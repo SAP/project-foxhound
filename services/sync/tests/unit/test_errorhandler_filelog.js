@@ -82,7 +82,7 @@ function readFile(file, callback) {
       uri: NetUtil.newURI(file),
       loadUsingSystemPrincipal: true,
     },
-    function (inputStream, statusCode, request) {
+    function (inputStream, statusCode) {
       let data = NetUtil.readInputStreamToString(
         inputStream,
         inputStream.available()
@@ -338,7 +338,7 @@ add_test(function test_newFailed_errorLog() {
 });
 
 add_test(function test_errorLog_dumpAddons() {
-  Svc.PrefBranch.setCharPref("log.logger", "Trace");
+  Svc.PrefBranch.setStringPref("log.logger", "Trace");
   Svc.PrefBranch.setBoolPref("log.appender.file.logOnError", true);
 
   Svc.Obs.add("weave:service:reset-file-log", function onResetFileLog() {

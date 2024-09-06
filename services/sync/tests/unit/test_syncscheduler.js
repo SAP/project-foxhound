@@ -92,7 +92,7 @@ add_task(async function setup() {
   // Don't remove stale clients when syncing. This is a test-only workaround
   // that lets us add clients directly to the store, without losing them on
   // the next sync.
-  clientsEngine._removeRemoteClient = async id => {};
+  clientsEngine._removeRemoteClient = async () => {};
   await Service.engineManager.clear();
 
   validate_all_future_pings();
@@ -469,7 +469,7 @@ add_task(async function test_handleSyncError() {
   await setUp(server);
 
   // Force sync to fail.
-  Svc.PrefBranch.setCharPref("firstSync", "notReady");
+  Svc.PrefBranch.setStringPref("firstSync", "notReady");
 
   _("Ensure expected initial environment.");
   Assert.equal(scheduler._syncErrors, 0);
@@ -523,7 +523,7 @@ add_task(async function test_handleSyncError() {
 
   _("Arrange for a successful sync to reset the scheduler error count");
   let promiseObserved = promiseOneObserver("weave:service:sync:finish");
-  Svc.PrefBranch.setCharPref("firstSync", "wipeRemote");
+  Svc.PrefBranch.setStringPref("firstSync", "wipeRemote");
   scheduler.scheduleNextSync(-1);
   await promiseObserved;
   await cleanUpAndGo(server);
@@ -662,7 +662,7 @@ add_task(async function test_no_autoconnect_during_wizard() {
   await setUp(server);
 
   // Simulate the Sync setup wizard.
-  Svc.PrefBranch.setCharPref("firstSync", "notReady");
+  Svc.PrefBranch.setStringPref("firstSync", "notReady");
 
   // Ensure we don't actually try to sync (or log in for that matter).
   function onLoginStart() {

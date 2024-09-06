@@ -20,6 +20,9 @@ reason = "test depends on update channel"
 
 ["browser_default_browser_prompt.js"]
 
+["browser_default_webprotocol_handler_mailto.js"]
+run-if = ["os == 'win'"]
+
 ["browser_initial_tab_remoteType.js"]
 https_first_disabled = true
 
@@ -32,9 +35,6 @@ skip-if = ["os == 'mac'"]
 ["browser_quit_shortcut_warning.js"]
 
 ["browser_startup_homepage.js"]
-
-["browser_system_notification_telemetry.js"]
-run-if = ["os == 'win'"]
 
 ["browser_to_handle_telemetry.js"]
 run-if = ["os == 'win'"]

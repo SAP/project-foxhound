@@ -52,16 +52,6 @@ enum class CompartmentSpecifier {
   ExistingCompartment,
 };
 
-/**
- * Specification for whether weak refs should be enabled and if so whether the
- * FinalizationRegistry.cleanupSome method should be present.
- */
-enum class WeakRefSpecifier {
-  Disabled,
-  EnabledWithCleanupSome,
-  EnabledWithoutCleanupSome
-};
-
 struct LocaleString : js::RefCounted<LocaleString> {
   const char* chars_;
 
@@ -182,68 +172,16 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool getCoopAndCoepEnabled() const;
   RealmCreationOptions& setCoopAndCoepEnabled(bool flag);
 
-  WeakRefSpecifier getWeakRefsEnabled() const { return weakRefs_; }
-  RealmCreationOptions& setWeakRefsEnabled(WeakRefSpecifier spec) {
-    weakRefs_ = spec;
-    return *this;
-  }
-
   bool getToSourceEnabled() const { return toSource_; }
   RealmCreationOptions& setToSourceEnabled(bool flag) {
     toSource_ = flag;
     return *this;
   }
 
-  bool getPropertyErrorMessageFixEnabled() const {
-    return propertyErrorMessageFix_;
-  }
-  RealmCreationOptions& setPropertyErrorMessageFixEnabled(bool flag) {
-    propertyErrorMessageFix_ = flag;
-    return *this;
-  }
-
-  bool getIteratorHelpersEnabled() const { return iteratorHelpers_; }
-  RealmCreationOptions& setIteratorHelpersEnabled(bool flag) {
-    iteratorHelpers_ = flag;
-    return *this;
-  }
-
-  bool getShadowRealmsEnabled() const { return shadowRealms_; }
-  RealmCreationOptions& setShadowRealmsEnabled(bool flag) {
-    shadowRealms_ = flag;
-    return *this;
-  }
-
-  bool getWellFormedUnicodeStringsEnabled() const {
-    return wellFormedUnicodeStrings_;
-  }
-  RealmCreationOptions& setWellFormedUnicodeStringsEnabled(bool flag) {
-    wellFormedUnicodeStrings_ = flag;
-    return *this;
-  }
-
-  bool getArrayGroupingEnabled() const { return arrayGrouping_; }
-  RealmCreationOptions& setArrayGroupingEnabled(bool flag) {
-    arrayGrouping_ = flag;
-    return *this;
-  }
-
-  bool getArrayBufferTransferEnabled() const { return arrayBufferTransfer_; }
-  RealmCreationOptions& setArrayBufferTransferEnabled(bool flag) {
-    arrayBufferTransfer_ = flag;
-    return *this;
-  }
-
-#ifdef NIGHTLY_BUILD
-  bool getNewSetMethodsEnabled() const { return newSetMethods_; }
-  RealmCreationOptions& setNewSetMethodsEnabled(bool flag) {
-    newSetMethods_ = flag;
-    return *this;
-  }
-
-  bool getSymbolsAsWeakMapKeysEnabled() const { return symbolsAsWeakMapKeys_; }
-  RealmCreationOptions& setSymbolsAsWeakMapKeysEnabled(bool flag) {
-    symbolsAsWeakMapKeys_ = flag;
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  bool getJSONParseWithSource() const { return jsonParseWithSource; }
+  RealmCreationOptions& setJSONParseWithSource(bool flag) {
+    jsonParseWithSource = flag;
     return *this;
   }
 #endif
@@ -302,27 +240,15 @@ class JS_PUBLIC_API RealmCreationOptions {
   };
   uint64_t profilerRealmID_ = 0;
   RefPtr<LocaleString> locale_;
-  WeakRefSpecifier weakRefs_ = WeakRefSpecifier::Disabled;
   bool invisibleToDebugger_ = false;
   bool preserveJitCode_ = false;
   bool sharedMemoryAndAtomics_ = false;
   bool defineSharedArrayBufferConstructor_ = true;
   bool coopAndCoep_ = false;
   bool toSource_ = false;
-  bool propertyErrorMessageFix_ = false;
-  bool iteratorHelpers_ = false;
-  bool shadowRealms_ = false;
-  // Pref for String.prototype.{is,to}WellFormed() methods.
-  bool wellFormedUnicodeStrings_ = true;
-  bool arrayGrouping_ = true;
-#ifdef NIGHTLY_BUILD
-  // Pref for new Set.prototype methods.
-  bool newSetMethods_ = false;
-  bool symbolsAsWeakMapKeys_ = false;
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  bool jsonParseWithSource = false;
 #endif
-
-  // Pref for ArrayBuffer.prototype.transfer{,ToFixedLength}() methods.
-  bool arrayBufferTransfer_ = false;
 
   bool secureContext_ = false;
   bool freezeBuiltins_ = false;

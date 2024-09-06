@@ -2,12 +2,12 @@ import {
   actionCreators as ac,
   actionTypes as at,
 } from "common/Actions.sys.mjs";
-import { RecommendationProvider } from "lib/RecommendationProvider.jsm";
+import { RecommendationProvider } from "lib/RecommendationProvider.sys.mjs";
 import { combineReducers, createStore } from "redux";
 import { reducers } from "common/Reducers.sys.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 
-import { PersonalityProvider } from "lib/PersonalityProvider/PersonalityProvider.jsm";
+import { PersonalityProvider } from "lib/PersonalityProvider/PersonalityProvider.sys.mjs";
 import { PersistentCache } from "lib/PersistentCache.sys.mjs";
 
 const PREF_PERSONALIZATION_ENABLED = "discoverystream.personalization.enabled";

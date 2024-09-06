@@ -11,6 +11,7 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/layers/CanvasRenderer.h"
+#include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -142,10 +143,14 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig) {
 }
 
 void CanvasContext::Unconfigure() {
-  if (mBridge && mBridge->IsOpen() && mRemoteTextureOwnerId.isSome()) {
-    mBridge->SendSwapChainDrop(*mRemoteTextureOwnerId);
+  if (mBridge && mBridge->IsOpen() && mRemoteTextureOwnerId) {
+    mBridge->SendSwapChainDrop(
+        *mRemoteTextureOwnerId,
+        layers::ToRemoteTextureTxnType(mFwdTransactionTracker),
+        layers::ToRemoteTextureTxnId(mFwdTransactionTracker));
   }
   mRemoteTextureOwnerId = Nothing();
+  mFwdTransactionTracker = nullptr;
   mBridge = nullptr;
   mConfig = nullptr;
   mTexture = nullptr;
@@ -187,6 +192,12 @@ RefPtr<Texture> CanvasContext::GetCurrentTexture(ErrorResult& aRv) {
 }
 
 void CanvasContext::MaybeQueueSwapChainPresent() {
+  MOZ_ASSERT(mTexture);
+
+  if (mTexture) {
+    mBridge->NotifyWaitForSubmit(mTexture->mId);
+  }
+
   if (mPendingSwapChainPresent) {
     return;
   }
@@ -222,8 +233,7 @@ bool CanvasContext::UpdateWebRenderCanvasData(
   auto* renderer = aCanvasData->GetCanvasRenderer();
 
   if (renderer && mRemoteTextureOwnerId.isSome() &&
-      renderer->GetRemoteTextureOwnerIdOfPushCallback() ==
-          mRemoteTextureOwnerId) {
+      renderer->GetRemoteTextureOwnerId() == mRemoteTextureOwnerId) {
     return true;
   }
 
@@ -246,7 +256,7 @@ bool CanvasContext::InitializeCanvasRenderer(
   data.mContext = this;
   data.mSize = mCanvasSize;
   data.mIsOpaque = false;
-  data.mRemoteTextureOwnerIdOfPushCallback = mRemoteTextureOwnerId;
+  data.mRemoteTextureOwnerId = mRemoteTextureOwnerId;
 
   aRenderer->Initialize(data);
   aRenderer->SetDirty();
@@ -327,16 +337,18 @@ already_AddRefed<mozilla::gfx::SourceSurface> CanvasContext::GetSurfaceSnapshot(
 
 Maybe<layers::SurfaceDescriptor> CanvasContext::GetFrontBuffer(
     WebGLFramebufferJS*, const bool) {
-  // With canvas element, remote texture push callback pushes remote texture
-  // from RemoteTextureMap to WebRenderImageHost. With offscreen canvas, the
-  // push callback is not used. remote texture is notified from
-  // ShareableCanvasRenderer to WebRenderImageHost.
   if (mPendingSwapChainPresent) {
     auto desc = SwapChainPresent();
     MOZ_ASSERT(!mPendingSwapChainPresent);
     return desc;
   }
   return Nothing();
+}
+
+already_AddRefed<layers::FwdTransactionTracker>
+CanvasContext::UseCompositableForwarder(
+    layers::CompositableForwarder* aForwarder) {
+  return layers::FwdTransactionTracker::GetOrCreate(mFwdTransactionTracker);
 }
 
 void CanvasContext::ForceNewFrame() {

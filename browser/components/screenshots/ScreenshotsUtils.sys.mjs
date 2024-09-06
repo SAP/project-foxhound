@@ -65,11 +65,13 @@ export class ScreenshotsComponentParent extends JSWindowActorParent {
       // otherwise looks like the UIPhases.CLOSED state.
       return;
     }
+
     switch (message.name) {
-      case "Screenshots:CancelScreenshot":
+      case "Screenshots:CancelScreenshot": {
         let { reason } = message.data;
         ScreenshotsUtils.cancel(browser, reason);
         break;
+      }
       case "Screenshots:CopyScreenshot":
         ScreenshotsUtils.closePanel(browser);
         ({ region } = message.data);
@@ -106,6 +108,20 @@ export class ScreenshotsComponentParent extends JSWindowActorParent {
     if (browser) {
       ScreenshotsUtils.exit(browser);
     }
+  }
+}
+
+export class ScreenshotsHelperParent extends JSWindowActorParent {
+  receiveMessage(message) {
+    switch (message.name) {
+      case "ScreenshotsHelper:GetElementRectFromPoint": {
+        let cxt = BrowsingContext.get(message.data.bcId);
+        return cxt.currentWindowGlobal
+          .getActor("ScreenshotsHelper")
+          .sendQuery("ScreenshotsHelper:GetElementRectFromPoint", message.data);
+      }
+    }
+    return null;
   }
 }
 
@@ -173,10 +189,87 @@ export var ScreenshotsUtils = {
   },
 
   handleEvent(event) {
-    // Escape should cancel and exit
-    if (event.type === "keydown" && event.key === "Escape") {
-      let browser = event.view.gBrowser.selectedBrowser;
-      this.cancel(browser, "escape");
+    switch (event.type) {
+      case "keydown":
+        if (event.key === "Escape") {
+          // Escape should cancel and exit
+          let browser = event.view.gBrowser.selectedBrowser;
+          this.cancel(browser, "escape");
+        }
+        break;
+      case "TabSelect":
+        this.handleTabSelect(event);
+        break;
+      case "SwapDocShells":
+        this.handleDocShellSwapEvent(event);
+        break;
+      case "EndSwapDocShells":
+        this.handleEndDocShellSwapEvent(event);
+        break;
+    }
+  },
+
+  /**
+   * When we swap docshells for a given screenshots browser, we need to update
+   * the browserToScreenshotsState WeakMap to the correct browser. If the old
+   * browser is in a state other than OVERLAYSELECTION, we will close
+   * screenshots.
+   *
+   * @param {Event} event The SwapDocShells event
+   */
+  handleDocShellSwapEvent(event) {
+    let oldBrowser = event.target;
+    let newBrowser = event.detail;
+
+    const currentUIPhase = this.getUIPhase(oldBrowser);
+    if (currentUIPhase === UIPhases.OVERLAYSELECTION) {
+      newBrowser.addEventListener("SwapDocShells", this);
+      newBrowser.addEventListener("EndSwapDocShells", this);
+      oldBrowser.removeEventListener("SwapDocShells", this);
+
+      let perBrowserState =
+        this.browserToScreenshotsState.get(oldBrowser) || {};
+      this.browserToScreenshotsState.set(newBrowser, perBrowserState);
+      this.browserToScreenshotsState.delete(oldBrowser);
+
+      this.getActor(oldBrowser).sendAsyncMessage(
+        "Screenshots:RemoveEventListeners"
+      );
+    } else {
+      this.cancel(oldBrowser, "navigation");
+    }
+  },
+
+  /**
+   * When we swap docshells for a given screenshots browser, we need to add the
+   * event listeners to the new browser because we removed event listeners in
+   * handleDocShellSwapEvent.
+   *
+   * We attach the overlay event listeners to this.docShell.chromeEventHandler
+   * in ScreenshotsComponentChild.sys.mjs which is the browser when the page is
+   * loaded via the parent process (about:config, about:robots, etc) and when
+   * this is the case, we lose the event listeners on the original browser.
+   * To fix this, we remove the event listeners on the old browser and add the
+   * event listeners to the new browser when a SwapDocShells occurs.
+   *
+   * @param {Event} event The EndSwapDocShells event
+   */
+  handleEndDocShellSwapEvent(event) {
+    let browser = event.target;
+    this.getActor(browser).sendAsyncMessage("Screenshots:AddEventListeners");
+    browser.removeEventListener("EndSwapDocShells", this);
+  },
+
+  /**
+   * When we receive a TabSelect event, we will close screenshots in the
+   * previous tab if the previous tab was in the initial state.
+   *
+   * @param {Event} event The TabSelect event
+   */
+  handleTabSelect(event) {
+    let previousTab = event.detail.previousTab;
+    if (this.getUIPhase(previousTab.linkedBrowser) === UIPhases.INITIAL) {
+      this.cancel(previousTab.linkedBrowser, "navigation");
     }
   },
 
@@ -236,10 +329,14 @@ export var ScreenshotsUtils = {
   start(browser, reason = "") {
     const uiPhase = this.getUIPhase(browser);
     switch (uiPhase) {
-      case UIPhases.CLOSED:
+      case UIPhases.CLOSED: {
         this.captureFocusedElement(browser, "previousFocusRef");
         this.showPanelAndOverlay(browser, reason);
+        browser.addEventListener("SwapDocShells", this);
+        let gBrowser = browser.getTabBrowser();
+        gBrowser.tabContainer.addEventListener("TabSelect", this);
         break;
+      }
       case UIPhases.INITIAL:
         // nothing to do, panel & overlay are already open
         break;
@@ -263,6 +360,10 @@ export var ScreenshotsUtils = {
     this.closeOverlay(browser);
     this.resetMethodsUsed();
     this.attemptToRestoreFocus(browser);
+
+    browser.removeEventListener("SwapDocShells", this);
+    const gBrowser = browser.getTabBrowser();
+    gBrowser.tabContainer.removeEventListener("TabSelect", this);
 
     this.browserToScreenshotsState.delete(browser);
     if (Cu.isInAutomation) {
@@ -452,21 +553,15 @@ export var ScreenshotsUtils = {
   },
 
   /**
-   * Returns the buttons panel for the given browser
+   * Returns the buttons panel for the given browser if the panel exists.
+   * Otherwise creates the buttons panel and returns the buttons panel.
    * @param browser The current browser
    * @returns The buttons panel
    */
   panelForBrowser(browser) {
-    return browser.ownerDocument.getElementById("screenshotsPagePanel");
-  },
-
-  /**
-   * Create the buttons container from its template, for this browser
-   * @param browser The current browser
-   * @returns The buttons panel
-   */
-  createPanelForBrowser(browser) {
-    let buttonsPanel = this.panelForBrowser(browser);
+    let buttonsPanel = browser.ownerDocument.getElementById(
+      "screenshotsPagePanel"
+    );
     if (!buttonsPanel) {
       let doc = browser.ownerDocument;
       let template = doc.getElementById("screenshotsPagePanelTemplate");
@@ -478,7 +573,10 @@ export var ScreenshotsUtils = {
       anchor.appendChild(buttonsPanel);
     }
 
-    return this.panelForBrowser(browser);
+    return (
+      buttonsPanel ??
+      browser.ownerDocument.getElementById("screenshotsPagePanel")
+    );
   },
 
   /**
@@ -520,7 +618,6 @@ export var ScreenshotsUtils = {
   async showPanelAndOverlay(browser, data) {
     let actor = this.getActor(browser);
     actor.sendAsyncMessage("Screenshots:ShowOverlay");
-    this.createPanelForBrowser(browser);
     this.recordTelemetryEvent("started", data, {});
     this.openPanel(browser);
   },
@@ -531,7 +628,12 @@ export var ScreenshotsUtils = {
    * @param browser The current browser.
    */
   closeOverlay(browser, options = {}) {
-    let actor = this.getActor(browser);
+    // If the actor has been unregistered (e.g. if the component enabled pref is flipped false)
+    // its possible getActor will throw an exception. That's ok.
+    let actor;
+    try {
+      actor = this.getActor(browser);
+    } catch (ex) {}
     actor?.sendAsyncMessage("Screenshots:HideOverlay", options);
 
     if (this.browserToScreenshotsState.has(browser)) {
@@ -617,7 +719,8 @@ export var ScreenshotsUtils = {
       !anchor.isConnected ||
       !window.isElementVisible(anchor.parentNode)
     ) {
-      anchor = browser.ownerDocument.getElementById("navigator-toolbox");
+      // Use the hamburger button if the screenshots button isn't available
+      anchor = browser.ownerDocument.getElementById("PanelUI-menu-button");
     }
     return anchor;
   },
@@ -732,7 +835,7 @@ export var ScreenshotsUtils = {
 
     Services.prefs.setStringPref(
       SCREENSHOTS_LAST_SCREENSHOT_METHOD_PREF,
-      "fullpage"
+      lastUsedMethod
     );
     this.methodsUsed[lastUsedMethod] += 1;
     this.recordTelemetryEvent("selected", type, {});
@@ -770,6 +873,13 @@ export var ScreenshotsUtils = {
    * @returns The canvas
    */
   async createCanvas(region, browser) {
+    region.left = Math.round(region.left);
+    region.right = Math.round(region.right);
+    region.top = Math.round(region.top);
+    region.bottom = Math.round(region.bottom);
+    region.width = Math.round(region.right - region.left);
+    region.height = Math.round(region.bottom - region.top);
+
     this.cropScreenshotRectIfNeeded(region);
 
     let { devicePixelRatio } = region;
@@ -784,6 +894,8 @@ export var ScreenshotsUtils = {
 
     canvas.width = region.width * devicePixelRatio;
     canvas.height = region.height * devicePixelRatio;
+
+    const snapshotSize = Math.floor(MAX_SNAPSHOT_DIMENSION * devicePixelRatio);
 
     for (
       let startLeft = region.left;
@@ -811,12 +923,20 @@ export var ScreenshotsUtils = {
           "rgb(255,255,255)"
         );
 
+        // The `left` and `top` need to be a multiple of the `snapshotSize` to
+        // prevent gaps/lines from appearing in the screenshot.
+        // If devicePixelRatio is 0.3, snapshotSize would be 307 after flooring
+        // from 307.2. Therefore every fifth snapshot would have a start of
+        // 307.2 * 5 or 1536 which is not a multiple of 307 and would cause a
+        // gap/line in the snapshot.
+        let left = Math.floor((startLeft - region.left) * devicePixelRatio);
+        let top = Math.floor((startTop - region.top) * devicePixelRatio);
         context.drawImage(
           snapshot,
-          (startLeft - region.left) * devicePixelRatio,
-          (startTop - region.top) * devicePixelRatio,
-          width * devicePixelRatio,
-          height * devicePixelRatio
+          left - (left % snapshotSize),
+          top - (top % snapshotSize),
+          Math.floor(width * devicePixelRatio),
+          Math.floor(height * devicePixelRatio)
         );
 
         snapshot.close();
@@ -870,8 +990,23 @@ export var ScreenshotsUtils = {
       "@mozilla.org/widget/transferable;1"
     ].createInstance(Ci.nsITransferable);
     transferable.init(null);
-    transferable.addDataFlavor("image/png");
-    transferable.setTransferData("image/png", imgDecoded);
+    // Internal consumers expect the image data to be stored as a
+    // nsIInputStream. On Linux and Windows, pasted data is directly
+    // retrieved from the system's native clipboard, and made available
+    // as a nsIInputStream.
+    //
+    // On macOS, nsClipboard::GetNativeClipboardData (nsClipboard.mm) uses
+    // a cached copy of nsITransferable if available, e.g. when the copy
+    // was initiated by the same browser instance. To make sure that a
+    // nsIInputStream is returned instead of the cached imgIContainer,
+    // the image is exported as as `kNativeImageMime`. Data associated
+    // with this type is converted to a platform-specific image format
+    // when written to the clipboard. The type is not used when images
+    // are read from the clipboard (on all platforms, not just macOS).
+    // This forces nsClipboard::GetNativeClipboardData to fall back to
+    // the native clipboard, and return the image as a nsITransferable.
+    transferable.addDataFlavor("application/x-moz-nativeimage");
+    transferable.setTransferData("application/x-moz-nativeimage", imgDecoded);
 
     Services.clipboard.setData(
       transferable,

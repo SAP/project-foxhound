@@ -18,6 +18,7 @@
 #include "mozilla/layers/OverlayInfo.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 
@@ -260,7 +261,7 @@ class DCLayerTree {
   }
 
  protected:
-  static UniquePtr<GpuOverlayInfo> sGpuOverlayInfo;
+  static StaticAutoPtr<GpuOverlayInfo> sGpuOverlayInfo;
 };
 
 /**
@@ -388,8 +389,8 @@ class DCSurfaceVideo : public DCSurface {
  protected:
   virtual ~DCSurfaceVideo();
 
-  DXGI_FORMAT GetSwapChainFormat();
-  bool CreateVideoSwapChain();
+  DXGI_FORMAT GetSwapChainFormat(bool aUseVpAutoHDR);
+  bool CreateVideoSwapChain(DXGI_FORMAT aFormat);
   bool CallVideoProcessorBlt();
   void ReleaseDecodeSwapChainResources();
 
@@ -408,6 +409,9 @@ class DCSurfaceVideo : public DCSurface {
   int mSlowPresentCount = 0;
   bool mFirstPresent = true;
   const UINT mSwapChainBufferCount;
+  bool mUseVpAutoHDR = false;
+  bool mVpAutoHDRFailed = false;
+  bool mVpSuperResolutionFailed = false;
 };
 
 /**

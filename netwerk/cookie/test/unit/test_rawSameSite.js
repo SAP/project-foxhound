@@ -88,7 +88,7 @@ add_task(async _ => {
     let test = tests[i];
 
     let promise = new Promise(resolve => {
-      function observer(subject, topic, data) {
+      function observer() {
         Services.obs.removeObserver(observer, "cookie-saved-on-disk");
         resolve();
       }
@@ -101,7 +101,7 @@ add_task(async _ => {
     await promise;
 
     conn = storage.openDatabase(dbFile);
-    Assert.equal(conn.schemaVersion, 12);
+    Assert.equal(conn.schemaVersion, 13);
 
     let stmt = conn.createStatement(
       "SELECT sameSite, rawSameSite FROM moz_cookies"

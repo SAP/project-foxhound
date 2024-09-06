@@ -32,7 +32,7 @@ const TEST_PROVIDER_INFO = [
       ads: [
         {
           selectors: "[data-ad-domain]",
-          method: "data-attribute",
+          method: "dataAttribute",
           options: {
             dataAttributeKey: "adDomain",
           },
@@ -69,6 +69,19 @@ add_setup(async function () {
 
   SearchTestUtils.useMockIdleService();
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
+  // On startup, the event scheduler is initialized.
+  // If serpEventTelemetryCategorization is already true, the instance of the
+  // class will be subscribed to to the real idle service instead of the mock
+  // idle service. If it's false, toggling the preference (which happens later
+  // in this setup) will initialize it.
+  if (
+    Services.prefs.getBoolPref(
+      "browser.search.serpEventTelemetryCategorization.enabled"
+    )
+  ) {
+    SearchSERPCategorizationEventScheduler.uninit();
+    SearchSERPCategorizationEventScheduler.init();
+  }
   await waitForIdle();
 
   let promise = waitForDomainToCategoriesUpdate();
@@ -119,9 +132,8 @@ add_task(async function test_categorize_serp_and_sleep() {
       sponsored_num_inconclusive: "0",
       sponsored_num_unknown: "0",
       mappings_version: "1",
-      app_version: APP_VERSION,
+      app_version: APP_MAJOR_VERSION,
       channel: CHANNEL,
-      locale: LOCALE,
       region: REGION,
       partner_code: "ff",
       provider: "example",
@@ -177,9 +189,8 @@ add_task(async function test_categorize_serp_and_sleep_not_long_enough() {
       sponsored_num_inconclusive: "0",
       sponsored_num_unknown: "0",
       mappings_version: "1",
-      app_version: APP_VERSION,
+      app_version: APP_MAJOR_VERSION,
       channel: CHANNEL,
-      locale: LOCALE,
       region: REGION,
       partner_code: "ff",
       provider: "example",

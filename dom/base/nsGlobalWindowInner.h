@@ -50,6 +50,7 @@
 #include "mozilla/dom/ImageBitmapSource.h"
 #include "mozilla/UniquePtr.h"
 #include "nsThreadUtils.h"
+#include "mozilla/MozPromise.h"
 
 class nsIArray;
 class nsIBaseWindow;
@@ -103,6 +104,7 @@ class ClientSource;
 class Console;
 class Crypto;
 class CustomElementRegistry;
+class DataTransfer;
 class DocGroup;
 class External;
 class Function;
@@ -126,6 +128,7 @@ class WebTaskScheduler;
 class WebTaskSchedulerMainThread;
 class SpeechSynthesis;
 class Timeout;
+class TrustedTypePolicyFactory;
 class VisualViewport;
 class VRDisplay;
 enum class VRDisplayEventReason : uint8_t;
@@ -1106,7 +1109,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // This method is called if this window loads a 3rd party tracking resource
   // and the storage is just been changed. The window can reset the partitioned
   // storage objects and switch to the first party cookie jar.
-  void StorageAccessPermissionChanged();
+  RefPtr<mozilla::GenericPromise> StorageAccessPermissionChanged(bool aGranted);
 
  protected:
   static void NotifyDOMWindowDestroyed(nsGlobalWindowInner* aWindow);
@@ -1253,10 +1256,17 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   virtual JS::loader::ModuleLoaderBase* GetModuleLoader(
       JSContext* aCx) override;
 
+  mozilla::dom::TrustedTypePolicyFactory* TrustedTypes();
+
+  void SetCurrentPasteDataTransfer(mozilla::dom::DataTransfer* aDataTransfer);
+  mozilla::dom::DataTransfer* GetCurrentPasteDataTransfer() const;
+
  private:
   RefPtr<mozilla::dom::ContentMediaController> mContentMediaController;
 
   RefPtr<mozilla::dom::WebTaskSchedulerMainThread> mWebTaskScheduler;
+
+  RefPtr<mozilla::dom::TrustedTypePolicyFactory> mTrustedTypePolicyFactory;
 
  protected:
   // Whether we need to care about orientation changes.
@@ -1458,6 +1468,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
     nsRefPtrHashtable<nsStringHashKey, mozilla::dom::ChromeMessageBroadcaster>
         mGroupMessageManagers{1};
   } mChromeFields;
+
+  // Cache the DataTransfer created for a paste event, this will be reset after
+  // the event is dispatched.
+  RefPtr<mozilla::dom::DataTransfer> mCurrentPasteDataTransfer;
 
   // These fields are used by the inner and outer windows to prevent
   // programatically moving the window while the mouse is down.

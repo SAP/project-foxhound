@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 
 // Trigger a save of a link in public mode, then trigger an identical save
 // in private mode and ensure that the second request is differentiated from
@@ -14,7 +14,7 @@ function triggerSave(aWindow, aCallback) {
   let testBrowser = aWindow.gBrowser.selectedBrowser;
   // This page sets a cookie if and only if a cookie does not exist yet
   let testURI =
-    "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517-2.html";
+    "https://example.com/browser/browser/base/content/test/general/bug792517-2.html";
   BrowserTestUtils.startLoadingURIString(testBrowser, testURI);
   BrowserTestUtils.browserLoaded(testBrowser, false, testURI).then(() => {
     waitForFocus(function () {
@@ -132,7 +132,7 @@ function test() {
     info("onExamineResponse with " + channel.URI.spec);
     if (
       channel.URI.spec !=
-      "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517.sjs"
+      "https://example.com/browser/browser/base/content/test/general/bug792517.sjs"
     ) {
       info("returning");
       return;
@@ -158,7 +158,7 @@ function test() {
     info("onModifyRequest with " + channel.URI.spec);
     if (
       channel.URI.spec !=
-      "http://mochi.test:8888/browser/browser/base/content/test/general/bug792517.sjs"
+      "https://example.com/browser/browser/base/content/test/general/bug792517.sjs"
     ) {
       return;
     }

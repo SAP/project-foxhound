@@ -96,6 +96,12 @@ export class NetworkEventRecord {
     // step 8.17
     // Bug 1802181: switch the NetworkObserver to an event-based API.
     this.#emitBeforeRequestSent();
+
+    // If the request is already blocked, we will not receive further updates,
+    // emit a network.fetchError event immediately.
+    if (networkEvent.blockedReason) {
+      this.#emitFetchError();
+    }
   }
 
   /**
@@ -157,13 +163,8 @@ export class NetworkEventRecord {
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
-   *
-   * @param {object} info
-   *     The object containing security information.
-   * @param {boolean} isRacing
-   *     True if the corresponding channel raced the cache and network requests.
    */
-  addSecurityInfo(info, isRacing) {}
+  addSecurityInfo() {}
 
   /**
    * Add network event timings.
@@ -171,15 +172,8 @@ export class NetworkEventRecord {
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
-   *
-   * @param {number} total
-   *     The total time for the request.
-   * @param {object} timings
-   *     The har-like timings.
-   * @param {object} offsets
-   *     The har-like timings, but as offset from the request start.
    */
-  addEventTimings(total, timings, offsets) {}
+  addEventTimings() {}
 
   /**
    * Add response cache entry.
@@ -187,11 +181,8 @@ export class NetworkEventRecord {
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
-   *
-   * @param {object} options
-   *     An object which contains a single responseCache property.
    */
-  addResponseCache(options) {}
+  addResponseCache() {}
 
   /**
    * Add response content.
@@ -227,11 +218,8 @@ export class NetworkEventRecord {
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
-   *
-   * @param {Array} serverTimings
-   *     The server timings.
    */
-  addServerTimings(serverTimings) {}
+  addServerTimings() {}
 
   /**
    * Add service worker timings.
@@ -239,11 +227,8 @@ export class NetworkEventRecord {
    * Required API for a NetworkObserver event owner.
    *
    * Not used for RemoteAgent.
-   *
-   * @param {object} serviceWorkerTimings
-   *     The server timings.
    */
-  addServiceWorkerTimings(serviceWorkerTimings) {}
+  addServiceWorkerTimings() {}
 
   onAuthPrompt(authDetails, authCallbacks) {
     this.#emitAuthRequired(authCallbacks);

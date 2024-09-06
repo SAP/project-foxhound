@@ -720,15 +720,14 @@ bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
   return true;
 }
 
-JSLinearString* StringFromCharCode(JSContext* cx, int32_t code) {
-  char16_t c = char16_t(code);
-
-  // Foxhound: avoid atoms
-  // if (StaticStrings::hasUnit(c)) {
-  //   return cx->staticStrings().getUnit(c);
-  // }
-
-  return NewInlineString<CanGC>(cx, {c}, 1);
+bool CodePointAt(JSContext* cx, HandleString str, int32_t index,
+                 uint32_t* code) {
+  char32_t codePoint;
+  if (!str->getCodePoint(cx, size_t(index), &codePoint)) {
+    return false;
+  }
+  *code = codePoint;
+  return true;
 }
 
 JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
@@ -742,15 +741,6 @@ JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code) {
   // }
 
   return NewInlineString<NoGC>(cx, {c}, 1);
-}
-
-JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint) {
-  RootedValue rval(cx, Int32Value(codePoint));
-  if (!str_fromCodePoint_one_arg(cx, rval, &rval)) {
-    return nullptr;
-  }
-
-  return rval.toString();
 }
 
 JSLinearString* LinearizeForCharAccessPure(JSString* str) {
@@ -1209,21 +1199,22 @@ ArrayObject* NewArrayObjectEnsureDenseInitLength(JSContext* cx, int32_t count) {
   return array;
 }
 
-JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
-                            HandleObject objRes) {
-  if (objRes) {
-    Handle<ArrayObject*> arrRes = objRes.as<ArrayObject>();
+ArrayObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
+                               Handle<ArrayObject*> arrRes) {
+  if (arrRes) {
+    // Fast path: we managed to allocate the array inline; initialize the
+    // elements.
     MOZ_ASSERT(arrRes->getDenseInitializedLength() == 0);
 
-    // Fast path: we managed to allocate the array inline; initialize the
-    // slots.
-    if (length > 0) {
-      if (!arrRes->ensureElements(cx, length)) {
-        return nullptr;
-      }
-      arrRes->initDenseElements(rest, length);
-      arrRes->setLength(length);
+    // We don't call this function if we can initialize the elements in JIT
+    // code.
+    MOZ_ASSERT(length > arrRes->getDenseCapacity());
+
+    if (!arrRes->growElements(cx, length)) {
+      return nullptr;
     }
+    arrRes->initDenseElements(rest, length);
+    arrRes->setLength(length);
     return arrRes;
   }
 
@@ -1304,23 +1295,21 @@ bool DebugLeaveThenPopLexicalEnv(JSContext* cx, BaselineFrame* frame,
 }
 
 bool FreshenLexicalEnv(JSContext* cx, BaselineFrame* frame) {
-  return frame->freshenLexicalEnvironment(cx);
+  return frame->freshenLexicalEnvironment<false>(cx);
 }
 
-bool DebugLeaveThenFreshenLexicalEnv(JSContext* cx, BaselineFrame* frame,
-                                     const jsbytecode* pc) {
-  MOZ_ALWAYS_TRUE(DebugLeaveLexicalEnv(cx, frame, pc));
-  return frame->freshenLexicalEnvironment(cx);
+bool DebuggeeFreshenLexicalEnv(JSContext* cx, BaselineFrame* frame,
+                               const jsbytecode* pc) {
+  return frame->freshenLexicalEnvironment<true>(cx, pc);
 }
 
 bool RecreateLexicalEnv(JSContext* cx, BaselineFrame* frame) {
-  return frame->recreateLexicalEnvironment(cx);
+  return frame->recreateLexicalEnvironment<false>(cx);
 }
 
-bool DebugLeaveThenRecreateLexicalEnv(JSContext* cx, BaselineFrame* frame,
-                                      const jsbytecode* pc) {
-  MOZ_ALWAYS_TRUE(DebugLeaveLexicalEnv(cx, frame, pc));
-  return frame->recreateLexicalEnvironment(cx);
+bool DebuggeeRecreateLexicalEnv(JSContext* cx, BaselineFrame* frame,
+                                const jsbytecode* pc) {
+  return frame->recreateLexicalEnvironment<true>(cx, pc);
 }
 
 bool DebugLeaveLexicalEnv(JSContext* cx, BaselineFrame* frame,
@@ -2037,7 +2026,7 @@ bool HasNativeElementPure(JSContext* cx, NativeObject* obj, int32_t index,
   }
   // TypedArrayObject are also native and contain indexed properties.
   if (MOZ_UNLIKELY(obj->is<TypedArrayObject>())) {
-    size_t length = obj->as<TypedArrayObject>().length();
+    size_t length = obj->as<TypedArrayObject>().length().valueOr(0);
     vp[0].setBoolean(uint32_t(index) < length);
     return true;
   }
@@ -2368,8 +2357,8 @@ void AllocateAndInitTypedArrayBuffer(JSContext* cx, TypedArrayObject* obj,
   // Negative numbers or zero will bail out to the slow path, which in turn will
   // raise an invalid argument exception or create a correct object with zero
   // elements.
-  constexpr size_t maxByteLength = TypedArrayObject::MaxByteLength;
-  if (count <= 0 || size_t(count) > maxByteLength / obj->bytesPerElement()) {
+  constexpr size_t byteLengthLimit = TypedArrayObject::ByteLengthLimit;
+  if (count <= 0 || size_t(count) > byteLengthLimit / obj->bytesPerElement()) {
     obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, PrivateValue(size_t(0)));
     return;
   }
@@ -2377,7 +2366,7 @@ void AllocateAndInitTypedArrayBuffer(JSContext* cx, TypedArrayObject* obj,
   obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, PrivateValue(count));
 
   size_t nbytes = size_t(count) * obj->bytesPerElement();
-  MOZ_ASSERT(nbytes <= maxByteLength);
+  MOZ_ASSERT(nbytes <= byteLengthLimit);
   nbytes = RoundUp(nbytes, sizeof(Value));
 
   MOZ_ASSERT(!obj->isTenured());
@@ -2579,7 +2568,8 @@ static int32_t AtomicsCompareExchange(TypedArrayObject* typedArray,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::compareExchangeSeqCst(addr + index, T(expected),
@@ -2611,7 +2601,8 @@ static int32_t AtomicsExchange(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::exchangeSeqCst(addr + index, T(value));
@@ -2642,7 +2633,8 @@ static int32_t AtomicsAdd(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::fetchAddSeqCst(addr + index, T(value));
@@ -2673,7 +2665,8 @@ static int32_t AtomicsSub(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::fetchSubSeqCst(addr + index, T(value));
@@ -2704,7 +2697,8 @@ static int32_t AtomicsAnd(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::fetchAndSeqCst(addr + index, T(value));
@@ -2735,7 +2729,8 @@ static int32_t AtomicsOr(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::fetchOrSeqCst(addr + index, T(value));
@@ -2766,7 +2761,8 @@ static int32_t AtomicsXor(TypedArrayObject* typedArray, size_t index,
   AutoUnsafeCallWithABI unsafe;
 
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   SharedMem<T*> addr = typedArray->dataPointerEither().cast<T*>();
   return jit::AtomicOperations::fetchXorSeqCst(addr + index, T(value));
@@ -2796,7 +2792,8 @@ static BigInt* AtomicAccess64(JSContext* cx, TypedArrayObject* typedArray,
                               size_t index, AtomicOp op, Args... args) {
   MOZ_ASSERT(Scalar::isBigIntType(typedArray->type()));
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   if (typedArray->type() == Scalar::BigInt64) {
     SharedMem<int64_t*> addr = typedArray->dataPointerEither().cast<int64_t*>();
@@ -2814,7 +2811,8 @@ static auto AtomicAccess64(TypedArrayObject* typedArray, size_t index,
                            AtomicOp op, Args... args) {
   MOZ_ASSERT(Scalar::isBigIntType(typedArray->type()));
   MOZ_ASSERT(!typedArray->hasDetachedBuffer());
-  MOZ_ASSERT(index < typedArray->length());
+  MOZ_ASSERT_IF(typedArray->hasResizableBuffer(), !typedArray->isOutOfBounds());
+  MOZ_ASSERT(index < typedArray->length().valueOr(0));
 
   if (typedArray->type() == Scalar::BigInt64) {
     SharedMem<int64_t*> addr = typedArray->dataPointerEither().cast<int64_t*>();

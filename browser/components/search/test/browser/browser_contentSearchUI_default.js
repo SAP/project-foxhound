@@ -58,11 +58,22 @@ async function ensureIcon(tab, expectedIcon) {
         "Search Icon not set."
       );
 
-      Assert.equal(
-        computedStyle.getPropertyValue("--newtab-search-icon"),
-        `url(${icon})`,
-        "Should have the expected icon"
-      );
+      if (icon.startsWith("blob:")) {
+        // We don't check the data here as `browser_contentSearch.js` performs
+        // those checks.
+        Assert.ok(
+          computedStyle
+            .getPropertyValue("--newtab-search-icon")
+            .startsWith("url(blob:"),
+          "Should have a blob URL"
+        );
+      } else {
+        Assert.equal(
+          computedStyle.getPropertyValue("--newtab-search-icon"),
+          `url(${icon})`,
+          "Should have the expected icon"
+        );
+      }
     }
   );
 }
@@ -96,7 +107,7 @@ async function runNewTabTest(isHandoff) {
     waitForLoad: false,
   });
 
-  let engineIcon = defaultEngine.getIconURL(16);
+  let engineIcon = await defaultEngine.getIconURL(16);
 
   await ensureIcon(tab, engineIcon);
   if (isHandoff) {
@@ -162,7 +173,7 @@ add_task(async function test_content_search_attributes_in_private_window() {
   });
   let tab = win.gBrowser.selectedTab;
 
-  let engineIcon = defaultEngine.getIconURL(16);
+  let engineIcon = await defaultEngine.getIconURL(16);
 
   await ensureIcon(tab, engineIcon);
   await ensurePlaceholder(

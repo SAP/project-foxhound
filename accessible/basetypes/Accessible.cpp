@@ -468,7 +468,7 @@ void Accessible::DebugPrint(const char* aPrefix,
   } else {
     desc.AssignLiteral("[null]");
   }
-#  if defined(ANDROID)
+#  if defined(ANDROID) || defined(MOZ_WIDGET_UIKIT)
   printf_stderr("%s %s\n", aPrefix, desc.get());
 #  else
   printf("%s %s\n", aPrefix, desc.get());
@@ -539,17 +539,13 @@ nsStaticAtom* Accessible::LandmarkRole() const {
   }
 
   if (tagName == nsGkAtoms::section) {
-    nsAutoString name;
-    Name(name);
-    if (!name.IsEmpty()) {
+    if (!NameIsEmpty()) {
       return nsGkAtoms::region;
     }
   }
 
   if (tagName == nsGkAtoms::form) {
-    nsAutoString name;
-    Name(name);
-    if (!name.IsEmpty()) {
+    if (!NameIsEmpty()) {
       return nsGkAtoms::form;
     }
   }
@@ -567,16 +563,20 @@ nsStaticAtom* Accessible::LandmarkRole() const {
 nsStaticAtom* Accessible::ComputedARIARole() const {
   const nsRoleMapEntry* roleMap = ARIARoleMap();
   if (roleMap && roleMap->roleAtom != nsGkAtoms::_empty &&
-      // region has its own Gecko role and it needs to be handled specially.
+      // region and form have their own Gecko roles and need to be handled
+      // specially.
       roleMap->roleAtom != nsGkAtoms::region &&
+      roleMap->roleAtom != nsGkAtoms::form &&
       (roleMap->roleRule == kUseNativeRole || roleMap->IsOfType(eLandmark) ||
        roleMap->roleAtom == nsGkAtoms::alertdialog ||
        roleMap->roleAtom == nsGkAtoms::feed ||
-       roleMap->roleAtom == nsGkAtoms::rowgroup ||
-       roleMap->roleAtom == nsGkAtoms::searchbox)) {
+       roleMap->roleAtom == nsGkAtoms::rowgroup)) {
     // Explicit ARIA role (e.g. specified via the role attribute) which does not
     // map to a unique Gecko role.
     return roleMap->roleAtom;
+  }
+  if (IsSearchbox()) {
+    return nsGkAtoms::searchbox;
   }
   role geckoRole = Role();
   if (geckoRole == roles::LANDMARK) {
@@ -594,7 +594,7 @@ nsStaticAtom* Accessible::ComputedARIARole() const {
   }
   // Role from native markup or layout.
 #define ROLE(_geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, nameRule)                      \
+             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)        \
   case roles::_geckoRole:                                                    \
     return ariaRole;
   switch (geckoRole) {
@@ -647,6 +647,12 @@ void Accessible::ApplyImplicitState(uint64_t& aState) const {
   if (Opacity() == 1.0f && !(aState & states::INVISIBLE)) {
     aState |= states::OPAQUE1;
   }
+}
+
+bool Accessible::NameIsEmpty() const {
+  nsAutoString name;
+  Name(name);
+  return name.IsEmpty();
 }
 
 ////////////////////////////////////////////////////////////////////////////////

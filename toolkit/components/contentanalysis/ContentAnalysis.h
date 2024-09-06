@@ -7,14 +7,24 @@
 #define mozilla_contentanalysis_h
 
 #include "mozilla/DataMutex.h"
-#include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/Promise.h"
 #include "nsIContentAnalysis.h"
 #include "nsProxyRelease.h"
 #include "nsString.h"
 #include "nsTHashMap.h"
 
 #include <atomic>
+#include <regex>
 #include <string>
+
+class nsIPrincipal;
+class ContentAnalysisTest;
+
+namespace mozilla::dom {
+class DataTransfer;
+class WindowGlobalParent;
+}  // namespace mozilla::dom
 
 namespace content_analysis::sdk {
 class Client;
@@ -31,7 +41,7 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
 
   ContentAnalysisRequest(AnalysisType aAnalysisType, nsString aString,
                          bool aStringIsFilePath, nsCString aSha256Digest,
-                         nsString aUrl, OperationType aOperationType,
+                         nsCOMPtr<nsIURI> aUrl, OperationType aOperationType,
                          dom::WindowGlobalParent* aWindowGlobalParent);
   static nsresult GetFileDigest(const nsAString& aFilePath,
                                 nsCString& aDigestString);
@@ -53,7 +63,7 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
 
   // The URL containing the file download/upload or to which web content is
   // being uploaded.
-  nsString mUrl;
+  nsCOMPtr<nsIURI> mUrl;
 
   // Sha256 digest of file.
   nsCString mSha256Digest;
@@ -75,6 +85,8 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   nsString mOperationDisplayString;
 
   RefPtr<dom::WindowGlobalParent> mWindowGlobalParent;
+
+  friend class ::ContentAnalysisTest;
 };
 
 #define CONTENTANALYSIS_IID                          \
@@ -92,6 +104,7 @@ class ContentAnalysis final : public nsIContentAnalysis {
   NS_DECL_NSICONTENTANALYSIS
 
   ContentAnalysis();
+  nsCString GetUserActionId();
 
  private:
   ~ContentAnalysis();
@@ -99,26 +112,41 @@ class ContentAnalysis final : public nsIContentAnalysis {
   ContentAnalysis(const ContentAnalysis&) = delete;
   ContentAnalysis& operator=(ContentAnalysis&) = delete;
   nsresult CreateContentAnalysisClient(nsCString&& aPipePathName,
+                                       nsString&& aClientSignatureSetting,
                                        bool aIsPerUser);
   nsresult RunAnalyzeRequestTask(
       const RefPtr<nsIContentAnalysisRequest>& aRequest, bool aAutoAcknowledge,
+      int64_t aRequestCount,
       const RefPtr<nsIContentAnalysisCallback>& aCallback);
   nsresult RunAcknowledgeTask(
       nsIContentAnalysisAcknowledgement* aAcknowledgement,
       const nsACString& aRequestToken);
   nsresult CancelWithError(nsCString aRequestToken, nsresult aResult);
+  void GenerateUserActionId();
   static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
   static void DoAnalyzeRequest(
       nsCString aRequestToken,
       content_analysis::sdk::ContentAnalysisRequest&& aRequest,
       const std::shared_ptr<content_analysis::sdk::Client>& aClient);
+  void IssueResponse(RefPtr<ContentAnalysisResponse>& response);
+
+  // Did the URL filter completely handle the request or do we need to check
+  // with the agent.
+  enum UrlFilterResult { eCheck, eDeny, eAllow };
+
+  UrlFilterResult FilterByUrlLists(nsIContentAnalysisRequest* aRequest);
+  void EnsureParsedUrlFilters();
 
   using ClientPromise =
       MozPromise<std::shared_ptr<content_analysis::sdk::Client>, nsresult,
                  false>;
+  nsCString mUserActionId;
+  int64_t mRequestCount = 0;
   RefPtr<ClientPromise::Private> mCaClientPromise;
   // Only accessed from the main thread
   bool mClientCreationAttempted;
+
+  bool mSetByEnterprise;
 
   class CallbackData final {
    public:
@@ -150,7 +178,12 @@ class ContentAnalysis final : public nsIContentAnalysis {
   };
   DataMutex<nsTHashMap<nsCString, WarnResponseData>> mWarnResponseDataMap;
 
+  std::vector<std::regex> mAllowUrlList;
+  std::vector<std::regex> mDenyUrlList;
+  bool mParsedUrlLists;
+
   friend class ContentAnalysisResponse;
+  friend class ::ContentAnalysisTest;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(ContentAnalysis, CONTENTANALYSIS_IID)
@@ -164,6 +197,7 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
       Action aAction, const nsACString& aRequestToken);
 
   void SetOwner(RefPtr<ContentAnalysis> aOwner);
+  void DoNotAcknowledge() { mDoNotAcknowledge = true; }
 
  private:
   ~ContentAnalysisResponse() = default;
@@ -189,7 +223,11 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   RefPtr<ContentAnalysis> mOwner;
 
   // Whether the response has been acknowledged
-  bool mHasAcknowledged;
+  bool mHasAcknowledged = false;
+
+  // If true, the request was completely handled by URL filter lists, so it
+  // was not sent to the agent and should not send an Acknowledge.
+  bool mDoNotAcknowledge = false;
 
   friend class ContentAnalysis;
 };

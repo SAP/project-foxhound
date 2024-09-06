@@ -177,6 +177,7 @@ const extraBrowserTestPaths = [
   "dom/broadcastchannel/tests/",
   "dom/events/test/",
   "dom/fetch/tests/",
+  "dom/file/ipc/tests/",
   "dom/html/test/",
   "dom/indexedDB/test/",
   "dom/ipc/tests/",
@@ -279,7 +280,6 @@ const extraChromeTestPaths = [
 // of the file.
 
 const extraMochitestTestPaths = [
-  "dom/file/tests/",
   "dom/ipc/tests/",
   "toolkit/xre/test/",
   "accessible/tests/crashtests/",
@@ -301,6 +301,7 @@ const extraMochitestTestPaths = [
   "dom/encoding/test/",
   "dom/events/test/",
   "dom/file/tests/",
+  "dom/file/ipc/tests/",
   "dom/filesystem/compat/tests/",
   "dom/filesystem/tests/",
   "dom/html/test/",
@@ -316,7 +317,6 @@ const extraMochitestTestPaths = [
   "dom/media/test/",
   "dom/media/webaudio/test/",
   "dom/media/webcodecs/test/",
-  "dom/media/webcodecs/crashtests/",
   "dom/media/webspeech/recognition/test/",
   "dom/media/webspeech/synth/test/",
   "dom/messagechannel/tests/",
@@ -396,6 +396,7 @@ let expectedDupePaths = new Set([
   "dom/encoding/test/",
   "dom/events/test/",
   "dom/file/tests/",
+  "dom/file/ipc/tests/",
   "dom/indexedDB/test/",
   "dom/ipc/tests/",
   "dom/localstorage/test/",

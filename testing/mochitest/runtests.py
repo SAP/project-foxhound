@@ -176,6 +176,7 @@ class MessageLogger(object):
         self.structured = structured
         self.gecko_id = "GECKO"
         self.is_test_running = False
+        self._manifest = None
 
         # Even if buffering is enabled, we only want to buffer messages between
         # TEST-START/TEST-END. So it is off to begin, but will be enabled after
@@ -188,6 +189,9 @@ class MessageLogger(object):
 
         # Message buffering
         self.buffered_messages = []
+
+    def setManifest(self, name):
+        self._manifest = name
 
     def validate(self, obj):
         """Tests whether the given object is a valid structured message
@@ -257,6 +261,7 @@ class MessageLogger(object):
             self._fix_subtest_name(message)
             self._fix_test_name(message)
             self._fix_message_format(message)
+            message["group"] = self._manifest
             messages.append(message)
 
         return messages
@@ -658,9 +663,11 @@ class WebSocketServer(object):
         cmd = [sys.executable, script]
         if self.debuggerInfo and self.debuggerInfo.interactive:
             cmd += ["--interactive"]
+        # We need to use 0.0.0.0 to listen on all interfaces because
+        # Android tests connect from a different hosts
         cmd += [
             "-H",
-            "127.0.0.1",
+            "0.0.0.0",
             "-p",
             str(self.port),
             "-w",
@@ -747,9 +754,12 @@ class SSLTunnel:
             config.write("httpproxy:1\n")
             config.write("certdbdir:%s\n" % self.certPath)
             config.write("forward:127.0.0.1:%s\n" % self.httpPort)
-            config.write(
-                "websocketserver:%s:%s\n" % (self.webServer, self.webSocketPort)
-            )
+
+            wsserver = self.webServer
+            if self.webServer == "10.0.2.2":
+                wsserver = "127.0.0.1"
+
+            config.write("websocketserver:%s:%s\n" % (wsserver, self.webSocketPort))
             # Use "*" to tell ssltunnel to listen on the public ip
             # address instead of the loopback address 127.0.0.1. This
             # may have the side-effect of causing firewall warnings on
@@ -1994,6 +2004,9 @@ toolbar#nav-bar {
         if options.headless:
             browserEnv["MOZ_HEADLESS"] = "1"
 
+        if not options.e10s:
+            browserEnv["MOZ_FORCE_DISABLE_E10S"] = "1"
+
         if options.dmd:
             browserEnv["DMD"] = os.environ.get("DMD", "1")
 
@@ -2452,7 +2465,6 @@ toolbar#nav-bar {
 
         # Hardcoded prefs (TODO move these into a base profile)
         prefs = {
-            "browser.tabs.remote.autostart": options.e10s,
             # Enable tracing output for detailed failures in case of
             # failing connection attempts, and hangs (bug 1397201)
             "remote.log.level": "Trace",
@@ -3459,6 +3471,7 @@ toolbar#nav-bar {
         for m in sorted(manifests):
             self.log.group_start(name=m)
             self.log.info("Running manifest: {}".format(m))
+            self.message_logger.setManifest(m)
 
             args = list(self.args_by_manifest[m])[0]
             self.extraArgs = []

@@ -17,8 +17,8 @@ namespace mozilla {
 namespace contentanalysis {
 
 enum class NoContentAnalysisResult : uint8_t {
-  AGENT_NOT_PRESENT,
-  NO_PARENT_BROWSER,
+  CONTENT_ANALYSIS_NOT_ACTIVE,
+  CONTEXT_EXEMPT_FROM_CONTENT_ANALYSIS,
   CANCELED,
   ERROR_INVALID_JSON_RESPONSE,
   ERROR_COULD_NOT_GET_DATA,
@@ -81,6 +81,15 @@ class ContentAnalysisResult : public nsIContentAnalysisResult {
       }
     }
     return FromNoResult(NoContentAnalysisResult::ERROR_INVALID_JSON_RESPONSE);
+  }
+
+  static RefPtr<ContentAnalysisResult> FromContentAnalysisResponse(
+      nsIContentAnalysisResponse* aResponse) {
+    if (aResponse->GetShouldAllowContent()) {
+      return FromAction(nsIContentAnalysisResponse::Action::eAllow);
+    } else {
+      return FromAction(nsIContentAnalysisResponse::Action::eBlock);
+    }
   }
 
  private:

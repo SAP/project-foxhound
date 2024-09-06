@@ -155,9 +155,9 @@ class DcSctpSocket : public DcSctpSocketInterface {
   // Closes the association, because of too many retransmission errors.
   void CloseConnectionBecauseOfTooManyTransmissionErrors();
   // Timer expiration handlers
-  absl::optional<DurationMs> OnInitTimerExpiry();
-  absl::optional<DurationMs> OnCookieTimerExpiry();
-  absl::optional<DurationMs> OnShutdownTimerExpiry();
+  webrtc::TimeDelta OnInitTimerExpiry();
+  webrtc::TimeDelta OnCookieTimerExpiry();
+  webrtc::TimeDelta OnShutdownTimerExpiry();
   void OnSentPacket(rtc::ArrayView<const uint8_t> packet,
                     SendPacketStatus status);
   // Sends SHUTDOWN or SHUTDOWN-ACK if the socket is shutting down and if all
@@ -180,9 +180,8 @@ class DcSctpSocket : public DcSctpSocketInterface {
   // sent and prints all chunks.
   void DebugPrintOutgoing(rtc::ArrayView<const uint8_t> payload);
   // Called whenever data has been received, or the cumulative acknowledgment
-  // TSN has moved, that may result in performing deferred stream resetting and
-  // delivering messages.
-  void MaybeResetStreamsDeferredAndDeliverMessages();
+  // TSN has moved, that may result in delivering messages.
+  void MaybeDeliverMessages();
   // Returns true if there is a TCB, and false otherwise (and reports an error).
   bool ValidateHasTCB();
 

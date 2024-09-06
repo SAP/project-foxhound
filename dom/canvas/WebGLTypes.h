@@ -19,11 +19,14 @@
 #include "ImageContainer.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/EnumTypeTraits.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Range.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/Span.h"
+#include "mozilla/TypedEnumBits.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/Logging.h"
@@ -407,8 +410,6 @@ inline ColorSpace2 ToColorSpace2(const dom::PredefinedColorSpace cs) {
       return ColorSpace2::SRGB;
     case dom::PredefinedColorSpace::Display_p3:
       return ColorSpace2::DISPLAY_P3;
-    case dom::PredefinedColorSpace::EndGuard_:
-      break;
   }
   MOZ_CRASH("Exhaustive switch");
 }
@@ -598,9 +599,13 @@ class EnumMask {
  public:
   BitRef operator[](const E i) { return {*this, Mask(i)}; }
   bool operator[](const E i) const { return mBits & Mask(i); }
+
+  // -
+
+  auto MutTiedFields() { return std::tie(mBits); }
 };
 
-class ExtensionBits : public EnumMask<WebGLExtensionID> {};
+using ExtensionBits = EnumMask<WebGLExtensionID>;
 
 // -
 
@@ -624,9 +629,16 @@ inline bool ReadContextLossReason(const uint8_t val,
 struct InitContextDesc final {
   bool isWebgl2 = false;
   bool resistFingerprinting = false;
+  std::array<uint8_t, 2> _padding;
+  uint32_t principalKey = 0;
   uvec2 size = {};
   WebGLContextOptions options;
-  uint32_t principalKey = 0;
+  std::array<uint8_t, 3> _padding2;
+
+  auto MutTiedFields() {
+    return std::tie(isWebgl2, resistFingerprinting, _padding, principalKey,
+                    size, options, _padding2);
+  }
 };
 
 constexpr uint32_t kMaxTransformFeedbackSeparateAttribs = 4;
@@ -651,10 +663,24 @@ struct Limits final {
 
   // Exts
   bool astcHdr = false;
+  std::array<uint8_t, 3> _padding;
   uint32_t maxColorDrawBuffers = 1;
+  uint32_t maxMultiviewLayers = 0;
   uint64_t queryCounterBitsTimeElapsed = 0;
   uint64_t queryCounterBitsTimestamp = 0;
-  uint32_t maxMultiviewLayers = 0;
+
+  auto MutTiedFields() {
+    return std::tie(supportedExtensions,
+
+                    maxTexUnits, maxTex2dSize, maxTexCubeSize, maxVertexAttribs,
+                    maxViewportDim, pointSizeRange, lineWidthRange,
+
+                    maxTexArrayLayers, maxTex3dSize, maxUniformBufferBindings,
+                    uniformBufferOffsetAlignment,
+
+                    astcHdr, _padding, maxColorDrawBuffers, maxMultiviewLayers,
+                    queryCounterBitsTimeElapsed, queryCounterBitsTimestamp);
+  }
 };
 
 // -
@@ -680,18 +706,41 @@ struct Padded {
 
 // -
 
+enum class OptionalRenderableFormatBits : uint8_t {
+  RGB8 = (1 << 0),
+  SRGB8 = (1 << 1),
+};
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OptionalRenderableFormatBits)
+inline constexpr bool IsEnumCase(const OptionalRenderableFormatBits raw) {
+  auto rawWithoutValidBits = UnderlyingValue(raw);
+  auto bit = decltype(rawWithoutValidBits){1};
+  while (bit) {
+    switch (OptionalRenderableFormatBits{bit}) {
+      // -Werror=switch ensures exhaustive.
+      case OptionalRenderableFormatBits::RGB8:
+      case OptionalRenderableFormatBits::SRGB8:
+        rawWithoutValidBits &= ~bit;
+        break;
+    }
+    bit <<= 1;
+  }
+  return rawWithoutValidBits == 0;
+}
+
+// -
+
 struct InitContextResult final {
   Padded<std::string, 32> error;  // MINGW 32-bit needs this padding.
   WebGLContextOptions options;
   gl::GLVendor vendor;
-  bool isRgb8Renderable;
+  OptionalRenderableFormatBits optionalRenderableFormatBits;
   uint8_t _padding = {};
-  webgl::Limits limits;
+  Limits limits;
   EnumMask<layers::SurfaceDescriptor::Type> uploadableSdTypes;
 
   auto MutTiedFields() {
-    return std::tie(error, options, vendor, isRgb8Renderable, _padding, limits,
-                    uploadableSdTypes);
+    return std::tie(error, options, vendor, optionalRenderableFormatBits,
+                    _padding, limits, uploadableSdTypes);
   }
 };
 
@@ -732,8 +781,13 @@ struct CompileResult final {
 struct OpaqueFramebufferOptions final {
   bool depthStencil = true;
   bool antialias = true;
+  std::array<uint8_t, 2> _padding;
   uint32_t width = 0;
   uint32_t height = 0;
+
+  auto MutTiedFields() {
+    return std::tie(depthStencil, antialias, _padding, width, height);
+  }
 };
 
 // -
@@ -852,47 +906,6 @@ struct VertAttribPointerCalculated final {
 };
 
 }  // namespace webgl
-
-// TODO: s/RawBuffer/Span/
-template <typename T = uint8_t>
-class RawBuffer final {
-  const T* mBegin = nullptr;
-  size_t mLen = 0;
-
- public:
-  using ElementType = T;
-
-  explicit RawBuffer(const Range<const T>& data)
-      : mBegin(data.begin().get()), mLen(data.length()) {
-    if (mLen) {
-      MOZ_ASSERT(mBegin);
-    }
-  }
-
-  ~RawBuffer() = default;
-
-  Range<const T> Data() const { return {begin(), mLen}; }
-  const auto& begin() const {
-    if (mLen) {
-      MOZ_RELEASE_ASSERT(mBegin);
-    }
-    return mBegin;
-  }
-  const auto& size() const { return mLen; }
-
-  void Shrink(const size_t newLen) {
-    if (mLen <= newLen) return;
-    mLen = newLen;
-  }
-
-  RawBuffer() = default;
-
-  RawBuffer(const RawBuffer&) = delete;
-  RawBuffer& operator=(const RawBuffer&) = delete;
-
-  RawBuffer(RawBuffer&&) = default;
-  RawBuffer& operator=(RawBuffer&&) = default;
-};
 
 template <class T>
 inline Range<T> ShmemRange(const mozilla::ipc::Shmem& shmem) {
@@ -1096,7 +1109,7 @@ struct TexUnpackBlobDesc final {
   uvec3 size;
   gfxAlphaType srcAlphaType = gfxAlphaType::NonPremult;
 
-  Maybe<RawBuffer<>> cpuData;
+  Maybe<Span<const uint8_t>> cpuData;
   Maybe<uint64_t> pboOffset;
 
   Maybe<uvec2> structuredSrcSize;
@@ -1134,11 +1147,6 @@ inline Range<const T> MakeRange(const dom::Sequence<T>& seq) {
   return {seq.Elements(), seq.Length()};
 }
 
-template <typename T>
-inline Range<const T> MakeRange(const RawBuffer<T>& from) {
-  return from.Data();
-}
-
 // -
 
 constexpr auto kUniversalAlignment = alignof(std::max_align_t);
@@ -1155,13 +1163,6 @@ inline size_t AlignmentOffset(const size_t alignment, const T posOrPtr) {
 template <typename T>
 inline size_t ByteSize(const Range<T>& range) {
   return range.length() * sizeof(T);
-}
-
-// -
-
-template <typename T>
-RawBuffer<T> RawBufferView(const Range<T>& range) {
-  return RawBuffer<T>{range};
 }
 
 // -
@@ -1205,6 +1206,13 @@ template <class T, class U>
 inline void Memcpy(const RangedPtr<T>* const destBegin,
                    const Range<U>& srcRange) {
   Memcpy(destBegin, srcRange->begin(), srcRange->length());
+}
+
+template <typename Dst, typename Src>
+inline void Memcpy(const Span<Dst>* const dest, const Span<Src>& src) {
+  MOZ_RELEASE_ASSERT(src.size_bytes() >= dest->size_bytes());
+  MOZ_ASSERT(src.size_bytes() == dest->size_bytes());
+  memcpy(dest->data(), src.data(), dest->size_bytes());
 }
 
 // -
@@ -1269,6 +1277,29 @@ struct IndexedBufferBinding final {
   ~IndexedBufferBinding();
 
   uint64_t ByteCount() const;
+};
+
+// -
+
+template <class... Args>
+inline std::string PrintfStdString(const char* const format,
+                                   const Args&... args) {
+  const auto nsStr = nsPrintfCString(format, args...);
+  return ToString(nsStr);
+}
+
+inline const char* ToChars(const bool val) {
+  if (val) return "true";
+  return "false";
+}
+
+template <class To>
+struct ReinterpretToSpan {
+  template <class FromT>
+  static inline constexpr Span<To> From(const Span<FromT>& from) {
+    static_assert(sizeof(FromT) == sizeof(To));
+    return {reinterpret_cast<To*>(from.data()), from.size()};
+  }
 };
 
 }  // namespace mozilla

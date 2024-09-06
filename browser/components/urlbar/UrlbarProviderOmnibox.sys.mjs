@@ -90,12 +90,10 @@ class ProviderOmnibox extends UrlbarProvider {
   /**
    * Gets the provider's priority.
    *
-   * @param {UrlbarQueryContext} queryContext
-   *   The query context object.
    * @returns {number}
    *   The provider's priority for the given query.
    */
-  getPriority(queryContext) {
+  getPriority() {
     return 0;
   }
 

@@ -30,7 +30,9 @@ add_task(async function test_about_preferences_manage_languages() {
       ukrainianDownload,
       ukrainianDelete,
     },
-  } = await setupAboutPreferences(LANGUAGE_PAIRS);
+  } = await setupAboutPreferences(LANGUAGE_PAIRS, {
+    prefs: [["browser.translations.newSettingsUI.enable", false]],
+  });
 
   is(
     downloadAllLabel.getAttribute("data-l10n-id"),
@@ -41,7 +43,7 @@ add_task(async function test_about_preferences_manage_languages() {
   is(spanishLabel.textContent, "Spanish", "There is a Spanish row.");
   is(ukrainianLabel.textContent, "Ukrainian", "There is a Ukrainian row.");
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "Everything starts out as available to download",
     visible: {
       downloadAll,
@@ -62,7 +64,7 @@ add_task(async function test_about_preferences_manage_languages() {
     "French models were downloaded."
   );
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "French can now be deleted, and delete all is available.",
     visible: {
       downloadAll,
@@ -76,7 +78,7 @@ add_task(async function test_about_preferences_manage_languages() {
 
   click(frenchDelete, "Deleting French");
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "Everything can be downloaded.",
     visible: {
       downloadAll,
@@ -122,7 +124,7 @@ add_task(async function test_about_preferences_manage_languages() {
     "Wasm was downloaded."
   );
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "Everything can be deleted.",
     visible: { deleteAll, frenchDelete, spanishDelete, ukrainianDelete },
     hidden: { downloadAll, frenchDownload, spanishDownload, ukrainianDownload },
@@ -130,7 +132,7 @@ add_task(async function test_about_preferences_manage_languages() {
 
   click(deleteAll, "Deleting all languages.");
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "Everything can be downloaded again",
     visible: {
       downloadAll,
@@ -155,7 +157,7 @@ add_task(async function test_about_preferences_manage_languages() {
 
   remoteClients.translationsWasm.assertNoNewDownloads();
 
-  await assertVisibility({
+  await ensureVisibility({
     message: "Everything is downloaded again.",
     visible: { deleteAll, frenchDelete, spanishDelete, ukrainianDelete },
     hidden: { downloadAll, frenchDownload, spanishDownload, ukrainianDownload },
@@ -169,7 +171,9 @@ add_task(async function test_about_preferences_download_reject() {
     cleanup,
     remoteClients,
     elements: { document, frenchDownload },
-  } = await setupAboutPreferences(LANGUAGE_PAIRS);
+  } = await setupAboutPreferences(LANGUAGE_PAIRS, {
+    prefs: [["browser.translations.newSettingsUI.enable", false]],
+  });
 
   click(frenchDownload, "Downloading French");
 

@@ -4,6 +4,7 @@
 
 import React, { Component } from "devtools/client/shared/vendor/react";
 import {
+  button,
   div,
   main,
   span,
@@ -208,15 +209,23 @@ class App extends Component {
     }
   }
 
+  closeSourceMapError = () => {
+    this.setState({ hiddenSourceMapError: this.props.sourceMapError });
+  };
+
   renderEditorNotificationBar() {
-    if (this.props.sourceMapError) {
+    if (
+      this.props.sourceMapError &&
+      this.state.hiddenSourceMapError != this.props.sourceMapError
+    ) {
       return div(
         { className: "editor-notification-footer", "aria-role": "status" },
         span(
           { className: "info icon" },
           React.createElement(AccessibleImage, { className: "sourcemap" })
         ),
-        `Source Map Error: ${this.props.sourceMapError}`
+        `Source Map Error: ${this.props.sourceMapError}`,
+        button({ className: "close-button", onClick: this.closeSourceMapError })
       );
     }
     if (this.props.showOriginalVariableMappingWarning) {
@@ -248,13 +257,13 @@ class App extends Component {
           className: "editor-container",
         },
         React.createElement(EditorTabs, {
-          startPanelCollapsed: startPanelCollapsed,
-          endPanelCollapsed: endPanelCollapsed,
-          horizontal: horizontal,
+          startPanelCollapsed,
+          endPanelCollapsed,
+          horizontal,
         }),
         React.createElement(Editor, {
-          startPanelSize: startPanelSize,
-          endPanelSize: endPanelSize,
+          startPanelSize,
+          endPanelSize,
         }),
         !this.props.selectedLocation
           ? React.createElement(WelcomeBox, {
@@ -313,7 +322,7 @@ class App extends Component {
           prefs.startPanelSize = num;
           this.triggerEditorPaneResize();
         },
-        startPanelCollapsed: startPanelCollapsed,
+        startPanelCollapsed,
         startPanel: React.createElement(PrimaryPanes, {
           horizontal,
         }),
@@ -323,7 +332,7 @@ class App extends Component {
       endPanel: React.createElement(SecondaryPanes, {
         horizontal,
       }),
-      endPanelCollapsed: endPanelCollapsed,
+      endPanelCollapsed,
     });
   };
 

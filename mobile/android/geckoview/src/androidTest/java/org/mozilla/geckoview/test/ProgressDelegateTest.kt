@@ -33,7 +33,7 @@ class ProgressDelegateTest : BaseSessionTest() {
             ProgressDelegate,
             NavigationDelegate {
             @AssertCalled
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>) {
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("LocationChange is called", url, endsWith(path))
             }
 
@@ -448,6 +448,11 @@ class ProgressDelegateTest : BaseSessionTest() {
     @WithDisplay(width = 400, height = 400)
     @Test
     fun saveAndRestoreStateNewSession() {
+        // TODO: Bug 1884334
+        val geckoPrefs = sessionRule.getPrefs(
+            "fission.disableSessionHistoryInParent",
+        )
+        assumeThat(geckoPrefs[0] as Boolean, equalTo(true))
         // TODO: Bug 1837551
         assumeThat(sessionRule.env.isFission, equalTo(false))
         val helloUri = createTestUrl(HELLO_HTML_PATH)
@@ -467,6 +472,7 @@ class ProgressDelegateTest : BaseSessionTest() {
                 session: GeckoSession,
                 url: String?,
                 perms: MutableList<ContentPermission>,
+                hasUserGesture: Boolean,
             ) {
                 assertThat("URI should match", url, equalTo(startUri))
             }
@@ -487,7 +493,7 @@ class ProgressDelegateTest : BaseSessionTest() {
         session.goBack()
 
         session.waitUntilCalled(object : NavigationDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>) {
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("History should be preserved", url, equalTo(helloUri))
             }
         })
@@ -511,7 +517,7 @@ class ProgressDelegateTest : BaseSessionTest() {
 
         sessionRule.forCallbacksDuringWait(object : NavigationDelegate {
             @AssertCalled
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>) {
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<ContentPermission>, hasUserGesture: Boolean) {
                 assertThat("URI should match", url, equalTo(startUri))
             }
         })
@@ -532,6 +538,11 @@ class ProgressDelegateTest : BaseSessionTest() {
     @WithDisplay(width = 400, height = 400)
     @Test
     fun flushSessionState() {
+        // TODO: Bug 1884334
+        val geckoPrefs = sessionRule.getPrefs(
+            "fission.disableSessionHistoryInParent",
+        )
+        assumeThat(geckoPrefs[0] as Boolean, equalTo(true))
         // TODO: Bug 1837551
         assumeThat(sessionRule.env.isFission, equalTo(false))
         val startUri = createTestUrl(SAVE_STATE_PATH)
@@ -568,6 +579,11 @@ class ProgressDelegateTest : BaseSessionTest() {
     @NullDelegate(GeckoSession.HistoryDelegate::class)
     @Test
     fun noHistoryDelegateOnSessionStateChange() {
+        // TODO: Bug 1884334
+        val geckoPrefs = sessionRule.getPrefs(
+            "fission.disableSessionHistoryInParent",
+        )
+        assumeThat(geckoPrefs[0] as Boolean, equalTo(true))
         // TODO: Bug 1837551
         assumeThat(sessionRule.env.isFission, equalTo(false))
         mainSession.loadTestPath(HELLO_HTML_PATH)

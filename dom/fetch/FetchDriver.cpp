@@ -9,9 +9,11 @@
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/FetchDriver.h"
 
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/dom/Document.h"
+#include "nsIBaseChannel.h"
 #include "nsICookieJarSettings.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
@@ -27,7 +29,6 @@
 #include "nsIPipe.h"
 #include "nsIRedirectHistoryEntry.h"
 
-#include "nsBaseChannel.h"
 #include "nsContentPolicyUtils.h"
 #include "nsDataChannel.h"
 #include "nsDataHandler.h"
@@ -46,6 +47,7 @@
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/PreloaderBase.h"
+#include "mozilla/net/ContentRange.h"
 #include "mozilla/net/InterceptionInfo.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
@@ -840,11 +842,20 @@ nsresult FetchDriver::HttpFetch(
                        nsIClassOfService::Tail);
   }
 
-  if (mIsTrackingFetch &&
-      StaticPrefs::privacy_trackingprotection_lower_network_priority()) {
-    nsCOMPtr<nsISupportsPriority> p = do_QueryInterface(chan);
-    if (p) {
+  if (nsCOMPtr<nsISupportsPriority> p = do_QueryInterface(chan)) {
+    if (mIsTrackingFetch &&
+        StaticPrefs::privacy_trackingprotection_lower_network_priority()) {
       p->SetPriority(nsISupportsPriority::PRIORITY_LOWEST);
+    } else if (StaticPrefs::network_fetchpriority_enabled()) {
+      // TODO: Bug 1881040 - we need to take into account of destination for the
+      // fetchpriority mapping.
+      const auto fetchPriority = ToFetchPriority(mRequest->GetPriorityMode());
+      // The spec defines the priority to be set in an implementation defined
+      // manner (<https://fetch.spec.whatwg.org/#concept-fetch>, step 15.
+      // See corresponding preferences in StaticPrefList.yaml for more context.
+      const int32_t supportsPriorityDelta =
+          FETCH_PRIORITY_ADJUSTMENT_FOR(global_fetch_api, fetchPriority);
+      p->AdjustPriority(supportsPriorityDelta);
     }
   }
 
@@ -1028,7 +1039,7 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
 
   bool foundOpaqueRedirect = false;
 
-  nsAutoCString contentType;
+  nsAutoCString contentType(VoidCString());
 
   int64_t contentLength = InternalResponse::UNKNOWN_BODY_SIZE;
   rv = channel->GetContentLength(&contentLength);
@@ -1089,13 +1100,10 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
     // Should set a Content-Range header for blob scheme
     // (https://fetch.spec.whatwg.org/#scheme-fetch)
     nsAutoCString contentRange(VoidCString());
-    nsCOMPtr<nsIURI> uri;
-    channel->GetURI(getter_AddRefs(uri));
-    if (IsBlobURI(uri)) {
-      nsBaseChannel* bchan = static_cast<nsBaseChannel*>(channel.get());
-      MOZ_ASSERT(bchan);
-      Maybe<nsBaseChannel::ContentRange> range = bchan->GetContentRange();
-      if (range.isSome()) {
+    nsCOMPtr<nsIBaseChannel> baseChan = do_QueryInterface(mChannel);
+    if (baseChan) {
+      RefPtr<mozilla::net::ContentRange> range = baseChan->ContentRange();
+      if (range) {
         range->AsHeader(contentRange);
       }
     }
@@ -1111,11 +1119,13 @@ FetchDriver::OnStartRequest(nsIRequest* aRequest) {
       MOZ_ASSERT(!result.Failed());
     }
 
-    if (uri && uri->SchemeIs("data")) {
-      nsDataChannel* dchan = static_cast<nsDataChannel*>(channel.get());
-      MOZ_ASSERT(dchan);
-      contentType.Assign(dchan->MimeType());
-    } else {
+    if (baseChan) {
+      RefPtr<CMimeType> fullMimeType(baseChan->FullMimeType());
+      if (fullMimeType) {
+        fullMimeType->Serialize(contentType);
+      }
+    }
+    if (contentType.IsVoid()) {
       channel->GetContentType(contentType);
       if (!contentType.IsEmpty()) {
         nsAutoCString contentCharset;

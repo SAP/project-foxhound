@@ -392,9 +392,10 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
         info.mDisplay.Width(), info.mDisplay.Height(),
         info.mDisplayAndImageDifferent ? "specified" : "unspecified");
 
+    bool imageSizeEmpty = mCurrentConfig.mImage.IsEmpty();
     mInfo = Some(info);
     mCurrentConfig.mImage = info.mImage;
-    if (info.mDisplayAndImageDifferent) {
+    if (imageSizeEmpty || info.mDisplayAndImageDifferent) {
       // If the flag to change the display size is set in the sequence, we
       // set our original values to begin rescaling according to the new values.
       mCurrentConfig.mDisplay = info.mDisplay;
@@ -650,6 +651,10 @@ RefPtr<MediaDataDecoder::InitPromise> MediaChangeMonitor::Init() {
                    mDecoderInitialized = true;
                    mConversionRequired = Some(mDecoder->NeedsConversion());
                    mCanRecycleDecoder = Some(CanRecycleDecoder());
+                   if (mPendingSeekThreshold) {
+                     mDecoder->SetSeekThreshold(*mPendingSeekThreshold);
+                     mPendingSeekThreshold.reset();
+                   }
                  }
                  return mInitPromise.ResolveOrRejectIfExists(std::move(aValue),
                                                              __func__);
@@ -817,11 +822,19 @@ bool MediaChangeMonitor::IsHardwareAccelerated(
 }
 
 void MediaChangeMonitor::SetSeekThreshold(const media::TimeUnit& aTime) {
-  if (mDecoder) {
-    mDecoder->SetSeekThreshold(aTime);
-  } else {
-    MediaDataDecoder::SetSeekThreshold(aTime);
-  }
+  GetCurrentSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
+      "MediaChangeMonitor::SetSeekThreshold",
+      [self = RefPtr<MediaChangeMonitor>(this), time = aTime, this] {
+        // During the shutdown.
+        if (mShutdownPromise) {
+          return;
+        }
+        if (mDecoder && mDecoderInitialized) {
+          mDecoder->SetSeekThreshold(time);
+        } else {
+          mPendingSeekThreshold = Some(time);
+        }
+      }));
 }
 
 RefPtr<MediaChangeMonitor::CreateDecoderPromise>
@@ -874,6 +887,11 @@ MediaResult MediaChangeMonitor::CreateDecoderAndInit(MediaRawData* aSample) {
                       mDecoderInitialized = true;
                       mConversionRequired = Some(mDecoder->NeedsConversion());
                       mCanRecycleDecoder = Some(CanRecycleDecoder());
+
+                      if (mPendingSeekThreshold) {
+                        mDecoder->SetSeekThreshold(*mPendingSeekThreshold);
+                        mPendingSeekThreshold.reset();
+                      }
 
                       if (!mFlushPromise.IsEmpty()) {
                         // A Flush is pending, abort the current operation.

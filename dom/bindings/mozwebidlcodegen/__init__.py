@@ -14,7 +14,6 @@ import os
 from copy import deepcopy
 
 import mozpack.path as mozpath
-import six
 from mach.mixin.logging import LoggingMixin
 from mozbuild.makeutil import Makefile
 from mozbuild.pythonutil import iter_modules_in_path
@@ -339,10 +338,8 @@ class WebIDLCodegenManager(LoggingMixin):
         if self._make_deps_path:
             mk = Makefile()
             codegen_rule = mk.create_rule([self._make_deps_target])
-            codegen_rule.add_dependencies(
-                six.ensure_text(s) for s in global_hashes.keys()
-            )
-            codegen_rule.add_dependencies(six.ensure_text(p) for p in self._input_paths)
+            codegen_rule.add_dependencies(global_hashes.keys())
+            codegen_rule.add_dependencies(self._input_paths)
 
             with FileAvoidWrite(self._make_deps_path) as fh:
                 mk.dump(fh)
@@ -359,7 +356,12 @@ class WebIDLCodegenManager(LoggingMixin):
 
         example_paths = self._example_paths(interface)
         for path in example_paths:
-            print("Generating {}".format(path))
+            self.log(
+                logging.INFO,
+                "webidl_generate_example_files",
+                {"filename": path},
+                "Generating WebIDL example files derived from {filename}",
+            )
 
         return self._maybe_write_codegen(root, *example_paths)
 
@@ -380,7 +382,7 @@ class WebIDLCodegenManager(LoggingMixin):
         for path in sorted(self._input_paths):
             with io.open(path, "r", encoding="utf-8") as fh:
                 data = fh.read()
-                hashes[path] = hashlib.sha1(six.ensure_binary(data)).hexdigest()
+                hashes[path] = hashlib.sha1(data.encode()).hexdigest()
                 parser.parse(data, path)
 
         # Only these directories may contain WebIDL files with interfaces
@@ -494,7 +496,7 @@ class WebIDLCodegenManager(LoggingMixin):
         for name in changedDictionaryNames:
             d = self._config.getDictionaryIfExists(name)
             if d:
-                changed_inputs.add(d.filename())
+                changed_inputs.add(d.filename)
 
         # Only use paths that are known to our current state.
         # This filters out files that were deleted or changed type (e.g. from

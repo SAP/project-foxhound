@@ -4,6 +4,8 @@
 
 We set `font: message-box` at the root of `common-shared.css` and `global.css` stylesheets so that both in-content and the chrome can have access to operating system font families.
 
+We also don't specify line height units and rely on the default.
+
 ### In-content
 <table class="sb-preview-design-tokens">
   <thead>
@@ -13,52 +15,45 @@ We set `font: message-box` at the root of `common-shared.css` and `global.css` s
       <th>Preview</th>
       <th>Font size</th>
       <th>Font weight</th>
-      <th>Line height</th>
     </tr>
   </thead>
   <tbody>
-  <tr>
-    <th>Heading XLarge <i>(used for error pages)</i></th>
-      <td><code>--font-size-xxlarge</code></td>
+    <tr>
+    <th>Heading XLarge</th>
+      <td><code>h1,<br/>.heading-xlarge</code></td>
       <td>
         ```html story
-          <h1 class="text-truncated-ellipsis sb-preview-font-size-xxlarge">The quick brown fox jumps over the lazy dog</h1>
+          <h1 class="text-truncated-ellipsis toc-ignore">The quick brown fox jumps over the lazy dog</h1>
         ```
       </td>
       <td>
-        <code>2.2rem</code> (<code>33px</code>)
+        <code>1.6rem</code> (<code>24px</code>)
       </td>
       <td>
-        <code>300</code>
-      </td>
-      <td>
-        <code>1.3</code>
+        <code>600</code>
       </td>
     </tr>
     <tr>
       <th>Heading Large</th>
-      <td><code>h1,<br/>.heading-large</code></td>
+      <td><code>h2,<br/>.heading-large</code></td>
       <td>
         ```html story
-          <h1 class="text-truncated-ellipsis">The quick brown fox jumps over the lazy dog</h1>
+          <h2 class="text-truncated-ellipsis toc-ignore">The quick brown fox jumps over the lazy dog</h2>
         ```
       </td>
       <td>
         <code>1.467rem</code> (<code>22px</code>)
       </td>
       <td>
-        <code>300</code>
-      </td>
-      <td>
-        <code>1.3</code>
+        <code>600</code>
       </td>
     </tr>
     <tr>
       <th>Heading Medium</th>
-      <td><code>h2,<br/>.heading-medium</code></td>
+      <td><code>h3,<br/>.heading-medium</code></td>
       <td >
         ```html story
-          <h2 class="text-truncated-ellipsis">The quick brown fox jumps over the lazy dog</h2>
+          <h3 class="text-truncated-ellipsis toc-ignore">The quick brown fox jumps over the lazy dog</h3>
         ```
       </td>
       <td>
@@ -66,9 +61,6 @@ We set `font: message-box` at the root of `common-shared.css` and `global.css` s
       </td>
       <td>
         <code>600</code>
-      </td>
-      <td>
-        <code>1.3</code>
       </td>
     </tr>
     <tr>
@@ -85,9 +77,6 @@ We set `font: message-box` at the root of `common-shared.css` and `global.css` s
       <td>
         <code>normal</code>
       </td>
-      <td>
-        <code>1.5</code>
-      </td>
     </tr>
     <tr>
       <th>Body Small</th>
@@ -102,9 +91,6 @@ We set `font: message-box` at the root of `common-shared.css` and `global.css` s
       </td>
       <td>
         <code>normal</code>
-      </td>
-      <td>
-        <code>1.5</code>
       </td>
     </tr>
   </tbody>
@@ -124,13 +110,12 @@ Note that there currently isn't a hierarchy of multiple headings on the chrome s
       <th>Preview</th>
       <th>Font keyword</th>
       <th>Font weight</th>
-      <th>Line height</th>
     </tr>
   </thead>
   <tbody>
      <tr>
       <th>Menu Heading</th>
-      <td><code>h1,<br/>.heading-large</code></td>
+      <td><code>h1</code></td>
       <td class="sb-preview-chrome-typescale sb-preview-chrome-menu">
         ```html story
           <h1 class="text-truncated-ellipsis">The quick brown fox jumps over the lazy dog</h1>
@@ -141,9 +126,6 @@ Note that there currently isn't a hierarchy of multiple headings on the chrome s
       </td>
       <td>
         <code>600</code>
-      </td>
-      <td>
-        <code>normal</code>
       </td>
     </tr>
     <tr>
@@ -160,13 +142,10 @@ Note that there currently isn't a hierarchy of multiple headings on the chrome s
       <td>
         <code>normal</code>
       </td>
-      <td>
-        <code>normal</code>
-      </td>
     </tr>
     <tr>
       <th>Heading</th>
-      <td><code>h1,<br/>.heading-large</code></td>
+      <td><code>h1</code></td>
       <td class="sb-preview-chrome-typescale">
         ```html story
           <h1 class="text-truncated-ellipsis">The quick brown fox jumps over the lazy dog</h1>
@@ -177,9 +156,6 @@ Note that there currently isn't a hierarchy of multiple headings on the chrome s
       </td>
       <td>
         <code>600</code>
-      </td>
-      <td>
-        <code>normal</code>
       </td>
     </tr>
     <tr>
@@ -196,15 +172,12 @@ Note that there currently isn't a hierarchy of multiple headings on the chrome s
       <td>
         <code>normal</code>
       </td>
-      <td>
-        <code>normal</code>
-      </td>
     </tr>
   </tbody>
 </table>
 
 ## Design tokens
-Type setting relies on typography design tokens for for font size, font weight, and line height.
+Type setting relies on design tokens for font size and font weight.
 
 #### Font size
 <table class="sb-preview-design-tokens">
@@ -216,6 +189,17 @@ Type setting relies on typography design tokens for for font size, font weight, 
     </tr>
   </thead>
   <tbody>
+    <tr>
+      <th>
+        <code>--font-size-xxlarge</code>
+      </th>
+      <td>
+        <code>1.6rem</code>
+      </td>
+      <td>
+        <code>unset</code>
+      </td>
+    </tr>
     <tr>
       <th>
         <code>--font-size-xlarge</code>
@@ -276,21 +260,10 @@ Type setting relies on typography design tokens for for font size, font weight, 
   <tbody>
     <tr>
       <th>
-        <code>--font-weight-light</code>
+        <code>--font-weight</code>
       </th>
       <td>
-        <code>300</code>
-      </td>
-      <td>
-        <code>unset</code>
-      </td>
-    </tr>
-    <tr>
-      <th>
-        <code>--font-weight-default</code>
-      </th>
-      <td>
-        <code>400</code>
+        <code>normal</code>
       </td>
       <td>
         <code>normal</code>
@@ -310,41 +283,6 @@ Type setting relies on typography design tokens for for font size, font weight, 
   </tbody>
 </table>
 
-#### Line height
-<table class="sb-preview-design-tokens">
-  <thead>
-    <tr>
-      <th>Base token</th>
-      <th>In-content value</th>
-      <th>Chrome value</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <th>
-        <code>--line-height-small</code>
-      </th>
-      <td>
-        <code>1.3</code>
-      </td>
-      <td>
-        <code>unset</code>
-      </td>
-    </tr>
-    <tr>
-      <th>
-        <code>--line-height-default</code>
-      </th>
-      <td>
-        <code>1.5</code>
-      </td>
-      <td>
-        <code>normal</code>
-      </td>
-    </tr>
-  </tbody>
-</table>
-
 ## Helpers
 ### text-and-typography.css
 
@@ -358,10 +296,10 @@ You should rely on typography helper classes and the defaults set by the design 
 This file is imported into `common-shared.css` and `global-shared.css` so that both in-content pages and the chrome receive their respective typography scale treatments, and have access to helper classes.
 
 #### Heading
-##### Large (h1)
+##### XLarge (h1)
 ###### In-content
 ```html story
-  <h1>General</h1>
+  <h1>Firefox View</h1>
 ```
 
 ###### Chrome
@@ -376,26 +314,37 @@ This file is imported into `common-shared.css` and `global-shared.css` so that b
 
 ```css story
 h1,
-.heading-large {
-  font-weight: var(--font-weight-light, var(--font-weight-bold));
-  font-size: var(--font-size-xlarge);
-  line-height: var(--line-height-small)
+.heading-xlarge {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xxlarge);
 }
 ```
 
-##### Medium (h2)
 *Reminder: There's no hierarchy of headings on the chrome. So here's just in-content's preview:*
 
+##### Large (h2)
 ```html story
-  <h2>Startup</h2>
+  <h2 class="toc-ignore">Recent browsing</h2>
 ```
 
 ```css story
 h2,
+.heading-large {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-xlarge);
+}
+```
+
+##### Medium (h3)
+```html story
+  <h3>Tabs from other devices</h3>
+```
+
+```css story
+h3,
 .heading-medium {
   font-weight: var(--font-weight-bold);
   font-size: var(--font-size-large);
-  line-height: var(--line-height-small);
 }
 ```
 

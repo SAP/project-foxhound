@@ -41,10 +41,11 @@
 #include "mozilla/ServoStyleConsts.h"   // for StyleComputedTimingFunction
 #include "mozilla/EventForwards.h"      // for nsEventStatus_*
 #include "mozilla/EventStateManager.h"  // for EventStateManager
-#include "mozilla/MouseEvents.h"        // for WidgetWheelEvent
-#include "mozilla/Preferences.h"        // for Preferences
-#include "mozilla/RecursiveMutex.h"     // for RecursiveMutexAutoLock, etc
-#include "mozilla/RefPtr.h"             // for RefPtr
+#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/MouseEvents.h"     // for WidgetWheelEvent
+#include "mozilla/Preferences.h"     // for Preferences
+#include "mozilla/RecursiveMutex.h"  // for RecursiveMutexAutoLock, etc
+#include "mozilla/RefPtr.h"          // for RefPtr
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_general.h"
@@ -105,6 +106,10 @@ static mozilla::LazyLogModule sApzCtlLog("apz.controller");
   APZC_LOG("%p(%s scrollId=%" PRIu64 "): " fmt, (apzc),   \
            (apzc)->IsRootContent() ? "root" : "subframe", \
            (apzc)->GetScrollId(), ##__VA_ARGS__)
+#define APZC_LOGV_DETAIL(fmt, apzc, ...)                   \
+  APZC_LOGV("%p(%s scrollId=%" PRIu64 "): " fmt, (apzc),   \
+            (apzc)->IsRootContent() ? "root" : "subframe", \
+            (apzc)->GetScrollId(), ##__VA_ARGS__)
 
 #define APZC_LOG_FM_COMMON(fm, prefix, level, ...)                 \
   if (MOZ_LOG_TEST(sApzCtlLog, level)) {                           \
@@ -2245,6 +2250,11 @@ ParentLayerPoint AsyncPanZoomController::GetDeltaForEvent(
 CSSRect AsyncPanZoomController::GetCurrentScrollRangeInCssPixels() const {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   return Metrics().CalculateScrollRange();
+}
+
+bool AsyncPanZoomController::AllowOneTouchPinch() const {
+  return StaticPrefs::apz_one_touch_pinch_enabled() &&
+         ZoomConstraintsAllowZoom();
 }
 
 // Return whether or not the underlying layer can be scrolled on either axis.
@@ -4733,6 +4743,10 @@ bool AsyncPanZoomController::UpdateAnimation(
   // Even if there's no animation, if we have a scroll offset change pending due
   // to the frame delay, we need to keep compositing.
   if (mLastSampleTime == aSampleTime) {
+    APZC_LOGV_DETAIL(
+        "UpdateAnimation short-circuit, animation=%p, pending frame-delayed "
+        "offset=%d\n",
+        this, mAnimation.get(), HavePendingFrameDelayedOffset());
     return !!mAnimation || HavePendingFrameDelayedOffset();
   }
 
@@ -4749,6 +4763,8 @@ bool AsyncPanZoomController::UpdateAnimation(
   // so that e.g. a main-thread animation can stay in sync with user-driven
   // scrolling or a compositor animation.
   bool needComposite = SampleCompositedAsyncTransform(aProofOfLock);
+  APZC_LOGV_DETAIL("UpdateAnimation needComposite=%d mAnimation=%p\n", this,
+                   needComposite, mAnimation.get());
 
   TimeDuration sampleTimeDelta = aSampleTime - mLastSampleTime;
   mLastSampleTime = aSampleTime;
@@ -5288,13 +5304,12 @@ void AsyncPanZoomController::UpdateCheckerboardEvent(
     const MutexAutoLock& aProofOfLock, uint32_t aMagnitude) {
   if (mCheckerboardEvent && mCheckerboardEvent->RecordFrameInfo(aMagnitude)) {
     // This checkerboard event is done. Report some metrics to telemetry.
-    mozilla::Telemetry::Accumulate(mozilla::Telemetry::CHECKERBOARD_SEVERITY,
-                                   mCheckerboardEvent->GetSeverity());
-    mozilla::Telemetry::Accumulate(mozilla::Telemetry::CHECKERBOARD_PEAK,
-                                   mCheckerboardEvent->GetPeak());
-    mozilla::Telemetry::Accumulate(
-        mozilla::Telemetry::CHECKERBOARD_DURATION,
-        (uint32_t)mCheckerboardEvent->GetDuration().ToMilliseconds());
+    mozilla::glean::gfx_checkerboard::severity.AccumulateSamples(
+        {mCheckerboardEvent->GetSeverity()});
+    mozilla::glean::gfx_checkerboard::peak_pixel_count.AccumulateSamples(
+        {mCheckerboardEvent->GetPeak()});
+    mozilla::glean::gfx_checkerboard::duration.AccumulateRawDuration(
+        mCheckerboardEvent->GetDuration());
 
     // mCheckerboardEvent only gets created if we are supposed to record
     // telemetry so we always pass true for aRecordTelemetry.
@@ -5575,17 +5590,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(
         aScrollMetadata.GetOverscrollBehavior());
   }
 
-  if (needToReclampScroll) {
-    // Whenever scrollable rect or composition bounds has changed, we need to
-    // re-clamp the scroll offset since it may be out of bounds. Also note that
-    // we need to re-clamp before updating new scroll offsets from content since
-    // we will use the last scroll offset to reflect the new offsets.
-    ClampAndSetVisualScrollOffset(Metrics().GetVisualScrollOffset());
-    for (auto& sampledState : mSampledState) {
-      sampledState.ClampVisualScrollOffset(Metrics());
-    }
-  }
-
   bool instantScrollMayTriggerTransform = false;
   bool scrollOffsetUpdated = false;
   bool smoothScrollRequested = false;
@@ -5732,20 +5736,11 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       relativeDelta =
           Some(Metrics().ApplyPureRelativeScrollUpdateFrom(scrollUpdate));
       Metrics().RecalculateLayoutViewportOffset();
-    } else if (scrollUpdate.GetType() == ScrollUpdateType::MergeableAbsolute) {
-      APZC_LOG("%p mergeable updating scroll offset from %s to %s\n", this,
-               ToString(Metrics().GetVisualScrollOffset()).c_str(),
-               ToString(scrollUpdate.GetDestination()).c_str());
-      relativeDelta =
-          Some(Metrics().ApplyAbsoluteScrollUpdateFrom(scrollUpdate).second);
-      Metrics().RecalculateLayoutViewportOffset();
-      scrollOffsetUpdated = true;
     } else {
       APZC_LOG("%p updating scroll offset from %s to %s\n", this,
                ToString(Metrics().GetVisualScrollOffset()).c_str(),
                ToString(scrollUpdate.GetDestination()).c_str());
-      auto [offsetChanged, _] =
-          Metrics().ApplyAbsoluteScrollUpdateFrom(scrollUpdate);
+      bool offsetChanged = Metrics().ApplyScrollUpdateFrom(scrollUpdate);
       Metrics().RecalculateLayoutViewportOffset();
 
       if (offsetChanged || scrollUpdate.GetMode() != ScrollMode::Instant ||
@@ -5779,6 +5774,15 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       // in a state where things are out of sync.
       CancelAnimation();
       didCancelAnimation = true;
+    }
+  }
+
+  if (aIsFirstPaint || needToReclampScroll) {
+    // The scrollable rect or composition bounds may have changed in a way that
+    // makes our local scroll offset out of bounds, so clamp it.
+    ClampAndSetVisualScrollOffset(Metrics().GetVisualScrollOffset());
+    for (auto& sampledState : mSampledState) {
+      sampledState.ClampVisualScrollOffset(Metrics());
     }
   }
 

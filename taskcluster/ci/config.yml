@@ -101,6 +101,9 @@ treeherder:
         'M-mda-gpu': 'Mochitests Media on GPU worker'
         'M-mda-gpu-cf': 'Mochitests confirm failure Media on GPU worker'
         'M-f': 'Mochitest failures'
+        'M-f-swr': 'Mochitest failures software webrender'
+        'M-f-cf': 'Mochitest failures w/confirm failure'
+        'M-f-swr-cf': 'Mochitest failures software webrender w/confirm failure'
         'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT disabled without fission enabled'
         'M-dt-no-eft-nofis-cf': 'DevTools Mochitests confirm failure with EFT disabled without fission enabled'
         'M-msix': 'Mochitests from MSIX builds'
@@ -224,6 +227,7 @@ treeherder:
         'rust': 'Rust checks'
         'Static-Analysis': 'Full tree static-analysis'
         'SS': 'Shadow scheduler'
+        'Sel': 'Selenium Snap tests'
         'Sentry': 'Sentry synchronization'
         'test-info': 'Test manifest skip/fail information'
         'condprof': 'Conditioned Profile Builder'
@@ -661,7 +665,7 @@ workers:
             implementation: generic-worker
             os: macosx
             worker-type: 'gecko-{alias}'
-        t-osx-1300-m2:
+        t-osx-1400-m2:
             provisioner: releng-hardware
             implementation: generic-worker
             os: macosx
@@ -794,6 +798,7 @@ mac-signing:
                       - "/Contents/MacOS/XUL"
                       - "/Contents/MacOS/pingsender"
                       - "/Contents/MacOS/minidump-analyzer"
+                      - "/Contents/MacOS/nmhproxy"
                       - "/Contents/MacOS/*.dylib"
                       - "/Contents/Resources/gmp-clearkey/*/*.dylib"
 
@@ -835,6 +840,7 @@ mac-signing:
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/pingsender"
                       - "/Contents/MacOS/minidump-analyzer"
+                      - "/Contents/MacOS/nmhproxy"
 
                 - deep: false
                   runtime: true

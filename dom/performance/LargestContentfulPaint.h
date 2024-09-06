@@ -73,16 +73,6 @@ struct LCPImageEntryKey {
     return element == otherElement && imgRequest == otherImgRequest;
   }
 
-  bool Equals(const Element* aElement,
-              const imgRequestProxy* aImgRequestProxy) const {
-    Element* element = GetElement();
-    if (!element || !mImageRequestProxy) {
-      return false;
-    }
-
-    return element == aElement && mImageRequestProxy == mImageRequestProxy;
-  }
-
   nsWeakPtr mElement;
 
   WeakPtr<PreloaderBase> mImageRequestProxy;
@@ -100,7 +90,7 @@ struct LCPTextFrameHelper final {
 class ImagePendingRendering final {
  public:
   ImagePendingRendering(const LCPImageEntryKey& aLCPImageEntryKey,
-                        DOMHighResTimeStamp aLoadTime);
+                        const TimeStamp& aLoadTime);
 
   Element* GetElement() const { return mLCPImageEntryKey.GetElement(); }
 
@@ -109,7 +99,7 @@ class ImagePendingRendering final {
   }
 
   LCPImageEntryKey mLCPImageEntryKey;
-  DOMHighResTimeStamp mLoadTime;
+  TimeStamp mLoadTime;
 };
 
 class LCPEntryHashEntry : public PLDHashEntryHdr {
@@ -141,9 +131,8 @@ class LCPHelpers final {
   // not going to be queued in this function.
   static void CreateLCPEntryForImage(
       PerformanceMainThread* aPerformance, Element* aElement,
-      imgRequestProxy* aRequestProxy, const DOMHighResTimeStamp aLoadTime,
-      const DOMHighResTimeStamp aRenderTime,
-      const LCPImageEntryKey& aContentIdentifier);
+      imgRequestProxy* aRequestProxy, const TimeStamp& aLoadTime,
+      const TimeStamp& aRenderTime, const LCPImageEntryKey& aContentIdentifier);
 
   // Called when the size of the image is known.
   static void FinalizeLCPEntryForImage(Element* aContainingBlock,
@@ -151,7 +140,7 @@ class LCPHelpers final {
                                        const nsRect& aTargetRectRelativeToSelf);
 
   static void FinalizeLCPEntryForText(PerformanceMainThread* aPerformance,
-                                      const DOMHighResTimeStamp aRenderTime,
+                                      const TimeStamp& aRenderTime,
                                       Element* aContainingBlock,
                                       const nsRect& aTargetRectRelativeToSelf,
                                       const nsPresContext* aPresContext);
@@ -172,8 +161,8 @@ class LargestContentfulPaint final : public PerformanceEntry {
                                            PerformanceEntry)
 
   LargestContentfulPaint(PerformanceMainThread* aPerformance,
-                         const DOMHighResTimeStamp aRenderTime,
-                         const DOMHighResTimeStamp aLoadTime,
+                         const TimeStamp& aRenderTime,
+                         const Maybe<TimeStamp>& aLoadTime,
                          const unsigned long aSize, nsIURI* aURI,
                          Element* aElement,
                          const Maybe<const LCPImageEntryKey>& aLCPImageEntryKey,
@@ -220,8 +209,8 @@ class LargestContentfulPaint final : public PerformanceEntry {
 
   // This is always set but only exposed to web content if
   // mShouldExposeRenderTime is true.
-  DOMHighResTimeStamp mRenderTime;
-  DOMHighResTimeStamp mLoadTime;
+  const TimeStamp mRenderTime;
+  const Maybe<TimeStamp> mLoadTime;
   // This is set to false when for security reasons web content it not allowed
   // to see the RenderTime.
   const bool mShouldExposeRenderTime;

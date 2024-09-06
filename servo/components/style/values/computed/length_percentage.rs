@@ -443,6 +443,19 @@ impl LengthPercentage {
         }
     }
 
+    /// Converts to a `<percentage>` with given basis. Returns None if the basis is 0.
+    #[inline]
+    pub fn to_percentage_of(&self, basis: Length) -> Option<Percentage> {
+        if basis.px() == 0. {
+            return None;
+        }
+        Some(match self.unpack() {
+            Unpacked::Length(l) => Percentage(l.px() / basis.px()),
+            Unpacked::Percentage(p) => p,
+            Unpacked::Calc(ref c) => Percentage(c.resolve(basis).px() / basis.px()),
+        })
+    }
+
     /// Returns the used value.
     #[inline]
     pub fn to_used_value(&self, containing_length: Au) -> Au {
@@ -671,12 +684,19 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return None;
         }
+
+        if matches!(self, Percentage(..)) && matches!(basis, PositivePercentageBasis::Unknown) {
+            return None;
+        }
+
+        let self_negative = self.is_negative();
+        if self_negative != other.is_negative() {
+            return Some(if self_negative { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater });
+        }
+
         match (self, other) {
             (&Length(ref one), &Length(ref other)) => one.partial_cmp(other),
-            (&Percentage(ref one), &Percentage(ref other)) => match basis {
-                PositivePercentageBasis::Yes => one.partial_cmp(other),
-                PositivePercentageBasis::Unknown => None,
-            },
+            (&Percentage(ref one), &Percentage(ref other)) => one.partial_cmp(other),
             (&Number(ref one), &Number(ref other)) => one.partial_cmp(other),
             _ => unsafe {
                 match *self {

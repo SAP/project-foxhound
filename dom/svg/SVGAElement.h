@@ -10,7 +10,6 @@
 #include "Link.h"
 #include "nsDOMTokenList.h"
 #include "SVGAnimatedString.h"
-#include "mozilla/dom/AnchorAreaFormRelValues.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
 
 nsresult NS_NewSVGAElement(
@@ -26,8 +25,7 @@ namespace dom {
 using SVGAElementBase = SVGGraphicsElement;
 
 class SVGAElement final : public SVGAElementBase,
-                          public Link,
-                          public AnchorAreaFormRelValues {
+                          public Link {
  protected:
   using Element::GetText;
 
@@ -50,7 +48,7 @@ class SVGAElement final : public SVGAElementBase,
 
   // nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   int32_t TabIndexDefault() override;
   Focusable IsFocusableWithoutStyle(bool aWithMouse) override;

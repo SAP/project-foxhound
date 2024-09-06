@@ -606,6 +606,24 @@ void nsAccessibilityService::NotifyOfDevPixelRatioChange(
   }
 }
 
+void nsAccessibilityService::NotifyAttrElementWillChange(
+    mozilla::dom::Element* aElement, nsAtom* aAttr) {
+  mozilla::dom::Document* doc = aElement->OwnerDoc();
+  MOZ_ASSERT(doc);
+  if (DocAccessible* docAcc = GetDocAccessible(doc)) {
+    docAcc->AttrElementWillChange(aElement, aAttr);
+  }
+}
+
+void nsAccessibilityService::NotifyAttrElementChanged(
+    mozilla::dom::Element* aElement, nsAtom* aAttr) {
+  mozilla::dom::Document* doc = aElement->OwnerDoc();
+  MOZ_ASSERT(doc);
+  if (DocAccessible* docAcc = GetDocAccessible(doc)) {
+    docAcc->AttrElementChanged(aElement, aAttr);
+  }
+}
+
 LocalAccessible* nsAccessibilityService::GetRootDocumentAccessible(
     PresShell* aPresShell, bool aCanCreate) {
   PresShell* presShell = aPresShell;
@@ -716,19 +734,6 @@ void nsAccessibilityService::TableLayoutGuessMaybeChanged(
   }
 }
 
-void nsAccessibilityService::PopovertargetMaybeChanged(PresShell* aPresShell,
-                                                       nsIContent* aContent) {
-  DocAccessible* document = GetDocAccessible(aPresShell);
-  if (!document) {
-    return;
-  }
-  if (LocalAccessible* acc = document->GetAccessible(aContent)) {
-    RefPtr<AccEvent> expandedChangeEvent =
-        new AccStateChangeEvent(acc, states::EXPANDED);
-    document->FireDelayedEvent(expandedChangeEvent);
-  }
-}
-
 void nsAccessibilityService::ComboboxOptionMaybeChanged(
     PresShell* aPresShell, nsIContent* aMutatingNode) {
   DocAccessible* document = GetDocAccessible(aPresShell);
@@ -833,7 +838,7 @@ void nsAccessibilityService::RecreateAccessible(PresShell* aPresShell,
 
 void nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString) {
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, nameRule)                     \
+             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
   case roles::geckoRole:                                                    \
     aString.AssignLiteral(stringRole);                                      \
     return;
@@ -1517,8 +1522,8 @@ bool nsAccessibilityService::Init() {
   NS_ADDREF(gApplicationAccessible);  // will release in Shutdown()
   gApplicationAccessible->Init();
 
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::Accessibility,
-                                     "Active"_ns);
+  CrashReporter::RecordAnnotationCString(
+      CrashReporter::Annotation::Accessibility, "Active");
 
   // Now its safe to start platform accessibility.
   if (XRE_IsParentProcess()) PlatformInit();

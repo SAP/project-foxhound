@@ -36,6 +36,9 @@ namespace mozilla {
 class ClientWebGLExtensionBase;
 class HostWebGLContext;
 
+template <typename MethodT, MethodT Method>
+size_t IdByMethod();
+
 namespace dom {
 class OwningHTMLCanvasElementOrOffscreenCanvas;
 class WebGLChild;
@@ -297,12 +300,6 @@ class WebGLFramebufferJS final : public nsWrapperCache, public webgl::ObjectJS {
  private:
   bool mHasBeenBound = false;  // !IsFramebuffer until Bind
   std::unordered_map<GLenum, Attachment> mAttachments;
-  // Holds Some Id if async present is used
-  Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
-  Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
-  // Needs sync IPC to ensure that the remote texture exists in the
-  // RemoteTextureMap.
-  bool mNeedsRemoteTextureSync = true;
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLFramebufferJS)
@@ -784,12 +781,12 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   mutable GLenum mNextError = 0;
   mutable webgl::LossStatus mLossStatus = webgl::LossStatus::Ready;
   mutable bool mAwaitingRestore = false;
+
+ public:
   // Holds Some Id if async present is used
   mutable Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
   mutable Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
-  // Needs sync IPC to ensure that the remote texture exists in the
-  // RemoteTextureMap.
-  bool mNeedsRemoteTextureSync = true;
+  mutable RefPtr<layers::FwdTransactionTracker> mFwdTransactionTracker;
 
   // -
 
@@ -932,11 +929,11 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   void EnqueueErrorImpl(GLenum errorOrZero, const nsACString&) const;
 
  public:
-  Maybe<Range<uint8_t>> ValidateArrayBufferView(const Span<uint8_t>& bytes,
-                                                size_t elemSize,
-                                                GLuint elemOffset,
-                                                GLuint elemCountOverride,
-                                                const GLenum errorEnum) const;
+  Maybe<Span<uint8_t>> ValidateArrayBufferView(const Span<uint8_t>& bytes,
+                                               size_t elemSize,
+                                               GLuint elemOffset,
+                                               GLuint elemCountOverride,
+                                               const GLenum errorEnum) const;
 
  protected:
   template <typename T>
@@ -1081,13 +1078,16 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
       const bool webvr = false) override;
   RefPtr<gfx::SourceSurface> GetFrontBufferSnapshot(
       bool requireAlphaPremult = true) override;
+  already_AddRefed<layers::FwdTransactionTracker> UseCompositableForwarder(
+      layers::CompositableForwarder* aForwarder) override;
+  void OnDestroyChild(dom::WebGLChild* aChild);
 
   void ClearVRSwapChain();
 
  private:
   RefPtr<gfx::DataSourceSurface> BackBufferSnapshot();
   [[nodiscard]] bool DoReadPixels(const webgl::ReadPixelsDesc&,
-                                  Range<uint8_t>) const;
+                                  Span<uint8_t>) const;
   uvec2 DrawingBufferSize();
 
   // -
@@ -2309,22 +2309,48 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   // The cross-process communication mechanism
   // -------------------------------------------------------------------------
  protected:
-  template <typename ReturnType>
-  friend struct WebGLClientDispatcher;
-
-  template <typename MethodType, MethodType method, typename ReturnType,
-            typename... Args>
-  friend ReturnType RunOn(const ClientWebGLContext& context, Args&&... aArgs);
-
   // If we are running WebGL in this process then call the HostWebGLContext
   // method directly.  Otherwise, dispatch over IPC.
-  template <typename MethodType, MethodType method, typename... Args>
-  void Run(Args&&... aArgs) const;
+  template <typename MethodType, MethodType method, typename... CallerArgs>
+  void Run(const CallerArgs&... args) const {
+    const auto id = IdByMethod<MethodType, method>();
+    auto noNoGc = std::optional<JS::AutoCheckCannotGC>{};
+    Run_WithDestArgTypes_ConstnessHelper(std::move(noNoGc), method, id,
+                                         args...);
+  }
 
   // Same as above for use when using potentially GC-controlled data. The scope
   // of `aNoGC` will be ended after the data is no longer needed.
-  template <typename MethodType, MethodType method, typename... Args>
-  void RunWithGCData(JS::AutoCheckCannotGC&& aNoGC, Args&&... aArgs) const;
+  template <typename MethodType, MethodType method, typename... CallerArgs>
+  void RunWithGCData(JS::AutoCheckCannotGC&& aNoGC,
+                     const CallerArgs&... aArgs) const {
+    const auto id = IdByMethod<MethodType, method>();
+    auto noGc = std::optional<JS::AutoCheckCannotGC>{std::move(aNoGC)};
+    Run_WithDestArgTypes_ConstnessHelper(std::move(noGc), method, id, aArgs...);
+  }
+
+  // Because we're trying to explicitly pull `DestArgs` via `method`, we have
+  // one overload for mut-methods and one for const-methods.
+  template <typename... DestArgs>
+  void Run_WithDestArgTypes_ConstnessHelper(
+      std::optional<JS::AutoCheckCannotGC>&& noGc,
+      void (HostWebGLContext::*method)(DestArgs...), const size_t id,
+      const std::remove_reference_t<std::remove_const_t<DestArgs>>&... args)
+      const {
+    Run_WithDestArgTypes(std::move(noGc), method, id, args...);
+  }
+  template <typename... DestArgs>
+  void Run_WithDestArgTypes_ConstnessHelper(
+      std::optional<JS::AutoCheckCannotGC>&& noGc,
+      void (HostWebGLContext::*method)(DestArgs...) const, const size_t id,
+      const std::remove_reference_t<std::remove_const_t<DestArgs>>&... args)
+      const {
+    Run_WithDestArgTypes(std::move(noGc), method, id, args...);
+  }
+
+  template <typename MethodT, typename... DestArgs>
+  void Run_WithDestArgTypes(std::optional<JS::AutoCheckCannotGC>&&, MethodT,
+                            const size_t id, const DestArgs&...) const;
 
   // -------------------------------------------------------------------------
   // Helpers for DOM operations, composition, actors, etc

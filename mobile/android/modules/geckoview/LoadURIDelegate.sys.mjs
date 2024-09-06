@@ -40,7 +40,7 @@ export const LoadURIDelegate = {
       }
     );
     Services.tm.spinEventLoopUntil(
-      "LoadURIDelegate.jsm:load",
+      "LoadURIDelegate.sys.mjs:load",
       () => aWindow.closed || handled !== undefined
     );
 
@@ -75,13 +75,13 @@ export const LoadURIDelegate = {
           Components.returnCode = Cr.NS_ERROR_ABORT;
         }
       },
-      e => {
+      () => {
         errorPageURI = null;
         Components.returnCode = Cr.NS_ERROR_ABORT;
       }
     );
     Services.tm.spinEventLoopUntil(
-      "LoadURIDelegate.jsm:handleLoadError",
+      "LoadURIDelegate.sys.mjs:handleLoadError",
       () => aWindow.closed || errorPageURI !== undefined
     );
 

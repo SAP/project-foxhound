@@ -141,7 +141,11 @@ function getClipboardData(aFlavor, aClipboardType) {
   );
   trans.init(null);
   trans.addDataFlavor(aFlavor);
-  clipboard.getData(trans, aClipboardType);
+  clipboard.getData(
+    trans,
+    aClipboardType,
+    SpecialPowers.wrap(window).browsingContext.currentWindowContext
+  );
 
   try {
     var data = SpecialPowers.createBlankObject();
@@ -153,11 +157,21 @@ function getClipboardData(aFlavor, aClipboardType) {
   }
 }
 
-function asyncGetClipboardData(aClipboardType) {
+function getClipboardDataSnapshotSync(aClipboardType) {
+  return clipboard.getDataSnapshotSync(
+    ["text/plain", "text/html", "image/png"],
+    aClipboardType
+  );
+}
+
+function asyncGetClipboardData(
+  aClipboardType,
+  aFormats = ["text/plain", "text/html", "image/png"]
+) {
   return new Promise((resolve, reject) => {
     try {
       clipboard.asyncGetData(
-        ["text/plain", "text/html", "image/png"],
+        aFormats,
         aClipboardType,
         null,
         SpecialPowers.Services.scriptSecurityManager.getSystemPrincipal(),

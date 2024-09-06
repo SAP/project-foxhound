@@ -9,6 +9,7 @@
 #include "AccEvent.h"
 #include "Compatibility.h"
 #include "HyperTextAccessible.h"
+#include "MsaaAccessible.h"
 #include "nsWinUtils.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/RemoteAccessible.h"
@@ -196,9 +197,8 @@ static void AccumulateInstantiatorTelemetry(const nsAString& aValue) {
 #if defined(MOZ_TELEMETRY_REPORTING)
     Telemetry::ScalarSet(Telemetry::ScalarID::A11Y_INSTANTIATORS, aValue);
 #endif  // defined(MOZ_TELEMETRY_REPORTING)
-    CrashReporter::AnnotateCrashReport(
-        CrashReporter::Annotation::AccessibilityClient,
-        NS_ConvertUTF16toUTF8(aValue));
+    CrashReporter::RecordAnnotationNSString(
+        CrashReporter::Annotation::AccessibilityClient, aValue);
   }
 }
 

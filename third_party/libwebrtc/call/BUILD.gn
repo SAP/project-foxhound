@@ -61,6 +61,7 @@ rtc_library("call_interfaces") {
     "../api/audio_codecs:audio_codecs_api",
     "../api/crypto:frame_encryptor_interface",
     "../api/crypto:options",
+    "../api/environment",
     "../api/metronome",
     "../api/neteq:neteq_api",
     "../api/task_queue",
@@ -349,7 +350,6 @@ rtc_library("call") {
   ]
   absl_deps = [
     "//third_party/abseil-cpp/absl/functional:bind_front",
-    "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/strings",
     "//third_party/abseil-cpp/absl/types:optional",
   ]
@@ -501,8 +501,8 @@ if (rtc_include_tests) {
         "../api:rtp_parameters",
         "../api:transport_api",
         "../api/audio_codecs:builtin_audio_decoder_factory",
-        "../api/rtc_event_log",
-        "../api/task_queue:default_task_queue_factory",
+        "../api/environment",
+        "../api/environment:environment_factory",
         "../api/test/video:function_video_factory",
         "../api/transport:field_trial_based_config",
         "../api/units:timestamp",
@@ -558,7 +558,6 @@ if (rtc_include_tests) {
       absl_deps = [
         "//third_party/abseil-cpp/absl/container:inlined_vector",
         "//third_party/abseil-cpp/absl/functional:any_invocable",
-        "//third_party/abseil-cpp/absl/memory",
         "//third_party/abseil-cpp/absl/strings",
         "//third_party/abseil-cpp/absl/types:optional",
         "//third_party/abseil-cpp/absl/types:variant",
@@ -584,7 +583,6 @@ if (rtc_include_tests) {
         "../api/rtc_event_log",
         "../api/rtc_event_log:rtc_event_log_factory",
         "../api/task_queue",
-        "../api/task_queue:default_task_queue_factory",
         "../api/task_queue:pending_task_safety_flag",
         "../api/test/metrics:global_metrics_logger_and_exporter",
         "../api/test/metrics:metric",
@@ -620,6 +618,7 @@ if (rtc_include_tests) {
         "../test:frame_generator_capturer",
         "../test:null_transport",
         "../test:test_common",
+        "../test:test_flags",
         "../test:test_support",
         "../test:video_test_common",
         "../test:video_test_constants",

@@ -67,7 +67,7 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
   // TODO(david): Is this sound?
   nsTArray<nsString> args;
   args.AppendElement(aStr);
-  NS_ConvertUTF8toUTF16 typeCopy(SupportedTypeValues::GetString(aType).data());
+  NS_ConvertUTF8toUTF16 typeCopy(dom::binding_detail::EnumStrings<dom::SupportedType>::Values[uint32_t(aType)]);
   args.AppendElement(typeCopy);
 
   MarkTaintOperation(strCopy, "DOMParser.ParseFromString", args);
@@ -199,12 +199,10 @@ already_AddRefed<Document> DOMParser::ParseFromStream(nsIInputStream* aStream,
 
   // Create a fake channel
   nsCOMPtr<nsIChannel> parserChannel;
-  NS_NewInputStreamChannel(
-      getter_AddRefs(parserChannel), mDocumentURI,
-      nullptr,  // aStream
-      mPrincipal, nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
-      nsIContentPolicy::TYPE_OTHER,
-      nsDependentCSubstring(SupportedTypeValues::GetString(aType)));
+  NS_NewInputStreamChannel(getter_AddRefs(parserChannel), mDocumentURI,
+                           nullptr,  // aStream
+                           mPrincipal, nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL,
+                           nsIContentPolicy::TYPE_OTHER, GetEnumString(aType));
   if (NS_WARN_IF(!parserChannel)) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;

@@ -290,7 +290,7 @@
   },
   "CHECKERBOARD_DURATION": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "botond@mozilla.com"],
     "bug_numbers": [1238040, 1539309, 1584109],
     "releaseChannelCollection": "opt-out",
@@ -302,7 +302,7 @@
   },
   "CHECKERBOARD_PEAK": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "botond@mozilla.com"],
     "bug_numbers": [1238040, 1539309, 1584109],
     "releaseChannelCollection": "opt-out",
@@ -314,7 +314,7 @@
   },
   "CHECKERBOARD_POTENTIAL_DURATION": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "botond@mozilla.com"],
     "bug_numbers": [1238040, 1539309, 1584109],
     "releaseChannelCollection": "opt-out",
@@ -326,7 +326,7 @@
   },
   "CHECKERBOARD_SEVERITY": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "botond@mozilla.com"],
     "bug_numbers": [1238040, 1539309, 1584109],
     "releaseChannelCollection": "opt-out",
@@ -354,7 +354,7 @@
   },
   "COMPOSITE_TIME": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "jnicol@mozilla.com"],
     "expires_in_version": "never",
     "description": "Composite times in milliseconds",
@@ -366,7 +366,7 @@
   },
   "COMPOSITE_SWAP_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com"
@@ -816,7 +816,7 @@
   },
   "GC_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dev-telemetry-gc-alerts@mozilla.org",
       "jcoppeard@mozilla.com"
@@ -914,7 +914,7 @@
   },
   "GC_PREPARE_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dev-telemetry-gc-alerts@mozilla.org",
       "jcoppeard@mozilla.com"
@@ -929,7 +929,7 @@
   },
   "GC_MARK_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -940,7 +940,7 @@
   },
   "GC_SWEEP_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -951,7 +951,7 @@
   },
   "GC_COMPACT_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -962,7 +962,7 @@
   },
   "GC_MARK_ROOTS_US": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dev-telemetry-gc-alerts@mozilla.org",
       "jcoppeard@mozilla.com"
@@ -1007,7 +1007,7 @@
   },
   "GC_SLICE_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -1110,7 +1110,7 @@
   },
   "GC_MINOR_US": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["dev-telemetry-gc-alerts@mozilla.org"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -2058,7 +2058,7 @@
   },
   "AVIF_DECODE_RESULT": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2101,7 +2101,7 @@
   },
   "AVIF_AOM_DECODE_ERROR": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2121,7 +2121,7 @@
   },
   "AVIF_DECODER": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2132,7 +2132,7 @@
   },
   "AVIF_YUV_COLOR_SPACE": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2143,7 +2143,7 @@
   },
   "AVIF_BIT_DEPTH": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2154,7 +2154,7 @@
   },
   "AVIF_ALPHA": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2165,7 +2165,7 @@
   },
   "AVIF_COLR": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2176,7 +2176,7 @@
   },
   "AVIF_CICP_CP": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2212,7 +2212,7 @@
   },
   "AVIF_CICP_TC": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2244,7 +2244,7 @@
   },
   "AVIF_CICP_MC": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2272,7 +2272,7 @@
   },
   "AVIF_ISPE": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2283,7 +2283,7 @@
   },
   "AVIF_PIXI": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2294,7 +2294,7 @@
   },
   "AVIF_PASP": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2305,7 +2305,7 @@
   },
   "AVIF_MAJOR_BRAND": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2316,7 +2316,7 @@
   },
   "AVIF_SEQUENCE": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2327,7 +2327,7 @@
   },
   "AVIF_A1LX": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2338,7 +2338,7 @@
   },
   "AVIF_A1OP": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2349,7 +2349,7 @@
   },
   "AVIF_CLAP": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2360,7 +2360,7 @@
   },
   "AVIF_GRID": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2371,7 +2371,7 @@
   },
   "AVIF_IPRO": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2382,7 +2382,7 @@
   },
   "AVIF_LSEL": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -2393,7 +2393,7 @@
   },
   "KEYPRESS_PRESENT_LATENCY": {
     "record_in_processes": ["all"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com", "vchin@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -2406,7 +2406,7 @@
   },
   "MOUSEUP_FOLLOWED_BY_CLICK_PRESENT_LATENCY": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com", "sefeng@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -2419,7 +2419,7 @@
   },
   "SCROLL_PRESENT_LATENCY": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "perf-telemetry-alerts@mozilla.com",
       "sefeng@mozilla.com",
@@ -2491,7 +2491,7 @@
     "record_in_processes": ["main"],
     "products": ["firefox", "fennec"],
     "alert_emails": ["seceng-telemetry@mozilla.com"],
-    "expires_in_version": "126",
+    "expires_in_version": "132",
     "keyed": true,
     "keys": ["known_text", "unknown"],
     "kind": "enumerated",
@@ -2504,7 +2504,7 @@
     "record_in_processes": ["main"],
     "products": ["firefox", "fennec"],
     "alert_emails": ["seceng-telemetry@mozilla.com"],
-    "expires_in_version": "126",
+    "expires_in_version": "132",
     "kind": "boolean",
     "releaseChannelCollection": "opt-out",
     "description": "Whether a probable font fingerprinting attempt was detected",
@@ -2512,7 +2512,7 @@
   },
   "TOTAL_CONTENT_PAGE_LOAD_TIME": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com", "bdekoz@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -2581,7 +2581,7 @@
   },
   "HTTP_PAGE_DNS_ISSUE_TIME": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["necko@mozilla.com", "vogosu@mozilla.com"],
@@ -2593,7 +2593,7 @@
   },
   "HTTP_PAGE_DNS_LOOKUP_TIME": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["necko@mozilla.com", "vogosu@mozilla.com"],
@@ -2605,7 +2605,7 @@
   },
   "HTTP_PAGE_TLS_HANDSHAKE": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
@@ -2617,7 +2617,7 @@
   },
   "HTTP_PAGE_TCP_CONNECTION_2": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
@@ -2935,19 +2935,6 @@
     "bug_numbers": [1675503],
     "keyed": true,
     "description": "The time between navigationStart and the first contentful paint of a foreground http or https root content document, in milliseconds. The contentful paint timestamp is taken during display list building and does not include rasterization or compositing of that paint. This is collected only on page load where the main document uses or suppports HTTP3"
-  },
-  "HTTPS_RR_OPEN_TO_FIRST_SENT": {
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox"],
-    "bug_numbers": [1697480],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "exponential",
-    "high": 30000,
-    "n_buckets": 50,
-    "keyed": true,
-    "description": "HTTP channel(keys: uses_https_rr_page, uses_https_rr_sub, no_https_rr_page, no_https_rr_sub): Open -> first byte of request sent (ms)"
   },
   "H3P_PERF_PAGE_LOAD_TIME_MS": {
     "record_in_processes": ["content"],
@@ -3984,25 +3971,12 @@
     "n_values": 16,
     "description": "SSL Handshake Key Exchange Algorithm for resumed handshake (null=0, rsa=1, dh=2, fortezza=3, ecdh=4)"
   },
-  "OCSP_AGE_AT_CRLITE_OVERRIDE": {
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com", "jschanck@mozilla.com"],
-    "bug_numbers": [1794479, 1817101, 1846897],
-    "expires_in_version": "125",
-    "kind": "linear",
-    "releaseChannelCollection": "opt-out",
-    "low": 1,
-    "high": 240,
-    "n_buckets": 20,
-    "description": "When OCSP and CRLite differ, how old is the OCSP response (in hours)?"
-  },
   "CRLITE_VS_OCSP_RESULT": {
     "record_in_processes": ["main", "socket"],
     "products": ["firefox"],
     "alert_emails": ["seceng-telemetry@mozilla.com", "dkeeler@mozilla.com"],
-    "bug_numbers": [1675655, 1758827, 1817102, 1846898],
-    "expires_in_version": "125",
+    "bug_numbers": [1675655, 1758827, 1817102, 1846898, 1876443],
+    "expires_in_version": "131",
     "kind": "categorical",
     "releaseChannelCollection": "opt-out",
     "description": "Does CRLite and OCSP fetching agree when a certificate is revoked?",
@@ -4023,8 +3997,8 @@
     "record_in_processes": ["main", "socket"],
     "products": ["firefox"],
     "alert_emails": ["seceng-telemetry@mozilla.com", "jschanck@mozilla.com"],
-    "bug_numbers": [1794450, 1817101, 1846897],
-    "expires_in_version": "125",
+    "bug_numbers": [1794450, 1817101, 1846897, 1876442],
+    "expires_in_version": "never",
     "kind": "categorical",
     "releaseChannelCollection": "opt-out",
     "description": "Which revocation checking mechanisms were used?",
@@ -4405,17 +4379,6 @@
     "releaseChannelCollection": "opt-out",
     "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"]
   },
-  "HTTP_CHANNEL_ONSTART_SUCCESS_HTTPS_RR": {
-    "record_in_processes": ["main"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "boolean",
-    "keyed": true,
-    "description": "Successfully started HTTP channels when HTTPS RR is used; Keyed by echConfig is used or not",
-    "bug_numbers": [1682552],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"]
-  },
   "HTTP_CONNECTION_ENTRY_CACHE_HIT_1": {
     "record_in_processes": ["main", "socket"],
     "products": ["firefox", "fennec"],
@@ -4477,13 +4440,6 @@
     "high": 20,
     "n_buckets": 19,
     "description": "Reuse count of an HTTP cache entry warmed in memory"
-  },
-  "HTTP_OFFLINE_CACHE_DOCUMENT_LOAD": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "boolean",
-    "description": "Rate of page load from offline cache"
   },
   "HTTP_CACHE_IO_QUEUE_2_OPEN_PRIORITY": {
     "record_in_processes": ["main", "content"],
@@ -4584,15 +4540,6 @@
     "n_buckets": 50,
     "description": "Time to search cache (ms)"
   },
-  "CACHE_OFFLINE_SEARCH_2": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time to search offline cache (ms)"
-  },
   "TRANSACTION_WAIT_TIME_HTTP": {
     "record_in_processes": ["main", "socket"],
     "products": ["firefox", "fennec"],
@@ -4626,19 +4573,6 @@
     "high": 5000,
     "n_buckets": 100,
     "description": "Time from submission to dispatch of HTTP/3 transaction (ms)"
-  },
-  "TRANSACTION_WAIT_TIME_HTTPS_RR": {
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox"],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "bug_numbers": [1697480],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "exponential",
-    "high": 5000,
-    "n_buckets": 100,
-    "keyed": true,
-    "description": "Time from submission to dispatch of transaction when HTTPS RR is used (ms)"
   },
   "TRANSACTION_WAIT_TIME_HTTP2_SUP_HTTP3": {
     "record_in_processes": ["main", "socket"],
@@ -4888,510 +4822,6 @@
     "expires_in_version": "never",
     "kind": "boolean",
     "description": "Cache discovered inconsistent last-modified entry"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_2": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms)"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_2": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock on the main thread (ms)"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSPROCESSREQUESTEVENT_RUN": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSPROCESSREQUESTEVENT_RUN"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSOUTPUTSTREAMWRAPPER_LAZYINIT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSOUTPUTSTREAMWRAPPER_LAZYINIT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSOUTPUTSTREAMWRAPPER_CLOSEINTERNAL": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSOUTPUTSTREAMWRAPPER_CLOSEINTERNAL"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSOUTPUTSTREAMWRAPPER_RELEASE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSOUTPUTSTREAMWRAPPER_RELEASE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCOMPRESSOUTPUTSTREAMWRAPPER_RELEASE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCOMPRESSOUTPUTSTREAMWRAPPER_RELEASE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSINPUTSTREAMWRAPPER_LAZYINIT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSINPUTSTREAMWRAPPER_LAZYINIT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSINPUTSTREAMWRAPPER_CLOSEINTERNAL": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSINPUTSTREAMWRAPPER_CLOSEINTERNAL"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSINPUTSTREAMWRAPPER_RELEASE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSINPUTSTREAMWRAPPER_RELEASE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSDECOMPRESSINPUTSTREAMWRAPPER_RELEASE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSDECOMPRESSINPUTSTREAMWRAPPER_RELEASE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_SHUTDOWN": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_SHUTDOWN"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_SETOFFLINECACHEENABLED": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_SETOFFLINECACHEENABLED"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_SETOFFLINECACHECAPACITY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_SETOFFLINECACHECAPACITY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_OPENCACHEENTRY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_OPENCACHEENTRY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_ONPROFILESHUTDOWN": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_ONPROFILESHUTDOWN"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_ONPROFILECHANGED": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_ONPROFILECHANGED"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_ISSTORAGEENABLEDFORPOLICY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_ISSTORAGEENABLEDFORPOLICY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_GETCACHEIOTARGET": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_GETCACHEIOTARGET"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_EVICTENTRIESFORCLIENT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_EVICTENTRIESFORCLIENT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_CLOSEALLSTREAMS": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_CLOSEALLSTREAMS"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_DOOM": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_DOOM"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETPREDICTEDDATASIZE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETPREDICTEDDATASIZE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETDATASIZE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETDATASIZE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETSTORAGEDATASIZE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETSTORAGEDATASIZE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_REQUESTDATASIZECHANGE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_REQUESTDATASIZECHANGE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETDATASIZE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETDATASIZE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_OPENINPUTSTREAM": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_OPENINPUTSTREAM"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_OPENOUTPUTSTREAM": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_OPENOUTPUTSTREAM"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETCACHEELEMENT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETCACHEELEMENT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETCACHEELEMENT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETCACHEELEMENT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETSTORAGEPOLICY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETSTORAGEPOLICY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETSTORAGEPOLICY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETSTORAGEPOLICY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETFILE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETFILE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETSECURITYINFO": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETSECURITYINFO"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETSECURITYINFO": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETSECURITYINFO"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_DOOMANDFAILPENDINGREQUESTS": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_DOOMANDFAILPENDINGREQUESTS"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_MARKVALID": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_MARKVALID"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_CLOSE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_CLOSE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETMETADATAELEMENT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETMETADATAELEMENT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETMETADATAELEMENT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETMETADATAELEMENT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_VISITMETADATA": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_VISITMETADATA"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_SETEXPIRATIONTIME": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_SETEXPIRATIONTIME"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_ISSTREAMBASED": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_ISSTREAMBASED"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETLASTMODIFIED": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETLASTMODIFIED"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETEXPIRATIONTIME": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETEXPIRATIONTIME"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETKEY": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETKEY"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETFETCHCOUNT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETFETCHCOUNT"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETDEVICEID": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETDEVICEID"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_PROCESSREQUEST": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_PROCESSREQUEST"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHESERVICE_VISITENTRIES": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHESERVICE_VISITENTRIES"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETPREDICTEDDATASIZE": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETPREDICTEDDATASIZE"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETLASTFETCHED": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETLASTFETCHED"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSCACHEENTRYDESCRIPTOR_GETCLIENTID": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSCACHEENTRYDESCRIPTOR_GETCLIENTID"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSBLOCKONCACHETHREADEVENT_RUN": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSBLOCKONCACHETHREADEVENT_RUN"
-  },
-  "CACHE_SERVICE_LOCK_WAIT_MAINTHREAD_NSASYNCDOOMEVENT_RUN": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "description": "Time spent waiting on the cache service lock (ms) on the main thread in NSASYNCDOOMEVENT_RUN"
   },
   "DNT_USAGE": {
     "record_in_processes": ["main", "content"],
@@ -7581,7 +7011,7 @@
     "n_values": 50,
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [353804],
-    "description": "Update: background update check result code except for no updates found (after we already have an update ready). Possible codes are enumerated by constants starting with CHK_ in toolkit/mozapps/update/UpdateTelemetry.jsm"
+    "description": "Update: background update check result code except for no updates found (after we already have an update ready). Possible codes are enumerated by constants starting with CHK_ in toolkit/mozapps/update/UpdateTelemetry.sys.mjs"
   },
   "UPDATE_CHECK_EXTENDED_ERROR_EXTERNAL": {
     "record_in_processes": ["main"],
@@ -8327,7 +7757,7 @@
     "n_values": 30,
     "releaseChannelCollection": "opt-out",
     "bug_numbers": [1137447],
-    "description": "Update: the update wizard page displayed when the UI was closed (mapped in toolkit/mozapps/update/UpdateTelemetry.jsm)"
+    "description": "Update: the update wizard page displayed when the UI was closed (mapped in toolkit/mozapps/update/UpdateTelemetry.sys.mjs)"
   },
   "UPDATE_NOTIFICATION_SHOWN": {
     "record_in_processes": ["main"],
@@ -8633,7 +8063,7 @@
   },
   "FX_TAB_SWITCH_COMPOSITE_E10S_MS": {
     "record_in_processes": ["main"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["mwoodrow@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -8689,7 +8119,7 @@
   },
   "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_ALL_TABS": {
     "record_in_processes": ["main"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 100,
@@ -8701,7 +8131,7 @@
   },
   "FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_DOCUMENT": {
     "record_in_processes": ["main"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "expires_in_version": "never",
     "kind": "exponential",
     "high": 100,
@@ -8892,7 +8322,7 @@
     "kind": "enumerated",
     "n_values": 15,
     "releaseChannelCollection": "opt-out",
-    "description": "The browser that data is pulled from. The values correspond to the internal browser ID (see MigrationUtils.jsm)"
+    "description": "The browser that data is pulled from. The values correspond to the internal browser ID (see MigrationUtils.sys.mjs)"
   },
   "FX_MIGRATION_ERRORS": {
     "record_in_processes": ["main"],
@@ -8972,7 +8402,7 @@
     "high": 60000,
     "releaseChannelCollection": "opt-out",
     "keyed": true,
-    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing bookmarks from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.jsm). The import is happening on a background thread and should ideally not affect the UI noticeably."
+    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing bookmarks from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.sys.mjs). The import is happening on a background thread and should ideally not affect the UI noticeably."
   },
   "FX_MIGRATION_HISTORY_JANK_MS": {
     "record_in_processes": ["main"],
@@ -8985,7 +8415,7 @@
     "high": 60000,
     "releaseChannelCollection": "opt-out",
     "keyed": true,
-    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing history from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.jsm). The import is happening on a background thread and should ideally not affect the UI noticeably."
+    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing history from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.sys.mjs). The import is happening on a background thread and should ideally not affect the UI noticeably."
   },
   "FX_MIGRATION_LOGINS_JANK_MS": {
     "record_in_processes": ["main"],
@@ -8998,7 +8428,7 @@
     "high": 60000,
     "releaseChannelCollection": "opt-out",
     "keyed": true,
-    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing logins / passwords from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.jsm). The import is happening on a background thread and should ideally not affect the UI noticeably. The time with the blocking Keychain dialog on macOS can skew this data."
+    "description": "Accumulated timer delay (variance between when the timer was expected to fire and when it actually fired) in milliseconds as an indicator for decreased main-thread responsiveness while importing logins / passwords from another browser, keyed by the name of the browser (see gAvailableMigratorKeys in MigrationUtils.sys.mjs). The import is happening on a background thread and should ideally not affect the UI noticeably. The time with the blocking Keychain dialog on macOS can skew this data."
   },
   "FX_MIGRATION_BOOKMARKS_QUANTITY": {
     "record_in_processes": ["main"],
@@ -9517,6 +8947,19 @@
     "labels": ["enter", "enterSelection", "click"],
     "bug_numbers": [1334615],
     "description": "The input method the user used to select a result in the searchbar. 'enter' => The user hit the Enter key without choosing a result in the popup. 'enterSelection' => The user chose a result and then hit the Enter key. 'click' => The user clicked a result with the mouse."
+  },
+  "FX_URLBAR_PROVIDER_CLIPBOARD_READ_TIME_MS": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["fx-search-telemetry@mozilla.com"],
+    "expires_in_version": "128",
+    "kind": "exponential",
+    "low": 16,
+    "high": 5000,
+    "n_buckets": 8,
+    "bug_numbers": [1866710],
+    "releaseChannelCollection": "opt-out",
+    "description": "Time taken to read data from the clipboard (ms)"
   },
   "INNERWINDOWS_WITH_MUTATION_LISTENERS": {
     "record_in_processes": ["main", "content"],
@@ -11346,19 +10789,9 @@
     "n_values": 5,
     "description": "Counts the number of entries in the sample description box (stsd) for a track in an mp4. Recorded each time we process a track's metadata while parsing mp4s."
   },
-  "MEDIA_DECODING_PROCESS_CRASH": {
-    "record_in_processes": ["content"],
-    "products": ["firefox"],
-    "alert_emails": ["media-alerts@mozilla.com"],
-    "bug_numbers": [1304268],
-    "expires_in_version": "never",
-    "kind": "count",
-    "operating_systems": ["android"],
-    "description": "Records a value each time GeckoView remote decoding process crashes unexpectedly while decoding media content."
-  },
   "MEDIA_AUDIO_INIT_FAILURE": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -11369,7 +10802,7 @@
   },
   "MEDIA_AUDIO_BACKEND": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -11395,7 +10828,7 @@
   },
   "MEDIA_SNIFFER_MP4_BRAND_PATTERN": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -12819,7 +12252,7 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "operating_systems": ["windows"],
-    "expires_in_version": "126",
+    "expires_in_version": "never",
     "kind": "categorical",
     "labels": [
       "Success",
@@ -12835,7 +12268,7 @@
       "ErrBuild"
     ],
     "releaseChannelCollection": "opt-out",
-    "bug_numbers": [1805509],
+    "bug_numbers": [1805509, 1883466],
     "alert_emails": ["application-update-telemetry-alerts@mozilla.com"],
     "description": "Result of each attempt to set the default browser with SetDefaultExtensionHandlersUserChoice() for pdf extension"
   },
@@ -12843,7 +12276,7 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "operating_systems": ["windows"],
-    "expires_in_version": "126",
+    "expires_in_version": "never",
     "kind": "categorical",
     "labels": [
       "Success",
@@ -12859,7 +12292,7 @@
       "ErrBuild"
     ],
     "releaseChannelCollection": "opt-out",
-    "bug_numbers": [1703578, 1736631, 1791928],
+    "bug_numbers": [1703578, 1736631, 1791928, 1881397],
     "alert_emails": ["application-update-telemetry-alerts@mozilla.com"],
     "description": "Result of each attempt to set the default browser with SetDefaultBrowserUserChoice()"
   },
@@ -12914,14 +12347,14 @@
     "n_values": 10,
     "description": "How often would blocked mixed content be allowed if HSTS upgrades were allowed? 0=display/no-HSTS, 1=display/HSTS, 2=active/no-HSTS, 3=active/HSTS"
   },
-  "MIXED_CONTENT_DOWNLOADS": {
+  "INSECURE_DOWNLOADS": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox"],
-    "alert_emails": ["seceng-telemetry@mozilla.com", "sstreich@mozilla.com"],
-    "bug_numbers": [1646768],
-    "expires_in_version": "90",
+    "alert_emails": ["seceng-telemetry@mozilla.com", "ckerschb@mozilla.com"],
+    "bug_numbers": [1877195],
+    "expires_in_version": "130",
     "kind": "boolean",
-    "description": "Accumulates how many downloads are mixed-content (True = The download is MixedContent, False= is not MixedContent)"
+    "description": "Accumulates how many downloads are insecure (True = The download is insecure, False= The download is secure)"
   },
   "MIXED_CONTENT_IMAGES": {
     "record_in_processes": ["main", "content"],
@@ -13046,7 +12479,7 @@
     "expires_in_version": "default",
     "kind": "enumerated",
     "n_values": 10,
-    "description": "BACKGROUND THUMBNAILS: Reason the capture completed (see TEL_CAPTURE_DONE_* constants in BackgroundPageThumbs.jsm)"
+    "description": "BACKGROUND THUMBNAILS: Reason the capture completed (see TEL_CAPTURE_DONE_* constants in BackgroundPageThumbs.sys.mjs)"
   },
   "FX_THUMBNAILS_BG_CAPTURE_PAGE_LOAD_TIME_MS": {
     "record_in_processes": ["main", "content"],
@@ -13084,7 +12517,7 @@
   },
   "NETWORK_CACHE_V2_HIT_TIME_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "alert_emails": [
       "hbambas@mozilla.com",
       "mnovotny@mozilla.com",
@@ -13140,15 +12573,6 @@
     "kind": "enumerated",
     "n_values": 7,
     "description": "Final status of the CacheFileInputStream (0=ok, 1=other error, 2=out of memory, 3=disk full, 4=file corrupted, 5=file not found, 6=binding aborted)"
-  },
-  "NETWORK_CACHE_SIZE_FULL_FAT": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "expires_in_version": "42",
-    "kind": "linear",
-    "high": 500,
-    "n_buckets": 50,
-    "description": "Size (in MB) of a cache that reached a file count limit"
   },
   "NETWORK_CACHE_HIT_MISS_STAT_PER_CACHE_SIZE": {
     "record_in_processes": ["main", "content"],
@@ -14522,7 +13946,7 @@
     "description": "Count of use of audio/video codecs in HTMLMediaElements and WebAudio. Those with 'resource' prefix are approximate; report based on HTTP ContentType or sniffing. Those with 'webaudio' prefix are for WebAudio."
   },
   "MSE_SOURCE_BUFFER_TYPE": {
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "record_in_processes": ["main", "content"],
     "alert_emails": ["media-alerts@mozilla.com"],
     "bug_numbers": [1699249, 1848211],
@@ -15167,7 +14591,7 @@
   },
   "WEBFONT_DOWNLOAD_TIME_AFTER_START": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "alert_emails": [
       "perf-telemetry-alerts@mozilla.com",
       "necko@mozilla.com",
@@ -15267,7 +14691,7 @@
   },
   "JS_PAGELOAD_EXECUTION_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15282,7 +14706,7 @@
   },
   "JS_PAGELOAD_DELAZIFICATION_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15297,7 +14721,7 @@
   },
   "JS_PAGELOAD_XDR_ENCODING_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15312,7 +14736,7 @@
   },
   "JS_PAGELOAD_BASELINE_COMPILE_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15327,7 +14751,7 @@
   },
   "JS_PAGELOAD_GC_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15342,7 +14766,7 @@
   },
   "JS_PAGELOAD_PROTECT_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15357,7 +14781,7 @@
   },
   "JS_PAGELOAD_PARSE_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -15738,7 +15162,7 @@
   },
   "CONTENT_PAINT_TIME": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com",
@@ -15754,7 +15178,7 @@
   },
   "CONTENT_FULL_PAINT_TIME": {
     "record_in_processes": ["main", "content", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com",
@@ -15770,7 +15194,7 @@
   },
   "CONTENT_FRAME_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com", "jnicol@mozilla.com"],
     "bug_numbers": [1470528, 1509536, 1584109],
     "expires_in_version": "never",
@@ -15782,7 +15206,7 @@
   },
   "CONTENT_FRAME_TIME_VSYNC": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox", "fennec"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com"
@@ -15798,7 +15222,7 @@
   },
   "CONTENT_FRAME_TIME_WITH_SVG": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com"
@@ -15813,7 +15237,7 @@
   },
   "CONTENT_FRAME_TIME_WITHOUT_RESOURCE_UPLOAD": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com"
@@ -15827,7 +15251,7 @@
   },
   "CONTENT_FRAME_TIME_WITHOUT_UPLOAD": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com"
@@ -15841,7 +15265,7 @@
   },
   "CONTENT_FRAME_TIME_REASON": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "mwoodrow@mozilla.com"
@@ -15978,7 +15402,7 @@
   },
   "TIME_TO_NON_BLANK_PAINT_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16121,7 +15545,7 @@
   },
   "TIME_TO_DOM_INTERACTIVE_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "hbambas@mozilla.com",
       "vgosu@mozilla.com",
@@ -16137,7 +15561,7 @@
   },
   "TIME_TO_DOM_CONTENT_LOADED_START_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["bdekoz@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16171,7 +15595,7 @@
   },
   "TIME_TO_DOM_CONTENT_LOADED_END_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16183,7 +15607,7 @@
   },
   "TIME_TO_DOM_COMPLETE_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "hbambas@mozilla.com",
       "vgosu@mozilla.com",
@@ -16199,7 +15623,7 @@
   },
   "TIME_TO_LOAD_EVENT_START_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["bdekoz@mozilla.com", "perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16233,7 +15657,7 @@
   },
   "TIME_TO_LOAD_EVENT_END_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16245,7 +15669,7 @@
   },
   "TIME_TO_RESPONSE_START_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["perf-telemetry-alerts@mozilla.com"],
     "expires_in_version": "never",
     "releaseChannelCollection": "opt-out",
@@ -16257,7 +15681,7 @@
   },
   "PERF_PAGE_LOAD_TIME_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16272,7 +15696,7 @@
   },
   "PERF_PAGE_LOAD_TIME_FROM_RESPONSESTART_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16285,39 +15709,9 @@
     "bug_numbers": [1671729],
     "description": "Time in milliseconds from responseStart to loadEventStart for the foreground http or https root content document."
   },
-  "PERF_DOM_CONTENT_LOADED_TIME_MS": {
-    "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
-    "alert_emails": [
-      "dpalmeiro@mozilla.com",
-      "perf-telemetry-alerts@mozilla.com"
-    ],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "exponential",
-    "high": 50000,
-    "n_buckets": 100,
-    "bug_numbers": [1671729],
-    "description": "Time in milliseconds from navigationStart to domContentLoaded for the foreground http or https root content document."
-  },
-  "PERF_DOM_CONTENT_LOADED_TIME_FROM_RESPONSESTART_MS": {
-    "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
-    "alert_emails": [
-      "dpalmeiro@mozilla.com",
-      "perf-telemetry-alerts@mozilla.com"
-    ],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "exponential",
-    "high": 50000,
-    "n_buckets": 100,
-    "bug_numbers": [1671729],
-    "description": "Time in milliseconds from responseStart to domContentLoaded for the foreground http or https root content document."
-  },
   "PERF_FIRST_CONTENTFUL_PAINT_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16332,7 +15726,7 @@
   },
   "PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16371,7 +15765,7 @@
   },
   "PERF_REQUEST_ANIMATION_CALLBACK_NON_PAGELOAD_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16386,7 +15780,7 @@
   },
   "PERF_REQUEST_ANIMATION_CALLBACK_PAGELOAD_MS": {
     "record_in_processes": ["content"],
-    "products": ["firefox", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "dpalmeiro@mozilla.com",
       "perf-telemetry-alerts@mozilla.com"
@@ -16570,8 +15964,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "releaseChannelCollection": "opt-out",
     "high": 100000,
@@ -16582,8 +15976,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "high": 50000000,
     "n_buckets": 50,
@@ -16593,8 +15987,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "releaseChannelCollection": "opt-out",
     "high": 100000,
@@ -16605,8 +15999,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "high": 50000000,
     "n_buckets": 50,
@@ -16616,8 +16010,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "releaseChannelCollection": "opt-out",
     "high": 100000,
@@ -16628,8 +16022,8 @@
     "record_in_processes": ["main"],
     "products": ["firefox"],
     "alert_emails": ["addons-dev-internal@mozilla.com"],
-    "bug_numbers": [1803363, 1850890],
-    "expires_in_version": "126",
+    "bug_numbers": [1803363, 1850890, 1881406],
+    "expires_in_version": "138",
     "kind": "exponential",
     "releaseChannelCollection": "opt-out",
     "high": 100000,
@@ -17207,7 +16601,7 @@
   },
   "WR_GPU_WAIT_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com"],
     "bug_numbers": [1772216],
     "expires_in_version": "never",
@@ -17242,7 +16636,7 @@
   },
   "WR_SCENEBUILD_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com"
@@ -17256,7 +16650,7 @@
   },
   "WR_SCENESWAP_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com"
@@ -17270,7 +16664,7 @@
   },
   "WR_FRAMEBUILD_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com"
@@ -17284,7 +16678,7 @@
   },
   "WR_RASTERIZE_GLYPHS_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "gfx-telemetry-alerts@mozilla.com",
       "jmuizelaar@mozilla.com"
@@ -17298,7 +16692,7 @@
   },
   "WR_RASTERIZE_BLOBS_TIME": {
     "record_in_processes": ["main", "gpu"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["gfx-telemetry-alerts@mozilla.com"],
     "bug_numbers": [1770974],
     "expires_in_version": "never",
@@ -17422,20 +16816,9 @@
     "alert_emails": ["jvarga@mozilla.com", "storage-telemetry@mozilla.com"],
     "description": "Time (ms) for the QuotaManager to shutdown. Keyed by conditions during shutdown, see RecordTimeDeltaHelper::Run in https://searchfox.org/mozilla-central/source/dom/quota/ActorsParent.cpp"
   },
-  "GV_CONTENT_PROCESS_LIFETIME_MS": {
-    "record_in_processes": ["main"],
-    "products": ["geckoview_streaming"],
-    "alert_emails": ["geckoview-team@mozilla.com", "asferro@mozilla.com"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 3600000,
-    "n_buckets": 100,
-    "bug_numbers": [1625325],
-    "description": "GeckoView: The uptime of content processes in ms"
-  },
   "GV_PAGE_LOAD_PROGRESS_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["geckoview-team@mozilla.com", "esawin@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -17446,7 +16829,7 @@
   },
   "GV_PAGE_LOAD_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": ["geckoview-team@mozilla.com", "esawin@mozilla.com"],
     "expires_in_version": "never",
     "kind": "exponential",
@@ -17457,7 +16840,7 @@
   },
   "GV_PAGE_RELOAD_MS": {
     "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
+    "products": ["firefox"],
     "alert_emails": [
       "geckoview-team@mozilla.com",
       "sefeng@mozilla.com",
@@ -17469,28 +16852,6 @@
     "n_buckets": 100,
     "bug_numbers": [1549519, 1580077],
     "description": "GeckoView: Time taken to reload a page in ms. This includes all static contents, no dynamic content. Loading of about: pages is not counted."
-  },
-  "GV_STARTUP_RUNTIME_MS": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec", "geckoview_streaming"],
-    "alert_emails": ["geckoview-team@mozilla.com", "esawin@mozilla.com"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 10000,
-    "n_buckets": 50,
-    "bug_numbers": [1499418, 1584109],
-    "description": "GeckoView: Time taken to initialize GeckoRuntime in ms."
-  },
-  "GV_STARTUP_MODULES_MS": {
-    "record_in_processes": ["main"],
-    "products": ["firefox", "fennec"],
-    "alert_emails": ["geckoview-team@mozilla.com", "esawin@mozilla.com"],
-    "expires_in_version": "never",
-    "kind": "exponential",
-    "high": 5000,
-    "n_buckets": 50,
-    "bug_numbers": [1499418],
-    "description": "GeckoView: Time taken to initialize all GeckoView modules in ms."
   },
   "HTTP_TRAFFIC_ANALYSIS_3": {
     "record_in_processes": ["main"],
@@ -17919,36 +17280,6 @@
     "description": "TLS handshake with and without EchConfig success rate.",
     "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
     "bug_numbers": [1682555]
-  },
-  "HTTPS_RR_PRESENTED": {
-    "record_in_processes": ["main"],
-    "products": ["firefox"],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "bug_numbers": [1686421],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "boolean",
-    "description": "HTTPS RR is presented or not."
-  },
-  "HTTPS_RR_WITH_HTTP3_PRESENTED": {
-    "record_in_processes": ["main"],
-    "products": ["firefox"],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "bug_numbers": [1686421],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "boolean",
-    "description": "Whether an HTTPS RR indicates that HTTP3 should be used."
-  },
-  "HTTPS_UPGRADE_WITH_HTTPS_RR": {
-    "record_in_processes": ["main"],
-    "products": ["firefox"],
-    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
-    "bug_numbers": [1686421],
-    "expires_in_version": "never",
-    "releaseChannelCollection": "opt-out",
-    "kind": "boolean",
-    "description": "Whether an HTTP request gets upgraded to HTTPS because HTTPS RR is presented"
   },
   "TEXT_RECOGNITION_API_PERFORMANCE": {
     "record_in_processes": ["main"],

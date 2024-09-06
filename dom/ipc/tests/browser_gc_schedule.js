@@ -15,7 +15,7 @@ async function waitForGCBegin() {
   // This fixes a ReferenceError for Date, it's weird.
   ok(Date.now(), "Date.now()");
   var when = await new Promise(resolve => {
-    observer.observe = function (subject, topic, data) {
+    observer.observe = function () {
       resolve(Date.now());
     };
 
@@ -40,7 +40,7 @@ async function waitForGCEnd() {
   // This fixes a ReferenceError for Date, it's weird.
   ok(Date.now(), "Date.now()");
   let when = await new Promise(resolve => {
-    observer.observe = function (subject, topic, data) {
+    observer.observe = function () {
       resolve(Date.now());
     };
 
@@ -87,13 +87,14 @@ function checkOneAtATime(events) {
   info("Checking order of events");
   for (const e of events) {
     ok(e.state === "begin" || e.state === "end", "event.state is good");
-    ok(e.tab !== undefined, "event.tab exists");
+    Assert.notStrictEqual(e.tab, undefined, "event.tab exists");
 
     if (lastWhen) {
       // We need these in sorted order so that the other checks here make
       // sense.
-      ok(
-        lastWhen <= e.when,
+      Assert.lessOrEqual(
+        lastWhen,
+        e.when,
         `Unsorted events, last: ${lastWhen}, this: ${e.when}`
       );
     }

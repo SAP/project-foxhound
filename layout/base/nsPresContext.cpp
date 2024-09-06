@@ -267,7 +267,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mHasEverBuiltInvisibleText(false),
       mPendingInterruptFromTest(false),
       mInterruptsEnabled(false),
-      mSendAfterPaintToContent(false),
       mDrawImageBackground(true),  // always draw the background
       mDrawColorBackground(true),
       // mNeverAnimate is initialised below, in constructor body
@@ -275,8 +274,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mCanPaginatedScroll(false),
       mDoScaledTwips(true),
       mIsRootPaginatedDocument(false),
-      mPrefBidiDirection(false),
-      mPrefScrollbarSide(0),
       mPendingThemeChanged(false),
       mPendingThemeChangeKind(0),
       mPendingUIResolutionChanged(false),
@@ -335,7 +332,6 @@ static const char* gExactCallbackPrefs[] = {
     "browser.anchor_color",
     "browser.visited_color",
     "dom.meta-viewport.enabled",
-    "dom.send_after_paint_to_content",
     "image.animation_mode",
     "intl.accept_languages",
     "layout.css.devPixelsPerPx",
@@ -435,11 +431,6 @@ void nsPresContext::GetUserPreferences() {
 
   PreferenceSheet::EnsureInitialized();
 
-  mSendAfterPaintToContent = Preferences::GetBool(
-      "dom.send_after_paint_to_content", mSendAfterPaintToContent);
-
-  mPrefScrollbarSide = Preferences::GetInt("layout.scrollbar.side");
-
   Document()->SetMayNeedFontPrefsUpdate();
 
   // * image animation
@@ -456,8 +447,7 @@ void nsPresContext::GetUserPreferences() {
 
   uint32_t bidiOptions = GetBidi();
 
-  mPrefBidiDirection = StaticPrefs::bidi_direction();
-  SET_BIDI_OPTION_DIRECTION(bidiOptions, mPrefBidiDirection);
+  SET_BIDI_OPTION_DIRECTION(bidiOptions, StaticPrefs::bidi_direction());
   SET_BIDI_OPTION_TEXTTYPE(bidiOptions, StaticPrefs::bidi_texttype());
   SET_BIDI_OPTION_NUMERAL(bidiOptions, StaticPrefs::bidi_numeral());
 
@@ -916,7 +906,6 @@ Maybe<ColorScheme> nsPresContext::GetOverriddenOrEmbedderColorScheme() const {
     case dom::PrefersColorSchemeOverride::Light:
       return Some(ColorScheme::Light);
     case dom::PrefersColorSchemeOverride::None:
-    case dom::PrefersColorSchemeOverride::EndGuard_:
       break;
   }
 
@@ -1912,13 +1901,12 @@ void nsPresContext::UIResolutionChangedInternal() {
     NotifyChildrenUIResolutionChanged(window);
   }
 
-  auto recurse = [](dom::Document& aSubDoc) {
+  mDocument->EnumerateSubDocuments([](dom::Document& aSubDoc) {
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       pc->UIResolutionChangedInternal();
     }
     return CallState::Continue;
-  };
-  mDocument->EnumerateSubDocuments(recurse);
+  });
 }
 
 void nsPresContext::EmulateMedium(nsAtom* aMediaType) {
@@ -2035,13 +2023,13 @@ void nsPresContext::MediaFeatureValuesChanged(
 
   if (aPropagation & MediaFeatureChangePropagation::SubDocuments) {
     // And then into any subdocuments.
-    auto recurse = [&aChange, aPropagation](dom::Document& aSubDoc) {
-      if (nsPresContext* pc = aSubDoc.GetPresContext()) {
-        pc->MediaFeatureValuesChanged(aChange, aPropagation);
-      }
-      return CallState::Continue;
-    };
-    mDocument->EnumerateSubDocuments(recurse);
+    mDocument->EnumerateSubDocuments(
+        [&aChange, aPropagation](dom::Document& aSubDoc) {
+          if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+            pc->MediaFeatureValuesChanged(aChange, aPropagation);
+          }
+          return CallState::Continue;
+        });
   }
 
   // We notify the media feature values changed for the responsive content of
@@ -2263,7 +2251,7 @@ void nsPresContext::FireDOMPaintEvent(
 
   nsCOMPtr<EventTarget> dispatchTarget = do_QueryInterface(ourWindow);
   nsCOMPtr<EventTarget> eventTarget = dispatchTarget;
-  if (!IsChrome() && !mSendAfterPaintToContent) {
+  if (!IsChrome() && !StaticPrefs::dom_send_after_paint_to_content()) {
     // Don't tell the window about this event, it should not know that
     // something happened in a subdocument. Tell only the chrome event handler.
     // (Events sent to the window get propagated to the chrome event handler
@@ -2473,13 +2461,12 @@ void nsPresContext::NotifyRevokingDidPaint(TransactionId aTransactionId) {
     transaction->mIsWaitingForPreviousTransaction = true;
   }
 
-  auto recurse = [&aTransactionId](dom::Document& aSubDoc) {
+  mDocument->EnumerateSubDocuments([&aTransactionId](dom::Document& aSubDoc) {
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       pc->NotifyRevokingDidPaint(aTransactionId);
     }
     return CallState::Continue;
-  };
-  mDocument->EnumerateSubDocuments(recurse);
+  });
 }
 
 void nsPresContext::NotifyDidPaintForSubtree(
@@ -2546,13 +2533,13 @@ void nsPresContext::NotifyDidPaintForSubtree(
                                     EventQueuePriority::MediumHigh);
   }
 
-  auto recurse = [&aTransactionId, &aTimeStamp](dom::Document& aSubDoc) {
-    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
-      pc->NotifyDidPaintForSubtree(aTransactionId, aTimeStamp);
-    }
-    return CallState::Continue;
-  };
-  mDocument->EnumerateSubDocuments(recurse);
+  mDocument->EnumerateSubDocuments(
+      [&aTransactionId, &aTimeStamp](dom::Document& aSubDoc) {
+        if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+          pc->NotifyDidPaintForSubtree(aTransactionId, aTimeStamp);
+        }
+        return CallState::Continue;
+      });
 }
 
 already_AddRefed<nsITimer> nsPresContext::CreateTimer(

@@ -13,22 +13,18 @@
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderClipboard:
     "resource:///modules/UrlbarProviderClipboard.sys.mjs",
+  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
 
 // This test has many subtests and can time out in verify mode.
 requestLongerTimeout(5);
-
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/browser/components/urlbar/tests/ext/browser/head.js",
-  this
-);
 
 add_setup(async function () {
   await setup();
 });
 
 add_task(async function selected_result_autofill_about() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("about:about");
     await doEnter();
 
@@ -49,7 +45,7 @@ add_task(async function selected_result_autofill_adaptive() {
     set: [["browser.urlbar.autoFill.adaptiveHistory.enabled", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesTestUtils.addVisits("https://example.com/test");
     await UrlbarUtils.addToInputHistory("https://example.com/test", "exa");
     await openPopup("exa");
@@ -70,7 +66,7 @@ add_task(async function selected_result_autofill_adaptive() {
 });
 
 add_task(async function selected_result_autofill_origin() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesTestUtils.addVisits("https://example.com/test");
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     await openPopup("exa");
@@ -89,7 +85,7 @@ add_task(async function selected_result_autofill_origin() {
 });
 
 add_task(async function selected_result_autofill_url() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesTestUtils.addVisits("https://example.com/test");
     await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
     await openPopup("https://example.com/test");
@@ -108,7 +104,7 @@ add_task(async function selected_result_autofill_url() {
 });
 
 add_task(async function selected_result_bookmark() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesUtils.bookmarks.insert({
       parentGuid: PlacesUtils.bookmarks.unfiledGuid,
       url: "https://example.com/bookmark",
@@ -136,7 +132,7 @@ add_task(async function selected_result_history() {
     set: [["browser.urlbar.autoFill", false]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesTestUtils.addVisits("https://example.com/test");
 
     await openPopup("example");
@@ -158,7 +154,7 @@ add_task(async function selected_result_history() {
 });
 
 add_task(async function selected_result_keyword() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await PlacesUtils.keywords.insert({
       keyword: "keyword",
       url: "https://example.com/?q=%s",
@@ -182,7 +178,7 @@ add_task(async function selected_result_keyword() {
 });
 
 add_task(async function selected_result_search_engine() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("x");
     await doEnter();
 
@@ -206,7 +202,7 @@ add_task(async function selected_result_search_suggest() {
     ],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("foo");
     await selectRowByURL("http://mochi.test:8888/?terms=foofoo");
     await doEnter();
@@ -233,7 +229,7 @@ add_task(async function selected_result_search_history() {
     ],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await UrlbarTestUtils.formHistory.add(["foofoo", "foobar"]);
 
     await openPopup("foo");
@@ -255,7 +251,7 @@ add_task(async function selected_result_search_history() {
 });
 
 add_task(async function selected_result_url() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("https://example.com/");
     await doEnter();
 
@@ -272,7 +268,7 @@ add_task(async function selected_result_url() {
 });
 
 add_task(async function selected_result_action() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await showResultByArrowDown();
     await selectRowByProvider("quickactions");
     const onLoad = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
@@ -294,7 +290,7 @@ add_task(async function selected_result_action() {
 add_task(async function selected_result_tab() {
   const tab = BrowserTestUtils.addTab(gBrowser, "https://example.com/");
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("example");
     await selectRowByProvider("Places");
     EventUtils.synthesizeKey("KEY_Enter");
@@ -317,7 +313,7 @@ add_task(async function selected_result_tab() {
 add_task(async function selected_result_remote_tab() {
   const remoteTab = await loadRemoteTab("https://example.com");
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("example");
     await selectRowByProvider("RemoteTabs");
     await doEnter();
@@ -340,7 +336,7 @@ add_task(async function selected_result_addon() {
   const addon = loadOmniboxAddon({ keyword: "omni" });
   await addon.startup();
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("omni test");
     await doEnter();
 
@@ -368,7 +364,7 @@ add_task(async function selected_result_tab_to_search() {
     search_url: "https://mozengine/",
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     for (let i = 0; i < 3; i++) {
       await PlacesTestUtils.addVisits(["https://mozengine/"]);
     }
@@ -394,7 +390,7 @@ add_task(async function selected_result_tab_to_search() {
 });
 
 add_task(async function selected_result_top_site() {
-  await doTest(async browser => {
+  await doTest(async () => {
     await addTopSites("https://example.com/");
     await showResultByArrowDown();
     await selectRowByURL("https://example.com/");
@@ -417,7 +413,7 @@ add_task(async function selected_result_calc() {
     set: [["browser.urlbar.suggest.calculator", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("8*8");
     await selectRowByProvider("calculator");
     await SimpleTest.promiseClipboardChange("64", () => {
@@ -449,7 +445,7 @@ add_task(async function selected_result_clipboard() {
     "https://example.com/selected_result_clipboard"
   );
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("");
     await selectRowByProvider("UrlbarProviderClipboard");
     await doEnter();
@@ -475,7 +471,7 @@ add_task(async function selected_result_unit() {
     set: [["browser.urlbar.unitConversion.enabled", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("1m to cm");
     await selectRowByProvider("UnitConversion");
     await SimpleTest.promiseClipboardChange("100 cm", () => {
@@ -501,7 +497,7 @@ add_task(async function selected_result_site_specific_contextual_search() {
     set: [["browser.urlbar.contextualSearch.enabled", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     const extension = await SearchTestUtils.installSearchExtension(
       {
         name: "Contextual",
@@ -540,77 +536,12 @@ add_task(async function selected_result_site_specific_contextual_search() {
   await SpecialPowers.popPrefEnv();
 });
 
-add_task(async function selected_result_experimental_addon() {
-  const extension = await loadExtension({
-    background: async () => {
-      browser.experiments.urlbar.addDynamicResultType("testDynamicType");
-      browser.experiments.urlbar.addDynamicViewTemplate("testDynamicType", {
-        children: [
-          {
-            name: "text",
-            tag: "span",
-            attributes: {
-              role: "button",
-            },
-          },
-        ],
-      });
-      browser.urlbar.onBehaviorRequested.addListener(query => {
-        return "active";
-      }, "testProvider");
-      browser.urlbar.onResultsRequested.addListener(query => {
-        return [
-          {
-            type: "dynamic",
-            source: "local",
-            payload: {
-              dynamicType: "testDynamicType",
-            },
-          },
-        ];
-      }, "testProvider");
-      browser.experiments.urlbar.onViewUpdateRequested.addListener(payload => {
-        return {
-          text: {
-            textContent: "This is a dynamic result.",
-          },
-        };
-      }, "testProvider");
-    },
-  });
-
-  await TestUtils.waitForCondition(
-    () =>
-      UrlbarProvidersManager.getProvider("testProvider") &&
-      UrlbarResult.getDynamicResultType("testDynamicType"),
-    "Waiting for provider and dynamic type to be registered"
-  );
-
-  await doTest(async browser => {
-    await openPopup("test");
-    EventUtils.synthesizeKey("KEY_ArrowDown");
-    await UrlbarTestUtils.promisePopupClose(window, () =>
-      EventUtils.synthesizeKey("KEY_Enter")
-    );
-
-    assertEngagementTelemetry([
-      {
-        selected_result: "experimental_addon",
-        selected_result_subtype: "",
-        selected_position: 2,
-        provider: "testProvider",
-        results: "search_engine,experimental_addon",
-      },
-    ]);
-  });
-
-  await extension.unload();
-});
-
 add_task(async function selected_result_rs_adm_sponsored() {
-  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+  const cleanupQuickSuggest = await ensureQuickSuggestInit({
+    prefs: [["quicksuggest.rustEnabled", false]],
+  });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("sponsored");
     await selectRowByURL("https://example.com/sponsored");
     await doEnter();
@@ -630,9 +561,11 @@ add_task(async function selected_result_rs_adm_sponsored() {
 });
 
 add_task(async function selected_result_rs_adm_nonsponsored() {
-  const cleanupQuickSuggest = await ensureQuickSuggestInit();
+  const cleanupQuickSuggest = await ensureQuickSuggestInit({
+    prefs: [["quicksuggest.rustEnabled", false]],
+  });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("nonsponsored");
     await selectRowByURL("https://example.com/nonsponsored");
     await doEnter();
@@ -662,13 +595,13 @@ add_task(async function selected_result_input_field() {
     },
   ];
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await doDropAndGo("example.com");
 
     assertEngagementTelemetry(expected);
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await doPasteAndGo("example.com");
 
     assertEngagementTelemetry(expected);
@@ -683,9 +616,12 @@ add_task(async function selected_result_weather() {
   const cleanupQuickSuggest = await ensureQuickSuggestInit();
   await MerinoTestUtils.initWeather();
 
-  await doTest(async browser => {
+  let provider = UrlbarPrefs.get("quickSuggestRustEnabled")
+    ? "UrlbarProviderQuickSuggest"
+    : "Weather";
+  await doTest(async () => {
     await openPopup(MerinoTestUtils.WEATHER_KEYWORD);
-    await selectRowByProvider("Weather");
+    await selectRowByProvider(provider);
     await doEnter();
 
     assertEngagementTelemetry([
@@ -693,7 +629,7 @@ add_task(async function selected_result_weather() {
         selected_result: "weather",
         selected_result_subtype: "",
         selected_position: 2,
-        provider: "Weather",
+        provider,
         results: "search_engine,weather",
       },
     ]);
@@ -718,7 +654,7 @@ add_task(async function selected_result_navigational() {
     ],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("only match the Merino suggestion");
     await selectRowByProvider("UrlbarProviderQuickSuggest");
     await doEnter();
@@ -753,7 +689,7 @@ add_task(async function selected_result_dynamic_wikipedia() {
     ],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("only match the Merino suggestion");
     await selectRowByProvider("UrlbarProviderQuickSuggest");
     await doEnter();
@@ -773,7 +709,7 @@ add_task(async function selected_result_dynamic_wikipedia() {
 });
 
 add_task(async function selected_result_search_shortcut_button() {
-  await doTest(async browser => {
+  await doTest(async () => {
     const oneOffSearchButtons = UrlbarTestUtils.getOneOffSearchButtons(window);
     await openPopup("x");
     Assert.ok(!oneOffSearchButtons.selectedButton);
@@ -821,31 +757,78 @@ add_task(async function selected_result_trending() {
   });
 
   let defaultEngine = await Services.search.getDefault();
-  let extension = await SearchTestUtils.installSearchExtension(
-    {
-      name: "mozengine",
-      search_url: "https://example.org/",
-    },
-    { setAsDefault: true, skipUnload: true }
-  );
+  let extension;
+  if (!SearchUtils.newSearchConfigEnabled) {
+    extension = await SearchTestUtils.installSearchExtension(
+      {
+        name: "mozengine",
+        search_url: "https://example.org/",
+      },
+      { setAsDefault: true, skipUnload: true }
+    );
+  }
 
   SearchTestUtils.useMockIdleService();
-  await SearchTestUtils.updateRemoteSettingsConfig([
-    {
-      webExtension: { id: "mozengine@tests.mozilla.org" },
-      urls: {
-        trending: {
-          fullPath:
-            "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs",
-          query: "",
-        },
-      },
-      appliesTo: [{ included: { everywhere: true } }],
-      default: "yes",
-    },
-  ]);
+  await SearchTestUtils.updateRemoteSettingsConfig(
+    SearchUtils.newSearchConfigEnabled
+      ? [
+          {
+            recordType: "engine",
+            identifier: "mozengine",
+            base: {
+              name: "mozengine",
+              urls: {
+                search: {
+                  base: "https://example.org/",
+                  searchTermParamName: "q",
+                },
+                trending: {
+                  base: "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs",
+                  method: "GET",
+                },
+              },
+            },
+            variants: [
+              {
+                environment: { allRegionsAndLocales: true },
+              },
+            ],
+          },
+          {
+            recordType: "defaultEngines",
+            globalDefault: "mozengine",
+            specificDefaults: [],
+          },
+          {
+            recordType: "engineOrders",
+            orders: [],
+          },
+        ]
+      : [
+          {
+            webExtension: { id: "mozengine@tests.mozilla.org" },
+            urls: {
+              trending: {
+                fullPath:
+                  "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs",
+                query: "",
+              },
+            },
+            appliesTo: [{ included: { everywhere: true } }],
+            default: "yes",
+          },
+        ]
+  );
 
-  await doTest(async browser => {
+  if (SearchUtils.newSearchConfigEnabled) {
+    let engine = Services.search.getEngineByName("mozengine");
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
+  }
+
+  await doTest(async () => {
     await openPopup("");
     await selectRowByProvider("SearchSuggestions");
     await doEnter();
@@ -861,7 +844,13 @@ add_task(async function selected_result_trending() {
     ]);
   });
 
-  await extension.unload();
+  if (SearchUtils.newSearchConfigEnabled) {
+    let engine = Services.search.getEngineByName("mozengine");
+    await Services.search.removeEngine(engine);
+  } else {
+    await extension.unload();
+  }
+
   await Services.search.setDefault(
     defaultEngine,
     Ci.nsISearchService.CHANGE_REASON_UNKNOWN
@@ -888,31 +877,84 @@ add_task(async function selected_result_trending_rich() {
   });
 
   let defaultEngine = await Services.search.getDefault();
-  let extension = await SearchTestUtils.installSearchExtension(
-    {
-      name: "mozengine",
-      search_url: "https://example.org/",
-    },
-    { setAsDefault: true, skipUnload: true }
-  );
+  let extension;
+  if (!SearchUtils.newSearchConfigEnabled) {
+    extension = await SearchTestUtils.installSearchExtension(
+      {
+        name: "mozengine",
+        search_url: "https://example.org/",
+      },
+      { setAsDefault: true, skipUnload: true }
+    );
+  }
 
   SearchTestUtils.useMockIdleService();
-  await SearchTestUtils.updateRemoteSettingsConfig([
-    {
-      webExtension: { id: "mozengine@tests.mozilla.org" },
-      urls: {
-        trending: {
-          fullPath:
-            "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs?richsuggestions=true",
-          query: "",
-        },
-      },
-      appliesTo: [{ included: { everywhere: true } }],
-      default: "yes",
-    },
-  ]);
+  await SearchTestUtils.updateRemoteSettingsConfig(
+    SearchUtils.newSearchConfigEnabled
+      ? [
+          {
+            recordType: "engine",
+            identifier: "mozengine",
+            base: {
+              name: "mozengine",
+              urls: {
+                search: {
+                  base: "https://example.org/",
+                  searchTermParamName: "q",
+                },
+                trending: {
+                  base: "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs",
+                  method: "GET",
+                  params: [
+                    {
+                      name: "richsuggestions",
+                      value: "true",
+                    },
+                  ],
+                },
+              },
+            },
+            variants: [
+              {
+                environment: { allRegionsAndLocales: true },
+              },
+            ],
+          },
+          {
+            recordType: "defaultEngines",
+            globalDefault: "mozengine",
+            specificDefaults: [],
+          },
+          {
+            recordType: "engineOrders",
+            orders: [],
+          },
+        ]
+      : [
+          {
+            webExtension: { id: "mozengine@tests.mozilla.org" },
+            urls: {
+              trending: {
+                fullPath:
+                  "https://example.com/browser/browser/components/search/test/browser/trendingSuggestionEngine.sjs?richsuggestions=true",
+                query: "",
+              },
+            },
+            appliesTo: [{ included: { everywhere: true } }],
+            default: "yes",
+          },
+        ]
+  );
 
-  await doTest(async browser => {
+  if (SearchUtils.newSearchConfigEnabled) {
+    let engine = Services.search.getEngineByName("mozengine");
+    await Services.search.setDefault(
+      engine,
+      Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    );
+  }
+
+  await doTest(async () => {
     await openPopup("");
     await selectRowByProvider("SearchSuggestions");
     await doEnter();
@@ -928,7 +970,13 @@ add_task(async function selected_result_trending_rich() {
     ]);
   });
 
-  await extension.unload();
+  if (SearchUtils.newSearchConfigEnabled) {
+    let engine = Services.search.getEngineByName("mozengine");
+    await Services.search.removeEngine(engine);
+  } else {
+    await extension.unload();
+  }
+
   await Services.search.setDefault(
     defaultEngine,
     Ci.nsISearchService.CHANGE_REASON_UNKNOWN
@@ -970,7 +1018,7 @@ add_task(async function selected_result_addons() {
     ],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("only match the Merino suggestion");
     await selectRowByProvider("UrlbarProviderQuickSuggest");
     await doEnter();
@@ -995,7 +1043,7 @@ add_task(async function selected_result_rust_adm_sponsored() {
     prefs: [["quicksuggest.rustEnabled", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("sponsored");
     await selectRowByURL("https://example.com/sponsored");
     await doEnter();
@@ -1019,7 +1067,7 @@ add_task(async function selected_result_rust_adm_nonsponsored() {
     prefs: [["quicksuggest.rustEnabled", true]],
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await openPopup("nonsponsored");
     await selectRowByURL("https://example.com/nonsponsored");
     await doEnter();

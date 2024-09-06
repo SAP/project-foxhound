@@ -20,17 +20,49 @@ add_setup(async function setUpQuickSuggestXpcshellTest() {
   UrlbarPrefs._testSkipTelemetryEnvironmentInit = true;
 });
 
+let gAddTasksWithRustSetup;
+
 /**
  * Adds two tasks: One with the Rust backend disabled and one with it enabled.
  * The names of the task functions will be the name of the passed-in task
- * function appended with "_rustDisabled" and "_rustEnabled" respectively. Call
- * with the usual `add_task()` arguments.
+ * function appended with "_rustDisabled" and "_rustEnabled". If the passed-in
+ * task doesn't have a name, "anonymousTask" will be used.
+ *
+ * Call this with the usual `add_task()` arguments. Additionally, an object with
+ * the following properties can be specified as any argument:
+ *
+ * {boolean} skip_if_rust_enabled
+ *   If true, a "_rustEnabled" task won't be added. Useful when Rust is enabled
+ *   by default but the task doesn't make sense with Rust and you still want to
+ *   test some behavior when Rust is disabled.
+ *
+ * @param {...any} args
+ *   The usual `add_task()` arguments.
  */
 function add_tasks_with_rust(...args) {
+  let skipIfRustEnabled = false;
+  let i = args.findIndex(a => a.skip_if_rust_enabled);
+  if (i >= 0) {
+    skipIfRustEnabled = true;
+    args.splice(i, 1);
+  }
+
   let taskFnIndex = args.findIndex(a => typeof a == "function");
   let taskFn = args[taskFnIndex];
 
   for (let rustEnabled of [false, true]) {
+    let newTaskName =
+      (taskFn.name || "anonymousTask") +
+      (rustEnabled ? "_rustEnabled" : "_rustDisabled");
+
+    if (rustEnabled && skipIfRustEnabled) {
+      info(
+        "add_tasks_with_rust: Skipping due to skip_if_rust_enabled: " +
+          newTaskName
+      );
+      continue;
+    }
+
     let newTaskFn = async (...taskFnArgs) => {
       info("add_tasks_with_rust: Setting rustEnabled: " + rustEnabled);
       UrlbarPrefs.set("quicksuggest.rustEnabled", rustEnabled);
@@ -40,6 +72,12 @@ function add_tasks_with_rust(...args) {
       info("add_tasks_with_rust: Forcing sync");
       await QuickSuggestTestUtils.forceSync();
       info("add_tasks_with_rust: Done forcing sync");
+
+      if (gAddTasksWithRustSetup) {
+        info("add_tasks_with_rust: Calling setup function");
+        await gAddTasksWithRustSetup();
+        info("add_tasks_with_rust: Done calling setup function");
+      }
 
       let rv;
       try {
@@ -76,13 +114,33 @@ function add_tasks_with_rust(...args) {
       return rv;
     };
 
-    Object.defineProperty(newTaskFn, "name", {
-      value: taskFn.name + (rustEnabled ? "_rustEnabled" : "_rustDisabled"),
-    });
-    let addTaskArgs = [...args];
-    addTaskArgs[taskFnIndex] = newTaskFn;
+    Object.defineProperty(newTaskFn, "name", { value: newTaskName });
+
+    let addTaskArgs = [];
+    for (let j = 0; j < args.length; j++) {
+      addTaskArgs[j] =
+        j == taskFnIndex
+          ? newTaskFn
+          : Cu.cloneInto(args[j], this, { cloneFunctions: true });
+    }
     add_task(...addTaskArgs);
   }
+}
+
+/**
+ * Registers a setup function that `add_tasks_with_rust()` will await before
+ * calling each of your original tasks. Call this at most once in your test file
+ * (i.e., in `add_setup()`). This is useful when enabling/disabling Rust has
+ * side effects related to your particular test that need to be handled or
+ * awaited for each of your tasks. On the other hand, if only one or two of your
+ * tasks need special setup, do it directly in those tasks instead of using
+ * this.
+ *
+ * @param {Function} setupFn
+ *   A function that will be awaited before your original tasks are called.
+ */
+function registerAddTasksWithRustSetup(setupFn) {
+  gAddTasksWithRustSetup = setupFn;
 }
 
 /**
@@ -103,7 +161,7 @@ function makeWikipediaResult({
   iconBlob = new Blob([new Uint8Array([])]),
   impressionUrl = "http://example.com/wikipedia-impression",
   clickUrl = "http://example.com/wikipedia-click",
-  blockId = 1,
+  blockId = 2,
   advertiser = "Wikipedia",
   iabCategory = "5 - Education",
   suggestedIndex = -1,
@@ -165,7 +223,7 @@ function makeAmpResult({
   source,
   provider,
   keyword = "amp",
-  title = "AMP Suggestion",
+  title = "Amp Suggestion",
   url = "http://example.com/amp",
   originalUrl = "http://example.com/amp",
   icon = null,
@@ -177,6 +235,7 @@ function makeAmpResult({
   iabCategory = "22 - Shopping",
   suggestedIndex = -1,
   isSuggestedIndexRelativeToGroup = true,
+  requestId = undefined,
 } = {}) {
   let result = {
     suggestedIndex,
@@ -188,6 +247,7 @@ function makeAmpResult({
       title,
       url,
       originalUrl,
+      requestId,
       displayUrl: url.replace(/^https:\/\//, ""),
       isSponsored: true,
       qsSuggestion: keyword,
@@ -212,11 +272,178 @@ function makeAmpResult({
   if (UrlbarPrefs.get("quickSuggestRustEnabled")) {
     result.payload.source = source || "rust";
     result.payload.provider = provider || "Amp";
-    result.payload.iconBlob = iconBlob;
+    if (result.payload.source == "rust") {
+      result.payload.iconBlob = iconBlob;
+    } else {
+      result.payload.icon = icon;
+    }
   } else {
     result.payload.source = source || "remote-settings";
     result.payload.provider = provider || "AdmWikipedia";
     result.payload.icon = icon;
+  }
+
+  return result;
+}
+
+/**
+ * Returns an expected MDN result that can be passed to `check_results()`
+ * regardless of whether the Rust backend is enabled.
+ *
+ * @returns {object}
+ *   An object that can be passed to `check_results()`.
+ */
+function makeMdnResult({ url, title, description }) {
+  let finalUrl = new URL(url);
+  finalUrl.searchParams.set("utm_medium", "firefox-desktop");
+  finalUrl.searchParams.set("utm_source", "firefox-suggest");
+  finalUrl.searchParams.set(
+    "utm_campaign",
+    "firefox-mdn-web-docs-suggestion-experiment"
+  );
+  finalUrl.searchParams.set("utm_content", "treatment");
+
+  let result = {
+    isBestMatch: true,
+    suggestedIndex: 1,
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
+    heuristic: false,
+    payload: {
+      telemetryType: "mdn",
+      title,
+      url: finalUrl.href,
+      originalUrl: url,
+      displayUrl: finalUrl.href.replace(/^https:\/\//, ""),
+      description,
+      icon: "chrome://global/skin/icons/mdn.svg",
+      shouldShowUrl: true,
+      bottomTextL10n: { id: "firefox-suggest-mdn-bottom-text" },
+    },
+  };
+
+  if (UrlbarPrefs.get("quickSuggestRustEnabled")) {
+    result.payload.source = "rust";
+    result.payload.provider = "Mdn";
+  } else {
+    result.payload.source = "remote-settings";
+    result.payload.provider = "MDNSuggestions";
+  }
+
+  return result;
+}
+
+/**
+ * Returns an expected AMO (addons) result that can be passed to
+ * `check_results()` regardless of whether the Rust backend is enabled.
+ *
+ * @returns {object}
+ *   An object that can be passed to `check_results()`.
+ */
+function makeAmoResult({
+  source,
+  provider,
+  title = "Amo Suggestion",
+  description = "Amo description",
+  url = "http://example.com/amo",
+  originalUrl = "http://example.com/amo",
+  icon = null,
+  setUtmParams = true,
+}) {
+  if (setUtmParams) {
+    url = new URL(url);
+    url.searchParams.set("utm_medium", "firefox-desktop");
+    url.searchParams.set("utm_source", "firefox-suggest");
+    url = url.href;
+  }
+
+  let result = {
+    isBestMatch: true,
+    suggestedIndex: 1,
+    type: UrlbarUtils.RESULT_TYPE.URL,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    heuristic: false,
+    payload: {
+      source,
+      provider,
+      title,
+      description,
+      url,
+      originalUrl,
+      icon,
+      displayUrl: url.replace(/^https:\/\//, ""),
+      shouldShowUrl: true,
+      bottomTextL10n: { id: "firefox-suggest-addons-recommended" },
+      helpUrl: QuickSuggest.HELP_URL,
+      telemetryType: "amo",
+    },
+  };
+
+  if (UrlbarPrefs.get("quickSuggestRustEnabled")) {
+    result.payload.source = source || "rust";
+    result.payload.provider = provider || "Amo";
+  } else {
+    result.payload.source = source || "remote-settings";
+    result.payload.provider = provider || "AddonSuggestions";
+  }
+
+  return result;
+}
+
+/**
+ * Returns an expected weather result that can be passed to `check_results()`
+ * regardless of whether the Rust backend is enabled.
+ *
+ * @returns {object}
+ *   An object that can be passed to `check_results()`.
+ */
+function makeWeatherResult({
+  source,
+  provider,
+  telemetryType = undefined,
+  temperatureUnit = undefined,
+} = {}) {
+  if (!temperatureUnit) {
+    temperatureUnit =
+      Services.locale.regionalPrefsLocales[0] == "en-US" ? "f" : "c";
+  }
+
+  let result = {
+    type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+    heuristic: false,
+    suggestedIndex: 1,
+    payload: {
+      temperatureUnit,
+      url: MerinoTestUtils.WEATHER_SUGGESTION.url,
+      iconId: "6",
+      requestId: MerinoTestUtils.server.response.body.request_id,
+      source: "merino",
+      provider: "accuweather",
+      dynamicType: "weather",
+      city: MerinoTestUtils.WEATHER_SUGGESTION.city_name,
+      temperature:
+        MerinoTestUtils.WEATHER_SUGGESTION.current_conditions.temperature[
+          temperatureUnit
+        ],
+      currentConditions:
+        MerinoTestUtils.WEATHER_SUGGESTION.current_conditions.summary,
+      forecast: MerinoTestUtils.WEATHER_SUGGESTION.forecast.summary,
+      high: MerinoTestUtils.WEATHER_SUGGESTION.forecast.high[temperatureUnit],
+      low: MerinoTestUtils.WEATHER_SUGGESTION.forecast.low[temperatureUnit],
+      shouldNavigate: true,
+    },
+  };
+
+  if (UrlbarPrefs.get("quickSuggestRustEnabled")) {
+    result.payload.source = source || "rust";
+    result.payload.provider = provider || "Weather";
+    if (telemetryType !== null) {
+      result.payload.telemetryType = telemetryType || "weather";
+    }
+  } else {
+    result.payload.source = source || "merino";
+    result.payload.provider = provider || "accuweather";
   }
 
   return result;
@@ -449,8 +676,13 @@ async function doMigrateTest({
  *   The name of the Nimbus variable that stores the "show less frequently" cap
  *   being tested.
  * @param {object} options.keyword
- *   The primary keyword to use during the test. It must contain more than one
- *   word, and it must have at least two chars after the first space.
+ *   The primary keyword to use during the test.
+ * @param {number} options.keywordBaseIndex
+ *   The index in `keyword` to base substring checks around. This function will
+ *   test substrings starting at the beginning of keyword and ending at the
+ *   following indexes: one index before `keywordBaseIndex`,
+ *   `keywordBaseIndex`, `keywordBaseIndex` + 1, `keywordBaseIndex` + 2, and
+ *   `keywordBaseIndex` + 3.
  */
 async function doShowLessFrequentlyTests({
   feature,
@@ -458,18 +690,19 @@ async function doShowLessFrequentlyTests({
   showLessFrequentlyCountPref,
   nimbusCapVariable,
   keyword,
+  keywordBaseIndex = keyword.indexOf(" "),
 }) {
   // Do some sanity checks on the keyword. Any checks that fail are errors in
   // the test.
-  let spaceIndex = keyword.indexOf(" ");
-  if (spaceIndex < 0) {
-    throw new Error("keyword must contain a space");
+  if (keywordBaseIndex <= 0) {
+    throw new Error(
+      "keywordBaseIndex must be > 0, but it's " + keywordBaseIndex
+    );
   }
-  if (spaceIndex == 0) {
-    throw new Error("keyword must not start with a space");
-  }
-  if (keyword.length < spaceIndex + 3) {
-    throw new Error("keyword must have at least two chars after the space");
+  if (keyword.length < keywordBaseIndex + 3) {
+    throw new Error(
+      "keyword must have at least two chars after keywordBaseIndex"
+    );
   }
 
   let tests = [
@@ -477,32 +710,32 @@ async function doShowLessFrequentlyTests({
       showLessFrequentlyCount: 0,
       canShowLessFrequently: true,
       newSearches: {
-        [keyword.substring(0, spaceIndex - 1)]: false,
-        [keyword.substring(0, spaceIndex)]: true,
-        [keyword.substring(0, spaceIndex + 1)]: true,
-        [keyword.substring(0, spaceIndex + 2)]: true,
-        [keyword.substring(0, spaceIndex + 3)]: true,
+        [keyword.substring(0, keywordBaseIndex - 1)]: false,
+        [keyword.substring(0, keywordBaseIndex)]: true,
+        [keyword.substring(0, keywordBaseIndex + 1)]: true,
+        [keyword.substring(0, keywordBaseIndex + 2)]: true,
+        [keyword.substring(0, keywordBaseIndex + 3)]: true,
       },
     },
     {
       showLessFrequentlyCount: 1,
       canShowLessFrequently: true,
       newSearches: {
-        [keyword.substring(0, spaceIndex)]: false,
+        [keyword.substring(0, keywordBaseIndex)]: false,
       },
     },
     {
       showLessFrequentlyCount: 2,
       canShowLessFrequently: true,
       newSearches: {
-        [keyword.substring(0, spaceIndex + 1)]: false,
+        [keyword.substring(0, keywordBaseIndex + 1)]: false,
       },
     },
     {
       showLessFrequentlyCount: 3,
       canShowLessFrequently: false,
       newSearches: {
-        [keyword.substring(0, spaceIndex + 2)]: false,
+        [keyword.substring(0, keywordBaseIndex + 2)]: false,
       },
     },
     {
@@ -512,19 +745,16 @@ async function doShowLessFrequentlyTests({
     },
   ];
 
-  // The Rust implementation doesn't support the remote settings config.
-  if (!UrlbarPrefs.get("quicksuggest.rustEnabled")) {
-    info("Testing 'show less frequently' with cap in remote settings");
-    await doOneShowLessFrequentlyTest({
-      tests,
-      feature,
-      expectedResult,
-      showLessFrequentlyCountPref,
-      rs: {
-        show_less_frequently_cap: 3,
-      },
-    });
-  }
+  info("Testing 'show less frequently' with cap in remote settings");
+  await doOneShowLessFrequentlyTest({
+    tests,
+    feature,
+    expectedResult,
+    showLessFrequentlyCountPref,
+    rs: {
+      show_less_frequently_cap: 3,
+    },
+  });
 
   // Nimbus should override remote settings.
   info("Testing 'show less frequently' with cap in Nimbus and remote settings");
@@ -732,4 +962,41 @@ async function doRustProvidersTests({ searchString, tests }) {
   info("Clearing rustEnabled pref and forcing sync");
   UrlbarPrefs.clear("quicksuggest.rustEnabled");
   await QuickSuggestTestUtils.forceSync();
+}
+
+/**
+ * Waits for `Weather` to start and finish a new fetch. Typically you call this
+ * before you know a new fetch will start, save but don't await the promise, do
+ * the thing that triggers the new fetch, and then await the promise to wait for
+ * the fetch to finish.
+ *
+ * If a fetch is currently ongoing, this will first wait for a new fetch to
+ * start, which might not be what you want. If you only want to wait for any
+ * ongoing fetch to finish, await `QuickSuggest.weather.fetchPromise` instead.
+ */
+async function waitForNewWeatherFetch() {
+  let { fetchPromise: oldFetchPromise } = QuickSuggest.weather;
+
+  // Wait for a new fetch to start.
+  let newFetchPromise;
+  await TestUtils.waitForCondition(() => {
+    let { fetchPromise } = QuickSuggest.weather;
+    if (
+      (oldFetchPromise && fetchPromise != oldFetchPromise) ||
+      (!oldFetchPromise && fetchPromise)
+    ) {
+      newFetchPromise = fetchPromise;
+      return true;
+    }
+    return false;
+  }, "Waiting for a new weather fetch to start");
+
+  Assert.equal(
+    QuickSuggest.weather.fetchPromise,
+    newFetchPromise,
+    "Sanity check: fetchPromise hasn't changed since waitForCondition returned"
+  );
+
+  // Wait for the new fetch to finish.
+  await newFetchPromise;
 }

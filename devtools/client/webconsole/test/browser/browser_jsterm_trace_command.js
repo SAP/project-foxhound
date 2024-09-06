@@ -11,7 +11,7 @@ const TEST_URI = `data:text/html;charset=utf-8,<!DOCTYPE html>
   <div>
     <h1>Testing trace command</h1>
     <script>
-    function main() {}
+    function main() { return 42; }
     function someNoise() {}
     </script>
   </div>
@@ -44,10 +44,13 @@ add_task(async function testBasicRecord() {
   // Instead a JSTRACER_STATE resource logs a console-api message.
   msg = await evaluateExpressionInConsole(
     hud,
-    ":trace --logMethod console --prefix foo --values --on-next-interaction",
+    ":trace --logMethod console --prefix foo --returns --values --on-next-interaction",
     "console-api"
   );
-  is(msg.textContent.trim(), "Started tracing to Web Console");
+  is(
+    msg.textContent.trim(),
+    "Waiting for next user interaction before tracing (next mousedown or keydown event)"
+  );
 
   info("Trigger some code before the user interaction");
   await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
@@ -62,14 +65,25 @@ add_task(async function testBasicRecord() {
     content.wrappedJSObject.main("arg", 2);
   });
 
+  info("Ensure a message notified about the tracer actual start");
+  await waitFor(
+    () => !!findConsoleAPIMessage(hud, `Started tracing to Web Console`)
+  );
+
   // Assert that we also see the custom prefix, as well as function arguments
   await waitFor(
-    () => !!findTracerMessages(hud, `foo: interpreter⟶λ main("arg", 2)`).length
+    () =>
+      !!findTracerMessages(hud, `foo: ⟶ interpreter λ main("arg", 2)`).length
   );
   is(
     findTracerMessages(hud, `someNoise`).length,
     0,
     "The code running before the key press should not be traced"
+  );
+  await waitFor(
+    () => !!findTracerMessages(hud, `foo: ⟵ λ main return 42`).length,
+
+    "Got the function returns being logged, with the returned value"
   );
 
   // But now that the tracer is active, we will be able to log this call to someNoise
@@ -77,7 +91,7 @@ add_task(async function testBasicRecord() {
     content.wrappedJSObject.someNoise();
   });
   await waitFor(
-    () => !!findTracerMessages(hud, `foo: interpreter⟶λ someNoise()`).length
+    () => !!findTracerMessages(hud, `foo: ⟶ interpreter λ someNoise()`).length
   );
 
   info("Test toggling the tracer OFF");
@@ -87,7 +101,7 @@ add_task(async function testBasicRecord() {
   info("Clear past traces");
   hud.ui.clearOutput();
   await waitFor(
-    () => !findTracerMessages(hud, `foo: interpreter⟶λ main("arg", 2)`).length
+    () => !findTracerMessages(hud, `foo: ⟶ interpreter λ main("arg", 2)`).length
   );
   ok("Console was cleared");
 
@@ -97,10 +111,10 @@ add_task(async function testBasicRecord() {
   });
 
   // Let some time for traces to appear
-  await wait(1000);
+  await wait(500);
 
   ok(
-    !findTracerMessages(hud, `foo: interpreter⟶λ main("arg", 2)`).length,
+    !findTracerMessages(hud, `foo: ⟶ interpreter λ main("arg", 2)`).length,
     "We really stopped recording traces, and no trace appear in the console"
   );
 });
@@ -205,4 +219,146 @@ add_task(async function testLimitedRecord() {
   await waitFor(() => !!findTracerMessages(hud, `λ foo3`).length);
   await waitFor(() => !!findTracerMessages(hud, `λ bar`).length);
   ok(true, "All traces were printed to console");
+});
+
+add_task(async function testDOMMutations() {
+  await pushPref("devtools.debugger.features.javascript-tracing", true);
+
+  const testScript = `/* this will be line 1 */
+  function add() {
+    const element = document.createElement("hr");
+    document.body.appendChild(element);
+  }
+  function attributes() {
+    document.querySelector("hr").setAttribute("hidden", "true");
+  }
+  function remove() {
+    document.querySelector("hr").remove();
+  }
+  /* Fake a real file name for this inline script */
+  //# sourceURL=fake.js
+  `;
+  const hud = await openNewTabAndConsole(
+    `data:text/html,test-page<script>${encodeURIComponent(testScript)}</script>`
+  );
+  ok(hud, "web console opened");
+
+  let msg = await evaluateExpressionInConsole(
+    hud,
+    ":trace --dom-mutations foo",
+    "console-api"
+  );
+  is(
+    msg.textContent.trim(),
+    ":trace --dom-mutations only accept a list of strings whose values can be: add,attributes,remove"
+  );
+
+  msg = await evaluateExpressionInConsole(
+    hud,
+    ":trace --dom-mutations 42",
+    "console-api"
+  );
+  is(
+    msg.textContent.trim(),
+    ":trace --dom-mutations accept only no arguments, or a list mutation type strings (add,attributes,remove)"
+  );
+
+  info("Test toggling the tracer ON");
+  // Pass `console-api` specific classname as the command results aren't logged as "result".
+  // Instead the frontend log a message as a console API message.
+  await evaluateExpressionInConsole(
+    hud,
+    ":trace --logMethod console --dom-mutations",
+    "console-api"
+  );
+
+  info("Trigger some code to add a DOM Element");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.wrappedJSObject.add();
+  });
+  let traceNode = await waitFor(
+    () => findTracerMessages(hud, `DOM Mutation | add <hr>`)[0],
+    "Wait for the DOM Mutation trace for DOM element creation"
+  );
+  is(
+    traceNode.querySelector(".message-location").textContent,
+    "fake.js:4:19",
+    "Add Mutation location is correct"
+  );
+
+  info("Trigger some code to modify attributes of a DOM Element");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.wrappedJSObject.attributes();
+  });
+  traceNode = await waitFor(
+    () =>
+      findTracerMessages(
+        hud,
+        `DOM Mutation | attributes <hr hidden="true">`
+      )[0],
+    "Wait for the DOM Mutation trace for DOM attributes modification"
+  );
+  is(
+    traceNode.querySelector(".message-location").textContent,
+    "fake.js:7:34",
+    "Attributes Mutation location is correct"
+  );
+
+  info("Trigger some code to remove a DOM Element");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.wrappedJSObject.remove();
+  });
+  traceNode = await waitFor(
+    () =>
+      findTracerMessages(hud, `DOM Mutation | remove <hr hidden="true">`)[0],
+    "Wait for the DOM Mutation trace for DOM Element removal"
+  );
+  is(
+    traceNode.querySelector(".message-location").textContent,
+    "fake.js:10:34",
+    "Remove Mutation location is correct"
+  );
+
+  info("Stop tracing all mutations");
+  await evaluateExpressionInConsole(hud, ":trace", "console-api");
+
+  info("Clear past traces");
+  hud.ui.clearOutput();
+  await waitFor(
+    () => !findTracerMessages(hud, `remove(<hr hidden="true">)`).length
+  );
+  ok("Console was cleared");
+
+  info("Re-enable the tracing, but only with a subset of mutations");
+  await evaluateExpressionInConsole(
+    hud,
+    ":trace --logMethod console --dom-mutations attributes,remove",
+    "console-api"
+  );
+
+  info("Trigger all types of mutations");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    const element = content.document.createElement("hr");
+    content.document.body.appendChild(element);
+    element.setAttribute("hidden", "true");
+    element.remove();
+  });
+  await waitFor(
+    () =>
+      !!findTracerMessages(hud, `DOM Mutation | attributes <hr hidden="true">`)
+        .length,
+    "Wait for the DOM Mutation trace for DOM attributes modification"
+  );
+
+  await waitFor(
+    () =>
+      !!findTracerMessages(hud, `DOM Mutation | remove <hr hidden="true">`)
+        .length,
+    "Wait for the DOM Mutation trace for DOM Element removal"
+  );
+  is(
+    findTracerMessages(hud, `add <hr`).length,
+    0,
+    "DOM Element creation isn't traced"
+  );
 });

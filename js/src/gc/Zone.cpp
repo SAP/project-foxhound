@@ -632,11 +632,13 @@ void Zone::purgeAtomCache() {
 }
 
 void Zone::addSizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf, JS::CodeSizes* code, size_t* regexpZone,
-    size_t* jitZone, size_t* cacheIRStubs, size_t* uniqueIdMap,
-    size_t* initialPropMapTable, size_t* shapeTables, size_t* atomsMarkBitmaps,
-    size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
-    size_t* compartmentsPrivateData, size_t* scriptCountsMapArg) {
+    mozilla::MallocSizeOf mallocSizeOf, size_t* zoneObject, JS::CodeSizes* code,
+    size_t* regexpZone, size_t* jitZone, size_t* cacheIRStubs,
+    size_t* uniqueIdMap, size_t* initialPropMapTable, size_t* shapeTables,
+    size_t* atomsMarkBitmaps, size_t* compartmentObjects,
+    size_t* crossCompartmentWrappersTables, size_t* compartmentsPrivateData,
+    size_t* scriptCountsMapArg) {
+  *zoneObject += mallocSizeOf(this);
   *regexpZone += regExps().sizeOfIncludingThis(mallocSizeOf);
   if (jitZone_) {
     jitZone_->addSizeOfIncludingThis(mallocSizeOf, code, jitZone, cacheIRStubs);
@@ -978,4 +980,21 @@ bool Zone::registerObjectWithWeakPointers(JSObject* obj) {
   MOZ_ASSERT(obj->getClass()->hasTrace());
   MOZ_ASSERT(!IsInsideNursery(obj));
   return objectsWithWeakPointers.ref().append(obj);
+}
+
+js::DependentScriptSet* Zone::getOrCreateDependentScriptSet(
+    JSContext* cx, js::InvalidatingFuse* fuse) {
+  for (auto& dss : fuseDependencies) {
+    if (dss.associatedFuse == fuse) {
+      return &dss;
+    }
+  }
+
+  if (!fuseDependencies.emplaceBack(cx, fuse)) {
+    return nullptr;
+  }
+
+  auto& dss = fuseDependencies.back();
+  MOZ_ASSERT(dss.associatedFuse == fuse);
+  return &dss;
 }

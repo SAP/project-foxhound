@@ -182,6 +182,7 @@ add_task(async function test_fog_memory_distribution_works() {
   Glean.testOnly.doYouRemember.accumulate(17);
 
   let data = Glean.testOnly.doYouRemember.testGetValue("test-ping");
+  Assert.equal(2, data.count, "Count of entries is correct");
   // `data.sum` is in bytes, but the metric is in MB.
   Assert.equal(24 * 1024 * 1024, data.sum, "Sum's correct");
   for (let [bucket, count] of Object.entries(data.values)) {
@@ -196,6 +197,7 @@ add_task(async function test_fog_custom_distribution_works() {
   Glean.testOnlyIpc.aCustomDist.accumulateSamples([7, 268435458]);
 
   let data = Glean.testOnlyIpc.aCustomDist.testGetValue("store1");
+  Assert.equal(2, data.count, "Count of entries is correct");
   Assert.equal(7 + 268435458, data.sum, "Sum's correct");
   for (let [bucket, count] of Object.entries(data.values)) {
     Assert.ok(
@@ -216,7 +218,7 @@ add_task(function test_fog_custom_pings() {
   Assert.ok("onePingOnly" in GleanPings);
   let submitted = false;
   Glean.testOnly.onePingOneBool.set(false);
-  GleanPings.onePingOnly.testBeforeNextSubmit(reason => {
+  GleanPings.onePingOnly.testBeforeNextSubmit(() => {
     submitted = true;
     Assert.equal(false, Glean.testOnly.onePingOneBool.testGetValue());
   });
@@ -227,7 +229,7 @@ add_task(function test_fog_custom_pings() {
 add_task(function test_recursive_testBeforeNextSubmit() {
   Assert.ok("onePingOnly" in GleanPings);
   let submitted = 0;
-  let rec = reason => {
+  let rec = () => {
     submitted++;
     GleanPings.onePingOnly.testBeforeNextSubmit(rec);
   };
@@ -255,6 +257,10 @@ add_task(async function test_fog_timing_distribution_works() {
   Glean.testOnly.whatTimeIsIt.stopAndAccumulate(t3); // 5ms
 
   let data = Glean.testOnly.whatTimeIsIt.testGetValue();
+
+  // Cancelled timers should not be counted.
+  Assert.equal(2, data.count, "Count of entries is correct");
+
   const NANOS_IN_MILLIS = 1e6;
   // bug 1701949 - Sleep gets close, but sometimes doesn't wait long enough.
   const EPSILON = 40000;
@@ -266,10 +272,7 @@ add_task(async function test_fog_timing_distribution_works() {
   // But we can guarantee it's only two samples.
   Assert.equal(
     2,
-    Object.entries(data.values).reduce(
-      (acc, [bucket, count]) => acc + count,
-      0
-    ),
+    Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
     "Only two buckets with samples"
   );
 });
@@ -455,4 +458,107 @@ add_task(async function test_fog_text_works_unusual_character() {
   Assert.equal(value, rslt);
 
   Assert.greater(rslt.length, 100);
+});
+
+add_task(async function test_fog_object_works() {
+  if (!Glean.testOnly.balloons) {
+    // FIXME(bug 1883857): object metric type not available, e.g. in artifact builds.
+    // Skipping this test.
+    return;
+  }
+
+  Assert.equal(
+    undefined,
+    Glean.testOnly.balloons.testGetValue(),
+    "No object stored"
+  );
+
+  // Can't store not-objects.
+  let invalidValues = [1, "str", false, undefined, null, NaN, Infinity];
+  for (let value of invalidValues) {
+    Assert.throws(
+      () => Glean.testOnly.balloons.set(value),
+      /is not an object/,
+      "Should throw a type error"
+    );
+  }
+
+  // No invalid value will be stored.
+  Assert.equal(
+    undefined,
+    Glean.testOnly.balloons.testGetValue(),
+    "No object stored"
+  );
+
+  // `JS_Stringify` internally throws
+  // an `TypeError: cyclic object value` exception.
+  // That's cleared and `set` should not throw on it.
+  // This eventually should log a proper error in Glean.
+  let selfref = {};
+  selfref.a = selfref;
+  Glean.testOnly.balloons.set(selfref);
+  Assert.equal(
+    undefined,
+    Glean.testOnly.balloons.testGetValue(),
+    "No object stored"
+  );
+
+  let balloons = [
+    { colour: "red", diameter: 5 },
+    { colour: "blue", diameter: 7 },
+    { colour: "orange" },
+  ];
+  Glean.testOnly.balloons.set(balloons);
+
+  let result = Glean.testOnly.balloons.testGetValue();
+  let expected = [
+    { colour: "red", diameter: 5 },
+    { colour: "blue", diameter: 7 },
+    { colour: "orange", diameter: null },
+  ];
+  Assert.deepEqual(expected, result);
+
+  // These values are coerced to null or removed.
+  balloons = [
+    { colour: "inf", diameter: Infinity },
+    { colour: "negative-inf", diameter: -1 / 0 },
+    { colour: "nan", diameter: NaN },
+    { colour: "undef", diameter: undefined },
+  ];
+  Glean.testOnly.balloons.set(balloons);
+  result = Glean.testOnly.balloons.testGetValue();
+  expected = [
+    { colour: "inf", diameter: null },
+    { colour: "negative-inf", diameter: null },
+    { colour: "nan", diameter: null },
+    { colour: "undef", diameter: null },
+  ];
+  Assert.deepEqual(expected, result);
+
+  // colour != color.
+  let invalid = [{ color: "orange" }, { color: "red", diameter: "small" }];
+  Glean.testOnly.balloons.set(invalid);
+  Assert.throws(
+    () => Glean.testOnly.balloons.testGetValue(),
+    /invalid_value/,
+    "Should throw because last object was invalid."
+  );
+
+  Services.fog.testResetFOG();
+  // set again to ensure it's stored
+  balloons = [
+    { colour: "red", diameter: 5 },
+    { colour: "blue", diameter: 7 },
+  ];
+  Glean.testOnly.balloons.set(balloons);
+  result = Glean.testOnly.balloons.testGetValue();
+  Assert.deepEqual(balloons, result);
+
+  invalid = [{ colour: "red", diameter: 5, extra: "field" }];
+  Glean.testOnly.balloons.set(invalid);
+  Assert.throws(
+    () => Glean.testOnly.balloons.testGetValue(),
+    /invalid_value/,
+    "Should throw because last object was invalid."
+  );
 });

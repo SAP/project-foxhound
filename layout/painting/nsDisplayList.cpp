@@ -69,10 +69,10 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/EffectCompositor.h"
 #include "mozilla/EffectSet.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/OperatorNewExtensions.h"
-#include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
@@ -188,7 +188,6 @@ already_AddRefed<ActiveScrolledRoot> ActiveScrolledRoot::CreateASRForFrame(
   }
   asr->mParent = aParent;
   asr->mScrollableFrame = aScrollableFrame;
-  asr->mViewId = Nothing();
   asr->mDepth = aParent ? aParent->mDepth + 1 : 1;
   asr->mRetained = aIsRetained;
 
@@ -269,11 +268,10 @@ static uint64_t AddAnimationsForWebRender(
       aManager->CommandBuilder()
           .CreateOrRecycleWebRenderUserData<WebRenderAnimationData>(aItem);
   AnimationInfo& animationInfo = animationData->GetAnimationInfo();
+  nsIFrame* frame = aItem->Frame();
   animationInfo.AddAnimationsForDisplayItem(
-      aItem->Frame(), aDisplayListBuilder, aItem, aItem->GetType(),
+      frame, aDisplayListBuilder, aItem, aItem->GetType(),
       aManager->LayerManager(), aPosition);
-  animationInfo.StartPendingAnimations(
-      aManager->LayerManager()->GetAnimationReadyTime());
 
   // Note that animationsId can be 0 (uninitialized in AnimationInfo) if there
   // are no active animations.
@@ -868,6 +866,11 @@ void nsDisplayListBuilder::MarkFrameForDisplayIfVisible(
 void nsDisplayListBuilder::SetIsRelativeToLayoutViewport() {
   mIsRelativeToLayoutViewport = true;
   UpdateShouldBuildAsyncZoomContainer();
+}
+
+void nsDisplayListBuilder::ForceLayerForScrollParent() {
+  mForceLayerForScrollParent = true;
+  mNumActiveScrollframesEncountered++;
 }
 
 void nsDisplayListBuilder::UpdateShouldBuildAsyncZoomContainer() {
@@ -2127,26 +2130,6 @@ nsRect nsDisplayList::GetBuildingRect() const {
   return result;
 }
 
-static void TriggerPendingAnimations(Document& aDoc,
-                                     const TimeStamp& aReadyTime) {
-  MOZ_ASSERT(!aReadyTime.IsNull(),
-             "Animation ready time is not set. Perhaps we're using a layer"
-             " manager that doesn't update it");
-  if (PendingAnimationTracker* tracker = aDoc.GetPendingAnimationTracker()) {
-    PresShell* presShell = aDoc.GetPresShell();
-    // If paint-suppression is in effect then we haven't finished painting
-    // this document yet so we shouldn't start animations
-    if (!presShell || !presShell->IsPaintingSuppressed()) {
-      tracker->TriggerPendingAnimationsOnNextTick(aReadyTime);
-    }
-  }
-  auto recurse = [&aReadyTime](Document& aDoc) {
-    TriggerPendingAnimations(aDoc, aReadyTime);
-    return CallState::Continue;
-  };
-  aDoc.EnumerateSubDocuments(recurse);
-}
-
 WindowRenderer* nsDisplayListBuilder::GetWidgetWindowRenderer(nsView** aView) {
   if (aView) {
     *aView = RootReferenceFrame()->GetView();
@@ -2312,11 +2295,6 @@ void nsDisplayList::PaintRoot(nsDisplayListBuilder* aBuilder, gfxContext* aCtx,
     }
 
     aBuilder->SetIsCompositingCheap(prevIsCompositingCheap);
-    if (document && widgetTransaction) {
-      TriggerPendingAnimations(*document,
-                               layerManager->GetAnimationReadyTime());
-    }
-
     if (presContext->RefreshDriver()->HasScheduleFlush()) {
       presContext->NotifyInvalidation(layerManager->GetLastTransactionId(),
                                       frame->GetRect());
@@ -2341,10 +2319,6 @@ void nsDisplayList::PaintRoot(nsDisplayListBuilder* aBuilder, gfxContext* aCtx,
                                    WindowRenderer::END_DEFAULT);
 
   aBuilder->SetIsCompositingCheap(temp);
-
-  if (document && widgetTransaction) {
-    TriggerPendingAnimations(*document, renderer->GetAnimationReadyTime());
-  }
 }
 
 void nsDisplayList::DeleteAll(nsDisplayListBuilder* aBuilder) {
@@ -2588,8 +2562,8 @@ struct ContentComparator {
       // Something weird going on
       return true;
     }
-    return nsLayoutUtils::CompareTreePosition(content1, content2,
-                                              mCommonAncestor) < 0;
+    return nsContentUtils::CompareTreePosition<TreeKind::Flat>(
+               content1, content2, mCommonAncestor) < 0;
   }
 };
 
@@ -5311,7 +5285,7 @@ bool nsDisplayOwnLayer::UpdateScrollData(WebRenderScrollData* aData,
     const float resolution =
         IsScrollbarLayerForRoot()
             ? 1.0f
-            : mFrame->PresContext()->PresShell()->GetCumulativeResolution();
+            : mFrame->PresShell()->GetCumulativeResolution();
     LayerIntRect layerBounds =
         RoundedOut(bounds * LayoutDeviceToLayerScale(resolution));
     aLayerData->SetVisibleRect(layerBounds);
@@ -6005,7 +5979,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mPrerenderDecision(PrerenderDecision::No),
       mIsTransformSeparator(true),
       mHasTransformGetter(false),
-      mHasAssociatedPerspective(false) {
+      mHasAssociatedPerspective(false),
+      mContainsASRs(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   Init(aBuilder, aList);
@@ -6021,7 +5996,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mPrerenderDecision(aPrerenderDecision),
       mIsTransformSeparator(false),
       mHasTransformGetter(false),
-      mHasAssociatedPerspective(false) {
+      mHasAssociatedPerspective(false),
+      mContainsASRs(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   SetReferenceFrameToAncestor(aBuilder);
@@ -6038,7 +6014,8 @@ nsDisplayTransform::nsDisplayTransform(nsDisplayListBuilder* aBuilder,
       mPrerenderDecision(PrerenderDecision::No),
       mIsTransformSeparator(false),
       mHasTransformGetter(true),
-      mHasAssociatedPerspective(false) {
+      mHasAssociatedPerspective(false),
+      mContainsASRs(false) {
   MOZ_COUNT_CTOR(nsDisplayTransform);
   MOZ_ASSERT(aFrame, "Must have a frame!");
   MOZ_ASSERT(aFrame->GetTransformGetter());
@@ -6224,6 +6201,9 @@ Matrix4x4 nsDisplayTransform::GetResultingTransformMatrixInternal(
   const nsIFrame* frame = aProperties.mFrame;
   NS_ASSERTION(frame || !(aFlags & INCLUDE_PERSPECTIVE),
                "Must have a frame to compute perspective!");
+
+  // IncrementScaleRestyleCountIfNeeded in ActiveLayerTracker.cpp is a
+  // simplified copy of this function.
 
   // Get the underlying transform matrix:
 
@@ -6668,12 +6648,12 @@ bool nsDisplayTransform::CreateWebRenderCommands(
                                key};
 
   nsDisplayTransform* deferredTransformItem = nullptr;
-  if (!mFrame->ChildrenHavePerspective()) {
+  if (ShouldDeferTransform()) {
     // If it has perspective, we create a new scroll data via the
-    // UpdateScrollData call because that scenario is more complex. Otherwise
-    // we can just stash the transform on the StackingContextHelper and
-    // apply it to any scroll data that are created inside this
-    // nsDisplayTransform.
+    // UpdateScrollData call because that scenario is more complex. Otherwise,
+    // if we don't contain any ASRs then just stash the transform on the
+    // StackingContextHelper and apply it to any scroll data that are created
+    // inside this nsDisplayTransform.
     deferredTransformItem = this;
   }
 
@@ -6724,14 +6704,14 @@ bool nsDisplayTransform::CreateWebRenderCommands(
 
 bool nsDisplayTransform::UpdateScrollData(
     WebRenderScrollData* aData, WebRenderLayerScrollData* aLayerData) {
-  if (!mFrame->ChildrenHavePerspective()) {
+  if (ShouldDeferTransform()) {
     // This case is handled in CreateWebRenderCommands by stashing the transform
     // on the stacking context.
     return false;
   }
   if (aLayerData) {
     aLayerData->SetTransform(GetTransform().GetMatrix());
-    aLayerData->SetTransformIsPerspective(true);
+    aLayerData->SetTransformIsPerspective(mFrame->ChildrenHavePerspective());
   }
   return true;
 }
@@ -8617,11 +8597,9 @@ PaintTelemetry::AutoRecordPaint::~AutoRecordPaint() {
     return;
   }
 
-  double totalMs = (TimeStamp::Now() - mStart).ToMilliseconds();
-
   // Record the total time.
-  Telemetry::Accumulate(Telemetry::CONTENT_PAINT_TIME,
-                        static_cast<uint32_t>(totalMs));
+  mozilla::glean::gfx_content::paint_time.AccumulateRawDuration(
+      TimeStamp::Now() - mStart);
 }
 
 static nsIFrame* GetSelfOrPlaceholderFor(nsIFrame* aFrame) {

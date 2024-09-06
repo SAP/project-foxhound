@@ -33,7 +33,18 @@ namespace glean {
     RecordedExperiment? glean_test_get_experiment_data(string experiment_id);
 
     // Experimentation ID API
+    void glean_set_experimentation_id(string experimentation_id);
     string? glean_test_get_experimentation_id();
+
+    // EXPERIMENTAL: Register a listener to receive notification of event recordings
+    //
+    // tag: String value used later to unregister the listener
+    // listener: An object which implements the GleanEventListener interface
+    void glean_register_event_listener(string tag, GleanEventListener listener);
+    // EXPERIMENTAL: Unregister a previously registered event listener
+    //
+    // tag: The tag used when registering the listener
+    void glean_unregister_event_listener(string tag);
 
     // Server Knobs API
     void glean_set_metrics_enabled_config(string json);
@@ -163,6 +174,12 @@ callback interface OnGleanEvents {
     void shutdown();
 };
 
+// A callback handler that receives the IDs of recorded events
+callback interface GleanEventListener {
+    // Called when an event is recorded, indicating the id of the event
+    void on_event_recorded(string id);
+};
+
 // Deserialized experiment data.
 dictionary RecordedExperiment {
     // The experiment's branch.
@@ -184,6 +201,10 @@ dictionary PingRequest {
     sequence<u8> body;
     // A map with all the headers to be sent with the request.
     record<DOMString, string> headers;
+    // Whether the body has {client|ping}_info sections.
+    boolean body_has_info_sections;
+    // The ping's name. Likely also somewhere in `path`.
+    string ping_name;
 };
 
 // An enum representing the possible upload tasks to be performed by an uploader.
@@ -270,7 +291,7 @@ enum ErrorType {
 };
 
 interface PingType {
-    constructor(string name, boolean include_client_id, boolean send_if_empty, boolean precise_timestamps, sequence<string> reason_codes);
+    constructor(string name, boolean include_client_id, boolean send_if_empty, boolean precise_timestamps, boolean include_info_sections, sequence<string> reason_codes);
     void submit(optional string? reason = null);
 };
 
@@ -463,6 +484,8 @@ interface TimingDistributionMetric {
 
     void accumulate_samples(sequence<i64> samples);
 
+    void accumulate_single_sample(i64 sample);
+
     DistributionData? test_get_value(optional string? ping_name = null);
 
     i32 test_get_num_recorded_errors(ErrorType error);
@@ -505,6 +528,8 @@ interface CustomDistributionMetric {
     constructor(CommonMetricData meta, i64 range_min, i64 range_max, i64 bucket_count, HistogramType histogram_type);
 
     void accumulate_samples(sequence<i64> samples);
+
+    void accumulate_single_sample(i64 sample);
 
     DistributionData? test_get_value(optional string? ping_name = null);
 

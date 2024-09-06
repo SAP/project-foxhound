@@ -457,10 +457,10 @@ class AOMExtensionWrapper extends ExtensionWrapper {
   /**
    * Override for subclasses which don't set an ID in the constructor.
    *
-   * @param {nsIURI} uri
-   * @param {string} id
+   * @param {nsIURI} _uri
+   * @param {string} _id
    */
-  maybeSetID(uri, id) {}
+  maybeSetID(_uri, _id) {}
 }
 
 class InstallableWrapper extends AOMExtensionWrapper {
@@ -746,14 +746,6 @@ export var ExtensionTestUtils = {
         Services.prefs.setBoolPref(prefName, true);
       });
     }
-  },
-
-  get remoteContentScripts() {
-    return XPCShellContentUtils.remoteContentScripts;
-  },
-
-  set remoteContentScripts(val) {
-    XPCShellContentUtils.remoteContentScripts = val;
   },
 
   /** @param {[origin: string, url: string, options: object]} args */

@@ -38,7 +38,7 @@ enum class RequestPriority : uint8_t;
 }  // namespace mozilla::dom
 
 namespace mozilla::loader {
-class ComponentLoadContext;
+class SyncLoadContext;
 }  // namespace mozilla::loader
 
 namespace JS {
@@ -194,7 +194,7 @@ class ScriptLoadRequest : public nsISupports,
 
   mozilla::dom::ScriptLoadContext* GetScriptLoadContext();
 
-  mozilla::loader::ComponentLoadContext* GetComponentLoadContext();
+  mozilla::loader::SyncLoadContext* GetSyncLoadContext();
 
   mozilla::dom::WorkerLoadContext* GetWorkerLoadContext();
 
@@ -202,6 +202,13 @@ class ScriptLoadRequest : public nsISupports,
 
   const LoadedScript* getLoadedScript() const { return mLoadedScript.get(); }
   LoadedScript* getLoadedScript() { return mLoadedScript.get(); }
+
+  /*
+   * Set the request's mBaseURL, based on aChannel.
+   * aOriginalURI is the result of aChannel->GetOriginalURI.
+   */
+  void SetBaseURLFromChannelAndOriginalURI(nsIChannel* aChannel,
+                                           nsIURI* aOriginalURI);
 
   const ScriptKind mKind;  // Whether this is a classic script or a module
                            // script.

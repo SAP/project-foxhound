@@ -188,7 +188,7 @@ add_task(async function json_activate_target({ client, tab }) {
   is(invalidResponse, "No such target id: does-not-exist");
 });
 
-add_task(async function json_close_target({ CDP, client, tab }) {
+add_task(async function json_close_target({ CDP, client }) {
   const { Target } = client;
 
   const { targetInfo, newTab } = await openTab(Target);
@@ -224,7 +224,7 @@ add_task(async function json_close_target({ CDP, client, tab }) {
     target => target.id === targetInfo.targetId
   );
 
-  ok(afterTarget == null, "New target is gone");
+  Assert.equal(afterTarget, null, "New target is gone");
 
   const invalidResponse = await requestJSON("/json/close/does-not-exist", {
     status: 404,

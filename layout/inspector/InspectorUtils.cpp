@@ -32,6 +32,7 @@
 #include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/CSSStyleRule.h"
+#include "mozilla/dom/CSSKeyframesRule.h"
 #include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/HighlightRegistry.h"
 #include "mozilla/dom/InspectorUtilsBinding.h"
@@ -350,27 +351,104 @@ uint32_t InspectorUtils::GetRelativeRuleLine(GlobalObject& aGlobal,
   return aRule.GetLineNumber() + 1;
 }
 
+void InspectorUtils::GetRuleIndex(GlobalObject& aGlobal, css::Rule& aRule,
+                                  nsTArray<uint32_t>& aResult) {
+  css::Rule* currentRule = &aRule;
+
+  do {
+    css::Rule* parentRule = currentRule->GetParentRule();
+    dom::CSSRuleList* ruleList = nullptr;
+
+    if (parentRule) {
+      if (parentRule->IsGroupRule()) {
+        ruleList = static_cast<css::GroupRule*>(parentRule)->CssRules();
+      } else if (parentRule->Type() == StyleCssRuleType::Keyframes) {
+        ruleList = static_cast<CSSKeyframesRule*>(parentRule)->CssRules();
+      } else {
+        MOZ_ASSERT_UNREACHABLE("Unknown parent rule type?");
+      }
+    } else if (StyleSheet* sheet = currentRule->GetStyleSheet()) {
+      ruleList = sheet->GetCssRulesInternal();
+    }
+
+    if (!ruleList) {
+      return;
+    }
+
+    bool found = false;
+    for (uint32_t i = 0, len = ruleList->Length(); i < len; ++i) {
+      css::Rule* rule = ruleList->Item(i);
+      if (currentRule == rule) {
+        found = true;
+        aResult.InsertElementAt(0, i);
+        break;
+      }
+    }
+
+    if (!found) {
+      return;
+    }
+
+    currentRule = parentRule;
+  } while (currentRule);
+}
+
 /* static */
 bool InspectorUtils::HasRulesModifiedByCSSOM(GlobalObject& aGlobal,
                                              StyleSheet& aSheet) {
   return aSheet.HasModifiedRulesForDevtools();
 }
 
-static void CollectRules(ServoCSSRuleList& aRuleList,
-                         nsTArray<RefPtr<css::Rule>>& aResult) {
-  for (uint32_t i = 0, len = aRuleList.Length(); i < len; ++i) {
+static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
+                               Sequence<OwningNonNull<css::Rule>>& aResult) {
+  uint32_t len = aRuleList.Length();
+  uint32_t ruleCount = len;
+  for (uint32_t i = 0; i < len; ++i) {
     css::Rule* rule = aRuleList.GetRule(i);
-    aResult.AppendElement(rule);
+    // This collect rules we want to display in Devtools Style Editor toolbar.
+    // When adding a new StyleCssRuleType, put it in the "default" list, and
+    // file a new bug with
+    // https://bugzilla.mozilla.org/enter_bug.cgi?product=DevTools&component=Style%20Editor&short_desc=Consider%20displaying%20new%20XXX%20rule%20type%20in%20at-rules%20sidebar
+    // so the DevTools team gets notified and can decide if it should be
+    // displayed.
+    switch (rule->Type()) {
+      case StyleCssRuleType::Media:
+      case StyleCssRuleType::Supports:
+      case StyleCssRuleType::LayerBlock:
+      case StyleCssRuleType::Container: {
+        Unused << aResult.AppendElement(OwningNonNull(*rule), fallible);
+        break;
+      }
+      case StyleCssRuleType::Style:
+      case StyleCssRuleType::Import:
+      case StyleCssRuleType::Document:
+      case StyleCssRuleType::LayerStatement:
+      case StyleCssRuleType::FontFace:
+      case StyleCssRuleType::Page:
+      case StyleCssRuleType::Property:
+      case StyleCssRuleType::Keyframes:
+      case StyleCssRuleType::Keyframe:
+      case StyleCssRuleType::Margin:
+      case StyleCssRuleType::Namespace:
+      case StyleCssRuleType::CounterStyle:
+      case StyleCssRuleType::FontFeatureValues:
+      case StyleCssRuleType::FontPaletteValues:
+        break;
+    }
+
     if (rule->IsGroupRule()) {
-      CollectRules(*static_cast<css::GroupRule*>(rule)->CssRules(), aResult);
+      ruleCount += CollectAtRules(
+          *static_cast<css::GroupRule*>(rule)->CssRules(), aResult);
     }
   }
+  return ruleCount;
 }
 
-void InspectorUtils::GetAllStyleSheetCSSStyleRules(
+void InspectorUtils::GetStyleSheetRuleCountAndAtRules(
     GlobalObject& aGlobal, StyleSheet& aSheet,
-    nsTArray<RefPtr<css::Rule>>& aResult) {
-  CollectRules(*aSheet.GetCssRulesInternal(), aResult);
+    InspectorStyleSheetRuleCountAndAtRulesResult& aResult) {
+  aResult.mRuleCount =
+      CollectAtRules(*aSheet.GetCssRulesInternal(), aResult.mAtRules);
 }
 
 /* static */
@@ -554,6 +632,26 @@ void InspectorUtils::ColorToRGBA(GlobalObject&, const nsACString& aColorString,
   tuple.mG = NS_GET_G(color);
   tuple.mB = NS_GET_B(color);
   tuple.mA = nsStyleUtil::ColorComponentToFloat(NS_GET_A(color));
+}
+
+/* static */
+void InspectorUtils::ColorTo(GlobalObject&, const nsACString& aFromColor,
+                             const nsACString& aToColorSpace,
+                             Nullable<InspectorColorToResult>& aResult) {
+  nsCString resultColor;
+  nsTArray<float> resultComponents;
+  bool resultAdjusted = false;
+
+  if (!ServoCSSParser::ColorTo(aFromColor, aToColorSpace, &resultColor,
+                               &resultComponents, &resultAdjusted)) {
+    aResult.SetNull();
+    return;
+  }
+
+  auto& result = aResult.SetValue();
+  result.mColor.AssignASCII(resultColor);
+  result.mComponents = std::move(resultComponents);
+  result.mAdjusted = resultAdjusted;
 }
 
 /* static */
@@ -899,6 +997,24 @@ void InspectorUtils::GetCSSRegisteredProperties(
     }
     property.mFromJS = propDef.from_js;
   }
+}
+
+/* static */
+void InspectorUtils::GetRuleBodyTextOffsets(
+    GlobalObject&, const nsACString& aInitialText,
+    Nullable<InspectorGetRuleBodyTextResult>& aResult) {
+  uint32_t resultStartOffset;
+  uint32_t resultEndOffset;
+
+  if (!Servo_GetRuleBodyTextOffsets(&aInitialText, &resultStartOffset,
+                                    &resultEndOffset)) {
+    aResult.SetNull();
+    return;
+  }
+
+  InspectorGetRuleBodyTextResult& offsets = aResult.SetValue();
+  offsets.mStartOffset = resultStartOffset;
+  offsets.mEndOffset = resultEndOffset;
 }
 
 }  // namespace dom

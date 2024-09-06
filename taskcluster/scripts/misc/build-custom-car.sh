@@ -57,9 +57,10 @@ if [[ $(uname -s) == "Darwin" ]]; then
   # Modify the config with fetched sdk path
   export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX14.2.sdk"
 
-  # Use the fetched toolchain python instead as it is a higher version
-  # than the system python
-  export PATH="$MOZ_FETCHES_DIR/python/bin/:$PATH"
+  # Avoid mixing up the system python and toolchain python in the
+  # python path configuration
+  # https://bugs.python.org/issue22490
+  unset __PYVENV_LAUNCHER__
 
   # Set the SDK path for build, which is technically a higher version
   # than what is associated with the current OS version (10.15).
@@ -105,7 +106,7 @@ if [[ $(uname -o) == "Msys" ]]; then
   pushd "$WINDOWSSDKDIR"
   mkdir -p Debuggers/x64/
   popd
-  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.38.33130/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
+  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.38.33135/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
   mv "$WINDOWSSDKDIR/App Certification Kit/"* "$WINDOWSSDKDIR"/Debuggers/x64/
   export WINDIR="$PWD/chrome_dll"
 

@@ -38,6 +38,13 @@
           </vbox>
         </toolbarbutton>
       </toolbaritem>
+      <toolbarbutton id="appMenu-profiles-button"
+                     class="subviewbutton subviewbutton-nav"
+                     data-l10n-id="appmenuitem-profiles"
+                     data-l10n-args='{ "profilename": "" }'
+                     closemenu="none"
+                     oncommand="gProfiles.updateView(this)"
+                     hidden="true"/>
       <toolbarseparator id="appMenu-fxa-separator" class="proton-zap"/>
       <toolbarbutton id="appMenu-new-tab-button2"
                      class="subviewbutton"
@@ -210,6 +217,39 @@
                    class="subviewbutton panel-subview-footer-button"
                    data-l10n-id="appmenu-manage-history"
                    oncommand="PlacesCommandHook.showPlacesOrganizer('History'); CustomizableUI.hidePanelForNode(this);"/>
+  </panelview>
+
+  <panelview id="PanelUI-profiles" flex="1">
+    <vbox class="panel-subview-body">
+      <vbox id="current-profile">
+        <image id="profile-icon-image"></image>
+        <h2 id="profile-name"></h2>
+        <hbox id="this-profile-buttons">
+          <toolbarbutton id="profiles-edit-this-delete-button"
+                         class="subviewbutton toolbarbutton-1"
+                         oncommand="switchToTabHavingURI('about:profilemanager', true)"/>
+          <toolbarbutton id="profiles-delete-this-profile-button"
+                         class="subviewbutton toolbarbutton-1"
+                         oncommand="switchToTabHavingURI('about:profilemanager', true)"/>
+        </hbox>
+      </vbox>
+      <toolbarseparator/>
+      <vbox id="profiles-list"></vbox>
+      <toolbarseparator/>
+      <toolbarbutton id="profiles-close-profile-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenu-close-profile"
+                     data-l10n-args='{ "profilename": "" }'
+                     oncommand=""/>
+      <toolbarbutton id="profiles-create-profile-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenu-create-profile"
+                     oncommand="switchToTabHavingURI('about:profilemanager', true)"/>
+      <toolbarbutton id="profiles-manage-profiles-button"
+                     class="subviewbutton"
+                     data-l10n-id="appmenu-manage-profiles"
+                     oncommand="switchToTabHavingURI('about:profilemanager', true)"/>
+    </vbox>
   </panelview>
 
   <panelview id="appMenu-library-recentlyClosedTabs"/>
@@ -613,24 +653,23 @@
               hidden="true"/>
       </vbox>
       <!-- updateCTAPanel will control if we show this panel -->
-      <vbox id="PanelUI-fxa-pxi-cta-menu">
+      <vbox id="PanelUI-fxa-cta-menu">
         <toolbarbutton id="PanelUI-fxa-menu-sync-button" class="subviewbutton subviewbutton-iconic"
-          oncommand="gSync.openPrefsFromFxaMenu('sync_cta', this);">
+          oncommand="gSync.openPrefsFromFxaButton('sync_cta', this);">
           <vbox flex="1">
-            <label id="fxa-menu-header-title" crop="end" data-l10n-id="sync-menu-title" />
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="sync-menu-description" />
+            <label id="fxa-menu-header-title" crop="end" data-l10n-id="fxa-menu-sync-title" />
+            <label id="cta-menu-header-description" crop="end" data-l10n-id="fxa-menu-sync-description" />
           </vbox>
-          <toolbarseparator id="PanelUI-remote-tabs-separator" />
         </toolbarbutton>
-        <toolbarseparator id="PanelUI-remote-tabs-separator" />
+        <toolbarseparator id="PanelUI-products-separator" />
         <toolbarbutton id="PanelUI-fxa-menu-monitor-button" class="subviewbutton subviewbutton-iconic"
           oncommand="gSync.openMonitorLink(this)">
           <vbox flex="1">
             <hbox align="center">
               <image class="PanelUI-fxa-menu-monitor-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="pxi-menu-monitor-title" />
+              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-monitor-title" />
             </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="pxi-menu-monitor-description" />
+            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-monitor-description" />
           </vbox>
         </toolbarbutton>
         <toolbarbutton id="PanelUI-fxa-menu-relay-button" class="subviewbutton subviewbutton-iconic"
@@ -638,9 +677,9 @@
           <vbox flex="1">
             <hbox align="center">
               <image class="PanelUI-fxa-menu-relay-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="pxi-menu-relay-title" />
+              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-relay-title" />
             </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="pxi-menu-relay-description" />
+            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-relay-description" />
           </vbox>
         </toolbarbutton>
         <toolbarbutton id="PanelUI-fxa-menu-vpn-button" class="subviewbutton subviewbutton-iconic"
@@ -648,9 +687,9 @@
           <vbox flex="1">
             <hbox align="center">
               <image class="PanelUI-fxa-menu-vpn-button ctaMenuLogo" role="presentation" />
-              <label id="fxa-menu-header-title" crop="end" data-l10n-id="pxi-menu-vpn-title" />
+              <label id="fxa-menu-header-title" crop="end" data-l10n-id="appmenuitem-vpn-title" />
             </hbox>
-            <label id="cta-menu-header-description" crop="end" data-l10n-id="pxi-menu-vpn-description" />
+            <label id="cta-menu-header-description" crop="end" data-l10n-id="appmenuitem-vpn-description" />
           </vbox>
         </toolbarbutton>
       </vbox>

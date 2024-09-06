@@ -103,7 +103,6 @@
 
 // Other Classes
 #include "mozilla/dom/BarProps.h"
-#include "nsContentCID.h"
 #include "nsLayoutStatics.h"
 #include "nsCCUncollectableMarker.h"
 #include "mozilla/dom/WorkerCommon.h"
@@ -2057,7 +2056,7 @@ static nsresult CreateNativeGlobalForInner(
   flags |= xpc::DONT_FIRE_ONNEWGLOBALHOOK;
 
   if (!Window_Binding::Wrap(aCx, aNewInner, aNewInner, options,
-                            nsJSPrincipals::get(principal), false, aGlobal) ||
+                            nsJSPrincipals::get(principal), aGlobal) ||
       !xpc::InitGlobalObject(aCx, aGlobal, flags)) {
     return NS_ERROR_FAILURE;
   }

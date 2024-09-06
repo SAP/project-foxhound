@@ -19,9 +19,10 @@
 #include <stdint.h>  // uint32_t
 #include <utility>   // std::move
 
-#include "ds/IdValuePair.h"  // IdValuePair
-#include "gc/GC.h"           // AutoSelectGCHeap
-#include "js/GCVector.h"     // JS::GCVector
+#include "builtin/ParseRecordObject.h"  // js::ParseRecordObject
+#include "ds/IdValuePair.h"             // IdValuePair
+#include "gc/GC.h"                      // AutoSelectGCHeap
+#include "js/GCVector.h"                // JS::GCVector
 #include "js/RootingAPI.h"  // JS::Handle, JS::MutableHandle, MutableWrappedPtrOperations
 #include "js/Value.h"           // JS::Value, JS::BooleanValue, JS::NullValue
 #include "js/Vector.h"          // Vector
@@ -59,6 +60,7 @@ class MOZ_STACK_CLASS JSONTokenizer {
   using CharPtr = mozilla::RangedPtr<const CharT>;
 
  protected:
+  CharPtr sourceStart;
   CharPtr current;
   const CharPtr begin, end;
 
@@ -69,19 +71,29 @@ class MOZ_STACK_CLASS JSONTokenizer {
 
   ParserT* parser = nullptr;
 
- public:
-  JSONTokenizer(CharPtr current, const CharPtr begin, const CharPtr end, const StringTaint& taint,
-                ParserT* parser)
-      : current(current), begin(begin), end(end), taint(taint), parser(parser) {
+  JSONTokenizer(CharPtr sourceStart, CharPtr current, const CharPtr begin,
+                const CharPtr end, const StringTaint& taint, ParserT* parser)
+      : sourceStart(sourceStart),
+        current(current),
+        begin(begin),
+        end(end),
+        taint(taint),
+        parser(parser) {
     MOZ_ASSERT(current <= end);
     MOZ_ASSERT(parser);
   }
+
+ public:
+  JSONTokenizer(CharPtr current, const CharPtr begin, const CharPtr end, const StringTaint& taint,
+                ParserT* parser)
+      : JSONTokenizer(current, current, begin, end, taint, parser) {}
 
   explicit JSONTokenizer(mozilla::Range<const CharT> data, const StringTaint& taint, ParserT* parser)
       : JSONTokenizer(data.begin(), data.begin(), data.end(), taint, parser) {}
 
   JSONTokenizer(JSONTokenizer<CharT, ParserT, StringBuilderT>&& other) noexcept
-      : JSONTokenizer(other.current, other.begin, other.end, other.taint, other.parser) {}
+      : JSONTokenizer(other.sourceStart, other.current, other.begin, other.end,
+                      other.taint, other.parser) {}
 
   JSONTokenizer(const JSONTokenizer<CharT, ParserT, StringBuilderT>& other) =
       delete;
@@ -126,6 +138,11 @@ class MOZ_STACK_CLASS JSONTokenizer {
   JSONToken readNumber();
 
   void error(const char* msg);
+
+ protected:
+  inline mozilla::Span<const CharT> getSource() const {
+    return mozilla::Span<const CharT>(sourceStart.get(), current.get());
+  }
 };
 
 // Possible states the parser can be in between values.
@@ -159,7 +176,7 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
 
   // State for an object that is currently being parsed. This includes all
   // the key/value pairs that have been seen so far.
-  using PropertyVector = JS::GCVector<IdValuePair, 10>;
+  using PropertyVector = IdValueVector;
 
   enum class ParseType {
     // Parsing a string as if by JSON.parse.
@@ -240,8 +257,6 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
     return v;
   }
 
-  inline void setNumberValue(double d);
-
   JS::Value stringValue() const {
     MOZ_ASSERT(v.isString());
     return v;
@@ -309,6 +324,8 @@ class MOZ_STACK_CLASS JSONFullParseHandler
     bool append(const CharT* begin, const CharT* end, const StringTaint& taint);
   };
 
+  ParseRecordObject parseRecord;
+
   explicit JSONFullParseHandler(JSContext* cx) : Base(cx) {}
 
   JSONFullParseHandler(JSONFullParseHandler&& other) noexcept
@@ -318,12 +335,21 @@ class MOZ_STACK_CLASS JSONFullParseHandler
   void operator=(const JSONFullParseHandler& other) = delete;
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint, const ParserT* parser);
+  inline bool setStringValue(CharPtr start, size_t length, mozilla::Span<const CharT>&& source,
+                             const StringTaint& taint, const ParserT* parser);
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(StringBuilder& builder, const ParserT* parser);
+  inline bool setStringValue(StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser);
+  inline bool setNumberValue(double d, mozilla::Span<const CharT>&& source);
+  inline bool setBooleanValue(bool value, mozilla::Span<const CharT>&& source);
+  inline bool setNullValue(mozilla::Span<const CharT>&& source);
 
-  void reportError(const char* msg, const char* lineString,
-                   const char* columnString);
+  void reportError(const char* msg, uint32_t line, uint32_t column);
+
+  void trace(JSTracer* trc);
+
+ protected:
+  inline bool createJSONParseRecord(const Value& value,
+                                    mozilla::Span<const CharT>& source);
 };
 
 template <typename CharT>
@@ -370,16 +396,22 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
   FrontendContext* context() { return fc; }
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(CharPtr start, size_t length, const StringTaint& taint, const ParserT* parser) {
+  inline bool setStringValue(CharPtr start, size_t length, mozilla::Span<const CharT>&& source, const StringTaint& taint, const ParserT* parser) {
     return true;
   }
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(StringBuilder& builder, const ParserT* parser) {
+  inline bool setStringValue(StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser) {
     return true;
   }
 
-  inline void setNumberValue(double d) {}
+  inline bool setNumberValue(double d, mozilla::Span<const CharT>&& source) {
+    return true;
+  }
+  inline bool setBooleanValue(bool value, mozilla::Span<const CharT>&& source) {
+    return true;
+  }
+  inline bool setNullValue(mozilla::Span<const CharT>&& source) { return true; }
 
   inline DummyValue numberValue() const { return DummyValue(); }
 
@@ -416,10 +448,10 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
 
   inline void freeStackEntry(StackEntry& entry) {}
 
-  void reportError(const char* msg, const char* lineString,
-                   const char* columnString);
+  void reportError(const char* msg, uint32_t line, uint32_t column);
 
   JSString* CurrentJsonPath(const Vector<StackEntry, 10>& stack) const { return nullptr; }
+
 };
 
 template <typename CharT, typename HandlerT>
@@ -501,6 +533,8 @@ class MOZ_STACK_CLASS JSONParser
    * represent |undefined|, so the JSON data couldn't have specified it.)
    */
   bool parse(JS::MutableHandle<JS::Value> vp);
+  bool parse(JS::MutableHandle<JS::Value> vp,
+             JS::MutableHandle<ParseRecordObject> pro);
 
   void trace(JSTracer* trc);
 };
@@ -511,6 +545,10 @@ class MutableWrappedPtrOperations<JSONParser<CharT>, Wrapper>
  public:
   bool parse(JS::MutableHandle<JS::Value> vp) {
     return static_cast<Wrapper*>(this)->get().parse(vp);
+  }
+  bool parse(JS::MutableHandle<JS::Value> vp,
+             JS::MutableHandle<ParseRecordObject> pro) {
+    return static_cast<Wrapper*>(this)->get().parse(vp, pro);
   }
 };
 

@@ -634,6 +634,7 @@ nsBaseDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   mSourceDocument = nullptr;
   mSourceNode = nullptr;
   mSourceWindowContext = nullptr;
+  mSourceTopWindowContext = nullptr;
   mTriggeringPrincipal = nullptr;
   mCsp = nullptr;
   mSelection = nullptr;
@@ -703,7 +704,9 @@ nsBaseDragService::FireDragEventAtSource(EventMessage aEventMessage,
   }
   event.mModifiers = aKeyModifiers;
 
-  if (widget) {
+  // Most drag events aren't able to converted to MouseEvent except to
+  // eDragStart and eDragEnd.
+  if (widget && event.CanConvertToInputData()) {
     // Send the drag event to APZ, which needs to know about them to be
     // able to accurately detect the end of a drag gesture.
     widget->DispatchEventToAPZOnly(&event);
@@ -1021,6 +1024,10 @@ bool nsBaseDragService::RemoveAllChildProcesses() {
   }
   mChildProcesses.Clear();
   return true;
+}
+
+bool nsBaseDragService::MustUpdateDataTransfer(EventMessage aMessage) {
+  return false;
 }
 
 NS_IMETHODIMP

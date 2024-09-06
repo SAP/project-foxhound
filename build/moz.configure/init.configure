@@ -525,6 +525,16 @@ def split_triplet(triplet, allow_wasi=False):
     elif os.startswith("darwin"):
         canonical_kernel = "Darwin"
         canonical_os = "OSX"
+    elif os.startswith("ios"):
+        canonical_kernel = "Darwin"
+        canonical_os = "iOS"
+        # old-configure does plenty of tests against $target and $target_os
+        # and expects darwin for iOS, so make it happy.
+        sub_configure_alias = sub_configure_alias[: -len(os)] + "darwin"
+        # rust knows ios-sim, clang knows ios-simulator. We only take the
+        # former as --target, but we need to make clang happy.
+        if os == "ios-sim":
+            os = "ios-simulator"
     elif os.startswith("dragonfly"):
         canonical_os = canonical_kernel = "DragonFly"
     elif os.startswith("freebsd"):
@@ -603,7 +613,7 @@ def split_triplet(triplet, allow_wasi=False):
     # prefixes. We need to be more specific about the LLVM target on Mac
     # so cross-language LTO will work correctly.
 
-    if os.startswith("darwin"):
+    if os.startswith(("darwin", "ios")):
         toolchain = "%s-apple-%s" % (cpu, os)
     else:
         toolchain = "%s-%s" % (cpu, os)
@@ -647,12 +657,13 @@ def help_host_target(help, host, target):
 
 def config_sub(shell, triplet):
     config_sub = os.path.join(os.path.dirname(__file__), "..", "autoconf", "config.sub")
-    # Config.sub doesn't like the *-windows-msvc/*-windows-gnu triplets, so
+    # Config.sub doesn't like the *-windows-msvc/*-windows-gnu/*-ios-sim triplets, so
     # munge those before and after calling config.sub.
     suffix = None
     munging = {
         "-windows-msvc": "-mingw32",
         "-windows-gnu": "-mingw32",
+        "-ios-sim": "-ios",
     }
     for check_suffix, replacement in munging.items():
         if triplet.endswith(check_suffix):
@@ -734,6 +745,8 @@ def real_target(value, host, shell, project, application):
                 else ("arm", "androideabi")
             )
             return split_triplet(f"{target_cpu}-unknown-linux-{target_system}")
+        if project == "mobile/ios":
+            return split_triplet("aarch64-apple-ios")
         return host
     # If --target was only given a cpu arch, expand it with the
     # non-cpu part of the host. For mobile/android, expand it with
@@ -744,6 +757,8 @@ def real_target(value, host, shell, project, application):
             rest = "unknown-linux-android"
             if target.startswith("arm"):
                 rest += "eabi"
+        elif project == "mobile/ios":
+            rest = "apple-ios"
         else:
             cpu, rest = host.alias.split("-", 1)
         target = "-".join((target, rest))
@@ -832,6 +847,7 @@ add_old_configure_assignment("TARGET_CPU", target.cpu)
 set_config("TARGET_RAW_CPU", target.raw_cpu)
 set_config("TARGET_OS", target.os)
 set_config("TARGET_RAW_OS", target.raw_os)
+set_config("TARGET_KERNEL", target.kernel)
 set_config("TARGET_ENDIANNESS", target.endianness)
 
 
@@ -900,6 +916,15 @@ def host_is_osx(host):
 
 
 set_define("XP_MACOSX", target_is_osx)
+
+
+@depends(target)
+def target_is_ios(target):
+    if target.kernel == "Darwin" and target.os == "iOS":
+        return True
+
+
+set_define("XP_IOS", target_is_ios)
 
 
 @depends(target)

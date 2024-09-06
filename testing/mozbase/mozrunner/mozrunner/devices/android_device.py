@@ -260,7 +260,7 @@ def _maybe_update_host_utils(build_obj):
 
     # Compare, prompt, update
     if existing_version and manifest_version:
-        hu_version_regex = "host-utils-([\d\.]*)"
+        hu_version_regex = r"host-utils-([\d\.]*)"
         manifest_version = float(re.search(hu_version_regex, manifest_version).group(1))
         existing_version = float(re.search(hu_version_regex, existing_version).group(1))
         if existing_version < manifest_version:
@@ -305,11 +305,21 @@ def verify_android_device(
     Returns True if the emulator was started or another device was
     already connected.
     """
-    if "MOZ_DISABLE_ADB_INSTALL" in os.environ:
+    if "MOZ_DISABLE_ADB_INSTALL" in os.environ or install == InstallIntent.NO:
         install = InstallIntent.NO
         _log_info(
-            "Found MOZ_DISABLE_ADB_INSTALL in environment, skipping android app"
-            "installation"
+            "Found MOZ_DISABLE_ADB_INSTALL in environment and/or the"
+            " --noinstall flag, skipping android app installation"
+        )
+    else:
+        _log_info(
+            "*********************************************************************\n"
+            "Neither the MOZ_DISABLE_ADB_INSTALL environment variable nor the\n"
+            "--noinstall flag was found. The code will now uninstall the current\n"
+            "app then re-install the android app from a different source. If you\n"
+            "don't want this set your local env so that\n"
+            "MOZ_DISABLE_ADB_INSTALL=True or pass the --noinstall flag\n"
+            "*********************************************************************"
         )
     device_verified = False
     emulator = AndroidEmulator("*", substs=build_obj.substs, verbose=verbose)

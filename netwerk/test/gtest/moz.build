@@ -8,6 +8,7 @@ UNIFIED_SOURCES += [
     "TestBase64Stream.cpp",
     "TestBind.cpp",
     "TestBufferedInputStream.cpp",
+    "TestCacheControlParser.cpp",
     "TestCommon.cpp",
     "TestCookie.cpp",
     "TestDNSPacket.cpp",
@@ -47,7 +48,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
     UNIFIED_SOURCES += ["TestNetworkLinkIdHashingWindows.cpp"]
 
 # run the test on mac only
-if CONFIG["OS_TARGET"] == "Darwin":
+if CONFIG["TARGET_OS"] == "OSX":
     UNIFIED_SOURCES += ["TestNetworkLinkIdHashingDarwin.cpp"]
 
 TEST_HARNESS_FILES.gtest += [
@@ -61,6 +62,7 @@ USE_LIBS += [
 LOCAL_INCLUDES += [
     "/netwerk/base",
     "/netwerk/cookie",
+    "/netwerk/protocol/http",
     "/toolkit/components/jsoncpp/include",
     "/xpcom/tests/gtest",
 ]
@@ -70,7 +72,7 @@ if CONFIG["OS_TARGET"] == "WINNT":
     LOCAL_INCLUDES += ["/netwerk/system/win32"]
 
 # mac includes only
-if CONFIG["OS_TARGET"] == "Darwin":
+if CONFIG["TARGET_OS"] == "OSX":
     LOCAL_INCLUDES += ["/netwerk/system/mac"]
 
 include("/ipc/chromium/chromium-config.mozbuild")

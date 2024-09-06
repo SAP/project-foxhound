@@ -504,128 +504,64 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
   mCodecContext->flags |= AV_CODEC_FLAG_FRAME_DURATION;
 #endif
   mCodecContext->gop_size = static_cast<int>(mConfig.mKeyframeInterval);
-  // TODO (bug 1872871): Move the following extra settings to some helpers
-  // instead.
+
   if (mConfig.mUsage == MediaDataEncoder::Usage::Realtime) {
     mLib->av_opt_set(mCodecContext->priv_data, "deadline", "realtime", 0);
     // Explicitly ask encoder do not keep in flight at any one time for
     // lookahead purposes.
     mLib->av_opt_set(mCodecContext->priv_data, "lag-in-frames", "0", 0);
   }
-  // Apply SVC settings.
-  if (Maybe<VPXSVCSetting> svc =
-          GetVPXSVCSetting(mConfig.mScalabilityMode, mConfig.mBitrate)) {
-    // For libvpx.
-    if (mCodecName == "libvpx" || mCodecName == "libvpx-vp9") {
-      // Show a warning if mScalabilityMode mismatches mNumTemporalLayers
-      if (mConfig.mCodecSpecific) {
-        if (mConfig.mCodecSpecific->is<VP8Specific>() ||
-            mConfig.mCodecSpecific->is<VP9Specific>()) {
-          const uint8_t numTemporalLayers =
-              mConfig.mCodecSpecific->is<VP8Specific>()
-                  ? mConfig.mCodecSpecific->as<VP8Specific>().mNumTemporalLayers
-                  : mConfig.mCodecSpecific->as<VP9Specific>()
-                        .mNumTemporalLayers;
-          if (numTemporalLayers != svc->mNumberLayers) {
-            FFMPEGV_LOG(
-                "Force using %zu layers defined in scalability mode instead of "
-                "the %u layers defined in VP8/9Specific",
-                svc->mNumberLayers, numTemporalLayers);
-          }
-        }
+
+  if (Maybe<SVCSettings> settings = GetSVCSettings()) {
+    SVCSettings s = settings.extract();
+    mLib->av_opt_set(mCodecContext->priv_data, s.mSettingKeyValue.first.get(),
+                     s.mSettingKeyValue.second.get(), 0);
+
+    // FFmpegVideoEncoder is reset after Drain(), so mSVCInfo should be reset()
+    // before emplace().
+    mSVCInfo.reset();
+    mSVCInfo.emplace(std::move(s.mTemporalLayerIds));
+
+    // TODO: layer settings should be changed dynamically when the frame's
+    // color space changed.
+  }
+
+  nsAutoCString h264Log;
+  if (mConfig.mCodecSpecific && mConfig.mCodecSpecific->is<H264Specific>()) {
+    // TODO: Set profile, level, avcc/annexb for openh264 and others.
+    if (mCodecName == "libx264") {
+      const H264Specific& h264Specific =
+          mConfig.mCodecSpecific->as<H264Specific>();
+      H264Settings s = GetH264Settings(h264Specific);
+      mCodecContext->profile = s.mProfile;
+      mCodecContext->level = s.mLevel;
+      for (const auto& pair : s.mSettingKeyValuePairs) {
+        mLib->av_opt_set(mCodecContext->priv_data, pair.first.get(),
+                         pair.second.get(), 0);
       }
 
-      // Set ts_layering_mode.
-      nsPrintfCString parameters("ts_layering_mode=%u", svc->mLayeringMode);
-      // Set ts_target_bitrate.
-      parameters.Append(":ts_target_bitrate=");
-      for (size_t i = 0; i < svc->mTargetBitrates.Length(); ++i) {
-        if (i > 0) {
-          parameters.Append(",");
-        }
-        parameters.AppendPrintf("%d", svc->mTargetBitrates[i]);
-      }
-      // TODO: Set ts_number_layers, ts_periodicity, ts_layer_id and
-      // ts_rate_decimator if they are different from the preset values in
-      // ts_layering_mode.
+      // Log the settings.
+      // When using profile other than EXTENDED, the profile string is in the
+      // first element of mSettingKeyValuePairs, while EXTENDED profile has no
+      // profile string.
 
-      // Set parameters into ts-parameters.
-      mLib->av_opt_set(mCodecContext->priv_data, "ts-parameters",
-                       parameters.get(), 0);
-
-      // FFmpegVideoEncoder would be reset after Drain(), so mSVCInfo should be
-      // reset() before emplace().
-      mSVCInfo.reset();
-      mSVCInfo.emplace(std::move(svc->mLayerIds));
-
-      // TODO: layer settings should be changed dynamically when the frame's
-      // color space changed.
-    } else {
-      FFMPEGV_LOG("SVC setting is not implemented for %s codec",
-                  mCodecName.get());
+      MOZ_ASSERT_IF(
+          s.mSettingKeyValuePairs.Length() != 3,
+          h264Specific.mProfile == H264_PROFILE::H264_PROFILE_EXTENDED);
+      const char* profileStr = s.mSettingKeyValuePairs.Length() == 3
+                                   ? s.mSettingKeyValuePairs[0].second.get()
+                                   : "extended";
+      const char* levelStr = s.mSettingKeyValuePairs.Length() == 3
+                                 ? s.mSettingKeyValuePairs[1].second.get()
+                                 : s.mSettingKeyValuePairs[0].second.get();
+      const char* formatStr =
+          h264Specific.mFormat == H264BitStreamFormat::AVC ? "AVCC" : "AnnexB";
+      h264Log.AppendPrintf(", H264: profile - %d (%s), level %d (%s), %s",
+                           mCodecContext->profile, profileStr,
+                           mCodecContext->level, levelStr, formatStr);
     }
   }
-  // Apply codec specific settings.
-  nsAutoCString codecSpecificLog;
-  if (mConfig.mCodecSpecific) {
-    if (mConfig.mCodecSpecific->is<H264Specific>()) {
-      // For libx264.
-      if (mCodecName == "libx264") {
-        codecSpecificLog.Append(", H264:");
 
-        const H264Specific& specific =
-            mConfig.mCodecSpecific->as<H264Specific>();
-
-        // Set profile.
-        Maybe<H264Setting> profile = GetH264Profile(specific.mProfile);
-        if (!profile) {
-          FFMPEGV_LOG("failed to get h264 profile");
-          return MediaResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
-                             RESULT_DETAIL("H264 profile is unknown"));
-        }
-        codecSpecificLog.Append(
-            nsPrintfCString(" profile - %d", profile->mValue));
-        mCodecContext->profile = profile->mValue;
-        if (!profile->mString.IsEmpty()) {
-          codecSpecificLog.AppendPrintf(" (%s)", profile->mString.get());
-          mLib->av_opt_set(mCodecContext->priv_data, "profile",
-                           profile->mString.get(), 0);
-        }
-
-        // Set level.
-        Maybe<H264Setting> level = GetH264Level(specific.mLevel);
-        if (!level) {
-          FFMPEGV_LOG("failed to get h264 level");
-          return MediaResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
-                             RESULT_DETAIL("H264 level is unknown"));
-        }
-        codecSpecificLog.AppendPrintf(", level %d (%s)", level->mValue,
-                                      level->mString.get());
-        mCodecContext->level = level->mValue;
-        MOZ_ASSERT(!level->mString.IsEmpty());
-        mLib->av_opt_set(mCodecContext->priv_data, "level",
-                         level->mString.get(), 0);
-
-        // Set format: libx264's default format is annexb
-        if (specific.mFormat == H264BitStreamFormat::AVC) {
-          codecSpecificLog.Append(", AVCC");
-          mLib->av_opt_set(mCodecContext->priv_data, "x264-params", "annexb=0",
-                           0);
-          // mCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER
-          // if we don't want to append SPS/PPS data in all keyframe
-          // (LIBAVCODEC_VERSION_MAJOR >= 57 only).
-        } else {
-          codecSpecificLog.Append(", AnnexB");
-          // Set annexb explicitly even if it's default format.
-          mLib->av_opt_set(mCodecContext->priv_data, "x264-params", "annexb=1",
-                           0);
-        }
-      } else {
-        FFMPEGV_LOG("H264 settings is not implemented for codec %s ",
-                    mCodecName.get());
-      }
-    }
-  }
   // TODO: keyint_min, max_b_frame?
   // - if mConfig.mDenoising is set: av_opt_set_int(mCodecContext->priv_data,
   // "noise_sensitivity", x, 0), where the x is from 0(disabled) to 6.
@@ -657,7 +593,7 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
               static_cast<int64_t>(mCodecContext->bit_rate),
               mCodecContext->width, mCodecContext->height,
               mCodecContext->time_base.num, mCodecContext->time_base.den,
-              codecSpecificLog.IsEmpty() ? "" : codecSpecificLog.get());
+              h264Log.IsEmpty() ? "" : h264Log.get());
 
   return MediaResult(NS_OK);
 }
@@ -1150,6 +1086,101 @@ void FFmpegVideoEncoder<LIBAV_VER>::ForceEnablingFFmpegDebugLogs() {
     mLib->av_log_set_level(AV_LOG_DEBUG);
   }
 #endif  // DEBUG
+}
+
+Maybe<FFmpegVideoEncoder<LIBAV_VER>::SVCSettings>
+FFmpegVideoEncoder<LIBAV_VER>::GetSVCSettings() {
+  MOZ_ASSERT(!mCodecName.IsEmpty());
+
+  // TODO: Add support for AV1 and H264.
+  if (mCodecName != "libvpx" && mCodecName != "libvpx-vp9") {
+    FFMPEGV_LOG("SVC setting is not implemented for %s codec",
+                mCodecName.get());
+    return Nothing();
+  }
+
+  Maybe<VPXSVCSetting> svc =
+      GetVPXSVCSetting(mConfig.mScalabilityMode, mConfig.mBitrate);
+  if (!svc) {
+    FFMPEGV_LOG("No SVC settings obtained. Skip");
+    return Nothing();
+  }
+
+  // Check if the number of temporal layers in codec specific settings matches
+  // the number of layers for the given scalability mode.
+
+  auto GetNumTemporalLayers = [&]() -> uint8_t {
+    uint8_t layers = 0;
+    if (mConfig.mCodecSpecific) {
+      if (mConfig.mCodecSpecific->is<VP8Specific>()) {
+        layers = mConfig.mCodecSpecific->as<VP8Specific>().mNumTemporalLayers;
+        MOZ_ASSERT(layers > 0);
+      } else if (mConfig.mCodecSpecific->is<VP9Specific>()) {
+        layers = mConfig.mCodecSpecific->as<VP9Specific>().mNumTemporalLayers;
+        MOZ_ASSERT(layers > 0);
+      }
+    }
+    return layers;
+  };
+
+  DebugOnly<uint8_t> numTemporalLayers = GetNumTemporalLayers();
+  MOZ_ASSERT_IF(numTemporalLayers > 0, numTemporalLayers == svc->mNumberLayers);
+
+  // Form an SVC setting string for libvpx.
+
+  nsPrintfCString parameters("ts_layering_mode=%u", svc->mLayeringMode);
+  parameters.Append(":ts_target_bitrate=");
+  for (size_t i = 0; i < svc->mTargetBitrates.Length(); ++i) {
+    if (i > 0) {
+      parameters.Append(",");
+    }
+    parameters.AppendPrintf("%d", svc->mTargetBitrates[i]);
+  }
+
+  // TODO: Set ts_number_layers, ts_periodicity, ts_layer_id and
+  // ts_rate_decimator if they are different from the preset values in
+  // ts_layering_mode.
+
+  return Some(
+      SVCSettings{std::move(svc->mLayerIds),
+                  std::make_pair("ts-parameters"_ns, std::move(parameters))});
+}
+
+FFmpegVideoEncoder<LIBAV_VER>::H264Settings FFmpegVideoEncoder<
+    LIBAV_VER>::GetH264Settings(const H264Specific& aH264Specific) {
+  MOZ_ASSERT(mCodecName == "libx264",
+             "GetH264Settings is libx264-only for now");
+
+  nsTArray<std::pair<nsCString, nsCString>> keyValuePairs;
+
+  Maybe<H264Setting> profile = GetH264Profile(aH264Specific.mProfile);
+  MOZ_RELEASE_ASSERT(profile.isSome());
+  if (!profile->mString.IsEmpty()) {
+    keyValuePairs.AppendElement(std::make_pair("profile"_ns, profile->mString));
+  } else {
+    MOZ_RELEASE_ASSERT(aH264Specific.mProfile ==
+                       H264_PROFILE::H264_PROFILE_EXTENDED);
+  }
+
+  Maybe<H264Setting> level = GetH264Level(aH264Specific.mLevel);
+  MOZ_RELEASE_ASSERT(level.isSome());
+  MOZ_RELEASE_ASSERT(!level->mString.IsEmpty());
+  keyValuePairs.AppendElement(std::make_pair("level"_ns, level->mString));
+
+  // Set format: libx264's default format is annexb.
+  if (aH264Specific.mFormat == H264BitStreamFormat::AVC) {
+    keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=0"));
+    // mCodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER
+    // if we don't want to append SPS/PPS data in all keyframe
+    // (LIBAVCODEC_VERSION_MAJOR >= 57 only).
+  } else {
+    // Set annexb explicitly even if it's default format.
+    keyValuePairs.AppendElement(std::make_pair("x264-params"_ns, "annexb=1"));
+  }
+
+  return H264Settings{.mProfile = profile->mValue,
+                      .mLevel = level->mValue,
+                      .mSettingKeyValuePairs = std::move(keyValuePairs)};
 }
 
 }  // namespace mozilla

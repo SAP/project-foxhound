@@ -1442,7 +1442,7 @@ class ASTSerializer {
   bool exportSpecifier(BinaryNode* exportSpec, MutableHandleValue dst);
   bool exportNamespaceSpecifier(UnaryNode* exportSpec, MutableHandleValue dst);
   bool classDefinition(ClassNode* pn, bool expr, MutableHandleValue dst);
-  bool importAttributes(ListNode* assertionList, NodeVector& assertions);
+  bool importAttributes(ListNode* attributeList, NodeVector& attributes);
 
   bool optStatement(ParseNode* pn, MutableHandleValue dst) {
     if (!pn) {
@@ -2885,7 +2885,8 @@ bool ASTSerializer::expression(ParseNode* pn, MutableHandleValue dst) {
     }
 
     case ParseNodeKind::DotExpr:
-    case ParseNodeKind::OptionalDotExpr: {
+    case ParseNodeKind::OptionalDotExpr:
+    case ParseNodeKind::ArgumentsLength: {
       PropertyAccessBase* prop = &pn->as<PropertyAccessBase>();
       MOZ_ASSERT(prop->pn_pos.encloses(prop->expression().pn_pos));
 

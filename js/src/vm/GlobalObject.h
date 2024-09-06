@@ -129,8 +129,8 @@ class GlobalObjectData {
     HeapPtr<JSObject*> constructor;
     HeapPtr<JSObject*> prototype;
   };
-  using CtorArray =
-      mozilla::EnumeratedArray<JSProtoKey, JSProto_LIMIT, ConstructorWithProto>;
+  using CtorArray = mozilla::EnumeratedArray<JSProtoKey, ConstructorWithProto,
+                                             size_t(JSProto_LIMIT)>;
   CtorArray builtinConstructors;
 
   // Built-in prototypes for this global. Note that this is different from the
@@ -154,8 +154,8 @@ class GlobalObjectData {
 
     Limit
   };
-  using ProtoArray =
-      mozilla::EnumeratedArray<ProtoKind, ProtoKind::Limit, HeapPtr<JSObject*>>;
+  using ProtoArray = mozilla::EnumeratedArray<ProtoKind, HeapPtr<JSObject*>,
+                                              size_t(ProtoKind::Limit)>;
   ProtoArray builtinProtos;
 
   HeapPtr<GlobalScope*> emptyGlobalScope;
@@ -195,8 +195,9 @@ class GlobalObjectData {
 
   // Shape for PlainObject with %Object.prototype% as proto, for each object
   // AllocKind.
-  using PlainObjectShapeArray = mozilla::EnumeratedArray<
-      PlainObjectSlotsKind, PlainObjectSlotsKind::Limit, HeapPtr<SharedShape*>>;
+  using PlainObjectShapeArray =
+      mozilla::EnumeratedArray<PlainObjectSlotsKind, HeapPtr<SharedShape*>,
+                               size_t(PlainObjectSlotsKind::Limit)>;
   PlainObjectShapeArray plainObjectShapesWithDefaultProto;
 
   // Shape for JSFunction with %Function.prototype% as proto, for both
@@ -1085,6 +1086,14 @@ class GlobalObject : public NativeObject {
   }
   static SharedShape* createPlainObjectShapeWithDefaultProto(
       JSContext* cx, gc::AllocKind kind);
+
+  static SharedShape* getEmptyPlainObjectShape(JSContext* cx) {
+    const PlainObjectSlotsKind kind = PlainObjectSlotsKind::Slots0;
+    SharedShape* shape =
+        cx->global()->data().plainObjectShapesWithDefaultProto[kind];
+    MOZ_ASSERT(shape);  // This is created on initialization.
+    return shape;
+  }
 
   static SharedShape* getFunctionShapeWithDefaultProto(JSContext* cx,
                                                        bool extended) {

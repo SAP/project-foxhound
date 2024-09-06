@@ -79,14 +79,14 @@ nsresult HTMLAnchorElement::BindToTree(BindContext& aContext,
   return rv;
 }
 
-void HTMLAnchorElement::UnbindFromTree(bool aNullParent) {
+void HTMLAnchorElement::UnbindFromTree(UnbindContext& aContext) {
   // Cancel any DNS prefetches
   // Note: Must come before ResetLinkState.  If called after, it will recreate
   // mCachedURI based on data that is invalid - due to a call to Link::GetURI()
   // via GetURIForDNSPrefetch().
   CancelDNSPrefetch(*this);
 
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 
   // Without removing the link state we risk a dangling pointer in the
   // mStyledLinks hashtable
@@ -156,7 +156,8 @@ void HTMLAnchorElement::GetTarget(nsAString& aValue) const {
 
 nsDOMTokenList* HTMLAnchorElement::RelList() {
   if (!mRelList) {
-    mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
+    mRelList =
+        new nsDOMTokenList(this, nsGkAtoms::rel, sAnchorAndFormRelValues);
   }
   return mRelList;
 }

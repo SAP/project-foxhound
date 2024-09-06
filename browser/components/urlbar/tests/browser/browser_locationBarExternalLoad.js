@@ -20,15 +20,7 @@ function urlClick(url) {
   gURLBar.focus();
   gURLBar.value = "";
   EventUtils.sendString(url);
-  // We intentionally change this a11y check, because the following click is
-  // send to test the behavior of a purposefully non-focusable image button
-  // using an alternative way of the urlbar search query submission, where
-  // other ways are keyboard accessible (and are tested above).
-  AccessibilityUtils.setEnv({
-    focusableRule: false,
-  });
   EventUtils.synthesizeMouseAtCenter(gURLBar.goButton, {});
-  AccessibilityUtils.resetEnv();
 }
 
 function promiseNewTabSwitched() {
@@ -60,7 +52,7 @@ function promiseLoaded(browser) {
   });
 }
 
-async function testURL(url, loadFunc, endFunc) {
+async function testURL(url, loadFunc) {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
   let browser = tab.linkedBrowser;
 
@@ -78,7 +70,7 @@ async function testURL(url, loadFunc, endFunc) {
   await SpecialPowers.spawn(
     browser,
     [{ isRemote: gMultiProcessBrowser }],
-    async function (arg) {
+    async function () {
       Assert.equal(
         Services.focus.focusedElement,
         null,

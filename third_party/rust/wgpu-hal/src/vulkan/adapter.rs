@@ -189,7 +189,7 @@ impl PhysicalDeviceFeatures {
                 //.shader_clip_distance(requested_features.contains(wgt::Features::SHADER_CLIP_DISTANCE))
                 //.shader_cull_distance(requested_features.contains(wgt::Features::SHADER_CULL_DISTANCE))
                 .shader_float64(requested_features.contains(wgt::Features::SHADER_F64))
-                //.shader_int64(requested_features.contains(wgt::Features::SHADER_INT64))
+                .shader_int64(requested_features.contains(wgt::Features::SHADER_INT64))
                 .shader_int16(requested_features.contains(wgt::Features::SHADER_I16))
                 //.shader_resource_residency(requested_features.contains(wgt::Features::SHADER_RESOURCE_RESIDENCY))
                 .geometry_shader(requested_features.contains(wgt::Features::SHADER_PRIMITIVE_INDEX))
@@ -369,6 +369,7 @@ impl PhysicalDeviceFeatures {
             | F::ADDRESS_MODE_CLAMP_TO_BORDER
             | F::ADDRESS_MODE_CLAMP_TO_ZERO
             | F::TIMESTAMP_QUERY
+            | F::TIMESTAMP_QUERY_INSIDE_ENCODERS
             | F::TIMESTAMP_QUERY_INSIDE_PASSES
             | F::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | F::CLEAR_TEXTURE;
@@ -468,7 +469,7 @@ impl PhysicalDeviceFeatures {
         //if self.core.shader_clip_distance != 0 {
         //if self.core.shader_cull_distance != 0 {
         features.set(F::SHADER_F64, self.core.shader_float64 != 0);
-        //if self.core.shader_int64 != 0 {
+        features.set(F::SHADER_INT64, self.core.shader_int64 != 0);
         features.set(F::SHADER_I16, self.core.shader_int16 != 0);
 
         //if caps.supports_extension(vk::KhrSamplerMirrorClampToEdgeFn::name()) {
@@ -827,6 +828,11 @@ impl PhysicalDeviceCapabilities {
                 u64::MAX
             };
 
+        // TODO: programmatically determine this, if possible. It's unclear whether we can
+        // as of https://github.com/gpuweb/gpuweb/issues/2965#issuecomment-1361315447.
+        // We could increase the limit when we aren't on a tiled GPU.
+        let max_color_attachment_bytes_per_sample = 32;
+
         wgt::Limits {
             max_texture_dimension_1d: limits.max_image_dimension1_d,
             max_texture_dimension_2d: limits.max_image_dimension2_d,
@@ -862,6 +868,10 @@ impl PhysicalDeviceCapabilities {
             max_inter_stage_shader_components: limits
                 .max_vertex_output_components
                 .min(limits.max_fragment_input_components),
+            max_color_attachments: limits
+                .max_color_attachments
+                .min(crate::MAX_COLOR_ATTACHMENTS as u32),
+            max_color_attachment_bytes_per_sample,
             max_compute_workgroup_storage_size: limits.max_compute_shared_memory_size,
             max_compute_invocations_per_workgroup: limits.max_compute_work_group_invocations,
             max_compute_workgroup_size_x: max_compute_workgroup_sizes[0],
@@ -1444,6 +1454,10 @@ impl super::Adapter {
                 capabilities.push(spv::Capability::RayQueryKHR);
             }
 
+            if features.contains(wgt::Features::SHADER_INT64) {
+                capabilities.push(spv::Capability::Int64);
+            }
+
             let mut flags = spv::WriterFlags::empty();
             flags.set(
                 spv::WriterFlags::DEBUG,
@@ -1848,7 +1862,11 @@ impl crate::Adapter<super::Api> for super::Adapter {
             .collect();
         Some(crate::SurfaceCapabilities {
             formats,
-            swap_chain_sizes: caps.min_image_count..=max_image_count,
+            // TODO: Right now we're always trunkating the swap chain
+            // (presumably - we're actually setting the min image count which isn't necessarily the swap chain size)
+            // Instead, we should use extensions when available to wait in present.
+            // See https://github.com/gfx-rs/wgpu/issues/2869
+            maximum_frame_latency: (caps.min_image_count - 1)..=(max_image_count - 1), // Note this can't underflow since both `min_image_count` is at least one and we already patched `max_image_count`.
             current_extent,
             usage: conv::map_vk_image_usage(caps.supported_usage_flags),
             present_modes: raw_present_modes

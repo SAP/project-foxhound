@@ -205,7 +205,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
                               nsAttrValue& aResult) override;
 
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  virtual void UnbindFromTree(UnbindContext&) override;
   virtual void DoneCreatingElement() override;
 
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
@@ -556,6 +556,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   bool HasVideo() const { return mMediaInfo.HasVideo(); }
 
   bool IsEncrypted() const override { return mIsEncrypted; }
+
+#ifdef MOZ_WMF_CDM
+  bool IsUsingWMFCDM() const override;
+#endif
 
   bool Paused() const { return mPaused; }
 
@@ -1928,6 +1932,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   // Return true if we should queue a 'timeupdate' event runner to main thread.
   bool ShouldQueueTimeupdateAsyncTask(TimeupdateType aType) const;
+
+#ifdef MOZ_WMF_CDM
+  // It's used to record telemetry probe for WMFCDM playback.
+  bool mIsUsingWMFCDM = false;
+#endif
 };
 
 // Check if the context is chrome or has the debugger or tabs permission

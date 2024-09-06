@@ -7,13 +7,10 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutWelcomeDefaults:
+    "resource:///modules/aboutwelcome/AboutWelcomeDefaults.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AboutWelcomeDefaults:
-    "resource:///modules/aboutwelcome/AboutWelcomeDefaults.jsm",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -22,6 +19,15 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   );
   return new Logger("AboutWelcomeChild");
 });
+
+const DID_SEE_FINAL_SCREEN_PREF = "browser.aboutwelcome.didSeeFinalScreen";
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "toolbarEntrypoint",
+  "browser.aboutwelcome.entrypoint",
+  ""
+);
 
 export class AboutWelcomeChild extends JSWindowActorChild {
   // Can be used to avoid accesses to the document/contentWindow after it's
@@ -94,6 +100,10 @@ export class AboutWelcomeChild extends JSWindowActorChild {
 
     Cu.exportFunction(this.AWFinish.bind(this), window, {
       defineAs: "AWFinish",
+    });
+
+    Cu.exportFunction(this.AWEnsureAddonInstalled.bind(this), window, {
+      defineAs: "AWEnsureAddonInstalled",
     });
 
     Cu.exportFunction(this.AWEnsureLangPackInstalled.bind(this), window, {
@@ -232,6 +242,9 @@ export class AboutWelcomeChild extends JSWindowActorChild {
    * @param {object} eventData
    */
   AWSendEventTelemetry(eventData) {
+    if (lazy.toolbarEntrypoint) {
+      eventData.event_context.entrypoint = lazy.toolbarEntrypoint;
+    }
     this.AWSendToParent("TELEMETRY_EVENT", {
       ...eventData,
       event_context: {
@@ -241,7 +254,7 @@ export class AboutWelcomeChild extends JSWindowActorChild {
   }
 
   /**
-   * Send message that can be handled by AboutWelcomeParent.jsm
+   * Send message that can be handled by AboutWelcomeParent.sys.mjs
    *
    * @param {string} type
    * @param {any=} data
@@ -255,9 +268,23 @@ export class AboutWelcomeChild extends JSWindowActorChild {
     return this.wrapPromise(this.sendQuery("AWPage:WAIT_FOR_MIGRATION_CLOSE"));
   }
 
+  setDidSeeFinalScreen() {
+    this.AWSendToParent("SPECIAL_ACTION", {
+      type: "SET_PREF",
+      data: {
+        pref: {
+          name: DID_SEE_FINAL_SCREEN_PREF,
+          value: true,
+        },
+      },
+    });
+  }
+
   AWFinish() {
     const shouldFocusNewtabUrlBar =
       lazy.NimbusFeatures.aboutwelcome.getVariable("newtabUrlBarFocus");
+
+    this.setDidSeeFinalScreen();
 
     this.contentWindow.location.href = "about:home";
     if (shouldFocusNewtabUrlBar) {
@@ -265,6 +292,12 @@ export class AboutWelcomeChild extends JSWindowActorChild {
         type: "FOCUS_URLBAR",
       });
     }
+  }
+
+  AWEnsureAddonInstalled(addonId) {
+    return this.wrapPromise(
+      this.sendQuery("AWPage:ENSURE_ADDON_INSTALLED", addonId)
+    );
   }
 
   AWEnsureLangPackInstalled(negotiated, screenContent) {
@@ -466,9 +499,6 @@ const SHOPPING_MICROSURVEY = {
         title: {
           string_id: "shopping-survey-headline",
         },
-        subtitle: {
-          string_id: "shopping-survey-question-one",
-        },
         primary_button: {
           label: {
             string_id: "shopping-survey-next-button-label",
@@ -512,6 +542,9 @@ const SHOPPING_MICROSURVEY = {
           style: {
             flexDirection: "column",
             alignItems: "flex-start",
+          },
+          label: {
+            string_id: "shopping-survey-question-one",
           },
           data: [
             {
@@ -565,9 +598,6 @@ const SHOPPING_MICROSURVEY = {
         title: {
           string_id: "shopping-survey-headline",
         },
-        subtitle: {
-          string_id: "shopping-survey-question-two",
-        },
         primary_button: {
           label: {
             string_id: "shopping-survey-submit-button-label",
@@ -611,6 +641,9 @@ const SHOPPING_MICROSURVEY = {
           style: {
             flexDirection: "column",
             alignItems: "flex-start",
+          },
+          label: {
+            string_id: "shopping-survey-question-two",
           },
           data: [
             {

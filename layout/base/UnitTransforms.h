@@ -77,9 +77,6 @@ enum class PixelCastJustification : uint8_t {
   // use CSS pixels) and code related to the scroll frame in APZ (which wants
   // such quantities in OuterCSS pixels).
   CSSPixelsOfSurroundingContent,
-  // The matrix has been converted to a conceptually different type by calling
-  // PreScale() and/or PostScale()
-  UntypedPrePostScale,
 };
 
 template <class TargetUnits, class SourceUnits>
@@ -177,7 +174,7 @@ template <class TargetMatrix, class SourceMatrixSourceUnits,
 TargetMatrix ViewAs(const gfx::Matrix4x4Typed<SourceMatrixSourceUnits,
                                               SourceMatrixTargetUnits>& aMatrix,
                     PixelCastJustification) {
-  return TargetMatrix::FromUnknownMatrix(aMatrix.ToUnknownMatrix());
+  return aMatrix.template Cast<TargetMatrix>();
 }
 template <class TargetMatrix, class SourceMatrixSourceUnits,
           class SourceMatrixTargetUnits>
@@ -186,7 +183,7 @@ Maybe<TargetMatrix> ViewAs(
                                     SourceMatrixTargetUnits>>& aMatrix,
     PixelCastJustification) {
   if (aMatrix.isSome()) {
-    return Some(TargetMatrix::FromUnknownMatrix(aMatrix->ToUnknownMatrix()));
+    return Some(aMatrix->template Cast<TargetMatrix>());
   }
   return Nothing();
 }

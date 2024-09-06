@@ -12,23 +12,7 @@ BROWSER_CHROME_MANIFESTS += [
     "test/browser/browser.toml",
 ]
 
-TESTING_JS_MODULES += [
-    "content-src/asrouter/schemas/FxMSCommon.schema.json",
-    "content-src/asrouter/templates/CFR/templates/CFRUrlbarChiclet.schema.json",
-    "content-src/asrouter/templates/CFR/templates/ExtensionDoorhanger.schema.json",
-    "content-src/asrouter/templates/CFR/templates/InfoBar.schema.json",
-    "content-src/asrouter/templates/OnboardingMessage/Spotlight.schema.json",
-    "content-src/asrouter/templates/OnboardingMessage/ToolbarBadgeMessage.schema.json",
-    "content-src/asrouter/templates/OnboardingMessage/UpdateAction.schema.json",
-    "content-src/asrouter/templates/OnboardingMessage/WhatsNewMessage.schema.json",
-    "content-src/asrouter/templates/PBNewtab/NewtabPromoMessage.schema.json",
-    "content-src/asrouter/templates/ToastNotification/ToastNotification.schema.json",
-    "test/InflightAssetsMessageProvider.sys.mjs",
-    "test/NimbusRolloutMessageProvider.sys.mjs",
-]
-
 SPHINX_TREES["docs"] = "docs"
-SPHINX_TREES["content-src/asrouter/docs"] = "content-src/asrouter/docs"
 
 XPCSHELL_TESTS_MANIFESTS += [
     "test/xpcshell/xpcshell.toml",
@@ -42,11 +26,6 @@ XPIDL_MODULE = "browser-newtab"
 
 EXTRA_JS_MODULES += [
     "AboutNewTabService.sys.mjs",
-]
-
-FINAL_TARGET_FILES.actors += [
-    "actors/ASRouterChild.sys.mjs",
-    "actors/ASRouterParent.sys.mjs",
 ]
 
 XPCOM_MANIFESTS += [

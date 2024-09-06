@@ -212,6 +212,7 @@ class DownloadItem {
       let timeLeftInSeconds = sizeLeft / this.download.speed;
       return new Date(Date.now() + timeLeftInSeconds * 1000);
     }
+    return undefined;
   }
 
   get state() {
@@ -460,7 +461,7 @@ const downloadQuery = query => {
   // an explicit value to match.
   function makeMatch(regex, value, field) {
     if (value == null && regex == null) {
-      return input => true;
+      return () => true;
     }
 
     let re;
@@ -477,7 +478,7 @@ const downloadQuery = query => {
     if (re.test(value)) {
       return input => value == input;
     }
-    return input => false;
+    return () => false;
   }
 
   const matchFilename = makeMatch(
@@ -940,7 +941,11 @@ this.downloads = class extends ExtensionAPIPersistent {
             const picker = Cc["@mozilla.org/filepicker;1"].createInstance(
               Ci.nsIFilePicker
             );
-            picker.init(window, null, Ci.nsIFilePicker.modeSave);
+            picker.init(
+              window.browsingContext,
+              null,
+              Ci.nsIFilePicker.modeSave
+            );
             if (lastFilePickerDirectory) {
               picker.displayDirectory = lastFilePickerDirectory;
             } else {

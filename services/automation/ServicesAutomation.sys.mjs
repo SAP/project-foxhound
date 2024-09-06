@@ -139,11 +139,11 @@ export var Authentication = {
     let mainWindow = Services.wm.getMostRecentWindow("navigator:browser");
     let newtab = mainWindow.gBrowser.addWebTab(uri);
     let win = mainWindow.gBrowser.getBrowserForTab(newtab);
-    win.addEventListener("load", function (e) {
+    win.addEventListener("load", function () {
       LOG("load");
     });
 
-    win.addEventListener("loadstart", function (e) {
+    win.addEventListener("loadstart", function () {
       LOG("loadstart");
     });
 
@@ -299,7 +299,7 @@ export var Sync = {
     await this.wipeLogs();
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     LOG("Event received " + topic);
   },
 
@@ -392,7 +392,7 @@ export var Sync = {
 };
 
 export function initConfig(autoconfig) {
-  Services.prefs.setCharPref(AUTOCONFIG_PREF, autoconfig);
+  Services.prefs.setStringPref(AUTOCONFIG_PREF, autoconfig);
 }
 
 export async function triggerSync(username, password, autoconfig) {

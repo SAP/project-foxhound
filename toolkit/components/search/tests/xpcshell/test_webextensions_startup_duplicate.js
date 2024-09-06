@@ -27,7 +27,7 @@ add_task(async function test_install_duplicate_engine_startup() {
   let name = "Plain";
   let id = "plain@tests.mozilla.org";
   consoleAllowList.push(
-    `#installExtensionEngine failed for ${id}`,
+    `#createAndAddAddonEngine failed for ${id}`,
     `An engine called ${name} already exists`
   );
   // Do not use SearchTestUtils.installSearchExtension, as we need to manually
@@ -51,7 +51,9 @@ add_task(async function test_install_duplicate_engine_startup() {
   let submission = engine.getSubmission("foo");
   Assert.equal(
     submission.uri.spec,
-    "https://duckduckgo.com/?q=foo&t=ffsb",
+    SearchUtils.newSearchConfigEnabled
+      ? "https://duckduckgo.com/?t=ffsb&q=foo"
+      : "https://duckduckgo.com/?q=foo&t=ffsb",
     "Should have not changed the app provided engine."
   );
 

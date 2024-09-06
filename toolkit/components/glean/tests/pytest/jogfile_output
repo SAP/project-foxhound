@@ -189,6 +189,15 @@
     ],
     "test.nested": [
       [
+        "object",
+        "an_object",
+        [
+          "metrics"
+        ],
+        "ping",
+        false
+      ],
+      [
         "datetime",
         "datetime_metric",
         [
@@ -303,6 +312,7 @@
       true,
       false,
       true,
+      true,
       [
         "background",
         "dirty_startup",
@@ -314,12 +324,14 @@
       true,
       true,
       true,
+      true,
       []
     ],
     [
       "not-events",
       true,
       false,
+      true,
       true,
       [
         "background",
@@ -332,6 +344,7 @@
       true,
       false,
       true,
+      true,
       [
         "overdue",
         "reschedule",
@@ -339,6 +352,14 @@
         "tomorrow",
         "upgrade"
       ]
+    ],
+    [
+      "not-ohttp",
+      false,
+      true,
+      true,
+      false,
+      []
     ]
   ]
 }

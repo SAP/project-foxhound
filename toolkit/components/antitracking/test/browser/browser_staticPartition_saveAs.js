@@ -16,7 +16,7 @@ const TEST_VIDEO_URL = TEST_DOMAIN + TEST_PATH + "file_saveAsVideo.sjs";
 const TEST_PAGEINFO_URL = TEST_DOMAIN + TEST_PATH + "file_saveAsPageInfo.html";
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 
 const tempDir = createTemporarySaveDirectory();
 MockFilePicker.displayDirectory = tempDir;
@@ -102,6 +102,7 @@ add_task(async function testContextMenuSaveImage() {
         set: [
           ["privacy.partition.network_state", networkIsolation],
           ["privacy.dynamic_firstparty.use_site", partitionPerSite],
+          ["dom.block_download_insecure", false],
         ],
       });
 
@@ -197,6 +198,7 @@ add_task(async function testContextMenuSaveVideo() {
         set: [
           ["privacy.partition.network_state", networkIsolation],
           ["privacy.dynamic_firstparty.use_site", partitionPerSite],
+          ["dom.block_download_insecure", false],
         ],
       });
 
@@ -370,7 +372,7 @@ add_task(async function testSavePageInOfflineMode() {
       // Clean up the cache count on the server side.
       await fetch(`${TEST_IMAGE_URL}?result`);
       await new Promise(resolve => {
-        Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
           resolve()
         );
       });

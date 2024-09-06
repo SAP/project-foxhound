@@ -136,9 +136,11 @@
   _(StringToString)                                \
   _(StringValueOf)                                 \
   _(StringCharCodeAt)                              \
+  _(StringCodePointAt)                             \
   _(StringFromCharCode)                            \
   _(StringFromCodePoint)                           \
   _(StringCharAt)                                  \
+  _(StringAt)                                      \
   _(StringIncludes)                                \
   _(StringIndexOf)                                 \
   _(StringLastIndexOf)                             \
@@ -215,6 +217,7 @@
   _(IntrinsicIsTypedArray)                         \
   _(IntrinsicIsPossiblyWrappedTypedArray)          \
   _(IntrinsicTypedArrayLength)                     \
+  _(IntrinsicTypedArrayLengthZeroOnOutOfBounds)    \
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicRegExpBuiltinExec)                    \
   _(IntrinsicRegExpBuiltinExecForTest)             \

@@ -1,9 +1,7 @@
 [DEFAULT]
 prefs = [
   "dom.animations-api.compositing.enabled=true",
-  "dom.animations-api.getAnimations.enabled=true",
   "dom.animations-api.timelines.enabled=true",
-  "dom.animations.mainthread-synchronization-with-geometric-animations=true",
   "gfx.omta.background-color=true",
   "gfx.font_loader.delay=0",
   "layout.css.container-queries.enabled=true",
@@ -20,6 +18,7 @@ prefs = [
   "layout.css.basic-shape-rect.enabled=true",
   "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.transform-box-content-stroke.enabled=true",
+  "layout.css.transition-behavior.enabled=true",
 ]
 support-files = [
   "animation_utils.js",

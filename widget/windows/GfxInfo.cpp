@@ -1092,25 +1092,20 @@ void GfxInfo::AddCrashReportAnnotations() {
   }
 
   nsString deviceID, vendorID, driverVersion, subsysID;
-  nsCString narrowDeviceID, narrowVendorID, narrowDriverVersion, narrowSubsysID;
 
   GetAdapterDeviceID(deviceID);
-  CopyUTF16toUTF8(deviceID, narrowDeviceID);
   GetAdapterVendorID(vendorID);
-  CopyUTF16toUTF8(vendorID, narrowVendorID);
   GetAdapterDriverVersion(driverVersion);
-  CopyUTF16toUTF8(driverVersion, narrowDriverVersion);
   GetAdapterSubsysID(subsysID);
-  CopyUTF16toUTF8(subsysID, narrowSubsysID);
 
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::AdapterVendorID,
-                                     narrowVendorID);
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::AdapterDeviceID,
-                                     narrowDeviceID);
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::AdapterDriverVersion, narrowDriverVersion);
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::AdapterSubsysID,
-                                     narrowSubsysID);
+  CrashReporter::RecordAnnotationNSString(
+      CrashReporter::Annotation::AdapterVendorID, vendorID);
+  CrashReporter::RecordAnnotationNSString(
+      CrashReporter::Annotation::AdapterDeviceID, deviceID);
+  CrashReporter::RecordAnnotationNSString(
+      CrashReporter::Annotation::AdapterDriverVersion, driverVersion);
+  CrashReporter::RecordAnnotationNSString(
+      CrashReporter::Annotation::AdapterSubsysID, subsysID);
 
   /* Add an App Note, this contains extra information. */
   nsAutoCString note;
@@ -1741,24 +1736,6 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         "FEATURE_UNQUALIFIED_P010_NVIDIA");
 
     ////////////////////////////////////
-    // FEATURE_VIDEO_OVERLAY - ALLOWLIST
-#ifdef EARLY_BETA_OR_EARLIER
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::All,
-        nsIGfxInfo::FEATURE_VIDEO_OVERLAY, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_ROLLOUT_ALL");
-#else
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::IntelAll,
-        nsIGfxInfo::FEATURE_VIDEO_OVERLAY, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_ROLLOUT_INTEL");
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::NvidiaAll,
-        nsIGfxInfo::FEATURE_VIDEO_OVERLAY, nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-        DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0), "FEATURE_ROLLOUT_NVIDIA");
-#endif
-
-    ////////////////////////////////////
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY
 
     APPEND_TO_DRIVER_BLOCKLIST_RANGE(
@@ -1801,9 +1778,13 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
 
     ////////////////////////////////////
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY - ALLOWLIST
-
-    // XXX ZeroCopyNV12Texture is disabled with non-intel GPUs for now.
-    // See Bug 1798242
+#ifdef EARLY_BETA_OR_EARLIER
+    APPEND_TO_DRIVER_BLOCKLIST2(
+        OperatingSystem::Windows, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
+        nsIGfxInfo::FEATURE_ALLOW_ALWAYS, DRIVER_COMPARISON_IGNORED,
+        V(0, 0, 0, 0), "FEATURE_ROLLOUT_ALL");
+#endif
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows, DeviceFamily::IntelAll,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
@@ -1826,6 +1807,26 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(10, 18, 15, 4256), V(10, 18, 15, 4293), "FEATURE_FAILURE_BUG_1833809",
         "Intel driver 10.18.15.*");
+
+    ////////////////////////////////////
+    // FEATURE_OVERLAY_VP_AUTO_HDR
+
+    APPEND_TO_DRIVER_BLOCKLIST(
+        OperatingSystem::Windows, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_OVERLAY_VP_AUTO_HDR,
+        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
+        V(31, 0, 15, 5050), "FEATURE_FAILURE_VP_AUTO_HDR",
+        "nVidia driver > 550.50");
+
+    ////////////////////////////////////
+    // FEATURE_OVERLAY_VP_SUPER_RESOLUTION
+
+    APPEND_TO_DRIVER_BLOCKLIST(
+        OperatingSystem::Windows, DeviceFamily::NvidiaAll,
+        nsIGfxInfo::FEATURE_OVERLAY_VP_SUPER_RESOLUTION,
+        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
+        V(31, 0, 15, 3000), "FEATURE_FAILURE_VP_AUTO_HDR",
+        "nVidia driver > 530.00");
 
     ////////////////////////////////////
     // FEATURE_WEBRENDER

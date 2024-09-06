@@ -19,7 +19,6 @@
 #include "mozilla/TextControlState.h"
 #include "nsAttrValueInlines.h"
 #include "nsBaseCommandController.h"
-#include "nsContentCID.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsError.h"
 #include "nsFocusManager.h"
@@ -395,12 +394,14 @@ bool HTMLTextAreaElement::ParseAttribute(int32_t aNamespaceID,
 void HTMLTextAreaElement::MapAttributesIntoRule(
     MappedDeclarationsBuilder& aBuilder) {
   // wrap=off
-  if (!aBuilder.PropertyIsSet(eCSSProperty_white_space)) {
-    const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::wrap);
-    if (value && value->Type() == nsAttrValue::eString &&
-        value->Equals(nsGkAtoms::OFF, eIgnoreCase)) {
-      aBuilder.SetKeywordValue(eCSSProperty_white_space, StyleWhiteSpace::Pre);
-    }
+  const nsAttrValue* value = aBuilder.GetAttr(nsGkAtoms::wrap);
+  if (value && value->Type() == nsAttrValue::eString &&
+      value->Equals(nsGkAtoms::OFF, eIgnoreCase)) {
+    // Equivalent to expanding `white-space; pre`
+    aBuilder.SetKeywordValue(eCSSProperty_white_space_collapse,
+                             StyleWhiteSpaceCollapse::Preserve);
+    aBuilder.SetKeywordValue(eCSSProperty_text_wrap_mode,
+                             StyleTextWrapMode::Nowrap);
   }
 
   nsGenericHTMLFormControlElementWithState::MapDivAlignAttributeInto(aBuilder);
@@ -509,7 +510,9 @@ nsresult HTMLTextAreaElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   if (aVisitor.mEvent->mMessage == eFormSelect) {
     mHandlingSelect = false;
   }
-
+  if (aVisitor.mEvent->mMessage == eFocus) {
+    GetValueInternal(mFocusedValue, true);
+  }
   return NS_OK;
 }
 
@@ -798,8 +801,8 @@ nsresult HTMLTextAreaElement::BindToTree(BindContext& aContext,
   return rv;
 }
 
-void HTMLTextAreaElement::UnbindFromTree(bool aNullParent) {
-  nsGenericHTMLFormControlElementWithState::UnbindFromTree(aNullParent);
+void HTMLTextAreaElement::UnbindFromTree(UnbindContext& aContext) {
+  nsGenericHTMLFormControlElementWithState::UnbindFromTree(aContext);
 
   // We might be no longer disabled because of parent chain changed.
   UpdateValueMissingValidityState();

@@ -1700,7 +1700,7 @@ mozilla::ipc::IPCResult ContentChild::RecvSetProcessSandbox(
 
   if (sandboxEnabled && !StaticPrefs::media_cubeb_sandbox()) {
     // Pre-start audio before sandboxing; see bug 1443612.
-    Unused << CubebUtils::GetCubebContext();
+    Unused << CubebUtils::GetCubeb();
   }
 
   if (sandboxEnabled) {
@@ -1714,12 +1714,12 @@ mozilla::ipc::IPCResult ContentChild::RecvSetProcessSandbox(
   DisconnectWindowServer(sandboxEnabled);
 #  endif
 
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::RecordAnnotationBool(
       CrashReporter::Annotation::ContentSandboxEnabled, sandboxEnabled);
 #  if defined(XP_LINUX) && !defined(ANDROID)
-  CrashReporter::AnnotateCrashReport(
+  CrashReporter::RecordAnnotationU32(
       CrashReporter::Annotation::ContentSandboxCapabilities,
-      static_cast<int>(SandboxInfo::Get().AsInteger()));
+      SandboxInfo::Get().AsInteger());
 #  endif /* XP_LINUX && !ANDROID */
 #endif   /* MOZ_SANDBOX */
 
@@ -1923,11 +1923,11 @@ mozilla::ipc::IPCResult ContentChild::RecvPTestShellConstructor(
   return IPC_OK();
 }
 
-void ContentChild::UpdateCookieStatus(nsIChannel* aChannel) {
+RefPtr<GenericPromise> ContentChild::UpdateCookieStatus(nsIChannel* aChannel) {
   RefPtr<CookieServiceChild> csChild = CookieServiceChild::GetSingleton();
   NS_ASSERTION(csChild, "Couldn't get CookieServiceChild");
 
-  csChild->TrackCookieLoad(aChannel);
+  return csChild->TrackCookieLoad(aChannel);
 }
 
 PScriptCacheChild* ContentChild::AllocPScriptCacheChild(
@@ -1982,12 +1982,6 @@ PRemotePrintJobChild* ContentChild::AllocPRemotePrintJobChild() {
 #else
   return nullptr;
 #endif
-}
-
-already_AddRefed<PClipboardReadRequestChild>
-ContentChild::AllocPClipboardReadRequestChild(
-    const nsTArray<nsCString>& aTypes) {
-  return MakeAndAddRef<ClipboardReadRequestChild>(aTypes);
 }
 
 media::PMediaChild* ContentChild::AllocPMediaChild() {
@@ -2223,9 +2217,8 @@ void ContentChild::ProcessingError(Result aCode, const char* aReason) {
       MOZ_CRASH("not reached");
   }
 
-  nsDependentCString reason(aReason);
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::ipc_channel_error, reason);
+  CrashReporter::RecordAnnotationCString(
+      CrashReporter::Annotation::ipc_channel_error, aReason);
 
   MOZ_CRASH("Content child abort due to IPC error");
 }
@@ -2677,8 +2670,8 @@ mozilla::ipc::IPCResult ContentChild::RecvRemoteType(
   }
 
   // Use the prefix to avoid URIs from Fission isolated processes.
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::RemoteType,
-                                     remoteTypePrefix);
+  CrashReporter::RecordAnnotationNSCString(
+      CrashReporter::Annotation::RemoteType, remoteTypePrefix);
 
   // Defer RemoteWorkerService initialization until the child process does
   // receive its specific remoteType and can become actionable for the
@@ -2951,8 +2944,7 @@ void ContentChild::ForceKillTimerCallback(nsITimer* aTimer, void* aClosure) {
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvShutdownConfirmedHP() {
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState,
+  ProcessChild::AppendToIPCShutdownStateAnnotation(
       "RecvShutdownConfirmedHP entry"_ns);
 
   // Bug 1755376: If we see "RecvShutdownConfirmedHP entry" often in
@@ -2963,8 +2955,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdownConfirmedHP() {
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState, "RecvShutdown entry"_ns);
+  ProcessChild::AppendToIPCShutdownStateAnnotation("RecvShutdown entry"_ns);
 
   // Signal the ongoing shutdown to AppShutdown, this
   // will make abort nested SpinEventLoopUntilOrQuit loops
@@ -2973,8 +2964,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {
-    CrashReporter::AppendToCrashReportAnnotation(
-        CrashReporter::Annotation::IPCShutdownState,
+    ProcessChild::AppendToIPCShutdownStateAnnotation(
         "content-child-will-shutdown started"_ns);
 
     os->NotifyObservers(ToSupports(this), "content-child-will-shutdown",
@@ -2986,8 +2976,7 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdown() {
 }
 
 void ContentChild::ShutdownInternal() {
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState, "ShutdownInternal entry"_ns);
+  ProcessChild::AppendToIPCShutdownStateAnnotation("ShutdownInternal entry"_ns);
 
   // If we receive the shutdown message from within a nested event loop, we want
   // to wait for that event loop to finish. Otherwise we could prematurely
@@ -3025,8 +3014,7 @@ void ContentChild::ShutdownInternal() {
 
   nsCOMPtr<nsIObserverService> os = services::GetObserverService();
   if (os) {
-    CrashReporter::AppendToCrashReportAnnotation(
-        CrashReporter::Annotation::IPCShutdownState,
+    ProcessChild::AppendToIPCShutdownStateAnnotation(
         "content-child-shutdown started"_ns);
     os->NotifyObservers(ToSupports(this), "content-child-shutdown", nullptr);
   }
@@ -3035,21 +3023,21 @@ void ContentChild::ShutdownInternal() {
 
   if (mProfilerController) {
     const bool isProfiling = profiler_is_active();
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationCString(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
-        isProfiling ? "Profiling - GrabShutdownProfileAndShutdown"_ns
-                    : "Not profiling - GrabShutdownProfileAndShutdown"_ns);
+        isProfiling ? "Profiling - GrabShutdownProfileAndShutdown"
+                    : "Not profiling - GrabShutdownProfileAndShutdown");
     ProfileAndAdditionalInformation shutdownProfileAndAdditionalInformation =
         mProfilerController->GrabShutdownProfileAndShutdown();
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationCString(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
-        isProfiling ? "Profiling - Destroying ChildProfilerController"_ns
-                    : "Not profiling - Destroying ChildProfilerController"_ns);
+        isProfiling ? "Profiling - Destroying ChildProfilerController"
+                    : "Not profiling - Destroying ChildProfilerController");
     mProfilerController = nullptr;
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationCString(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
-        isProfiling ? "Profiling - SendShutdownProfile (sending)"_ns
-                    : "Not profiling - SendShutdownProfile (sending)"_ns);
+        isProfiling ? "Profiling - SendShutdownProfile (sending)"
+                    : "Not profiling - SendShutdownProfile (sending)");
     if (const size_t len = shutdownProfileAndAdditionalInformation.SizeOf();
         len >= size_t(IPC::Channel::kMaximumMessageSize)) {
       shutdownProfileAndAdditionalInformation.mProfile = nsPrintfCString(
@@ -3061,13 +3049,12 @@ void ContentChild::ShutdownInternal() {
     // message channel, which we know will survive for long enough.
     bool sent =
         SendShutdownProfile(shutdownProfileAndAdditionalInformation.mProfile);
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationCString(
         CrashReporter::Annotation::ProfilerChildShutdownPhase,
-        sent ? (isProfiling ? "Profiling - SendShutdownProfile (sent)"_ns
-                            : "Not profiling - SendShutdownProfile (sent)"_ns)
-             : (isProfiling
-                    ? "Profiling - SendShutdownProfile (failed)"_ns
-                    : "Not profiling - SendShutdownProfile (failed)"_ns));
+        sent ? (isProfiling ? "Profiling - SendShutdownProfile (sent)"
+                            : "Not profiling - SendShutdownProfile (sent)")
+             : (isProfiling ? "Profiling - SendShutdownProfile (failed)"
+                            : "Not profiling - SendShutdownProfile (failed)"));
   }
 
   if (PerfStats::GetCollectionMask() != 0) {
@@ -3077,12 +3064,10 @@ void ContentChild::ShutdownInternal() {
   // Start a timer that will ensure we quickly exit after a reasonable period
   // of time. Prevents shutdown hangs after our connection to the parent
   // closes or when the parent is too busy to ever kill us.
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState, "StartForceKillTimer"_ns);
+  ProcessChild::AppendToIPCShutdownStateAnnotation("StartForceKillTimer"_ns);
   StartForceKillTimer();
 
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState,
+  ProcessChild::AppendToIPCShutdownStateAnnotation(
       "SendFinishShutdown (sending)"_ns);
 
   // Notify the parent that we are done with shutdown. This is sent with high
@@ -3094,8 +3079,7 @@ void ContentChild::ShutdownInternal() {
   // ever process for this ContentChild.
   bool sent = SendFinishShutdown();
 
-  CrashReporter::AppendToCrashReportAnnotation(
-      CrashReporter::Annotation::IPCShutdownState,
+  ProcessChild::AppendToIPCShutdownStateAnnotation(
       sent ? "SendFinishShutdown (sent)"_ns : "SendFinishShutdown (failed)"_ns);
 }
 
@@ -3152,13 +3136,53 @@ mozilla::ipc::IPCResult ContentChild::RecvPWebBrowserPersistDocumentConstructor(
   return IPC_OK();
 }
 
+static already_AddRefed<DataTransfer> ConvertToDataTransfer(
+    nsTArray<IPCTransferableData>&& aTransferables, EventMessage aMessage) {
+  // Check if we are receiving any file objects. If we are we will want
+  // to hide any of the other objects coming in from content.
+  bool hasFiles = false;
+  for (uint32_t i = 0; i < aTransferables.Length() && !hasFiles; ++i) {
+    auto& items = aTransferables[i].items();
+    for (uint32_t j = 0; j < items.Length() && !hasFiles; ++j) {
+      if (items[j].data().type() ==
+          IPCTransferableDataType::TIPCTransferableDataBlob) {
+        hasFiles = true;
+      }
+    }
+  }
+  // Add the entries from the IPC to the new DataTransfer
+  RefPtr<DataTransfer> dataTransfer =
+      new DataTransfer(nullptr, aMessage, false, -1);
+  for (uint32_t i = 0; i < aTransferables.Length(); ++i) {
+    auto& items = aTransferables[i].items();
+    for (uint32_t j = 0; j < items.Length(); ++j) {
+      const IPCTransferableDataItem& item = items[j];
+      RefPtr<nsVariantCC> variant = new nsVariantCC();
+      nsresult rv =
+          nsContentUtils::IPCTransferableDataItemToVariant(item, variant);
+      if (NS_FAILED(rv)) {
+        continue;
+      }
+
+      // We should hide this data from content if we have a file, and we
+      // aren't a file.
+      bool hidden =
+          hasFiles && item.data().type() !=
+                          IPCTransferableDataType::TIPCTransferableDataBlob;
+      dataTransfer->SetDataWithPrincipalFromOtherProcess(
+          NS_ConvertUTF8toUTF16(item.flavor()), variant, i,
+          nsContentUtils::GetSystemPrincipal(), hidden);
+    }
+  }
+  return dataTransfer.forget();
+}
+
 mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
     const MaybeDiscarded<WindowContext>& aSourceWindowContext,
     const MaybeDiscarded<WindowContext>& aSourceTopWindowContext,
     nsTArray<IPCTransferableData>&& aTransferables, const uint32_t& aAction) {
-  nsCOMPtr<nsIDragService> dragService =
-      do_GetService("@mozilla.org/widget/dragservice;1");
-  if (dragService) {
+  if (nsCOMPtr<nsIDragService> dragService =
+          do_GetService("@mozilla.org/widget/dragservice;1")) {
     dragService->StartDragSession();
     nsCOMPtr<nsIDragSession> session;
     dragService->GetCurrentSession(getter_AddRefs(session));
@@ -3167,43 +3191,25 @@ mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
       session->SetSourceTopWindowContext(
           aSourceTopWindowContext.GetMaybeDiscarded());
       session->SetDragAction(aAction);
-      // Check if we are receiving any file objects. If we are we will want
-      // to hide any of the other objects coming in from content.
-      bool hasFiles = false;
-      for (uint32_t i = 0; i < aTransferables.Length() && !hasFiles; ++i) {
-        auto& items = aTransferables[i].items();
-        for (uint32_t j = 0; j < items.Length() && !hasFiles; ++j) {
-          if (items[j].data().type() ==
-              IPCTransferableDataType::TIPCTransferableDataBlob) {
-            hasFiles = true;
-          }
-        }
-      }
 
-      // Add the entries from the IPC to the new DataTransfer
+      RefPtr<DataTransfer> dataTransfer =
+          ConvertToDataTransfer(std::move(aTransferables), eDragStart);
+      session->SetDataTransfer(dataTransfer);
+    }
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvUpdateDragSession(
+    nsTArray<IPCTransferableData>&& aTransferables,
+    EventMessage aEventMessage) {
+  if (nsCOMPtr<nsIDragService> dragService =
+          do_GetService("@mozilla.org/widget/dragservice;1")) {
+    nsCOMPtr<nsIDragSession> session;
+    dragService->GetCurrentSession(getter_AddRefs(session));
+    if (session) {
       nsCOMPtr<DataTransfer> dataTransfer =
-          new DataTransfer(nullptr, eDragStart, false, -1);
-      for (uint32_t i = 0; i < aTransferables.Length(); ++i) {
-        auto& items = aTransferables[i].items();
-        for (uint32_t j = 0; j < items.Length(); ++j) {
-          const IPCTransferableDataItem& item = items[j];
-          RefPtr<nsVariantCC> variant = new nsVariantCC();
-          nsresult rv =
-              nsContentUtils::IPCTransferableDataItemToVariant(item, variant);
-          if (NS_FAILED(rv)) {
-            continue;
-          }
-
-          // We should hide this data from content if we have a file, and we
-          // aren't a file.
-          bool hidden =
-              hasFiles && item.data().type() !=
-                              IPCTransferableDataType::TIPCTransferableDataBlob;
-          dataTransfer->SetDataWithPrincipalFromOtherProcess(
-              NS_ConvertUTF8toUTF16(item.flavor()), variant, i,
-              nsContentUtils::GetSystemPrincipal(), hidden);
-        }
-      }
+          ConvertToDataTransfer(std::move(aTransferables), aEventMessage);
       session->SetDataTransfer(dataTransfer);
     }
   }
@@ -4323,8 +4329,8 @@ mozilla::ipc::IPCResult ContentChild::RecvLoadURI(
       annotationURI = aLoadState->URI();
     }
 
-    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL,
-                                       annotationURI->GetSpecOrDefault());
+    CrashReporter::RecordAnnotationNSCString(CrashReporter::Annotation::URL,
+                                             annotationURI->GetSpecOrDefault());
   }
 #endif
 
@@ -4357,8 +4363,8 @@ mozilla::ipc::IPCResult ContentChild::RecvInternalLoad(
       annotationURI = aLoadState->URI();
     }
 
-    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL,
-                                       annotationURI->GetSpecOrDefault());
+    CrashReporter::RecordAnnotationNSCString(CrashReporter::Annotation::URL,
+                                             annotationURI->GetSpecOrDefault());
   }
 #endif
 

@@ -8,12 +8,15 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://testing-common/CustomizableUITestUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  SEARCH_TELEMETRY_SHARED: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetryUtils: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   SERPCategorizationRecorder: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
+  SPA_ADLINK_CHECK_TIMEOUT_MS:
+    "resource:///modules/SearchSERPTelemetry.sys.mjs",
   TELEMETRY_CATEGORIZATION_KEY:
     "resource:///modules/SearchSERPTelemetry.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
@@ -42,11 +45,14 @@ ChromeUtils.defineLazyGetter(this, "SEARCH_AD_CLICK_SCALARS", () => {
   ];
 });
 
+ChromeUtils.defineLazyGetter(this, "gCryptoHash", () => {
+  return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
+});
+
 // For use with categorization.
-const APP_VERSION = Services.appinfo.version;
+const APP_MAJOR_VERSION = parseInt(Services.appinfo.version).toString();
 const CHANNEL = SearchUtils.MODIFIED_APP_CHANNEL;
 const REGION = Region.home;
-const LOCALE = Services.locale.appLocaleAsBCP47;
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
 
@@ -205,6 +211,11 @@ function resetTelemetry() {
  * values we use to validate the recorded Glean impression events.
  */
 function assertSERPTelemetry(expectedEvents) {
+  // Do a deep copy of impressions in case the input is using constants, as
+  // we insert impression id into the expected events to make it easier to
+  // run Assert.deepEqual() on the expected and actual result.
+  expectedEvents = JSON.parse(JSON.stringify(expectedEvents));
+
   // A single test might run assertImpressionEvents more than once
   // so the Set needs to be cleared or else the impression event
   // check will throw.
@@ -383,6 +394,46 @@ add_setup(function () {
   });
 });
 
+async function openSerpInNewTab(url, expectedAds = true) {
+  let promise;
+  if (expectedAds) {
+    promise = waitForPageWithAdImpressions();
+  }
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
+  await promise;
+
+  let cleanup = async () => {
+    await BrowserTestUtils.removeTab(tab);
+    resetTelemetry();
+  };
+
+  return { tab, cleanup };
+}
+
+async function synthesizePageAction({
+  selector,
+  event = {},
+  tab,
+  expectEngagement = true,
+} = {}) {
+  let promise;
+  if (expectEngagement) {
+    promise = waitForPageWithAction();
+  } else {
+    // Wait roughly around how much it might take for a possible page action
+    // to be registered in telemetry.
+    /* eslint-disable-next-line mozilla/no-arbitrary-setTimeout */
+    promise = new Promise(resolve => setTimeout(resolve, 50));
+  }
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    selector,
+    event,
+    tab.linkedBrowser
+  );
+
+  await promise;
+}
+
 function assertCategorizationValues(expectedResults) {
   // TODO Bug 1868476: Replace with calls to Glean telemetry.
   let actualResults = [...fakeTelemetryStorage];
@@ -433,6 +484,10 @@ function assertCategorizationValues(expectedResults) {
   }
 }
 
+function waitForPageWithAction() {
+  return TestUtils.topicObserved("reported-page-with-action");
+}
+
 function waitForPageWithAdImpressions() {
   return TestUtils.topicObserved("reported-page-with-ad-impressions");
 }
@@ -457,10 +512,9 @@ registerCleanupFunction(async () => {
   await PlacesUtils.history.clear();
 });
 
-async function mockRecordWithAttachment({ id, version, filename }) {
+async function mockRecordWithAttachment({ id, version, filename, mapping }) {
   // Get the bytes of the file for the hash and size for attachment metadata.
-  let data = await IOUtils.readUTF8(getTestFilePath(filename));
-  let buffer = new TextEncoder().encode(data).buffer;
+  let buffer = new TextEncoder().encode(JSON.stringify(mapping)).buffer;
   let stream = Cc["@mozilla.org/io/arraybuffer-input-stream;1"].createInstance(
     Ci.nsIArrayBufferInputStream
   );
@@ -504,6 +558,30 @@ async function resetCategorizationCollection(record) {
   await client.db.importChanges({}, Date.now());
 }
 
+const MOCK_ATTACHMENT_VALUES = {
+  "abc.com": [2, 95],
+  "abc.org": [4, 90],
+  "def.com": [2, 78, 4, 10],
+  "def.org": [4, 90],
+  "foobar.org": [3, 90],
+};
+
+const CONVERTED_ATTACHMENT_VALUES = convertDomainsToHashes(
+  MOCK_ATTACHMENT_VALUES
+);
+
+function convertDomainsToHashes(domainsToCategories) {
+  let newObj = {};
+  for (let [key, value] of Object.entries(domainsToCategories)) {
+    gCryptoHash.init(gCryptoHash.SHA256);
+    let bytes = new TextEncoder().encode(key);
+    gCryptoHash.update(bytes, key.length);
+    let hash = gCryptoHash.finish(true);
+    newObj[hash] = value;
+  }
+  return newObj;
+}
+
 async function insertRecordIntoCollection() {
   const client = RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
   const db = client.db;
@@ -513,6 +591,7 @@ async function insertRecordIntoCollection() {
     id: "example_id",
     version: 1,
     filename: "domain_category_mappings.json",
+    mapping: CONVERTED_ATTACHMENT_VALUES,
   });
   await db.create(record);
   await client.attachments.cacheImpl.set(record.id, attachment);
@@ -540,5 +619,80 @@ async function syncCollection(record) {
       updated: [],
       deleted: [],
     },
+  });
+}
+
+async function initSinglePageAppTest() {
+  /* import-globals-from head-spa.js */
+  Services.scriptloader.loadSubScript(
+    "chrome://mochitests/content/browser/browser/components/search/test/browser/telemetry/head-spa.js",
+    this
+  );
+
+  const BASE_PROVIDER = {
+    telemetryId: "example1",
+    searchPageRegexp:
+      /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/telemetry\/searchTelemetrySinglePageApp/,
+    queryParamNames: ["s"],
+    codeParamName: "abc",
+    taggedCodes: ["ff"],
+    adServerAttributes: ["mozAttr"],
+    extraAdServersRegexps: [
+      /^https:\/\/example\.com\/ad/,
+      /^https:\/\/example.org\/browser\/browser\/components\/search\/test\/browser\/telemetry\/redirect_ad/,
+    ],
+    components: [
+      {
+        included: {
+          parent: {
+            selector: "#searchbox-container",
+          },
+          related: {
+            selector: "#searchbox-suggestions",
+          },
+          children: [
+            {
+              selector: "#searchbox",
+            },
+          ],
+        },
+        topDown: true,
+        type: SearchSERPTelemetryUtils.COMPONENTS.INCONTENT_SEARCHBOX,
+      },
+      {
+        type: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+        default: true,
+      },
+    ],
+    isSPA: true,
+    defaultPageQueryParam: {
+      key: "page",
+      value: "web",
+    },
+  };
+
+  const SPA_PROVIDER_INFO = [
+    BASE_PROVIDER,
+    {
+      ...BASE_PROVIDER,
+      telemetryId: "example2",
+      // Use example.com instead of example.org so that we have two providers
+      // with different TLD's and won't share the same web process.
+      searchPageRegexp:
+        /^https:\/\/example.com\/browser\/browser\/components\/search\/test\/browser\/telemetry\/searchTelemetrySinglePageApp/,
+    },
+  ];
+
+  SearchSERPTelemetry.overrideSearchTelemetryForTests(SPA_PROVIDER_INFO);
+  await waitForIdle();
+
+  // Shorten delay to avoid potential TV timeouts.
+  Services.ppmm.sharedData.set(SEARCH_TELEMETRY_SHARED.SPA_LOAD_TIMEOUT, 100);
+
+  registerCleanupFunction(function () {
+    Services.ppmm.sharedData.set(
+      SEARCH_TELEMETRY_SHARED.SPA_LOAD_TIMEOUT,
+      SPA_ADLINK_CHECK_TIMEOUT_MS
+    );
   });
 }

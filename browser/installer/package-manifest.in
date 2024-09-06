@@ -60,10 +60,7 @@
 @RESPATH@/update.locale
 @RESPATH@/updater.ini
 #endif
-#ifdef MOZ_DEFAULT_BROWSER_AGENT
-@RESPATH@/defaultagent.ini
-#endif
-#if defined(MOZ_UPDATE_AGENT) || defined(MOZ_DEFAULT_BROWSER_AGENT)
+#if defined(MOZ_UPDATE_AGENT)
 @RESPATH@/locale.ini
 #endif
 
@@ -152,17 +149,8 @@
 #endif
 @BINPATH@/@DLL_PREFIX@lgpllibs@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@gkcodecs@DLL_SUFFIX@
-#ifdef MOZ_FFVPX
 @BINPATH@/@DLL_PREFIX@mozavutil@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@mozavcodec@DLL_SUFFIX@
-#endif
-#ifdef XP_WIN
-#ifdef _AMD64_
-@BINPATH@/@DLL_PREFIX@qipcap64@DLL_SUFFIX@
-#else
-@BINPATH@/@DLL_PREFIX@qipcap@DLL_SUFFIX@
-#endif
-#endif
 
 ; [Components]
 #ifdef ACCESSIBILITY
@@ -415,6 +403,12 @@ bin/libfreebl_64int_3.so
 ; [ Ping Sender ]
 ;
 @BINPATH@/pingsender@BIN_SUFFIX@
+
+; [ Native Messaging Host Proxy ]
+;
+#if defined(XP_WIN) || defined(XP_MACOSX)
+@BINPATH@/nmhproxy@BIN_SUFFIX@
+#endif
 
 ; [ Notification COM Server ]
 ;

@@ -378,6 +378,40 @@ gfxPlatformFontList::~gfxPlatformFontList() {
   NS_RELEASE(gFontListPrefObserver);
 }
 
+void gfxPlatformFontList::GetMissingFonts(nsCString& aMissingFonts) {
+  AutoLock lock(mLock);
+
+  auto fontLists = GetFilteredPlatformFontLists();
+
+  if (!fontLists.Length()) {
+    aMissingFonts.Append("No font list available for this device.");
+  }
+
+  for (unsigned int i = 0; i < fontLists.Length(); i++) {
+    for (unsigned int j = 0; j < fontLists[i].second; j++) {
+      nsCString key(fontLists[i].first[j]);
+      GenerateFontListKey(key);
+
+      if (SharedFontList()) {
+        fontlist::Family* family = SharedFontList()->FindFamily(key);
+        if (!family) {
+          aMissingFonts.Append(fontLists[i].first[j]);
+          aMissingFonts.Append("|");
+        }
+      } else {
+        gfxFontFamily* familyEntry = mFontFamilies.GetWeak(key);
+        if (!familyEntry) {
+          familyEntry = mOtherFamilyNames.GetWeak(key);
+        }
+        if (!familyEntry) {
+          aMissingFonts.Append(fontLists[i].first[j]);
+          aMissingFonts.Append("|");
+        }
+      }
+    }
+  }
+}
+
 /* static */
 void gfxPlatformFontList::FontWhitelistPrefChanged(const char* aPref,
                                                    void* aClosure) {
@@ -478,8 +512,10 @@ void gfxPlatformFontList::CheckFamilyList(const char* aList[], size_t aCount) {
   for (size_t i = 1; i < aCount; ++i) {
     const char* b = aList[i];
     uint32_t bLen = strlen(b);
-    MOZ_ASSERT(nsCaseInsensitiveUTF8StringComparator(a, b, aLen, bLen) < 0,
-               "incorrectly sorted font family list!");
+    if (nsCaseInsensitiveUTF8StringComparator(a, b, aLen, bLen) >= 0) {
+      MOZ_CRASH_UNSAFE_PRINTF("incorrectly sorted font family list: %s >= %s",
+                              a, b);
+    }
     a = b;
     aLen = bLen;
   }
@@ -698,6 +734,10 @@ void gfxPlatformFontList::GenerateFontListKey(const nsACString& aKeyName,
   ToLowerCase(aResult);
 }
 
+void gfxPlatformFontList::GenerateFontListKey(nsACString& aKeyName) {
+  ToLowerCase(aKeyName);
+}
+
 // Used if a stylo thread wants to trigger InitOtherFamilyNames in the main
 // process: we can't do IPC from the stylo thread so we post this to the main
 // thread instead.
@@ -753,7 +793,7 @@ bool gfxPlatformFontList::InitOtherFamilyNames(
   // (This is used so we can reliably run reftests that depend on localized
   // font-family names being available.)
   if (aDeferOtherFamilyNamesLoading &&
-      StaticPrefs::gfx_font_loader_delay_AtStartup() > 0) {
+      StaticPrefs::gfx_font_loader_delay() > 0) {
     if (!mPendingOtherFamilyNameTask) {
       RefPtr<mozilla::CancelableRunnable> task =
           new InitOtherFamilyNamesRunnable();
@@ -1311,8 +1351,8 @@ class StartCmapLoadingRunnable : public mozilla::Runnable {
 
 void gfxPlatformFontList::StartCmapLoadingFromFamily(uint32_t aStartIndex) {
   AutoLock lock(mLock);
-  if (aStartIndex > mStartedLoadingCmapsFrom) {
-    // We already initiated cmap-loading from somewhere earlier in the list;
+  if (aStartIndex >= mStartedLoadingCmapsFrom) {
+    // We already initiated cmap-loading from here or earlier in the list;
     // no need to do it again here.
     return;
   }
@@ -2646,7 +2686,7 @@ bool gfxPlatformFontList::LoadFontInfo() {
     // Limit the time spent reading fonts in one pass, unless the font-loader
     // delay was set to zero, in which case we run to completion even if it
     // causes some jank.
-    if (StaticPrefs::gfx_font_loader_delay_AtStartup() > 0) {
+    if (StaticPrefs::gfx_font_loader_delay() > 0) {
       TimeDuration elapsed = TimeStamp::Now() - start;
       if (elapsed.ToMilliseconds() > FONT_LOADER_MAX_TIMESLICE &&
           i + 1 != endIndex) {
@@ -2749,7 +2789,7 @@ void gfxPlatformFontList::GetPrefsAndStartLoader() {
   if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
     return;
   }
-  uint32_t delay = std::max(1u, StaticPrefs::gfx_font_loader_delay_AtStartup());
+  uint32_t delay = std::max(1u, StaticPrefs::gfx_font_loader_delay());
   if (NS_IsMainThread()) {
     StartLoader(delay);
   } else {

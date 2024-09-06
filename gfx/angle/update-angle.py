@@ -5,7 +5,7 @@
 
 assert __name__ == "__main__"
 
-"""
+r"""
 To update ANGLE in Gecko, use Windows with git-bash, and setup depot_tools, python2, and
 python3. Because depot_tools expects `python` to be `python2` (shame!), python2 must come
 before python3 in your path.
@@ -29,7 +29,7 @@ Prepare your env:
 * If in `cmd`:
     `export PATH="$PATH:/path/to/depot_tools"`
 * If in `powershell`:
-    `$env:Path += "C:\path\to\depot_tools"`
+    `$env:Path += ";C:\path\to\depot_tools"`
 
 If this is a new repo, don't forget:
 
@@ -502,8 +502,18 @@ def export_target(target_full_name) -> Set[str]:
     dep_dirs = set(dep_libs)
     dep_dirs.discard("zlib")
 
+    # Those directories are added by gfx/angle/moz.build.
+    already_added_dirs = [
+        "angle_common",
+        "translator",
+        "libEGL",
+        "libGLESv2",
+    ]
+
     append_arr(lines, "USE_LIBS", dep_libs)
-    append_arr(lines, "DIRS", ["../" + x for x in dep_dirs])
+    append_arr(
+        lines, "DIRS", ["../" + x for x in dep_dirs if x not in already_added_dirs]
+    )
     append_arr(lines, "OS_LIBS", os_libs)
     append_arr_commented(lines, "LDFLAGS", ldflags)
 

@@ -3,7 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 module.exports = {
-  plugins: ["react", "mozilla", "@babel", "import", "file-header"],
+  plugins: ["react", "mozilla", "import", "file-header"],
   globals: {
     atob: true,
     btoa: true,
@@ -32,13 +32,6 @@ module.exports = {
     ecmaVersion: "latest",
     sourceType: "module",
     ecmaFeatures: { jsx: true },
-
-    // When the linter runs from the MC root, it won't pick up this project's
-    // babel.config.js, so we explicitly set Babel's root location so that
-    // it knows where to look.
-    babelOptions: {
-      root: __dirname,
-    },
   },
   env: {
     es6: true,
@@ -115,9 +108,6 @@ module.exports = {
     "global-strict": 0,
     // Only useful in a node environment.
     "handle-callback-err": 0,
-    // Don't enforce the maximum depth that blocks can be nested. The complexity
-    // rule is a better rule to check this.
-    "max-depth": 0,
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": [2, 4],
     // Don't limit the number of parameters that can be used in a function.
@@ -140,10 +130,6 @@ module.exports = {
     "no-catch-shadow": 2,
     // Disallow assignment in conditional expressions.
     "no-cond-assign": 2,
-    // Allow using the console API.
-    "no-console": 0,
-    // Allow using constant expressions in conditions like while (true)
-    "no-constant-condition": 0,
     // Allow use of the continue statement.
     "no-continue": 0,
     // Disallow control characters in regular expressions.
@@ -156,8 +142,6 @@ module.exports = {
     "no-div-regex": 0,
     // Disallow duplicate arguments in functions.
     "no-dupe-args": 2,
-    // Disallow duplicate keys when creating object literals.
-    "no-dupe-keys": 2,
     // Disallow a duplicate case label.
     "no-duplicate-case": 2,
     // Disallow else after a return in an if. The else around the second return
@@ -186,8 +170,6 @@ module.exports = {
     "no-extra-boolean-cast": 2,
     // Deprecated, will be removed in 1.0.
     "no-extra-strict": 0,
-    // Disallow fallthrough of case statements, except if there is a comment.
-    "no-fallthrough": 2,
     // Disallow comments inline after code.
     "no-inline-comments": 2,
     // Disallow if as the only statement in an else block.
@@ -245,8 +227,6 @@ module.exports = {
     // random name.
     // Still, making this a warning can help people avoid being confused.
     "no-shadow": 2,
-    // Disallow shadowing of names such as arguments.
-    "no-shadow-restricted-names": 2,
     // Disallow sparse arrays, eg. let arr = [,,2].
     // Array destructuring is fine though:
     // for (let [, breakpointPromise] of aPromises)
@@ -280,12 +260,6 @@ module.exports = {
     "no-var": 0,
     // Allow using TODO/FIXME comments.
     "no-warning-comments": 0,
-    // Disallow use of the with statement.
-    "no-with": 2,
-    // Dont require method and property shorthand syntax for object literals.
-    // We use this in the code a lot, but not consistently, and this seems more
-    // like something to check at code review time.
-    "object-shorthand": 0,
     // Allow more than one variable declaration per function.
     "one-var": 0,
     // Require use of the second argument for parseInt().

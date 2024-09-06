@@ -110,8 +110,23 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   // Return the sum of inline-size of the scrollbar gutters (if any) at the
   // inline-start and inline-end edges of the scroll frame (for a potential
   // scrollbar that scrolls in the block axis).
-  nscoord IntrinsicScrollbarGutterSizeAtInlineEdges(
-      gfxContext* aRenderingContext);
+  nscoord IntrinsicScrollbarGutterSizeAtInlineEdges() const;
+
+  // Return the size of space created by scrollbar-gutter or actual scrollbars,
+  // assuming that the content is *not* overflowing the container. In other
+  // words, this space is created by stable scrollbar-gutter or by scrollbars
+  // due to "overflow: scroll".
+  nsMargin IntrinsicScrollbarGutterSize() const;
+
+  // Compute stable scrollbar-gutter from scrollbar-width and scrollbar-gutter
+  // properties.
+  //
+  // Note: this method doesn't consider overflow property and the space created
+  // by the actual scrollbars. That is, if scrollbar-gutter is 'auto', this
+  // method just returns empty result.
+  nsMargin ComputeStableScrollbarGutter(
+      const mozilla::StyleScrollbarWidth& aStyleScrollbarWidth,
+      const mozilla::StyleScrollbarGutter& aStyleScrollbarGutter) const;
 
   bool GetBorderRadii(const nsSize& aFrameSize, const nsSize& aBorderArea,
                       Sides aSkipSides, nscoord aRadii[8]) const final;

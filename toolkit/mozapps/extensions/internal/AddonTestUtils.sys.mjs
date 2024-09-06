@@ -194,6 +194,44 @@ class AddonsList {
   }
 }
 
+// The number of resetXPIExports calls.
+//
+// This is added to the URL of the modules once resetXPIExports is called,
+// so that they become different module instances for each reset, and also the
+// suffix is not used outside of tests.
+let resetXPIExportsCount = 0;
+
+// Reset all properties of XPIExports to lazy getters, with new module URIs,
+// in order to simulate the shutdown+restart situation.
+function resetXPIExports(XPIExports) {
+  resetXPIExportsCount++;
+
+  const suffix = "?" + resetXPIExportsCount;
+
+  // The list of lazy getters should be in sync with XPIExports.sys.mjs.
+  //
+  // eslint-disable-next-line mozilla/lazy-getter-object-name
+  ChromeUtils.defineESModuleGetters(XPIExports, {
+    // XPIDatabase.sys.mjs
+    AddonInternal: "resource://gre/modules/addons/XPIDatabase.sys.mjs" + suffix,
+    BuiltInThemesHelpers:
+      "resource://gre/modules/addons/XPIDatabase.sys.mjs" + suffix,
+    XPIDatabase: "resource://gre/modules/addons/XPIDatabase.sys.mjs" + suffix,
+    XPIDatabaseReconcile:
+      "resource://gre/modules/addons/XPIDatabase.sys.mjs" + suffix,
+
+    // XPIInstall.sys.mjs
+    UpdateChecker: "resource://gre/modules/addons/XPIInstall.sys.mjs" + suffix,
+    XPIInstall: "resource://gre/modules/addons/XPIInstall.sys.mjs" + suffix,
+    verifyBundleSignedState:
+      "resource://gre/modules/addons/XPIInstall.sys.mjs" + suffix,
+
+    // XPIProvider.sys.mjs
+    XPIProvider: "resource://gre/modules/addons/XPIProvider.sys.mjs" + suffix,
+    XPIInternal: "resource://gre/modules/addons/XPIProvider.sys.mjs" + suffix,
+  });
+}
+
 export var AddonTestUtils = {
   addonIntegrationService: null,
   addonsList: null,
@@ -260,7 +298,7 @@ export var AddonTestUtils = {
     // And scan for changes at startup
     Services.prefs.setIntPref("extensions.startupScanScopes", 15);
 
-    // By default, don't cache add-ons in AddonRepository.jsm
+    // By default, don't cache add-ons in AddonRepository.sys.mjs
     Services.prefs.setBoolPref("extensions.getAddons.cache.enabled", false);
 
     // Point update checks to the local machine for fast failures
@@ -529,7 +567,7 @@ export var AddonTestUtils = {
   },
 
   overrideCertDB() {
-    let verifyCert = async (file, result, cert, callback) => {
+    let verifyCert = async (file, result, signatureInfos, callback) => {
       if (
         result == Cr.NS_ERROR_SIGNED_JAR_NOT_SIGNED &&
         !this.useRealCertChecks &&
@@ -568,7 +606,16 @@ export var AddonTestUtils = {
             };
           }
 
-          return [callback, Cr.NS_OK, fakeCert];
+          return [
+            callback,
+            Cr.NS_OK,
+            [
+              {
+                signerCert: fakeCert,
+                signatureAlgorithm: Ci.nsIAppSignatureInfo.COSE_WITH_SHA256,
+              },
+            ],
+          ];
         } catch (e) {
           // If there is any error then just pass along the original results
         } finally {
@@ -583,7 +630,7 @@ export var AddonTestUtils = {
         }
       }
 
-      return [callback, result, cert];
+      return [callback, result, signatureInfos];
     };
 
     let FakeCertDB = {
@@ -606,10 +653,14 @@ export var AddonTestUtils = {
         this._genuine.openSignedAppFileAsync(
           root,
           file,
-          (result, zipReader, cert) => {
-            verifyCert(file.clone(), result, cert, callback).then(
-              ([callback, result, cert]) => {
-                callback.openSignedAppFileFinished(result, zipReader, cert);
+          (result, zipReader, signatureInfos) => {
+            verifyCert(file.clone(), result, signatureInfos, callback).then(
+              ([callback, result, signatureInfos]) => {
+                callback.openSignedAppFileFinished(
+                  result,
+                  zipReader,
+                  signatureInfos
+                );
               }
             );
           }
@@ -748,26 +799,23 @@ export var AddonTestUtils = {
     // promiseShutdown to allow re-initialization.
     lazy.ExtensionAddonObserver.init();
 
-    const { XPIInternal, XPIProvider } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm"
+    const { XPIExports } = ChromeUtils.importESModule(
+      "resource://gre/modules/addons/XPIExports.sys.mjs"
     );
-    XPIInternal.overrideAsyncShutdown(MockAsyncShutdown);
+    XPIExports.XPIInternal.overrideAsyncShutdown(MockAsyncShutdown);
 
-    XPIInternal.BootstrapScope.prototype._beforeCallBootstrapMethod = (
-      method,
-      params,
-      reason
-    ) => {
-      try {
-        this.emit("bootstrap-method", { method, params, reason });
-      } catch (e) {
+    XPIExports.XPIInternal.BootstrapScope.prototype._beforeCallBootstrapMethod =
+      (method, params, reason) => {
         try {
-          this.testScope.do_throw(e);
+          this.emit("bootstrap-method", { method, params, reason });
         } catch (e) {
-          // Le sigh.
+          try {
+            this.testScope.do_throw(e);
+          } catch (e) {
+            // Le sigh.
+          }
         }
-      }
-    };
+      };
 
     this.addonIntegrationService = Cc[
       "@mozilla.org/addons/integration;1"
@@ -777,7 +825,7 @@ export var AddonTestUtils = {
 
     this.emit("addon-manager-started");
 
-    await Promise.all(XPIProvider.startupPromises);
+    await Promise.all(XPIExports.XPIProvider.startupPromises);
 
     // Load the add-ons list as it was after extension registration
     await this.loadAddonsList(true);
@@ -785,7 +833,7 @@ export var AddonTestUtils = {
     // Wait for all add-ons to finish starting up before resolving.
     await Promise.all(
       Array.from(
-        XPIProvider.activeAddons.values(),
+        XPIExports.XPIProvider.activeAddons.values(),
         addon => addon.startupPromise
       )
     );
@@ -810,11 +858,8 @@ export var AddonTestUtils = {
       this.overrideEntry = null;
     }
 
-    const { XPIProvider } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm"
-    );
-    const { XPIDatabase } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIDatabase.jsm"
+    const { XPIExports } = ChromeUtils.importESModule(
+      "resource://gre/modules/addons/XPIExports.sys.mjs"
     );
 
     // Ensure some startup observers in XPIProvider are released.
@@ -830,7 +875,7 @@ export var AddonTestUtils = {
     // a promise, potentially still pending. Wait for it to settle before
     // triggering profileBeforeChange, because the latter can trigger errors in
     // the pending asyncLoadDB() by an indirect call to XPIDatabase.shutdown().
-    await XPIDatabase._dbPromise;
+    await XPIExports.XPIDatabase._dbPromise;
 
     await MockAsyncShutdown.profileBeforeChange.trigger();
     await MockAsyncShutdown.profileChangeTeardown.trigger();
@@ -861,12 +906,11 @@ export var AddonTestUtils = {
 
     // This would be cleaner if I could get it as the rejection reason from
     // the AddonManagerInternal.shutdown() promise
-    let shutdownError = XPIDatabase._saveError;
+    let shutdownError = XPIExports.XPIDatabase._saveError;
 
-    AddonManagerPrivate.unregisterProvider(XPIProvider);
-    Cu.unload("resource://gre/modules/addons/XPIProvider.jsm");
-    Cu.unload("resource://gre/modules/addons/XPIDatabase.jsm");
-    Cu.unload("resource://gre/modules/addons/XPIInstall.jsm");
+    AddonManagerPrivate.unregisterProvider(XPIExports.XPIProvider);
+
+    resetXPIExports(XPIExports);
 
     lazy.ExtensionAddonObserver.uninit();
 
@@ -916,11 +960,11 @@ export var AddonTestUtils = {
 
   async loadAddonsList(flush = false) {
     if (flush) {
-      const { XPIInternal } = ChromeUtils.import(
-        "resource://gre/modules/addons/XPIProvider.jsm"
+      const { XPIExports } = ChromeUtils.importESModule(
+        "resource://gre/modules/addons/XPIExports.sys.mjs"
       );
-      XPIInternal.XPIStates.save();
-      await XPIInternal.XPIStates._jsonFile._save();
+      XPIExports.XPIInternal.XPIStates.save();
+      await XPIExports.XPIInternal.XPIStates._jsonFile._save();
     }
 
     this.addonsList = new AddonsList(this.addonStartup);
@@ -1699,7 +1743,7 @@ export var AddonTestUtils = {
    * @param {object} extension
    *        The return value of ExtensionTestUtils.loadExtension.
    *        For browser tests, see mochitest/tests/SimpleTest/ExtensionTestUtils.js
-   *        For xpcshell tests, see toolkit/components/extensions/ExtensionXPCShellUtils.jsm
+   *        For xpcshell tests, see toolkit/components/extensions/ExtensionXPCShellUtils.sys.mjs
    * @param {object} [options]
    *        Optional options.
    * @param {boolean} [options.expectPending = false]

@@ -94,6 +94,14 @@ static bool ToRefType(JSContext* cx, JSLinearString* typeLinearStr,
     *out = RefType::extern_();
     return true;
   }
+#ifdef ENABLE_WASM_EXNREF
+  if (ExnRefAvailable(cx)) {
+    if (StringEqualsLiteral(typeLinearStr, "exnref")) {
+      *out = RefType::exn();
+      return true;
+    }
+  }
+#endif
 #ifdef ENABLE_WASM_GC
   if (GcAvailable(cx)) {
     if (StringEqualsLiteral(typeLinearStr, "anyref")) {
@@ -142,90 +150,7 @@ enum class RefTypeResult {
   Unparsed,
 };
 
-static RefTypeResult MaybeToRefType(JSContext* cx, HandleObject obj,
-                                    RefType* out) {
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
-  if (!wasm::FunctionReferencesAvailable(cx)) {
-    return RefTypeResult::Unparsed;
-  }
-
-  JSAtom* refAtom = Atomize(cx, "ref", strlen("ref"));
-  if (!refAtom) {
-    return RefTypeResult::Failure;
-  }
-  RootedId refId(cx, AtomToId(refAtom));
-
-  RootedValue refVal(cx);
-  if (!GetProperty(cx, obj, obj, refId, &refVal)) {
-    return RefTypeResult::Failure;
-  }
-
-  RootedString typeStr(cx, ToString(cx, refVal));
-  if (!typeStr) {
-    return RefTypeResult::Failure;
-  }
-
-  Rooted<JSLinearString*> typeLinearStr(cx, typeStr->ensureLinear(cx));
-  if (!typeLinearStr) {
-    return RefTypeResult::Failure;
-  }
-
-  if (StringEqualsLiteral(typeLinearStr, "func")) {
-    *out = RefType::func();
-  } else if (StringEqualsLiteral(typeLinearStr, "extern")) {
-    *out = RefType::extern_();
-#  ifdef ENABLE_WASM_GC
-  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "any")) {
-    *out = RefType::any();
-  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "eq")) {
-    *out = RefType::eq();
-  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "i31")) {
-    *out = RefType::i31();
-  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "struct")) {
-    *out = RefType::struct_();
-  } else if (GcAvailable(cx) && StringEqualsLiteral(typeLinearStr, "array")) {
-    *out = RefType::array();
-#  endif
-  } else {
-    return RefTypeResult::Unparsed;
-  }
-
-  JSAtom* nullableAtom = Atomize(cx, "nullable", strlen("nullable"));
-  if (!nullableAtom) {
-    return RefTypeResult::Failure;
-  }
-  RootedId nullableId(cx, AtomToId(nullableAtom));
-  RootedValue nullableVal(cx);
-  if (!GetProperty(cx, obj, obj, nullableId, &nullableVal)) {
-    return RefTypeResult::Failure;
-  }
-
-  bool nullable = ToBoolean(nullableVal);
-  if (!nullable) {
-    *out = out->asNonNullable();
-  }
-  MOZ_ASSERT(out->isNullable() == nullable);
-  return RefTypeResult::Parsed;
-#else
-  return RefTypeResult::Unparsed;
-#endif
-}
-
 bool wasm::ToValType(JSContext* cx, HandleValue v, ValType* out) {
-  if (v.isObject()) {
-    RootedObject obj(cx, &v.toObject());
-    RefType refType;
-    switch (MaybeToRefType(cx, obj, &refType)) {
-      case RefTypeResult::Failure:
-        return false;
-      case RefTypeResult::Parsed:
-        *out = ValType(refType);
-        return true;
-      case RefTypeResult::Unparsed:
-        break;
-    }
-  }
-
   RootedString typeStr(cx, ToString(cx, v));
   if (!typeStr) {
     return false;
@@ -262,18 +187,6 @@ bool wasm::ToValType(JSContext* cx, HandleValue v, ValType* out) {
 }
 
 bool wasm::ToRefType(JSContext* cx, HandleValue v, RefType* out) {
-  if (v.isObject()) {
-    RootedObject obj(cx, &v.toObject());
-    switch (MaybeToRefType(cx, obj, out)) {
-      case RefTypeResult::Failure:
-        return false;
-      case RefTypeResult::Parsed:
-        return true;
-      case RefTypeResult::Unparsed:
-        break;
-    }
-  }
-
   RootedString typeStr(cx, ToString(cx, v));
   if (!typeStr) {
     return false;
@@ -381,34 +294,34 @@ UniqueChars wasm::ToString(RefType type, const TypeContext* types) {
 }
 
 UniqueChars wasm::ToString(ValType type, const TypeContext* types) {
-  return ToString(type.fieldType(), types);
+  return ToString(type.storageType(), types);
 }
 
-UniqueChars wasm::ToString(FieldType type, const TypeContext* types) {
+UniqueChars wasm::ToString(StorageType type, const TypeContext* types) {
   const char* literal = nullptr;
   switch (type.kind()) {
-    case FieldType::I8:
+    case StorageType::I8:
       literal = "i8";
       break;
-    case FieldType::I16:
+    case StorageType::I16:
       literal = "i16";
       break;
-    case FieldType::I32:
+    case StorageType::I32:
       literal = "i32";
       break;
-    case FieldType::I64:
+    case StorageType::I64:
       literal = "i64";
       break;
-    case FieldType::V128:
+    case StorageType::V128:
       literal = "v128";
       break;
-    case FieldType::F32:
+    case StorageType::F32:
       literal = "f32";
       break;
-    case FieldType::F64:
+    case StorageType::F64:
       literal = "f64";
       break;
-    case FieldType::Ref:
+    case StorageType::Ref:
       return ToString(type.refType(), types);
   }
   return DuplicateString(literal);

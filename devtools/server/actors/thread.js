@@ -32,6 +32,7 @@ const {
 const {
   logEvent,
 } = require("resource://devtools/server/actors/utils/logEvent.js");
+const Targets = require("devtools/server/actors/targets/index");
 
 loader.lazyRequireGetter(
   this,
@@ -169,24 +170,23 @@ class ThreadActor extends Actor {
    *
    * ThreadActors manage execution/inspection of debuggees.
    *
-   * @param parent TargetActor
-   *        This |ThreadActor|'s parent actor. i.e. one of the many Target actors.
-   * @param aGlobal object [optional]
-   *        An optional (for content debugging only) reference to the content
-   *        window.
+   * @param {TargetActor} targetActor
+   *        This `ThreadActor`'s parent actor. i.e. one of the many Target actors.
    */
-  constructor(parent, global) {
-    super(parent.conn, threadSpec);
+  constructor(targetActor) {
+    super(targetActor.conn, threadSpec);
+
+    // This attribute is used by various other actors to find the target actor
+    this.targetActor = targetActor;
 
     this._state = STATES.DETACHED;
-    this._parent = parent;
-    this.global = global;
     this._options = {
       skipBreakpoints: false,
     };
     this._gripDepth = 0;
-    this._parentClosed = false;
+    this._targetActorClosed = false;
     this._observingNetwork = false;
+    this._shouldShowPauseOverlay = true;
     this._frameActors = [];
     this._xhrBreakpoints = [];
 
@@ -233,9 +233,9 @@ class ThreadActor extends Actor {
     this._onWillNavigate = this._onWillNavigate.bind(this);
     this._onNavigate = this._onNavigate.bind(this);
 
-    this._parent.on("window-ready", this._onWindowReady);
-    this._parent.on("will-navigate", this._onWillNavigate);
-    this._parent.on("navigate", this._onNavigate);
+    this.targetActor.on("window-ready", this._onWindowReady);
+    this.targetActor.on("will-navigate", this._onWillNavigate);
+    this.targetActor.on("navigate", this._onNavigate);
 
     this._firstStatementBreakpoint = null;
     this._debuggerNotificationObserver = new DebuggerNotificationObserver();
@@ -246,7 +246,7 @@ class ThreadActor extends Actor {
 
   get dbg() {
     if (!this._dbg) {
-      this._dbg = this._parent.dbg;
+      this._dbg = this.targetActor.dbg;
       // Keep the debugger disabled until a client attaches.
       if (this._state === STATES.DETACHED) {
         this._dbg.disable();
@@ -289,11 +289,11 @@ class ThreadActor extends Actor {
   }
 
   get sourcesManager() {
-    return this._parent.sourcesManager;
+    return this.targetActor.sourcesManager;
   }
 
   get breakpoints() {
-    return this._parent.breakpoints;
+    return this.targetActor.breakpoints;
   }
 
   get youngestFrame() {
@@ -360,9 +360,9 @@ class ThreadActor extends Actor {
       } catch (e) {}
     }
 
-    this._parent.off("window-ready", this._onWindowReady);
-    this._parent.off("will-navigate", this._onWillNavigate);
-    this._parent.off("navigate", this._onNavigate);
+    this.targetActor.off("window-ready", this._onWindowReady);
+    this.targetActor.off("will-navigate", this._onWillNavigate);
+    this.targetActor.off("navigate", this._onNavigate);
 
     this.sourcesManager.off("newSource", this.onNewSourceEvent);
     this.clearDebuggees();
@@ -418,11 +418,11 @@ class ThreadActor extends Actor {
     this.alreadyAttached = true;
     this.dbg.enable();
 
-    // Notify the parent that we've finished attaching. If this is a worker
+    // Notify the target actor that we've finished attaching. If this is a worker
     // thread which was paused until attaching, this will allow content to
     // begin executing.
-    if (this._parent.onThreadAttached) {
-      this._parent.onThreadAttached();
+    if (this.targetActor.onThreadAttached) {
+      this.targetActor.onThreadAttached();
     }
     if (Services.obs) {
       // Set a wrappedJSObject property so |this| can be sent via the observer service
@@ -443,7 +443,7 @@ class ThreadActor extends Actor {
     }
 
     const env = new HighlighterEnvironment();
-    env.initFromTargetActor(this._parent);
+    env.initFromTargetActor(this.targetActor);
     const highlighter = new PausedDebuggerOverlay(env, {
       resume: () => this.resume(null),
       stepOver: () => this.resume({ type: "next" }),
@@ -453,7 +453,13 @@ class ThreadActor extends Actor {
   }
 
   _canShowOverlay() {
-    const { window } = this._parent;
+    // Only attempt to show on overlay on WindowGlobal targets, which displays a document.
+    // Workers and content processes can't display any overlay.
+    if (this.targetActor.targetType != Targets.TYPES.FRAME) {
+      return false;
+    }
+
+    const { window } = this.targetActor;
 
     // The CanvasFrameAnonymousContentHelper class we're using to create the paused overlay
     // need to have access to a documentElement.
@@ -473,21 +479,22 @@ class ThreadActor extends Actor {
 
   async showOverlay() {
     if (
-      this.isPaused() &&
-      this._canShowOverlay() &&
-      this._parent.on &&
-      this.pauseOverlay
+      !this._shouldShowPauseOverlay ||
+      !this.isPaused() ||
+      !this._canShowOverlay()
     ) {
-      const reason = this._priorPause.why.type;
-      await this.pauseOverlay.isReady;
-
-      // we might not be paused anymore.
-      if (!this.isPaused()) {
-        return;
-      }
-
-      this.pauseOverlay.show(reason);
+      return;
     }
+
+    const reason = this._priorPause.why.type;
+    await this.pauseOverlay.isReady;
+
+    // we might not be paused anymore.
+    if (!this.isPaused()) {
+      return;
+    }
+
+    this.pauseOverlay.show(reason);
   }
 
   hideOverlay() {
@@ -590,7 +597,7 @@ class ThreadActor extends Actor {
   }
 
   getAvailableEventBreakpoints() {
-    return getAvailableEventBreakpoints(this._parent.window);
+    return getAvailableEventBreakpoints(this.targetActor.window);
   }
   getActiveEventBreakpoints() {
     return Array.from(this._activeEventBreakpoints);
@@ -805,12 +812,15 @@ class ThreadActor extends Actor {
     if ("observeWasm" in options) {
       this.dbg.allowUnobservedWasm = !options.observeWasm;
     }
+    if ("pauseOverlay" in options) {
+      this._shouldShowPauseOverlay = !!options.pauseOverlay;
+    }
 
     if (
       "pauseWorkersUntilAttach" in options &&
-      this._parent.pauseWorkersUntilAttach
+      this.targetActor.pauseWorkersUntilAttach
     ) {
-      this._parent.pauseWorkersUntilAttach(options.pauseWorkersUntilAttach);
+      this.targetActor.pauseWorkersUntilAttach(options.pauseWorkersUntilAttach);
     }
 
     if (options.breakpoints) {
@@ -977,10 +987,10 @@ class ThreadActor extends Actor {
     // If the parent actor has been closed, terminate the debuggee script
     // instead of continuing. Executing JS after the content window is gone is
     // a bad idea.
-    return this._parentClosed ? null : undefined;
+    return this._targetActorClosed ? null : undefined;
   }
 
-  _makeOnEnterFrame({ pauseAndRespond }) {
+  _makeOnEnterFrame() {
     return frame => {
       if (this._requestedFrameRestart) {
         return null;
@@ -1089,7 +1099,7 @@ class ThreadActor extends Actor {
     return line !== newLocation.line || column !== newLocation.column;
   }
 
-  _makeOnStep({ pauseAndRespond, startFrame, steppingType, completion }) {
+  _makeOnStep({ pauseAndRespond, startFrame, completion }) {
     const thread = this;
     return function () {
       if (thread._validFrameStepOffset(this, startFrame, this.offset)) {
@@ -1336,7 +1346,7 @@ class ThreadActor extends Actor {
    * when we do not want to notify the front end of a resume, for example when
    * we are shutting down.
    */
-  doResume({ resumeLimit } = {}) {
+  doResume() {
     this._state = STATES.RUNNING;
 
     // Drop the actors in the pause actor pool.
@@ -1520,7 +1530,7 @@ class ThreadActor extends Actor {
     }
   }
 
-  sources(request) {
+  sources() {
     this.addAllSources();
 
     // No need to flush the new source packets here, as we are sending the
@@ -1528,7 +1538,11 @@ class ThreadActor extends Actor {
     // overhead of an RDP packet for every source right now. Let the default
     // timeout flush the buffered packets.
 
-    return this.sourcesManager.iter().map(s => s.form());
+    const forms = [];
+    for (const source of this.sourcesManager.iter()) {
+      forms.push(source.form());
+    }
+    return forms;
   }
 
   /**
@@ -1809,7 +1823,7 @@ class ThreadActor extends Actor {
     this.threadLifetimePool.objectActors.set(actor.obj, actor);
   }
 
-  _onWindowReady({ isTopLevel, isBFCache, window }) {
+  _onWindowReady({ isTopLevel, isBFCache }) {
     // Note that this code relates to the disabling of Debugger API from will-navigate listener.
     // And should only be triggered when the target actor doesn't follow WindowGlobal lifecycle.
     // i.e. when the Thread Actor manages more than one top level WindowGlobal.
@@ -1817,9 +1831,6 @@ class ThreadActor extends Actor {
       this.sourcesManager.reset();
       this.clearDebuggees();
       this.dbg.enable();
-      // Update the global no matter if the debugger is on or off,
-      // otherwise the global will be wrong when enabled later.
-      this.global = window;
     }
 
     // Refresh the debuggee list when a new window object appears (top window or
@@ -2119,7 +2130,7 @@ class ThreadActor extends Actor {
     // when debugging a tab (i.e. browser-element). As we still want to debug them
     // from the browser toolbox.
     if (
-      this._parent.sessionContext.type == "browser-element" &&
+      this.targetActor.sessionContext.type == "browser-element" &&
       source.url.endsWith("ExtensionContent.sys.mjs")
     ) {
       return false;
@@ -2208,7 +2219,7 @@ class ThreadActor extends Actor {
       // HTML files can contain any number of inline sources. We have to find
       // all the inline sources and their start line without running any of the
       // scripts on the page. The approach used here is approximate.
-      if (!this._parent.window) {
+      if (!this.targetActor.window) {
         return;
       }
 

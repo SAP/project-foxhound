@@ -66,7 +66,8 @@ const kRegExpRemovalRegExp = /^\/\^\(\(?|\\|\)\)?\$\/$/g;
 // See the uses of kXPIAddonTypes before introducing new addon types or
 // providers that differ from the existing types.
 ChromeUtils.defineLazyGetter(lazy, "kXPIAddonTypes", () => {
-  // In practice, this result is equivalent to ALL_XPI_TYPES in XPIProvider.jsm.
+  // In practice, this result is equivalent to ALL_XPI_TYPES in
+  // XPIProvider.sys.mjs.
   // "plugin" (from GMPProvider.sys.mjs) is intentionally omitted, as we decided to
   // not support blocklisting of GMP plugins in bug 1086668.
   return lazy.AddonManagerPrivate.getAddonTypesByProvider("XPIProvider");
@@ -1321,7 +1322,7 @@ var gBlocklistLevel = DEFAULT_LEVEL;
  *          disable - can be used by the nsIBlocklistPrompt to allows users to decide
  *                    whether a soft-blocked add-on should be disabled,
  *          blocked - true if the item is hard-blocked, false otherwise,
- *          item    - the nsIPluginTag or Addon object
+ *          item    - the Addon object
  */
 
 // It is not possible to use the one in Services since it will not successfully

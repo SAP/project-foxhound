@@ -36,8 +36,10 @@ open class BaseSessionTest(
         const val RESUBMIT_CONFIRM = "/assets/www/resubmit.html"
         const val BEFORE_UNLOAD = "/assets/www/beforeunload.html"
         const val CLICK_TO_RELOAD_HTML_PATH = "/assets/www/clickToReload.html"
+        const val CLICK_TO_REPLACE_HTML_PATH = "/assets/www/clickToReplace.html"
         const val CLIPBOARD_READ_HTML_PATH = "/assets/www/clipboard_read.html"
         const val CONTENT_CRASH_URL = "about:crashcontent"
+        const val DND_HTML_PATH = "/assets/www/dnd.html"
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
         const val FORM_BLANK_HTML_PATH = "/assets/www/form_blank.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
@@ -232,6 +234,9 @@ open class BaseSessionTest(
 
     fun GeckoSession.synthesizeTap(x: Int, y: Int) =
         sessionRule.synthesizeTap(this, x, y)
+
+    fun GeckoSession.synthesizeMouse(downTime: Long, action: Int, x: Int, y: Int, buttonState: Int) =
+        sessionRule.synthesizeMouse(this, downTime, action, x, y, buttonState)
 
     fun GeckoSession.synthesizeMouseMove(x: Int, y: Int) =
         sessionRule.synthesizeMouseMove(this, x, y)

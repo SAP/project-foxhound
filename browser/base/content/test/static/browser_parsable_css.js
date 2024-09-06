@@ -12,10 +12,6 @@
 let ignoreList = [
   // CodeMirror is imported as-is, see bug 1004423.
   { sourceName: /codemirror\.css$/i, isFromDevTools: true },
-  {
-    sourceName: /devtools\/content\/debugger\/src\/components\/([A-z\/]+).css/i,
-    isFromDevTools: true,
-  },
   // UA-only media features.
   {
     sourceName: /\b(autocomplete-item)\.css$/,
@@ -68,24 +64,6 @@ if (!Services.prefs.getBoolPref("layout.css.zoom.enabled")) {
   ignoreList.push({
     sourceName: /\bscrollbars\.css$/i,
     errorMessage: /Error in parsing value for ‘zoom’/i,
-    isFromDevTools: false,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.math-depth.enabled")) {
-  // mathml.css UA sheet rule for math-depth.
-  ignoreList.push({
-    sourceName: /\b(scrollbars|mathml)\.css$/i,
-    errorMessage: /Unknown property .*\bmath-depth\b/i,
-    isFromDevTools: false,
-  });
-}
-
-if (!Services.prefs.getBoolPref("layout.css.math-style.enabled")) {
-  // mathml.css UA sheet rule for math-style.
-  ignoreList.push({
-    sourceName: /(?:res|gre-resources)\/mathml\.css$/i,
-    errorMessage: /Unknown property .*\bmath-style\b/i,
     isFromDevTools: false,
   });
 }
@@ -335,7 +313,7 @@ function processCSSRules(container) {
     let urls = cssText.match(/url\("[^"]*"\)/g);
     // Extract props by searching all "--" preceded by "var(" or a non-word
     // character.
-    let props = cssText.match(/(var\(|\W|^)(--[\w\-]+)/g);
+    let props = cssText.match(/(var\(\s*|\W|^)(--[\w\-]+)/g);
     if (!urls && !props) {
       continue;
     }
@@ -362,7 +340,7 @@ function processCSSRules(container) {
 
     for (let prop of props || []) {
       if (prop.startsWith("var(")) {
-        prop = prop.substring(4);
+        prop = prop.substring(4).trim();
         let prevValue = customPropsToReferencesMap.get(prop) || 0;
         customPropsToReferencesMap.set(prop, prevValue + 1);
       } else {

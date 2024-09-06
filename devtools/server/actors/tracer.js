@@ -12,6 +12,7 @@ const {
   stopTracing,
   addTracingListener,
   removeTracingListener,
+  NEXT_INTERACTION_MESSAGE,
 } = require("resource://devtools/server/tracer/tracer.jsm");
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
@@ -83,7 +84,7 @@ class TracerActor extends Actor {
    */
   toggleTracing(options) {
     if (!this.tracingListener) {
-      this.#startTracing(options);
+      this.startTracing(options);
       return true;
     }
     this.stopTracing();
@@ -93,18 +94,11 @@ class TracerActor extends Actor {
   /**
    * Start tracing.
    *
-   * @param {String} logMethod
-   *        The output method used by the tracer.
-   *        See `LOG_METHODS` for potential values.
    * @param {Object} options
    *        Options used to configure JavaScriptTracer.
    *        See `JavaScriptTracer.startTracing`.
    */
-  startTracing(logMethod = LOG_METHODS.STDOUT, options = {}) {
-    this.#startTracing({ ...options, logMethod });
-  }
-
-  #startTracing(options) {
+  startTracing(options = {}) {
     if (options.logMethod && !VALID_LOG_METHODS.includes(options.logMethod)) {
       throw new Error(
         `Invalid log method '${options.logMethod}'. Only supports: ${VALID_LOG_METHODS}`
@@ -119,6 +113,14 @@ class TracerActor extends Actor {
     if (options.maxRecords && typeof options.maxRecords != "number") {
       throw new Error("Invalid max-records, only support numbers");
     }
+
+    // When tracing on next user interaction is enabled,
+    // disable logging from workers as this makes the tracer work
+    // against visible documents and is actived per document thread.
+    if (options.traceOnNextInteraction && isWorker) {
+      return;
+    }
+
     this.logMethod = options.logMethod || LOG_METHODS.STDOUT;
 
     if (this.logMethod == LOG_METHODS.PROFILER) {
@@ -127,35 +129,52 @@ class TracerActor extends Actor {
 
     this.tracingListener = {
       onTracingFrame: this.onTracingFrame.bind(this),
+      onTracingFrameStep: this.onTracingFrameStep.bind(this),
+      onTracingFrameExit: this.onTracingFrameExit.bind(this),
       onTracingInfiniteLoop: this.onTracingInfiniteLoop.bind(this),
       onTracingToggled: this.onTracingToggled.bind(this),
+      onTracingPending: this.onTracingPending.bind(this),
+      onTracingDOMMutation: this.onTracingDOMMutation.bind(this),
     };
     addTracingListener(this.tracingListener);
     this.traceValues = !!options.traceValues;
-    startTracing({
-      global: this.targetActor.window || this.targetActor.workerGlobal,
-      prefix: options.prefix || "",
-      // Enable receiving the `currentDOMEvent` being passed to `onTracingFrame`
-      traceDOMEvents: true,
-      // Enable tracing function arguments as well as returned values
-      traceValues: !!options.traceValues,
-      // Enable tracing only on next user interaction
-      traceOnNextInteraction: !!options.traceOnNextInteraction,
-      // Ignore frames beyond the given depth
-      maxDepth: options.maxDepth,
-      // Stop the tracing after a number of top level frames
-      maxRecords: options.maxRecords,
-    });
+    try {
+      startTracing({
+        global: this.targetActor.window || this.targetActor.workerGlobal,
+        prefix: options.prefix || "",
+        // Enable receiving the `currentDOMEvent` being passed to `onTracingFrame`
+        traceDOMEvents: true,
+        // Enable tracing DOM Mutations
+        traceDOMMutations: options.traceDOMMutations,
+        // Enable tracing function arguments as well as returned values
+        traceValues: !!options.traceValues,
+        // Enable tracing only on next user interaction
+        traceOnNextInteraction: !!options.traceOnNextInteraction,
+        // Notify about frame exit / function call returning
+        traceFunctionReturn: !!options.traceFunctionReturn,
+        // Ignore frames beyond the given depth
+        maxDepth: options.maxDepth,
+        // Stop the tracing after a number of top level frames
+        maxRecords: options.maxRecords,
+      });
+    } catch (e) {
+      // If startTracing throws, it probably rejected one of its options and we should
+      // unregister the tracing listener.
+      this.stopTracing();
+      throw e;
+    }
   }
 
   stopTracing() {
     if (!this.tracingListener) {
       return;
     }
-    stopTracing();
+    // Remove before stopping to prevent receiving the stop notification
     removeTracingListener(this.tracingListener);
-    this.logMethod = null;
     this.tracingListener = null;
+
+    stopTracing();
+    this.logMethod = null;
   }
 
   /**
@@ -180,12 +199,10 @@ class TracerActor extends Actor {
    *
    * @param {Boolean} enabled
    *        True if the tracer starts tracing, false it it stops.
-   * @param {String} reason
-   *        Optional string to justify why the tracer stopped.
    * @return {Boolean}
    *         Return true, if the JavaScriptTracer should log a message to stdout.
    */
-  onTracingToggled(enabled, reason) {
+  onTracingToggled(enabled) {
     // stopTracing will clear `logMethod`, so compute this before calling it.
     const shouldLogToStdout = this.logMethod == LOG_METHODS.STDOUT;
 
@@ -193,6 +210,37 @@ class TracerActor extends Actor {
       this.stopTracing();
     }
     return shouldLogToStdout;
+  }
+
+  /**
+   * Called when "trace on next user interaction" is enabled, to notify the user
+   * that the tracer is initialized but waiting for the user first input.
+   */
+  onTracingPending() {
+    // Delegate to JavaScriptTracer to log to stdout
+    if (this.logMethod == LOG_METHODS.STDOUT) {
+      return true;
+    }
+
+    if (this.logMethod == LOG_METHODS.CONSOLE) {
+      const consoleMessageWatcher = getResourceWatcher(
+        this.targetActor,
+        TYPES.CONSOLE_MESSAGE
+      );
+      if (consoleMessageWatcher) {
+        consoleMessageWatcher.emitMessages([
+          {
+            arguments: [NEXT_INTERACTION_MESSAGE],
+            styles: [],
+            level: "jstracer",
+            chromeContext: false,
+            timeStamp: ChromeUtils.dateNow(),
+          },
+        ]);
+      }
+      return false;
+    }
+    return false;
   }
 
   onTracingInfiniteLoop() {
@@ -217,7 +265,7 @@ class TracerActor extends Actor {
       {
         arguments: [message],
         styles: [],
-        level: "error",
+        level: "jstracer",
         chromeContext: false,
         timeStamp: ChromeUtils.dateNow(),
       },
@@ -226,6 +274,109 @@ class TracerActor extends Actor {
     return false;
   }
 
+  /**
+   * Called by JavaScriptTracer class when a new mutation happened on any DOM Element.
+   *
+   * @param {Object} options
+   * @param {Number} options.depth
+   *        Represents the depth of the frame in the call stack.
+   * @param {String} options.prefix
+   *        A string to be displayed as a prefix of any logged frame.
+   * @param {nsIStackFrame} options.caller
+   *        The JS Callsite which caused this mutation.
+   * @param {String} options.type
+   *        Type of DOM Mutation:
+   *        - "add": Node being added,
+   *        - "attributes": Node whose attributes changed,
+   *        - "remove": Node being removed,
+   * @param {DOMNode} options.element
+   *        The DOM Node related to the current mutation.
+   */
+  onTracingDOMMutation({ depth, prefix, type, caller, element }) {
+    // Delegate to JavaScriptTracer to log to stdout
+    if (this.logMethod == LOG_METHODS.STDOUT) {
+      return true;
+    }
+
+    if (this.logMethod == LOG_METHODS.CONSOLE) {
+      const dbgObj = makeDebuggeeValue(this.targetActor, element);
+      this.throttledTraces.push({
+        resourceType: JSTRACER_TRACE,
+        prefix,
+        timeStamp: ChromeUtils.dateNow(),
+
+        filename: caller?.filename,
+        lineNumber: caller?.lineNumber,
+        columnNumber: caller?.columnNumber,
+        sourceId: caller.sourceId,
+
+        depth,
+        mutationType: type,
+        mutationElement: createValueGripForTarget(this.targetActor, dbgObj),
+      });
+      this.throttleEmitTraces();
+      return false;
+    }
+    return false;
+  }
+
+  /**
+   * Called by JavaScriptTracer class on each step of a function call.
+   *
+   * @param {Object} options
+   * @param {Debugger.Frame} options.frame
+   *        A descriptor object for the JavaScript frame.
+   * @param {Number} options.depth
+   *        Represents the depth of the frame in the call stack.
+   * @param {String} options.prefix
+   *        A string to be displayed as a prefix of any logged frame.
+   * @return {Boolean}
+   *         Return true, if the JavaScriptTracer should log the step to stdout.
+   */
+  onTracingFrameStep({ frame, depth, prefix }) {
+    const { script } = frame;
+    const { lineNumber, columnNumber } = script.getOffsetMetadata(frame.offset);
+    const url = script.source.url;
+
+    // NOTE: Debugger.Script.prototype.getOffsetMetadata returns
+    //       columnNumber in 1-based.
+    //       Convert to 0-based, while keeping the wasm's column (1) as is.
+    //       (bug 1863878)
+    const columnBase = script.format === "wasm" ? 0 : 1;
+
+    // Ignore blackboxed sources
+    if (
+      this.sourcesManager.isBlackBoxed(
+        url,
+        lineNumber,
+        columnNumber - columnBase
+      )
+    ) {
+      return false;
+    }
+
+    if (this.logMethod == LOG_METHODS.STDOUT) {
+      // By returning true, we let JavaScriptTracer class log the message to stdout.
+      return true;
+    }
+
+    if (this.logMethod == LOG_METHODS.CONSOLE) {
+      this.throttledTraces.push({
+        resourceType: JSTRACER_TRACE,
+        prefix,
+        timeStamp: ChromeUtils.dateNow(),
+
+        depth,
+        filename: url,
+        lineNumber,
+        columnNumber: columnNumber - columnBase,
+        sourceId: script.source.id,
+      });
+      this.throttleEmitTraces();
+    }
+
+    return false;
+  }
   /**
    * Called by JavaScriptTracer class when a new JavaScript frame is executed.
    *
@@ -294,7 +445,9 @@ class TracerActor extends Actor {
       let args = undefined;
       // Log arguments, but only when this feature is enabled as it introduce
       // some significant overhead in perf as well as memory as it may hold the objects in memory.
-      if (this.traceValues) {
+      // Also prevent trying to log function call arguments if we aren't logging a frame
+      // with arguments (e.g. Debugger evaluation frames, when executing from the console)
+      if (this.traceValues && frame.arguments) {
         args = [];
         for (let arg of frame.arguments) {
           // Debugger.Frame.arguments contains either a Debugger.Object or primitive object
@@ -335,6 +488,104 @@ class TracerActor extends Actor {
         },
         depth
       );
+    }
+
+    return false;
+  }
+
+  /**
+   * Called by JavaScriptTracer class when a JavaScript frame exits (i.e. a function returns or throw).
+   *
+   * @param {Object} options
+   * @param {Number} options.frameId
+   *        Unique identifier for the current frame.
+   *        This should match a frame notified via onTracingFrame.
+   * @param {Debugger.Frame} options.frame
+   *        A descriptor object for the JavaScript frame.
+   * @param {Number} options.depth
+   *        Represents the depth of the frame in the call stack.
+   * @param {String} options.formatedDisplayName
+   *        A human readable name for the current frame.
+   * @param {String} options.prefix
+   *        A string to be displayed as a prefix of any logged frame.
+   * @param {String} options.why
+   *        A string to explain why the function stopped.
+   *        See tracer.jsm's FRAME_EXIT_REASONS.
+   * @param {Debugger.Object|primitive} options.rv
+   *        The returned value. It can be the returned value, or the thrown exception.
+   *        It is either a primitive object, otherwise it is a Debugger.Object for any other JS Object type.
+   * @return {Boolean}
+   *         Return true, if the JavaScriptTracer should log the frame to stdout.
+   */
+  onTracingFrameExit({
+    frameId,
+    frame,
+    depth,
+    formatedDisplayName,
+    prefix,
+    why,
+    rv,
+  }) {
+    const { script } = frame;
+    const { lineNumber, columnNumber } = script.getOffsetMetadata(frame.offset);
+    const url = script.source.url;
+
+    // NOTE: Debugger.Script.prototype.getOffsetMetadata returns
+    //       columnNumber in 1-based.
+    //       Convert to 0-based, while keeping the wasm's column (1) as is.
+    //       (bug 1863878)
+    const columnBase = script.format === "wasm" ? 0 : 1;
+
+    // Ignore blackboxed sources
+    if (
+      this.sourcesManager.isBlackBoxed(
+        url,
+        lineNumber,
+        columnNumber - columnBase
+      )
+    ) {
+      return false;
+    }
+
+    if (this.logMethod == LOG_METHODS.STDOUT) {
+      // By returning true, we let JavaScriptTracer class log the message to stdout.
+      return true;
+    }
+
+    if (this.logMethod == LOG_METHODS.CONSOLE) {
+      let returnedValue = undefined;
+      // Log arguments, but only when this feature is enabled as it introduce
+      // some significant overhead in perf as well as memory as it may hold the objects in memory.
+      if (this.traceValues) {
+        // Debugger.Frame.arguments contains either a Debugger.Object or primitive object
+        if (rv?.unsafeDereference) {
+          rv = rv.unsafeDereference();
+        }
+        // Instantiate a object actor so that the tools can easily inspect these objects
+        const dbgObj = makeDebuggeeValue(this.targetActor, rv);
+        returnedValue = createValueGripForTarget(this.targetActor, dbgObj);
+      }
+
+      // Create a message object that fits Console Message Watcher expectations
+      this.throttledTraces.push({
+        resourceType: JSTRACER_TRACE,
+        prefix,
+        timeStamp: ChromeUtils.dateNow(),
+
+        depth,
+        displayName: formatedDisplayName,
+        filename: url,
+        lineNumber,
+        columnNumber: columnNumber - columnBase,
+        sourceId: script.source.id,
+
+        relatedTraceId: frameId,
+        returnedValue,
+        why,
+      });
+      this.throttleEmitTraces();
+    } else if (this.logMethod == LOG_METHODS.PROFILER) {
+      // For now, the profiler doesn't use this.
     }
 
     return false;

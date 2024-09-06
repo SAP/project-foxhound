@@ -468,7 +468,7 @@ add_task(async function shouldNavigate() {
      * @param {Function} addCallback - Function to add a result to the query.
      */
     async startQuery(context, addCallback) {
-      for (let result of this._results) {
+      for (let result of this.results) {
         result.payload.searchString = context.searchString;
         result.payload.shouldNavigate = true;
         result.payload.url = DUMMY_PAGE;
@@ -580,7 +580,7 @@ add_task(async function highlighting() {
       addCallback(this, result);
     }
 
-    getViewUpdate(result, idsByName) {
+    getViewUpdate(_result, _idsByName) {
       return {};
     }
   }
@@ -617,7 +617,7 @@ add_task(async function highlighting() {
    * Provides a dynamic result with highlighted text that is then overridden.
    */
   class TestHighlightProviderOveridden extends TestHighlightProvider {
-    getViewUpdate(result, idsByName) {
+    getViewUpdate(_result, _idsByName) {
       return {
         text: {
           textContent: "Test title",
@@ -864,7 +864,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
   }
 
   async startQuery(context, addCallback) {
-    for (let result of this._results) {
+    for (let result of this.results) {
       result.payload.searchString = context.searchString;
       addCallback(this, result);
     }
@@ -904,7 +904,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     };
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onEngagement(state, queryContext, details, _controller) {
     if (this._pickPromiseResolve) {
       let { result, element } = details;
       this._pickPromiseResolve([result, element]);

@@ -88,7 +88,6 @@
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/OwningNonNull.h"
-#include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/PendingFullscreenEvent.h"
 #include "mozilla/PermissionDelegateHandler.h"
 #include "mozilla/PermissionManager.h"
@@ -108,6 +107,7 @@
 #include "mozilla/SMILTimeContainer.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Components.h"
+#include "mozilla/SVGUtils.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/SizeOfState.h"
@@ -131,7 +131,6 @@
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/TelemetryHistogramEnums.h"
 #include "mozilla/TelemetryScalarEnums.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
@@ -1405,6 +1404,7 @@ Document::Document(const char* aContentType)
       mShouldResistFingerprinting(false),
       mCloningForSVGUse(false),
       mAllowDeclarativeShadowRoots(false),
+      mSuspendDOMNotifications(false),
       mXMLDeclarationBits(0),
       mOnloadBlockCount(0),
       mWriteLevel(0),
@@ -1436,7 +1436,6 @@ Document::Document(const char* aContentType)
       mHttpsOnlyStatus(nsILoadInfo::HTTPS_ONLY_UNINITIALIZED),
       mViewportType(Unknown),
       mViewportFit(ViewportFitType::Auto),
-      mSubDocuments(nullptr),
       mHeaderData(nullptr),
       mServoRestyleRootDirtyBits(0),
       mThrowOnDynamicMarkupInsertionCounter(0),
@@ -1934,10 +1933,6 @@ void Document::LoadEventFired() {
   }
 }
 
-static uint32_t ConvertToUnsignedFromDouble(double aNumber) {
-  return aNumber < 0 ? 0 : static_cast<uint32_t>(aNumber);
-}
-
 void Document::RecordPageLoadEventTelemetry(
     glean::perf::PageLoadExtra& aEventTelemetryData) {
   // If the page load time is empty, then the content wasn't something we want
@@ -2152,8 +2147,8 @@ void Document::AccumulatePageLoadTelemetry(
   // First Contentful Composite
   if (TimeStamp firstContentfulComposite =
           GetNavigationTiming()->GetFirstContentfulCompositeTimeStamp()) {
-    Telemetry::AccumulateTimeDelta(Telemetry::PERF_FIRST_CONTENTFUL_PAINT_MS,
-                                   navigationStart, firstContentfulComposite);
+    glean::performance_pageload::fcp.AccumulateRawDuration(
+        firstContentfulComposite - navigationStart);
 
     if (!http3Key.IsEmpty()) {
       Telemetry::AccumulateTimeDelta(
@@ -2177,9 +2172,8 @@ void Document::AccumulatePageLoadTelemetry(
         Telemetry::DNS_PERF_FIRST_CONTENTFUL_PAINT_MS, dnsKey, navigationStart,
         firstContentfulComposite);
 
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::PERF_FIRST_CONTENTFUL_PAINT_FROM_RESPONSESTART_MS,
-        responseStart, firstContentfulComposite);
+    glean::performance_pageload::fcp_responsestart.AccumulateRawDuration(
+        firstContentfulComposite - responseStart);
 
     TimeDuration fcpTime = firstContentfulComposite - navigationStart;
     if (fcpTime > zeroDuration) {
@@ -2196,21 +2190,11 @@ void Document::AccumulatePageLoadTelemetry(
         static_cast<uint32_t>((lcpTime - navigationStart).ToMilliseconds()));
   }
 
-  // DOM Content Loaded event
-  if (TimeStamp dclEventStart =
-          GetNavigationTiming()->GetDOMContentLoadedEventStartTimeStamp()) {
-    Telemetry::AccumulateTimeDelta(Telemetry::PERF_DOM_CONTENT_LOADED_TIME_MS,
-                                   navigationStart, dclEventStart);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::PERF_DOM_CONTENT_LOADED_TIME_FROM_RESPONSESTART_MS,
-        responseStart, dclEventStart);
-  }
-
   // Load event
   if (TimeStamp loadEventStart =
           GetNavigationTiming()->GetLoadEventStartTimeStamp()) {
-    Telemetry::AccumulateTimeDelta(Telemetry::PERF_PAGE_LOAD_TIME_MS,
-                                   navigationStart, loadEventStart);
+    glean::performance_pageload::load_time.AccumulateRawDuration(
+        loadEventStart - navigationStart);
     if (!http3Key.IsEmpty()) {
       Telemetry::AccumulateTimeDelta(Telemetry::HTTP3_PERF_PAGE_LOAD_TIME_MS,
                                      http3Key, navigationStart, loadEventStart);
@@ -2228,9 +2212,8 @@ void Document::AccumulatePageLoadTelemetry(
                                      loadEventStart);
     }
 
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::PERF_PAGE_LOAD_TIME_FROM_RESPONSESTART_MS, responseStart,
-        loadEventStart);
+    glean::performance_pageload::load_time_responsestart.AccumulateRawDuration(
+        loadEventStart - responseStart);
 
     TimeDuration responseTime = responseStart - navigationStart;
     if (responseTime > zeroDuration) {
@@ -2262,41 +2245,34 @@ void Document::AccumulateJSTelemetry(
   JS::JSTimers timers = JS::GetJSTimers(cx);
 
   if (!timers.executionTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_EXECUTION_MS,
-        ConvertToUnsignedFromDouble(timers.executionTime.ToMilliseconds()));
+    glean::javascript_pageload::execution_time.AccumulateRawDuration(
+        timers.executionTime);
     aEventTelemetryDataOut.jsExecTime = mozilla::Some(
         static_cast<uint32_t>(timers.executionTime.ToMilliseconds()));
   }
 
   if (!timers.delazificationTime.IsZero()) {
-    Telemetry::Accumulate(Telemetry::JS_PAGELOAD_DELAZIFICATION_MS,
-                          ConvertToUnsignedFromDouble(
-                              timers.delazificationTime.ToMilliseconds()));
+    glean::javascript_pageload::delazification_time.AccumulateRawDuration(
+        timers.delazificationTime);
   }
 
   if (!timers.xdrEncodingTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_XDR_ENCODING_MS,
-        ConvertToUnsignedFromDouble(timers.xdrEncodingTime.ToMilliseconds()));
+    glean::javascript_pageload::xdr_encode_time.AccumulateRawDuration(
+        timers.xdrEncodingTime);
   }
 
   if (!timers.baselineCompileTime.IsZero()) {
-    Telemetry::Accumulate(Telemetry::JS_PAGELOAD_BASELINE_COMPILE_MS,
-                          ConvertToUnsignedFromDouble(
-                              timers.baselineCompileTime.ToMilliseconds()));
+    glean::javascript_pageload::baseline_compile_time.AccumulateRawDuration(
+        timers.baselineCompileTime);
   }
 
   if (!timers.gcTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_GC_MS,
-        ConvertToUnsignedFromDouble(timers.gcTime.ToMilliseconds()));
+    glean::javascript_pageload::gc_time.AccumulateRawDuration(timers.gcTime);
   }
 
   if (!timers.protectTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_PROTECT_MS,
-        ConvertToUnsignedFromDouble(timers.protectTime.ToMilliseconds()));
+    glean::javascript_pageload::protect_time.AccumulateRawDuration(
+        timers.protectTime);
   }
 }
 
@@ -2362,7 +2338,6 @@ Document::~Document() {
 
   // Kill the subdocument map, doing this will release its strong
   // references, if any.
-  delete mSubDocuments;
   mSubDocuments = nullptr;
 
   nsAutoScriptBlocker scriptBlocker;
@@ -2534,14 +2509,13 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOnloadBlocker)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLazyLoadObserver)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLastRememberedSizeObserver)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mElementsObservedForLastRememberedSize)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDOMImplementation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImageMaps)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOrientationPendingPromise)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOriginalDocument)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentTimeline)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScrollTimelineAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mChildrenCollection)
@@ -2657,7 +2631,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSecurityInfo)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDisplayDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mLazyLoadObserver)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLastRememberedSizeObserver)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mElementsObservedForLastRememberedSize);
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadyForIdle)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentL10n)
@@ -2670,7 +2644,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOriginalDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCachedEncoder)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentTimeline)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mPendingAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mScrollTimelineAnimationTracker)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTemplateContentsOwner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mChildrenCollection)
@@ -2718,7 +2691,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
     tmp->mStyleSheetSetList = nullptr;
   }
 
-  delete tmp->mSubDocuments;
   tmp->mSubDocuments = nullptr;
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFrameRequestManager)
@@ -2879,7 +2851,6 @@ void Document::DisconnectNodeTree() {
   // Delete references to sub-documents and kill the subdocument map,
   // if any. This is not strictly needed, but makes the node tree
   // teardown a bit faster.
-  delete mSubDocuments;
   mSubDocuments = nullptr;
 
   bool oldVal = mInUnlinkOrDeletion;
@@ -4359,25 +4330,6 @@ void Document::SetContentType(const nsACString& aContentType) {
   mContentType = aContentType;
 }
 
-bool Document::GetAllowPlugins() {
-  // First, we ask our docshell if it allows plugins.
-  auto* browsingContext = GetBrowsingContext();
-
-  if (browsingContext) {
-    if (!browsingContext->GetAllowPlugins()) {
-      return false;
-    }
-
-    // If the docshell allows plugins, we check whether
-    // we are sandboxed and plugins should not be allowed.
-    if (mSandboxFlags & SANDBOXED_PLUGINS) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 bool Document::HasPendingInitialTranslation() {
   return mDocumentL10n && mDocumentL10n->GetState() != DocumentL10nState::Ready;
 }
@@ -4511,15 +4463,6 @@ bool Document::AllowsL10n() const {
   bool allowed = false;
   NodePrincipal()->IsL10nAllowed(GetDocumentURI(), &allowed);
   return allowed;
-}
-
-bool Document::IsWebAnimationsGetAnimationsEnabled(JSContext* aCx,
-                                                   JSObject* /*unused*/
-) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  return nsContentUtils::IsSystemCaller(aCx) ||
-         StaticPrefs::dom_animations_api_getAnimations_enabled();
 }
 
 bool Document::AreWebAnimationsTimelinesEnabled(JSContext* aCx,
@@ -6378,9 +6321,11 @@ void Document::DeferredContentEditableCountChange(Element* aElement) {
     if (aElement) {
       if (RefPtr<HTMLEditor> htmlEditor = GetHTMLEditor()) {
         nsCOMPtr<nsIInlineSpellChecker> spellChecker;
-        rv = htmlEditor->GetInlineSpellChecker(false,
-                                               getter_AddRefs(spellChecker));
-        NS_ENSURE_SUCCESS_VOID(rv);
+        DebugOnly<nsresult> rvIgnored = htmlEditor->GetInlineSpellChecker(
+            false, getter_AddRefs(spellChecker));
+        NS_WARNING_ASSERTION(
+            NS_SUCCEEDED(rvIgnored),
+            "EditorBase::GetInlineSpellChecker() failed, but ignored");
 
         if (spellChecker &&
             aElement->InclusiveDescendantMayNeedSpellchecking(htmlEditor)) {
@@ -7273,7 +7218,8 @@ nsresult Document::SetSubDocumentFor(Element* aElement, Document* aSubDoc) {
           PLDHashTable::HashVoidPtrKeyStub, PLDHashTable::MatchEntryStub,
           PLDHashTable::MoveEntryStub, SubDocClearEntry, SubDocInitEntry};
 
-      mSubDocuments = new PLDHashTable(&hash_table_ops, sizeof(SubDocMapEntry));
+      mSubDocuments =
+          MakeUnique<PLDHashTable>(&hash_table_ops, sizeof(SubDocMapEntry));
     }
 
     // Add a mapping to the hash table
@@ -7716,8 +7662,7 @@ bool Document::ContainsEMEContent() {
 
 bool Document::ContainsMSEContent() {
   bool containsMSE = false;
-
-  auto check = [&containsMSE](nsISupports* aSupports) {
+  EnumerateActivityObservers([&containsMSE](nsISupports* aSupports) {
     nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
     if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
       RefPtr<MediaSource> ms = mediaElem->GetMozMediaSourceObject();
@@ -7725,23 +7670,14 @@ bool Document::ContainsMSEContent() {
         containsMSE = true;
       }
     }
-  };
-
-  EnumerateActivityObservers(check);
+  });
   return containsMSE;
 }
 
 static void NotifyActivityChangedCallback(nsISupports* aSupports) {
   nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
-  if (auto mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
+  if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
     mediaElem->NotifyOwnerDocumentActivityChanged();
-  }
-  nsCOMPtr<nsIObjectLoadingContent> objectLoadingContent(
-      do_QueryInterface(aSupports));
-  if (objectLoadingContent) {
-    nsObjectLoadingContent* olc =
-        static_cast<nsObjectLoadingContent*>(objectLoadingContent.get());
-    olc->NotifyOwnerDocumentActivityChanged();
   }
   nsCOMPtr<nsIDocumentActivity> objectDocumentActivity(
       do_QueryInterface(aSupports));
@@ -7751,7 +7687,8 @@ static void NotifyActivityChangedCallback(nsISupports* aSupports) {
     nsCOMPtr<nsIImageLoadingContent> imageLoadingContent(
         do_QueryInterface(aSupports));
     if (imageLoadingContent) {
-      auto ilc = static_cast<nsImageLoadingContent*>(imageLoadingContent.get());
+      auto* ilc =
+          static_cast<nsImageLoadingContent*>(imageLoadingContent.get());
       ilc->NotifyOwnerDocumentActivityChanged();
     }
   }
@@ -9049,7 +8986,7 @@ void Document::SetDomain(const nsAString& aDomain, ErrorResult& rv) {
   MOZ_ALWAYS_SUCCEEDS(NodePrincipal()->SetDomain(newURI));
   MOZ_ALWAYS_SUCCEEDS(PartitionedPrincipal()->SetDomain(newURI));
   if (WindowGlobalChild* wgc = GetWindowGlobalChild()) {
-    wgc->SendSetDocumentDomain(newURI);
+    wgc->SendSetDocumentDomain(WrapNotNull(newURI));
   }
 }
 
@@ -9319,12 +9256,8 @@ class Document::TitleChangeEvent final : public Runnable {
  public:
   explicit TitleChangeEvent(Document* aDoc)
       : Runnable("Document::TitleChangeEvent"),
-        mDoc(aDoc)
-#ifndef ANDROID
-        ,
-        mBlockOnload(aDoc->IsInChromeDocShell())
-#endif
-  {
+        mDoc(aDoc),
+        mBlockOnload(aDoc->IsInChromeDocShell()) {
     if (mBlockOnload) {
       mDoc->BlockOnload();
     }
@@ -9392,7 +9325,7 @@ void Document::DoNotifyPossibleTitleChange() {
     return;
   }
   // Make sure the pending runnable method is cleared.
-  mPendingTitleChangeEvent.Forget();
+  mPendingTitleChangeEvent.Revoke();
   mHaveFiredTitleChange = true;
 
   nsAutoString title;
@@ -9598,14 +9531,6 @@ SMILAnimationController* Document::GetAnimationController() {
   }
 
   return mAnimationController;
-}
-
-PendingAnimationTracker* Document::GetOrCreatePendingAnimationTracker() {
-  if (!mPendingAnimationTracker) {
-    mPendingAnimationTracker = new PendingAnimationTracker(this);
-  }
-
-  return mPendingAnimationTracker;
 }
 
 ScrollTimelineAnimationTracker*
@@ -11033,12 +10958,10 @@ void Document::FlushExternalResources(FlushType aType) {
     return;
   }
 
-  auto flush = [aType](Document& aDoc) {
+  EnumerateExternalResources([aType](Document& aDoc) {
     aDoc.FlushPendingNotifications(aType);
     return CallState::Continue;
-  };
-
-  EnumerateExternalResources(flush);
+  });
 }
 
 void Document::SetXMLDeclaration(const char16_t* aVersion,
@@ -11905,11 +11828,10 @@ void Document::OnPageShow(bool aPersisted, EventTarget* aDispatchStartTarget,
 
   NotifyActivityChanged();
 
-  auto notifyExternal = [aPersisted](Document& aExternalResource) {
+  EnumerateExternalResources([aPersisted](Document& aExternalResource) {
     aExternalResource.OnPageShow(aPersisted, nullptr);
     return CallState::Continue;
-  };
-  EnumerateExternalResources(notifyExternal);
+  });
 
   if (mAnimationController) {
     mAnimationController->OnPageShow();
@@ -12007,11 +11929,10 @@ void Document::OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
     UpdateVisibilityState();
   }
 
-  auto notifyExternal = [aPersisted](Document& aExternalResource) {
+  EnumerateExternalResources([aPersisted](Document& aExternalResource) {
     aExternalResource.OnPageHide(aPersisted, nullptr);
     return CallState::Continue;
-  };
-  EnumerateExternalResources(notifyExternal);
+  });
   NotifyActivityChanged();
 
   ClearPendingFullscreenRequests(this);
@@ -12377,12 +12298,10 @@ void Document::SuppressEventHandling(uint32_t aIncrease) {
     ScriptLoader()->AddExecuteBlocker();
   }
 
-  auto suppressInSubDoc = [aIncrease](Document& aSubDoc) {
+  EnumerateSubDocuments([aIncrease](Document& aSubDoc) {
     aSubDoc.SuppressEventHandling(aIncrease);
     return CallState::Continue;
-  };
-
-  EnumerateSubDocuments(suppressInSubDoc);
+  });
 }
 
 void Document::NotifyAbortedLoad() {
@@ -12498,7 +12417,8 @@ already_AddRefed<nsIURI> Document::ResolvePreloadImage(
 
 void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
                             ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                            bool aLinkPreload, uint64_t aEarlyHintPreloaderId) {
+                            bool aLinkPreload, uint64_t aEarlyHintPreloaderId,
+                            const nsAString& aFetchPriority) {
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL |
                           nsContentUtils::CORSModeToLoadImageFlags(
                               Element::StringToCORSMode(aCrossOriginAttr));
@@ -12519,7 +12439,8 @@ void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
   nsresult rv = nsContentUtils::LoadImage(
       aUri, static_cast<nsINode*>(this), this, NodePrincipal(), 0, referrerInfo,
       nullptr /* no observer */, loadFlags, initiator, getter_AddRefs(request),
-      policyType, false /* urgent */, aLinkPreload, aEarlyHintPreloaderId);
+      policyType, false /* urgent */, aLinkPreload, aEarlyHintPreloaderId,
+      nsGenericHTMLElement::ToFetchPriority(aFetchPriority));
 
   // Pin image-reference to avoid evicting it from the img-cache before
   // the "real" load occurs. Unpinned in DispatchContentLoadedEvents and
@@ -12532,7 +12453,8 @@ void Document::PreLoadImage(nsIURI* aUri, const nsAString& aCrossOriginAttr,
 void Document::MaybePreLoadImage(nsIURI* aUri,
                                  const nsAString& aCrossOriginAttr,
                                  ReferrerPolicyEnum aReferrerPolicy,
-                                 bool aIsImgSet, bool aLinkPreload) {
+                                 bool aIsImgSet, bool aLinkPreload,
+                                 const nsAString& aFetchPriority) {
   const CORSMode corsMode = dom::Element::StringToCORSMode(aCrossOriginAttr);
   if (aLinkPreload) {
     // Check if the image was already preloaded in this document to avoid
@@ -12541,7 +12463,7 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
         PreloadHashKey::CreateAsImage(aUri, NodePrincipal(), corsMode);
     if (!mPreloadService.PreloadExists(key)) {
       PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet,
-                   aLinkPreload, 0);
+                   aLinkPreload, 0, aFetchPriority);
     }
     return;
   }
@@ -12555,7 +12477,7 @@ void Document::MaybePreLoadImage(nsIURI* aUri,
 
   // Image not in cache - trigger preload
   PreLoadImage(aUri, aCrossOriginAttr, aReferrerPolicy, aIsImgSet, aLinkPreload,
-               0);
+               0, aFetchPriority);
 }
 
 void Document::MaybePreconnect(nsIURI* aOrigURI, mozilla::CORSMode aCORSMode) {
@@ -12775,11 +12697,10 @@ static void GetAndUnsuppressSubDocuments(
     aDocument.ScriptLoader()->RemoveExecuteBlocker();
   }
   aDocuments.AppendElement(&aDocument);
-  auto recurse = [&aDocuments](Document& aSubDoc) {
+  aDocument.EnumerateSubDocuments([&aDocuments](Document& aSubDoc) {
     GetAndUnsuppressSubDocuments(aSubDoc, aDocuments);
     return CallState::Continue;
-  };
-  aDocument.EnumerateSubDocuments(recurse);
+  });
 }
 
 void Document::UnsuppressEventHandlingAndFireEvents(bool aFireEvents) {
@@ -12857,11 +12778,10 @@ void Document::FireOrClearPostMessageEvents(bool aFireEvents) {
 
 void Document::SetSuppressedEventListener(EventListener* aListener) {
   mSuppressedEventListener = aListener;
-  auto setOnSubDocs = [&](Document& aDocument) {
+  EnumerateSubDocuments([&](Document& aDocument) {
     aDocument.SetSuppressedEventListener(aListener);
     return CallState::Continue;
-  };
-  EnumerateSubDocuments(setOnSubDocs);
+  });
 }
 
 bool Document::IsActive() const {
@@ -14227,11 +14147,10 @@ void EvaluateMediaQueryLists(nsTArray<RefPtr<MediaQueryList>>& aListsToNotify,
   if (!aRecurse) {
     return;
   }
-  auto recurse = [&](Document& aSubDoc) {
+  aDocument.EnumerateSubDocuments([&](Document& aSubDoc) {
     EvaluateMediaQueryLists(aListsToNotify, aSubDoc, true);
     return CallState::Continue;
-  };
-  aDocument.EnumerateSubDocuments(recurse);
+  });
 }
 
 void Document::EvaluateMediaQueriesAndReportChanges(bool aRecurse) {
@@ -14401,7 +14320,7 @@ class PendingFullscreenChangeList {
         if (aDoc->GetBrowsingContext()) {
           mRootBCForIteration = aDoc->GetBrowsingContext();
           if (aOption == eDocumentsWithSameRoot) {
-            RefPtr<BrowsingContext> bc =
+            BrowsingContext* bc =
                 GetParentIgnoreChromeBoundary(mRootBCForIteration);
             while (bc) {
               mRootBCForIteration = bc;
@@ -14421,14 +14340,14 @@ class PendingFullscreenChangeList {
     bool AtEnd() const { return mCurrent == nullptr; }
 
    private:
-    already_AddRefed<BrowsingContext> GetParentIgnoreChromeBoundary(
+    static BrowsingContext* GetParentIgnoreChromeBoundary(
         BrowsingContext* aBC) {
       // Chrome BrowsingContexts are only available in the parent process, so if
       // we're in a content process, we only worry about the context tree.
       if (XRE_IsParentProcess()) {
         return aBC->Canonical()->GetParentCrossChromeBoundary();
       }
-      return do_AddRef(aBC->GetParent());
+      return aBC->GetParent();
     }
 
     UniquePtr<T> TakeAndNextInternal() {
@@ -14440,8 +14359,7 @@ class PendingFullscreenChangeList {
     void SkipToNextMatch() {
       while (mCurrent) {
         if (mCurrent->Type() == T::kType) {
-          RefPtr<BrowsingContext> bc =
-              mCurrent->Document()->GetBrowsingContext();
+          BrowsingContext* bc = mCurrent->Document()->GetBrowsingContext();
           if (!bc) {
             // Always automatically drop fullscreen changes which are
             // from a document detached from the doc shell.
@@ -14551,13 +14469,12 @@ void Document::AsyncExitFullscreen(Document* aDoc) {
 static uint32_t CountFullscreenSubDocuments(Document& aDoc) {
   uint32_t count = 0;
   // FIXME(emilio): Should this be recursive and dig into our nested subdocs?
-  auto subDoc = [&count](Document& aSubDoc) {
+  aDoc.EnumerateSubDocuments([&count](Document& aSubDoc) {
     if (aSubDoc.Fullscreen()) {
       count++;
     }
     return CallState::Continue;
-  };
-  aDoc.EnumerateSubDocuments(subDoc);
+  });
   return count;
 }
 
@@ -14578,11 +14495,10 @@ static Document* GetFullscreenLeaf(Document& aDoc) {
     return nullptr;
   }
   Document* leaf = nullptr;
-  auto recurse = [&leaf](Document& aSubDoc) {
+  aDoc.EnumerateSubDocuments([&leaf](Document& aSubDoc) {
     leaf = GetFullscreenLeaf(aSubDoc);
     return leaf ? CallState::Stop : CallState::Continue;
-  };
-  aDoc.EnumerateSubDocuments(recurse);
+  });
   return leaf;
 }
 
@@ -14861,6 +14777,10 @@ void Document::TopLayerPush(Element& aElement) {
   const bool modal = aElement.State().HasState(ElementState::MODAL);
 
   TopLayerPop(aElement);
+  if (nsIFrame* f = aElement.GetPrimaryFrame()) {
+    f->MarkNeedsDisplayItemRebuild();
+  }
+
   mTopLayer.AppendElement(do_GetWeakReference(&aElement));
   NS_ASSERTION(GetTopLayerTop() == &aElement, "Should match");
 
@@ -14914,6 +14834,9 @@ Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicate) {
     nsCOMPtr<Element> element(do_QueryReferent(mTopLayer[i]));
     if (element && aPredicate(element)) {
       removedElement = element;
+      if (nsIFrame* f = element->GetPrimaryFrame()) {
+        f->MarkNeedsDisplayItemRebuild();
+      }
       mTopLayer.RemoveElementAt(i);
       break;
     }
@@ -14928,6 +14851,12 @@ Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicate) {
   while (!mTopLayer.IsEmpty()) {
     Element* element = GetTopLayerTop();
     if (!element || element->GetComposedDoc() != this) {
+      if (element) {
+        if (nsIFrame* f = element->GetPrimaryFrame()) {
+          f->MarkNeedsDisplayItemRebuild();
+        }
+      }
+
       mTopLayer.RemoveLastElement();
     } else {
       // The top element of the stack is now an in-doc element. Return here.
@@ -15130,6 +15059,10 @@ void Document::HideAllPopoversUntil(nsINode& aEndpoint,
     }
   };
 
+  if (aEndpoint.IsElement() && !aEndpoint.AsElement()->IsPopoverOpen()) {
+    return;
+  }
+
   if (&aEndpoint == this) {
     closeAllOpenPopovers();
     return;
@@ -15237,6 +15170,16 @@ void Document::HidePopover(Element& aPopover, bool aFocusPreviousElement,
     popoverHTMLEl->FireToggleEvent(PopoverVisibilityState::Showing,
                                    PopoverVisibilityState::Hidden,
                                    u"beforetoggle"_ns);
+
+    // https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
+    // step 10.2.
+    // Hide all popovers when beforetoggle shows a popover.
+    if (popoverHTMLEl->IsAutoPopover() &&
+        GetTopmostAutoPopover() != popoverHTMLEl &&
+        popoverHTMLEl->PopoverOpen()) {
+      HideAllPopoversUntil(*popoverHTMLEl, aFocusPreviousElement, false);
+    }
+
     if (!popoverHTMLEl->CheckPopoverValidity(PopoverVisibilityState::Showing,
                                              nullptr, aRv)) {
       return;
@@ -16120,40 +16063,6 @@ bool Document::HasScriptsBlockedBySandbox() const {
   return mSandboxFlags & SANDBOXED_SCRIPTS;
 }
 
-// Some use-counter sanity-checking.
-static_assert(size_t(eUseCounter_EndCSSProperties) -
-                      size_t(eUseCounter_FirstCSSProperty) ==
-                  size_t(eCSSProperty_COUNT_with_aliases),
-              "We should have the right amount of CSS property use counters");
-static_assert(size_t(eUseCounter_Count) -
-                      size_t(eUseCounter_FirstCountedUnknownProperty) ==
-                  size_t(CountedUnknownProperty::Count),
-              "We should have the right amount of counted unknown properties"
-              " use counters");
-static_assert(size_t(eUseCounter_Count) * 2 ==
-                  size_t(Telemetry::HistogramUseCounterCount),
-              "There should be two histograms (document and page)"
-              " for each use counter");
-
-#define ASSERT_CSS_COUNTER(id_, method_)                        \
-  static_assert(size_t(eUseCounter_property_##method_) -        \
-                        size_t(eUseCounter_FirstCSSProperty) == \
-                    size_t(id_),                                \
-                "Order for CSS counters and CSS property id should match");
-#define CSS_PROP_PUBLIC_OR_PRIVATE(publicname_, privatename_) privatename_
-#define CSS_PROP_LONGHAND(name_, id_, method_, ...) \
-  ASSERT_CSS_COUNTER(eCSSProperty_##id_, method_)
-#define CSS_PROP_SHORTHAND(name_, id_, method_, ...) \
-  ASSERT_CSS_COUNTER(eCSSProperty_##id_, method_)
-#define CSS_PROP_ALIAS(name_, aliasid_, id_, method_, ...) \
-  ASSERT_CSS_COUNTER(eCSSPropertyAlias_##aliasid_, method_)
-#include "mozilla/ServoCSSPropList.h"
-#undef CSS_PROP_ALIAS
-#undef CSS_PROP_SHORTHAND
-#undef CSS_PROP_LONGHAND
-#undef CSS_PROP_PUBLIC_OR_PRIVATE
-#undef ASSERT_CSS_COUNTER
-
 void Document::SetCssUseCounterBits() {
   if (StaticPrefs::layout_css_use_counters_enabled()) {
     for (size_t i = 0; i < eCSSProperty_COUNT_with_aliases; ++i) {
@@ -16182,8 +16091,6 @@ void Document::InitUseCounters() {
     return;
   }
   mUseCountersInitialized = true;
-
-  static_assert(Telemetry::HistogramUseCounterCount > 0);
 
   if (!ShouldIncludeInTelemetry()) {
     return;
@@ -16232,7 +16139,7 @@ void Document::InitUseCounters() {
 // page split, we can see that N documents would be affected, but
 // only a single web page would be affected.
 //
-// The difference between the values of these two histograms and the
+// The difference between the values of these two counts and the
 // related use counters below tell us how many pages did *not* use
 // the feature in question.  For instance, if we see that a given
 // session has destroyed 30 content documents, but a particular use
@@ -16240,7 +16147,7 @@ void Document::InitUseCounters() {
 // counter was *not* used in 25 of those 30 documents.
 //
 // We do things this way, rather than accumulating a boolean flag
-// for each use counter, to avoid sending histograms for features
+// for each use counter, to avoid sending data for features
 // that don't get widely used.  Doing things in this fashion means
 // smaller telemetry payloads and faster processing on the server
 // side.
@@ -16252,10 +16159,7 @@ void Document::ReportDocumentUseCounters() {
   mReportedDocumentUseCounters = true;
 
   // Note that a document is being destroyed.  See the comment above for how
-  // use counter histograms are interpreted relative to this measurement.
-  // TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED is recorded in
-  // WindowGlobalParent::FinishAccumulatingPageUseCounters.
-  Telemetry::Accumulate(Telemetry::CONTENT_DOCUMENTS_DESTROYED, 1);
+  // use counter data are interpreted relative to this measurement.
   glean::use_counter::content_documents_destroyed.Add();
 
   // Ask all of our resource documents to report their own document use
@@ -16282,14 +16186,11 @@ void Document::ReportDocumentUseCounters() {
       continue;
     }
 
-    auto id = static_cast<Telemetry::HistogramID>(
-        Telemetry::HistogramFirstUseCounter + uc * 2);
+    const char* metricName = IncrementUseCounter(uc, /* aIsPage = */ false);
     if (dumpCounters) {
-      printf_stderr("USE_COUNTER_DOCUMENT: %s - %s\n",
-                    Telemetry::GetHistogramName(id), urlForLogging->get());
+      printf_stderr("USE_COUNTER_DOCUMENT: %s - %s\n", metricName,
+                    urlForLogging->get());
     }
-    Telemetry::Accumulate(id, 1);
-    IncrementUseCounter(uc, /* aIsPage = */ false);
   }
 }
 
@@ -16570,27 +16471,79 @@ DOMIntersectionObserver& Document::EnsureLazyLoadObserver() {
   return *mLazyLoadObserver;
 }
 
-ResizeObserver& Document::EnsureLastRememberedSizeObserver() {
-  if (!mLastRememberedSizeObserver) {
-    mLastRememberedSizeObserver =
-        ResizeObserver::CreateLastRememberedSizeObserver(*this);
-  }
-  return *mLastRememberedSizeObserver;
-}
-
 void Document::ObserveForLastRememberedSize(Element& aElement) {
   if (NS_WARN_IF(!IsActive())) {
     return;
   }
-  // Options are initialized with ResizeObserverBoxOptions::Content_box by
-  // default, which is what we want.
-  static ResizeObserverOptions options;
-  EnsureLastRememberedSizeObserver().Observe(aElement, options);
+  mElementsObservedForLastRememberedSize.Insert(&aElement);
 }
 
 void Document::UnobserveForLastRememberedSize(Element& aElement) {
-  if (mLastRememberedSizeObserver) {
-    mLastRememberedSizeObserver->Unobserve(aElement);
+  mElementsObservedForLastRememberedSize.Remove(&aElement);
+}
+
+void Document::UpdateLastRememberedSizes() {
+  auto shouldRemoveElement = [&](auto* element) {
+    if (element->GetComposedDoc() != this) {
+      element->RemoveLastRememberedBSize();
+      element->RemoveLastRememberedISize();
+      return true;
+    }
+    return !element->GetPrimaryFrame();
+  };
+
+  for (auto it = mElementsObservedForLastRememberedSize.begin(),
+            end = mElementsObservedForLastRememberedSize.end();
+       it != end; ++it) {
+    if (shouldRemoveElement(*it)) {
+      mElementsObservedForLastRememberedSize.Remove(it);
+      continue;
+    }
+    const auto element = *it;
+    MOZ_ASSERT(element->GetComposedDoc() == this);
+    nsIFrame* frame = element->GetPrimaryFrame();
+    MOZ_ASSERT(frame);
+
+    // As for ResizeObserver, skip nodes hidden `content-visibility`.
+    if (frame->IsHiddenByContentVisibilityOnAnyAncestor()) {
+      continue;
+    }
+
+    MOZ_ASSERT(!frame->IsLineParticipant() || frame->IsReplaced(),
+               "Should have unobserved non-replaced inline.");
+    MOZ_ASSERT(!frame->HidesContent(),
+               "Should have unobserved element skipping its contents.");
+    const nsStylePosition* stylePos = frame->StylePosition();
+    const WritingMode wm = frame->GetWritingMode();
+    bool canUpdateBSize = stylePos->ContainIntrinsicBSize(wm).HasAuto();
+    bool canUpdateISize = stylePos->ContainIntrinsicISize(wm).HasAuto();
+    MOZ_ASSERT(canUpdateBSize || !element->HasLastRememberedBSize(),
+               "Should have removed the last remembered block size.");
+    MOZ_ASSERT(canUpdateISize || !element->HasLastRememberedISize(),
+               "Should have removed the last remembered inline size.");
+    MOZ_ASSERT(canUpdateBSize || canUpdateISize,
+               "Should have unobserved if we can't update any size.");
+
+    AutoTArray<LogicalPixelSize, 1> contentSizeList =
+        ResizeObserver::CalculateBoxSize(element,
+                                         ResizeObserverBoxOptions::Content_box,
+                                         /* aForceFragmentHandling */ true);
+    MOZ_ASSERT(!contentSizeList.IsEmpty());
+
+    if (canUpdateBSize) {
+      float bSize = 0;
+      for (const auto& current : contentSizeList) {
+        bSize += current.BSize();
+      }
+      element->SetLastRememberedBSize(bSize);
+    }
+    if (canUpdateISize) {
+      float iSize = 0;
+      for (const auto& current : contentSizeList) {
+        iSize = std::max(iSize, current.ISize());
+      }
+      element->SetLastRememberedISize(iSize);
+    }
   }
 }
 
@@ -17241,13 +17194,7 @@ bool Document::IsExtensionPage() const {
 
 void Document::AddResizeObserver(ResizeObserver& aObserver) {
   MOZ_ASSERT(!mResizeObservers.Contains(&aObserver));
-  // Insert internal ResizeObservers before scripted ones, since they may have
-  // observable side-effects and we don't want to expose the insertion time.
-  if (aObserver.HasNativeCallback()) {
-    mResizeObservers.InsertElementAt(0, &aObserver);
-  } else {
-    mResizeObservers.AppendElement(&aObserver);
-  }
+  mResizeObservers.AppendElement(&aObserver);
 }
 
 void Document::RemoveResizeObserver(ResizeObserver& aObserver) {
@@ -17302,6 +17249,18 @@ void Document::DetermineProximityToViewportAndNotifyResizeObservers() {
     // sub-documents or ancestors, so flushing layout for the whole browsing
     // context tree makes sure we don't miss anyone.
     FlushLayoutForWholeBrowsingContextTree(*this);
+
+    // Last remembered sizes are recorded "at the time that ResizeObserver
+    // events are determined and delivered".
+    // https://drafts.csswg.org/css-sizing-4/#last-remembered
+    //
+    // We do it right after layout to make sure sizes are up-to-date. If we do
+    // it after determining the proximities to viewport of
+    // 'content-visibility: auto' nodes, and if one of such node ever becomes
+    // relevant to the user, then we would be incorrectly recording the size
+    // of its rendering when it was skipping its content.
+    UpdateLastRememberedSizes();
+
     if (PresShell* presShell = GetPresShell()) {
       auto result = presShell->DetermineProximityToViewport();
       if (result.mHadInitialDetermination) {
@@ -17432,11 +17391,9 @@ Selection* Document::GetSelection(ErrorResult& aRv) {
 }
 
 void Document::MakeBrowsingContextNonSynthetic() {
-  if (nsContentUtils::ShouldHideObjectOrEmbedImageDocument()) {
-    if (BrowsingContext* bc = GetBrowsingContext()) {
-      if (bc->GetSyntheticDocumentContainer()) {
-        Unused << bc->SetSyntheticDocumentContainer(false);
-      }
+  if (BrowsingContext* bc = GetBrowsingContext()) {
+    if (bc->GetSyntheticDocumentContainer()) {
+      Unused << bc->SetSyntheticDocumentContainer(false);
     }
   }
 }
@@ -17862,11 +17819,14 @@ already_AddRefed<mozilla::dom::Promise> Document::RequestStorageAccess(
       ContentBlockingNotifier::eStorageAccessAPI, true)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [inner, promise] {
-            inner->SaveStorageAccessPermissionGranted();
-            promise->MaybeResolveWithUndefined();
-          },
-          [self, promise] {
+          [inner] { return inner->SaveStorageAccessPermissionGranted(); },
+          [] {
+            return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+          })
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [promise] { promise->MaybeResolveWithUndefined(); },
+          [promise, self] {
             self->ConsumeTransientUserGestureActivation();
             promise->MaybeRejectWithNotAllowedError(
                 "requestStorageAccess not allowed"_ns);
@@ -18539,15 +18499,15 @@ void Document::RecordNavigationTiming(ReadyState aReadyState) {
       break;
     case READYSTATE_INTERACTIVE:
       if (!mDOMInteractiveSet) {
-        Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_INTERACTIVE_MS,
-                                       startTime);
+        glean::performance_time::dom_interactive.AccumulateRawDuration(
+            TimeStamp::Now() - startTime);
         mDOMInteractiveSet = true;
       }
       break;
     case READYSTATE_COMPLETE:
       if (!mDOMCompleteSet) {
-        Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_COMPLETE_MS,
-                                       startTime);
+        glean::performance_time::dom_complete.AccumulateRawDuration(
+            TimeStamp::Now() - startTime);
         mDOMCompleteSet = true;
       }
       break;
@@ -18647,10 +18607,21 @@ void Document::DoCacheAllKnownLangPrefs() {
 }
 
 void Document::RecomputeLanguageFromCharset() {
-  nsLanguageAtomService* service = nsLanguageAtomService::GetService();
-  RefPtr<nsAtom> language = service->LookupCharSet(mCharacterSet);
-  if (language == nsGkAtoms::Unicode) {
-    language = service->GetLocaleLanguage();
+  RefPtr<nsAtom> language;
+  // Optimize the default character sets.
+  if (mCharacterSet == WINDOWS_1252_ENCODING) {
+    language = nsGkAtoms::x_western;
+  } else {
+    nsLanguageAtomService* service = nsLanguageAtomService::GetService();
+    if (mCharacterSet == UTF_8_ENCODING) {
+      language = nsGkAtoms::Unicode;
+    } else {
+      language = service->LookupCharSet(mCharacterSet);
+    }
+
+    if (language == nsGkAtoms::Unicode) {
+      language = service->GetLocaleLanguage();
+    }
   }
 
   if (language == mLanguageFromCharset) {
@@ -18753,7 +18724,7 @@ nsIPrincipal* Document::EffectiveStoragePrincipal() const {
   }
 
   // Calling StorageAllowedForDocument will notify the ContentBlockLog. This
-  // loads TrackingDBService.jsm, which in turn pulls in osfile.jsm, making us
+  // loads TrackingDBService.sys.mjs, making us potentially
   // fail // browser/base/content/test/performance/browser_startup.js. To avoid
   // that, we short-circuit the check here by allowing storage access to system
   // and addon principles, avoiding the test-failure.

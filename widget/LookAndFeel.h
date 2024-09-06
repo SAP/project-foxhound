@@ -163,10 +163,6 @@ class LookAndFeel {
      * 1: scrollbar button repeats to scroll even if cursor is outside of it.
      */
     ScrollbarButtonAutoRepeatBehavior,
-    /**
-     * Delay before showing a tooltip.
-     */
-    TooltipDelay,
     /*
      * A Boolean value to determine whether swipe animations should be used.
      */
@@ -292,6 +288,9 @@ class LookAndFeel {
 
     /** GTK titlebar radius */
     TitlebarRadius,
+
+    /** GTK button-to-button spacing in the inline axis */
+    TitlebarButtonSpacing,
 
     /**
      * Corresponding to dynamic-range.
@@ -492,6 +491,28 @@ class LookAndFeel {
    * Whether we should be drawing in the titlebar by default.
    */
   static bool DrawInTitlebar();
+
+  enum class TitlebarAction {
+    None,
+    WindowLower,
+    WindowMenu,
+    WindowMinimize,
+    WindowMaximize,
+    WindowMaximizeToggle,
+    // We don't support more actions (maximize-horizontal, maximize-vertical,..)
+    // as they're implemented as part of Wayland gtk_surface1 protocol
+    // which is not accessible to us.
+  };
+
+  enum class TitlebarEvent {
+    Double_Click,
+    Middle_Click,
+  };
+
+  /**
+   * Get system defined action for titlebar events.
+   */
+  static TitlebarAction GetTitlebarAction(TitlebarEvent aEvent);
 
   /**
    * The millisecond to mask password value.

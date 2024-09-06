@@ -5,9 +5,7 @@
 
 import { EXIT_CODE } from "resource://gre/modules/BackgroundTasksManager.sys.mjs";
 
-const { ASRouterTargeting } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouterTargeting.jsm"
-);
+import { ASRouterTargeting } from "resource:///modules/asrouter/ASRouterTargeting.sys.mjs";
 
 // Background tasks are "live" with a temporary profile that doesn't map common
 // network preferences to https://mochi.test in the way that regular testing

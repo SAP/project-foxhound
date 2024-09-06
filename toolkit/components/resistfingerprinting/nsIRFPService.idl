@@ -5,6 +5,9 @@
 #include "nsISupports.idl"
 #include "nsIFingerprintingWebCompatService.idl"
 
+interface nsIPrincipal;
+interface nsIChannel;
+
 /**
  * The singleton serivce which handles fingerprinting protection stuffs.
  */
@@ -40,4 +43,38 @@ interface nsIRFPService : nsISupports
    * The bitfield of the default enabled RFP Targets.
    */
   readonly attribute uint64_t enabledFingerprintingProtections;
+
+  /**
+   * Clean all fingerprinting randomization keys.
+   */
+  void cleanAllRandomKeys();
+
+  /**
+   * Clean the fingerprinting randomization key by the given principal.
+   */
+  void cleanRandomKeyByPrincipal(in nsIPrincipal aPrincipal);
+
+  /**
+   * Clean the fingerprinting randomization key by the given domain.
+   */
+  void cleanRandomKeyByDomain(in ACString aDomain);
+
+  /**
+   * Clean the fingerprinting randomization key by the given host and
+   * OriginAttributesPattern.
+   */
+  void cleanRandomKeyByHost(in ACString aHost,
+                            in AString  aPattern);
+
+  /**
+   * Clean the fingerprinting randomization key by the given
+   * OriginAttributesPattern.
+   */
+  void cleanRandomKeyByOriginAttributesPattern(in AString aPattern);
+
+  /**
+   * Test function for generating and return the fingerprinting randomization
+   * key for the given channel.
+   */
+  Array<uint8_t> testGenerateRandomKey(in nsIChannel aChannel);
 };

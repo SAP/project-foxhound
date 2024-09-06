@@ -2,12 +2,14 @@ import React from "react";
 import { mount } from "enzyme";
 import { MultiSelect } from "content-src/components/MultiSelect";
 
-describe("Multistage AboutWelcome module", () => {
+describe("MultiSelect component", () => {
   let sandbox;
   let MULTISELECT_SCREEN_PROPS;
+  let setScreenMultiSelects;
   let setActiveMultiSelect;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    setScreenMultiSelects = sandbox.stub();
     setActiveMultiSelect = sandbox.stub();
     MULTISELECT_SCREEN_PROPS = {
       id: "multiselect-screen",
@@ -22,9 +24,9 @@ describe("Multistage AboutWelcome module", () => {
         progress_bar: true,
         logo: {},
         title: "Test Title",
-        subtitle: "Test SubTitle",
         tiles: {
           type: "multiselect",
+          label: "Test Subtitle",
           data: [
             {
               id: "checkbox-1",
@@ -73,128 +75,147 @@ describe("Multistage AboutWelcome module", () => {
           has_arrow_icon: true,
         },
       },
+      setScreenMultiSelects,
+      setActiveMultiSelect,
     };
   });
   afterEach(() => {
     sandbox.restore();
   });
 
-  describe("MultiSelect component", () => {
-    it("should call setActiveMultiSelect with ids of checkboxes with defaultValue true", () => {
-      const wrapper = mount(
-        <MultiSelect
-          setActiveMultiSelect={setActiveMultiSelect}
-          {...MULTISELECT_SCREEN_PROPS}
-        />
-      );
+  it("should call setScreenMultiSelects with all ids of checkboxes", () => {
+    mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
 
-      wrapper.setProps({ activeMultiSelect: null });
-      assert.calledOnce(setActiveMultiSelect);
-      assert.calledWith(setActiveMultiSelect, ["checkbox-1", "checkbox-2"]);
-    });
+    assert.calledOnce(setScreenMultiSelects);
+    assert.calledWith(setScreenMultiSelects, [
+      "checkbox-1",
+      "checkbox-2",
+      "checkbox-3",
+    ]);
+  });
 
-    it("should use activeMultiSelect ids to set checked state for respective checkbox", () => {
-      const wrapper = mount(
-        <MultiSelect
-          setActiveMultiSelect={setActiveMultiSelect}
-          {...MULTISELECT_SCREEN_PROPS}
-        />
-      );
+  it("should not call setScreenMultiSelects if it's already set", () => {
+    let map = sandbox
+      .stub()
+      .returns(MULTISELECT_SCREEN_PROPS.content.tiles.data);
 
-      wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
-      const checkBoxes = wrapper.find(".checkbox-container input");
-      assert.strictEqual(checkBoxes.length, 3);
+    mount(
+      <MultiSelect screenMultiSelects={{ map }} {...MULTISELECT_SCREEN_PROPS} />
+    );
 
-      assert.strictEqual(checkBoxes.first().props().checked, true);
-      assert.strictEqual(checkBoxes.at(1).props().checked, true);
-      assert.strictEqual(checkBoxes.last().props().checked, false);
-    });
+    assert.notCalled(setScreenMultiSelects);
+    assert.calledOnce(map);
+    assert.calledWith(map, sinon.match.func);
+  });
 
-    it("should filter out id when checkbox is unchecked", () => {
-      const wrapper = mount(
-        <MultiSelect
-          setActiveMultiSelect={setActiveMultiSelect}
-          {...MULTISELECT_SCREEN_PROPS}
-        />
-      );
-      wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
+  it("should call setActiveMultiSelect with ids of checkboxes with defaultValue true", () => {
+    const wrapper = mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
 
-      const ckbx1 = wrapper.find(".checkbox-container input").at(0);
-      assert.strictEqual(ckbx1.prop("value"), "checkbox-1");
-      ckbx1.getDOMNode().checked = false;
-      ckbx1.simulate("change");
-      assert.calledWith(setActiveMultiSelect, ["checkbox-2"]);
-    });
+    wrapper.setProps({ activeMultiSelect: null });
+    assert.calledOnce(setActiveMultiSelect);
+    assert.calledWith(setActiveMultiSelect, ["checkbox-1", "checkbox-2"]);
+  });
 
-    it("should add id when checkbox is checked", () => {
-      const wrapper = mount(
-        <MultiSelect
-          setActiveMultiSelect={setActiveMultiSelect}
-          {...MULTISELECT_SCREEN_PROPS}
-        />
-      );
-      wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
+  it("should use activeMultiSelect ids to set checked state for respective checkbox", () => {
+    const wrapper = mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
 
-      const ckbx3 = wrapper.find(".checkbox-container input").at(2);
-      assert.strictEqual(ckbx3.prop("value"), "checkbox-3");
-      ckbx3.getDOMNode().checked = true;
-      ckbx3.simulate("change");
-      assert.calledWith(setActiveMultiSelect, [
-        "checkbox-1",
-        "checkbox-2",
-        "checkbox-3",
-      ]);
-    });
+    wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
+    const checkBoxes = wrapper.find(".checkbox-container input");
+    assert.strictEqual(checkBoxes.length, 3);
 
-    it("should render radios and checkboxes with correct styles", async () => {
-      const SCREEN_PROPS = { ...MULTISELECT_SCREEN_PROPS };
-      SCREEN_PROPS.content.tiles.style = { flexDirection: "row", gap: "24px" };
-      SCREEN_PROPS.content.tiles.data = [
-        {
-          id: "checkbox-1",
-          defaultValue: true,
-          label: { raw: "Test1" },
-          action: { type: "OPEN_PROTECTION_REPORT" },
-          style: { color: "red" },
-          icon: { style: { color: "blue" } },
-        },
-        {
-          id: "radio-1",
-          type: "radio",
-          group: "radios",
-          defaultValue: true,
-          label: { raw: "Test3" },
-          action: { type: "OPEN_PROTECTION_REPORT" },
-          style: { color: "purple" },
-          icon: { style: { color: "yellow" } },
-        },
-      ];
-      const wrapper = mount(
-        <MultiSelect
-          setActiveMultiSelect={setActiveMultiSelect}
-          {...SCREEN_PROPS}
-        />
-      );
+    assert.strictEqual(checkBoxes.first().props().checked, true);
+    assert.strictEqual(checkBoxes.at(1).props().checked, true);
+    assert.strictEqual(checkBoxes.last().props().checked, false);
+  });
 
-      // wait for effect hook
-      await new Promise(resolve => queueMicrotask(resolve));
-      // activeMultiSelect was called on effect hook with default values
-      assert.calledWith(setActiveMultiSelect, ["checkbox-1", "radio-1"]);
+  it("cover the randomize property", async () => {
+    MULTISELECT_SCREEN_PROPS.content.tiles.data.forEach(
+      item => (item.randomize = true)
+    );
 
-      const container = wrapper.find(".multi-select-container");
-      assert.strictEqual(container.prop("style").flexDirection, "row");
-      assert.strictEqual(container.prop("style").gap, "24px");
+    const wrapper = mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
 
-      // checkboxes/radios are rendered with correct styles
-      const checkBoxes = wrapper.find(".checkbox-container");
-      assert.strictEqual(checkBoxes.length, 2);
-      assert.strictEqual(checkBoxes.first().prop("style").color, "red");
-      assert.strictEqual(checkBoxes.at(1).prop("style").color, "purple");
+    const checkBoxes = wrapper.find(".checkbox-container input");
+    assert.strictEqual(checkBoxes.length, 3);
 
-      const checks = wrapper.find(".checkbox-container input");
-      assert.strictEqual(checks.length, 2);
-      assert.strictEqual(checks.first().prop("style").color, "blue");
-      assert.strictEqual(checks.at(1).prop("style").color, "yellow");
-    });
+    // We don't want to actually test the randomization, just that it doesn't
+    // throw. We _could_ render the component until we get a different order,
+    // and that should work the vast majority of the time, but it's
+    // theoretically possible that we get the same order over and over again
+    // until we hit the 2 second timeout. That would be an extremely low failure
+    // rate, but we already know Math.random() works, so we don't really need to
+    // test it anyway. It's not worth the added risk of false failures.
+  });
+
+  it("should filter out id when checkbox is unchecked", () => {
+    const wrapper = mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
+    wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
+
+    const ckbx1 = wrapper.find(".checkbox-container input").at(0);
+    assert.strictEqual(ckbx1.prop("value"), "checkbox-1");
+    ckbx1.getDOMNode().checked = false;
+    ckbx1.simulate("change");
+    assert.calledWith(setActiveMultiSelect, ["checkbox-2"]);
+  });
+
+  it("should add id when checkbox is checked", () => {
+    const wrapper = mount(<MultiSelect {...MULTISELECT_SCREEN_PROPS} />);
+    wrapper.setProps({ activeMultiSelect: ["checkbox-1", "checkbox-2"] });
+
+    const ckbx3 = wrapper.find(".checkbox-container input").at(2);
+    assert.strictEqual(ckbx3.prop("value"), "checkbox-3");
+    ckbx3.getDOMNode().checked = true;
+    ckbx3.simulate("change");
+    assert.calledWith(setActiveMultiSelect, [
+      "checkbox-1",
+      "checkbox-2",
+      "checkbox-3",
+    ]);
+  });
+
+  it("should render radios and checkboxes with correct styles", async () => {
+    const SCREEN_PROPS = { ...MULTISELECT_SCREEN_PROPS };
+    SCREEN_PROPS.content.tiles.style = { flexDirection: "row", gap: "24px" };
+    SCREEN_PROPS.content.tiles.data = [
+      {
+        id: "checkbox-1",
+        defaultValue: true,
+        label: { raw: "Test1" },
+        action: { type: "OPEN_PROTECTION_REPORT" },
+        style: { color: "red" },
+        icon: { style: { color: "blue" } },
+      },
+      {
+        id: "radio-1",
+        type: "radio",
+        group: "radios",
+        defaultValue: true,
+        label: { raw: "Test3" },
+        action: { type: "OPEN_PROTECTION_REPORT" },
+        style: { color: "purple" },
+        icon: { style: { color: "yellow" } },
+      },
+    ];
+    const wrapper = mount(<MultiSelect {...SCREEN_PROPS} />);
+
+    // wait for effect hook
+    await new Promise(resolve => queueMicrotask(resolve));
+    // activeMultiSelect was called on effect hook with default values
+    assert.calledWith(setActiveMultiSelect, ["checkbox-1", "radio-1"]);
+
+    const container = wrapper.find(".multi-select-container");
+    assert.strictEqual(container.prop("style").flexDirection, "row");
+    assert.strictEqual(container.prop("style").gap, "24px");
+
+    // checkboxes/radios are rendered with correct styles
+    const checkBoxes = wrapper.find(".checkbox-container");
+    assert.strictEqual(checkBoxes.length, 2);
+    assert.strictEqual(checkBoxes.first().prop("style").color, "red");
+    assert.strictEqual(checkBoxes.at(1).prop("style").color, "purple");
+
+    const checks = wrapper.find(".checkbox-container input");
+    assert.strictEqual(checks.length, 2);
+    assert.strictEqual(checks.first().prop("style").color, "blue");
+    assert.strictEqual(checks.at(1).prop("style").color, "yellow");
   });
 });

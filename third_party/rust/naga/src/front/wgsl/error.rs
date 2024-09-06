@@ -87,7 +87,7 @@ impl ParseError {
 
     /// Returns a [`SourceLocation`] for the first label in the error message.
     pub fn location(&self, source: &str) -> Option<SourceLocation> {
-        self.labels.get(0).map(|label| label.0.location(source))
+        self.labels.first().map(|label| label.0.location(source))
     }
 }
 
@@ -184,7 +184,7 @@ pub enum Error<'a> {
     NonPowerOfTwoAlignAttribute(Span),
     InconsistentBinding(Span),
     TypeNotConstructible(Span),
-    TypeNotInferrable(Span),
+    TypeNotInferable(Span),
     InitializationTypeMismatch {
         name: Span,
         expected: String,
@@ -500,7 +500,7 @@ impl<'a> Error<'a> {
                 labels: vec![(span, "type is not constructible".into())],
                 notes: vec![],
             },
-            Error::TypeNotInferrable(span) => ParseError {
+            Error::TypeNotInferable(span) => ParseError {
                 message: "type can't be inferred".to_string(),
                 labels: vec![(span, "type can't be inferred".into())],
                 notes: vec![],

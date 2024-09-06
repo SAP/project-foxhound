@@ -15,7 +15,12 @@
 
 namespace mozilla {
 
+namespace dom {
+class ThreadSafeWorkerRef;
+}
+
 namespace gfx {
+class DrawTargetRecording;
 class SourceSurface;
 }
 
@@ -27,7 +32,7 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
  public:
   NS_INLINE_DECL_REFCOUNTING(CanvasChild)
 
-  CanvasChild();
+  explicit CanvasChild(dom::ThreadSafeWorkerRef* aWorkerRef);
 
   /**
    * @returns true if remote canvas has been deactivated due to failure.
@@ -57,7 +62,7 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
    * @params aTextureType the TextureType to create in the CanvasTranslator.
    */
   void EnsureRecorder(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-                      TextureType aTextureType);
+                      TextureType aTextureType, TextureType aWebglTextureType);
 
   /**
    * Clean up IPDL actor.
@@ -96,7 +101,7 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
    * @param aFormat SurfaceFormat for the DrawTarget
    * @returns newly created DrawTargetRecording
    */
-  already_AddRefed<gfx::DrawTarget> CreateDrawTarget(
+  already_AddRefed<gfx::DrawTargetRecording> CreateDrawTarget(
       int64_t aTextureId, const RemoteTextureOwnerId& aTextureOwnerId,
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
 
@@ -117,6 +122,12 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
    */
   already_AddRefed<gfx::SourceSurface> WrapSurface(
       const RefPtr<gfx::SourceSurface>& aSurface, int64_t aTextureId);
+
+  /**
+   * The DrawTargetRecording backing the surface has not been modified since the
+   * previous use, so it is safe to reattach the snapshot for readback.
+   */
+  void AttachSurface(const RefPtr<gfx::SourceSurface>& aSurface);
 
   /**
    * The DrawTargetRecording is about to change, so detach the old snapshot.
@@ -140,6 +151,9 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
 
   void CleanupTexture(int64_t aTextureId);
 
+  void ReturnDataSurfaceShmem(
+      already_AddRefed<ipc::SharedMemoryBasic> aDataSurfaceShmem);
+
  protected:
   void ActorDestroy(ActorDestroyReason aWhy) final;
 
@@ -150,14 +164,6 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
 
   bool EnsureDataSurfaceShmem(gfx::IntSize aSize, gfx::SurfaceFormat aFormat);
 
-  void ReturnDataSurfaceShmem(
-      already_AddRefed<ipc::SharedMemoryBasic> aDataSurfaceShmem);
-
-  struct DataShmemHolder {
-    RefPtr<ipc::SharedMemoryBasic> shmem;
-    RefPtr<CanvasChild> canvasChild;
-  };
-
   static void ReleaseDataShmemHolder(void* aClosure);
 
   void DropFreeBuffersWhenDormant();
@@ -166,6 +172,7 @@ class CanvasChild final : public PCanvasChild, public SupportsWeakPtr {
 
   static bool mDeactivated;
 
+  RefPtr<dom::ThreadSafeWorkerRef> mWorkerRef;
   RefPtr<CanvasDrawEventRecorder> mRecorder;
 
   RefPtr<ipc::SharedMemoryBasic> mDataSurfaceShmem;

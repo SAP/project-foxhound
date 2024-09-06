@@ -3,6 +3,7 @@ prefs = [
   "layout.css.basic-shape-rect.enabled=true",
   "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.properties-and-values.enabled=true",
+  "layout.css.transition-behavior.enabled=true",
   "dom.customHighlightAPI.enabled=true",
 ]
 support-files = [
@@ -32,6 +33,8 @@ support-files = [
 
 ["test_bug1006595.html"]
 
+["test_color_to.html"]
+
 ["test_color_to_rgba.html"]
 
 ["test_containing_block_of.html"]
@@ -57,6 +60,8 @@ support-files = [
 ["test_getRegisteredCustomProperties.html"]
 
 ["test_getRelativeRuleLine.html"]
+
+["test_getRuleIndex.html"]
 
 ["test_get_all_style_sheets.html"]
 

@@ -2,7 +2,7 @@
 import {
   AboutPreferences,
   PREFERENCES_LOADED_EVENT,
-} from "lib/AboutPreferences.jsm";
+} from "lib/AboutPreferences.sys.mjs";
 import {
   actionTypes as at,
   actionCreators as ac,
@@ -146,7 +146,7 @@ describe("AboutPreferences Feed", () => {
               },
             },
             createProcessingInstruction: sandbox.stub(),
-            createElementNS: sandbox.stub().callsFake((NS, el) => node),
+            createElementNS: sandbox.stub().callsFake(() => node),
             getElementById: sandbox.stub().returns(node),
             insertBefore: sandbox.stub().returnsArg(0),
             querySelector: sandbox

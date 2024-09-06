@@ -203,6 +203,7 @@ windows11-64-2009-hw-ref-shippable/opt:
             msix: repackage-signing-msix-win64/opt
             default: build-signing-win64/opt
     test-sets:
+        - talos-ref-hw
         - windows-ref-hw-tests
 
 windows11-64-2009-hw-ref/opt:
@@ -212,6 +213,7 @@ windows11-64-2009-hw-ref/opt:
             msix: repackage-signing-msix-win64/opt
             default: build-signing-win64/opt
     test-sets:
+        - talos-ref-hw
         - windows-ref-hw-tests
 
 windows10-64-shippable-qr/opt:
@@ -394,10 +396,10 @@ macosx1015-64-ccov-qr/opt:
     test-sets:
         - macosx1015-64-qr-tests
 
-macosx1300-64-shippable-qr/opt:
+macosx1400-64-shippable-qr/opt:
     build-platform: macosx64-shippable/opt
     test-sets:
-        - macosx1300-64-qr-tests
+        - macosx1400-64-qr-tests
 
 ##
 # Android platforms (matching /android-em.*/)
@@ -437,6 +439,11 @@ android-em-7.0-x86_64-qr/debug-isolated-process:
     build-platform: android-x86_64/debug-isolated-process
     test-sets:
         - android-x86_64-tests
+
+android-em-7.0-x86-qr/opt:
+    build-platform: android-x86/opt
+    test-sets:
+        - android-x86-tests
 
 # android-hw test platforms execute on real devices attached to Autophone hosts.
 
@@ -491,4 +498,10 @@ android-hw-p5-13-0-android-aarch64-shippable-qr/opt:
 
 android-hw-p6-13-0-android-aarch64-shippable-qr/opt:
     build-platform: android-aarch64-shippable/opt
-    test-sets: []
+    test-sets:
+        - android-hw-speedometer-tests
+
+android-hw-s21-13-0-android-aarch64-shippable-qr/opt:
+    build-platform: android-aarch64-shippable/opt
+    test-sets:
+        - android-hw-speedometer-tests

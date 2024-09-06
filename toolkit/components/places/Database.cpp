@@ -797,8 +797,8 @@ nsresult Database::BackupAndReplaceDatabaseFile(
     }
 
     nsCOMPtr<nsIFile> backup;
-    Unused << aStorage->BackupDatabaseFile(databaseFile, corruptFilename,
-                                           profDir, getter_AddRefs(backup));
+    Unused << BackupDatabaseFile(databaseFile, corruptFilename, profDir,
+                                 getter_AddRefs(backup));
   }
 
   // If anything fails from this point on, we have a stale connection or
@@ -1260,6 +1260,15 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
 
       // Firefox 118 uses schema version 75
 
+      // Version 76 was not correctly invoked and thus removed.
+
+      if (currentSchemaVersion < 77) {
+        rv = MigrateV77Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 125 uses schema version 77
+
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
       // NEVER MIX UP SYNC AND ASYNC EXECUTION IN MIGRATORS, YOU MAY LOCK THE
@@ -1615,7 +1624,7 @@ nsresult Database::InitFunctions() {
   NS_ENSURE_SUCCESS(rv, rv);
   rv = InvalidateDaysOfHistoryFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = MD5HexFunction::create(mMainConn);
+  rv = SHA256HexFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
   rv = SetShouldStartFrecencyRecalculationFunction::create(mMainConn);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2038,6 +2047,15 @@ nsresult Database::MigrateV75Up() {
     rv = mMainConn->ExecuteSimpleSQL(CREATE_MOZ_HISTORYVISITS_EXTRA);
     NS_ENSURE_SUCCESS(rv, rv);
   }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV77Up() {
+  // Recalculate origins frecency.
+  nsCOMPtr<mozIStorageStatement> stmt;
+  nsresult rv = mMainConn->ExecuteSimpleSQL(
+      "UPDATE moz_origins SET recalc_frecency = 1"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
   return NS_OK;
 }
 

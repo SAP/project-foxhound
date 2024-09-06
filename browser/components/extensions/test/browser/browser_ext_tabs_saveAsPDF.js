@@ -30,7 +30,7 @@ async function testReturnStatus(expectedStatus) {
   }
 
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window);
+  MockFilePicker.init(window.browsingContext);
 
   if (expectedStatus == "replaced" || expectedStatus == "not_replaced") {
     MockFilePicker.returnValue = MockFilePicker.returnReplace;
@@ -42,7 +42,7 @@ async function testReturnStatus(expectedStatus) {
 
   MockFilePicker.displayDirectory = saveDir;
 
-  MockFilePicker.showCallback = fp => {
+  MockFilePicker.showCallback = () => {
     MockFilePicker.setFiles([saveFile]);
     MockFilePicker.filterIndex = 0; // *.* - all file extensions
   };
@@ -126,7 +126,7 @@ async function testFileName(expectedFileName) {
   }
 
   let MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window);
+  MockFilePicker.init(window.browsingContext);
 
   MockFilePicker.returnValue = MockFilePicker.returnOK;
 

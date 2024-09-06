@@ -16,7 +16,7 @@ import { selectSource } from "../actions/sources/select";
 import {
   getEditor,
   getLocationsInViewport,
-  updateDocuments,
+  updateEditorLineWrapping,
 } from "../utils/editor/index";
 import { blackboxSourceActorsForSource } from "./sources/blackbox";
 import { toggleBreakpoints } from "./breakpoints/index";
@@ -66,7 +66,7 @@ export function setActiveSearch(activeSearch) {
 }
 
 export function toggleFrameworkGrouping(toggleValue) {
-  return ({ dispatch, getState }) => {
+  return ({ dispatch }) => {
     dispatch({
       type: "TOGGLE_FRAMEWORK_GROUPING",
       value: toggleValue,
@@ -75,7 +75,7 @@ export function toggleFrameworkGrouping(toggleValue) {
 }
 
 export function toggleInlinePreview(toggleValue) {
-  return ({ dispatch, getState }) => {
+  return ({ dispatch }) => {
     dispatch({
       type: "TOGGLE_INLINE_PREVIEW",
       value: toggleValue,
@@ -84,8 +84,8 @@ export function toggleInlinePreview(toggleValue) {
 }
 
 export function toggleEditorWrapping(toggleValue) {
-  return ({ dispatch, getState }) => {
-    updateDocuments(doc => doc.cm.setOption("lineWrapping", toggleValue));
+  return ({ dispatch }) => {
+    updateEditorLineWrapping(toggleValue);
 
     dispatch({
       type: "TOGGLE_EDITOR_WRAPPING",
@@ -95,7 +95,7 @@ export function toggleEditorWrapping(toggleValue) {
 }
 
 export function toggleSourceMapsEnabled(toggleValue) {
-  return ({ dispatch, getState }) => {
+  return ({ dispatch }) => {
     dispatch({
       type: "TOGGLE_SOURCE_MAPS_ENABLED",
       value: toggleValue,
@@ -217,7 +217,7 @@ export function setSearchOptions(searchKey, searchOptions) {
 }
 
 export function copyToClipboard(location) {
-  return ({ dispatch, getState }) => {
+  return ({ getState }) => {
     const content = getSourceTextContent(getState(), location);
     if (content && isFulfilled(content) && content.value.type === "text") {
       copyToTheClipboard(content.value.value);
@@ -226,11 +226,9 @@ export function copyToClipboard(location) {
 }
 
 export function setJavascriptTracingLogMethod(value) {
-  return ({ dispatch, getState }) => {
-    dispatch({
-      type: "SET_JAVASCRIPT_TRACING_LOG_METHOD",
-      value,
-    });
+  return {
+    type: "SET_JAVASCRIPT_TRACING_LOG_METHOD",
+    value,
   };
 }
 
@@ -246,8 +244,20 @@ export function toggleJavascriptTracingOnNextInteraction() {
   };
 }
 
+export function toggleJavascriptTracingFunctionReturn() {
+  return {
+    type: "TOGGLE_JAVASCRIPT_TRACING_FUNCTION_RETURN",
+  };
+}
+
+export function toggleJavascriptTracingOnNextLoad() {
+  return {
+    type: "TOGGLE_JAVASCRIPT_TRACING_ON_NEXT_LOAD",
+  };
+}
+
 export function setHideOrShowIgnoredSources(shouldHide) {
-  return ({ dispatch, getState }) => {
+  return ({ dispatch }) => {
     dispatch({ type: "HIDE_IGNORED_SOURCES", shouldHide });
   };
 }

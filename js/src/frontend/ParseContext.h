@@ -661,8 +661,12 @@ class ParseContext : public Nestable<ParseContext> {
 
   bool hasUsedName(const UsedNameTracker& usedNames,
                    TaggedParserAtomIndex name);
+  bool hasClosedOverName(const UsedNameTracker& usedNames,
+                         TaggedParserAtomIndex name);
   bool hasUsedFunctionSpecialName(const UsedNameTracker& usedNames,
                                   TaggedParserAtomIndex name);
+  bool hasClosedOverFunctionSpecialName(const UsedNameTracker& usedNames,
+                                        TaggedParserAtomIndex name);
 
   bool declareFunctionThis(const UsedNameTracker& usedNames,
                            bool canSkipLazyClosedOverBindings);
@@ -672,6 +676,13 @@ class ParseContext : public Nestable<ParseContext> {
                         bool canSkipLazyClosedOverBindings);
   bool declareDotGeneratorName();
   bool declareTopLevelDotGeneratorName();
+
+  // Used to determine if we have non-length uses of the arguments binding.
+  // This works by incrementing this counter each time we encounter the
+  // arguments name, and decrementing each time it is combined into
+  // arguments.length; as a result, if this is non-zero at the end of parsing,
+  // we have identified a non-length use of the arguments binding.
+  size_t numberOfArgumentsNames = 0;
 
  private:
   [[nodiscard]] bool isVarRedeclaredInInnermostScope(

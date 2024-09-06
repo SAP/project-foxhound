@@ -17,6 +17,7 @@
 #include <stddef.h>
 
 #include "builtin/Array.h"
+#include "ds/IdValuePair.h"
 #include "gc/Barrier.h"
 #include "js/GCVariant.h"
 #include "js/RealmOptions.h"
@@ -24,6 +25,7 @@
 #include "js/UniquePtr.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/GuardFuse.h"
+#include "vm/InvalidatingFuse.h"
 #include "vm/JSContext.h"
 #include "vm/PromiseLookup.h"  // js::PromiseLookup
 #include "vm/RealmFuses.h"
@@ -128,7 +130,7 @@ class NewPlainObjectWithPropsCache {
  public:
   NewPlainObjectWithPropsCache() { purge(); }
 
-  SharedShape* lookup(IdValuePair* properties, size_t nproperties) const;
+  SharedShape* lookup(Handle<IdValueVector> properties) const;
   void add(SharedShape* shape);
 
   void purge() {
@@ -434,9 +436,6 @@ class JS::Realm : public JS::shadow::Realm {
   // alternative for making the global a debuggee, when no actual debugging
   // features are required.
   bool isUnlimitedStacksCapturingEnabled = false;
-
-  // Whether or not the deprecation warning for bug 1873186 has been shown.
-  bool warnedAboutDateLateWeekday = false;
 
  private:
   void updateDebuggerObservesFlag(unsigned flag);

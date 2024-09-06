@@ -12,21 +12,16 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/FetchPriority.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/dom/RequestBinding.h"
-#include "nsIChildChannel.h"
-#include "zlib.h"
 
 #include "prsystem.h"
-#include "jsapi.h"
-#include "jsfriendapi.h"
-#include "js/Array.h"         // JS::GetArrayLength
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::OwningCompileOptions, JS::DecodeOptions, JS::OwningDecodeOptions, JS::DelazificationOption
 #include "js/ContextOptions.h"  // JS::ContextOptionsRef
 #include "js/experimental/JSStencil.h"  // JS::Stencil, JS::InstantiationStorage
 #include "js/experimental/CompileScript.h"  // JS::FrontendContext, JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompilationStorage, JS::CompileGlobalScriptToStencil, JS::CompileModuleScriptToStencil, JS::DecodeStencil, JS::PrepareForInstantiate
-#include "js/friend/ErrorMessages.h"        // js::GetErrorMessage, JSMSG_*
 #include "js/loader/ScriptLoadRequest.h"
 #include "ScriptCompression.h"
 #include "js/loader/LoadedScript.h"
@@ -34,8 +29,6 @@
 #include "js/MemoryFunctions.h"
 #include "js/Modules.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
-#include "js/Realm.h"
-#include "js/SourceText.h"
 #include "js/Transcoding.h"  // JS::TranscodeRange, JS::TranscodeResult, JS::IsTranscodeFailureResult
 #include "js/Utility.h"
 #include "xpcpublic.h"
@@ -54,7 +47,6 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/Mutex.h"  // mozilla::Mutex
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -66,6 +58,7 @@
 #include "nsIPrincipal.h"
 #include "nsJSPrincipals.h"
 #include "nsContentPolicyUtils.h"
+#include "nsContentSecurityUtils.h"
 #include "nsIClassifiedChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
@@ -79,16 +72,12 @@
 #include "nsUnicharUtils.h"
 #include "nsError.h"
 #include "nsThreadUtils.h"
-#include "nsDocShellCID.h"
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/Logging.h"
 #include "nsCRT.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsProxyRelease.h"
-#include "nsSandboxFlags.h"
-#include "nsContentTypeParser.h"
 #include "nsINetworkPredictor.h"
-#include "nsMimeTypes.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventQueue.h"
@@ -102,14 +91,12 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsIScriptError.h"
 #include "nsIAsyncOutputStream.h"
 #include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/Maybe.h"
 
-using JS::SourceText;
 using namespace JS::loader;
 
 using mozilla::Telemetry::LABELS_DOM_SCRIPT_PRELOAD_RESULT;
@@ -667,53 +654,35 @@ static void AdjustPriorityAndClassOfServiceForLinkPreloadScripts(
     nsIChannel* aChannel, ScriptLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->GetScriptLoadContext()->IsLinkPreloadScript());
 
-  if (!StaticPrefs::network_fetchpriority_enabled()) {
-    // Put it to the group that is not blocked by leaders and doesn't block
-    // follower at the same time.
-    // Giving it a much higher priority will make this request be processed
-    // ahead of other Unblocked requests, but with the same weight as
-    // Leaders. This will make us behave similar way for both http2 and http1.
-    ScriptLoadContext::PrioritizeAsPreload(aChannel);
-    return;
-  }
+  // Put it to the group that is not blocked by leaders and doesn't block
+  // follower at the same time.
+  // Giving it a much higher priority will make this request be processed
+  // ahead of other Unblocked requests, but with the same weight as
+  // Leaders. This will make us behave similar way for both http2 and http1.
+  ScriptLoadContext::PrioritizeAsPreload(aChannel);
 
-  if (nsCOMPtr<nsIClassOfService> cos = do_QueryInterface(aChannel)) {
-    cos->AddClassFlags(nsIClassOfService::Unblocked);
+  if (!StaticPrefs::network_fetchpriority_enabled()) {
+    return;
   }
 
   if (nsCOMPtr<nsISupportsPriority> supportsPriority =
           do_QueryInterface(aChannel)) {
     LOG(("Is <link rel=[module]preload"));
 
-    const RequestPriority fetchPriority = aRequest->FetchPriority();
+    const auto fetchPriority = ToFetchPriority(aRequest->FetchPriority());
     // The spec defines the priority to be set in an implementation defined
     // manner (<https://fetch.spec.whatwg.org/#concept-fetch>, step 15 and
     // <https://html.spec.whatwg.org/#concept-script-fetch-options-fetch-priority>).
-    // For web-compatibility, the fetch priority mapping from
-    // <https://web.dev/articles/fetch-priority#browser_priority_and_fetchpriority>
-    // is taken.
-    const int32_t supportsPriorityValue = [&]() {
-      switch (fetchPriority) {
-        case RequestPriority::Auto: {
-          return nsISupportsPriority::PRIORITY_HIGH;
-        }
-        case RequestPriority::High: {
-          return nsISupportsPriority::PRIORITY_HIGH;
-        }
-        case RequestPriority::Low: {
-          return nsISupportsPriority::PRIORITY_LOW;
-        }
-        default: {
-          MOZ_ASSERT_UNREACHABLE();
-          return nsISupportsPriority::PRIORITY_NORMAL;
-        }
-      }
-    }();
-
-    LogPriorityMapping(ScriptLoader::gScriptLoaderLog,
-                       ToFetchPriority(fetchPriority), supportsPriorityValue);
-
-    supportsPriority->SetPriority(supportsPriorityValue);
+    // See corresponding preferences in StaticPrefList.yaml for more context.
+    const int32_t supportsPriorityDelta =
+        FETCH_PRIORITY_ADJUSTMENT_FOR(link_preload_script, fetchPriority);
+    supportsPriority->AdjustPriority(supportsPriorityDelta);
+#ifdef DEBUG
+    int32_t adjustedPriority;
+    supportsPriority->GetPriority(&adjustedPriority);
+    LogPriorityMapping(ScriptLoader::gScriptLoaderLog, fetchPriority,
+                       adjustedPriority);
+#endif
   }
 }
 
@@ -728,50 +697,40 @@ void AdjustPriorityForNonLinkPreloadScripts(nsIChannel* aChannel,
   if (nsCOMPtr<nsISupportsPriority> supportsPriority =
           do_QueryInterface(aChannel)) {
     LOG(("Is not <link rel=[module]preload"));
-    const RequestPriority fetchPriority = aRequest->FetchPriority();
+    const auto fetchPriority = ToFetchPriority(aRequest->FetchPriority());
 
     // The spec defines the priority to be set in an implementation defined
     // manner (<https://fetch.spec.whatwg.org/#concept-fetch>, step 15 and
     // <https://html.spec.whatwg.org/#concept-script-fetch-options-fetch-priority>).
-    // <testing/web-platform/mozilla/tests/fetch/fetchpriority/support/script-tests-data.js>
-    // provides more context for the priority mapping.
-    const int32_t supportsPriorityValue = [&]() {
-      switch (fetchPriority) {
-        case RequestPriority::Auto: {
-          if (aRequest->IsModuleRequest()) {
-            return nsISupportsPriority::PRIORITY_HIGH;
-          }
-
-          const ScriptLoadContext* scriptLoadContext =
-              aRequest->GetScriptLoadContext();
-          if (scriptLoadContext->IsAsyncScript() ||
-              scriptLoadContext->IsDeferredScript()) {
-            return nsISupportsPriority::PRIORITY_LOW;
-          }
-
-          if (scriptLoadContext->mScriptFromHead) {
-            return nsISupportsPriority::PRIORITY_HIGH;
-          }
-
-          return nsISupportsPriority::PRIORITY_NORMAL;
-        }
-        case RequestPriority::Low: {
-          return nsISupportsPriority::PRIORITY_LOW;
-        }
-        case RequestPriority::High: {
-          return nsISupportsPriority::PRIORITY_HIGH;
-        }
-        default: {
-          MOZ_ASSERT_UNREACHABLE();
-          return nsISupportsPriority::PRIORITY_NORMAL;
-        }
+    // See corresponding preferences in StaticPrefList.yaml for more context.
+    const int32_t supportsPriorityDelta = [&]() {
+      const ScriptLoadContext* scriptLoadContext =
+          aRequest->GetScriptLoadContext();
+      if (aRequest->IsModuleRequest()) {
+        return FETCH_PRIORITY_ADJUSTMENT_FOR(module_script, fetchPriority);
       }
+
+      if (scriptLoadContext->IsAsyncScript() ||
+          scriptLoadContext->IsDeferredScript()) {
+        return FETCH_PRIORITY_ADJUSTMENT_FOR(async_or_defer_script,
+                                             fetchPriority);
+      }
+
+      if (scriptLoadContext->mScriptFromHead) {
+        return FETCH_PRIORITY_ADJUSTMENT_FOR(script_in_head, fetchPriority);
+      }
+
+      return FETCH_PRIORITY_ADJUSTMENT_FOR(other_script, fetchPriority);
     }();
 
-    if (supportsPriorityValue) {
-      LogPriorityMapping(ScriptLoader::gScriptLoaderLog,
-                         ToFetchPriority(fetchPriority), supportsPriorityValue);
-      supportsPriority->SetPriority(supportsPriorityValue);
+    if (supportsPriorityDelta) {
+      supportsPriority->AdjustPriority(supportsPriorityDelta);
+#ifdef DEBUG
+      int32_t adjustedPriority;
+      supportsPriority->GetPriority(&adjustedPriority);
+      LogPriorityMapping(ScriptLoader::gScriptLoaderLog, fetchPriority,
+                         adjustedPriority);
+#endif
     }
   }
 }
@@ -1115,12 +1074,8 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
     return false;
   }
 
-  nsAutoString nonce;
-  if (nsString* cspNonce = static_cast<nsString*>(
-          aScriptContent->GetProperty(nsGkAtoms::nonce))) {
-    nonce = *cspNonce;
-  }
-
+  nsString nonce = nsContentSecurityUtils::GetIsElementNonceableNonce(
+      *aScriptContent->AsElement());
   SRIMetadata sriMetadata;
   {
     nsAutoString integrity;
@@ -1326,12 +1281,8 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
     return false;
   }
 
-  nsCOMPtr<nsINode> node = do_QueryInterface(aElement);
-  nsAutoString nonce;
-  if (nsString* cspNonce =
-          static_cast<nsString*>(node->GetProperty(nsGkAtoms::nonce))) {
-    nonce = *cspNonce;
-  }
+  nsCOMPtr<Element> element = do_QueryInterface(aElement);
+  nsString nonce = nsContentSecurityUtils::GetIsElementNonceableNonce(*element);
 
   // Does CSP allow this inline script to run?
   if (!CSPAllowsInlineScript(aElement, nonce, mDocument)) {
@@ -1374,6 +1325,8 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
   ReferrerPolicy referrerPolicy = GetReferrerPolicy(aElement);
   ParserMetadata parserMetadata = GetParserMetadata(aElement);
 
+  // NOTE: The `nonce` as specified here is significant, because it's inherited
+  // by other scripts (e.g. modules created via dynamic imports).
   RefPtr<ScriptLoadRequest> request =
       CreateLoadRequest(aScriptKind, mDocument->GetDocumentURI(), aElement,
                         mDocument->NodePrincipal(), corsMode, nonce,
@@ -1938,14 +1891,13 @@ class ScriptOrModuleCompileTask final : public CompileOrDecodeTask {
     JS::SetNativeStackQuota(mFrontendContext,
                             JS::ThreadStackQuotaForSize(stackSize));
 
-    JS::CompilationStorage compileStorage;
     auto compile = [&](auto& source) {
       if constexpr (target == CompilationTarget::Script) {
         return JS::CompileGlobalScriptToStencil(mFrontendContext, mOptions,
-                                                source, compileStorage);
+                                                source);
       }
       return JS::CompileModuleScriptToStencil(mFrontendContext, mOptions,
-                                              source, compileStorage);
+                                              source);
     };
     return mMaybeSource.mapNonEmpty(compile);
   }
@@ -2009,7 +1961,6 @@ class ScriptDecodeTask final : public CompileOrDecodeTask {
   already_AddRefed<JS::Stencil> Decode() {
     // NOTE: JS::DecodeStencil doesn't need the stack quota.
 
-    JS::CompilationStorage compileStorage;
     RefPtr<JS::Stencil> stencil;
     mResult = JS::DecodeStencil(mFrontendContext, mDecodeOptions, mRange,
                                 getter_AddRefs(stencil));
@@ -2861,9 +2812,8 @@ void ScriptLoader::LoadEventFired() {
   MaybeTriggerBytecodeEncoding();
 
   if (!mMainThreadParseTime.IsZero()) {
-    Telemetry::Accumulate(
-        Telemetry::JS_PAGELOAD_PARSE_MS,
-        static_cast<uint32_t>(mMainThreadParseTime.ToMilliseconds()));
+    glean::javascript_pageload::parse_time.AccumulateRawDuration(
+        mMainThreadParseTime);
   }
 }
 
@@ -3680,11 +3630,6 @@ int32_t ScriptLoader::PhysicalSizeOfMemoryInGB() {
   return mPhysicalSizeOfMemory;
 }
 
-static bool IsInternalURIScheme(nsIURI* uri) {
-  return uri->SchemeIs("moz-extension") || uri->SchemeIs("resource") ||
-         uri->SchemeIs("chrome");
-}
-
 bool ScriptLoader::ShouldApplyDelazifyStrategy(ScriptLoadRequest* aRequest) {
   // Full parse everything if negative.
   if (StaticPrefs::dom_script_loader_delazification_max_size() < 0) {
@@ -3871,13 +3816,7 @@ nsresult ScriptLoader::PrepareLoadedRequest(ScriptLoadRequest* aRequest,
   rv = channel->GetOriginalURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Fixup moz-extension: and resource: URIs, because the channel URI will
-  // point to file:, which won't be allowed to load.
-  if (uri && IsInternalURIScheme(uri)) {
-    aRequest->mBaseURL = uri;
-  } else {
-    channel->GetURI(getter_AddRefs(aRequest->mBaseURL));
-  }
+  aRequest->SetBaseURLFromChannelAndOriginalURI(channel, uri);
 
   if (aRequest->IsModuleRequest()) {
     ModuleLoadRequest* request = aRequest->AsModuleRequest();

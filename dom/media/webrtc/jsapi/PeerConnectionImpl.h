@@ -16,6 +16,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsIUUIDGenerator.h"
 #include "nsIThread.h"
+#include "nsTHashSet.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Attributes.h"
 
@@ -217,8 +218,10 @@ class PeerConnectionImpl final
   virtual const std::string& GetName();
 
   // ICE events
-  void IceConnectionStateChange(dom::RTCIceConnectionState state);
-  void IceGatheringStateChange(dom::RTCIceGatheringState state);
+  void IceConnectionStateChange(const std::string& aTransportId,
+                                dom::RTCIceTransportState state);
+  void IceGatheringStateChange(const std::string& aTransportId,
+                               dom::RTCIceGathererState state);
   void OnCandidateFound(const std::string& aTransportId,
                         const CandidateInfo& aCandidateInfo);
   void UpdateDefaultCandidate(const std::string& defaultAddr,
@@ -411,7 +414,7 @@ class PeerConnectionImpl final
 
   void RecordEndOfCallTelemetry();
 
-  nsresult InitializeDataChannel();
+  nsresult MaybeInitializeDataChannel();
 
   NS_IMETHODIMP_TO_ERRORRESULT_RETREF(nsDOMDataChannel, CreateDataChannel,
                                       ErrorResult& rv, const nsAString& aLabel,
@@ -481,6 +484,9 @@ class PeerConnectionImpl final
     aTransceiversOut = mTransceivers.Clone();
   }
 
+  RefPtr<dom::RTCRtpTransceiver> GetTransceiver(
+      const std::string& aTransceiverId);
+
   // Gets the RTC Signaling State of the JSEP session
   dom::RTCSignalingState GetSignalingState() const;
 
@@ -499,6 +505,12 @@ class PeerConnectionImpl final
   dom::RTCPeerConnectionState GetNewConnectionState() const;
   // Returns whether we need to fire a state change event
   bool UpdateConnectionState();
+  dom::RTCIceConnectionState GetNewIceConnectionState() const;
+  // Returns whether we need to fire a state change event
+  bool UpdateIceConnectionState();
+  dom::RTCIceGatheringState GetNewIceGatheringState() const;
+  // Returns whether we need to fire a state change event
+  bool UpdateIceGatheringState();
 
   // initialize telemetry for when calls start
   void StartCallTelem();
@@ -584,6 +596,9 @@ class PeerConnectionImpl final
       std::vector<RtpExtensionHeader>& aPreferredheaders);
 
   void BreakCycles();
+
+  using RTCDtlsTransportMap =
+      nsTHashMap<nsCStringHashKey, RefPtr<dom::RTCDtlsTransport>>;
 
  private:
   virtual ~PeerConnectionImpl();
@@ -805,10 +820,10 @@ class PeerConnectionImpl final
   // Ensure ICE transports exist that we might need when offer/answer concludes
   void EnsureTransports(const JsepSession& aSession);
 
-  void UpdateRTCDtlsTransports(bool aMarkAsStable);
-  void RollbackRTCDtlsTransports();
-  void RemoveRTCDtlsTransportsExcept(
-      const std::set<std::string>& aTransportIds);
+  void UpdateRTCDtlsTransports();
+  void SaveStateForRollback();
+  void RestoreStateForRollback();
+  std::set<RefPtr<dom::RTCDtlsTransport>> GetActiveTransports() const;
 
   // Activate ICE transports at the conclusion of offer/answer,
   // or when rollback occurs.
@@ -861,9 +876,12 @@ class PeerConnectionImpl final
   std::set<std::pair<std::string, std::string>> mLocalIceCredentialsToReplace;
 
   nsTArray<RefPtr<dom::RTCRtpTransceiver>> mTransceivers;
-  std::map<std::string, RefPtr<dom::RTCDtlsTransport>>
-      mTransportIdToRTCDtlsTransport;
+  RTCDtlsTransportMap mTransportIdToRTCDtlsTransport;
   RefPtr<dom::RTCSctpTransport> mSctpTransport;
+  // This is similar to [[LastStableStateSender/ReceiverTransport]], but for
+  // DataChannel.
+  RefPtr<dom::RTCSctpTransport> mLastStableSctpTransport;
+  RefPtr<dom::RTCDtlsTransport> mLastStableSctpDtlsTransport;
 
   // Used whenever we need to dispatch a runnable to STS to tweak something
   // on our ICE ctx, but are not ready to do so at the moment (eg; we are
@@ -924,8 +942,10 @@ class PeerConnectionImpl final
     void ConnectSignals();
 
     // ICE events
-    void IceGatheringStateChange_s(dom::RTCIceGatheringState aState);
-    void IceConnectionStateChange_s(dom::RTCIceConnectionState aState);
+    void IceGatheringStateChange_s(const std::string& aTransportId,
+                                   dom::RTCIceGathererState aState);
+    void IceConnectionStateChange_s(const std::string& aTransportId,
+                                    dom::RTCIceTransportState aState);
     void OnCandidateFound_s(const std::string& aTransportId,
                             const CandidateInfo& aCandidateInfo);
     void AlpnNegotiated_s(const std::string& aAlpn, bool aPrivacyRequested);

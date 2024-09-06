@@ -92,6 +92,7 @@
 #include "js/HashTable.h"
 #include "js/Interrupt.h"
 #include "js/LocaleSensitive.h"
+#include "js/Prefs.h"
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperties, JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetElement, JS_SetProperty
 #include "js/PropertySpec.h"
@@ -211,22 +212,6 @@ static bool GetRealmConfiguration(JSContext* cx, unsigned argc, Value* vp) {
                       importAttributes ? TrueHandleValue : FalseHandleValue)) {
     return false;
   }
-
-#ifdef NIGHTLY_BUILD
-  bool arrayGrouping = cx->realm()->creationOptions().getArrayGroupingEnabled();
-  if (!JS_SetProperty(cx, info, "enableArrayGrouping",
-                      arrayGrouping ? TrueHandleValue : FalseHandleValue)) {
-    return false;
-  }
-#endif
-
-#ifdef NIGHTLY_BUILD
-  bool newSetMethods = cx->realm()->creationOptions().getNewSetMethodsEnabled();
-  if (!JS_SetProperty(cx, info, "enableNewSetMethods",
-                      newSetMethods ? TrueHandleValue : FalseHandleValue)) {
-    return false;
-  }
-#endif
 
   if (args.length() == 1) {
     RootedString str(cx, ToString(cx, args[0]));
@@ -619,6 +604,15 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   value = BooleanValue(false);
 #endif
   if (!JS_SetProperty(cx, info, "decorators", value)) {
+    return false;
+  }
+
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "json-parse-with-source", value)) {
     return false;
   }
 
@@ -1604,16 +1598,19 @@ static bool WasmLosslessInvoke(JSContext* cx, unsigned argc, Value* vp) {
     JS_ReportErrorASCII(cx, "not enough arguments");
     return false;
   }
-  if (!args.get(0).isObject()) {
+  if (!args.get(0).isObject() || !args.get(0).toObject().is<JSFunction>()) {
     JS_ReportErrorASCII(cx, "argument is not an object");
     return false;
   }
 
-  RootedFunction func(cx, args[0].toObject().maybeUnwrapIf<JSFunction>());
+  RootedFunction func(cx, &args[0].toObject().as<JSFunction>());
   if (!func || !wasm::IsWasmExportedFunction(func)) {
     JS_ReportErrorASCII(cx, "argument is not an exported wasm function");
     return false;
   }
+
+  // Switch to the function's realm
+  AutoRealm ar(cx, func);
 
   // Get the instance and funcIndex for calling the function
   wasm::Instance& instance = wasm::ExportedFunctionToInstance(func);
@@ -1814,6 +1811,15 @@ static bool DisassembleNative(JSContext* cx, unsigned argc, Value* vp) {
   if (jit_begin == nullptr || jit_end == nullptr) {
     return false;
   }
+
+#ifdef JS_CODEGEN_ARM
+  // The ARM32 disassembler is currently not fuzzing-safe because it doesn't
+  // handle constant pools correctly (bug 1875363).
+  if (fuzzingSafe) {
+    JS_ReportErrorASCII(cx, "disnative is not fuzzing-safe on ARM32");
+    return false;
+  }
+#endif
 
   // Dump the raw code to a file before disassembling in case
   // finishString triggers a GC and discards the jitcode.
@@ -2042,6 +2048,95 @@ static bool WasmDisassemble(JSContext* cx, unsigned argc, Value* vp) {
   return false;
 }
 
+static bool ToIonDumpContents(JSContext* cx, HandleValue value,
+                              wasm::IonDumpContents* contents) {
+  RootedString option(cx, JS::ToString(cx, value));
+
+  if (!option) {
+    return false;
+  }
+
+  bool isEqual = false;
+  if (!JS_StringEqualsLiteral(cx, option, "mir", &isEqual) || isEqual) {
+    *contents = wasm::IonDumpContents::UnoptimizedMIR;
+    return isEqual;
+  } else if (!JS_StringEqualsLiteral(cx, option, "unopt-mir", &isEqual) ||
+             isEqual) {
+    *contents = wasm::IonDumpContents::UnoptimizedMIR;
+    return isEqual;
+  } else if (!JS_StringEqualsLiteral(cx, option, "opt-mir", &isEqual) ||
+             isEqual) {
+    *contents = wasm::IonDumpContents::OptimizedMIR;
+    return isEqual;
+  } else if (!JS_StringEqualsLiteral(cx, option, "lir", &isEqual) || isEqual) {
+    *contents = wasm::IonDumpContents::LIR;
+    return isEqual;
+  } else {
+    return false;
+  }
+}
+
+static bool WasmDumpIon(JSContext* cx, unsigned argc, Value* vp) {
+  if (!wasm::HasSupport(cx)) {
+    JS_ReportErrorASCII(cx, "wasm support unavailable");
+    return false;
+  }
+
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  args.rval().set(UndefinedValue());
+
+  SharedMem<uint8_t*> dataPointer;
+  size_t byteLength;
+  if (!args.get(0).isObject() || !IsBufferSource(args.get(0).toObjectOrNull(),
+                                                 &dataPointer, &byteLength)) {
+    JS_ReportErrorASCII(cx, "argument is not a buffer source");
+    return false;
+  }
+
+  uint32_t targetFuncIndex;
+  if (!ToUint32(cx, args.get(1), &targetFuncIndex)) {
+    JS_ReportErrorASCII(cx, "argument is not a func index");
+    return false;
+  }
+
+  wasm::IonDumpContents contents = wasm::IonDumpContents::Default;
+  if (args.length() > 2 && !ToIonDumpContents(cx, args.get(2), &contents)) {
+    JS_ReportErrorASCII(cx, "argument is not a valid dump contents");
+    return false;
+  }
+
+  wasm::MutableBytes bytecode = cx->new_<wasm::ShareableBytes>();
+  if (!bytecode) {
+    return false;
+  }
+  if (!bytecode->append(dataPointer.unwrap(), byteLength)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  UniqueChars error;
+  JSSprinter out(cx);
+  if (!out.init()) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  if (!wasm::DumpIonFunctionInModule(*bytecode, targetFuncIndex, contents, out,
+                                     &error)) {
+    if (error) {
+      JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                               JSMSG_WASM_COMPILE_ERROR, error.get());
+      return false;
+    }
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  args.rval().set(StringValue(out.release(cx)));
+  return true;
+}
+
 enum class Flag { Tier2Complete, Deserialized };
 
 static bool WasmReturnFlag(JSContext* cx, unsigned argc, Value* vp, Flag flag) {
@@ -2073,16 +2168,11 @@ static bool WasmReturnFlag(JSContext* cx, unsigned argc, Value* vp, Flag flag) {
   return true;
 }
 
-#if defined(DEBUG)
 static bool wasmMetadataAnalysis(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   if (!args.get(0).isObject()) {
     JS_ReportErrorASCII(cx, "argument is not an object");
-    return false;
-  }
-
-  if (!cx->options().wasmTestMetadata()) {
     return false;
   }
 
@@ -2096,6 +2186,7 @@ static bool wasmMetadataAnalysis(JSContext* cx, unsigned argc, Value* vp) {
                       .metadataAnalysis(cx);
     if (hashmap.empty()) {
       JS_ReportErrorASCII(cx, "Metadata analysis has failed");
+      return false;
     }
 
     // metadataAnalysis returned a map of {key, value} with various statistics
@@ -2107,16 +2198,21 @@ static bool wasmMetadataAnalysis(JSContext* cx, unsigned argc, Value* vp) {
       auto value = iter.get().value();
 
       JSString* string = JS_NewStringCopyZ(cx, key);
+      if (!string) {
+        return false;
+      }
+
       if (!props.append(
               IdValuePair(NameToId(string->asLinear().toPropertyName(cx)),
                           NumberValue(value)))) {
-        ReportOutOfMemory(cx);
         return false;
       }
     }
 
-    JSObject* results =
-        NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+    JSObject* results = NewPlainObjectWithUniqueNames(cx, props);
+    if (!results) {
+      return false;
+    }
     args.rval().setObject(*results);
 
     return true;
@@ -2127,7 +2223,6 @@ static bool wasmMetadataAnalysis(JSContext* cx, unsigned argc, Value* vp) {
 
   return false;
 }
-#endif
 
 static bool WasmHasTier2CompilationCompleted(JSContext* cx, unsigned argc,
                                              Value* vp) {
@@ -2210,8 +2305,8 @@ static bool WasmGcArrayLength(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool LargeArrayBufferSupported(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  args.rval().setBoolean(ArrayBufferObject::MaxByteLength >
-                         ArrayBufferObject::MaxByteLengthForSmallBuffer);
+  args.rval().setBoolean(ArrayBufferObject::ByteLengthLimit >
+                         ArrayBufferObject::ByteLengthLimitForSmallBuffer);
   return true;
 }
 
@@ -4406,7 +4501,7 @@ static bool DumpHeap(JSContext* cx, unsigned argc, Value* vp) {
 
   FILE* dumpFile = stdout;
   auto closeFile = mozilla::MakeScopeExit([&dumpFile] {
-    if (dumpFile != stdout) {
+    if (dumpFile && dumpFile != stdout) {
       fclose(dumpFile);
     }
   });
@@ -4523,7 +4618,9 @@ static bool ReadGeckoProfilingStack(JSContext* cx, unsigned argc, Value* vp) {
         case JS::ProfilingFrameIterator::Frame_Ion:
           frameKindStr = "ion";
           break;
-        case JS::ProfilingFrameIterator::Frame_Wasm:
+        case JS::ProfilingFrameIterator::Frame_WasmBaseline:
+        case JS::ProfilingFrameIterator::Frame_WasmIon:
+        case JS::ProfilingFrameIterator::Frame_WasmOther:
           frameKindStr = "wasm";
           break;
         default:
@@ -5264,15 +5361,17 @@ class CustomSerializableObject : public NativeObject {
     static ActivityLog* getThreadLog() {
       if (!self.initialized() || !self.get()) {
         self.infallibleInit();
+        AutoEnterOOMUnsafeRegion oomUnsafe;
         self.set(js_new<ActivityLog>());
-        MOZ_RELEASE_ASSERT(self.get());
+        if (!self.get()) {
+          oomUnsafe.crash("allocating activity log");
+        }
         if (!TlsContext.get()->runtime()->atExit(
                 [](void* vpData) {
                   auto* log = static_cast<ActivityLog*>(vpData);
                   js_delete(log);
                 },
                 self.get())) {
-          AutoEnterOOMUnsafeRegion oomUnsafe;
           oomUnsafe.crash("atExit");
         }
       }
@@ -5768,14 +5867,10 @@ static bool DetachArrayBuffer(JSContext* cx, unsigned argc, Value* vp) {
 
 static bool EnsureNonInline(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
+  Rooted<JSObject*> callee(cx, &args.callee());
 
-  if (args.length() != 1) {
-    JS_ReportErrorASCII(cx, "ensureNonInline() requires a single argument");
-    return false;
-  }
-
-  if (!args[0].isObject()) {
-    JS_ReportErrorASCII(cx, "ensureNonInline must be passed an object");
+  if (!args.get(0).isObject()) {
+    js::ReportUsageErrorASCII(cx, callee, "Single object argument required");
     return false;
   }
 
@@ -5785,6 +5880,30 @@ static bool EnsureNonInline(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   args.rval().setUndefined();
+  return true;
+}
+
+static bool PinArrayBufferOrViewLength(JSContext* cx, unsigned argc,
+                                       Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  Rooted<JSObject*> callee(cx, &args.callee());
+
+  if (!args.get(0).isObject()) {
+    js::ReportUsageErrorASCII(
+        cx, callee, "ArrayBuffer or ArrayBufferView argument required");
+    return false;
+  }
+  RootedObject obj(cx, &args[0].toObject());
+  if (!obj->canUnwrapAs<ArrayBufferViewObject>() &&
+      !obj->canUnwrapAs<ArrayBufferObjectMaybeShared>()) {
+    js::ReportUsageErrorASCII(
+        cx, callee, "ArrayBuffer or ArrayBufferView argument required");
+    return false;
+  }
+
+  bool pin = args.get(1).isUndefined() ? true : ToBoolean(args.get(1));
+
+  args.rval().setBoolean(JS::PinArrayBufferOrViewLength(obj, pin));
   return true;
 }
 
@@ -6195,6 +6314,31 @@ static bool DumpObject(JSContext* cx, unsigned argc, Value* vp) {
   DumpObject(obj);
 
   args.rval().setUndefined();
+  return true;
+}
+
+static bool DumpValue(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  args.get(0).get().dump();
+  args.rval().setUndefined();
+  return true;
+}
+
+static bool DumpValueToString(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  JSSprinter out(cx);
+  if (!out.init()) {
+    return false;
+  }
+  args.get(0).get().dump(out);
+
+  JSString* rep = out.release(cx);
+  if (!rep) {
+    return false;
+  }
+
+  args.rval().setString(rep);
   return true;
 }
 #endif
@@ -7052,7 +7196,7 @@ static bool DumpStringRepresentation(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Fprinter out(stderr);
-  str->dumpRepresentation(out, 0);
+  str->dumpRepresentation(out);
 
   args.rval().setUndefined();
   return true;
@@ -7070,7 +7214,7 @@ static bool GetStringRepresentation(JSContext* cx, unsigned argc, Value* vp) {
   if (!out.init()) {
     return false;
   }
-  str->dumpRepresentation(out, 0);
+  str->dumpRepresentation(out);
 
   JSString* rep = out.release(cx);
   if (!rep) {
@@ -7095,6 +7239,12 @@ static bool ParseCompileOptionsForModule(JSContext* cx,
   if (!v.isUndefined() && JS::ToBoolean(v)) {
     options.setModule();
     isModule = true;
+
+    // js::ParseCompileOptions should already be called.
+    if (options.lineno == 0) {
+      JS_ReportErrorASCII(cx, "Module cannot be compiled with lineNumber == 0");
+      return false;
+    }
   } else {
     isModule = false;
   }
@@ -7148,6 +7298,8 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   CompileOptions options(cx);
+  options.setFile("<compileToStencil>");
+
   RootedString displayURL(cx);
   RootedString sourceMapURL(cx);
   UniqueChars fileNameBytes;
@@ -7179,13 +7331,10 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
 
   AutoReportFrontendContext fc(cx);
   RefPtr<JS::Stencil> stencil;
-  JS::CompilationStorage compileStorage;
   if (isModule) {
-    stencil =
-        JS::CompileModuleScriptToStencil(&fc, options, srcBuf, compileStorage);
+    stencil = JS::CompileModuleScriptToStencil(&fc, options, srcBuf);
   } else {
-    stencil =
-        JS::CompileGlobalScriptToStencil(&fc, options, srcBuf, compileStorage);
+    stencil = JS::CompileGlobalScriptToStencil(&fc, options, srcBuf);
   }
   if (!stencil) {
     return false;
@@ -7221,13 +7370,13 @@ static bool EvalStencil(JSContext* cx, uint32_t argc, Value* vp) {
 
   /* Prepare the input byte array. */
   if (!args[0].isObject()) {
-    JS_ReportErrorASCII(cx, "evalStencil: Object expected");
+    JS_ReportErrorASCII(cx, "evalStencil: Stencil object expected");
     return false;
   }
   Rooted<js::StencilObject*> stencilObj(
       cx, args[0].toObject().maybeUnwrapIf<js::StencilObject>());
   if (!stencilObj) {
-    JS_ReportErrorASCII(cx, "evalStencil: Stencil expected");
+    JS_ReportErrorASCII(cx, "evalStencil: Stencil object expected");
     return false;
   }
 
@@ -7317,6 +7466,8 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   CompileOptions options(cx);
+  options.setFile("<compileToStencilXDR>");
+
   RootedString displayURL(cx);
   RootedString sourceMapURL(cx);
   UniqueChars fileNameBytes;
@@ -7398,12 +7549,13 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
 
   /* Prepare the input byte array. */
   if (!args[0].isObject()) {
-    JS_ReportErrorASCII(cx, "evalStencilXDR: stencil XDR object expected");
+    JS_ReportErrorASCII(cx, "evalStencilXDR: Stencil XDR object expected");
+    return false;
   }
   Rooted<StencilXDRBufferObject*> xdrObj(
       cx, args[0].toObject().maybeUnwrapIf<StencilXDRBufferObject>());
   if (!xdrObj) {
-    JS_ReportErrorASCII(cx, "evalStencilXDR: stencil XDR object expected");
+    JS_ReportErrorASCII(cx, "evalStencilXDR: Stencil XDR object expected");
     return false;
   }
   MOZ_ASSERT(xdrObj->hasBuffer());
@@ -8108,8 +8260,6 @@ static bool GetDefaultLocale(JSContext* cx, unsigned argc, Value* vp) {
 
   UniqueChars locale = JS_GetDefaultLocale(cx);
   if (!locale) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_DEFAULT_LOCALE_ERROR);
     return false;
   }
 
@@ -8344,6 +8494,23 @@ static bool GetFuseState(JSContext* cx, unsigned argc, Value* vp) {
   FOR_EACH_REALM_FUSE(FUSE)
 #undef FUSE
 
+  // Register hasSeenUndefinedFuse
+  fuseObj = JS_NewPlainObject(cx);
+  if (!fuseObj) {
+    return false;
+  }
+  intactValue.setBoolean(
+      cx->runtime()->hasSeenObjectEmulateUndefinedFuse.ref().intact());
+  if (!JS_DefineProperty(cx, fuseObj, "intact", intactValue,
+                         JSPROP_ENUMERATE)) {
+    return false;
+  }
+
+  if (!JS_DefineProperty(cx, returnObj, "hasSeenObjectEmulateUndefinedFuse",
+                         fuseObj, JSPROP_ENUMERATE)) {
+    return false;
+  }
+
   args.rval().setObject(*returnObj);
   return true;
 }
@@ -8361,6 +8528,74 @@ static bool PopAllFusesInRealm(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setUndefined();
   return true;
+}
+
+static bool GetAllPrefNames(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedValueVector values(cx);
+
+  auto addPref = [cx, &values](const char* name) {
+    JSString* s = JS_NewStringCopyZ(cx, name);
+    if (!s) {
+      return false;
+    }
+    return values.append(StringValue(s));
+  };
+
+#define ADD_NAME(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF) \
+  if (!addPref(NAME)) {                                         \
+    return false;                                               \
+  }
+  FOR_EACH_JS_PREF(ADD_NAME)
+#undef ADD_NAME
+
+  ArrayObject* arr = NewDenseCopiedArray(cx, values.length(), values.begin());
+  if (!arr) {
+    return false;
+  }
+
+  args.rval().setObject(*arr);
+  return true;
+}
+
+static bool GetPrefValue(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  if (!args.requireAtLeast(cx, "getPrefValue", 1)) {
+    return false;
+  }
+
+  if (!args[0].isString()) {
+    JS_ReportErrorASCII(cx, "expected string argument");
+    return false;
+  }
+
+  Rooted<JSLinearString*> name(cx, args[0].toString()->ensureLinear(cx));
+  if (!name) {
+    return false;
+  }
+
+  auto setReturnValue = [&args](auto value) {
+    using T = decltype(value);
+    if constexpr (std::is_same_v<T, bool>) {
+      args.rval().setBoolean(value);
+    } else {
+      static_assert(std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>);
+      args.rval().setNumber(value);
+    }
+  };
+
+  // Search for a matching pref and return its value.
+#define CHECK_PREF(NAME, CPP_NAME, TYPE, SETTER, IS_STARTUP_PREF) \
+  if (StringEqualsAscii(name, NAME)) {                            \
+    setReturnValue(JS::Prefs::CPP_NAME());                        \
+    return true;                                                  \
+  }
+  FOR_EACH_JS_PREF(CHECK_PREF)
+#undef CHECK_PREF
+
+  JS_ReportErrorASCII(cx, "invalid pref name");
+  return false;
 }
 
 static bool GetErrorNotes(JSContext* cx, unsigned argc, Value* vp) {
@@ -9615,6 +9850,15 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "      ImportJitExit    - wasm-to-jitted-JS stubs\n"
 "      all              - all kinds, including obscure ones\n"),
 
+    JS_FN_HELP("wasmDumpIon", WasmDumpIon, 2, 0,
+"wasmDumpIon(bytecode, funcIndex, [, contents])\n",
+"wasmDumpIon(bytecode, funcIndex, [, contents])"
+"  Returns a dump of compiling a function in the specified module with Ion."
+"  The `contents` flag controls what is dumped. one of:"
+"    `mir` | `unopt-mir`: Unoptimized MIR (the default)"
+"    `opt-mir`: Optimized MIR"
+"    `lir`: LIR"),
+
     JS_FN_HELP("wasmHasTier2CompilationCompleted", WasmHasTier2CompilationCompleted, 1, 0,
 "wasmHasTier2CompilationCompleted(module)",
 "  Returns a boolean indicating whether a given module has finished compiled code for tier2. \n"
@@ -9754,6 +9998,11 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "  Ensure that the memory for the given ArrayBuffer or ArrayBufferView\n"
 "  is not inline."),
 
+    JS_FN_HELP("pinArrayBufferOrViewLength", PinArrayBufferOrViewLength, 1, 0,
+"pinArrayBufferOrViewLength(view or buffer[, pin])",
+"  Prevent or allow (if `pin` is false) changes to the length of the given\n"
+"  ArrayBuffer or ArrayBufferView. `pin` defaults to true."),
+
     JS_FN_HELP("JSONStringify", JSONStringify, 4, 0,
 "JSONStringify(value, behavior)",
 "  Same as JSON.stringify(value), but allows setting behavior:\n"
@@ -9808,16 +10057,22 @@ JS_FOR_WASM_FEATURES(WASM_FEATURE)
 "  element's edge is the node of the i+1'th array element; the destination of\n"
 "  the last array element is implicitly |target|.\n"),
 
-#if defined(DEBUG)
     JS_FN_HELP("wasmMetadataAnalysis", wasmMetadataAnalysis, 1, 0,
 "wasmMetadataAnalysis(wasmObject)",
 "  Prints an analysis of the size of metadata on this wasm object.\n"),
-#endif
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
     JS_FN_HELP("dumpObject", DumpObject, 1, 0,
-"dumpObject()",
+"dumpObject(obj)",
 "  Dump an internal representation of an object."),
+
+    JS_FN_HELP("dumpValue", DumpValue, 1, 0,
+"dumpValue(v)",
+"  Dump an internal representation of a value."),
+
+    JS_FN_HELP("dumpValueToString", DumpValueToString, 1, 0,
+"dumpValue(v)",
+"  Return a dump of an internal representation of a value."),
 #endif
 
     JS_FN_HELP("sharedMemoryEnabled", SharedMemoryEnabled, 0, 0,
@@ -10110,6 +10365,14 @@ JS_FN_HELP("isSmallFunction", IsSmallFunction, 1, 0,
   "popAllFusesInRealm()",
   " Pops all the fuses in the current realm"),
 
+    JS_FN_HELP("getAllPrefNames", GetAllPrefNames, 0, 0,
+"getAllPrefNames()",
+"  Returns an array containing the names of all JS prefs."),
+
+    JS_FN_HELP("getPrefValue", GetPrefValue, 1, 0,
+"getPrefValue(name)",
+"  Return the value of the JS pref with the given name."),
+
   JS_FS_HELP_END
 };
 // clang-format on
@@ -10164,9 +10427,9 @@ JS_FN_HELP("getEnvironmentObjectType", GetEnvironmentObjectType, 1, 0,
       "      the starting point will be the set of GC roots."),
 
     JS_FN_HELP("getFuseState", GetFuseState, 0, 0,
-"getFuseState()",
-"  Return an object describing the calling realm's fuse state"),
-
+      "getFuseState()",
+      "  Return an object describing the calling realm's fuse state, "
+      "as well as the state of any runtime fuses."),
 
     JS_FS_HELP_END
 };

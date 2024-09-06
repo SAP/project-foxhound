@@ -20,7 +20,8 @@ GPU_IMPL_CYCLE_COLLECTION(RenderBundleEncoder, mParent, mUsedBindGroups,
                           mUsedBuffers, mUsedPipelines, mUsedTextureViews)
 GPU_IMPL_JS_WRAP(RenderBundleEncoder)
 
-void ffiWGPURenderBundleEncoderDeleter::operator()(ffi::WGPURenderBundleEncoder* raw) {
+void ffiWGPURenderBundleEncoderDeleter::operator()(
+    ffi::WGPURenderBundleEncoder* raw) {
   if (raw) {
     ffi::wgpu_render_bundle_encoder_destroy(raw);
   }
@@ -59,10 +60,9 @@ ffi::WGPURenderBundleEncoder* CreateRenderBundleEncoder(
   ipc::ByteBuf failureAction;
   auto* bundle = ffi::wgpu_device_create_render_bundle_encoder(
       aDeviceId, &desc, ToFFI(&failureAction));
-  // report an error only if the operation failed
-  if (!bundle &&
-      !aBridge->SendDeviceAction(aDeviceId, std::move(failureAction))) {
-    MOZ_CRASH("IPC failure");
+  // Report an error only if the operation failed.
+  if (!bundle) {
+    aBridge->SendDeviceAction(aDeviceId, std::move(failureAction));
   }
   return bundle;
 }
@@ -88,9 +88,9 @@ void RenderBundleEncoder::SetBindGroup(
     const dom::Sequence<uint32_t>& aDynamicOffsets) {
   if (mValid) {
     mUsedBindGroups.AppendElement(&aBindGroup);
-    ffi::wgpu_render_bundle_set_bind_group(mEncoder.get(), aSlot, aBindGroup.mId,
-                                           aDynamicOffsets.Elements(),
-                                           aDynamicOffsets.Length());
+    ffi::wgpu_render_bundle_set_bind_group(
+        mEncoder.get(), aSlot, aBindGroup.mId, aDynamicOffsets.Elements(),
+        aDynamicOffsets.Length());
   }
 }
 
@@ -109,8 +109,8 @@ void RenderBundleEncoder::SetIndexBuffer(
     const auto iformat = aIndexFormat == dom::GPUIndexFormat::Uint32
                              ? ffi::WGPUIndexFormat_Uint32
                              : ffi::WGPUIndexFormat_Uint16;
-    ffi::wgpu_render_bundle_set_index_buffer(mEncoder.get(), aBuffer.mId, iformat,
-                                             aOffset, aSize);
+    ffi::wgpu_render_bundle_set_index_buffer(mEncoder.get(), aBuffer.mId,
+                                             iformat, aOffset, aSize);
   }
 }
 
@@ -118,8 +118,8 @@ void RenderBundleEncoder::SetVertexBuffer(uint32_t aSlot, const Buffer& aBuffer,
                                           uint64_t aOffset, uint64_t aSize) {
   if (mValid) {
     mUsedBuffers.AppendElement(&aBuffer);
-    ffi::wgpu_render_bundle_set_vertex_buffer(mEncoder.get(), aSlot, aBuffer.mId,
-                                              aOffset, aSize);
+    ffi::wgpu_render_bundle_set_vertex_buffer(mEncoder.get(), aSlot,
+                                              aBuffer.mId, aOffset, aSize);
   }
 }
 
@@ -136,9 +136,9 @@ void RenderBundleEncoder::DrawIndexed(uint32_t aIndexCount,
                                       uint32_t aFirstIndex, int32_t aBaseVertex,
                                       uint32_t aFirstInstance) {
   if (mValid) {
-    ffi::wgpu_render_bundle_draw_indexed(mEncoder.get(), aIndexCount, aInstanceCount,
-                                         aFirstIndex, aBaseVertex,
-                                         aFirstInstance);
+    ffi::wgpu_render_bundle_draw_indexed(mEncoder.get(), aIndexCount,
+                                         aInstanceCount, aFirstIndex,
+                                         aBaseVertex, aFirstInstance);
   }
 }
 
@@ -153,8 +153,8 @@ void RenderBundleEncoder::DrawIndirect(const Buffer& aIndirectBuffer,
 void RenderBundleEncoder::DrawIndexedIndirect(const Buffer& aIndirectBuffer,
                                               uint64_t aIndirectOffset) {
   if (mValid) {
-    ffi::wgpu_render_bundle_draw_indexed_indirect(mEncoder.get(), aIndirectBuffer.mId,
-                                                  aIndirectOffset);
+    ffi::wgpu_render_bundle_draw_indexed_indirect(
+        mEncoder.get(), aIndirectBuffer.mId, aIndirectOffset);
   }
 }
 

@@ -17,12 +17,12 @@ add_task(
       prefs: [["browser.translations.select.enable", true]],
     });
 
-    await assertTranslationsButton(
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true, circleArrows: false, locale: false, icon: true },
       "The button is available."
     );
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: false,
@@ -52,12 +52,12 @@ add_task(
       prefs: [["browser.translations.select.enable", true]],
     });
 
-    await assertTranslationsButton(
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true, circleArrows: false, locale: false, icon: true },
       "The button is available."
     );
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: false,
@@ -87,12 +87,12 @@ add_task(
       prefs: [["browser.translations.select.enable", true]],
     });
 
-    await assertTranslationsButton(
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true, circleArrows: false, locale: false, icon: true },
       "The button is available."
     );
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: true,

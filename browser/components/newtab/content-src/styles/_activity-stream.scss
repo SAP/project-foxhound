@@ -143,6 +143,7 @@ input {
 @import '../components/PocketLoggedInCta/PocketLoggedInCta';
 @import '../components/MoreRecommendations/MoreRecommendations';
 @import '../components/DiscoveryStreamBase/DiscoveryStreamBase';
+@import '../components/ModalOverlay/ModalOverlay';
 
 // Discovery Stream Components
 @import '../components/DiscoveryStreamComponents/CardGrid/CardGrid';
@@ -165,8 +166,9 @@ input {
 @import '../components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal';
 @import '../components/DiscoveryStreamComponents/PrivacyLink/PrivacyLink';
 @import '../components/DiscoveryStreamComponents/TopicsWidget/TopicsWidget';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/FeatureHighlight';
+@import '../components/DiscoveryStreamComponents/FeatureHighlight/SponsoredContentHighlight';
 
 // AS Router
-@import '../asrouter/components/Button/Button';
-@import '../asrouter/components/ModalOverlay/ModalOverlay';
+@import '../../../asrouter/content-src/components/Button/Button';
 // stylelint-enable no-invalid-position-at-import-rule

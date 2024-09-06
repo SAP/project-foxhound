@@ -18,6 +18,10 @@ XPIDL_SOURCES += [
 
 XPIDL_MODULE = "dom_quota"
 
+EXPORTS.mozilla += [
+    "StorageOriginAttributes.h",
+]
+
 EXPORTS.mozilla.dom += [
     "QMResult.h",
     "StorageManager.h",
@@ -40,6 +44,7 @@ EXPORTS.mozilla.dom.quota += [
     "DecryptingInputStream.h",
     "DecryptingInputStream_impl.h",
     "DirectoryLock.h",
+    "DirectoryLockCategory.h",
     "DummyCipherStrategy.h",
     "EncryptedBlock.h",
     "EncryptingOutputStream.h",
@@ -117,6 +122,7 @@ UNIFIED_SOURCES += [
     "ScopedLogExtraInfo.cpp",
     "StorageHelpers.cpp",
     "StorageManager.cpp",
+    "StorageOriginAttributes.cpp",
     "StreamUtils.cpp",
     "StringifyUtils.cpp",
 ]

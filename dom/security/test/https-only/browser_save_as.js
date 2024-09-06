@@ -14,7 +14,7 @@ const TEST_PATH =
   "http://example.com/browser/dom/security/test/https-only/file_save_as.html";
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 const tempDir = createTemporarySaveDirectory();
 MockFilePicker.displayDirectory = tempDir;
 
@@ -78,7 +78,7 @@ function createPromiseForTransferComplete() {
 }
 
 function createPromiseForConsoleError(message) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     function listener(msgObj) {
       let text = msgObj.message;
       if (text.includes(message)) {
@@ -155,7 +155,11 @@ async function setHttpsFirstAndOnlyPrefs(httpsFirst, httpsOnly) {
 add_task(async function testBaseline() {
   // Run with HTTPS-First and HTTPS-Only disabled
   await setHttpsFirstAndOnlyPrefs(false, false);
-  await runTest("#insecure-link", HTTP_LINK, undefined);
+  await runTest(
+    "#insecure-link",
+    HTTP_LINK,
+    "We blocked a download that’s not secure: “http://example.org/”."
+  );
   await runTest("#secure-link", HTTPS_LINK, undefined);
 });
 
@@ -169,7 +173,7 @@ add_task(async function testHttpsFirst() {
   await runTest(
     "#insecure-link",
     HTTP_LINK,
-    "Blocked downloading insecure content “http://example.org/”."
+    "We blocked a download that’s not secure: “http://example.org/”."
   );
   await runTest("#secure-link", HTTPS_LINK, undefined);
 });
@@ -181,7 +185,7 @@ add_task(async function testHttpsOnly() {
   await runTest(
     "#insecure-link",
     HTTP_LINK,
-    "Blocked downloading insecure content “http://example.org/”."
+    "We blocked a download that’s not secure: “http://example.org/”."
   );
   await runTest("#secure-link", HTTPS_LINK, undefined);
 });

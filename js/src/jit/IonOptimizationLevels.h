@@ -181,8 +181,8 @@ class OptimizationInfo {
 
 class OptimizationLevelInfo {
  private:
-  mozilla::EnumeratedArray<OptimizationLevel, OptimizationLevel::Count,
-                           OptimizationInfo>
+  mozilla::EnumeratedArray<OptimizationLevel, OptimizationInfo,
+                           size_t(OptimizationLevel::Count)>
       infos_;
 
  public:

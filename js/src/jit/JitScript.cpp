@@ -517,7 +517,13 @@ void ICScript::purgeStubs(Zone* zone, ICStubSpace& newStubSpace) {
     if (fallback->trialInliningState() == TrialInliningState::Inlined &&
         hasInlinedChild(fallback->pcOffset())) {
       MOZ_ASSERT(active());
-      MOZ_ASSERT(findInlinedChild(fallback->pcOffset())->active());
+#ifdef DEBUG
+      // The callee script must be active. Also assert its bytecode size field
+      // is valid, because this helps catch memory safety issues (bug 1871947).
+      ICScript* callee = findInlinedChild(fallback->pcOffset());
+      MOZ_ASSERT(callee->active());
+      MOZ_ASSERT(callee->bytecodeSize() < inliningRoot()->totalBytecodeSize());
+#endif
 
       JSRuntime* rt = zone->runtimeFromMainThread();
       ICCacheIRStub* prev = nullptr;
@@ -718,6 +724,9 @@ static void MarkActiveICScriptsAndCopyStubs(
           ICCacheIRStub* newStub = stub->clone(cx->runtime(), newStubSpace);
           layout->setStubPtr(newStub);
 
+          // If this is a trial-inlining call site, also preserve the callee
+          // ICScript. Inlined constructor calls invoke CreateThisFromIC (which
+          // can trigger GC) before using the inlined ICScript.
           JSJitFrameIter parentFrame(frame);
           ++parentFrame;
           BaselineFrame* blFrame = parentFrame.baselineFrame();

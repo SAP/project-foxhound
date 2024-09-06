@@ -133,6 +133,7 @@ with Files("WindowsRegistry.sys.mjs"):
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.toml"]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 MOCHITEST_CHROME_MANIFESTS += ["tests/chrome/chrome.toml"]
+MARIONETTE_MANIFESTS += ["tests/marionette/manifest.toml"]
 
 TESTING_JS_MODULES += [
     "tests/modules/MockDocument.sys.mjs",
@@ -163,7 +164,6 @@ EXTRA_JS_MODULES += [
     "CreditCard.sys.mjs",
     "DateTimePickerPanel.sys.mjs",
     "DeferredTask.sys.mjs",
-    "Deprecated.sys.mjs",
     "E10SUtils.sys.mjs",
     "EventEmitter.sys.mjs",
     "FileUtils.sys.mjs",

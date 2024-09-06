@@ -244,7 +244,7 @@ export var PreferenceExperiments = {
     const defaultBranchPrefs = allExperiments
       .flatMap(exp => Object.entries(exp.preferences))
       .filter(
-        ([preferenceName, preferenceInfo]) =>
+        ([, preferenceInfo]) =>
           preferenceInfo.preferenceBranchType === "default"
       );
     for (const [preferenceName, { preferenceValue }] of defaultBranchPrefs) {
@@ -906,7 +906,7 @@ export var PreferenceExperiments = {
   InvalidPreferenceName: class extends Error {},
 
   /**
-   * These migrations should only be called from `NormandyMigrations.jsm` and tests.
+   * These migrations should only be called from `NormandyMigrations.sys.mjs` and tests.
    */
   migrations: {
     /** Move experiments into a specific key. */

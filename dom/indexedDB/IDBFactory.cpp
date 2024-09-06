@@ -174,8 +174,7 @@ Result<RefPtr<IDBFactory>, nsresult> IDBFactory::CreateForWindow(
   auto factory = MakeRefPtr<IDBFactory>(IDBFactoryGuard{});
   factory->mPrincipalInfo = std::move(principalInfo);
 
-  factory->mGlobal = do_QueryInterface(aWindow);
-  MOZ_ASSERT(factory->mGlobal);
+  factory->BindToOwner(aWindow->AsGlobal());
 
   factory->mBrowserChild = BrowserChild::GetFrom(aWindow);
   factory->mEventTarget =
@@ -243,6 +242,12 @@ Result<RefPtr<IDBFactory>, nsresult> IDBFactory::CreateForMainThreadJSInternal(
     return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
   }
 
+  nsresult rv = mgr->EnsureLocale();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    IDB_REPORT_INTERNAL_ERR();
+    return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+  };
+
   return CreateInternal(aGlobal, std::move(aPrincipalInfo),
                         /* aInnerWindowID */ 0);
 }
@@ -263,7 +268,7 @@ Result<RefPtr<IDBFactory>, nsresult> IDBFactory::CreateInternal(
 
   auto factory = MakeRefPtr<IDBFactory>(IDBFactoryGuard{});
   factory->mPrincipalInfo = std::move(aPrincipalInfo);
-  factory->mGlobal = aGlobal;
+  factory->BindToOwner(aGlobal);
   factory->mEventTarget = GetCurrentSerialEventTarget();
   factory->mInnerWindowID = aInnerWindowID;
 
@@ -284,9 +289,16 @@ nsresult IDBFactory::AllowedForWindowInternal(
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aWindow);
 
-  if (NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate())) {
+  IndexedDatabaseManager* mgr = IndexedDatabaseManager::GetOrCreate();
+  if (NS_WARN_IF(!mgr)) {
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
+
+  nsresult rv = mgr->EnsureLocale();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    IDB_REPORT_INTERNAL_ERR();
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  };
 
   StorageAccess access = StorageAllowedForWindow(aWindow);
 
@@ -342,9 +354,15 @@ bool IDBFactory::AllowedForPrincipal(nsIPrincipal* aPrincipal,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
 
-  if (NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate())) {
+  IndexedDatabaseManager* mgr = IndexedDatabaseManager::GetOrCreate();
+  if (NS_WARN_IF(!mgr)) {
     return false;
   }
+
+  nsresult rv = mgr->EnsureLocale();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  };
 
   if (aPrincipal->IsSystemPrincipal()) {
     if (aIsSystemPrincipal) {
@@ -373,9 +391,8 @@ void IDBFactory::UpdateActiveDatabaseCount(int32_t aDelta) {
                         (mActiveDatabaseCount + aDelta) < mActiveDatabaseCount);
   mActiveDatabaseCount += aDelta;
 
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mGlobal);
-  if (window) {
-    window->UpdateActiveIndexedDBDatabaseCount(aDelta);
+  if (GetOwner()) {
+    GetOwner()->UpdateActiveIndexedDBDatabaseCount(aDelta);
   }
 }
 
@@ -499,7 +516,7 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
     JSContext* aCx, nsIPrincipal* aPrincipal, const nsAString& aName,
     const Optional<uint64_t>& aVersion, bool aDeleting, CallerType aCallerType,
     ErrorResult& aRv) {
-  if (NS_WARN_IF(!mGlobal)) {
+  if (NS_WARN_IF(!GetOwnerGlobal())) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return nullptr;
   }
@@ -538,10 +555,11 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
       return nullptr;
     }
   } else {
-    if (mGlobal->GetStorageAccess() == StorageAccess::ePrivateBrowsing) {
+    if (GetOwnerGlobal()->GetStorageAccess() ==
+        StorageAccess::ePrivateBrowsing) {
       if (NS_IsMainThread()) {
         SetUseCounter(
-            mGlobal->GetGlobalJSObject(),
+            GetOwnerGlobal()->GetGlobalJSObject(),
             aDeleting
                 ? eUseCounter_custom_PrivateBrowsingIDBFactoryOpen
                 : eUseCounter_custom_PrivateBrowsingIDBFactoryDeleteDatabase);
@@ -574,19 +592,20 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
 
   PersistenceType persistenceType;
 
-  bool isInternal = principalInfo.type() == PrincipalInfo::TSystemPrincipalInfo;
-  if (!isInternal &&
+  bool isPersistent =
+      principalInfo.type() == PrincipalInfo::TSystemPrincipalInfo;
+  if (!isPersistent &&
       principalInfo.type() == PrincipalInfo::TContentPrincipalInfo) {
     nsCString origin =
         principalInfo.get_ContentPrincipalInfo().originNoSuffix();
-    isInternal = QuotaManager::IsOriginInternal(origin);
+    isPersistent = QuotaManager::IsOriginInternal(origin);
   }
 
   const bool isPrivate =
       principalInfo.type() == PrincipalInfo::TContentPrincipalInfo &&
       principalInfo.get_ContentPrincipalInfo().attrs().mPrivateBrowsingId > 0;
 
-  if (isInternal) {
+  if (isPersistent) {
     // Chrome privilege and internal origins always get persistent storage.
     persistenceType = PERSISTENCE_TYPE_PERSISTENT;
   } else if (isPrivate) {
@@ -642,7 +661,8 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
 
       mBackgroundActor = static_cast<BackgroundFactoryChild*>(
           backgroundActor->SendPBackgroundIDBFactoryConstructor(
-              actor, idbThreadLocal->GetLoggingInfo()));
+              actor, idbThreadLocal->GetLoggingInfo(),
+              IndexedDatabaseManager::GetLocale()));
 
       if (NS_WARN_IF(!mBackgroundActor)) {
         mBackgroundActorFailed = true;
@@ -664,7 +684,7 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
   }
 
   RefPtr<IDBOpenDBRequest> request = IDBOpenDBRequest::Create(
-      aCx, SafeRefPtr{this, AcquireStrongRefFromRawPtr{}}, mGlobal);
+      aCx, SafeRefPtr{this, AcquireStrongRefFromRawPtr{}}, GetOwnerGlobal());
   if (!request) {
     MOZ_ASSERT(!NS_IsMainThread());
     aRv.ThrowUncatchableException();
@@ -737,14 +757,6 @@ nsresult IDBFactory::InitiateRequest(
   return NS_OK;
 }
 
-void IDBFactory::DisconnectFromGlobal(nsIGlobalObject* aOldGlobal) {
-  MOZ_DIAGNOSTIC_ASSERT(aOldGlobal);
-  // If CC unlinks us first, then mGlobal might be nullptr
-  MOZ_DIAGNOSTIC_ASSERT(!mGlobal || mGlobal == aOldGlobal);
-
-  mGlobal = nullptr;
-}
-
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IDBFactory)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(IDBFactory)
 
@@ -756,14 +768,12 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_CLASS(IDBFactory)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IDBFactory)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBrowserChild)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mEventTarget)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IDBFactory)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mBrowserChild)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mEventTarget)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END

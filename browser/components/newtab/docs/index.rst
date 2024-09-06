@@ -2,13 +2,13 @@
 Firefox Home (New Tab)
 ======================
 
-All files related to Firefox Home, which includes content that appears on ``about:home``,
-``about:newtab``, and ``about:welcome``, can be found in the ``browser/components/newtab`` directory.
+All files related to Firefox Home, which includes content that appears on ``about:home`` and
+``about:newtab``, can be found in the ``browser/components/newtab`` directory.
 Some of these source files (such as ``.js``, ``.jsx``, and ``.scss``) require an additional build step.
 We are working on migrating this to work with ``mach``, but in the meantime, please
 follow the following steps if you need to make changes in this directory:
 
-For ``.jsm`` or ``.sys.mjs`` files (system modules)
+For ``.sys.mjs`` files (system modules)
 ---------------------------------------------------
 
 No build step is necessary. Use ``mach`` and run mochitests according to your regular Firefox workflow.

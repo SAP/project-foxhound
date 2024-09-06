@@ -1,3 +1,8 @@
+/**
+ * @license
+ * Copyright 2024 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 import {spawn} from 'child_process';
 import {normalize, join} from 'path';
 
@@ -76,7 +81,7 @@ function updateExecutablePath(command: string, root?: string) {
 async function executeCommand(
   context: BuilderContext,
   command: string[],
-  env: Record<string, any> = {}
+  env: NodeJS.ProcessEnv = {}
 ) {
   let project: JsonObject;
   if (context.target) {

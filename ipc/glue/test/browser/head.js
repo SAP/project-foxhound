@@ -39,7 +39,11 @@ async function getUtilityProcesses(actor = undefined, options = {}) {
 async function tryGetUtilityPid(actor, options = {}) {
   let process = await getUtilityProcesses(actor, options);
   if (!options?.quiet) {
-    ok(process.length <= 1, `at most one ${actor} process exists`);
+    Assert.lessOrEqual(
+      process.length,
+      1,
+      `at most one ${actor} process exists`
+    );
   }
   return process[0]?.pid;
 }
@@ -47,7 +51,7 @@ async function tryGetUtilityPid(actor, options = {}) {
 async function checkUtilityExists(actor) {
   info(`Looking for a running ${actor} utility process`);
   const utilityPid = await tryGetUtilityPid(actor);
-  ok(utilityPid > 0, `Found ${actor} utility process ${utilityPid}`);
+  Assert.greater(utilityPid, 0, `Found ${actor} utility process ${utilityPid}`);
   return utilityPid;
 }
 
@@ -60,7 +64,11 @@ async function cleanUtilityProcessShutdown(actor, preferKill = false) {
   info(`${preferKill ? "Kill" : "Clean shutdown"} Utility Process ${actor}`);
 
   const utilityPid = await tryGetUtilityPid(actor);
-  ok(utilityPid !== undefined, `Must have PID for ${actor} utility process`);
+  Assert.notStrictEqual(
+    utilityPid,
+    undefined,
+    `Must have PID for ${actor} utility process`
+  );
 
   const utilityProcessGone = TestUtils.topicObserved(
     "ipc:utility-shutdown",
@@ -332,7 +340,7 @@ async function checkAudioDecoder(
   const doc = typeof content !== "undefined" ? content.document : document;
   let audio = doc.querySelector("audio");
   const checkPromise = new Promise((resolve, reject) => {
-    const timeUpdateHandler = async ev => {
+    const timeUpdateHandler = async () => {
       const debugInfo = await SpecialPowers.wrap(audio).mozRequestDebugInfo();
       const audioDecoderName = debugInfo.decoder.reader.audioDecoderName;
 
@@ -363,7 +371,7 @@ async function checkAudioDecoder(
       }
     };
 
-    const startPlaybackHandler = async ev => {
+    const startPlaybackHandler = async () => {
       ok(
         await audio.play().then(
           _ => true,
@@ -375,7 +383,7 @@ async function checkAudioDecoder(
       audio.addEventListener("timeupdate", timeUpdateHandler, { once: true });
     };
 
-    audio.addEventListener("error", async err => {
+    audio.addEventListener("error", async () => {
       info(
         `Received HTML media error: ${audio.error.code}: ${audio.error.message}`
       );
@@ -483,8 +491,9 @@ async function crashSomeUtility(utilityPid, actorsCheck) {
 
   info(`Waiting for utility process ${utilityPid} to go away.`);
   let [subject, data] = await utilityProcessGone;
-  ok(
-    parseInt(data, 10) === utilityPid,
+  Assert.strictEqual(
+    parseInt(data, 10),
+    utilityPid,
     `Should match the crashed PID ${utilityPid} with ${data}`
   );
   ok(
@@ -510,7 +519,7 @@ async function crashSomeUtility(utilityPid, actorsCheck) {
       ),
       "Record should be a utility process crash"
     );
-    ok(crash.id === dumpID, "Record should have an ID");
+    Assert.strictEqual(crash.id, dumpID, "Record should have an ID");
     ok(
       actorsCheck(crash.metadata.UtilityActorsName),
       `Record should have the correct actors name for: ${crash.metadata.UtilityActorsName}`
@@ -546,8 +555,9 @@ async function crashSomeUtilityActor(
 ) {
   // Get PID for utility type
   const procInfos = await getUtilityProcesses(actor);
-  ok(
-    procInfos.length == 1,
+  Assert.equal(
+    procInfos.length,
+    1,
     `exactly one ${actor} utility process should be found`
   );
   const utilityPid = procInfos[0].pid;
@@ -559,18 +569,4 @@ function isNightlyOnly() {
     "resource://gre/modules/AppConstants.sys.mjs"
   );
   return AppConstants.NIGHTLY_BUILD;
-}
-
-function isBetaOnly() {
-  const { AppConstants } = ChromeUtils.importESModule(
-    "resource://gre/modules/AppConstants.sys.mjs"
-  );
-  return !AppConstants.NIGHTLY_BUILD && AppConstants.EARLY_BETA_OR_EARLIER;
-}
-
-function isNightlyOrEalyBeta() {
-  const { AppConstants } = ChromeUtils.importESModule(
-    "resource://gre/modules/AppConstants.sys.mjs"
-  );
-  return AppConstants.NIGHTLY_BUILD || AppConstants.EARLY_BETA_OR_EARLIER;
 }

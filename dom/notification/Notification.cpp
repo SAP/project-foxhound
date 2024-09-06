@@ -307,8 +307,10 @@ nsresult CheckScope(nsIPrincipal* aPrincipal, const nsACString& aScope,
 // thread.
 class NotificationWorkerRunnable : public MainThreadWorkerRunnable {
  protected:
-  explicit NotificationWorkerRunnable(WorkerPrivate* aWorkerPrivate)
-      : MainThreadWorkerRunnable(aWorkerPrivate) {}
+  explicit NotificationWorkerRunnable(
+      WorkerPrivate* aWorkerPrivate,
+      const char* aName = "NotificationWorkerRunnable")
+      : MainThreadWorkerRunnable(aWorkerPrivate, aName) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->AssertIsOnWorkerThread();
@@ -336,7 +338,8 @@ class NotificationEventWorkerRunnable final
  public:
   NotificationEventWorkerRunnable(Notification* aNotification,
                                   const nsString& aEventName)
-      : NotificationWorkerRunnable(aNotification->mWorkerPrivate),
+      : NotificationWorkerRunnable(aNotification->mWorkerPrivate,
+                                   "NotificationEventWorkerRunnable"),
         mNotification(aNotification),
         mEventName(aEventName) {}
 
@@ -350,7 +353,8 @@ class ReleaseNotificationRunnable final : public NotificationWorkerRunnable {
 
  public:
   explicit ReleaseNotificationRunnable(Notification* aNotification)
-      : NotificationWorkerRunnable(aNotification->mWorkerPrivate),
+      : NotificationWorkerRunnable(aNotification->mWorkerPrivate,
+                                   "ReleaseNotificationRunnable"),
         mNotification(aNotification) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
@@ -710,7 +714,12 @@ Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
   }
 }
 
-nsresult Notification::Init() {
+nsresult Notification::MaybeObserveWindowFrozenOrDestroyed() {
+  // NOTE: Non-persistent notifications can also be opened from workers, but we
+  // don't care and nobody else cares. And it's not clear whether we even should
+  // do this for window at all, see
+  // https://github.com/whatwg/notifications/issues/204.
+  // TODO: Somehow extend GlobalTeardownObserver to deal with FROZEN_TOPIC?
   if (!mWorkerPrivate) {
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     NS_ENSURE_TRUE(obs, NS_ERROR_FAILURE);
@@ -770,6 +779,10 @@ already_AddRefed<Notification> Notification::Constructor(
   RefPtr<Notification> notification =
       CreateAndShow(aGlobal.Context(), global, aTitle, aOptions, u""_ns, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+  if (NS_WARN_IF(
+          NS_FAILED(notification->MaybeObserveWindowFrozenOrDestroyed()))) {
     return nullptr;
   }
 
@@ -911,8 +924,6 @@ already_AddRefed<Notification> Notification::CreateInternal(
       aGlobal, id, aTitle, aOptions.mBody, aOptions.mDir, aOptions.mLang,
       aOptions.mTag, aOptions.mIcon, aOptions.mRequireInteraction, silent,
       std::move(vibrate), aOptions.mMozbehavior);
-  rv = notification->Init();
-  NS_ENSURE_SUCCESS(rv, nullptr);
   return notification.forget();
 }
 
@@ -1052,7 +1063,8 @@ class NotificationClickWorkerRunnable final
   NotificationClickWorkerRunnable(
       Notification* aNotification,
       const nsMainThreadPtrHandle<nsPIDOMWindowInner>& aWindow)
-      : NotificationWorkerRunnable(aNotification->mWorkerPrivate),
+      : NotificationWorkerRunnable(aNotification->mWorkerPrivate,
+                                   "NotificationClickWorkerRunnable"),
         mNotification(aNotification),
         mWindow(aWindow) {
     MOZ_ASSERT_IF(mWorkerPrivate->IsServiceWorker(), !mWindow);
@@ -1695,7 +1707,7 @@ class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
   WorkerGetResultRunnable(WorkerPrivate* aWorkerPrivate,
                           PromiseWorkerProxy* aPromiseProxy,
                           nsTArray<NotificationStrings>&& aStrings)
-      : NotificationWorkerRunnable(aWorkerPrivate),
+      : NotificationWorkerRunnable(aWorkerPrivate, "WorkerGetResultRunnable"),
         mPromiseProxy(aPromiseProxy),
         mStrings(std::move(aStrings)) {}
 
@@ -2125,6 +2137,8 @@ class CheckLoadRunnable final : public WorkerMainThreadRunnable {
   nsresult Result() { return mRv; }
 };
 
+// Step 2, 5, 6 of
+// https://notifications.spec.whatwg.org/#dom-serviceworkerregistration-shownotification
 /* static */
 already_AddRefed<Promise> Notification::ShowPersistentNotification(
     JSContext* aCx, nsIGlobalObject* aGlobal, const nsAString& aScope,
@@ -2184,6 +2198,7 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
     }
   }
 
+  // Step 2: Let promise be a new promise in this’s relevant Realm.
   RefPtr<Promise> p = Promise::Create(aGlobal, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -2191,12 +2206,14 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
 
   // We check permission here rather than pass the Promise to NotificationTask
   // which leads to uglier code.
+  // XXX: GetPermission is a synchronous blocking function on workers.
   NotificationPermission permission = GetPermission(aGlobal, aRv);
 
-  // "If permission for notification's origin is not "granted", reject promise
-  // with a TypeError exception, and terminate these substeps."
+  // Step 6.1: If the result of getting the notifications permission state is
+  // not "granted", then queue a global task on the DOM manipulation task source
+  // given global to reject promise with a TypeError, and abort these steps.
   if (NS_WARN_IF(aRv.Failed()) ||
-      permission == NotificationPermission::Denied) {
+      permission != NotificationPermission::Granted) {
     p->MaybeRejectWithTypeError("Permission to show Notification denied.");
     return p.forget();
   }
@@ -2206,6 +2223,13 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
   // is not concerned with those.
   p->MaybeResolveWithUndefined();
 
+  // Step 5: Let notification be the result of creating a notification given
+  // title, options, this’s relevant settings object, and
+  // serviceWorkerRegistration. If this threw an exception, then reject promise
+  // with that exception and return promise.
+  //
+  // XXX: This should happen before the permission check per the spec, as this
+  // can throw errors too. This should be split into create and show.
   RefPtr<Notification> notification =
       CreateAndShow(aCx, aGlobal, aTitle, aOptions, aScope, aRv);
   if (NS_WARN_IF(aRv.Failed())) {

@@ -111,11 +111,9 @@ if (!isWorker) {
     () =>
       ChromeUtils.importESModule(
         "resource://gre/modules/ContentDOMReference.sys.mjs",
-        {
-          // ContentDOMReference needs to be retrieved from the shared global
-          // since it is a shared singleton.
-          loadInDevToolsLoader: false,
-        }
+        // ContentDOMReference needs to be retrieved from the shared global
+        // since it is a shared singleton.
+        { global: "shared" }
       ).ContentDOMReference
   );
 }
@@ -341,7 +339,11 @@ class WalkerActor extends Actor {
     return {
       actor: this.actorID,
       root: this.rootNode.form(),
-      traits: {},
+      traits: {
+        // @backward-compat { version 125 } Indicate to the client that it can use getIdrefNode.
+        // This trait can be removed once 125 hits release.
+        hasGetIdrefNode: true,
+      },
     };
   }
 
@@ -524,7 +526,7 @@ class WalkerActor extends Actor {
    * When a custom element is defined, send a customElementDefined mutation for all the
    * NodeActors using this tag name.
    */
-  onCustomElementDefined({ name, actors }) {
+  onCustomElementDefined({ actors }) {
     actors.forEach(actor =>
       this.queueMutation({
         target: actor.actorID,
@@ -534,7 +536,7 @@ class WalkerActor extends Actor {
     );
   }
 
-  _onReflows(reflows) {
+  _onReflows() {
     // Going through the nodes the walker knows about, see which ones have had their
     // containerType, display, scrollable or overflow state changed and send events if any.
     const containerTypeChanges = [];
@@ -1067,6 +1069,32 @@ class WalkerActor extends Actor {
     }
 
     return new NodeListActor(this, nodeList);
+  }
+
+  /**
+   * Return the node in the baseNode rootNode matching the passed id referenced in a
+   * idref/idreflist attribute, as those are scoped within a shadow root.
+   *
+   * @param NodeActor baseNode
+   * @param string id
+   */
+  getIdrefNode(baseNode, id) {
+    if (isNodeDead(baseNode)) {
+      return {};
+    }
+
+    // Get the document or the shadow root for baseNode
+    const rootNode = baseNode.rawNode.getRootNode({ composed: false });
+    if (!rootNode) {
+      return {};
+    }
+
+    const node = rootNode.getElementById(id);
+    if (!node) {
+      return {};
+    }
+
+    return this.attachElement(node);
   }
 
   /**

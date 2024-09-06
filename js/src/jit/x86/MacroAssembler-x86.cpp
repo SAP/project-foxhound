@@ -568,17 +568,23 @@ void MacroAssemblerX86::handleFailureWithHandlerTail(Label* profilerExitTail,
   loadPtr(Address(esp, ResumeFromException::offsetOfStackPointer()), esp);
   jmp(Operand(eax));
 
-  // If we found a finally block, this must be a baseline frame. Push two
-  // values expected by the finally block: the exception and BooleanValue(true).
+  // If we found a finally block, this must be a baseline frame. Push three
+  // values expected by the finally block: the exception, the exception stack,
+  // and BooleanValue(true).
   bind(&finally);
   ValueOperand exception = ValueOperand(ecx, edx);
   loadValue(Address(esp, ResumeFromException::offsetOfException()), exception);
+
+  ValueOperand exceptionStack = ValueOperand(esi, edi);
+  loadValue(Address(esp, ResumeFromException::offsetOfExceptionStack()),
+            exceptionStack);
 
   loadPtr(Address(esp, ResumeFromException::offsetOfTarget()), eax);
   loadPtr(Address(esp, ResumeFromException::offsetOfFramePointer()), ebp);
   loadPtr(Address(esp, ResumeFromException::offsetOfStackPointer()), esp);
 
   pushValue(exception);
+  pushValue(exceptionStack);
   pushValue(BooleanValue(true));
   jmp(Operand(eax));
 
@@ -1417,19 +1423,19 @@ static void AtomicFetchOp64(MacroAssembler& masm,
   } while (0)
 
   switch (op) {
-    case AtomicFetchAddOp:
+    case AtomicOp::Add:
       ATOMIC_OP_BODY(add64FromMemory);
       break;
-    case AtomicFetchSubOp:
+    case AtomicOp::Sub:
       ATOMIC_OP_BODY(sub64FromMemory);
       break;
-    case AtomicFetchAndOp:
+    case AtomicOp::And:
       ATOMIC_OP_BODY(and64FromMemory);
       break;
-    case AtomicFetchOrOp:
+    case AtomicOp::Or:
       ATOMIC_OP_BODY(or64FromMemory);
       break;
-    case AtomicFetchXorOp:
+    case AtomicOp::Xor:
       ATOMIC_OP_BODY(xor64FromMemory);
       break;
     default:
@@ -1620,60 +1626,57 @@ void MacroAssembler::wasmTruncateFloat32ToUInt64(
 // ========================================================================
 // Primitive atomic operations.
 
-void MacroAssembler::atomicLoad64(const Synchronization&, const Address& mem,
+void MacroAssembler::atomicLoad64(Synchronization, const Address& mem,
                                   Register64 temp, Register64 output) {
   AtomicLoad64(*this, nullptr, mem, temp, output);
 }
 
-void MacroAssembler::atomicLoad64(const Synchronization&, const BaseIndex& mem,
+void MacroAssembler::atomicLoad64(Synchronization, const BaseIndex& mem,
                                   Register64 temp, Register64 output) {
   AtomicLoad64(*this, nullptr, mem, temp, output);
 }
 
-void MacroAssembler::atomicStore64(const Synchronization&, const Address& mem,
+void MacroAssembler::atomicStore64(Synchronization, const Address& mem,
                                    Register64 value, Register64 temp) {
   AtomicExchange64(*this, nullptr, mem, value, temp);
 }
 
-void MacroAssembler::atomicStore64(const Synchronization&, const BaseIndex& mem,
+void MacroAssembler::atomicStore64(Synchronization, const BaseIndex& mem,
                                    Register64 value, Register64 temp) {
   AtomicExchange64(*this, nullptr, mem, value, temp);
 }
 
-void MacroAssembler::compareExchange64(const Synchronization&,
-                                       const Address& mem, Register64 expected,
-                                       Register64 replacement,
-                                       Register64 output) {
-  CompareExchange64(*this, nullptr, mem, expected, replacement, output);
-}
-
-void MacroAssembler::compareExchange64(const Synchronization&,
-                                       const BaseIndex& mem,
+void MacroAssembler::compareExchange64(Synchronization, const Address& mem,
                                        Register64 expected,
                                        Register64 replacement,
                                        Register64 output) {
   CompareExchange64(*this, nullptr, mem, expected, replacement, output);
 }
 
-void MacroAssembler::atomicExchange64(const Synchronization&,
-                                      const Address& mem, Register64 value,
-                                      Register64 output) {
+void MacroAssembler::compareExchange64(Synchronization, const BaseIndex& mem,
+                                       Register64 expected,
+                                       Register64 replacement,
+                                       Register64 output) {
+  CompareExchange64(*this, nullptr, mem, expected, replacement, output);
+}
+
+void MacroAssembler::atomicExchange64(Synchronization, const Address& mem,
+                                      Register64 value, Register64 output) {
   AtomicExchange64(*this, nullptr, mem, value, output);
 }
 
-void MacroAssembler::atomicExchange64(const Synchronization&,
-                                      const BaseIndex& mem, Register64 value,
-                                      Register64 output) {
+void MacroAssembler::atomicExchange64(Synchronization, const BaseIndex& mem,
+                                      Register64 value, Register64 output) {
   AtomicExchange64(*this, nullptr, mem, value, output);
 }
 
-void MacroAssembler::atomicFetchOp64(const Synchronization&, AtomicOp op,
+void MacroAssembler::atomicFetchOp64(Synchronization, AtomicOp op,
                                      const Address& value, const Address& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value, mem, temp, output);
 }
 
-void MacroAssembler::atomicFetchOp64(const Synchronization&, AtomicOp op,
+void MacroAssembler::atomicFetchOp64(Synchronization, AtomicOp op,
                                      const Address& value, const BaseIndex& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value, mem, temp, output);

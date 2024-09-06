@@ -7,6 +7,10 @@ const { TelemetryEnvironment } = ChromeUtils.importESModule(
 const { SearchTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/SearchTestUtils.sys.mjs"
 );
+
+const { SearchUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/SearchUtils.sys.mjs"
+);
 const { TelemetryEnvironmentTesting } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryEnvironmentTesting.sys.mjs"
 );
@@ -140,10 +144,13 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
   Assert.equal(data.settings.defaultSearchEngine, "telemetrySearchIdentifier");
   let expectedSearchEngineData = {
     name: "telemetrySearchIdentifier",
-    loadPath: "[addon]telemetrySearchIdentifier@search.mozilla.org",
+    loadPath: SearchUtils.newSearchConfigEnabled
+      ? "[app]telemetrySearchIdentifier@search.mozilla.org"
+      : "[addon]telemetrySearchIdentifier@search.mozilla.org",
     origin: "default",
-    submissionURL:
-      "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB?search=&sourceId=Mozilla-search",
+    submissionURL: SearchUtils.newSearchConfigEnabled
+      ? "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB?sourceId=Mozilla-search&search="
+      : "https://ar.wikipedia.org/wiki/%D8%AE%D8%A7%D8%B5:%D8%A8%D8%AD%D8%AB?search=&sourceId=Mozilla-search",
   };
   Assert.deepEqual(
     data.settings.defaultSearchEngineData,
@@ -260,30 +267,11 @@ add_task(async function test_defaultSearchEngine() {
       resolve
     );
   });
-  let engine = await new Promise((resolve, reject) => {
-    Services.obs.addObserver(function obs(obsSubject, obsTopic, obsData) {
-      try {
-        let searchEngine = obsSubject.QueryInterface(Ci.nsISearchEngine);
-        info("Observed " + obsData + " for " + searchEngine.name);
-        if (
-          obsData != "engine-added" ||
-          searchEngine.name != "engine-telemetry"
-        ) {
-          return;
-        }
-
-        Services.obs.removeObserver(obs, "browser-search-engine-modified");
-        resolve(searchEngine);
-      } catch (ex) {
-        reject(ex);
-      }
-    }, "browser-search-engine-modified");
-    Services.search.addOpenSearchEngine(gDataRoot + "/engine.xml", null);
+  let engine = await SearchTestUtils.promiseNewSearchEngine({
+    url: gDataRoot + "engine.xml",
+    setAsDefault: true,
+    skipReset: true,
   });
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
   await promise;
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
   let data = TelemetryEnvironment.currentEnvironment;
@@ -311,7 +299,6 @@ add_task(async function test_defaultSearchEngine() {
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
   data = TelemetryEnvironment.currentEnvironment;
   Assert.equal(data.settings.defaultSearchEngineData.origin, "invalid");
-  await Services.search.removeEngine(engine);
 
   const SEARCH_ENGINE_ID = "telemetry_default";
   const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;

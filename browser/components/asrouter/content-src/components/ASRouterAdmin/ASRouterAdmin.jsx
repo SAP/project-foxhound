@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { ASRouterUtils } from "newtab/content-src/asrouter/asrouter-utils";
+import { ASRouterUtils } from "../../asrouter-utils";
 import React from "react";
 import ReactDOM from "react-dom";
 import { SimpleHashRouter } from "./SimpleHashRouter";
@@ -258,7 +258,7 @@ export class ASRouterAdminInner extends React.PureComponent {
     ASRouterUtils.sendMessage({ type: "RESET_PROVIDER_PREF" });
   }
 
-  resetGroups(id, value) {
+  resetGroups() {
     ASRouterUtils.sendMessage({
       type: "RESET_GROUPS_STATE",
     }).then(this.setStateFromParent);
@@ -387,7 +387,7 @@ export class ASRouterAdminInner extends React.PureComponent {
   }
 
   // Simulate a copy event that sets to clipboard all targeting paramters and values
-  onCopyTargetingParams(event) {
+  onCopyTargetingParams() {
     const stringTargetingParameters = {
       ...this.state.stringTargetingParameters,
     };
@@ -507,8 +507,7 @@ export class ASRouterAdminInner extends React.PureComponent {
             isBlocked ? null : isModified ? (
               <button
                 className="button restore"
-                // eslint-disable-next-line react/jsx-no-bind
-                onClick={e => this.resetJSON(msg)}
+                onClick={() => this.resetJSON(msg)}
               >
                 Reset
               </button>
@@ -524,8 +523,7 @@ export class ASRouterAdminInner extends React.PureComponent {
           {isBlocked ? null : (
             <button
               className="button modify"
-              // eslint-disable-next-line react/jsx-no-bind
-              onClick={e => this.modifyJson(msg)}
+              onClick={() => this.modifyJson(msg)}
             >
               Modify
             </button>
@@ -559,8 +557,7 @@ export class ASRouterAdminInner extends React.PureComponent {
                 name={msg.id}
                 className="general-textarea"
                 disabled={isBlocked}
-                // eslint-disable-next-line react/jsx-no-bind
-                onChange={e => this.handleChange(msg.id)}
+                onChange={() => this.handleChange(msg.id)}
               >
                 {JSON.stringify(msg, null, 2)}
               </textarea>
@@ -650,7 +647,7 @@ export class ASRouterAdminInner extends React.PureComponent {
           </button>
           <button
             className="ASRouterButton slim button"
-            onClick={e => this.resetPBJSON(msg)}
+            onClick={() => this.resetPBJSON(msg)}
           >
             Reset JSON
           </button>
@@ -701,8 +698,7 @@ export class ASRouterAdminInner extends React.PureComponent {
       <div>
         <button
           className="ASRouterButton slim"
-          // eslint-disable-next-line react/jsx-no-bind
-          onClick={e => this.toggleAllMessages(messagesToShow)}
+          onClick={() => this.toggleAllMessages(messagesToShow)}
         >
           Collapse/Expand All
         </button>
@@ -1050,7 +1046,7 @@ export class ASRouterAdminInner extends React.PureComponent {
     });
   }
 
-  setAttribution(e) {
+  setAttribution() {
     ASRouterUtils.sendMessage({
       type: "FORCE_ATTRIBUTION",
       data: this.state.attributionParameters,
@@ -1311,8 +1307,7 @@ export class ASRouterAdminInner extends React.PureComponent {
           <h2>Messages</h2>
           <button
             className="ASRouterButton slim button"
-            // eslint-disable-next-line react/jsx-no-bind
-            onClick={e => this.toggleAllMessages(messagesToShow)}
+            onClick={() => this.toggleAllMessages(messagesToShow)}
           >
             Collapse/Expand All
           </button>
@@ -1364,10 +1359,7 @@ export class ASRouterAdminInner extends React.PureComponent {
               <tbody>
                 {this.state.groups &&
                   this.state.groups.map(
-                    (
-                      { id, enabled, frequency, userPreferences = [] },
-                      index
-                    ) => (
+                    ({ id, enabled, frequency, userPreferences = [] }) => (
                       <Row key={id}>
                         <td>
                           <TogglePrefCheckbox
@@ -1478,7 +1470,7 @@ export class ASRouterAdminInner extends React.PureComponent {
               Need help using these tools? Check out our{" "}
               <a
                 target="blank"
-                href="https://firefox-source-docs.mozilla.org/browser/components/newtab/content-src/asrouter/docs/debugging-docs.html"
+                href="https://firefox-source-docs.mozilla.org/browser/components/asrouter/docs/debugging-docs.html"
               >
                 documentation
               </a>

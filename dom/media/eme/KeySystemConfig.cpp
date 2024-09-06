@@ -57,9 +57,10 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
                       {nsCString(kWidevineExperimentKeySystemName)});
   }
 
-  if ((IsPlayReadyKeySystemAndSupported(aKeySystem) ||
-       IsWMFClearKeySystemAndSupported(aKeySystem)) &&
-      WMFCDMImpl::Supports(aKeySystem)) {
+  // PlayReady and WMF-based ClearKey are always installed, we don't need to
+  // download them.
+  if (IsPlayReadyKeySystemAndSupported(aKeySystem) ||
+      IsWMFClearKeySystemAndSupported(aKeySystem)) {
     return true;
   }
 #endif
@@ -69,7 +70,8 @@ bool KeySystemConfig::Supports(const nsAString& aKeySystem) {
 
 /* static */
 bool KeySystemConfig::CreateKeySystemConfigs(
-    const nsAString& aKeySystem, nsTArray<KeySystemConfig>& aOutConfigs) {
+    const nsAString& aKeySystem, const DecryptionInfo aDecryption,
+    nsTArray<KeySystemConfig>& aOutConfigs) {
   if (!Supports(aKeySystem)) {
     return false;
   }
@@ -103,10 +105,16 @@ bool KeySystemConfig::CreateKeySystemConfigs(
     config->mMP4.SetCanDecrypt(EME_CODEC_FLAC);
     config->mMP4.SetCanDecrypt(EME_CODEC_OPUS);
     config->mMP4.SetCanDecrypt(EME_CODEC_VP9);
+#ifdef MOZ_AV1
+    config->mMP4.SetCanDecrypt(EME_CODEC_AV1);
+#endif
     config->mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
     config->mWebM.SetCanDecrypt(EME_CODEC_OPUS);
     config->mWebM.SetCanDecrypt(EME_CODEC_VP8);
     config->mWebM.SetCanDecrypt(EME_CODEC_VP9);
+#ifdef MOZ_AV1
+    config->mWebM.SetCanDecrypt(EME_CODEC_AV1);
+#endif
 
     if (StaticPrefs::media_clearkey_test_key_systems_enabled()) {
       // Add testing key systems. These offer the same capabilities as the
@@ -156,6 +164,10 @@ bool KeySystemConfig::CreateKeySystemConfigs(
          &config->mMP4},
         {nsCString(VIDEO_MP4), EME_CODEC_VP9, java::MediaDrmProxy::AVC,
          &config->mMP4},
+#  ifdef MOZ_AV1
+        {nsCString(VIDEO_MP4), EME_CODEC_AV1, java::MediaDrmProxy::AV1,
+         &config->mMP4},
+#  endif
         {nsCString(AUDIO_MP4), EME_CODEC_AAC, java::MediaDrmProxy::AAC,
          &config->mMP4},
         {nsCString(AUDIO_MP4), EME_CODEC_FLAC, java::MediaDrmProxy::FLAC,
@@ -166,6 +178,10 @@ bool KeySystemConfig::CreateKeySystemConfigs(
          &config->mWebM},
         {nsCString(VIDEO_WEBM), EME_CODEC_VP9, java::MediaDrmProxy::VP9,
          &config->mWebM},
+#  ifdef MOZ_AV1
+        {nsCString(VIDEO_WEBM), EME_CODEC_AV1, java::MediaDrmProxy::AV1,
+         &config->mWebM},
+#  endif
         {nsCString(AUDIO_WEBM), EME_CODEC_VORBIS, java::MediaDrmProxy::VORBIS,
          &config->mWebM},
         {nsCString(AUDIO_WEBM), EME_CODEC_OPUS, java::MediaDrmProxy::OPUS,
@@ -198,10 +214,16 @@ bool KeySystemConfig::CreateKeySystemConfigs(
     config->mMP4.SetCanDecrypt(EME_CODEC_OPUS);
     config->mMP4.SetCanDecryptAndDecode(EME_CODEC_H264);
     config->mMP4.SetCanDecryptAndDecode(EME_CODEC_VP9);
+#  ifdef MOZ_AV1
+    config->mMP4.SetCanDecryptAndDecode(EME_CODEC_AV1);
+#  endif
     config->mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
     config->mWebM.SetCanDecrypt(EME_CODEC_OPUS);
     config->mWebM.SetCanDecryptAndDecode(EME_CODEC_VP8);
     config->mWebM.SetCanDecryptAndDecode(EME_CODEC_VP9);
+#  ifdef MOZ_AV1
+    config->mWebM.SetCanDecryptAndDecode(EME_CODEC_AV1);
+#  endif
 #endif
     return true;
   }
@@ -209,7 +231,8 @@ bool KeySystemConfig::CreateKeySystemConfigs(
   if (IsPlayReadyKeySystemAndSupported(aKeySystem) ||
       IsWidevineExperimentKeySystemAndSupported(aKeySystem)) {
     RefPtr<WMFCDMImpl> cdm = MakeRefPtr<WMFCDMImpl>(aKeySystem);
-    return cdm->GetCapabilities(aOutConfigs);
+    return cdm->GetCapabilities(aDecryption == DecryptionInfo::Hardware,
+                                aOutConfigs);
   }
 #endif
   return false;
@@ -243,7 +266,9 @@ void KeySystemConfig::GetGMPKeySystemConfigs(dom::Promise* aPromise) {
       continue;
     }
 #endif
-    if (KeySystemConfig::CreateKeySystemConfigs(name, keySystemConfigs)) {
+    if (KeySystemConfig::CreateKeySystemConfigs(
+            name, KeySystemConfig::DecryptionInfo::Software,
+            keySystemConfigs)) {
       auto* info = cdmInfo.AppendElement(fallible);
       if (!info) {
         aPromise->MaybeReject(NS_ERROR_OUT_OF_MEMORY);
@@ -253,6 +278,8 @@ void KeySystemConfig::GetGMPKeySystemConfigs(dom::Promise* aPromise) {
       info->mKeySystemName = name;
       info->mCapabilities = keySystemConfigs.LastElement().GetDebugInfo();
       info->mClearlead = DoesKeySystemSupportClearLead(name);
+      // TODO : ask real CDM
+      info->mIsHDCP22Compatible = false;
     }
   }
   aPromise->MaybeResolve(cdmInfo);
@@ -314,6 +341,8 @@ nsString KeySystemConfig::GetDebugInfo() const {
   debugInfo.AppendLiteral(" WEBM={");
   debugInfo.Append(NS_ConvertUTF8toUTF16(mWebM.GetDebugInfo()));
   debugInfo.AppendLiteral("}");
+  debugInfo.AppendASCII(
+      nsPrintfCString(" isHDCP22Compatible=%d", mIsHDCP22Compatible));
   return debugInfo;
 }
 

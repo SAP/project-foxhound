@@ -59,6 +59,7 @@ namespace jit {
   _(ArrayJoin, js::jit::ArrayJoin)                                             \
   _(ArraySliceDense, js::ArraySliceDense)                                      \
   _(AsyncFunctionAwait, js::AsyncFunctionAwait)                                \
+  _(AsyncFunctionReject, js::AsyncFunctionReject)                              \
   _(AsyncFunctionResolve, js::AsyncFunctionResolve)                            \
   _(AtomicsAdd64, js::jit::AtomicsAdd64)                                       \
   _(AtomicsAnd64, js::jit::AtomicsAnd64)                                       \
@@ -122,6 +123,7 @@ namespace jit {
     js::ClassBodyLexicalEnvironmentObject::createWithoutEnclosing)             \
   _(CloneRegExpObject, js::CloneRegExpObject)                                  \
   _(CloseIterOperation, js::CloseIterOperation)                                \
+  _(CodePointAt, js::jit::CodePointAt)                                         \
   _(ConcatStrings, js::ConcatStrings<CanGC>)                                   \
   _(CreateAsyncFromSyncIterator, js::CreateAsyncFromSyncIterator)              \
   _(CreateBigIntFromInt64, js::jit::CreateBigIntFromInt64)                     \
@@ -133,11 +135,10 @@ namespace jit {
   _(DebugAfterYield, js::jit::DebugAfterYield)                                 \
   _(DebugEpilogueOnBaselineReturn, js::jit::DebugEpilogueOnBaselineReturn)     \
   _(DebugLeaveLexicalEnv, js::jit::DebugLeaveLexicalEnv)                       \
-  _(DebugLeaveThenFreshenLexicalEnv, js::jit::DebugLeaveThenFreshenLexicalEnv) \
   _(DebugLeaveThenPopLexicalEnv, js::jit::DebugLeaveThenPopLexicalEnv)         \
-  _(DebugLeaveThenRecreateLexicalEnv,                                          \
-    js::jit::DebugLeaveThenRecreateLexicalEnv)                                 \
   _(Debug_CheckSelfHosted, js::Debug_CheckSelfHosted)                          \
+  _(DebuggeeFreshenLexicalEnv, js::jit::DebuggeeFreshenLexicalEnv)             \
+  _(DebuggeeRecreateLexicalEnv, js::jit::DebuggeeRecreateLexicalEnv)           \
   _(DelElemOperationNonStrict, js::DelElemOperation<false>)                    \
   _(DelElemOperationStrict, js::DelElemOperation<true>)                        \
   _(DelPropOperationNonStrict, js::DelPropOperation<false>)                    \
@@ -193,6 +194,7 @@ namespace jit {
   _(GetIteratorWithIndices, js::GetIteratorWithIndices)                        \
   _(GetNonSyntacticGlobalThis, js::GetNonSyntacticGlobalThis)                  \
   _(GetOrCreateModuleMetaObject, js::GetOrCreateModuleMetaObject)              \
+  _(GetPendingExceptionStack, js::GetPendingExceptionStack)                    \
   _(GetPrototypeOf, js::jit::GetPrototypeOf)                                   \
   _(GetSparseElementHelper, js::GetSparseElementHelper)                        \
   _(GlobalDeclInstantiationFromIon, js::jit::GlobalDeclInstantiationFromIon)   \
@@ -303,8 +305,8 @@ namespace jit {
     js::jit::StringBigIntCompare<js::jit::ComparisonKind::LessThan>)           \
   _(StringEndsWith, js::StringEndsWith)                                        \
   _(StringFlatReplaceString, js::StringFlatReplaceString)                      \
-  _(StringFromCharCode, js::jit::StringFromCharCode)                           \
-  _(StringFromCodePoint, js::jit::StringFromCodePoint)                         \
+  _(StringFromCharCode, js::StringFromCharCode)                                \
+  _(StringFromCodePoint, js::StringFromCodePoint)                              \
   _(StringIncludes, js::StringIncludes)                                        \
   _(StringIndexOf, js::StringIndexOf)                                          \
   _(StringLastIndexOf, js::StringLastIndexOf)                                  \
@@ -332,6 +334,7 @@ namespace jit {
   _(ThrowOperation, js::ThrowOperation)                                        \
   _(ThrowRuntimeLexicalError, js::jit::ThrowRuntimeLexicalError)               \
   _(ThrowUninitializedThis, js::ThrowUninitializedThis)                        \
+  _(ThrowWithStackOperation, js::ThrowWithStackOperation)                      \
   _(ToBigInt, js::ToBigInt)                                                    \
   _(ToStringSlow, js::ToStringSlow<CanGC>)                                     \
   _(ValueToIterator, js::ValueToIterator)                                      \

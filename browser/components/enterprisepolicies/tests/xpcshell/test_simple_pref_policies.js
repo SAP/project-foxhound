@@ -461,6 +461,19 @@ const POLICIES_TESTS = [
     },
   },
 
+  // POLICY: DNSOverHTTPS Fallback off
+  {
+    policies: {
+      DNSOverHTTPS: {
+        Enabled: true,
+        Fallback: false,
+      },
+    },
+    unlockedPrefs: {
+      "network.trr.mode": 3,
+    },
+  },
+
   // POLICY: DNSOverHTTPS Locked
   {
     policies: {
@@ -1017,6 +1030,19 @@ const POLICIES_TESTS = [
     lockedPrefs: {
       "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": true,
       "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": true,
+    },
+  },
+
+  // POLICY: AutofillAddressEnabled, AutofillCreditCardEnabled
+
+  {
+    policies: {
+      AutofillAddressEnabled: false,
+      AutofillCreditCardEnabled: false,
+    },
+    lockedPrefs: {
+      "extensions.formautofill.addresses.enabled": false,
+      "extensions.formautofill.creditCards.enabled": false,
     },
   },
 ];

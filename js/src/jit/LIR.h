@@ -501,7 +501,8 @@ class LDefinition {
     GENERAL,  // Generic, integer or pointer-width data (GPR).
     INT32,    // int32 data (GPR).
     OBJECT,   // Pointer that may be collected as garbage (GPR).
-    SLOTS,    // Slots/elements pointer that may be moved by minor GCs (GPR).
+    SLOTS,  // Slots/elements/wasm array data pointer that may be moved by minor
+            // GCs (GPR).
     WASM_ANYREF,   // Tagged pointer that may be collected as garbage (GPR).
     FLOAT32,       // 32-bit floating-point value (FPU).
     DOUBLE,        // 64-bit floating-point value (FPU).
@@ -644,6 +645,7 @@ class LDefinition {
 #endif
       case MIRType::Slots:
       case MIRType::Elements:
+      case MIRType::WasmArrayData:
         return LDefinition::SLOTS;
       case MIRType::WasmAnyRef:
         return LDefinition::WASM_ANYREF;
@@ -1829,6 +1831,12 @@ class LSafepoint : public TempObject {
     MOZ_ASSERT(framePushedAtStackMapBase_ == 0);
     framePushedAtStackMapBase_ = n;
   }
+};
+
+struct WasmRefIsSubtypeDefs {
+  LAllocation superSTV;
+  LDefinition scratch1;
+  LDefinition scratch2;
 };
 
 class LInstruction::InputIterator {

@@ -242,6 +242,7 @@ impl super::Adapter {
             | wgt::Features::POLYGON_MODE_LINE
             | wgt::Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES
             | wgt::Features::TIMESTAMP_QUERY
+            | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
             | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES
             | wgt::Features::TEXTURE_COMPRESSION_BC
             | wgt::Features::CLEAR_TEXTURE
@@ -294,6 +295,22 @@ impl super::Adapter {
             bgra8unorm_storage_supported,
         );
 
+        // we must be using DXC because uint64_t was added with Shader Model 6
+        // and FXC only supports up to 5.1
+        let int64_shader_ops_supported = dxc_container.is_some() && {
+            let mut features1: d3d12_ty::D3D12_FEATURE_DATA_D3D12_OPTIONS1 =
+                unsafe { mem::zeroed() };
+            let hr = unsafe {
+                device.CheckFeatureSupport(
+                    d3d12_ty::D3D12_FEATURE_D3D12_OPTIONS1,
+                    &mut features1 as *mut _ as *mut _,
+                    mem::size_of::<d3d12_ty::D3D12_FEATURE_DATA_D3D12_OPTIONS1>() as _,
+                )
+            };
+            hr == 0 && features1.Int64ShaderOps != 0
+        };
+        features.set(wgt::Features::SHADER_INT64, int64_shader_ops_supported);
+
         // float32-filterable should always be available on d3d12
         features.set(wgt::Features::FLOAT32_FILTERABLE, true);
 
@@ -306,6 +323,12 @@ impl super::Adapter {
         // https://github.com/gfx-rs/wgpu/issues/2471
         downlevel.flags -=
             wgt::DownlevelFlags::VERTEX_AND_INSTANCE_INDEX_RESPECTS_RESPECTIVE_FIRST_VALUE_IN_INDIRECT_DRAW;
+
+        // See https://learn.microsoft.com/en-us/windows/win32/direct3d12/hardware-feature-levels#feature-level-support
+        let max_color_attachments = 8;
+        // TODO: determine this programmatically if possible.
+        // https://github.com/gpuweb/gpuweb/issues/2965#issuecomment-1361315447
+        let max_color_attachment_bytes_per_sample = 64;
 
         Some(crate::ExposedAdapter {
             adapter: super::Adapter {
@@ -377,6 +400,8 @@ impl super::Adapter {
                         d3d12_ty::D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT,
                     min_storage_buffer_offset_alignment: 4,
                     max_inter_stage_shader_components: base.max_inter_stage_shader_components,
+                    max_color_attachments,
+                    max_color_attachment_bytes_per_sample,
                     max_compute_workgroup_storage_size: base.max_compute_workgroup_storage_size, //TODO?
                     max_compute_invocations_per_workgroup:
                         d3d12_ty::D3D12_CS_4_X_THREAD_GROUP_MAX_THREADS_PER_GROUP,
@@ -626,8 +651,8 @@ impl crate::Adapter<super::Api> for super::Adapter {
                 wgt::TextureFormat::Rgb10a2Unorm,
                 wgt::TextureFormat::Rgba16Float,
             ],
-            // we currently use a flip effect which supports 2..=16 buffers
-            swap_chain_sizes: 2..=16,
+            // See https://learn.microsoft.com/en-us/windows/win32/api/dxgi/nf-dxgi-idxgidevice1-setmaximumframelatency
+            maximum_frame_latency: 1..=16,
             current_extent,
             usage: crate::TextureUses::COLOR_TARGET
                 | crate::TextureUses::COPY_SRC

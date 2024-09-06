@@ -1,9 +1,10 @@
 [DEFAULT]
-head = "head.js head_e10s.js head_telemetry.js"
+head = "head.js head_telemetry.js"
 firefox-appdir = "browser"
 skip-if = [
   "appname == 'thunderbird'",
   "os == 'android'",
+  "os == 'mac' && debug", # Bug 1814779
 ]
 dupe-manifest = ""
 support-files = [

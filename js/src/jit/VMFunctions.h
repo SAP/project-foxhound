@@ -381,9 +381,9 @@ JSString* ArrayJoin(JSContext* cx, HandleObject array, HandleString sep);
 
 [[nodiscard]] bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
                               uint32_t* code);
-JSLinearString* StringFromCharCode(JSContext* cx, int32_t code);
+[[nodiscard]] bool CodePointAt(JSContext* cx, HandleString str, int32_t index,
+                               uint32_t* code);
 JSLinearString* StringFromCharCodeNoGC(JSContext* cx, int32_t code);
-JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint);
 JSLinearString* LinearizeForCharAccessPure(JSString* str);
 JSLinearString* LinearizeForCharAccess(JSContext* cx, JSString* str);
 int32_t StringTrimStartIndex(const JSString* str);
@@ -462,8 +462,8 @@ JSObject* CreateGenerator(JSContext* cx, HandleFunction, HandleScript,
 
 ArrayObject* NewArrayObjectEnsureDenseInitLength(JSContext* cx, int32_t count);
 
-JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
-                            HandleObject res);
+ArrayObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
+                               Handle<ArrayObject*> arrRes);
 
 [[nodiscard]] bool HandleDebugTrap(JSContext* cx, BaselineFrame* frame,
                                    const uint8_t* retAddr);
@@ -482,13 +482,13 @@ JSObject* InitRestParameter(JSContext* cx, uint32_t length, Value* rest,
                                                BaselineFrame* frame,
                                                const jsbytecode* pc);
 [[nodiscard]] bool FreshenLexicalEnv(JSContext* cx, BaselineFrame* frame);
-[[nodiscard]] bool DebugLeaveThenFreshenLexicalEnv(JSContext* cx,
-                                                   BaselineFrame* frame,
-                                                   const jsbytecode* pc);
+[[nodiscard]] bool DebuggeeFreshenLexicalEnv(JSContext* cx,
+                                             BaselineFrame* frame,
+                                             const jsbytecode* pc);
 [[nodiscard]] bool RecreateLexicalEnv(JSContext* cx, BaselineFrame* frame);
-[[nodiscard]] bool DebugLeaveThenRecreateLexicalEnv(JSContext* cx,
-                                                    BaselineFrame* frame,
-                                                    const jsbytecode* pc);
+[[nodiscard]] bool DebuggeeRecreateLexicalEnv(JSContext* cx,
+                                              BaselineFrame* frame,
+                                              const jsbytecode* pc);
 [[nodiscard]] bool DebugLeaveLexicalEnv(JSContext* cx, BaselineFrame* frame,
                                         const jsbytecode* pc);
 

@@ -218,7 +218,14 @@
 
 - name: Throw
   operands:
-    ins: Value
+    value: Value
+  alias_set: custom
+  possibly_calls: true
+
+- name: ThrowWithStack
+  operands:
+    value: Value
+    stack: Value
   alias_set: custom
   possibly_calls: true
 
@@ -931,6 +938,26 @@
   # Strings are immutable, so there is no implicit dependency.
   alias_set: none
 
+- name: LinearizeForCodePointAccess
+  operands:
+    string: String
+    index: Int32
+  result_type: String
+  movable: true
+  congruent_to: if_operands_equal
+  # Strings are immutable, so there is no implicit dependency.
+  alias_set: none
+
+- name: ToRelativeStringIndex
+  operands:
+    index: Int32
+    length: Int32
+  result_type: Int32
+  movable: true
+  folds_to: custom
+  congruent_to: if_operands_equal
+  alias_set: none
+
 - name: CharCodeAt
   operands:
     string: String
@@ -956,8 +983,41 @@
   # Strings are immutable, so there is no implicit dependency.
   alias_set: none
 
+- name: CodePointAt
+  operands:
+    string: String
+    index: Int32
+  result_type: Int32
+  movable: true
+  folds_to: custom
+  congruent_to: if_operands_equal
+  # Strings are immutable, so there is no implicit dependency.
+  alias_set: none
+  compute_range: custom
+  clone: true
+
+# Similar to CodePointAt, but returns a negative value on out-of-bounds access.
+- name: CodePointAtOrNegative
+  operands:
+    string: String
+    index: Int32
+  result_type: Int32
+  movable: true
+  congruent_to: if_operands_equal
+  # Strings are immutable, so there is no implicit dependency.
+  alias_set: none
+
 # Return the input if non-negative, otherwise return NaN.
 - name: NegativeToNaN
+  operands:
+    input: Int32
+  result_type: Value
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+
+# Return the input if non-negative, otherwise return undefined.
+- name: NegativeToUndefined
   operands:
     input: Int32
   result_type: Value
@@ -985,6 +1045,15 @@
   alias_set: none
   can_recover: true
   clone: true
+
+# Similar to FromCharCode, but returns the |undefined| if the input is negative.
+- name: FromCharCodeUndefinedIfNegative
+  operands:
+    code: Int32
+  result_type: Value
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
 
 - name: FromCodePoint
   operands:
@@ -1262,7 +1331,6 @@
   folds_to: custom
   congruent_to: if_operands_equal
   alias_set: none
-  movable: true
   can_recover: true
 
 - name: ModuleMetadata
@@ -1423,6 +1491,54 @@
   alias_set: custom
   clone: true
 
+# Implements the TypedArrayByteOffset intrinsic for resizable typed arrays,
+# which calls TypedArrayObject::byteOffsetMaybeOutOfBounds().
+- name: ResizableTypedArrayByteOffsetMaybeOutOfBounds
+  operands:
+    object: Object
+  result_type: IntPtr
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+  compute_range: custom
+
+# Read the length of a resizable typed array.
+- name: ResizableTypedArrayLength
+  operands:
+    object: Object
+  arguments:
+    requiresMemoryBarrier: MemoryBarrierRequirement
+  result_type: IntPtr
+  # Not removable or movable when a barrier is needed.
+  guard: true
+  movable: false
+  congruent_to: custom
+  alias_set: custom
+  compute_range: custom
+
+# Read the byteLength of a resizable dataview.
+- name: ResizableDataViewByteLength
+  operands:
+    object: Object
+  arguments:
+    requiresMemoryBarrier: MemoryBarrierRequirement
+  result_type: IntPtr
+  # Not removable or movable when a barrier is needed.
+  guard: true
+  movable: false
+  congruent_to: custom
+  alias_set: custom
+  compute_range: custom
+
+# Read the byte length of a growable shared array buffer as IntPtr.
+- name: GrowableSharedArrayBufferByteLength
+  operands:
+    object: Object
+  result_type: IntPtr
+  guard: true
+  movable: false
+  alias_set: custom
+
 # Return the element size of a typed array.
 - name: TypedArrayElementSize
   operands:
@@ -1436,6 +1552,26 @@
 
 # Guard an ArrayBufferView has an attached ArrayBuffer.
 - name: GuardHasAttachedArrayBuffer
+  operands:
+    object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+
+# Guard a resizable typed array is in-bounds.
+- name: GuardResizableArrayBufferViewInBounds
+  operands:
+    object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: custom
+
+# Guard a resizable typed array is in-bounds or detached.
+- name: GuardResizableArrayBufferViewInBoundsOrDetached
   operands:
     object: Object
   result_type: Object
@@ -1596,7 +1732,6 @@
   movable: false
   congruent_to: if_operands_equal
   alias_set: custom
-  compute_range: custom
   clone: true
 
 - name: LoadUnboxedScalar
@@ -1846,6 +1981,15 @@
   alias_set: custom
   possibly_calls: true
 
+- name: SmallObjectVariableKeyHasProp
+  operands:
+    idStr: String
+  arguments:
+    shape: Shape*
+  congruent_to: custom
+  result_type: Boolean
+  alias_set: custom
+
 - name: GuardIsNotArrayBufferMaybeShared
   operands:
     object: Object
@@ -1857,6 +2001,24 @@
   alias_set: none
 
 - name: GuardIsTypedArray
+  operands:
+    object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: GuardIsFixedLengthTypedArray
+  operands:
+    object: Object
+  result_type: Object
+  guard: true
+  movable: true
+  congruent_to: if_operands_equal
+  alias_set: none
+
+- name: GuardIsResizableTypedArray
   operands:
     object: Object
   result_type: Object
@@ -2424,6 +2586,9 @@
 - name: GuardToClass
   gen_boilerplate: false
 
+- name: GuardToEitherClass
+  gen_boilerplate: false
+
 - name: GuardToFunction
   gen_boilerplate: false
 
@@ -2465,9 +2630,14 @@
 - name: AsyncResolve
   operands:
     generator: Object
-    valueOrReason: Value
-  arguments:
-    resolveKind: AsyncFunctionResolveKind
+    value: Value
+  result_type: Object
+
+- name: AsyncReject
+  operands:
+    generator: Object
+    reason: Value
+    stack: Value
   result_type: Object
 
 # Returns from this function to the previous caller; this looks like a regular
@@ -3015,6 +3185,9 @@
   congruent_to: if_operands_equal
   alias_set: custom
 
+- name: PostIntPtrConversion
+  gen_boilerplate: false
+
 - name: WasmNeg
   gen_boilerplate: false
 
@@ -3123,7 +3296,10 @@
 - name: WasmStoreRef
   gen_boilerplate: false
 
-- name: WasmPostWriteBarrier
+- name: WasmPostWriteBarrierImmediate
+  gen_boilerplate: false
+
+- name: WasmPostWriteBarrierIndex
   gen_boilerplate: false
 
 - name: WasmParameter
@@ -3250,10 +3426,19 @@
 - name: WasmLoadFieldKA
   gen_boilerplate: false
 
+- name: WasmLoadElementKA
+  gen_boilerplate: false
+
 - name: WasmStoreFieldKA
   gen_boilerplate: false
 
 - name: WasmStoreFieldRefKA
+  gen_boilerplate: false
+
+- name: WasmStoreElementKA
+  gen_boilerplate: false
+
+- name: WasmStoreElementRefKA
   gen_boilerplate: false
 
 - name: WasmRefIsSubtypeOfConcrete
@@ -3263,6 +3448,9 @@
   gen_boilerplate: false
 
 - name: WasmNewStructObject
+  gen_boilerplate: false
+
+- name: WasmNewArrayObject
   gen_boilerplate: false
 
 #ifdef FUZZING_JS_FUZZILLI

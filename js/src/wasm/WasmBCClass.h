@@ -174,6 +174,12 @@ enum class PostBarrierKind {
   Imprecise,
 };
 
+struct BranchIfRefSubtypeRegisters {
+  RegPtr superSTV;
+  RegI32 scratch1;
+  RegI32 scratch2;
+};
+
 //////////////////////////////////////////////////////////////////////////////
 //
 // Wasm baseline compiler proper.
@@ -290,6 +296,10 @@ struct BaseCompiler final {
 
   // Flag indicating that the compiler is currently in a dead code region.
   bool deadCode_;
+
+  // Store previously finished note to know if we need to insert a nop in
+  // finishTryNote.
+  size_t mostRecentFinishedTryNoteIndex_;
 
   ///////////////////////////////////////////////////////////////////////////
   //
@@ -967,7 +977,7 @@ struct BaseCompiler final {
                     bool tailCall, CodeOffset* fastCallOffset,
                     CodeOffset* slowCallOffset);
   CodeOffset callImport(unsigned instanceDataOffset, const FunctionCall& call);
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
   void callRef(const Stk& calleeRef, const FunctionCall& call,
                CodeOffset* fastCallOffset, CodeOffset* slowCallOffset);
 #  ifdef ENABLE_WASM_TAIL_CALLS
@@ -1288,10 +1298,10 @@ struct BaseCompiler final {
   [[nodiscard]] bool throwFrom(RegRef exn);
 
   // Load the specified tag object from the Instance.
-  void loadTag(RegPtr instanceData, uint32_t tagIndex, RegRef tagDst);
+  void loadTag(RegPtr instance, uint32_t tagIndex, RegRef tagDst);
 
   // Load the pending exception state from the Instance and then reset it.
-  void consumePendingException(RegRef* exnDst, RegRef* tagDst);
+  void consumePendingException(RegPtr instance, RegRef* exnDst, RegRef* tagDst);
 
   [[nodiscard]] bool startTryNote(size_t* tryNoteIndex);
   void finishTryNote(size_t tryNoteIndex);
@@ -1635,7 +1645,7 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitRefFunc();
   [[nodiscard]] bool emitRefNull();
   [[nodiscard]] bool emitRefIsNull();
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
   [[nodiscard]] bool emitRefAsNonNull();
   [[nodiscard]] bool emitBrOnNull();
   [[nodiscard]] bool emitBrOnNonNull();
@@ -1722,9 +1732,20 @@ struct BaseCompiler final {
   // Load a pointer to the SuperTypeVector for a given type index
   RegPtr loadSuperTypeVector(uint32_t typeIndex);
 
+  // Emits allocation code for a GC struct. The struct may have an out-of-line
+  // data area; if so, `isOutlineStruct` will be true and `outlineBase` will be
+  // allocated and must be freed.
   template <bool ZeroFields>
   bool emitStructAlloc(uint32_t typeIndex, RegRef* object,
                        bool* isOutlineStruct, RegPtr* outlineBase);
+  // Emits allocation code for a dynamically-sized GC array.
+  template <bool ZeroFields>
+  bool emitArrayAlloc(uint32_t typeIndex, RegRef object, RegI32 numElements,
+                      uint32_t elemSize);
+  // Emits allocation code for a fixed-size GC array.
+  template <bool ZeroFields>
+  bool emitArrayAllocFixed(uint32_t typeIndex, RegRef object,
+                           uint32_t numElements, uint32_t elemSize);
 
   template <typename NullCheckPolicy>
   RegPtr emitGcArrayGetData(RegRef rp);
@@ -1732,19 +1753,14 @@ struct BaseCompiler final {
   RegI32 emitGcArrayGetNumElements(RegRef rp);
   void emitGcArrayBoundsCheck(RegI32 index, RegI32 numElements);
   template <typename T, typename NullCheckPolicy>
-  void emitGcGet(FieldType type, FieldWideningOp wideningOp, const T& src);
+  void emitGcGet(StorageType type, FieldWideningOp wideningOp, const T& src);
   template <typename T, typename NullCheckPolicy>
-  void emitGcSetScalar(const T& dst, FieldType type, AnyReg value);
+  void emitGcSetScalar(const T& dst, StorageType type, AnyReg value);
 
-  // Common code for both old and new ref.test instructions.
-  void emitRefTestCommon(RefType sourceType, RefType destType);
-  // Common code for both old and new ref.cast instructions.
-  void emitRefCastCommon(RefType sourceType, RefType destType);
-
-  // Allocate registers and branch if the given wasm ref is a subtype of the
-  // given heap type.
-  void branchIfRefSubtype(RegRef ref, RefType sourceType, RefType destType,
-                          Label* label, bool onSuccess);
+  BranchIfRefSubtypeRegisters allocRegistersForBranchIfRefSubtype(
+      RefType destType);
+  void freeRegistersForBranchIfRefSubtype(
+      const BranchIfRefSubtypeRegisters& regs);
 
   // Write `value` to wasm struct `object`, at `areaBase + areaOffset`.  The
   // caller must decide on the in- vs out-of-lineness before the call and set
@@ -1753,7 +1769,7 @@ struct BaseCompiler final {
   // trashed.
   template <typename NullCheckPolicy>
   [[nodiscard]] bool emitGcStructSet(RegRef object, RegPtr areaBase,
-                                     uint32_t areaOffset, FieldType fieldType,
+                                     uint32_t areaOffset, StorageType type,
                                      AnyReg value,
                                      PreBarrierKind preBarrierKind);
 

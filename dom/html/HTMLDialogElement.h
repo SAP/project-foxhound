@@ -35,11 +35,11 @@ class HTMLDialogElement final : public nsGenericHTMLElement {
     mReturnValue = aReturnValue;
   }
 
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   void Close(const mozilla::dom::Optional<nsAString>& aReturnValue);
-  void Show(ErrorResult& aError);
-  void ShowModal(ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void Show(ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void ShowModal(ErrorResult& aError);
 
   bool IsInTopLayer() const;
   void QueueCancelDialog();

@@ -18,6 +18,8 @@ const { CustomizableUITestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/CustomizableUITestUtils.sys.mjs"
 );
 
+requestLongerTimeout(3);
+
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -47,49 +49,6 @@ async function clickToggle(toggle) {
   await changed;
 }
 
-add_task(async function testPanelInfoMessage() {
-  const PROTECTIONS_PANEL_INFOMSG_PREF =
-    "browser.protections_panel.infoMessage.seen";
-
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    TRACKING_PAGE
-  );
-  // Set the infomessage pref to ensure the message is displayed every time
-  Services.prefs.setBoolPref(PROTECTIONS_PANEL_INFOMSG_PREF, false);
-
-  await openProtectionsPanel();
-
-  await TestUtils.waitForCondition(() => {
-    return gProtectionsHandler._protectionsPopup.hasAttribute(
-      "infoMessageShowing"
-    );
-  });
-
-  // Test that the info message is displayed when the panel opens
-  let container = document.getElementById("messaging-system-message-container");
-  let message = document.getElementById("protections-popup-message");
-  let learnMoreLink = document.querySelector(
-    "#messaging-system-message-container .text-link"
-  );
-
-  // Check the visibility of the info message.
-  ok(
-    BrowserTestUtils.isVisible(container),
-    "The message container should exist."
-  );
-
-  ok(BrowserTestUtils.isVisible(message), "The message should be visible.");
-
-  ok(BrowserTestUtils.isVisible(learnMoreLink), "The link should be visible.");
-
-  //TODO: Add a check for infomessage telemetry
-
-  //Clear telemetry from this test so that the next one doesn't fall over
-  Services.telemetry.clearEvents();
-  BrowserTestUtils.removeTab(tab);
-});
-
 add_task(async function testToggleSwitch() {
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
@@ -114,158 +73,55 @@ add_task(async function testToggleSwitch() {
   console.log(buttonEvents);
   is(buttonEvents.length, 1, "recorded telemetry for opening the popup");
 
-  // Check the visibility of the "Site not working?" link.
-  ok(
-    BrowserTestUtils.isVisible(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageLink
-    ),
-    "The 'Site not working?' link should be visible."
-  );
+  let browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
 
-  // The 'Site Fixed?' link should be hidden.
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageFixedLink
-    ),
-    "The 'Site Fixed?' link should be hidden."
-  );
-
-  // Navigate through the 'Site Not Working?' flow and back to the main view,
-  // checking for telemetry on the way.
-  let siteNotWorkingView = document.getElementById(
-    "protections-popup-siteNotWorkingView"
-  );
-  let viewShown = BrowserTestUtils.waitForEvent(
-    siteNotWorkingView,
-    "ViewShown"
-  );
-  gProtectionsHandler._protectionsPopupTPSwitchBreakageLink.click();
-  await viewShown;
-
-  checkClickTelemetry("sitenotworking_link");
-
-  let sendReportButton = document.getElementById(
-    "protections-popup-siteNotWorkingView-sendReport"
-  );
-  let sendReportView = document.getElementById(
-    "protections-popup-sendReportView"
-  );
-  viewShown = BrowserTestUtils.waitForEvent(sendReportView, "ViewShown");
-  sendReportButton.click();
-  await viewShown;
-
-  checkClickTelemetry("send_report_link");
-
-  viewShown = BrowserTestUtils.waitForEvent(siteNotWorkingView, "ViewShown");
-  sendReportView.querySelector(".subviewbutton-back").click();
-  await viewShown;
-
-  let mainView = document.getElementById("protections-popup-mainView");
-
-  viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
-  siteNotWorkingView.querySelector(".subviewbutton-back").click();
-  await viewShown;
-
-  ok(
-    gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("pressed"),
-    "TP Switch should be on"
-  );
   let popuphiddenPromise = BrowserTestUtils.waitForEvent(
     gProtectionsHandler._protectionsPopup,
     "popuphidden"
   );
-  let browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+
   await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
-
-  // The 'Site not working?' link should be hidden after clicking the TP switch.
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageLink
-    ),
-    "The 'Site not working?' link should be hidden after TP switch turns to off."
-  );
-  // Same for the 'Site Fixed?' link
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageFixedLink
-    ),
-    "The 'Site Fixed?' link should be hidden."
-  );
-
   await popuphiddenPromise;
+
   checkClickTelemetry("etp_toggle_off");
 
   // We need to wait toast's popup shown and popup hidden events. It won't fire
   // the popup shown event if we open the protections panel while the toast is
   // opening.
-  let popupShownPromise = BrowserTestUtils.waitForEvent(
-    gProtectionsHandler._protectionsPopup,
-    "popupshown"
-  );
-  popuphiddenPromise = BrowserTestUtils.waitForEvent(
-    gProtectionsHandler._protectionsPopup,
-    "popuphidden"
-  );
+  let toastShown = waitForProtectionsPanelToast();
 
   await browserLoadedPromise;
 
-  // Wait until the toast is shown and hidden.
-  await popupShownPromise;
-  await popuphiddenPromise;
+  // Wait until the ETP state confirmation toast is shown and hides itself.
+  await toastShown;
 
+  // Re-open the protections panel and confirm that the toggle is off, then toggle it back on.
   await openProtectionsPanel();
   ok(
     !gProtectionsHandler._protectionsPopupTPSwitch.hasAttribute("pressed"),
     "TP Switch should be off"
   );
 
-  // The 'Site not working?' link should be hidden if the TP is off.
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageLink
-    ),
-    "The 'Site not working?' link should be hidden if TP is off."
-  );
-
-  // The 'Site Fixed?' link should be shown if TP is off.
-  ok(
-    BrowserTestUtils.isVisible(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageFixedLink
-    ),
-    "The 'Site Fixed?' link should be visible."
-  );
-
-  // Check telemetry for 'Site Fixed?' link.
-  viewShown = BrowserTestUtils.waitForEvent(sendReportView, "ViewShown");
-  gProtectionsHandler._protectionsPopupTPSwitchBreakageFixedLink.click();
-  await viewShown;
-
-  checkClickTelemetry("sitenotworking_link", "sitefixed");
-
-  viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
-  sendReportView.querySelector(".subviewbutton-back").click();
-  await viewShown;
-
-  // Click the TP switch again and check the visibility of the 'Site not
-  // Working?'. It should be hidden after toggling the TP switch.
   browserLoadedPromise = BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+
+  popuphiddenPromise = BrowserTestUtils.waitForEvent(
+    gProtectionsHandler._protectionsPopup,
+    "popuphidden"
+  );
+
   await clickToggle(gProtectionsHandler._protectionsPopupTPSwitch);
 
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageLink
-    ),
-    `The 'Site not working?' link should be still hidden after toggling TP
-     switch to on from off.`
-  );
-  ok(
-    BrowserTestUtils.isHidden(
-      gProtectionsHandler._protectionsPopupTPSwitchBreakageFixedLink
-    ),
-    "The 'Site Fixed?' link should be hidden."
-  );
+  // Wait for the protections panel to be hidden as the result of the ETP toggle
+  // on action.
+  await popuphiddenPromise;
+
+  toastShown = waitForProtectionsPanelToast();
 
   await browserLoadedPromise;
+
+  // Wait until the ETP state confirmation toast is shown and hides itself.
+  await toastShown;
+
   checkClickTelemetry("etp_toggle_on");
 
   ContentBlockingAllowList.remove(tab.linkedBrowser);
@@ -339,6 +195,7 @@ add_task(async function testTrackingProtectionLabel() {
 
   Services.prefs.setStringPref("browser.contentblocking.category", "strict");
   await openProtectionsPanel();
+
   is(
     trackingProtectionLabel.textContent,
     "Strict",
@@ -714,8 +571,6 @@ add_task(async function testSubViewTelemetry() {
  * tab after toggling the TP switch.
  */
 add_task(async function testQuickSwitchTabAfterTogglingTPSwitch() {
-  requestLongerTimeout(3);
-
   const FIRST_TEST_SITE = "https://example.com/";
   const SECOND_TEST_SITE = "https://example.org/";
 

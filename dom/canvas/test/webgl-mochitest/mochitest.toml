@@ -35,7 +35,8 @@ fail-if = ["os == 'android'"]
 ["ensure-exts/test_EXT_texture_compression_bptc.html"]
 fail-if = [
   "os == 'android'",
-  "os == 'mac'",
+  "apple_catalina",
+  "apple_silicon",
 ]
 
 ["ensure-exts/test_EXT_texture_compression_rgtc.html"]
@@ -53,36 +54,45 @@ fail-if = ["os == 'linux' && display != 'wayland'"]
 ["ensure-exts/test_OVR_multiview2.html"]
 fail-if = [
   "os == 'linux'",
-  "os == 'mac'",
+  "apple_catalina",
+  "apple_silicon",
 ]
 
 ["ensure-exts/test_WEBGL_color_buffer_float.html"]
 
 ["ensure-exts/test_WEBGL_compressed_texture_astc.html"]
 fail-if = [
-  "os == 'mac'",
-  "os == 'win'",
+  "apple_catalina",
+  "apple_silicon",
+  "win10_2009",
+  "win11_2009",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc.html"]
 fail-if = [
-  "os == 'mac'",
-  "os == 'win'",
+  "apple_catalina",
+  "apple_silicon",
+  "win10_2009",
+  "win11_2009",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_etc1.html"]
 fail-if = [
   "os == 'linux'",
-  "os == 'mac'",
-  "os == 'win'",
+  "apple_catalina",
+  "apple_silicon",
+  "win10_2009",
+  "win11_2009",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_pvrtc.html"]
 fail-if = [
   "os == 'android'",
   "os == 'linux'",
-  "os == 'mac'",
-  "os == 'win'",
+  "apple_catalina",
+  "apple_silicon",
+  "win10_2009",
+  "win11_2009",
 ]
 
 ["ensure-exts/test_WEBGL_compressed_texture_s3tc.html"]
@@ -137,9 +147,9 @@ support-files = ["../captureStream_common.js"]
 
 ["test_has_rbab.html"]
 fail-if = [
-  "os == 'android' && android_version == '26'",
   "os == 'linux'",
-  "os == 'mac'",
+  "apple_catalina",
+  "apple_silicon",
 ]
 
 ["test_hidden_alpha.html"]
@@ -157,9 +167,9 @@ fail-if = [
 ["test_noprog_draw.html"]
 
 ["test_pixel_pack_buffer.html"]
-# skip-if = os == "win" && os_version == "10.0" # Bug 1302199
 skip-if = [
-  "os == 'win'", # Unofficial DXGL support regressed by bug 1632249
+  "win10_2009", # Unofficial DXGL support regressed by bug 1632249
+  "win11_2009", # Unofficial DXGL support regressed by bug 1632249
   "apple_silicon",
 ]
 
@@ -173,7 +183,7 @@ skip-if = ["display == 'wayland'"]
 ["test_sab_with_webgl.html"]
 
 ["test_tex_large_uploads.html"]
-skip-if = ["os == 'win' && debug && bits == 32"] # bug 1705863
+skip-if = ["win11_2009 && debug && bits == 32"] # bug 1705863
 support-files = ["blank_15000x10000.png"]
 
 ["test_tex_pbo.html"]
@@ -187,27 +197,30 @@ support-files = ["blank_15000x10000.png"]
 ["test_vertexattrib4f_update.html"]
 
 ["test_video_fastpath_mp4.html"]
-skip-if = ["os == 'win' && bits == 32"] # No fast video path for h264 decoder (done in RDD, can't be read in content)
+skip-if = ["win11_2009 && bits == 32"] # No fast video path for h264 decoder (done in RDD, can't be read in content)
 
 ["test_video_fastpath_theora.html"]
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac'",
-  "os == 'win' && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
+  "os == 'linux' && os_version == '18.04'",
+  "apple_catalina",
+  "apple_silicon",
+  "win11_2009 && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
 ]
 
 ["test_video_fastpath_vp8.html"]
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac'",
-  "os == 'win' && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
+  "os == 'linux' && os_version == '18.04'",
+  "apple_catalina",
+  "apple_silicon",
+  "win11_2009 && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
 ]
 
 ["test_video_fastpath_vp9.html"]
 skip-if = [
-  "os == 'linux'",
-  "os == 'mac'",
-  "os == 'win' && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
+  "os == 'linux' && os_version == '18.04'",
+  "apple_catalina",
+  "apple_silicon",
+  "win11_2009 && bits == 32", # No fast video path for theora decoder (done in RDD, can't be read in content)
 ]
 
 ["test_webgl2_alpha_luminance.html"]

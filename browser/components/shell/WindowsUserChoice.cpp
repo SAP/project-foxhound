@@ -284,6 +284,19 @@ UniquePtr<wchar_t[]> GetAssociationKeyPath(const wchar_t* aExt) {
   return keyPath;
 }
 
+void AppendAssociationKeyPath(const wchar_t* aExt, nsAString& aOutput) {
+  if (aExt[0] == L'.') {
+    aOutput.AppendLiteral(
+        u"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\");
+  } else {
+    aOutput.AppendLiteral(
+        u"SOFTWARE\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations"
+        u"\\");
+  }
+
+  aOutput.Append(aExt);
+}
+
 UniquePtr<wchar_t[]> GenerateUserChoiceHash(const wchar_t* aExt,
                                             const wchar_t* aUserSid,
                                             const wchar_t* aProgId,

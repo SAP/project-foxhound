@@ -2020,7 +2020,7 @@ StyleTransition::StyleTransition(const StyleTransition& aCopy) = default;
 bool StyleTransition::operator==(const StyleTransition& aOther) const {
   return mTimingFunction == aOther.mTimingFunction &&
          mDuration == aOther.mDuration && mDelay == aOther.mDelay &&
-         mProperty == aOther.mProperty;
+         mProperty == aOther.mProperty && mBehavior == aOther.mBehavior;
 }
 
 StyleAnimation::StyleAnimation(const StyleAnimation& aCopy) = default;
@@ -2276,8 +2276,8 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     }
     if (containmentDiff & (StyleContain::PAINT | StyleContain::LAYOUT)) {
       // Paint and layout containment boxes are absolutely/fixed positioning
-      // containers and establishes an independent formatting context.
-      hint |= nsChangeHint_UpdateContainingBlock | nsChangeHint_UpdateBFC;
+      // containers.
+      hint |= nsChangeHint_UpdateContainingBlock;
     }
     // The other container types only need a reflow.
     hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
@@ -2791,7 +2791,6 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mTextAlign(StyleTextAlign::Start),
       mTextAlignLast(StyleTextAlignLast::Auto),
       mTextJustify(StyleTextJustify::Auto),
-      mWhiteSpace(StyleWhiteSpace::Normal),
       mHyphens(StyleHyphens::Manual),
       mRubyAlign(StyleRubyAlign::SpaceAround),
       mRubyPosition(StyleRubyPosition::AlternateOver),
@@ -2828,7 +2827,8 @@ nsStyleText::nsStyleText(const nsStyleText& aSource)
       mTextAlign(aSource.mTextAlign),
       mTextAlignLast(aSource.mTextAlignLast),
       mTextJustify(aSource.mTextJustify),
-      mWhiteSpace(aSource.mWhiteSpace),
+      mWhiteSpaceCollapse(aSource.mWhiteSpaceCollapse),
+      mTextWrapMode(aSource.mTextWrapMode),
       mLineBreak(aSource.mLineBreak),
       mWordBreak(aSource.mWordBreak),
       mOverflowWrap(aSource.mOverflowWrap),
@@ -2855,7 +2855,7 @@ nsStyleText::nsStyleText(const nsStyleText& aSource)
       mTextEmphasisStyle(aSource.mTextEmphasisStyle),
       mHyphenateCharacter(aSource.mHyphenateCharacter),
       mWebkitTextSecurity(aSource.mWebkitTextSecurity),
-      mTextWrap(aSource.mTextWrap) {
+      mTextWrapStyle(aSource.mTextWrapStyle) {
   MOZ_COUNT_CTOR(nsStyleText);
 }
 
@@ -2875,7 +2875,8 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
   if ((mTextAlign != aNewData.mTextAlign) ||
       (mTextAlignLast != aNewData.mTextAlignLast) ||
       (mTextTransform != aNewData.mTextTransform) ||
-      (mWhiteSpace != aNewData.mWhiteSpace) ||
+      (mWhiteSpaceCollapse != aNewData.mWhiteSpaceCollapse) ||
+      (mTextWrapMode != aNewData.mTextWrapMode) ||
       (mLineBreak != aNewData.mLineBreak) ||
       (mWordBreak != aNewData.mWordBreak) ||
       (mOverflowWrap != aNewData.mOverflowWrap) ||
@@ -2889,7 +2890,7 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
       (mTabSize != aNewData.mTabSize) ||
       (mHyphenateCharacter != aNewData.mHyphenateCharacter) ||
       (mWebkitTextSecurity != aNewData.mWebkitTextSecurity) ||
-      (mTextWrap != aNewData.mTextWrap)) {
+      (mTextWrapStyle != aNewData.mTextWrapStyle)) {
     return NS_STYLE_HINT_REFLOW;
   }
 
@@ -3078,6 +3079,7 @@ nsStyleUIReset::nsStyleUIReset()
       mTransitionDurationCount(1),
       mTransitionDelayCount(1),
       mTransitionPropertyCount(1),
+      mTransitionBehaviorCount(1),
       mAnimations(
           nsStyleAutoArray<StyleAnimation>::WITH_SINGLE_INITIAL_ELEMENT),
       mAnimationTimingFunctionCount(1),
@@ -3119,6 +3121,7 @@ nsStyleUIReset::nsStyleUIReset(const nsStyleUIReset& aSource)
       mTransitionDurationCount(aSource.mTransitionDurationCount),
       mTransitionDelayCount(aSource.mTransitionDelayCount),
       mTransitionPropertyCount(aSource.mTransitionPropertyCount),
+      mTransitionBehaviorCount(aSource.mTransitionBehaviorCount),
       mAnimations(aSource.mAnimations.Clone()),
       mAnimationTimingFunctionCount(aSource.mAnimationTimingFunctionCount),
       mAnimationDurationCount(aSource.mAnimationDurationCount),
@@ -3177,6 +3180,7 @@ nsChangeHint nsStyleUIReset::CalcDifference(
        mTransitionDurationCount != aNewData.mTransitionDurationCount ||
        mTransitionDelayCount != aNewData.mTransitionDelayCount ||
        mTransitionPropertyCount != aNewData.mTransitionPropertyCount ||
+       mTransitionBehaviorCount != aNewData.mTransitionBehaviorCount ||
        mAnimations != aNewData.mAnimations ||
        mAnimationTimingFunctionCount !=
            aNewData.mAnimationTimingFunctionCount ||
@@ -3458,12 +3462,6 @@ void StyleCalcNode::ScaleLengthsBy(float aScale) {
       break;
     }
   }
-}
-
-nscoord StyleCalcLengthPercentage::Resolve(nscoord aBasis,
-                                           CoordRounder aRounder) const {
-  CSSCoord result = ResolveToCSSPixels(CSSPixel::FromAppUnits(aBasis));
-  return aRounder(result * AppUnitsPerCSSPixel());
 }
 
 bool nsStyleDisplay::PrecludesSizeContainmentOrContentVisibilityWithFrame(

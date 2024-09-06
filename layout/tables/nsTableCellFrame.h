@@ -53,6 +53,8 @@ class nsTableCellFrame : public nsContainerFrame,
   NS_DECL_QUERYFRAME
   NS_DECL_FRAMEARENA_HELPERS(nsTableCellFrame)
 
+  nsIScrollableFrame* GetScrollTargetFrame() const final;
+
   nsTableRowFrame* GetTableRowFrame() const {
     nsIFrame* parent = GetParent();
     MOZ_ASSERT(parent && parent->IsTableRowFrame());
@@ -91,6 +93,8 @@ class nsTableCellFrame : public nsContainerFrame,
   nsContainerFrame* GetContentInsertionFrame() override {
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
+
+  nsIFrame* CellContentFrame() const;
 
   nsMargin GetUsedMargin() const override;
 
@@ -131,9 +135,6 @@ class nsTableCellFrame : public nsContainerFrame,
     return GetVerticalAlign() == mozilla::StyleVerticalAlignKeyword::Baseline &&
            !GetContentEmpty();
   }
-
-  bool CellHasVisibleContent(nscoord aBSize, nsTableFrame* tableFrame,
-                             nsIFrame* kidFrame);
 
   /**
    * Get the first-line baseline of the cell relative to its block-start border

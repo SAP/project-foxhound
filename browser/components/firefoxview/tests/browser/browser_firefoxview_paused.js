@@ -38,6 +38,8 @@ async function getElements(document) {
     await TestUtils.waitForCondition(() => recentlyClosedView.fullyUpdated);
   }
   let recentlyClosedList = recentlyClosedView.tabList;
+  await openTabsView.openTabsTarget.readyWindowsPromise;
+  await openTabsView.updateComplete;
   let openTabsList =
     openTabsView.shadowRoot.querySelector("view-opentabs-card")?.tabList;
 
@@ -84,6 +86,17 @@ async function setupOpenAndClosedTabs() {
   await SessionStoreTestUtils.closeTab(TestTabs.tab3);
 }
 
+function assertSpiesCalled(spiesMap, expectCalled) {
+  let message = expectCalled ? "to be called" : "to not be called";
+  for (let [elem, renderSpy] of spiesMap.entries()) {
+    is(
+      expectCalled,
+      renderSpy.called,
+      `Expected the render method spy on element ${elem.localName} ${message}`
+    );
+  }
+}
+
 async function checkFxRenderCalls(browser, elements, selectedView) {
   const sandbox = sinon.createSandbox();
   const topLevelViews = getTopLevelViewElements(browser.contentDocument);
@@ -119,7 +132,20 @@ async function checkFxRenderCalls(browser, elements, selectedView) {
   }
 
   info("test switches to tab2");
+  let tabChangeRaised = BrowserTestUtils.waitForEvent(
+    NonPrivateTabs,
+    "TabRecencyChange"
+  );
   await BrowserTestUtils.switchTab(gBrowser, TestTabs.tab2);
+  await tabChangeRaised;
+  info(
+    "TabRecencyChange event was raised, check no render() methods were called"
+  );
+  assertSpiesCalled(viewSpies, false);
+  assertSpiesCalled(elementSpies, false);
+  for (let renderSpy of [...viewSpies.values(), ...elementSpies.values()]) {
+    renderSpy.resetHistory();
+  }
 
   // check all the top-level views are paused
   ok(
@@ -132,21 +158,14 @@ async function checkFxRenderCalls(browser, elements, selectedView) {
   );
   ok(topLevelViews.openTabsView.paused, "The open tabs view is paused");
 
-  function assertSpiesCalled(spiesMap, expectCalled) {
-    let message = expectCalled ? "to be called" : "to not be called";
-    for (let [elem, renderSpy] of spiesMap.entries()) {
-      is(
-        expectCalled,
-        renderSpy.called,
-        `Expected the render method spy on element ${elem.localName} ${message}`
-      );
-    }
-  }
-
   await nextFrame();
   info("test removes tab1");
+  tabChangeRaised = BrowserTestUtils.waitForEvent(
+    NonPrivateTabs,
+    "TabRecencyChange"
+  );
   await BrowserTestUtils.removeTab(TestTabs.tab1);
-  await nextFrame();
+  await tabChangeRaised;
 
   assertSpiesCalled(viewSpies, false);
   assertSpiesCalled(elementSpies, false);
@@ -170,6 +189,42 @@ async function checkFxRenderCalls(browser, elements, selectedView) {
   assertSpiesCalled(viewSpies, false);
 
   sandbox.restore();
+}
+
+function dragAndDrop(
+  tab1,
+  tab2,
+  initialWindow = window,
+  destWindow = window,
+  afterTab = true,
+  context
+) {
+  let rect = tab2.getBoundingClientRect();
+  let event = {
+    ctrlKey: false,
+    altKey: false,
+    clientX: rect.left + rect.width / 2 + 10 * (afterTab ? 1 : -1),
+    clientY: rect.top + rect.height / 2,
+  };
+
+  if (destWindow != initialWindow) {
+    // Make sure that both tab1 and tab2 are visible
+    initialWindow.focus();
+    initialWindow.moveTo(rect.left, rect.top + rect.height * 3);
+  }
+
+  EventUtils.synthesizeDrop(
+    tab1,
+    tab2,
+    null,
+    "move",
+    initialWindow,
+    destWindow,
+    event
+  );
+
+  // Ensure dnd suppression is cleared.
+  EventUtils.synthesizeMouseAtCenter(tab2, { type: "mouseup" }, context);
 }
 
 add_task(async function test_recentbrowsing() {
@@ -300,7 +355,7 @@ add_task(async function test_opentabs() {
     const document = browser.contentDocument;
     const { openTabsView } = getTopLevelViewElements(document);
 
-    await navigateToCategoryAndWait(document, "opentabs");
+    await navigateToViewAndWait(document, "opentabs");
 
     const { openTabsList } = await getElements(document);
     ok(openTabsView, "Found the open tabs view");
@@ -365,7 +420,7 @@ add_task(async function test_recentlyclosed() {
   await withFirefoxView({}, async browser => {
     const document = browser.contentDocument;
     const { recentlyClosedView } = getTopLevelViewElements(document);
-    await navigateToCategoryAndWait(document, "recentlyclosed");
+    await navigateToViewAndWait(document, "recentlyclosed");
 
     const { recentlyClosedList } = await getElements(document);
     ok(recentlyClosedView, "Found the recently-closed view");
@@ -382,4 +437,67 @@ add_task(async function test_recentlyclosed() {
     );
   });
   await BrowserTestUtils.removeTab(TestTabs.tab2);
+});
+
+add_task(async function test_drag_drop_pinned_tab() {
+  await setupOpenAndClosedTabs();
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    let win1 = browser.ownerGlobal;
+    await navigateToViewAndWait(document, "opentabs");
+
+    let openTabs = document.querySelector("view-opentabs[name=opentabs]");
+    await openTabs.updateComplete;
+    await TestUtils.waitForCondition(
+      () => openTabs.viewCards[0].tabList.rowEls.length
+    );
+    await openTabs.openTabsTarget.readyWindowsPromise;
+    let card = openTabs.viewCards[0];
+    let tabRows = card.tabList.rowEls;
+    let tabChangeRaised;
+
+    // Pin first two tabs
+    for (var i = 0; i < 2; i++) {
+      tabChangeRaised = BrowserTestUtils.waitForEvent(
+        NonPrivateTabs,
+        "TabChange"
+      );
+      let currentTabEl = tabRows[i];
+      let currentTab = currentTabEl.tabElement;
+      info(`Pinning tab ${i + 1} with label: ${currentTab.label}`);
+      win1.gBrowser.pinTab(currentTab);
+      await tabChangeRaised;
+      await openTabs.updateComplete;
+      tabRows = card.tabList.rowEls;
+      currentTabEl = tabRows[i];
+
+      await TestUtils.waitForCondition(
+        () => currentTabEl.indicators.includes("pinned"),
+        `Tab ${i + 1} is pinned.`
+      );
+    }
+
+    info(`First two tabs are pinned.`);
+
+    let win2 = await BrowserTestUtils.openNewBrowserWindow();
+
+    await openTabs.updateComplete;
+    await TestUtils.waitForCondition(
+      () => openTabs.viewCards.length === 2,
+      "Two windows are shown for Open Tabs in in Fx View."
+    );
+
+    let pinnedTab = win1.gBrowser.visibleTabs[0];
+    let newWindowTab = win2.gBrowser.visibleTabs[0];
+
+    dragAndDrop(newWindowTab, pinnedTab, win2, win1, true, content);
+
+    await switchToFxViewTab();
+    await openTabs.updateComplete;
+    await TestUtils.waitForCondition(
+      () => openTabs.viewCards.length === 1,
+      "One window is shown for Open Tabs in in Fx View."
+    );
+  });
+  cleanupTabs();
 });

@@ -169,7 +169,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
     CFLAGS += CONFIG["GLIB_CFLAGS"]
     CXXFLAGS += CONFIG["GLIB_CFLAGS"]
 
-if CONFIG["OS_ARCH"] == "Darwin":
+if CONFIG["TARGET_KERNEL"] == "Darwin":
     UNIFIED_SOURCES += [
         "KeychainSecret.cpp",
         "OSReauthenticatorDarwin.mm",
@@ -244,6 +244,11 @@ headers_arrays_certs = [
         "addons-public-intermediate.crt",
     ),
     ("addons-stage.inc", "addonsStageRoot", "addons-stage.crt"),
+    (
+        "addons-stage-intermediate.inc",
+        "addonsStageIntermediate",
+        "addons-stage-intermediate.crt",
+    ),
     (
         "content-signature-prod.inc",
         "contentSignatureProdRoot",

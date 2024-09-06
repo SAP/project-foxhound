@@ -12,14 +12,19 @@ Test custom commit messages with fuzzy selector
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
   $ ./mach try fuzzy $testargs -q foo -m "Foobar: {msg}"
@@ -29,14 +34,19 @@ Test custom commit messages with fuzzy selector
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
   $ unset EDITOR

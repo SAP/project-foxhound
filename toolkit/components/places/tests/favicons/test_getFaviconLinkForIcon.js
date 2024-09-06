@@ -11,7 +11,7 @@ add_task(async function test_basic() {
     let url = PlacesUtils.favicons.getFaviconLinkForIcon(
       Services.io.newURI(protocol + "test/test.png")
     ).spec;
-    Assert.equal(url, "moz-anno:favicon:" + protocol + "test/test.png");
+    Assert.equal(url, "cached-favicon:" + protocol + "test/test.png");
   }
 });
 
@@ -19,10 +19,12 @@ add_task(async function test_directRequestProtocols() {
   // Check these protocols are pass-through.
   for (let protocol of [
     "about:",
+    "cached-favicon:",
     "chrome://",
     "data:",
     "file:///",
-    "moz-anno:",
+    "moz-page-thumb://",
+    "page-icon:",
     "resource://",
   ]) {
     let url = PlacesUtils.favicons.getFaviconLinkForIcon(

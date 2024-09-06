@@ -17,7 +17,7 @@ const { FormAutofill } = ChromeUtils.importESModule(
   "resource://autofill/FormAutofill.sys.mjs"
 );
 const { AutofillTelemetry } = ChromeUtils.importESModule(
-  "resource://autofill/AutofillTelemetry.sys.mjs"
+  "resource://gre/modules/shared/AutofillTelemetry.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -197,6 +197,9 @@ class ManageRecords {
       this._elements.edit.setAttribute("disabled", "disabled");
       this._elements.remove.removeAttribute("disabled");
     }
+    this._elements.add.disabled = !Services.prefs.getBoolPref(
+      `extensions.formautofill.${this._subStorageName}.enabled`
+    );
   }
 
   /**
@@ -265,7 +268,7 @@ class ManageRecords {
     }
   }
 
-  observe(subject, topic, data) {
+  observe(_subject, topic, _data) {
     switch (topic) {
       case "formautofill-storage-changed": {
         this.loadRecords();

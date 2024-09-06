@@ -74,6 +74,14 @@ void TenuringTracer::onObjectEdge(JSObject** objp, const char* name) {
     return;
   }
 
+  onNonForwardedNurseryObjectEdge(objp);
+}
+
+void TenuringTracer::onNonForwardedNurseryObjectEdge(JSObject** objp) {
+  JSObject* obj = *objp;
+  MOZ_ASSERT(IsInsideNursery(obj));
+  MOZ_ASSERT(!obj->isForwarded());
+
   UpdateAllocSiteOnTenure(obj);
 
   // Take a fast path for tenuring a plain object which is by far the most
@@ -98,6 +106,14 @@ void TenuringTracer::onStringEdge(JSString** strp, const char* name) {
     return;
   }
 
+  onNonForwardedNurseryStringEdge(strp);
+}
+
+void TenuringTracer::onNonForwardedNurseryStringEdge(JSString** strp) {
+  JSString* str = *strp;
+  MOZ_ASSERT(IsInsideNursery(str));
+  MOZ_ASSERT(!str->isForwarded());
+
   UpdateAllocSiteOnTenure(str);
 
   *strp = moveToTenured(str);
@@ -114,6 +130,14 @@ void TenuringTracer::onBigIntEdge(JS::BigInt** bip, const char* name) {
     *bip = static_cast<JS::BigInt*>(overlay->forwardingAddress());
     return;
   }
+
+  onNonForwardedNurseryBigIntEdge(bip);
+}
+
+void TenuringTracer::onNonForwardedNurseryBigIntEdge(JS::BigInt** bip) {
+  JS::BigInt* bi = *bip;
+  MOZ_ASSERT(IsInsideNursery(bi));
+  MOZ_ASSERT(!bi->isForwarded());
 
   UpdateAllocSiteOnTenure(bi);
 
@@ -137,37 +161,52 @@ void TenuringTracer::traverse(JS::Value* thingp) {
   Value value = *thingp;
   CheckTracedThing(this, value);
 
-  // We only care about a few kinds of GC thing here and this generates much
-  // tighter code than using MapGCThingTyped.
-  Value post;
-  if (value.isObject()) {
-    JSObject* obj = &value.toObject();
-    onObjectEdge(&obj, "value");
-    post = JS::ObjectValue(*obj);
-  }
-#ifdef ENABLE_RECORD_TUPLE
-  else if (value.isExtendedPrimitive()) {
-    JSObject* obj = &value.toExtendedPrimitive();
-    onObjectEdge(&obj, "value");
-    post = JS::ExtendedPrimitiveValue(*obj);
-  }
-#endif
-  else if (value.isString()) {
-    JSString* str = value.toString();
-    onStringEdge(&str, "value");
-    post = JS::StringValue(str);
-  } else if (value.isBigInt()) {
-    JS::BigInt* bi = value.toBigInt();
-    onBigIntEdge(&bi, "value");
-    post = JS::BigIntValue(bi);
-  } else {
-    MOZ_ASSERT_IF(value.isGCThing(), !IsInsideNursery(value.toGCThing()));
+  if (!value.isGCThing()) {
     return;
   }
 
-  if (post != value) {
-    *thingp = post;
+  Cell* cell = value.toGCThing();
+  if (!IsInsideNursery(cell)) {
+    return;
   }
+
+  if (cell->isForwarded()) {
+    const gc::RelocationOverlay* overlay =
+        gc::RelocationOverlay::fromCell(cell);
+    thingp->changeGCThingPayload(overlay->forwardingAddress());
+    return;
+  }
+
+  // We only care about a few kinds of GC thing here and this generates much
+  // tighter code than using MapGCThingTyped.
+  if (value.isObject()) {
+    JSObject* obj = &value.toObject();
+    onNonForwardedNurseryObjectEdge(&obj);
+    MOZ_ASSERT(obj != &value.toObject());
+    *thingp = JS::ObjectValue(*obj);
+    return;
+  }
+#ifdef ENABLE_RECORD_TUPLE
+  if (value.isExtendedPrimitive()) {
+    JSObject* obj = &value.toExtendedPrimitive();
+    onNonForwardedNurseryObjectEdge(&obj);
+    MOZ_ASSERT(obj != &value.toExtendedPrimitive());
+    *thingp = JS::ExtendedPrimitiveValue(*obj);
+    return;
+  }
+#endif
+  if (value.isString()) {
+    JSString* str = value.toString();
+    onNonForwardedNurseryStringEdge(&str);
+    MOZ_ASSERT(str != value.toString());
+    *thingp = JS::StringValue(str);
+    return;
+  }
+  MOZ_ASSERT(value.isBigInt());
+  JS::BigInt* bi = value.toBigInt();
+  onNonForwardedNurseryBigIntEdge(&bi);
+  MOZ_ASSERT(bi != value.toBigInt());
+  *thingp = JS::BigIntValue(bi);
 }
 
 void TenuringTracer::traverse(wasm::AnyRef* thingp) {
@@ -554,8 +593,8 @@ JSObject* js::gc::TenuringTracer::moveToTenuredSlow(JSObject* src) {
   // For Arrays and Tuples we're reducing tenuredSize to the smaller srcSize
   // because moveElementsToTenured() accounts for all Array or Tuple elements,
   // even if they are inlined.
-  if (src->is<TypedArrayObject>()) {
-    TypedArrayObject* tarray = &src->as<TypedArrayObject>();
+  if (src->is<FixedLengthTypedArrayObject>()) {
+    auto* tarray = &src->as<FixedLengthTypedArrayObject>();
     // Typed arrays with inline data do not necessarily have the same
     // AllocKind between src and dst. The nursery does not allocate an
     // inline data buffer that has the same size as the slow path will do.
@@ -565,7 +604,8 @@ JSObject* js::gc::TenuringTracer::moveToTenuredSlow(JSObject* src) {
     // minimal JSObject. That buffer size plus the JSObject size is not
     // necessarily as large as the slow path's AllocKind size.
     if (tarray->hasInlineElements()) {
-      AllocKind srcKind = GetGCObjectKind(TypedArrayObject::FIXED_DATA_START);
+      AllocKind srcKind =
+          GetGCObjectKind(FixedLengthTypedArrayObject::FIXED_DATA_START);
       size_t headerSize = Arena::thingSize(srcKind);
       srcSize = headerSize + tarray->byteLength();
     }

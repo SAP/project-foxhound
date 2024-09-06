@@ -714,6 +714,9 @@ var snapshotFormatters = {
       compositor = "BasicLayers (" + noOMTCString + ")";
     }
     addRow("features", "compositing", [new Text(compositor)]);
+    addRow("features", "supportFontDetermination", [
+      new Text(data.supportFontDetermination),
+    ]);
     delete data.windowLayerManagerRemote;
     delete data.windowLayerManagerType;
     delete data.numTotalWindows;
@@ -1176,8 +1179,9 @@ var snapshotFormatters = {
         $.new("td", cdmInfo.keySystemName),
         $.new("td", getVideoRobustness(rvArray)),
         $.new("td", getAudioRobustness(rvArray)),
-        $.new("td", getCapabilities(rvArray)),
+        $.new("td", getCapabilities(rvArray), null, { colspan: "4" }),
         $.new("td", cdmInfo.clearlead ? "Yes" : "No"),
+        $.new("td", cdmInfo.isHDCP22Compatible ? "Yes" : "No"),
       ]);
     }
 

@@ -20,6 +20,7 @@
 #include "gfxPlatformGtk.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/WidgetUtilsGtk.h"
 #include "nsGtkUtils.h"
 #include "nsTArray.h"
@@ -84,7 +85,7 @@ RefPtr<Screen> ScreenHelperGTK::GetScreenForWindow(nsWindow* aWindow) {
     return nullptr;
   }
 
-  GdkWindow* gdkWindow = gtk_widget_get_window(aWindow->GetGtkWidget());
+  GdkWindow* gdkWindow = aWindow->GetToplevelGdkWindow();
   if (!gdkWindow) {
     LOG_SCREEN("  failed, can't get GdkWindow");
     return nullptr;
@@ -109,7 +110,7 @@ RefPtr<Screen> ScreenHelperGTK::GetScreenForWindow(nsWindow* aWindow) {
   return nullptr;
 }
 
-static UniquePtr<ScreenGetterGtk> gScreenGetter;
+static StaticAutoPtr<ScreenGetterGtk> gScreenGetter;
 
 static void monitors_changed(GdkScreen* aScreen, gpointer aClosure) {
   LOG_SCREEN("Received monitors-changed event");
@@ -246,6 +247,12 @@ static already_AddRefed<Screen> MakeScreenGtk(GdkScreen* aScreen,
   }
 
   uint32_t pixelDepth = GetGTKPixelDepth();
+  if (pixelDepth == 32) {
+    // If a device uses 32 bits per pixel, it's still only using 8 bits
+    // per color component, which is what our callers want to know.
+    // (Some devices report 32 and some devices report 24.)
+    pixelDepth = 24;
+  }
 
   CSSToLayoutDeviceScale defaultCssScale(gdkScaleFactor);
 
@@ -286,7 +293,7 @@ gint ScreenHelperGTK::GetGTKMonitorScaleFactor(gint aMonitorNum) {
 }
 
 ScreenHelperGTK::ScreenHelperGTK() {
-  gScreenGetter = MakeUnique<ScreenGetterGtk>();
+  gScreenGetter = new ScreenGetterGtk();
   gScreenGetter->Init();
 }
 

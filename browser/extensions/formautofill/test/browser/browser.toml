@@ -4,9 +4,13 @@ support-files = [
   "./fathom/**",
   "../fixtures/autocomplete_basic.html",
   "../fixtures/autocomplete_iframe.html",
+  "../fixtures/autocomplete_iframe_sandboxed.html",
   "../fixtures/autocomplete_simple_basic.html",
+  "../fixtures/page_navigation.html",
   "./empty.html",
 ]
+
+["browser_active_window_navigation.js"]
 
 ["browser_autocomplete_footer.js"]
 skip-if = ["verify"]
@@ -23,6 +27,8 @@ skip-if = [
 
 ["browser_autofill_duplicate_fields.js"]
 
+["browser_autofill_sandboxed_iframe.js"]
+
 ["browser_check_installed.js"]
 
 ["browser_dropdown_layout.js"]
@@ -30,7 +36,6 @@ skip-if = [
 ["browser_editAddressDialog.js"]
 skip-if = [
   "verify",
-  "win10_2004", # Bug 1723573
   "win11_2009", # Bug 1797751
 ]
 

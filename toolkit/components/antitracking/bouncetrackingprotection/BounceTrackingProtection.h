@@ -8,7 +8,6 @@
 #include "mozilla/MozPromise.h"
 #include "nsIBounceTrackingProtection.h"
 #include "nsIClearDataService.h"
-#include "nsTHashMap.h"
 
 class nsIPrincipal;
 class nsITimer;
@@ -16,6 +15,10 @@ class nsITimer;
 namespace mozilla {
 
 class BounceTrackingState;
+class BounceTrackingStateGlobal;
+class BounceTrackingProtectionStorage;
+class ContentBlockingAllowListCache;
+class OriginAttributes;
 
 extern LazyLogModule gBounceTrackingProtectionLog;
 
@@ -31,28 +34,27 @@ class BounceTrackingProtection final : public nsIBounceTrackingProtection {
   // navigation start for bounce tracking, or if the client bounce detection
   // timer expires after process response received for bounce tracking without
   // observing a client redirect.
-  nsresult RecordStatefulBounces(BounceTrackingState* aBounceTrackingState);
+  [[nodiscard]] nsresult RecordStatefulBounces(
+      BounceTrackingState* aBounceTrackingState);
 
   // Stores a user activation flag with a timestamp for the given principal.
-  nsresult RecordUserActivation(nsIPrincipal* aPrincipal);
+  [[nodiscard]] nsresult RecordUserActivation(nsIPrincipal* aPrincipal);
+
+  // Clears expired user interaction flags for the given state global. If
+  // aStateGlobal == nullptr, clears expired user interaction flags for all
+  // state globals.
+  [[nodiscard]] nsresult ClearExpiredUserInteractions(
+      BounceTrackingStateGlobal* aStateGlobal = nullptr);
 
  private:
   BounceTrackingProtection();
   ~BounceTrackingProtection() = default;
 
-  // Map of site hosts to moments. The moments represent the most recent wall
-  // clock time at which the user activated a top-level document on the
-  // associated site host.
-  nsTHashMap<nsCStringHashKey, PRTime> mUserActivation{};
-
-  // Map of site hosts to moments. The moments represent the first wall clock
-  // time since the last execution of the bounce tracking timer at which a page
-  // on the given site host performed an action that could indicate stateful
-  // bounce tracking took place.
-  nsTHashMap<nsCStringHashKey, PRTime> mBounceTrackers{};
-
   // Timer which periodically runs PurgeBounceTrackers.
   nsCOMPtr<nsITimer> mBounceTrackingPurgeTimer;
+
+  // Storage for user agent globals.
+  RefPtr<BounceTrackingProtectionStorage> mStorage;
 
   // Clear state for classified bounce trackers. To be called on an interval.
   using PurgeBounceTrackersMozPromise =
@@ -61,7 +63,17 @@ class BounceTrackingProtection final : public nsIBounceTrackingProtection {
 
   // Pending clear operations are stored as ClearDataMozPromise, one per host.
   using ClearDataMozPromise = MozPromise<nsCString, uint32_t, true>;
-  nsTArray<RefPtr<ClearDataMozPromise>> mClearPromises;
+
+  // Clear state for classified bounce trackers for a specific state global.
+  // aClearPromises is populated with promises for each host that is cleared.
+  [[nodiscard]] nsresult PurgeBounceTrackersForStateGlobal(
+      BounceTrackingStateGlobal* aStateGlobal,
+      ContentBlockingAllowListCache& aContentBlockingAllowList,
+      nsTArray<RefPtr<ClearDataMozPromise>>& aClearPromises);
+
+  // Whether a purge operation is currently in progress. This avoids running
+  // multiple purge operations at the same time.
+  bool mPurgeInProgress = false;
 
   // Wraps nsIClearDataCallback in MozPromise.
   class ClearDataCallback final : public nsIClearDataCallback {

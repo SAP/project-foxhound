@@ -20,7 +20,6 @@
 #include "jit/JitRuntime.h"
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
-#include "jit/PcScriptCache.h"
 #include "jit/Recover.h"
 #include "jit/Safepoints.h"
 #include "jit/ScriptFromCalleeToken.h"
@@ -234,6 +233,7 @@ static void OnLeaveIonFrame(JSContext* cx, const InlineFrameIterator& frame,
   rfe->framePointer = frame.frame().fp();
   rfe->stackPointer = frame.frame().fp();
   rfe->exception = rval;
+  rfe->exceptionStack = NullValue();
 
   act->removeIonFrameRecovery(frame.frame().jsFrame());
   act->removeRematerializedFrame(frame.frame().fp());
@@ -325,10 +325,13 @@ static void HandleExceptionIon(JSContext* cx, const InlineFrameIterator& frame,
                                      tn->stackDepth);
 
         RootedValue exception(cx);
-        if (!cx->getPendingException(&exception)) {
+        RootedValue exceptionStack(cx);
+        if (!cx->getPendingException(&exception) ||
+            !cx->getPendingExceptionStack(&exceptionStack)) {
           exception = UndefinedValue();
+          exceptionStack = NullValue();
         }
-        excInfo.setFinallyException(exception.get());
+        excInfo.setFinallyException(exception.get(), exceptionStack.get());
         cx->clearPendingException();
 
         if (ExceptionHandlerBailout(cx, frame, rfe, excInfo)) {
@@ -494,9 +497,15 @@ static bool ProcessTryNotesBaseline(JSContext* cx, const JSJitFrameIter& frame,
         }
 
         // Drop the exception instead of leaking cross compartment data.
-        if (!cx->getPendingException(
-                MutableHandleValue::fromMarkedLocation(&rfe->exception))) {
+        RootedValue exception(cx);
+        RootedValue exceptionStack(cx);
+        if (!cx->getPendingException(&exception) ||
+            !cx->getPendingExceptionStack(&exceptionStack)) {
           rfe->exception = UndefinedValue();
+          rfe->exceptionStack = NullValue();
+        } else {
+          rfe->exception = exception;
+          rfe->exceptionStack = exceptionStack;
         }
         cx->clearPendingException();
         return true;
@@ -912,32 +921,32 @@ static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
     return;
   }
 
-  size_t nargs = layout->numActualArgs();
-  size_t nformals = 0;
-
   JSFunction* fun = CalleeTokenToFunction(layout->calleeToken());
+
+  size_t numFormals = fun->nargs();
+  size_t numArgs = std::max(layout->numActualArgs(), numFormals);
+  size_t firstArg = 0;
+
   if (frame.type() != FrameType::JSJitToWasm &&
       !frame.isExitFrameLayout<CalledFromJitExitFrameLayout>() &&
       !fun->nonLazyScript()->mayReadFrameArgsDirectly()) {
-    nformals = fun->nargs();
+    firstArg = numFormals;
   }
-
-  size_t newTargetOffset = std::max(nargs, fun->nargs());
 
   Value* argv = layout->thisAndActualArgs();
 
   // Trace |this|.
   TraceRoot(trc, argv, "ion-thisv");
 
-  // Trace actual arguments beyond the formals. Note + 1 for thisv.
-  for (size_t i = nformals + 1; i < nargs + 1; i++) {
-    TraceRoot(trc, &argv[i], "ion-argv");
+  // Trace arguments. Note + 1 for thisv.
+  for (size_t i = firstArg; i < numArgs; i++) {
+    TraceRoot(trc, &argv[i + 1], "ion-argv");
   }
 
   // Always trace the new.target from the frame. It's not in the snapshots.
   // +1 to pass |this|
   if (CalleeTokenIsConstructing(layout->calleeToken())) {
-    TraceRoot(trc, &argv[1 + newTargetOffset], "ion-newTarget");
+    TraceRoot(trc, &argv[1 + numArgs], "ion-newTarget");
   }
 }
 
@@ -1485,9 +1494,31 @@ void UpdateJitActivationsForMinorGC(JSRuntime* rt) {
   JSContext* cx = rt->mainContextFromOwnThread();
   for (JitActivationIterator activations(cx); !activations.done();
        ++activations) {
-    for (OnlyJSJitFrameIter iter(activations); !iter.done(); ++iter) {
-      if (iter.frame().type() == FrameType::IonJS) {
-        UpdateIonJSFrameForMinorGC(rt, iter.frame());
+    for (JitFrameIter iter(activations->asJit()); !iter.done(); ++iter) {
+      if (iter.isJSJit()) {
+        const JSJitFrameIter& jitFrame = iter.asJSJit();
+        if (jitFrame.type() == FrameType::IonJS) {
+          UpdateIonJSFrameForMinorGC(rt, jitFrame);
+        }
+      } else if (iter.isWasm()) {
+        const wasm::WasmFrameIter& frame = iter.asWasm();
+        frame.instance()->updateFrameForMovingGC(
+            frame, frame.resumePCinCurrentFrame());
+      }
+    }
+  }
+}
+
+void UpdateJitActivationsForCompactingGC(JSRuntime* rt) {
+  MOZ_ASSERT(JS::RuntimeHeapIsMajorCollecting());
+  JSContext* cx = rt->mainContextFromOwnThread();
+  for (JitActivationIterator activations(cx); !activations.done();
+       ++activations) {
+    for (JitFrameIter iter(activations->asJit()); !iter.done(); ++iter) {
+      if (iter.isWasm()) {
+        const wasm::WasmFrameIter& frame = iter.asWasm();
+        frame.instance()->updateFrameForMovingGC(
+            frame, frame.resumePCinCurrentFrame());
       }
     }
   }
@@ -1505,90 +1536,6 @@ JSScript* GetTopJitJSScript(JSContext* cx) {
 
   MOZ_ASSERT(frame.isScripted());
   return frame.script();
-}
-
-void GetPcScript(JSContext* cx, JSScript** scriptRes, jsbytecode** pcRes) {
-  JitSpew(JitSpew_IonSnapshots, "Recover PC & Script from the last frame.");
-
-  // Recover the return address so that we can look it up in the
-  // PcScriptCache, as script/pc computation is expensive.
-  JitActivationIterator actIter(cx);
-  OnlyJSJitFrameIter it(actIter);
-  uint8_t* retAddr;
-  if (it.frame().isExitFrame()) {
-    ++it;
-
-    // Skip baseline interpreter entry frames.
-    // Can exist before rectifier frames.
-    if (it.frame().isBaselineInterpreterEntry()) {
-      ++it;
-    }
-
-    // Skip rectifier frames.
-    if (it.frame().isRectifier()) {
-      ++it;
-      MOZ_ASSERT(it.frame().isBaselineStub() || it.frame().isBaselineJS() ||
-                 it.frame().isIonJS());
-    }
-
-    // Skip Baseline/Ion stub and IC call frames.
-    if (it.frame().isBaselineStub()) {
-      ++it;
-      MOZ_ASSERT(it.frame().isBaselineJS());
-    } else if (it.frame().isIonICCall()) {
-      ++it;
-      MOZ_ASSERT(it.frame().isIonJS());
-    }
-
-    MOZ_ASSERT(it.frame().isBaselineJS() || it.frame().isIonJS());
-
-    // Don't use the return address and the cache if the BaselineFrame is
-    // running in the Baseline Interpreter. In this case the bytecode pc is
-    // cheap to get, so we won't benefit from the cache, and the return address
-    // does not map to a single bytecode pc.
-    if (it.frame().isBaselineJS() &&
-        it.frame().baselineFrame()->runningInInterpreter()) {
-      it.frame().baselineScriptAndPc(scriptRes, pcRes);
-      return;
-    }
-
-    retAddr = it.frame().resumePCinCurrentFrame();
-  } else {
-    MOZ_ASSERT(it.frame().isBailoutJS());
-    retAddr = it.frame().returnAddress();
-  }
-
-  MOZ_ASSERT(retAddr);
-
-  uint32_t hash = PcScriptCache::Hash(retAddr);
-
-  // Lazily initialize the cache. The allocation may safely fail and will not
-  // GC.
-  if (MOZ_UNLIKELY(cx->ionPcScriptCache == nullptr)) {
-    cx->ionPcScriptCache =
-        MakeUnique<PcScriptCache>(cx->runtime()->gc.gcNumber());
-  }
-
-  if (cx->ionPcScriptCache.ref() &&
-      cx->ionPcScriptCache->get(cx->runtime(), hash, retAddr, scriptRes,
-                                pcRes)) {
-    return;
-  }
-
-  // Lookup failed: undertake expensive process to determine script and pc.
-  if (it.frame().isIonJS() || it.frame().isBailoutJS()) {
-    InlineFrameIterator ifi(cx, &it.frame());
-    *scriptRes = ifi.script();
-    *pcRes = ifi.pc();
-  } else {
-    MOZ_ASSERT(it.frame().isBaselineJS());
-    it.frame().baselineScriptAndPc(scriptRes, pcRes);
-  }
-
-  // Add entry to cache.
-  if (cx->ionPcScriptCache.ref()) {
-    cx->ionPcScriptCache->add(hash, retAddr, *pcRes, *scriptRes);
-  }
 }
 
 RInstructionResults::RInstructionResults(JitFrameLayout* fp)

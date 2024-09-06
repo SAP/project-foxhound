@@ -27,6 +27,7 @@ import java.util.Locale;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoSystemStateListener;
 import org.mozilla.gecko.util.GeckoBundle;
+import org.mozilla.gecko.util.LocaleUtils;
 
 @AnyThread
 public final class GeckoRuntimeSettings extends RuntimeSettings {
@@ -462,6 +463,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      * @param delegate the delegate that will handle telemetry
      * @return The builder instance.
      */
+    @Deprecated
+    @DeprecationSchedule(id = "geckoview-gvst", version = 127)
     public @NonNull Builder telemetryDelegate(final @NonNull RuntimeTelemetry.Delegate delegate) {
       getSettings().mTelemetryProxy = new RuntimeTelemetry.Proxy(delegate);
       getSettings().mTelemetryEnabled.set(true);
@@ -541,6 +544,42 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       getSettings().mExtensionsWebAPIEnabled.set(flag);
       return this;
     }
+
+    /**
+     * Sets whether and how DNS-over-HTTPS (Trusted Recursive Resolver) is configured.
+     *
+     * @param mode One of the {@link GeckoRuntimeSettings#TRR_MODE_OFF TrustedRecursiveResolverMode}
+     *     constants.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder trustedRecursiveResolverMode(
+        final @TrustedRecursiveResolverMode int mode) {
+      getSettings().setTrustedRecursiveResolverMode(mode);
+      return this;
+    }
+
+    /**
+     * Set the DNS-over-HTTPS server URI.
+     *
+     * @param uri URI of the DNS-over-HTTPS server.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder trustedRecursiveResolverUri(final @NonNull String uri) {
+      getSettings().setTrustedRecursiveResolverUri(uri);
+      return this;
+    }
+
+    /**
+     * Set the factor by which to increase the keepalive timeout when the NS_HTTP_LARGE_KEEPALIVE
+     * flag is used for a connection.
+     *
+     * @param factor FACTOR by which to increase the keepalive timeout.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder largeKeepaliveFactor(final int factor) {
+      getSettings().setLargeKeepaliveFactor(factor);
+      return this;
+    }
   }
 
   private GeckoRuntime mRuntime;
@@ -591,6 +630,12 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("dom.security.https_only_mode", false);
   /* package */ final Pref<Boolean> mHttpsOnlyPrivateMode =
       new Pref<Boolean>("dom.security.https_only_mode_pbm", false);
+  /* package */ final PrefWithoutDefault<Integer> mTrustedRecursiveResolverMode =
+      new PrefWithoutDefault<>("network.trr.mode");
+  /* package */ final PrefWithoutDefault<String> mTrustedRecursiveResolverUri =
+      new PrefWithoutDefault<>("network.trr.uri");
+  /* package */ final PrefWithoutDefault<Integer> mLargeKeepalivefactor =
+      new PrefWithoutDefault<>("network.http.largeKeepaliveFactor");
   /* package */ final Pref<Integer> mProcessCount = new Pref<>("dom.ipc.processCount", 2);
   /* package */ final Pref<Boolean> mExtensionsWebAPIEnabled =
       new Pref<>("extensions.webapi.enabled", false);
@@ -1012,7 +1057,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       }
     }
     // OS prefs come second:
-    for (final String locale : getDefaultLocales()) {
+    for (final String locale : getSystemLocalesForAcceptLanguage()) {
       final String localeLowerCase = locale.toLowerCase(Locale.ROOT);
       if (!locales.containsKey(localeLowerCase)) {
         locales.put(localeLowerCase, locale);
@@ -1022,33 +1067,20 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return TextUtils.join(",", locales.values());
   }
 
-  private static String[] getDefaultLocales() {
+  private static String[] getSystemLocalesForAcceptLanguage() {
     if (VERSION.SDK_INT >= 24) {
       final LocaleList localeList = LocaleList.getDefault();
       final String[] locales = new String[localeList.size()];
       for (int i = 0; i < localeList.size(); i++) {
-        locales[i] = localeList.get(i).toLanguageTag();
+        // accept-language should be language or language-region format.
+        locales[i] = LocaleUtils.getLanguageTagForAcceptLanguage(localeList.get(i));
       }
       return locales;
     }
     final String[] locales = new String[1];
     final Locale locale = Locale.getDefault();
-    locales[0] = locale.toLanguageTag();
+    locales[0] = LocaleUtils.getLanguageTagForAcceptLanguage(locale);
     return locales;
-  }
-
-  private static String getLanguageTag(final Locale locale) {
-    final StringBuilder out = new StringBuilder(locale.getLanguage());
-    final String country = locale.getCountry();
-    final String variant = locale.getVariant();
-    if (!TextUtils.isEmpty(country)) {
-      out.append('-').append(country);
-    }
-    if (!TextUtils.isEmpty(variant)) {
-      out.append('-').append(variant);
-    }
-    // e.g. "en", "en-US", or "en-US-POSIX".
-    return out.toString();
   }
 
   /**
@@ -1488,6 +1520,129 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       default:
         throw new IllegalArgumentException("Invalid setting for setAllowInsecureConnections");
     }
+    return this;
+  }
+
+  /** The trusted recursive resolver (TRR) modes. */
+  @Retention(RetentionPolicy.SOURCE)
+  @IntDef({TRR_MODE_OFF, TRR_MODE_FIRST, TRR_MODE_ONLY, TRR_MODE_DISABLED})
+  public @interface TrustedRecursiveResolverMode {}
+
+  /** Off (default). Use native DNS resolution by default. */
+  public static final int TRR_MODE_OFF = 0;
+
+  /**
+   * First. Use TRR first, and only if the name resolve fails use the native resolver as a fallback.
+   */
+  public static final int TRR_MODE_FIRST = 2;
+
+  /** Only. Only use TRR, never use the native resolver. */
+  public static final int TRR_MODE_ONLY = 3;
+
+  /**
+   * Off by choice. This is the same as 0 but marks it as done by choice and not done by default.
+   */
+  public static final int TRR_MODE_DISABLED = 5;
+
+  /**
+   * Get whether and how DNS-over-HTTPS (Trusted Recursive Resolver) is configured.
+   *
+   * @return One of the {@link GeckoRuntimeSettings#TRR_MODE_OFF TrustedRecursiveResolverMode}
+   *     constants.
+   */
+  public @TrustedRecursiveResolverMode int getTrustedRecusiveResolverMode() {
+    final int mode = mTrustedRecursiveResolverMode.get();
+    switch (mode) {
+      case 2:
+        return TRR_MODE_FIRST;
+      case 3:
+        return TRR_MODE_ONLY;
+      case 5:
+        return TRR_MODE_DISABLED;
+      default:
+      case 0:
+        return TRR_MODE_OFF;
+    }
+  }
+
+  /**
+   * Get the factor by which to increase the keepalive timeout when the NS_HTTP_LARGE_KEEPALIVE flag
+   * is used for a connection.
+   *
+   * @return An integer factor.
+   */
+  public @NonNull int getLargeKeepaliveFactor() {
+    return mLargeKeepalivefactor.get();
+  }
+
+  /**
+   * Set whether and how DNS-over-HTTPS (Trusted Recursive Resolver) is configured.
+   *
+   * @param mode One of the {@link GeckoRuntimeSettings#TRR_MODE_OFF TrustedRecursiveResolverMode}
+   *     constants.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setTrustedRecursiveResolverMode(
+      final @TrustedRecursiveResolverMode int mode) {
+    switch (mode) {
+      case TRR_MODE_OFF:
+      case TRR_MODE_FIRST:
+      case TRR_MODE_ONLY:
+      case TRR_MODE_DISABLED:
+        mTrustedRecursiveResolverMode.commit(mode);
+        break;
+      default:
+        throw new IllegalArgumentException("Invalid setting for setTrustedRecursiveResolverMode");
+    }
+    return this;
+  }
+
+  private static final int DEFAULT_LARGE_KEEPALIVE_FACTOR = 1;
+
+  private int sanitizeLargeKeepaliveFactor(final int factor) {
+    if (factor < 1 || factor > 10) {
+      if (BuildConfig.DEBUG_BUILD) {
+        throw new IllegalArgumentException(
+            "largeKeepaliveFactor must be between 1 to 10 inclusive");
+      } else {
+        Log.e(LOGTAG, "largeKeepaliveFactor must be between 1 to 10 inclusive");
+        return DEFAULT_LARGE_KEEPALIVE_FACTOR;
+      }
+    }
+
+    return factor;
+  }
+
+  /**
+   * Set the factor by which to increase the keepalive timeout when the NS_HTTP_LARGE_KEEPALIVE flag
+   * is used for a connection.
+   *
+   * @param factor FACTOR by which to increase the keepalive timeout.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setLargeKeepaliveFactor(final int factor) {
+    final int newFactor = sanitizeLargeKeepaliveFactor(factor);
+    mLargeKeepalivefactor.commit(newFactor);
+    return this;
+  }
+
+  /**
+   * Get the DNS-over-HTTPS (DoH) server URI.
+   *
+   * @return URI of the DoH server.
+   */
+  public @NonNull String getTrustedRecursiveResolverUri() {
+    return mTrustedRecursiveResolverUri.get();
+  }
+
+  /**
+   * Set the DNS-over-HTTPS server URI.
+   *
+   * @param uri URI of the DNS-over-HTTPS server.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setTrustedRecursiveResolverUri(final @NonNull String uri) {
+    mTrustedRecursiveResolverUri.commit(uri);
     return this;
   }
 

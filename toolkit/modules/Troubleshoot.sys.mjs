@@ -52,6 +52,7 @@ const PREFS_FOR_DISPLAY = [
   "browser.startup.homepage",
   "browser.startup.page",
   "browser.tabs.",
+  "browser.toolbars.",
   "browser.urlbar.",
   "browser.zoom.",
   "doh-rollout.",
@@ -412,6 +413,11 @@ var dataProviders = {
         remoteType = remoteType === "preallocated" ? "prealloc" : remoteType;
       } catch (e) {}
 
+      // We will split Utility by actor name, so do not do it now
+      if (remoteType === "utility") {
+        continue;
+      }
+
       // The parent process is also managed by the ppmm (because
       // of non-remote tabs), but it doesn't have a remoteType.
       if (!remoteType) {
@@ -422,6 +428,20 @@ var dataProviders = {
         remoteTypes[remoteType]++;
       } else {
         remoteTypes[remoteType] = 1;
+      }
+    }
+
+    for (let i = 0; i < processInfo.children.length; i++) {
+      if (processInfo.children[i].type === "utility") {
+        for (let utilityWithActor of processInfo.children[i].utilityActors.map(
+          e => `utility_${e.actorName}`
+        )) {
+          if (remoteTypes[utilityWithActor]) {
+            remoteTypes[utilityWithActor]++;
+          } else {
+            remoteTypes[utilityWithActor] = 1;
+          }
+        }
       }
     }
 
@@ -658,6 +678,7 @@ var dataProviders = {
         cleartypeParameters: "clearTypeParameters",
         TargetFrameRate: "targetFrameRate",
         windowProtocol: null,
+        fontVisibilityDeterminationStr: "supportFontDetermination",
       };
 
       for (let prop in gfxInfoProps) {

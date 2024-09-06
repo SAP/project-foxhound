@@ -102,8 +102,10 @@ class ExternalEngineStateMachine final
 
   bool IsCDMProxySupported(CDMProxy* aProxy) override;
 
+  bool IsExternalEngineStateMachine() const override { return true; }
+
  private:
-  ~ExternalEngineStateMachine() = default;
+  ~ExternalEngineStateMachine();
 
   void AssertOnTaskQueue() const { MOZ_ASSERT(OnTaskQueue()); }
 
@@ -233,6 +235,7 @@ class ExternalEngineStateMachine final
   void PreservesPitchChanged() override;
   void PlayStateChanged() override;
   void LoopingChanged() override;
+  void PlaybackRateChanged();
 
   // Not supported.
   void SetIsLiveStream(bool aIsLiveStream) override {}
@@ -291,6 +294,10 @@ class ExternalEngineStateMachine final
 
   void RecoverFromCDMProcessCrashIfNeeded();
 
+  void ReportTelemetry(const MediaResult& aError);
+
+  void DecodeError(const MediaResult& aError) override;
+
   UniquePtr<ExternalPlaybackEngine> mEngine;
 
   bool mHasEnoughAudio = false;
@@ -301,9 +308,20 @@ class ExternalEngineStateMachine final
   // Only used if setting CDM happens before the engine finishes initialization.
   MozPromiseHolder<SetCDMPromise> mSetCDMProxyPromise;
   MozPromiseRequestHolder<SetCDMPromise> mSetCDMProxyRequest;
+  MozPromiseRequestHolder<GenericNonExclusivePromise> mInitEngineForCDMRequest;
 
   // It would be zero for audio-only playback.
   gfx::IntSize mVideoDisplay;
+
+  // It would be set if playback is encrypted.
+  nsCString mKeySystem;
+
+  // This array stores the tasks which needs to be executed only after the
+  // engine is ready but is called before that. It will be executed when
+  // starting running the engine.
+  nsTArray<RefPtr<nsIRunnable>> mPendingTasks;
+
+  bool mHasFatalError = false;
 };
 
 class ExternalPlaybackEngine {

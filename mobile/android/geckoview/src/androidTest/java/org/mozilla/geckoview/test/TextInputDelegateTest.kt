@@ -537,7 +537,8 @@ class TextInputDelegateTest : BaseSessionTest() {
             "Can commit text (select before)",
             ic,
             "foobarfoo",
-            5, /* checkGecko */
+            5,
+            /* checkGecko */
             false,
         )
     }
@@ -641,7 +642,8 @@ class TextInputDelegateTest : BaseSessionTest() {
             "Can set new composing region text",
             ic,
             "frabar",
-            6, /* checkGecko */
+            6,
+            /* checkGecko */
             false,
         )
 
@@ -826,7 +828,13 @@ class TextInputDelegateTest : BaseSessionTest() {
         }.joinToString("")
         setupContent(content)
         val ic = mainSession.textInput.onCreateInputConnection(EditorInfo())!!
-        assertText("Can set large initial text", ic, content, /* checkGecko */ false)
+        assertText(
+            "Can set large initial text",
+            ic,
+            content,
+            /* checkGecko */
+            false,
+        )
     }
 
     @SdkSuppress(minSdkVersion = Build.VERSION_CODES.N_MR1)
@@ -1279,6 +1287,25 @@ class TextInputDelegateTest : BaseSessionTest() {
         assertText("commit abc", ic, "abc")
     }
 
+    // Bug 1837931 - When 2nd commitText uses -1 as newCursorPosition into batch mode, text
+    // cannot insert correct position.
+    @WithDisplay(width = 512, height = 512)
+    // Child process updates require having a display.
+    @Test
+    fun inputConnection_multiple_commitText_into_batchEdit() {
+        setupContent("")
+        val ic = mainSession.textInput.onCreateInputConnection(EditorInfo())!!
+
+        // Emulate GBoard's InputConnection API calls
+        ic.beginBatchEdit()
+        ic.commitText("( ", 1)
+        ic.commitText(")", -1)
+        ic.endBatchEdit()
+        processChildEvents()
+
+        assertText("commit ()", ic, "( )")
+    }
+
     // Bug 1593683 - Cursor is jumping when using the arrow keys in input field on GBoard
     @WithDisplay(width = 512, height = 512)
     // Child process updates require having a display.
@@ -1294,7 +1321,14 @@ class TextInputDelegateTest : BaseSessionTest() {
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
         pressKey(ic, KeyEvent.KEYCODE_DPAD_LEFT)
-        assertSelection("IME caret is moved to top", ic, 0, 0, /* checkGecko */ false)
+        assertSelection(
+            "IME caret is moved to top",
+            ic,
+            0,
+            0,
+            /* checkGecko */
+            false,
+        )
 
         setComposingText(ic, "bar", 1)
         finishComposingText(ic)

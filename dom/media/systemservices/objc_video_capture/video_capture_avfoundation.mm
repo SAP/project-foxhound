@@ -88,10 +88,11 @@ AVCaptureDeviceFormat* _Nullable FindFormat(
 
 - (void)capturer:(RTCVideoCapturer* _Nonnull)capturer
     didCaptureVideoFrame:(RTCVideoFrame* _Nonnull)frame {
-  rtc::scoped_refptr<webrtc::videocapturemodule::VideoCaptureAvFoundation> cap;
+  webrtc::scoped_refptr<webrtc::videocapturemodule::VideoCaptureAvFoundation>
+      cap;
   {
     webrtc::MutexLock lock(&_mutex);
-    cap = rtc::scoped_refptr(_capturer);
+    cap = webrtc::scoped_refptr(_capturer);
   }
   if (!cap) return;
   cap->OnFrame(frame);

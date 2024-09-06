@@ -1550,7 +1550,18 @@ messaging_experiments:
       "moments_page",
       "infobar",
       "spotlight",
-      "featureCallout"
+      "featureCallout",
+      "fxms_message_1",
+      "fxms_message_2",
+      "fxms_message_3",
+      "fxms_message_4",
+      "fxms_message_5",
+      "fxms_message_6",
+      "fxms_message_7",
+      "fxms_message_8",
+      "fxms_message_9",
+      "fxms_message_10",
+      "fxms_message_11"
     ]
     methods: ["reach"]
     release_channel_collection: opt-out
@@ -1590,16 +1601,6 @@ messaging_experiments:
     notification_emails:
       - ujet@mozilla.com
     expiry_version: never
-
-telemetry:
-  early_event:
-    objects: ["startup"]
-    bug_numbers: [1837230, 1850873]
-    notification_emails: ["chutten@mozilla.com"]
-    products: ["firefox"]
-    record_in_processes: ["main"]
-    description: This is a mirrored-to verification event.
-    expiry_version: "125"
 
 # This category contains event entries used for Telemetry tests.
 # They will not be sent out with any pings.
@@ -2523,9 +2524,6 @@ security.ui.protectionspopup:
     objects: [
       "etp_toggle_on",
       "etp_toggle_off",
-      "sitenotworking_link",
-      "send_report_link",
-      "send_report_submit",
       "social",
       "cookies",
       "trackers",
@@ -3328,6 +3326,24 @@ security.ui.certerror:
       has_sts: If the error page is for a site with HSTS headers or with a pinned key.
       panel_open: If the advanced panel was open at the time of the interaction.
 
+security.ui.tlserror:
+  load:
+    objects: ["abouttlserror"]
+    bug_numbers:
+      - 1881335
+    description: >
+      The about:neterror page is loaded with a TLS error or non-overridable certificate error, keyed by error code.
+    expiry_version: never
+    notification_emails:
+      - dkeeler@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - "firefox"
+    record_in_processes: ["content"]
+    extra_keys:
+      is_frame: If the error page is loaded in an iframe.
+
 slow_script_warning:
   shown:
     bug_numbers:
@@ -3494,6 +3510,48 @@ avif:
     expiry_version: never
     notification_emails:
       - media-alerts@mozilla.com
+
+mfcdm:
+  eme_playback:
+    objects: ["gecko"]
+    bug_numbers: [1873394]
+    description:
+      Record the information about the EME playback when using the media engine.
+      The value of this event is the key system name.
+    products:
+      - firefox
+    record_in_processes: ["all"]
+    release_channel_collection: opt-out
+    expiry_version: "130"
+    notification_emails:
+      - media-alerts@mozilla.com
+    extra_keys:
+      key_system: The key system used for the EME playback
+      video_codec: The video codec used for playback
+      resolution: The video resolution used for playback
+      played_time: The amount of time the EME content has been played (in seconds)
+      rendered_frames: The amount of video frames has been rendered
+      dropped_frames: The amount of video frames don't get rendered but dropped
+  error:
+    objects: ["gecko"]
+    bug_numbers: [1873394]
+    description:
+      Record the error or crash happened while using the media engine playback.
+      The value of this event is the name of error.
+    products:
+      - firefox
+    record_in_processes: ["all"]
+    release_channel_collection: opt-out
+    expiry_version: "130"
+    notification_emails:
+      - media-alerts@mozilla.com
+    extra_keys:
+      error_name: The name of the error
+      current_state: The state of the external state machine was being used when the error or crash happened
+      video_codec: The video codec was being used when the error or crash happened
+      audio_codec: The audio codec was being used when the error or crash happened
+      resolution: The video resolution was being used when the error or crash happened
+      key_system: The key system was being used when the error or crash happened
 
 installation:
   first_seen:
@@ -3859,6 +3917,20 @@ firefoxview_next:
       - main
     bug_numbers:
       - 1842616
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  close_open_tab:
+    objects: ["tabs"]
+    description: >
+      Recorded when a tab is closed via the close button on an open tab row.
+    notification_emails:
+      - firefoxview@mozilla.com
+    products:
+      - "firefox"
+    record_in_processes:
+      - main
+    bug_numbers:
+      - 1857298
     expiry_version: "never"
     release_channel_collection: opt-out
   browser_context_menu:

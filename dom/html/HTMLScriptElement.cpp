@@ -25,6 +25,7 @@
 #include "nsDOMJSUtils.h"
 #include "nsIScriptError.h"
 #include "nsISupportsImpl.h"
+#include "nsDOMTokenList.h"
 #include "nsTaintingUtils.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLScriptElement.h"
@@ -52,9 +53,14 @@ HTMLScriptElement::HTMLScriptElement(
 
 HTMLScriptElement::~HTMLScriptElement() = default;
 
-NS_IMPL_ISUPPORTS_INHERITED(HTMLScriptElement, nsGenericHTMLElement,
-                            nsIScriptLoaderObserver, nsIScriptElement,
-                            nsIMutationObserver)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLScriptElement,
+                                             nsGenericHTMLElement,
+                                             nsIScriptLoaderObserver,
+                                             nsIScriptElement,
+                                             nsIMutationObserver)
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLScriptElement, nsGenericHTMLElement,
+                                   mBlocking)
 
 nsresult HTMLScriptElement::BindToTree(BindContext& aContext,
                                        nsINode& aParent) {
@@ -85,6 +91,12 @@ bool HTMLScriptElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
     if (aAttribute == nsGkAtoms::fetchpriority) {
       ParseFetchPriority(aValue, aResult);
+      return true;
+    }
+
+    if (aAttribute == nsGkAtoms::blocking &&
+        StaticPrefs::dom_element_blocking_enabled()) {
+      aResult.ParseAtomArray(aValue);
       return true;
     }
   }
@@ -255,6 +267,24 @@ bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
   return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module") ||
 
          aType.EqualsLiteral("importmap");
+}
+
+nsDOMTokenList* HTMLScriptElement::Blocking() {
+  if (!mBlocking) {
+    mBlocking =
+        new nsDOMTokenList(this, nsGkAtoms::blocking, sSupportedBlockingValues);
+  }
+  return mBlocking;
+}
+
+bool HTMLScriptElement::IsPotentiallyRenderBlocking() {
+  return BlockingContainsRender();
+
+  // TODO: handle implicitly potentially render blocking
+  // https://html.spec.whatwg.org/#implicitly-potentially-render-blocking
+  // A script element el is implicitly potentially render-blocking if el's type
+  // is "classic", el is parser-inserted, and el does not have an async or defer
+  // attribute.
 }
 
 }  // namespace mozilla::dom

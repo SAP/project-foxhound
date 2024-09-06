@@ -320,13 +320,14 @@ impl crate::Adapter<super::Api> for super::Adapter {
         let pc = &self.shared.private_caps;
         Some(crate::SurfaceCapabilities {
             formats,
-            //Note: this is hardcoded in `CAMetalLayer` documentation
-            swap_chain_sizes: if pc.can_set_maximum_drawables_count {
-                2..=3
+            // We use this here to govern the maximum number of drawables + 1.
+            // See https://developer.apple.com/documentation/quartzcore/cametallayer/2938720-maximumdrawablecount
+            maximum_frame_latency: if pc.can_set_maximum_drawables_count {
+                1..=2
             } else {
-                // 3 is the default in `CAMetalLayer` documentation
+                // 3 is the default value for maximum drawables in `CAMetalLayer` documentation
                 // iOS 10.3 was tested to use 3 on iphone5s
-                3..=3
+                2..=2
             },
             present_modes: if pc.can_set_display_sync {
                 vec![wgt::PresentMode::Fifo, wgt::PresentMode::Immediate]
@@ -730,6 +731,12 @@ impl super::PrivateCapabilities {
             } else {
                 4
             },
+            // Per https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
+            max_color_attachment_bytes_per_sample: if device.supports_family(MTLGPUFamily::Apple4) {
+                64
+            } else {
+                32
+            },
             max_varying_components: if device
                 .supports_feature_set(MTLFeatureSet::macOS_GPUFamily1_v1)
             {
@@ -832,7 +839,7 @@ impl super::PrivateCapabilities {
             self.indirect_draw_dispatch,
         );
         features.set(
-            F::TIMESTAMP_QUERY,
+            F::TIMESTAMP_QUERY | F::TIMESTAMP_QUERY_INSIDE_ENCODERS,
             self.timestamp_query_support
                 .contains(TimestampQuerySupport::STAGE_BOUNDARIES),
         );
@@ -871,6 +878,10 @@ impl super::PrivateCapabilities {
         {
             features.insert(F::STORAGE_RESOURCE_BINDING_ARRAY);
         }
+        features.set(
+            F::SHADER_INT64,
+            self.msl_version >= MTLLanguageVersion::V2_3,
+        );
 
         features.set(
             F::ADDRESS_MODE_CLAMP_TO_BORDER,
@@ -939,6 +950,10 @@ impl super::PrivateCapabilities {
                 min_uniform_buffer_offset_alignment: self.buffer_alignment as u32,
                 min_storage_buffer_offset_alignment: self.buffer_alignment as u32,
                 max_inter_stage_shader_components: self.max_varying_components,
+                max_color_attachments: (self.max_color_render_targets as u32)
+                    .min(crate::MAX_COLOR_ATTACHMENTS as u32),
+                max_color_attachment_bytes_per_sample: self.max_color_attachment_bytes_per_sample
+                    as u32,
                 max_compute_workgroup_storage_size: self.max_total_threadgroup_memory,
                 max_compute_invocations_per_workgroup: self.max_threads_per_group,
                 max_compute_workgroup_size_x: self.max_threads_per_group,

@@ -10,7 +10,7 @@ preference as it is displayed in `about:config` will be `browser.newtabpage.acti
 ## Defining new preferences
 
 All preferences for Activity Stream should be defined in the `PREFS_CONFIG` Array
-found in `lib/ActivityStream.jsm`.
+found in `lib/ActivityStream.sys.mjs`.
 The configuration object should have a `name` (the name of the pref), a `title`
 that describes the functionality of the pref, and a `value`, the default value
 of the pref. Optionally a `getValue` function can be provided to dynamically
@@ -43,7 +43,7 @@ pref in the following files:
 
 You can see an example in [this patch](https://github.com/mozilla/activity-stream/pull/2977).
 
-## Reading, setting, and observing preferences from `.jsm`s
+## Reading, setting, and observing preferences from `.sys.mjs`s
 
 To read/set/observe Activity Stream preferences, construct a `Prefs` instance found in `lib/ActivityStreamPrefs.sys.mjs`.
 

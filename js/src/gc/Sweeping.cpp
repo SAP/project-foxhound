@@ -264,13 +264,13 @@ void GCRuntime::backgroundFinalize(JS::GCContext* gcx, Zone* zone,
     return;
   }
 
-  SortedArenaList finalizedSorted(Arena::thingsPerArena(kind));
+  SortedArenaList finalizedSorted(kind);
 
   auto unlimited = SliceBudget::unlimited();
   FinalizeArenas(gcx, arenas, finalizedSorted, kind, unlimited);
   MOZ_ASSERT(arenas.isEmpty());
 
-  finalizedSorted.extractEmpty(empty);
+  finalizedSorted.extractEmptyTo(empty);
 
   // When marking begins, all arenas are moved from arenaLists to
   // collectingArenaLists. When the mutator runs, new arenas are allocated in
@@ -310,7 +310,7 @@ void ArenaLists::mergeFinalizedArenas(AllocKind kind,
   ArenaList& arenas = arenaList(kind);
 
   ArenaList allocatedDuringCollection = std::move(arenas);
-  arenas = finalizedArenas.toArenaList();
+  arenas = finalizedArenas.convertToArenaList();
   arenas.insertListWithCursorAtEnd(allocatedDuringCollection);
 
   collectingArenaList(kind).clear();
@@ -1760,14 +1760,11 @@ bool GCRuntime::foregroundFinalize(JS::GCContext* gcx, Zone* zone,
   // GCRuntime::sweepBackgroundThings for more details).
   if (!FinalizeArenas(gcx, lists.collectingArenaList(thingKind), sweepList,
                       thingKind, sliceBudget)) {
-    // Copy the current contents of sweepList so that ArenaIter can find them.
-    lists.setIncrementalSweptArenas(thingKind, sweepList);
     return false;
   }
 
-  sweepList.extractEmpty(&lists.savedEmptyArenas.ref());
+  sweepList.extractEmptyTo(&lists.savedEmptyArenas.ref());
   lists.mergeFinalizedArenas(thingKind, sweepList);
-  lists.clearIncrementalSweptArenas();
 
   return true;
 }
@@ -1952,21 +1949,43 @@ IncrementalProgress GCRuntime::finalizeAllocKind(JS::GCContext* gcx,
                                                  SliceBudget& budget) {
   MOZ_ASSERT(sweepZone->isGCSweeping());
 
-  // Set the number of things per arena for this AllocKind.
-  size_t thingsPerArena = Arena::thingsPerArena(sweepAllocKind);
-  auto& sweepList = incrementalSweepList.ref();
-  sweepList.setThingsPerArena(thingsPerArena);
+  auto& finalizedArenas = foregroundFinalizedArenas.ref();
+  if (!finalizedArenas) {
+    finalizedArenas.emplace(sweepAllocKind);
+    foregroundFinalizedZone = sweepZone;
+    foregroundFinalizedAllocKind = sweepAllocKind;
+  } else {
+    MOZ_ASSERT(finalizedArenas->allocKind() == sweepAllocKind);
+    MOZ_ASSERT(foregroundFinalizedZone == sweepZone);
+    MOZ_ASSERT(foregroundFinalizedAllocKind == sweepAllocKind);
+  }
 
   AutoSetThreadIsFinalizing threadIsFinalizing(gcx);
-
-  if (!foregroundFinalize(gcx, sweepZone, sweepAllocKind, budget, sweepList)) {
+  if (!foregroundFinalize(gcx, sweepZone, sweepAllocKind, budget,
+                          finalizedArenas.ref())) {
     return NotFinished;
   }
 
-  // Reset the slots of the sweep list that we used.
-  sweepList.reset(thingsPerArena);
+  finalizedArenas.reset();
+  foregroundFinalizedZone = nullptr;
+  foregroundFinalizedAllocKind = AllocKind::LIMIT;
 
   return Finished;
+}
+
+SortedArenaList* GCRuntime::maybeGetForegroundFinalizedArenas(Zone* zone,
+                                                              AllocKind kind) {
+  MOZ_ASSERT(zone);
+  MOZ_ASSERT(IsValidAllocKind(kind));
+
+  auto& finalizedArenas = foregroundFinalizedArenas.ref();
+
+  if (finalizedArenas.isNothing() || zone != foregroundFinalizedZone ||
+      kind != foregroundFinalizedAllocKind) {
+    return nullptr;
+  }
+
+  return finalizedArenas.ptr();
 }
 
 IncrementalProgress GCRuntime::sweepPropMapTree(JS::GCContext* gcx,
@@ -2374,6 +2393,14 @@ void GCRuntime::endSweepPhase(bool destroyingRuntime) {
   gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::SWEEP);
 
   MOZ_ASSERT_IF(destroyingRuntime, !useBackgroundThreads);
+
+  // Release parallel marking threads for worker runtimes now we've finished
+  // marking. The main thread keeps the reservation as long as parallel marking
+  // is enabled.
+  if (!rt->isMainRuntime()) {
+    MOZ_ASSERT_IF(useParallelMarking, reservedMarkingThreads != 0);
+    releaseMarkingThreads();
+  }
 
   {
     gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::DESTROY);

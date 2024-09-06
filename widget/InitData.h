@@ -37,11 +37,6 @@ enum class PopupLevel : uint8_t {
   // The popup appears just above its parent and maintains its position
   // relative to the parent.
   Parent,
-  // The popup is a floating popup used for tool palettes. A parent window must
-  // be specified, but a platform implementation need not use this. On Windows,
-  // floating is generally equivalent to parent. On Mac, floating puts the
-  // popup at toplevel, but it will hide when the application is deactivated.
-  Floating,
   // The popup appears on top of other windows, including those of other
   // applications.
   Top,
@@ -91,7 +86,6 @@ struct InitData {
   // when painting exclude area occupied by child windows and sibling windows
   bool mClipChildren = false;
   bool mClipSiblings = false;
-  bool mForMenupopupFrame = false;
   bool mRTL = false;
   bool mNoAutoHide = false;   // true for noautohide panels
   bool mIsDragPopup = false;  // true for drag feedback panels

@@ -787,7 +787,7 @@ var contentScripts = new DefaultWeakMap(matcher => {
  * An execution context for semi-privileged extension content scripts.
  *
  * This is the child side of the ContentScriptContextParent class
- * defined in ExtensionParent.jsm.
+ * defined in ExtensionParent.sys.mjs.
  */
 class ContentScriptContextChild extends BaseContext {
   constructor(extension, contentWindow) {
@@ -1035,7 +1035,7 @@ DocumentManager = {
   },
 
   observers: {
-    "inner-window-destroyed"(subject, topic, data) {
+    "inner-window-destroyed"(subject) {
       let windowId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
 
       // Close any existent content-script context for the destroyed window.

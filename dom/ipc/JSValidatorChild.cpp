@@ -179,7 +179,12 @@ JSValidatorChild::GetUTF8EncodedContent(
 
 JSValidatorChild::ValidatorResult JSValidatorChild::ShouldAllowJS(
     const mozilla::Span<const char>& aSpan) const {
-  MOZ_ASSERT(!aSpan.IsEmpty());
+  // It's possible that the data we get is not valid UTF-8, so aSpan
+  // ends empty here. We should treat it as a failure because this
+  // is not valid JS.
+  if (aSpan.IsEmpty()) {
+    return ValidatorResult::Failure;
+  }
 
   MOZ_DIAGNOSTIC_ASSERT(IsUtf8(aSpan));
 
@@ -202,9 +207,8 @@ JSValidatorChild::ValidatorResult JSValidatorChild::ShouldAllowJS(
   prefableOptions.setAsmJSOption(JS::AsmJSOption::DisabledByAsmJSPref);
 
   JS::CompileOptions options(prefableOptions);
-  JS::CompilationStorage storage;
   RefPtr<JS::Stencil> stencil =
-      JS::CompileGlobalScriptToStencil(fc, options, srcBuf, storage);
+      JS::CompileGlobalScriptToStencil(fc, options, srcBuf);
 
   if (!stencil) {
     JS::ClearFrontendErrors(fc);

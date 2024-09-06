@@ -734,7 +734,7 @@ add_task(async function test_clean_real_os_error() {
       equal(failureReason.name, "unexpectederror");
       equal(
         failureReason.error,
-        "OS error [File/Path not found] Could not open the file at [profileDir]/no/such/path.json"
+        "OS error [File/Path not found] Could not open `[profileDir]/no/such/path.json': file does not exist"
       );
     });
   } finally {
@@ -1351,7 +1351,7 @@ add_task(async function test_no_node_type() {
   await configureIdentity(null, server);
 
   await sync_and_validate_telem(ping => {
-    ok(ping.syncNodeType === undefined);
+    Assert.strictEqual(ping.syncNodeType, undefined);
   }, true);
   await promiseStopServer(server);
 });

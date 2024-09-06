@@ -30,10 +30,6 @@ dnl Set the minimum version of toolkit libs used by mozilla
 dnl ========================================================
 W32API_VERSION=3.14
 
-dnl Set various checks
-dnl ========================================================
-MISSING_X=
-
 dnl Initialize the Pthread test variables early so they can be
 dnl  overridden by each platform.
 dnl ========================================================
@@ -100,7 +96,7 @@ case "$target" in
         AC_DEFINE(_CRT_NONSTDC_NO_WARNINGS)
 
         MSVC_C_RUNTIME_DLL=vcruntime140.dll
-        if test -n "$IS_VS2019_OR_MORE" -a "$TARGET_CPU" != "x86"; then
+        if test "$TARGET_CPU" != "x86"; then
             MSVC_C_RUNTIME_1_DLL=vcruntime140_1.dll
         fi
         MSVC_CXX_RUNTIME_DLL=msvcp140.dll
@@ -113,13 +109,6 @@ case "$target" in
         AC_SUBST(MSVC_CXX_RUNTIME_DLL)
 
         AC_DEFINE(HAVE_SEH_EXCEPTIONS)
-
-        if test -n "$WIN32_REDIST_DIR"; then
-          if test ! -d "$WIN32_REDIST_DIR"; then
-            AC_MSG_ERROR([Invalid Win32 Redist directory: ${WIN32_REDIST_DIR}])
-          fi
-          WIN32_REDIST_DIR=`cd "$WIN32_REDIST_DIR" && (pwd -W 2>/dev/null || pwd)`
-        fi
     else
         # Check w32api version
         _W32API_MAJOR_VERSION=`echo $W32API_VERSION | $AWK -F\. '{ print $1 }'`
@@ -193,77 +182,6 @@ if test "$GNU_CC"; then
         ASFLAGS="$ASFLAGS -fPIC"
     fi
 
-    AC_MSG_CHECKING([for --noexecstack option to as])
-    _SAVE_CFLAGS=$CFLAGS
-    CFLAGS="$CFLAGS -Wa,--noexecstack"
-    AC_TRY_COMPILE(,,AC_MSG_RESULT([yes])
-                     [ASFLAGS="$ASFLAGS -Wa,--noexecstack"],
-                     AC_MSG_RESULT([no]))
-    CFLAGS=$_SAVE_CFLAGS
-    AC_MSG_CHECKING([for -z noexecstack option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-z,noexecstack"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for -z text option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-z,text"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for -z relro option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-z,relro"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for -z now option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-z,now"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for -z nocopyreloc option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-z,nocopyreloc"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for -Bsymbolic-functions option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,-Bsymbolic-functions"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    # While sha1 is deterministic, it is slower.
-    if test -z "$DEVELOPER_OPTIONS"; then
-        build_id=sha1
-    else
-        build_id=uuid
-    fi
-    AC_MSG_CHECKING([for --build-id=$build_id option to ld])
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,--build-id=$build_id"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes]),
-                  AC_MSG_RESULT([no])
-                  LDFLAGS=$_SAVE_LDFLAGS)
-
-    AC_MSG_CHECKING([for --ignore-unresolved-symbol option to ld])
-    HAVE_LINKER_SUPPORT_IGNORE_UNRESOLVED=
-    _SAVE_LDFLAGS=$LDFLAGS
-    LDFLAGS="$LDFLAGS -Wl,--ignore-unresolved-symbol,environ"
-    AC_TRY_LINK(,,AC_MSG_RESULT([yes])
-                  [HAVE_LINKER_SUPPORT_IGNORE_UNRESOLVED=1],
-                  AC_MSG_RESULT([no]))
-    LDFLAGS=$_SAVE_LDFLAGS
-
     DSO_LDOPTS='-shared'
     if test "$GCC_USE_GNU_LD"; then
         # Some tools like ASan use a runtime library that is only
@@ -276,7 +194,7 @@ if test "$GNU_CC"; then
             # BSDs need `environ' exposed for posix_spawn (bug 753046)
             case "$OS_TARGET" in
             DragonFly|FreeBSD|NetBSD|OpenBSD)
-                if test -n "$HAVE_LINKER_SUPPORT_IGNORE_UNRESOLVED"; then
+                if test "$HAVE_LINKER_SUPPORT_IGNORE_UNRESOLVED" = 1; then
                     DSO_LDOPTS="$DSO_LDOPTS -Wl,--ignore-unresolved-symbol,environ"
                 else
                     DSO_LDOPTS="$DSO_LDOPTS -Wl,--warn-unresolved-symbols"
@@ -346,31 +264,12 @@ dnl ========================================================
 dnl System overrides of the defaults for target
 dnl ========================================================
 
+MOZ_OPTIMIZE_LDFLAGS="${_COMPILATION_OPTIMIZE_LDFLAGS} ${MOZ_OPTIMIZE_FLAGS}"
+
 case "$target" in
 *-darwin*)
     MOZ_OPTIMIZE_FLAGS="-O3"
     DSO_LDOPTS=''
-
-    dnl DTrace and -dead_strip don't interact well. See bug 403132.
-    dnl ===================================================================
-    if test "x$enable_dtrace" = "xyes"; then
-        echo "Skipping -dead_strip because DTrace is enabled. See bug 403132."
-    else
-        dnl check for the presence of the -dead_strip linker flag
-        AC_MSG_CHECKING([for -dead_strip option to ld])
-        _SAVE_LDFLAGS=$LDFLAGS
-        LDFLAGS="$LDFLAGS -Wl,-dead_strip"
-        AC_TRY_LINK(,[return 0;],_HAVE_DEAD_STRIP=1,_HAVE_DEAD_STRIP=)
-        if test -n "$_HAVE_DEAD_STRIP" ; then
-            AC_MSG_RESULT([yes])
-            MOZ_OPTIMIZE_LDFLAGS="-Wl,-dead_strip"
-        else
-            AC_MSG_RESULT([no])
-        fi
-
-        LDFLAGS=$_SAVE_LDFLAGS
-    fi
-
     MOZ_FIX_LINK_PATHS=
     ;;
 
@@ -570,13 +469,9 @@ fi # COMPILE_ENVIRONMENT
 if test -z "$SKIP_COMPILER_CHECKS"; then
 dnl Checks for typedefs, structures, and compiler characteristics.
 dnl ========================================================
-AC_C_CONST
 AC_TYPE_MODE_T
 AC_TYPE_OFF_T
 AC_TYPE_PID_T
-AC_TYPE_SIZE_T
-AC_LANG_CPLUSPLUS
-AC_LANG_C
 
 AC_LANG_CPLUSPLUS
 
@@ -722,69 +617,6 @@ then
 fi
 
 
-dnl Checks for library functions.
-dnl ========================================================
-
-dnl check for clock_gettime(), the CLOCK_MONOTONIC clock
-AC_CACHE_CHECK(for clock_gettime(CLOCK_MONOTONIC),
-               ac_cv_clock_monotonic,
-               [for libs in "" -lrt; do
-                    _SAVE_LIBS="$LIBS"
-                    LIBS="$LIBS $libs"
-dnl clock_gettime is available on OSX since 10.12, so depending on MACOSX_DEPLOYMENT_TARGET,
-dnl we should or not be able to use it. To detect if we can, we need to make the
-dnl availability attribute strict, so that compilation fails when the target is < 10.12.
-                    AC_TRY_LINK([#define availability(os, ...) availability(os, strict, __VA_ARGS)
-                                 #include <time.h>],
-                                 [ struct timespec ts;
-                                   clock_gettime(CLOCK_MONOTONIC, &ts); ],
-                                 ac_cv_clock_monotonic=$libs
-                                 LIBS="$_SAVE_LIBS"
-                                 break,
-                                 ac_cv_clock_monotonic=no)
-                    LIBS="$_SAVE_LIBS"
-                done])
-if test "$ac_cv_clock_monotonic" != "no"; then
-    HAVE_CLOCK_MONOTONIC=1
-    REALTIME_LIBS=$ac_cv_clock_monotonic
-    AC_DEFINE(HAVE_CLOCK_MONOTONIC)
-    AC_SUBST(HAVE_CLOCK_MONOTONIC)
-    AC_SUBST_LIST(REALTIME_LIBS)
-fi
-
-AC_CACHE_CHECK(
-    [for res_ninit()],
-    ac_cv_func_res_ninit,
-    [if test "$OS_TARGET" = NetBSD -o "$OS_TARGET" = OpenBSD; then
-        dnl no need for res_ninit() on NetBSD and OpenBSD
-        ac_cv_func_res_ninit=no
-     else
-        AC_TRY_LINK([
-            #ifdef linux
-            #define _BSD_SOURCE 1
-            #endif
-            #include <sys/types.h>
-            #include <netinet/in.h>
-            #include <arpa/nameser.h>
-            #include <resolv.h>
-            ],
-            [int foo = res_ninit(&_res);],
-            [ac_cv_func_res_ninit=yes],
-            [ac_cv_func_res_ninit=no])
-     fi
-    ])
-
-if test "$ac_cv_func_res_ninit" = "yes"; then
-    AC_DEFINE(HAVE_RES_NINIT)
-dnl must add the link line we do something as foolish as this... dougt
-dnl else
-dnl    AC_CHECK_LIB(bind, res_ninit, AC_DEFINE(HAVE_RES_NINIT),
-dnl        AC_CHECK_LIB(resolv, res_ninit, AC_DEFINE(HAVE_RES_NINIT)))
-fi
-
-AC_LANG_C
-
-dnl ===================================================================
 dnl ========================================================
 dnl Put your C++ language/feature checks below
 dnl ========================================================
@@ -814,40 +646,6 @@ if test "$GNU_CC"; then
   fi
 
   TARGET_COMPILER_ABI="${TARGET_COMPILER_ABI-${ARM_ABI_PREFIX}gcc3}"
-fi
-
-# try harder, when checking for __thread support, see bug 521750 comment #33 and below
-# We pass MOZ_OPTIMIZE_LDFLAGS to the linker because if dead_strip is
-# enabled, the linker in xcode 4.1 will crash. Without this it would crash when
-# linking XUL.
-_SAVE_LDFLAGS=$LDFLAGS
-LDFLAGS="$LDFLAGS $DSO_LDOPTS $MOZ_OPTIMIZE_LDFLAGS"
-AC_CACHE_CHECK(for __thread keyword for TLS variables,
-               ac_cv_thread_keyword,
-               [AC_TRY_LINK([__thread bool tlsIsMainThread = false;],
-                            [return tlsIsMainThread;],
-                            ac_cv_thread_keyword=yes,
-                            ac_cv_thread_keyword=no)])
-LDFLAGS=$_SAVE_LDFLAGS
-# The custom dynamic linker doesn't support TLS variables
-if test "$ac_cv_thread_keyword" = yes -a "$MOZ_LINKER" != 1; then
-  # mips builds fail with TLS variables because of a binutils bug.
-  # See bug 528687
-  # OpenBSD doesn't have TLS support, and the test succeeds with clang++
-  case "${target}" in
-    mips*-*)
-      :
-      ;;
-    *-android*|*-linuxandroid*)
-      :
-      ;;
-    *-openbsd*)
-      :
-      ;;
-    *)
-      AC_DEFINE(HAVE_THREAD_TLS_KEYWORD)
-      ;;
-  esac
 fi
 
 if test -n "$MOZ_LINKER"; then
@@ -1017,18 +815,7 @@ esac
 dnl ========================================================
 dnl = Jemalloc build setup
 dnl ========================================================
-if test -z "$MOZ_MEMORY"; then
-  case "${target}" in
-    *-mingw*)
-      if test -z "$WIN32_REDIST_DIR" -a -z "$MOZ_DEBUG"; then
-        AC_MSG_WARN([When not building jemalloc, you need to set WIN32_REDIST_DIR to the path to the Visual C++ Redist (usually VCINSTALLDIR/redist/x86/Microsoft.VC80.CRT, for VC++ v8) if you intend to distribute your build.])
-      fi
-      ;;
-  esac
-else
-  dnl The generic feature tests that determine how to compute ncpus are long and
-  dnl complicated.  Therefore, simply define special cpp variables for the
-  dnl platforms we have special knowledge of.
+if test -n "$MOZ_MEMORY"; then
   case "${target}" in
   *-mingw*)
     export MOZ_NO_DEBUG_RTL=1
@@ -1044,22 +831,6 @@ dnl ========================================================
 if test -n "$COMPILE_ENVIRONMENT"; then
 MOZ_CONFIG_CLANG_PLUGIN
 fi # COMPILE_ENVIRONMENT
-
-if test -z "$SKIP_COMPILER_CHECKS"; then
-dnl ========================================================
-dnl Check for gcc -pipe support
-dnl ========================================================
-AC_MSG_CHECKING([for -pipe support])
-if test -n "$GNU_CC" -a -n "$GNU_CXX"; then
-    dnl Any gcc that supports firefox supports -pipe.
-    CFLAGS="$CFLAGS -pipe"
-    CXXFLAGS="$CXXFLAGS -pipe"
-    AC_MSG_RESULT([yes])
-else
-    AC_MSG_RESULT([no])
-fi
-
-fi # ! SKIP_COMPILER_CHECKS
 
 AC_LANG_C
 
@@ -1254,9 +1025,6 @@ AC_SUBST(MOZ_SOURCE_REPO)
 AC_SUBST(MOZ_SOURCE_CHANGESET)
 AC_SUBST(MOZ_INCLUDE_SOURCE_INFO)
 
-dnl win32 options
-AC_SUBST(WIN32_REDIST_DIR)
-
 dnl Echo the CFLAGS to remove extra whitespace.
 CFLAGS=`echo \
     $_COMPILATION_CFLAGS \
@@ -1265,6 +1033,10 @@ CFLAGS=`echo \
 CXXFLAGS=`echo \
     $_COMPILATION_CXXFLAGS \
     $CXXFLAGS`
+
+ASFLAGS=`echo \
+    $_COMPILATION_ASFLAGS \
+    $ASFLAGS`
 
 COMPILE_CFLAGS=`echo \
     $_DEFINES_CFLAGS \
@@ -1281,6 +1053,14 @@ HOST_CFLAGS=`echo \
 HOST_CXXFLAGS=`echo \
     $_COMPILATION_HOST_CXXFLAGS \
     $HOST_CXXFLAGS`
+
+LDFLAGS=`echo \
+    $LDFLAGS \
+    $_COMPILATION_LDFLAGS`
+
+HOST_LDFLAGS=`echo \
+    $HOST_LDFLAGS \
+    $_COMPILATION_HOST_LDFLAGS`
 
 HOST_CMFLAGS="-x objective-c -fobjc-exceptions"
 HOST_CMMFLAGS="-x objective-c++ -fobjc-exceptions"

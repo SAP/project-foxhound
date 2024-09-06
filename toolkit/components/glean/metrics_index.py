@@ -16,12 +16,19 @@
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 gecko_metrics = [
     "browser/base/content/metrics.yaml",
+    "docshell/base/metrics.yaml",
     "dom/base/use_counter_metrics.yaml",
     "dom/media/metrics.yaml",
     "dom/media/webrtc/metrics.yaml",
     "dom/metrics.yaml",
+    "dom/performance/metrics.yaml",
+    "dom/security/metrics.yaml",
     "gfx/metrics.yaml",
+    "image/decoders/metrics.yaml",
+    "js/xpconnect/metrics.yaml",
+    "layout/base/metrics.yaml",
     "mobile/android/actors/metrics.yaml",
+    "mobile/android/modules/geckoview/metrics.yaml",
     "netwerk/metrics.yaml",
     "netwerk/protocol/http/metrics.yaml",
     "security/manager/ssl/metrics.yaml",
@@ -37,12 +44,14 @@ gecko_metrics = [
     "toolkit/components/translations/metrics.yaml",
     "toolkit/mozapps/extensions/metrics.yaml",
     "toolkit/mozapps/handling/metrics.yaml",
+    "toolkit/xre/metrics.yaml",
     "xpcom/metrics.yaml",
 ]
 
 # Metrics that are sent by Firefox Desktop
 # Order is lexicographical, enforced by t/c/glean/tests/pytest/test_yaml_indices.py
 firefox_desktop_metrics = [
+    "browser/components/backup/metrics.yaml",
     "browser/components/metrics.yaml",
     "browser/components/migration/metrics.yaml",
     "browser/components/newtab/metrics.yaml",
@@ -54,6 +63,7 @@ firefox_desktop_metrics = [
     "browser/components/shopping/metrics.yaml",
     "browser/components/urlbar/metrics.yaml",
     "browser/modules/metrics.yaml",
+    "dom/media/platforms/wmf/metrics.yaml",
     "toolkit/components/crashes/metrics.yaml",
     "toolkit/components/nimbus/metrics.yaml",
     "toolkit/components/search/metrics.yaml",
@@ -61,7 +71,6 @@ firefox_desktop_metrics = [
     "toolkit/components/telemetry/dap/metrics.yaml",
     "toolkit/components/telemetry/metrics.yaml",
     "toolkit/modules/metrics.yaml",
-    "toolkit/xre/metrics.yaml",
     "widget/cocoa/metrics.yaml",
     "widget/windows/metrics.yaml",
 ]
@@ -117,6 +126,7 @@ firefox_desktop_pings = [
     "browser/components/search/pings.yaml",
     "browser/components/urlbar/pings.yaml",
     "toolkit/components/crashes/pings.yaml",
+    "toolkit/components/resistfingerprinting/pings.yaml",
     "toolkit/components/telemetry/pings.yaml",
     "toolkit/modules/pings.yaml",
 ]

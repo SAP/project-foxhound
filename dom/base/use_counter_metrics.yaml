@@ -107,32 +107,8 @@ use.counter:
     send_in_pings:
       - use-counters
 
-use.counter.error:
-  unknown_counter:
-    type: labeled_counter
-    description: >
-      How many times did we try to increment a use counter we couldn't find?
-      Labeled by what kind of use counter it is.
-    labels:
-      - page
-      - doc
-      - dedicated
-      - shared
-      - service
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - chutten@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-# Total of 2299 use counter metrics (excludes denominators).
-# Total of 356 'page' use counters.
+# Total of 2307 use counter metrics (excludes denominators).
+# Total of 358 'page' use counters.
 use.counter.page:
   svgsvgelement_getelementbyid:
     type: counter
@@ -597,6 +573,23 @@ use.counter.page:
     type: counter
     description: >
       Whether a page parses a Date with day of week in an unexpected position.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_wasm_legacy_exceptions:
+    type: counter
+    description: >
+      Whether a page uses WebAssembly legacy exception-handling.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -5982,6 +5975,23 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
+  htmldialogelement_show:
+    type: counter
+    description: >
+      Whether a page called called HTMLDialogElement.show.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   mixed_content_upgraded_image_success:
     type: counter
     description: >
@@ -6186,7 +6196,7 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
-# Total of 356 'document' use counters.
+# Total of 358 'document' use counters.
 use.counter.doc:
   svgsvgelement_getelementbyid:
     type: counter
@@ -6651,6 +6661,23 @@ use.counter.doc:
     type: counter
     description: >
       Whether a document parses a Date with day of week in an unexpected position.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_wasm_legacy_exceptions:
+    type: counter
+    description: >
+      Whether a document uses WebAssembly legacy exception-handling.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -12036,6 +12063,23 @@ use.counter.doc:
     send_in_pings:
       - use-counters
 
+  htmldialogelement_show:
+    type: counter
+    description: >
+      Whether a document called called HTMLDialogElement.show.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   mixed_content_upgraded_image_success:
     type: counter
     description: >
@@ -13929,7 +13973,7 @@ use.counter.worker.service:
     send_in_pings:
       - use-counters
 
-# Total of 51 'deprecated operations (page)' use counters.
+# Total of 50 'deprecated operations (page)' use counters.
 use.counter.deprecated_ops.page:
   mutation_event:
     type: counter
@@ -14764,23 +14808,6 @@ use.counter.deprecated_ops.page:
     send_in_pings:
       - use-counters
 
-  is_external_ctap2_security_key_supported:
-    type: counter
-    description: >
-      Whether a page used IsExternalCTAP2SecurityKeySupported.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   idbobject_store_create_index_locale:
     type: counter
     description: >
@@ -14798,7 +14825,7 @@ use.counter.deprecated_ops.page:
     send_in_pings:
       - use-counters
 
-# Total of 51 'deprecated operations (document)' use counters.
+# Total of 50 'deprecated operations (document)' use counters.
 use.counter.deprecated_ops.doc:
   mutation_event:
     type: counter
@@ -15633,23 +15660,6 @@ use.counter.deprecated_ops.doc:
     send_in_pings:
       - use-counters
 
-  is_external_ctap2_security_key_supported:
-    type: counter
-    description: >
-      Whether a document used IsExternalCTAP2SecurityKeySupported.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   idbobject_store_create_index_locale:
     type: counter
     description: >
@@ -15667,7 +15677,7 @@ use.counter.deprecated_ops.doc:
     send_in_pings:
       - use-counters
 
-# Total of 693 'CSS (page)' use counters.
+# Total of 696 'CSS (page)' use counters.
 use.counter.css.page:
   css_align_content:
     type: counter
@@ -17624,10 +17634,27 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-  css_text_wrap:
+  css_text_wrap_mode:
     type: counter
     description: >
-      Whether a page used the CSS property text-wrap.
+      Whether a page used the CSS property text-wrap-mode.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_text_wrap_style:
+    type: counter
+    description: >
+      Whether a page used the CSS property text-wrap-style.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -17794,10 +17821,10 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-  css_white_space:
+  css_white_space_collapse:
     type: counter
     description: >
-      Whether a page used the CSS property white-space.
+      Whether a page used the CSS property white-space-collapse.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -20110,6 +20137,23 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property text-shadow.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_transition_behavior:
+    type: counter
+    description: >
+      Whether a page used the CSS property transition-behavior.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -23170,6 +23214,40 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property text-emphasis.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_text_wrap:
+    type: counter
+    description: >
+      Whether a page used the CSS property text-wrap.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_white_space:
+    type: counter
+    description: >
+      Whether a page used the CSS property white-space.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -27450,7 +27528,7 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-# Total of 693 'CSS (document)' use counters.
+# Total of 696 'CSS (document)' use counters.
 use.counter.css.doc:
   css_align_content:
     type: counter
@@ -29407,10 +29485,27 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
-  css_text_wrap:
+  css_text_wrap_mode:
     type: counter
     description: >
-      Whether a document used the CSS property text-wrap.
+      Whether a document used the CSS property text-wrap-mode.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_text_wrap_style:
+    type: counter
+    description: >
+      Whether a document used the CSS property text-wrap-style.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -29577,10 +29672,10 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
-  css_white_space:
+  css_white_space_collapse:
     type: counter
     description: >
-      Whether a document used the CSS property white-space.
+      Whether a document used the CSS property white-space-collapse.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -31893,6 +31988,23 @@ use.counter.css.doc:
     type: counter
     description: >
       Whether a document used the CSS property text-shadow.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_transition_behavior:
+    type: counter
+    description: >
+      Whether a document used the CSS property transition-behavior.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -34953,6 +35065,40 @@ use.counter.css.doc:
     type: counter
     description: >
       Whether a document used the CSS property text-emphasis.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_text_wrap:
+    type: counter
+    description: >
+      Whether a document used the CSS property text-wrap.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_white_space:
+    type: counter
+    description: >
+      Whether a document used the CSS property white-space.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:

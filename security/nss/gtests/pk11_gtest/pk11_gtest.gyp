@@ -25,6 +25,7 @@
         'pk11_des_unittest.cc',
         'pk11_dsa_unittest.cc',
         'pk11_ecdsa_unittest.cc',
+        'pk11_eddsa_unittest.cc',
         'pk11_ecdh_unittest.cc',
         'pk11_encrypt_derive_unittest.cc',
         'pk11_find_certs_unittest.cc',
@@ -38,6 +39,7 @@
         'pk11_keygen.cc',
         'pk11_key_unittest.cc',
         'pk11_module_unittest.cc',
+        'pk11_pbe_unittest.cc',
         'pk11_pbkdf2_unittest.cc',
         'pk11_prf_unittest.cc',
         'pk11_prng_unittest.cc',
@@ -75,6 +77,9 @@
             '<(DEPTH)/lib/nss/nss.gyp:nss3',
             '<(DEPTH)/lib/ssl/ssl.gyp:ssl3',
           ],
+        }],
+        ['ct_verif==1', {
+            'defines': ['CT_VERIF'],
         }],
       ],
     }

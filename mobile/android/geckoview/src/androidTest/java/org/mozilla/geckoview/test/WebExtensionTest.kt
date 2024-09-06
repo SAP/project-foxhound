@@ -7,6 +7,7 @@ package org.mozilla.geckoview.test
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.hamcrest.MatcherAssert.assertThat
+import org.hamcrest.Matchers
 import org.hamcrest.Matchers.greaterThan
 import org.hamcrest.core.IsEqual.equalTo
 import org.hamcrest.core.StringEndsWith.endsWith
@@ -90,6 +91,68 @@ class WebExtensionTest : BaseSessionTest() {
 
         assertTrue(borderify.isBuiltIn)
 
+        assertArrayEquals(
+            arrayOf("*://developer.mozilla.org/*"),
+            borderify.metaData.optionalOrigins,
+        )
+        assertArrayEquals(
+            arrayOf("clipboardRead"),
+            borderify.metaData.optionalPermissions,
+        )
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was applied by checking the border color
+        assertBodyBorderEqualTo("red")
+
+        // Check some of the metadata
+        assertEquals(borderify.metaData.incognito, "spanning")
+
+        // Uninstall WebExtension and check again
+        sessionRule.waitForResult(controller.uninstall(borderify))
+
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was not applied after being uninstalled
+        assertBodyBorderEqualTo("")
+    }
+
+    @Test
+    fun verifyOptionalAndOriginsPermissionsMV3() {
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        // First let's check that the color of the border is empty before loading
+        // the WebExtension
+        assertBodyBorderEqualTo("")
+
+        // Load the WebExtension that will add a border to the body
+        val borderify = sessionRule.waitForResult(
+            controller.installBuiltIn(
+                "resource://android/assets/web_extensions/borderify-mv3/",
+            ),
+        )
+
+        assertArrayEquals(
+            arrayOf("clipboardRead"),
+            borderify.metaData.optionalPermissions,
+        )
+
+        val expectedOptionalOrigins = arrayOf(
+            "*://*.example.com/*",
+            "*://opt-host-perm.example.com/*",
+            "*://host-perm.example.com/*",
+        )
+
+        expectedOptionalOrigins.sort()
+        borderify.metaData.optionalOrigins.sort()
+
+        assertArrayEquals(
+            expectedOptionalOrigins,
+            borderify.metaData.optionalOrigins,
+        )
+
         mainSession.reload()
         sessionRule.waitForPageStop()
 
@@ -104,6 +167,105 @@ class WebExtensionTest : BaseSessionTest() {
 
         // Check that the WebExtension was not applied after being uninstalled
         assertBodyBorderEqualTo("")
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test
+    fun grantedOptionalPermissions() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "xpinstall.signatures.required" to false,
+                "extensions.install.requireBuiltInCerts" to false,
+                "extensions.update.requireBuiltInCerts" to false,
+            ),
+        )
+
+        val extension = sessionRule.waitForResult(
+            controller.ensureBuiltIn(
+                "resource://android/assets/web_extensions/optional-permission-request/",
+                "optional-permission-request@example.com",
+            ),
+        )
+
+        assertEquals("optional-permission-request@example.com", extension.id)
+
+        mainSession.loadUri("${extension.metaData.baseUrl}clickToRequestPermission.html")
+        sessionRule.waitForPageStop()
+
+        var grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        var grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+
+        // click triggers permissions.request
+        mainSession.synthesizeTap(50, 50)
+
+        sessionRule.delegateUntilTestEnd(object : WebExtensionController.PromptDelegate {
+            override fun onOptionalPrompt(
+                extension: WebExtension,
+                permissions: Array<String>,
+                origins: Array<String>,
+            ): GeckoResult<AllowOrDeny> {
+                return GeckoResult.allow()
+            }
+        })
+
+        var result = GeckoResult<String>()
+        mainSession.webExtensionController.setMessageDelegate(
+            extension,
+            object : WebExtension.MessageDelegate {
+                override fun onMessage(
+                    nativeApp: String,
+                    message: Any,
+                    sender: WebExtension.MessageSender,
+                ): GeckoResult<Any>? {
+                    result.complete(message as String)
+                    return null
+                }
+            },
+            "browser",
+        )
+
+        result = GeckoResult<String>()
+        val message = sessionRule.waitForResult(result)
+        assertThat("Permission request should be accepted.", message, equalTo("true"))
+
+        val updatedExtension = sessionRule.waitForResult(
+            // Adds "internal:privateBrowsingAllowed"
+            controller.setAllowedInPrivateBrowsing(extension, true),
+        )
+
+        grantedOptionalPermissions = updatedExtension.metaData.grantedOptionalPermissions
+        grantedOptionalOrigins = updatedExtension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 1.",
+            grantedOptionalPermissions.size,
+            equalTo(1),
+        )
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // geolocation is part of the manifest but not requested/granted.
+        assertFalse(grantedOptionalPermissions.contains("geolocation"))
+
+        // "internal:privateBrowsingAllowed" must not be part of grantedOptionalPermissions.
+        assertThat(
+            "grantedOptionalPermissions must be activeTab.",
+            grantedOptionalPermissions.first(),
+            equalTo("activeTab"),
+        )
+
+        sessionRule.waitForResult(controller.uninstall(extension))
     }
 
     private fun assertBodyBorderEqualTo(expected: String) {
@@ -330,6 +492,7 @@ class WebExtensionTest : BaseSessionTest() {
                     extension.metaData.blocklistState,
                     WebExtension.BlocklistStateFlags.NOT_BLOCKED,
                 )
+                assertEquals(extension.metaData.incognito, "spanning")
 
                 return GeckoResult.allow()
             }
@@ -1614,6 +1777,11 @@ class WebExtensionTest : BaseSessionTest() {
     // - verifies that the messages are received when restoring the tab in a fresh session
     @Test
     fun testRestoringExtensionPagePreservesMessages() {
+        // TODO: Bug 1884334
+        val geckoPrefs = sessionRule.getPrefs(
+            "fission.disableSessionHistoryInParent",
+        )
+        assumeThat(geckoPrefs[0] as Boolean, Matchers.equalTo(true))
         // TODO: Bug 1837551
         assumeThat(sessionRule.env.isFission, equalTo(false))
 
@@ -2134,7 +2302,7 @@ class WebExtensionTest : BaseSessionTest() {
 
         mainSession.waitUntilCalled(object : NavigationDelegate, ProgressDelegate {
             @GeckoSessionTestRule.AssertCalled(count = 1)
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>) {
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 assertThat(
                     "Url should load example.com first",
                     url,
@@ -2156,7 +2324,7 @@ class WebExtensionTest : BaseSessionTest() {
         val pageStop = GeckoResult<Boolean>()
 
         mainSession.delegateUntilTestEnd(object : NavigationDelegate, ProgressDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>) {
+            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
                 page = url
             }
 

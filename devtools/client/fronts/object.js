@@ -14,17 +14,18 @@ const {
 } = require("resource://devtools/client/fronts/string.js");
 
 const SUPPORT_ENUM_ENTRIES_SET = new Set([
-  "Headers",
-  "Map",
-  "WeakMap",
-  "Set",
-  "WeakSet",
-  "Storage",
-  "URLSearchParams",
+  "CustomStateSet",
   "FormData",
+  "Headers",
+  "HighlightRegistry",
+  "Map",
   "MIDIInputMap",
   "MIDIOutputMap",
-  "HighlightRegistry",
+  "Set",
+  "Storage",
+  "URLSearchParams",
+  "WeakMap",
+  "WeakSet",
 ]);
 
 /**
@@ -346,7 +347,7 @@ function getAdHocFrontOrPrimitiveGrip(packet, parentFront) {
   // - it's a highlightRegistryEntry (the preview.value properties can hold actors)
   // - or it is already a front (happens when we are using the legacy listeners in the ResourceCommand)
   const isPacketAnObject = packet && typeof packet === "object";
-  const isFront = !!packet.typeName;
+  const isFront = !!packet?.typeName;
   if (
     !isPacketAnObject ||
     packet.type == "symbol" ||

@@ -7,7 +7,7 @@ import {
   actionCreators as ac,
   actionTypes as at,
 } from "common/Actions.sys.mjs";
-import { ModalOverlayWrapper } from "content-src/asrouter/components/ModalOverlay/ModalOverlay";
+import { ModalOverlayWrapper } from "content-src/components/ModalOverlay/ModalOverlay";
 
 export class DSPrivacyModal extends React.PureComponent {
   constructor(props) {
@@ -17,7 +17,7 @@ export class DSPrivacyModal extends React.PureComponent {
     this.onManageLinkClick = this.onManageLinkClick.bind(this);
   }
 
-  onLearnLinkClick(event) {
+  onLearnLinkClick() {
     this.props.dispatch(
       ac.DiscoveryStreamUserEvent({
         event: "CLICK_PRIVACY_INFO",
@@ -26,7 +26,7 @@ export class DSPrivacyModal extends React.PureComponent {
     );
   }
 
-  onManageLinkClick(event) {
+  onManageLinkClick() {
     this.props.dispatch(ac.OnlyToMain({ type: at.SETTINGS_OPEN }));
   }
 
@@ -50,7 +50,7 @@ export class DSPrivacyModal extends React.PureComponent {
             className="modal-link modal-link-privacy"
             data-l10n-id="newtab-privacy-modal-link"
             onClick={this.onLearnLinkClick}
-            href="https://help.getpocket.com/article/1142-firefox-new-tab-recommendations-faq"
+            href="https://support.mozilla.org/kb/pocket-recommendations-firefox-new-tab"
           />
           <button
             className="modal-link modal-link-manage"

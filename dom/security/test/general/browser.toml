@@ -42,6 +42,22 @@ support-files = [
   "file_framing_error_pages.sjs",
 ]
 
+["browser_test_gpc_privateBrowsingMode.js"]
+support-files = [
+  "file_empty.html",
+  "file_gpc_server.sjs",
+]
+
+["browser_test_http_download.js"]
+skip-if = [
+  "win11_2009", # Bug 1784764
+  "os == 'linux' && !debug",
+]
+support-files = [
+  "http_download_page.html",
+  "http_download_server.sjs"
+]
+
 ["browser_test_referrer_loadInOtherProcess.js"]
 
 ["browser_test_report_blocking.js"]
@@ -73,10 +89,3 @@ support-files = [
   "file_framing_xfo_object.html",
   "file_framing_xfo_embed_object.sjs",
 ]
-
-["browser_test_gpc_privateBrowsingMode.js"]
-support-files = [
-  "file_empty.html",
-  "file_gpc_server.sjs",
-]
-

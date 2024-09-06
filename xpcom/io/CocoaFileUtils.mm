@@ -40,9 +40,9 @@ nsresult OpenURL(CFURLRef url) {
 
   nsAutoreleasePool localPool;
 
-  BOOL success = [[NSWorkspace sharedWorkspace] openURL:(NSURL*)url];
+  [[NSWorkspace sharedWorkspace] openURL:(NSURL*)url];
 
-  return (success ? NS_OK : NS_ERROR_FAILURE);
+  return NS_OK;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
 }
@@ -309,7 +309,7 @@ void CopyQuarantineReferrerUrl(const CFStringRef aFilePath,
       ::CFDictionaryGetValue(mutQuarantineProps, kLSQuarantineOriginURLKey);
   if (referrerRef && ::CFGetTypeID(referrerRef) == ::CFURLGetTypeID()) {
     // URL string must be copied prior to releasing the dictionary.
-    mozilla::CopyCocoaStringToXPCOMString(
+    mozilla::CopyNSStringToXPCOMString(
         (NSString*)::CFURLGetString(static_cast<CFURLRef>(referrerRef)),
         aReferrer);
   }

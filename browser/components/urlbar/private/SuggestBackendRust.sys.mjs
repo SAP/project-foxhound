@@ -9,12 +9,14 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  RemoteSettingsConfig: "resource://gre/modules/RustRemoteSettings.sys.mjs",
   SuggestIngestionConstraints: "resource://gre/modules/RustSuggest.sys.mjs",
   SuggestStore: "resource://gre/modules/RustSuggest.sys.mjs",
   Suggestion: "resource://gre/modules/RustSuggest.sys.mjs",
   SuggestionProvider: "resource://gre/modules/RustSuggest.sys.mjs",
   SuggestionQuery: "resource://gre/modules/RustSuggest.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  Utils: "resource://services-settings/Utils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -67,8 +69,13 @@ const gSuggestionTypesByCtor = new WeakMap();
  * [6] https://searchfox.org/mozilla-central/source/toolkit/components/uniffi-bindgen-gecko-js/config.toml
  */
 export class SuggestBackendRust extends BaseFeature {
-  get shouldEnable() {
-    return lazy.UrlbarPrefs.get("quickSuggestRustEnabled");
+  /**
+   * @returns {object}
+   *   The global Suggest config from the Rust component as returned from
+   *   `SuggestStore.fetchGlobalConfig()`.
+   */
+  get config() {
+    return this.#config || {};
   }
 
   /**
@@ -78,6 +85,10 @@ export class SuggestBackendRust extends BaseFeature {
    */
   get ingestPromise() {
     return this.#ingestPromise;
+  }
+
+  get shouldEnable() {
+    return lazy.UrlbarPrefs.get("quickSuggestRustEnabled");
   }
 
   enable(enabled) {
@@ -97,26 +108,22 @@ export class SuggestBackendRust extends BaseFeature {
       return [];
     }
 
-    // Build the list of Rust providers to query. Each provider is identified by
-    // an integer value defined on the `SuggestionProvider` object. Here we
-    // convert the Rust suggestion types of our registered features to their
-    // corresponding provider integer values.
-    let providers = [];
-    for (let [type, feature] of lazy.QuickSuggest
-      .featuresByRustSuggestionType) {
-      if (feature.isEnabled && feature.isRustSuggestionTypeEnabled(type)) {
-        let key = type.toUpperCase();
-        this.logger.debug("Adding provider to query:" + key);
-        if (!lazy.SuggestionProvider.hasOwnProperty(key)) {
-          this.logger.error(`SuggestionProvider["${key}"] is not defined!`);
-          continue;
+    // Build the list of enabled Rust providers to query.
+    let providers = this.#rustProviders.reduce(
+      (memo, { type, feature, provider }) => {
+        if (feature.isEnabled && feature.isRustSuggestionTypeEnabled(type)) {
+          this.logger.debug(
+            `Adding provider to query: '${type}' (${provider})`
+          );
+          memo.push(provider);
         }
-        providers.push(lazy.SuggestionProvider[key]);
-      }
-    }
+        return memo;
+      },
+      []
+    );
 
     let suggestions = await this.#store.query(
-      new lazy.SuggestionQuery(searchString, providers)
+      new lazy.SuggestionQuery({ keyword: searchString, providers })
     );
 
     for (let suggestion of suggestions) {
@@ -127,9 +134,12 @@ export class SuggestBackendRust extends BaseFeature {
 
       suggestion.source = "rust";
       suggestion.provider = type;
-      suggestion.is_sponsored = type == "Amp";
+      suggestion.is_sponsored = type == "Amp" || type == "Yelp";
       if (Array.isArray(suggestion.icon)) {
-        suggestion.icon_blob = new Blob([new Uint8Array(suggestion.icon)]);
+        suggestion.icon_blob = new Blob(
+          [new Uint8Array(suggestion.icon)],
+          type == "Yelp" ? { type: "image/svg+xml" } : null
+        );
         delete suggestion.icon;
       }
     }
@@ -143,6 +153,20 @@ export class SuggestBackendRust extends BaseFeature {
 
   cancelQuery() {
     this.#store?.interrupt();
+  }
+
+  /**
+   * Returns suggestion-type-specific configuration data set by the Rust
+   * backend.
+   *
+   * @param {string} type
+   *   A Rust suggestion type name as defined in `suggest.udl`, e.g., "Amp",
+   *   "Wikipedia", "Mdn", etc. See also `BaseFeature.rustSuggestionTypes`.
+   * @returns {object} config
+   *   The config data for the type.
+   */
+  getConfigForSuggestionType(type) {
+    return this.#configsBySuggestionType.get(type);
   }
 
   /**
@@ -160,14 +184,64 @@ export class SuggestBackendRust extends BaseFeature {
     );
   }
 
-  #init() {
-    // Create the store.
+  /**
+   * @returns {Array}
+   *   Each item in this array contains metadata related to a Rust suggestion
+   *   type, the `BaseFeature` that manages the type, and the corresponding
+   *   suggestion provider as defined by Rust. Items look like this:
+   *   `{ type, feature, provider }`
+   *
+   *   {string} type
+   *     The Rust suggestion type name (the same type of string values that are
+   *     defined in `BaseFeature.rustSuggestionTypes`).
+   *   {BaseFeature} feature
+   *     The feature that manages the suggestion type.
+   *   {number} provider
+   *     An integer value defined on the `SuggestionProvider` object in
+   *     `RustSuggest.sys.mjs` that identifies the suggestion provider to
+   *     Rust.
+   */
+  get #rustProviders() {
+    let items = [];
+    for (let [type, feature] of lazy.QuickSuggest
+      .featuresByRustSuggestionType) {
+      let key = type.toUpperCase();
+      if (!lazy.SuggestionProvider.hasOwnProperty(key)) {
+        this.logger.error(`SuggestionProvider["${key}"] is not defined!`);
+        continue;
+      }
+      items.push({ type, feature, provider: lazy.SuggestionProvider[key] });
+    }
+    return items;
+  }
+
+  async #init() {
+    // Important note on schema updates:
+    //
+    // The first time the Suggest store is accessed after a schema version
+    // update, its backing database will be deleted and a new empty database
+    // will be created. The database will remain empty until we tell the store
+    // to ingest. If we wait to ingest as usual until our ingest timer fires,
+    // the store will remain empty for up to 24 hours, which means we won't
+    // serve any suggestions at all during that time.
+    //
+    // Therefore we simply always ingest here in `#init()`. We'll sometimes
+    // ingest unnecessarily but that's better than the alternative. (As a
+    // reminder, for users who have Suggest enabled `#init()` is called whenever
+    // the Rust backend is enabled, including on startup.)
+
+    // Initialize the store.
     let path = this.#storePath;
     this.logger.info("Initializing SuggestStore: " + path);
     try {
       this.#store = lazy.SuggestStore.init(
         path,
-        SuggestBackendRust._test_remoteSettingsConfig
+        this.#test_remoteSettingsConfig ??
+          new lazy.RemoteSettingsConfig({
+            collectionName: "quicksuggest",
+            bucketName: lazy.Utils.actualBucketName("main"),
+            serverUrl: lazy.Utils.SERVER_URL,
+          })
       );
     } catch (error) {
       this.logger.error("Error initializing SuggestStore:");
@@ -175,24 +249,19 @@ export class SuggestBackendRust extends BaseFeature {
       return;
     }
 
-    // Before registering the ingest timer, check the last-update pref, which is
-    // created by the timer manager the first time we register it. If the pref
-    // doesn't exist, this is the first time the Rust backend has been enabled
-    // in this profile. In that case, perform ingestion immediately to make
-    // automated and manual testing easier. Otherwise we'd need to wait at least
-    // 30s (`app.update.timerFirstInterval`) for the timer manager to call us
-    // back (and we'd also need to pass false for `skipFirst` below).
+    // Log the last ingest time for debugging.
     let lastIngestSecs = Services.prefs.getIntPref(
       INGEST_TIMER_LAST_UPDATE_PREF,
       0
     );
     if (lastIngestSecs) {
-      this.logger.info(
-        `Last ingest: ${lastIngestSecs}s since epoch. Not ingesting now`
+      this.logger.debug(
+        `Last ingest time: ${lastIngestSecs}s (${
+          Math.round(Date.now() / 1000) - lastIngestSecs
+        }s ago)`
       );
     } else {
-      this.logger.info("Last ingest time not found. Ingesting now");
-      this.#ingest();
+      this.logger.debug("Last ingest time: none");
     }
 
     // Register the ingest timer.
@@ -202,27 +271,87 @@ export class SuggestBackendRust extends BaseFeature {
       lazy.UrlbarPrefs.get("quicksuggest.rustIngestIntervalSeconds"),
       true // skipFirst
     );
+
+    // Ingest.
+    await this.#ingest();
   }
 
   #uninit() {
     this.#store = null;
+    this.#configsBySuggestionType.clear();
     lazy.timerManager.unregisterTimer(INGEST_TIMER_ID);
   }
 
   async #ingest() {
-    this.logger.info("Starting ingest");
-    this.#ingestPromise = this.#store.ingest(
-      new lazy.SuggestIngestionConstraints()
-    );
+    let instance = (this.#ingestInstance = {});
+    await this.#ingestPromise;
+    if (instance != this.#ingestInstance) {
+      return;
+    }
+    await (this.#ingestPromise = this.#ingestHelper());
+  }
+
+  async #ingestHelper() {
+    if (!this.#store) {
+      return;
+    }
+
+    this.logger.info("Starting ingest and configs fetch");
+
+    // Do the ingest.
+    this.logger.debug("Starting ingest");
     try {
-      await this.#ingestPromise;
+      await this.#store.ingest(new lazy.SuggestIngestionConstraints());
     } catch (error) {
       // Ingest can throw a `SuggestApiError` subclass called `Other` that has a
       // custom `reason` message, which is very helpful for diagnosing problems
       // with remote settings data in tests in particular.
       this.logger.error("Ingest error: " + (error.reason ?? error));
     }
-    this.logger.info("Finished ingest");
+    this.logger.debug("Finished ingest");
+
+    if (!this.#store) {
+      this.logger.info("#store became null, returning from ingest");
+      return;
+    }
+
+    // Fetch the global config.
+    this.logger.debug("Fetching global config");
+    this.#config = await this.#store.fetchGlobalConfig();
+    this.logger.debug("Got global config: " + JSON.stringify(this.#config));
+
+    if (!this.#store) {
+      this.logger.info("#store became null, returning from ingest");
+      return;
+    }
+
+    // Fetch all provider configs. We do this for all features, even ones that
+    // are currently disabled, because they may become enabled before the next
+    // ingest.
+    this.logger.debug("Fetching provider configs");
+    await Promise.all(
+      this.#rustProviders.map(async ({ type, provider }) => {
+        let config = await this.#store.fetchProviderConfig(provider);
+        this.logger.debug(
+          `Got '${type}' provider config: ` + JSON.stringify(config)
+        );
+        this.#configsBySuggestionType.set(type, config);
+      })
+    );
+    this.logger.debug("Finished fetching provider configs");
+
+    this.logger.info("Finished ingest and configs fetch");
+  }
+
+  async _test_setRemoteSettingsConfig(config) {
+    this.#test_remoteSettingsConfig = config;
+
+    if (this.isEnabled) {
+      // Recreate the store and re-ingest.
+      Services.prefs.clearUserPref(INGEST_TIMER_LAST_UPDATE_PREF);
+      this.#uninit();
+      await this.#init();
+    }
   }
 
   async _test_ingest() {
@@ -232,7 +361,16 @@ export class SuggestBackendRust extends BaseFeature {
   // The `SuggestStore` instance.
   #store;
 
+  // Global Suggest config as returned from `SuggestStore.fetchGlobalConfig()`.
+  #config = {};
+
+  // Maps from suggestion type to provider config as returned from
+  // `SuggestStore.fetchProviderConfig()`.
+  #configsBySuggestionType = new Map();
+
   #ingestPromise;
+  #ingestInstance;
+  #test_remoteSettingsConfig;
 }
 
 /**

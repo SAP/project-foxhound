@@ -116,13 +116,13 @@ nsresult ScriptPreloader::CollectReports(nsIHandleReportCallback* aHandleReport,
 
 StaticRefPtr<ScriptPreloader> ScriptPreloader::gScriptPreloader;
 StaticRefPtr<ScriptPreloader> ScriptPreloader::gChildScriptPreloader;
-UniquePtr<AutoMemMap> ScriptPreloader::gCacheData;
-UniquePtr<AutoMemMap> ScriptPreloader::gChildCacheData;
+StaticAutoPtr<AutoMemMap> ScriptPreloader::gCacheData;
+StaticAutoPtr<AutoMemMap> ScriptPreloader::gChildCacheData;
 
 ScriptPreloader& ScriptPreloader::GetSingleton() {
   if (!gScriptPreloader) {
     if (XRE_IsParentProcess()) {
-      gCacheData = MakeUnique<AutoMemMap>();
+      gCacheData = new AutoMemMap();
       gScriptPreloader = new ScriptPreloader(gCacheData.get());
       gScriptPreloader->mChildCache = &GetChildSingleton();
       Unused << gScriptPreloader->InitCache();
@@ -159,7 +159,7 @@ ScriptPreloader& ScriptPreloader::GetSingleton() {
 //  previous cache file, but I'd rather do that as a follow-up.
 ScriptPreloader& ScriptPreloader::GetChildSingleton() {
   if (!gChildScriptPreloader) {
-    gChildCacheData = MakeUnique<AutoMemMap>();
+    gChildCacheData = new AutoMemMap();
     gChildScriptPreloader = new ScriptPreloader(gChildCacheData.get());
     if (XRE_IsParentProcess()) {
       Unused << gChildScriptPreloader->InitCache(u"scriptCache-child"_ns);
@@ -712,9 +712,10 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
   }
 
   {
-    AutoFDClose fd;
+    AutoFDClose raiiFd;
     MOZ_TRY(cacheFile->OpenNSPRFileDesc(PR_WRONLY | PR_CREATE_FILE, 0644,
-                                        &fd.rwget()));
+                                        getter_Transfers(raiiFd)));
+    const auto fd = raiiFd.get();
 
     // We also need to hold mMonitor while we're touching scripts in
     // mScripts, or they may be freed before we're done with them.
@@ -981,6 +982,9 @@ already_AddRefed<JS::Stencil> ScriptPreloader::WaitForCachedStencil(
     JSContext* cx, const JS::ReadOnlyDecodeOptions& options,
     CachedStencil* script) {
   if (!script->mReadyToExecute) {
+    // mReadyToExecute is kept as false only when off-thread decode task was
+    // available (pref is set to true) and the task was successfully created.
+    // See ScriptPreloader::StartDecodeTask methods.
     MOZ_ASSERT(mDecodedStencils);
 
     // Check for the finished operations that can contain our target.
@@ -1065,7 +1069,12 @@ void ScriptPreloader::OnDecodeTaskFailed() {
 void ScriptPreloader::FinishPendingParses(MonitorAutoLock& aMal) {
   mMonitor.AssertCurrentThreadOwns();
 
-  MOZ_ASSERT_IF(!mDecodingScripts.isEmpty(), mDecodedStencils);
+  // If off-thread decoding task hasn't been started, nothing to do.
+  // This can happen if the javascript.options.parallel_parsing pref was false,
+  // or the decode task fails to start.
+  if (!mDecodedStencils) {
+    return;
+  }
 
   // Process any pending decodes that are in flight.
   while (!mDecodingScripts.isEmpty()) {

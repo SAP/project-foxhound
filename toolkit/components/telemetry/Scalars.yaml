@@ -155,6 +155,24 @@ a11y:
     record_in_processes:
       - 'main'
 
+browser.backup:
+  prof_d_disk_space:
+    bug_numbers:
+      - 1884407
+    description: >
+      The total disk space available on the storage device that the profile
+      directory is stored on. To reduce fingerprintability, we round to the
+      nearest 10 megabytes and return the result in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+
 # The following section contains the browser engagement scalars.
 browser.engagement:
   max_concurrent_tab_count:
@@ -1439,54 +1457,19 @@ cookie.banners.click:
       - 'content'
     release_channel_collection: opt-out
 
-gecko:
-  version:
-    bug_numbers:
-      - 1611240
-    description: >
-      The version of the Gecko engine, example: '74.0a1'.
-      It consists of the major and minor version, followed by the release life cycle phase.
-      'a' stands for alpha or nightly, 'b' stands for beta.
-      The number behind the release life cycle phase indicates minor releases within the phase.
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  build_id:
-    bug_numbers:
-      - 1611240
-    description: >
-      The build id of the Gecko engine, example: '20200205124310'.
-      It contains the time the build was created and is used as a unique id for the build.
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-
 extensions.apis.dnr:
   startup_cache_entries:
     bug_numbers:
       - 1803363
       - 1850890
+      - 1881406
     description: >
       Counters for startup cache data hits or misses on initializating
       DNR rules for extensions loaded on application startup.
       The expected keys are 'hit' and 'miss'.
       This probe is mirrored from a Glean metric with the same name.
     keyed: true
-    expires: '126'
+    expires: '138'
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1498,9 +1481,10 @@ extensions.apis.dnr:
     bug_numbers:
       - 1803363
       - 1850890
+      - 1881406
     description: >
       Max amount of DNR rules being evaluated.
-    expires: '126'
+    expires: '138'
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1600,7 +1584,7 @@ extensions.startupCache:
       Unlike the related glean metric, this scalar has an expiring date,
       set as a deadline to consider removing the mirrored scalar in
       favor to just use the Glean metric).
-    expires: "125"
+    expires: "132"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -3992,206 +3976,6 @@ gfx.hdr:
     record_in_processes:
       - 'main'
 
-
-gfx.display:
-  count:
-    bug_numbers:
-      - 1594145
-    description: >
-      Number of displays connected to the device
-    expires: never
-    kind: uint
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  primary_width:
-    bug_numbers:
-      - 1594145
-    description: >
-      Width of the primary display, takes device rotation into account.
-    expires: never
-    kind: uint
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  primary_height:
-    bug_numbers:
-      - 1594145
-    description: >
-      Height of the primary display, takes device rotation into account.
-    expires: never
-    kind: uint
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-gfx.adapter:
-  description:
-    bug_numbers:
-      - 1594145
-    description: >
-      Long form description of the Graphics adapter
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  vendor_id:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter vendor identification
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  device_id:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter device identification
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  subsystem_id:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter subsystem identification
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  ram:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter dedicated memory
-    expires: never
-    kind: uint
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  driver_files:
-    bug_numbers:
-      - 1594145
-    description: >
-      List of graphics adapter driver files
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  driver_vendor:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter driver vendor identification
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  driver_version:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter driver version
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  driver_date:
-    bug_numbers:
-      - 1594145
-    description: >
-      Graphics adapter driver date
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-gfx.feature:
-  webrender:
-    bug_numbers:
-      - 1687312
-    description:
-      Whether webrender is enabled or disabled, and why.
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - jnicol@mozilla.com
-    products:
-      - geckoview_streaming
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-
 gfx:
   skipped_composites:
     bug_numbers:
@@ -4210,51 +3994,6 @@ gfx:
     record_in_processes:
       - 'main'
       - 'gpu'
-  compositor:
-    bug_numbers:
-      - 1594145
-    description: >
-      Name of the graphics compositor in use. possible values are "opengl, d3d11, client, webrender or basic"
-    expires: never
-    kind: string
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  last_compositor_gecko_version:
-    bug_numbers:
-      - 1704842
-    description: >
-      The gecko version at the last time a compositor was initialized.
-    expires: never
-    kind: string
-    notification_emails:
-      - jnicol@mozilla.com
-      - gfx-telemetry-alerts@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
-  headless:
-    bug_numbers:
-      - 1594145
-    description: >
-      Boolean indicated whether graphics is running in headless (no display) mode
-    expires: never
-    kind: boolean
-    notification_emails:
-      - gfx-telemetry-alerts@mozilla.com
-      - ktaeleman@mozilla.com
-    products:
-      - 'geckoview_streaming'
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
   os_compositor:
     bug_numbers:
       - 1623492
@@ -4309,7 +4048,7 @@ apz:
       - 1836870
     description: >
       Count of overshoot events, where the user reverses scrollwheel direction soon after the last scrollwheel input.
-    expires: "126"
+    expires: "134"
     kind: uint
     notification_emails:
       - botond@mozilla.com
@@ -5295,7 +5034,7 @@ update:
       to be moved from the downloading update directory to the ready update
       directory. This probe counts the results that we get when attempting to
       perform this file move. Valid values for the keys for this probe are
-      stored in the MOVE_RESULT_* values in UpdateTelemetry.jsm.
+      stored in the MOVE_RESULT_* values in UpdateTelemetry.sys.mjs.
     expires: never
     kind: uint
     keyed: true
@@ -6175,10 +5914,11 @@ browser.searchinit:
       - 1789438
       - 1811158
       - 1846899
+      - 1881408
     description: >
       Records the number of secure (i.e., using https) OpenSearch search
       engines a given user has installed
-    expires: "126"
+    expires: "133"
     keyed: false
     kind: uint
     notification_emails:
@@ -6194,10 +5934,11 @@ browser.searchinit:
       - 1789438
       - 1811158
       - 1846899
+      - 1881408
     description: >
       Records the number of insecure (i.e., using http) OpenSearch search
       engines a given user has installed
-    expires: "126"
+    expires: "133"
     keyed: false
     kind: uint
     notification_emails:
@@ -6213,10 +5954,11 @@ browser.searchinit:
       - 1789438
       - 1811158
       - 1846899
+      - 1881408
     description: >
       Records the number of OpenSearch search engines with secure updates
       enabled (i.e., using https) a given user has installed
-    expires: "126"
+    expires: "133"
     keyed: false
     kind: uint
     notification_emails:
@@ -6232,10 +5974,11 @@ browser.searchinit:
       - 1789438
       - 1811158
       - 1846899
+      - 1881408
     description: >
       Records the number of OpenSearch search engines with insecure updates
       enabled (i.e., using http) a given user has installed
-    expires: "126"
+    expires: "133"
     keyed: false
     kind: uint
     notification_emails:
@@ -6659,6 +6402,45 @@ networking:
     record_in_processes:
       - 'main'
       - 'socket'
+
+  captive_portal_banner_displayed:
+    bug_numbers:
+      - 1868145
+    description: >
+      Number of times the captive portal banner was displayed in this session.
+    expires: never
+    release_channel_collection: opt-out
+    keyed: false
+    kind: uint
+    notification_emails:
+      - necko@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+
+  captive_portal_banner_display_time:
+    bug_numbers:
+      - 1868145
+    description: >
+      Number of seconds the captive portal banner was displayed for, keyed by close reason:
+        "success" - the portal login was completed
+        "abort"   - the portal login was aborted (e.g. loss of network)
+        "dismiss" - the user dismissed the banner
+    expires: never
+    release_channel_collection: opt-out
+    keyed: true
+    keys:
+      - 'success'
+      - 'abort'
+      - 'dismiss'
+    kind: uint
+    notification_emails:
+      - necko@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
 
   http3_enabled:
     bug_numbers:

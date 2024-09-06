@@ -22,13 +22,13 @@ SOURCES += [
     'allcodecs.c',
     'avcodec.c',
     'avdct.c',
+    'avfft.c',
     'avpacket.c',
     'bitstream.c',
     'bitstream_filters.c',
     'bsf.c',
     'codec_desc.c',
     'codec_par.c',
-    'dct.c',
     'dct32_fixed.c',
     'dct32_float.c',
     'decode.c',
@@ -36,9 +36,6 @@ SOURCES += [
     'faandct.c',
     'faanidct.c',
     'fdctdsp.c',
-    'fft_fixed_32.c',
-    'fft_float.c',
-    'fft_init_table.c',
     'flac.c',
     'flacdata.c',
     'flacdec.c',
@@ -71,7 +68,7 @@ SOURCES += [
     'pthread.c',
     'pthread_frame.c',
     'pthread_slice.c',
-    'rdft.c',
+    'refstruct.c',
     'reverse.c',
     'simple_idct.c',
     'utils.c',
@@ -148,11 +145,6 @@ if not CONFIG["MOZ_SYSTEM_LIBVPX"]:
 else:
   CXXFLAGS += CONFIG["MOZ_LIBVPX_CFLAGS"]
   OS_LIBS += CONFIG["MOZ_LIBVPX_LIBS"]
-
-if CONFIG['MOZ_LIBAV_FFT']:
-    SOURCES += [
-        'avfft.c',
-    ]
 
 SYMBOLS_FILE = 'avcodec.symbols'
 NoVisibilityFlags()

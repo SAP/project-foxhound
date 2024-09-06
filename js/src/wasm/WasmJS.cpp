@@ -103,6 +103,14 @@ using mozilla::Nothing;
 using mozilla::RangedPtr;
 using mozilla::Span;
 
+static bool ThrowCompileOutOfMemory(JSContext* cx) {
+  // Most OOMs during compilation are due to large contiguous allocations,
+  // and future allocations are likely to succeed. Throwing a proper error
+  // object is nicer for users in these circumstances.
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_OUT_OF_MEMORY);
+  return false;
+}
+
 // ============================================================================
 // Imports
 
@@ -374,7 +382,7 @@ bool wasm::Eval(JSContext* cx, Handle<TypedArrayObject*> code,
   }
 
   if (!bytecode->append((uint8_t*)code->dataPointerEither().unwrap(),
-                        code->byteLength())) {
+                        code->byteLength().valueOr(0))) {
     ReportOutOfMemory(cx);
     return false;
   }
@@ -395,8 +403,7 @@ bool wasm::Eval(JSContext* cx, Handle<TypedArrayObject*> code,
                                JSMSG_WASM_COMPILE_ERROR, error.get());
       return false;
     }
-    ReportOutOfMemory(cx);
-    return false;
+    return ThrowCompileOutOfMemory(cx);
   }
 
   Rooted<ImportValues> imports(cx);
@@ -761,8 +768,14 @@ static JSObject* GetWasmConstructorPrototype(JSContext* cx,
 }
 
 #ifdef ENABLE_WASM_TYPE_REFLECTIONS
-static JSString* UTF8CharsToString(JSContext* cx, const char* chars) {
-  return NewStringCopyUTF8Z(cx, JS::ConstUTF8CharsZ(chars, strlen(chars)));
+template <typename T>
+static JSString* TypeToString(JSContext* cx, T type) {
+  UniqueChars chars = ToString(type, nullptr);
+  if (!chars) {
+    return nullptr;
+  }
+  return NewStringCopyUTF8Z(
+      cx, JS::ConstUTF8CharsZ(chars.get(), strlen(chars.get())));
 }
 
 [[nodiscard]] static JSObject* ValTypesToArray(JSContext* cx,
@@ -772,8 +785,7 @@ static JSString* UTF8CharsToString(JSContext* cx, const char* chars) {
     return nullptr;
   }
   for (ValType valType : valTypes) {
-    RootedString type(cx,
-                      UTF8CharsToString(cx, ToString(valType, nullptr).get()));
+    RootedString type(cx, TypeToString(cx, valType));
     if (!type) {
       return nullptr;
     }
@@ -802,15 +814,14 @@ static JSObject* FuncTypeToObject(JSContext* cx, const FuncType& type) {
     return nullptr;
   }
 
-  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+  return NewPlainObjectWithUniqueNames(cx, props);
 }
 
 static JSObject* TableTypeToObject(JSContext* cx, RefType type,
                                    uint32_t initial, Maybe<uint32_t> maximum) {
   Rooted<IdValueVector> props(cx, IdValueVector(cx));
 
-  RootedString elementType(
-      cx, UTF8CharsToString(cx, ToString(type, nullptr).get()));
+  RootedString elementType(cx, TypeToString(cx, type));
   if (!elementType || !props.append(IdValuePair(NameToId(cx->names().element),
                                                 StringValue(elementType)))) {
     ReportOutOfMemory(cx);
@@ -831,7 +842,7 @@ static JSObject* TableTypeToObject(JSContext* cx, RefType type,
     return nullptr;
   }
 
-  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+  return NewPlainObjectWithUniqueNames(cx, props);
 }
 
 static JSObject* MemoryTypeToObject(JSContext* cx, bool shared,
@@ -885,7 +896,7 @@ static JSObject* MemoryTypeToObject(JSContext* cx, bool shared,
     return nullptr;
   }
 
-  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+  return NewPlainObjectWithUniqueNames(cx, props);
 }
 
 static JSObject* GlobalTypeToObject(JSContext* cx, ValType type,
@@ -898,15 +909,14 @@ static JSObject* GlobalTypeToObject(JSContext* cx, ValType type,
     return nullptr;
   }
 
-  RootedString valueType(cx,
-                         UTF8CharsToString(cx, ToString(type, nullptr).get()));
+  RootedString valueType(cx, TypeToString(cx, type));
   if (!valueType || !props.append(IdValuePair(NameToId(cx->names().value),
                                               StringValue(valueType)))) {
     ReportOutOfMemory(cx);
     return nullptr;
   }
 
-  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+  return NewPlainObjectWithUniqueNames(cx, props);
 }
 
 static JSObject* TagTypeToObject(JSContext* cx,
@@ -921,7 +931,7 @@ static JSObject* TagTypeToObject(JSContext* cx,
     return nullptr;
   }
 
-  return NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+  return NewPlainObjectWithUniqueNames(cx, props);
 }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
@@ -1177,8 +1187,7 @@ bool WasmModuleObject::imports(JSContext* cx, unsigned argc, Value* vp) {
     }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-    JSObject* obj =
-        NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+    JSObject* obj = NewPlainObjectWithUniqueNames(cx, props);
     if (!obj) {
       return false;
     }
@@ -1281,8 +1290,7 @@ bool WasmModuleObject::exports(JSContext* cx, unsigned argc, Value* vp) {
     }
 #endif  // ENABLE_WASM_TYPE_REFLECTIONS
 
-    JSObject* obj =
-        NewPlainObjectWithUniqueNames(cx, props.begin(), props.length());
+    JSObject* obj = NewPlainObjectWithUniqueNames(cx, props);
     if (!obj) {
       return false;
     }
@@ -1495,8 +1503,7 @@ bool WasmModuleObject::construct(JSContext* cx, unsigned argc, Value* vp) {
                                JSMSG_WASM_COMPILE_ERROR, error.get());
       return false;
     }
-    ReportOutOfMemory(cx);
-    return false;
+    return ThrowCompileOutOfMemory(cx);
   }
 
   RootedObject proto(
@@ -3221,7 +3228,7 @@ void WasmGlobalObject::finalize(JS::GCContext* gcx, JSObject* obj) {
     // Release the strong reference to the type definitions this global could
     // be referencing.
     global->type().Release();
-    gcx->delete_(obj, &global->val(), MemoryUse::WasmGlobalCell);
+    gcx->delete_(obj, &global->mutableVal(), MemoryUse::WasmGlobalCell);
   }
 }
 
@@ -3247,7 +3254,9 @@ WasmGlobalObject* WasmGlobalObject::create(JSContext* cx, HandleVal value,
 
   // It's simpler to initialize the cell after the object has been created,
   // to avoid needing to root the cell before the object creation.
-  obj->val() = value.get();
+  // We don't use `setVal` here because the assumes the cell has already
+  // been initialized.
+  obj->mutableVal() = value.get();
   // Acquire a strong reference to a type definition this global could
   // be referencing.
   obj->type().AddRef();
@@ -3378,7 +3387,7 @@ bool WasmGlobalObject::valueSetterImpl(JSContext* cx, const CallArgs& args) {
   if (!Val::fromJSValue(cx, global->type(), args.get(0), &val)) {
     return false;
   }
-  global->val() = val.get();
+  global->setVal(val);
 
   args.rval().setUndefined();
   return true;
@@ -3411,8 +3420,21 @@ bool WasmGlobalObject::isMutable() const {
 
 ValType WasmGlobalObject::type() const { return val().get().type(); }
 
-GCPtrVal& WasmGlobalObject::val() const {
+GCPtrVal& WasmGlobalObject::mutableVal() {
   return *reinterpret_cast<GCPtrVal*>(getReservedSlot(VAL_SLOT).toPrivate());
+}
+
+const GCPtrVal& WasmGlobalObject::val() const {
+  return *reinterpret_cast<GCPtrVal*>(getReservedSlot(VAL_SLOT).toPrivate());
+}
+
+void WasmGlobalObject::setVal(wasm::HandleVal value) {
+  MOZ_ASSERT(type() == value.get().type());
+  mutableVal() = value;
+}
+
+void* WasmGlobalObject::addressOfCell() const {
+  return (void*)&val().get().cell();
 }
 
 #ifdef ENABLE_WASM_TYPE_REFLECTIONS
@@ -3769,7 +3791,7 @@ bool WasmExceptionObject::construct(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    if (!exnObj->initValue(cx, offsets[i], params[i], nextArg)) {
+    if (!exnObj->initArg(cx, offsets[i], params[i], nextArg)) {
       return false;
     }
   }
@@ -3811,9 +3833,42 @@ WasmExceptionObject* WasmExceptionObject::create(JSContext* cx,
   return obj;
 }
 
+WasmExceptionObject* WasmExceptionObject::wrapJSValue(JSContext* cx,
+                                                      HandleValue value) {
+  Rooted<WasmNamespaceObject*> wasm(cx, WasmNamespaceObject::getOrCreate(cx));
+  if (!wasm) {
+    return nullptr;
+  }
+
+  Rooted<AnyRef> valueAnyRef(cx);
+  if (!AnyRef::fromJSValue(cx, value, &valueAnyRef)) {
+    return nullptr;
+  }
+
+  Rooted<WasmTagObject*> wrappedJSValueTag(cx, wasm->wrappedJSValueTag());
+  WasmExceptionObject* exn =
+      WasmExceptionObject::create(cx, wrappedJSValueTag, nullptr, nullptr);
+  if (!exn) {
+    return nullptr;
+  }
+  MOZ_ASSERT(exn->isWrappedJSValue());
+
+  exn->initRefArg(WrappedJSValueTagType_ValueOffset, valueAnyRef);
+  return exn;
+}
+
 bool WasmExceptionObject::isNewborn() const {
   MOZ_ASSERT(is<WasmExceptionObject>());
   return getReservedSlot(DATA_SLOT).isUndefined();
+}
+
+bool WasmExceptionObject::isWrappedJSValue() const {
+  return tagType() == sWrappedJSValueTagType;
+}
+
+Value WasmExceptionObject::wrappedJSValue() const {
+  MOZ_ASSERT(isWrappedJSValue());
+  return loadRefArg(WrappedJSValueTagType_ValueOffset).toJSValue();
 }
 
 const JSPropertySpec WasmExceptionObject::properties[] = {
@@ -3886,7 +3941,7 @@ bool WasmExceptionObject::getArgImpl(JSContext* cx, const CallArgs& args) {
 
   uint32_t offset = exnTag->tagType()->argOffsets()[index];
   RootedValue result(cx);
-  if (!exnObj->loadValue(cx, offset, params[index], &result)) {
+  if (!exnObj->loadArg(cx, offset, params[index], &result)) {
     return false;
   }
   args.rval().set(result);
@@ -3931,8 +3986,9 @@ uint8_t* WasmExceptionObject::typedMem() const {
   return (uint8_t*)getReservedSlot(DATA_SLOT).toPrivate();
 }
 
-bool WasmExceptionObject::loadValue(JSContext* cx, size_t offset,
-                                    wasm::ValType type, MutableHandleValue vp) {
+bool WasmExceptionObject::loadArg(JSContext* cx, size_t offset,
+                                  wasm::ValType type,
+                                  MutableHandleValue vp) const {
   if (!type.isExposable()) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_BAD_VAL_TYPE);
@@ -3941,8 +3997,8 @@ bool WasmExceptionObject::loadValue(JSContext* cx, size_t offset,
   return ToJSValue(cx, typedMem() + offset, type, vp);
 }
 
-bool WasmExceptionObject::initValue(JSContext* cx, size_t offset,
-                                    wasm::ValType type, HandleValue value) {
+bool WasmExceptionObject::initArg(JSContext* cx, size_t offset,
+                                  wasm::ValType type, HandleValue value) {
   if (!type.isExposable()) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                              JSMSG_WASM_BAD_VAL_TYPE);
@@ -3958,6 +4014,16 @@ bool WasmExceptionObject::initValue(JSContext* cx, size_t offset,
   }
   val.get().writeToHeapLocation(dest);
   return true;
+}
+
+void WasmExceptionObject::initRefArg(size_t offset, wasm::AnyRef ref) {
+  uint8_t* dest = typedMem() + offset;
+  *((GCPtr<AnyRef>*)dest) = ref;
+}
+
+wasm::AnyRef WasmExceptionObject::loadRefArg(size_t offset) const {
+  uint8_t* src = typedMem() + offset;
+  return *((GCPtr<AnyRef>*)src);
 }
 
 const JSFunctionSpec WasmExceptionObject::methods[] = {
@@ -4231,7 +4297,7 @@ static bool RejectWithPendingException(JSContext* cx,
 static bool Reject(JSContext* cx, const CompileArgs& args,
                    Handle<PromiseObject*> promise, const UniqueChars& error) {
   if (!error) {
-    ReportOutOfMemory(cx);
+    ThrowCompileOutOfMemory(cx);
     return RejectWithPendingException(cx, promise);
   }
 
@@ -4602,6 +4668,10 @@ static bool WebAssembly_validate(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   FeatureOptions options;
+  if (!options.init(cx, callArgs.get(1))) {
+    return false;
+  }
+
   UniqueChars error;
   bool validated = Validate(cx, *bytecode, options, &error);
 
@@ -5301,17 +5371,31 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
     }
   }
 
-  if (ExceptionsAvailable(cx)) {
-    constexpr NameAndProtoKey exceptionEntries[] = {
-        {"Tag", JSProto_WasmTag},
-        {"Exception", JSProto_WasmException},
-    };
-    for (const auto& entry : exceptionEntries) {
-      if (!WebAssemblyDefineConstructor(cx, wasm, entry, &ctorValue, &id)) {
-        return false;
-      }
+  constexpr NameAndProtoKey exceptionEntries[] = {
+      {"Tag", JSProto_WasmTag},
+      {"Exception", JSProto_WasmException},
+  };
+  for (const auto& entry : exceptionEntries) {
+    if (!WebAssemblyDefineConstructor(cx, wasm, entry, &ctorValue, &id)) {
+      return false;
     }
   }
+
+  RootedObject tagProto(
+      cx, GlobalObject::getOrCreatePrototype(cx, JSProto_WasmTag));
+  if (!tagProto) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  SharedTagType wrappedJSValueTagType(sWrappedJSValueTagType);
+  WasmTagObject* wrappedJSValueTagObject =
+      WasmTagObject::create(cx, wrappedJSValueTagType, tagProto);
+  if (!wrappedJSValueTagObject) {
+    return false;
+  }
+
+  wasm->setWrappedJSValueTag(wrappedJSValueTagObject);
 
 #ifdef ENABLE_WASM_MOZ_INTGEMM
   if (MozIntGemmAvailable(cx) &&
@@ -5323,13 +5407,24 @@ static bool WebAssemblyClassFinish(JSContext* cx, HandleObject object,
   return true;
 }
 
+WasmNamespaceObject* WasmNamespaceObject::getOrCreate(JSContext* cx) {
+  JSObject* wasm =
+      GlobalObject::getOrCreateConstructor(cx, JSProto_WebAssembly);
+  if (!wasm) {
+    return nullptr;
+  }
+  return &wasm->as<WasmNamespaceObject>();
+}
+
 static const ClassSpec WebAssemblyClassSpec = {
     CreateWebAssemblyObject,       nullptr, WebAssembly_static_methods,
     WebAssembly_static_properties, nullptr, nullptr,
     WebAssemblyClassFinish};
 
 const JSClass js::WasmNamespaceObject::class_ = {
-    "WebAssembly", JSCLASS_HAS_CACHED_PROTO(JSProto_WebAssembly),
+    "WebAssembly",
+    JSCLASS_HAS_CACHED_PROTO(JSProto_WebAssembly) |
+        JSCLASS_HAS_RESERVED_SLOTS(WasmNamespaceObject::RESERVED_SLOTS),
     JS_NULL_CLASS_OPS, &WebAssemblyClassSpec};
 
 // Sundry

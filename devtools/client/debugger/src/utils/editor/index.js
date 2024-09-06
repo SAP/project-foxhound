@@ -14,17 +14,27 @@ import { createLocation } from "../location";
 
 let editor;
 
-export function getEditor() {
+export function getEditor(useCm6) {
   if (editor) {
     return editor;
   }
 
-  editor = createEditor();
+  editor = createEditor(useCm6);
   return editor;
 }
 
 export function removeEditor() {
   editor = null;
+}
+
+/**
+ *  Update line wrapping for the codemirror editor.
+ */
+export function updateEditorLineWrapping(value) {
+  if (!editor) {
+    return;
+  }
+  editor.setLineWrapping(value);
 }
 
 function getCodeMirror() {

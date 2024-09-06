@@ -78,16 +78,6 @@
 
 /************************************************************************/
 
-namespace JS {
-/**
- * Tell JS engine whether to use fdlibm for Math.sin, Math.cos, and Math.tan.
- * Using fdlibm ensures that we don't expose a math fingerprint.
- */
-extern JS_PUBLIC_API void SetUseFdlibmForSinCosTan(bool value);
-}  // namespace JS
-
-/************************************************************************/
-
 struct JSFunctionSpec;
 struct JSPropertySpec;
 
@@ -874,8 +864,7 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(WASM_FOLD_OFFSETS, "wasm.fold-offsets") \
   Register(WASM_DELAY_TIER2, "wasm.delay-tier2") \
   Register(WASM_JIT_BASELINE, "wasm.baseline") \
-  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing")
-// clang-format on
+  Register(WASM_JIT_OPTIMIZING, "wasm.optimizing")  // clang-format on
 
 typedef enum JSJitCompilerOption {
 #define JIT_COMPILER_DECLARE(key, str) JSJITCOMPILER_##key,

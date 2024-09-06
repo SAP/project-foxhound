@@ -129,8 +129,7 @@ class ChromeUtils {
   static bool IsOriginAttributesEqualIgnoringFPD(
       const dom::OriginAttributesDictionary& aA,
       const dom::OriginAttributesDictionary& aB) {
-    return aA.mInIsolatedMozBrowser == aB.mInIsolatedMozBrowser &&
-           aA.mUserContextId == aB.mUserContextId &&
+    return aA.mUserContextId == aB.mUserContextId &&
            aA.mPrivateBrowsingId == aB.mPrivateBrowsingId;
   }
 
@@ -223,10 +222,10 @@ class ChromeUtils {
                                  const nsAString& resourceURI,
                                  ErrorResult& aRv);
 
-  static void DefineESModuleGetters(const GlobalObject& global,
-                                    JS::Handle<JSObject*> target,
-                                    JS::Handle<JSObject*> modules,
-                                    ErrorResult& aRv);
+  static void DefineESModuleGetters(
+      const GlobalObject& global, JS::Handle<JSObject*> target,
+      JS::Handle<JSObject*> modules,
+      const ImportESModuleOptionsDictionary& aOptions, ErrorResult& aRv);
 
 #ifdef XP_UNIX
   static void GetLibcConstants(const GlobalObject&, LibcConstants& aConsts);

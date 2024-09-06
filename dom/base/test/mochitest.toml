@@ -1231,8 +1231,6 @@ skip-if = [
 
 ["test_domparsing.html"]
 
-["test_domrequest.html"]
-
 ["test_domwindowutils.html"]
 skip-if = ["os == 'android'"] # Bug 1525959
 
@@ -1299,6 +1297,8 @@ skip-if = [
   "http3",
   "http2",
 ]
+
+["test_focus_radio.html"]
 
 ["test_focus_scroll_padding_tab.html"]
 

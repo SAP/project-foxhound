@@ -48,7 +48,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
 
   // nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
   void BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                      const nsAttrValue* aValue, bool aNotify) override;
   void AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -166,6 +166,9 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
     return AttrValueToCORSMode(GetParsedAttr(nsGkAtoms::crossorigin));
   }
 
+  nsDOMTokenList* Blocking();
+  bool IsPotentiallyRenderBlocking() override;
+
   void NodeInfoChanged(Document* aOldDoc) final {
     mCachedURI = nullptr;
     nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
@@ -197,6 +200,7 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
 
   RefPtr<nsDOMTokenList> mRelList;
   RefPtr<nsDOMTokenList> mSizes;
+  RefPtr<nsDOMTokenList> mBlocking;
 
   // A weak reference to our preload is held only to cancel the preload when
   // this node updates or unbounds from the tree.  We want to prevent cycles,

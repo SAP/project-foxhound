@@ -547,6 +547,12 @@ nsIWidget* nsBaseWidget::GetSheetWindowParent(void) { return nullptr; }
 
 float nsBaseWidget::GetDPI() { return 96.0f; }
 
+void nsBaseWidget::NotifyAPZOfDPIChange() {
+  if (mAPZC) {
+    mAPZC->SetDPI(GetDPI());
+  }
+}
+
 CSSToLayoutDeviceScale nsIWidget::GetDefaultScale() {
   double devPixelsPerCSSPixel = StaticPrefs::layout_css_devPixelsPerPx();
 
@@ -1174,18 +1180,22 @@ class DispatchEventOnMainThread : public Runnable {
 template <class InputType, class EventType>
 class DispatchInputOnControllerThread : public Runnable {
  public:
+  enum class APZOnly { Yes, No };
   DispatchInputOnControllerThread(const EventType& aEvent,
                                   IAPZCTreeManager* aAPZC,
-                                  nsBaseWidget* aWidget)
+                                  nsBaseWidget* aWidget,
+                                  APZOnly aAPZOnly = APZOnly::No)
       : mozilla::Runnable("DispatchInputOnControllerThread"),
         mMainMessageLoop(MessageLoop::current()),
         mInput(aEvent),
         mAPZC(aAPZC),
-        mWidget(aWidget) {}
+        mWidget(aWidget),
+        mAPZOnly(aAPZOnly) {}
 
   NS_IMETHOD Run() override {
     APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(mInput);
-    if (result.GetStatus() == nsEventStatus_eConsumeNoDefault) {
+    if (mAPZOnly == APZOnly::Yes ||
+        result.GetStatus() == nsEventStatus_eConsumeNoDefault) {
       return NS_OK;
     }
     RefPtr<Runnable> r = new DispatchEventOnMainThread<InputType, EventType>(
@@ -1199,6 +1209,7 @@ class DispatchInputOnControllerThread : public Runnable {
   InputType mInput;
   RefPtr<IAPZCTreeManager> mAPZC;
   nsBaseWidget* mWidget;
+  const APZOnly mAPZOnly;
 };
 
 void nsBaseWidget::DispatchTouchInput(MultiTouchInput& aInput,
@@ -1266,6 +1277,7 @@ nsIWidget::ContentAndAPZEventStatus nsBaseWidget::DispatchInputEvent(
     WidgetInputEvent* aEvent) {
   nsIWidget::ContentAndAPZEventStatus status;
   MOZ_ASSERT(NS_IsMainThread());
+
   if (mAPZC) {
     if (APZThreadUtils::IsControllerThread()) {
       APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(*aEvent);
@@ -1276,34 +1288,45 @@ nsIWidget::ContentAndAPZEventStatus nsBaseWidget::DispatchInputEvent(
       status.mContentStatus = ProcessUntransformedAPZEvent(aEvent, result);
       return status;
     }
-    if (WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent()) {
-      RefPtr<Runnable> r =
-          new DispatchInputOnControllerThread<ScrollWheelInput,
-                                              WidgetWheelEvent>(*wheelEvent,
-                                                                mAPZC, this);
-      APZThreadUtils::RunOnControllerThread(std::move(r));
-      status.mContentStatus = nsEventStatus_eConsumeDoDefault;
-      return status;
+    // Most drag events aren't able to converted to MouseEvent except to
+    // eDragStart and eDragEnd.
+    const bool canDispatchToApzc =
+        !aEvent->AsDragEvent() ||
+        aEvent->AsDragEvent()->CanConvertToInputData();
+    if (canDispatchToApzc) {
+      if (WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent()) {
+        RefPtr<Runnable> r =
+            new DispatchInputOnControllerThread<ScrollWheelInput,
+                                                WidgetWheelEvent>(*wheelEvent,
+                                                                  mAPZC, this);
+        APZThreadUtils::RunOnControllerThread(std::move(r));
+        status.mContentStatus = nsEventStatus_eConsumeDoDefault;
+        return status;
+      }
+      if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
+        RefPtr<Runnable> r =
+            new DispatchInputOnControllerThread<MouseInput, WidgetMouseEvent>(
+                *mouseEvent, mAPZC, this);
+        APZThreadUtils::RunOnControllerThread(std::move(r));
+        status.mContentStatus = nsEventStatus_eConsumeDoDefault;
+        return status;
+      }
+      if (WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent()) {
+        RefPtr<Runnable> r =
+            new DispatchInputOnControllerThread<MultiTouchInput,
+                                                WidgetTouchEvent>(*touchEvent,
+                                                                  mAPZC, this);
+        APZThreadUtils::RunOnControllerThread(std::move(r));
+        status.mContentStatus = nsEventStatus_eConsumeDoDefault;
+        return status;
+      }
+      // Allow dispatching keyboard/drag events on Gecko thread
+      // without sending them to APZ
+
+      // FIXME: APZ can handle keyboard events now, we should
+      // be sending them to APZ here
+      MOZ_ASSERT(aEvent->AsKeyboardEvent() || aEvent->AsDragEvent());
     }
-    if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
-      RefPtr<Runnable> r =
-          new DispatchInputOnControllerThread<MouseInput, WidgetMouseEvent>(
-              *mouseEvent, mAPZC, this);
-      APZThreadUtils::RunOnControllerThread(std::move(r));
-      status.mContentStatus = nsEventStatus_eConsumeDoDefault;
-      return status;
-    }
-    if (WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent()) {
-      RefPtr<Runnable> r =
-          new DispatchInputOnControllerThread<MultiTouchInput,
-                                              WidgetTouchEvent>(*touchEvent,
-                                                                mAPZC, this);
-      APZThreadUtils::RunOnControllerThread(std::move(r));
-      status.mContentStatus = nsEventStatus_eConsumeDoDefault;
-      return status;
-    }
-    // Allow dispatching keyboard events on Gecko thread.
-    MOZ_ASSERT(aEvent->AsKeyboardEvent());
   }
 
   DispatchEvent(aEvent, status.mContentStatus);
@@ -1313,8 +1336,22 @@ nsIWidget::ContentAndAPZEventStatus nsBaseWidget::DispatchInputEvent(
 void nsBaseWidget::DispatchEventToAPZOnly(mozilla::WidgetInputEvent* aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mAPZC) {
-    MOZ_ASSERT(APZThreadUtils::IsControllerThread());
-    mAPZC->InputBridge()->ReceiveInputEvent(*aEvent);
+    if (APZThreadUtils::IsControllerThread()) {
+      mAPZC->InputBridge()->ReceiveInputEvent(*aEvent);
+      return;
+    }
+
+    if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
+      RefPtr<Runnable> r =
+          new DispatchInputOnControllerThread<MouseInput, WidgetMouseEvent>(
+              *mouseEvent, mAPZC, this,
+              DispatchInputOnControllerThread<MouseInput,
+                                              WidgetMouseEvent>::APZOnly::Yes);
+      APZThreadUtils::RunOnControllerThread(std::move(r));
+      return;
+    }
+
+    MOZ_ASSERT_UNREACHABLE("Not implemented yet");
   }
 }
 

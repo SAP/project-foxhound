@@ -16,6 +16,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
   UrlbarProviderTabToSearch:
@@ -40,7 +41,10 @@ function makeMapKeyForTabResult(result) {
   return UrlbarUtils.tupleString(
     result.payload.url,
     lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") &&
-      result.type == UrlbarUtils.RESULT_TYPE.TAB_SWITCH
+      result.type == UrlbarUtils.RESULT_TYPE.TAB_SWITCH &&
+      lazy.UrlbarProviderOpenTabs.isNonPrivateUserContextId(
+        result.payload.userContextId
+      )
       ? result.payload.userContextId
       : undefined
   );
@@ -162,9 +166,11 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     }
 
     // Show Top Sites above trending results.
-    let showSearchSuggestionsFirst = !(
-      lazy.UrlbarPrefs.get("suggest.trending") && !context.searchString
-    );
+    let showSearchSuggestionsFirst =
+      context.searchString ||
+      (!lazy.UrlbarPrefs.get("suggest.trending") &&
+        !lazy.UrlbarPrefs.get("suggest.recentsearches"));
+
     // Determine the result groups to use for this sort.  In search mode with
     // an engine, show search suggestions first.
     let rootGroup =

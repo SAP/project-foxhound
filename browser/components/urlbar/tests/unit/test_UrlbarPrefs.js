@@ -81,7 +81,7 @@ add_task(function makeResultGroups_true() {
                       group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
                     },
                     {
-                      flex: 2,
+                      flex: 99,
                       group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
                     },
                     {
@@ -207,7 +207,7 @@ add_task(function makeResultGroups_false() {
                       group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY,
                     },
                     {
-                      flex: 2,
+                      flex: 99,
                       group: UrlbarUtils.RESULT_GROUP.RECENT_SEARCH,
                     },
                     {
@@ -363,10 +363,10 @@ add_task(async function onNimbusChanged() {
   // Add an observer that throws an Error and an observer that does not define
   // anything to check whether the other observers can get notifications.
   UrlbarPrefs.addObserver({
-    onPrefChanged(pref) {
+    onPrefChanged() {
       throw new Error("From onPrefChanged");
     },
-    onNimbusChanged(pref) {
+    onNimbusChanged() {
       throw new Error("From onNimbusChanged");
     },
   });
@@ -407,10 +407,10 @@ add_task(async function onPrefChanged() {
   // Add an observer that throws an Error and an observer that does not define
   // anything to check whether the other observers can get notifications.
   UrlbarPrefs.addObserver({
-    onPrefChanged(pref) {
+    onPrefChanged() {
       throw new Error("From onPrefChanged");
     },
-    onNimbusChanged(pref) {
+    onNimbusChanged() {
       throw new Error("From onNimbusChanged");
     },
   });

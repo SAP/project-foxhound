@@ -361,6 +361,17 @@ class Raptor(
                 },
             ],
             [
+                ["--post-startup-delay"],
+                {
+                    "dest": "post_startup_delay",
+                    "type": "int",
+                    "help": (
+                        "How long to wait (ms) after browser start-up before "
+                        "starting the tests."
+                    ),
+                },
+            ],
+            [
                 ["--project"],
                 {
                     "action": "store",
@@ -608,6 +619,15 @@ class Raptor(
                     ),
                 },
             ],
+            [
+                ["--screenshot-on-failure"],
+                {
+                    "action": "store_true",
+                    "dest": "screenshot_on_failure",
+                    "default": False,
+                    "help": "Take a screenshot when the test fails.",
+                },
+            ],
         ]
         + testing_config_options
         + copy.deepcopy(code_coverage_config_options)
@@ -732,6 +752,7 @@ class Raptor(
         self.browser_cycles = self.config.get("browser_cycles")
         self.clean = self.config.get("clean")
         self.page_timeout = self.config.get("page_timeout", None)
+        self.screenshot_on_failure = self.config.get("screenshot_on_failure")
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line.
@@ -1054,6 +1075,15 @@ class Raptor(
             )
         if self.config.get("page_timeout"):
             options.extend([f"--page-timeout={self.page_timeout}"])
+        if self.config.get("post_startup_delay"):
+            options.extend(
+                [f"--post-startup-delay={self.config['post_startup_delay']}"]
+            )
+        if (
+            self.config.get("screenshot_on_failure", False)
+            or os.environ.get("MOZ_AUTOMATION", None) is not None
+        ):
+            options.extend(["--screenshot-on-failure"])
 
         for (arg,), details in Raptor.browsertime_options:
             # Allow overriding defaults on the `./mach raptor-test ...` command-line
@@ -1168,7 +1198,6 @@ class Raptor(
             )
         self.register_virtualenv_module(
             requirements=[mozbase_requirements],
-            two_pass=True,
             editable=True,
         )
 
@@ -1193,7 +1222,7 @@ class Raptor(
                     "Pillow==9.2.0",
                     "scipy==1.9.3",
                     "pyssim==0.4",
-                    "opencv-python==4.7.0.72",
+                    "opencv-python==4.6.0.66",
                 ]
             )
 

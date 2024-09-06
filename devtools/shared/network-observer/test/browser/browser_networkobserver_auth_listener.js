@@ -71,7 +71,7 @@ add_task(async function testAuthRequestWithoutListener() {
   const events = [];
   const networkObserver = new NetworkObserver({
     ignoreChannelFunction: channel => channel.URI.spec !== AUTH_URL,
-    onNetworkEvent: event => {
+    onNetworkEvent: () => {
       const owner = new AuthForwardingOwner();
       events.push(owner);
       return owner;
@@ -91,8 +91,9 @@ add_task(async function testAuthRequestWithoutListener() {
 
   info("Wait for the auth prompt to be displayed");
   await onAuthPrompt;
-  ok(
-    getTabAuthPrompts(tab).length == 1,
+  Assert.equal(
+    getTabAuthPrompts(tab).length,
+    1,
     "The auth prompt was not blocked by the network observer"
   );
 
@@ -114,7 +115,7 @@ add_task(async function testAuthRequestWithForwardingListener() {
   const events = [];
   const networkObserver = new NetworkObserver({
     ignoreChannelFunction: channel => channel.URI.spec !== AUTH_URL,
-    onNetworkEvent: event => {
+    onNetworkEvent: () => {
       info("waitForNetworkEvents received a new event");
       const owner = new AuthForwardingOwner();
       events.push(owner);
@@ -140,8 +141,9 @@ add_task(async function testAuthRequestWithForwardingListener() {
   // forwards the auth notification immediately.
   info("Wait for the auth prompt to be displayed");
   await onAuthPrompt;
-  ok(
-    getTabAuthPrompts(tab).length == 1,
+  Assert.equal(
+    getTabAuthPrompts(tab).length,
+    1,
     "The auth prompt was not blocked by the network observer"
   );
 
@@ -165,7 +167,7 @@ add_task(async function testAuthRequestWithCancellingListener() {
   const events = [];
   const networkObserver = new NetworkObserver({
     ignoreChannelFunction: channel => channel.URI.spec !== AUTH_URL,
-    onNetworkEvent: event => {
+    onNetworkEvent: () => {
       const owner = new AuthCancellingOwner();
       events.push(owner);
       return owner;

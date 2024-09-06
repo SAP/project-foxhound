@@ -1058,7 +1058,7 @@ class ModalPrompter {
         closed = true;
       });
     Services.tm.spinEventLoopUntilOrQuit(
-      "prompts/Prompter.jsm:openPromptSync",
+      "prompts/Prompter.sys.mjs:openPromptSync",
       () => closed
     );
   }
@@ -1474,7 +1474,8 @@ class ModalPrompter {
     }
 
     if (flags & Ci.nsIPrompt.SHOW_SPINNER) {
-      args.showSpinner = true;
+      // When bug 1879550 is fixed, add a higher-res version here
+      args.headerIconURL = "chrome://global/skin/icons/loading.png";
     }
 
     if (this.async) {

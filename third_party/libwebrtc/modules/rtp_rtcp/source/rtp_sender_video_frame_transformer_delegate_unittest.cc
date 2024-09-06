@@ -74,10 +74,16 @@ class RtpSenderVideoFrameTransformerDelegateTest : public ::testing::Test {
                           frame_to_transform) {
           frame = std::move(frame_to_transform);
         });
+    RTPVideoHeader rtp_header;
+
+    VideoFrameMetadata metadata;
+    metadata.SetCodec(VideoCodecType::kVideoCodecVP8);
+    metadata.SetRTPVideoHeaderCodecSpecifics(RTPVideoHeaderVP8());
+
     delegate->TransformFrame(
         /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
-        encoded_image, RTPVideoHeader(),
-        /*expected_retransmission_time=*/TimeDelta::PlusInfinity());
+        encoded_image, RTPVideoHeader::FromMetadata(metadata),
+        /*expected_retransmission_time=*/TimeDelta::Millis(10));
     return frame;
   }
 
@@ -117,7 +123,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
   delegate->TransformFrame(
       /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
       encoded_image, RTPVideoHeader(),
-      /*expected_retransmission_time=*/TimeDelta::PlusInfinity());
+      /*expected_retransmission_time=*/TimeDelta::Millis(10));
 }
 
 TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
@@ -135,6 +141,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
   std::unique_ptr<TransformableFrameInterface> frame =
       GetTransformableFrame(delegate);
   ASSERT_TRUE(frame);
+  EXPECT_STRCASEEQ("video/VP8", frame->GetMimeType().c_str());
 
   rtc::Event event;
   EXPECT_CALL(test_sender_, SendVideo).WillOnce(WithoutArgs([&] {
@@ -162,6 +169,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneSenderVideoFrame) {
 
   EXPECT_EQ(clone->IsKeyFrame(), video_frame.IsKeyFrame());
   EXPECT_EQ(clone->GetPayloadType(), video_frame.GetPayloadType());
+  EXPECT_EQ(clone->GetMimeType(), video_frame.GetMimeType());
   EXPECT_EQ(clone->GetSsrc(), video_frame.GetSsrc());
   EXPECT_EQ(clone->GetTimestamp(), video_frame.GetTimestamp());
   EXPECT_EQ(clone->Metadata(), video_frame.Metadata());
@@ -182,6 +190,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, CloneKeyFrame) {
 
   EXPECT_EQ(clone->IsKeyFrame(), video_frame.IsKeyFrame());
   EXPECT_EQ(clone->GetPayloadType(), video_frame.GetPayloadType());
+  EXPECT_EQ(clone->GetMimeType(), video_frame.GetMimeType());
   EXPECT_EQ(clone->GetSsrc(), video_frame.GetSsrc());
   EXPECT_EQ(clone->GetTimestamp(), video_frame.GetTimestamp());
   EXPECT_EQ(clone->Metadata(), video_frame.Metadata());
@@ -251,7 +260,7 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
       test_sender_,
       SendVideo(payload_type, absl::make_optional(kVideoCodecVP8), timestamp,
                 /*capture_time=*/Timestamp::MinusInfinity(), buffer, _, _,
-                /*expected_retransmission_time=*/TimeDelta::PlusInfinity(),
+                /*expected_retransmission_time=*/TimeDelta::Millis(10),
                 frame_csrcs))
       .WillOnce(WithoutArgs([&] {
         event.Set();
@@ -278,6 +287,30 @@ TEST_F(RtpSenderVideoFrameTransformerDelegateTest, SettingRTPTimestamp) {
 
   video_frame.SetRTPTimestamp(rtp_timestamp);
   EXPECT_EQ(video_frame.GetTimestamp(), rtp_timestamp);
+}
+
+TEST_F(RtpSenderVideoFrameTransformerDelegateTest,
+       ShortCircuitingSkipsTransform) {
+  auto delegate = rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+      &test_sender_, frame_transformer_,
+      /*ssrc=*/1111, time_controller_.CreateTaskQueueFactory().get());
+  EXPECT_CALL(*frame_transformer_,
+              RegisterTransformedFrameSinkCallback(_, 1111));
+  delegate->Init();
+
+  delegate->StartShortCircuiting();
+
+  // Will not call the actual transformer.
+  EXPECT_CALL(*frame_transformer_, Transform).Times(0);
+  // Will pass the frame straight to the reciever.
+  EXPECT_CALL(test_sender_, SendVideo);
+
+  EncodedImage encoded_image;
+  encoded_image.SetEncodedData(EncodedImageBuffer::Create(1));
+  delegate->TransformFrame(
+      /*payload_type=*/1, VideoCodecType::kVideoCodecVP8, /*rtp_timestamp=*/2,
+      encoded_image, RTPVideoHeader(),
+      /*expected_retransmission_time=*/TimeDelta::Millis(10));
 }
 
 }  // namespace

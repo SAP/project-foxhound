@@ -33,12 +33,11 @@ var makeDebugger = require("resource://devtools/server/actors/utils/make-debugge
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 const { TargetActorRegistry } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
-  {
-    loadInDevToolsLoader: false,
-  }
+  { global: "shared" }
 );
 const { PrivateBrowsingUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
+  "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  { global: "contextual" }
 );
 
 const EXTENSION_CONTENT_SYS_MJS =
@@ -82,7 +81,7 @@ loader.lazyGetter(lazy, "ExtensionContent", () => {
     // main loader. Note that the user of lazy.ExtensionContent elsewhere in
     // this file (at webextensionsContentScriptGlobals) looks up the module
     // via Cu.isESModuleLoaded, which also uses the main loader as desired.
-    loadInDevToolsLoader: false,
+    global: "shared",
   }).ExtensionContent;
 });
 
@@ -888,7 +887,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
     return {};
   }
 
-  listFrames(request) {
+  listFrames() {
     const windows = this._docShellsToWindows(this.docShells);
     return { frames: windows };
   }
@@ -912,7 +911,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
     );
   }
 
-  listWorkers(request) {
+  listWorkers() {
     return this.ensureWorkerDescriptorActorList()
       .getList()
       .then(actors => {
@@ -960,7 +959,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
     this.emit("workerListChanged");
   }
 
-  _onConsoleApiProfilerEvent(subject, topic, data) {
+  _onConsoleApiProfilerEvent() {
     // TODO: We will receive console-api-profiler events for any browser running
     // in the same process as this target. We should filter irrelevant events,
     // but console-api-profiler currently doesn't emit any information to identify
@@ -977,7 +976,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
     });
   }
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     // Ignore any event that comes before/after the actor is attached.
     // That typically happens during Firefox shutdown.
     if (this.isDestroyed()) {
@@ -1165,7 +1164,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
    * This sets up the content window for being debugged
    */
   _createThreadActor() {
-    this.threadActor = new ThreadActor(this, this.window);
+    this.threadActor = new ThreadActor(this);
     this.manage(this.threadActor);
   }
 
@@ -1187,7 +1186,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
   // Protocol Request Handlers
 
-  detach(request) {
+  detach() {
     // Destroy the actor in the next event loop in order
     // to ensure responding to the `detach` request.
     DevToolsUtils.executeSoon(() => {
@@ -1307,6 +1306,9 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       // The window global is already closed.
       return;
     }
+
+    // Also update configurations which applies to all target types
+    super.updateTargetConfiguration(options, calledFromDocumentCreation);
 
     let reload = false;
     if (typeof options.touchEventsOverride !== "undefined") {
@@ -1821,7 +1823,7 @@ class DebuggerProgressListener {
     this._knownWindowIDs.delete(getWindowID(window));
   }, "DebuggerProgressListener.prototype.onWindowHidden");
 
-  observe = DevToolsUtils.makeInfallible(function (subject, topic) {
+  observe = DevToolsUtils.makeInfallible(function (subject) {
     if (this._targetActor.isDestroyed()) {
       return;
     }
@@ -1856,8 +1858,7 @@ class DebuggerProgressListener {
   onStateChange = DevToolsUtils.makeInfallible(function (
     progress,
     request,
-    flag,
-    status
+    flag
   ) {
     if (this._targetActor.isDestroyed()) {
       return;

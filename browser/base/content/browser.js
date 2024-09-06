@@ -23,12 +23,12 @@ ChromeUtils.defineESModuleGetters(this, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  CFRPageActions: "resource:///modules/asrouter/CFRPageActions.sys.mjs",
   Color: "resource://gre/modules/Color.sys.mjs",
   ContentAnalysis: "resource:///modules/ContentAnalysis.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
-  Deprecated: "resource://gre/modules/Deprecated.sys.mjs",
   DevToolsSocketStatus:
     "resource://devtools/shared/security/DevToolsSocketStatus.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
@@ -99,10 +99,6 @@ ChromeUtils.defineESModuleGetters(this, {
   webrtcUI: "resource:///modules/webrtcUI.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
   ZoomUI: "resource:///modules/ZoomUI.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(this, {
-  CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
 });
 
 ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
@@ -188,8 +184,13 @@ XPCOMUtils.defineLazyScriptGetter(
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
-  "TranslationsPanel",
-  "chrome://browser/content/translations/translationsPanel.js"
+  "SelectTranslationsPanel",
+  "chrome://browser/content/translations/selectTranslationsPanel.js"
+);
+XPCOMUtils.defineLazyScriptGetter(
+  this,
+  "FullPageTranslationsPanel",
+  "chrome://browser/content/translations/fullPageTranslationsPanel.js"
 );
 XPCOMUtils.defineLazyScriptGetter(
   this,
@@ -274,6 +275,11 @@ XPCOMUtils.defineLazyScriptGetter(
   this,
   "gPageStyleMenu",
   "chrome://browser/content/browser-pagestyle.js"
+);
+XPCOMUtils.defineLazyScriptGetter(
+  this,
+  "gProfiles",
+  "chrome://browser/content/browser-profiles.js"
 );
 
 // lazy service getters
@@ -527,13 +533,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "gBookmarksToolbarShowInPrivate",
-  "browser.toolbars.bookmarks.showInPrivateBrowsing",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
   "gFxaToolbarEnabled",
   "identity.fxaccounts.toolbar.enabled",
   false,
@@ -723,6 +722,7 @@ var gInitialPages = [
   "about:welcome",
   "about:welcomeback",
   "chrome://browser/content/blanktab.html",
+  "about:profilemanager",
 ];
 
 function isInitialPage(url) {
@@ -743,22 +743,13 @@ function browserWindows() {
 }
 
 function updateBookmarkToolbarVisibility() {
-  // Bug 1846583 - hide bookmarks toolbar in PBM
-  if (
-    gUseFeltPrivacyUI &&
-    !gBookmarksToolbarShowInPrivate &&
-    PrivateBrowsingUtils.isWindowPrivate(window)
-  ) {
-    setToolbarVisibility(BookmarkingUI.toolbar, false, false, false);
-  } else {
-    BookmarkingUI.updateEmptyToolbarMessage();
-    setToolbarVisibility(
-      BookmarkingUI.toolbar,
-      gBookmarksToolbarVisibility,
-      false,
-      false
-    );
-  }
+  BookmarkingUI.updateEmptyToolbarMessage();
+  setToolbarVisibility(
+    BookmarkingUI.toolbar,
+    gBookmarksToolbarVisibility,
+    false,
+    false
+  );
 }
 
 // This is a stringbundle-like interface to gBrowserBundle, formerly a getter for
@@ -1689,13 +1680,13 @@ var gBrowserInit = {
     gBrowser.addEventListener("DOMUpdateBlockedPopups", gPopupBlockerObserver);
     gBrowser.addEventListener(
       "TranslationsParent:LanguageState",
-      TranslationsPanel
+      FullPageTranslationsPanel
     );
     gBrowser.addEventListener(
       "TranslationsParent:OfferTranslation",
-      TranslationsPanel
+      FullPageTranslationsPanel
     );
-    gBrowser.addTabsProgressListener(TranslationsPanel);
+    gBrowser.addTabsProgressListener(FullPageTranslationsPanel);
 
     window.addEventListener("AppCommand", HandleAppCommandEvent, true);
 
@@ -1708,12 +1699,10 @@ var gBrowserInit = {
 
     if (!gMultiProcessBrowser) {
       // There is a Content:Click message manually sent from content.
-      Services.els.addSystemEventListener(
-        gBrowser.tabpanels,
-        "click",
-        contentAreaClick,
-        true
-      );
+      gBrowser.tabpanels.addEventListener("click", contentAreaClick, {
+        capture: true,
+        mozSystemGroup: true,
+      });
     }
 
     // hook up UI through progress listener
@@ -2008,6 +1997,34 @@ var gBrowserInit = {
         document
           .getElementById("toolbar-menubar")
           .removeAttribute("toolbarname");
+      }
+      if (!Services.policies.isAllowed("filepickers")) {
+        let savePageCommand = document.getElementById("Browser:SavePage");
+        let openFileCommand = document.getElementById("Browser:OpenFile");
+
+        savePageCommand.setAttribute("disabled", "true");
+        openFileCommand.setAttribute("disabled", "true");
+
+        document.addEventListener("FilePickerBlocked", function (event) {
+          let browser = event.target;
+
+          let notificationBox = browser
+            .getTabBrowser()
+            ?.getNotificationBox(browser);
+
+          // Prevent duplicate notifications
+          if (
+            notificationBox &&
+            !notificationBox.getNotificationWithValue("filepicker-blocked")
+          ) {
+            notificationBox.appendNotification("filepicker-blocked", {
+              label: {
+                "l10n-id": "filepicker-blocked-infobar",
+              },
+              priority: notificationBox.PRIORITY_INFO_LOW,
+            });
+          }
+        });
       }
       let policies = Services.policies.getActivePolicies();
       if ("ManagedBookmarks" in policies) {
@@ -2398,6 +2415,10 @@ var gBrowserInit = {
         window,
         "browser-idle-startup-tasks-finished"
       );
+    });
+
+    scheduleIdleTask(() => {
+      gProfiles.init();
     });
   },
 
@@ -3010,7 +3031,7 @@ function BrowserOpenFileWindow() {
     };
 
     fp.init(
-      window,
+      window.browsingContext,
       gNavigatorBundle.getString("openFile"),
       nsIFilePicker.modeOpen
     );
@@ -3218,15 +3239,6 @@ function BrowserPageInfo(
   browsingContext,
   browser
 ) {
-  if (HTMLDocument.isInstance(documentURL)) {
-    Deprecated.warning(
-      "Please pass the location URL instead of the document " +
-        "to BrowserPageInfo() as the first argument.",
-      "https://bugzilla.mozilla.org/show_bug.cgi?id=1238180"
-    );
-    documentURL = documentURL.location;
-  }
-
   let args = { initialTab, imageElement, browsingContext, browser };
 
   documentURL = documentURL || window.gBrowser.selectedBrowser.currentURI.spec;
@@ -4524,7 +4536,23 @@ function toOpenWindowByType(inType, uri, features) {
  * @return a reference to the new window.
  */
 function OpenBrowserWindow(options = {}) {
-  return BrowserWindowTracker.openWindow({ openerWindow: window, ...options });
+  let telemetryObj = {};
+  TelemetryStopwatch.start("FX_NEW_WINDOW_MS", telemetryObj);
+
+  let win = BrowserWindowTracker.openWindow({
+    openerWindow: window,
+    ...options,
+  });
+
+  win.addEventListener(
+    "MozAfterPaint",
+    () => {
+      TelemetryStopwatch.finish("FX_NEW_WINDOW_MS", telemetryObj);
+    },
+    { once: true }
+  );
+
+  return win;
 }
 
 /**
@@ -6431,6 +6459,37 @@ function onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
     return;
   }
 
+  // triggerNode can be a nested child element of a toolbaritem.
+  let toolbarItem = popup.triggerNode;
+  while (toolbarItem) {
+    let localName = toolbarItem.localName;
+    if (localName == "toolbar") {
+      toolbarItem = null;
+      break;
+    }
+    if (localName == "toolbarpaletteitem") {
+      toolbarItem = toolbarItem.firstElementChild;
+      break;
+    }
+    if (localName == "menupopup") {
+      aEvent.preventDefault();
+      aEvent.stopPropagation();
+      return;
+    }
+    let parent = toolbarItem.parentElement;
+    if (parent) {
+      if (
+        parent.classList.contains("customization-target") ||
+        parent.getAttribute("overflowfortoolbar") || // Needs to work in the overflow list as well.
+        parent.localName == "toolbarpaletteitem" ||
+        parent.localName == "toolbar"
+      ) {
+        break;
+      }
+    }
+    toolbarItem = parent;
+  }
+
   // Empty the menu
   for (var i = popup.children.length - 1; i >= 0; --i) {
     var deadItem = popup.children[i];
@@ -6484,30 +6543,7 @@ function onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
     return;
   }
 
-  // triggerNode can be a nested child element of a toolbaritem.
-  let toolbarItem = popup.triggerNode;
-
-  if (toolbarItem && toolbarItem.localName == "toolbarpaletteitem") {
-    toolbarItem = toolbarItem.firstElementChild;
-  } else if (toolbarItem && toolbarItem.localName != "toolbar") {
-    while (toolbarItem && toolbarItem.parentElement) {
-      let parent = toolbarItem.parentElement;
-      if (
-        (parent.classList &&
-          parent.classList.contains("customization-target")) ||
-        parent.getAttribute("overflowfortoolbar") || // Needs to work in the overflow list as well.
-        parent.localName == "toolbarpaletteitem" ||
-        parent.localName == "toolbar"
-      ) {
-        break;
-      }
-      toolbarItem = parent;
-    }
-  } else {
-    toolbarItem = null;
-  }
-
-  let showTabStripItems = toolbarItem && toolbarItem.id == "tabbrowser-tabs";
+  let showTabStripItems = toolbarItem?.id == "tabbrowser-tabs";
   for (let node of popup.querySelectorAll(
     'menuitem[contexttype="toolbaritem"]'
   )) {
@@ -6563,9 +6599,7 @@ function onViewToolbarsPopupShowing(aEvent, aInsertPoint) {
   }
 
   let movable =
-    toolbarItem &&
-    toolbarItem.id &&
-    CustomizableUI.isWidgetRemovable(toolbarItem);
+    toolbarItem?.id && CustomizableUI.isWidgetRemovable(toolbarItem);
   if (movable) {
     if (CustomizableUI.isSpecialWidget(toolbarItem.id)) {
       moveToPanel.setAttribute("disabled", true);
@@ -9918,7 +9952,7 @@ var ConfirmationHint = {
     );
 
     this._panel.openPopup(anchor, {
-      position: options.position ?? "bottomcenter topleft",
+      position: options.position ?? "bottomleft topleft",
       triggerEvent: options.event,
     });
   },

@@ -57,6 +57,13 @@ function replacer(key, value) {
   if (typeof value === "function" || instanceOf(value, "RegExp")) {
     return value.toString();
   }
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "QueryInterface" in value
+  ) {
+    return value.toString();
+  }
   return value;
 }
 

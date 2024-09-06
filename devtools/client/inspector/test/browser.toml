@@ -213,6 +213,8 @@ skip-if = ["os == 'win'"] # bug 1413442
 
 ["browser_inspector_highlighter-geometry_06.js"]
 
+["browser_inspector_highlighter-geometry_07.js"]
+
 ["browser_inspector_highlighter-geometry_hide_on_interaction.js"]
 
 ["browser_inspector_highlighter-geometry_iframe.js"]
@@ -298,7 +300,6 @@ skip-if = ["debug"] # Bug 1250058 - Docshell leak on debug
 ["browser_inspector_inspect_loading_document.js"]
 
 ["browser_inspector_inspect_mutated_node.js"]
-skip-if = ["win10_2004"] # Bug 1723573
 
 ["browser_inspector_inspect_node_contextmenu.js"]
 

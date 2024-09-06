@@ -46,13 +46,6 @@ WebRenderImageHost::~WebRenderImageHost() {
 }
 
 void WebRenderImageHost::OnReleased() {
-  if (mRemoteTextureOwnerIdOfPushCallback) {
-    RemoteTextureMap::Get()->UnregisterRemoteTexturePushListener(
-        *mRemoteTextureOwnerIdOfPushCallback, mForPidOfPushCallback, this);
-    mRemoteTextureOwnerIdOfPushCallback = Nothing();
-    mSizeOfPushCallback = gfx::IntSize();
-    mFlagsOfPushCallback = TextureFlags::NO_FLAGS;
-  }
   if (!mPendingRemoteTextureWrappers.empty()) {
     mPendingRemoteTextureWrappers.clear();
   }
@@ -165,8 +158,7 @@ void WebRenderImageHost::UseRemoteTexture() {
     return;
   }
 
-  const bool useReadyCallback =
-      GetAsyncRef() && mRemoteTextureOwnerIdOfPushCallback.isNothing();
+  const bool useReadyCallback = bool(GetAsyncRef());
   CompositableTextureHostRef texture;
 
   if (useReadyCallback) {
@@ -206,8 +198,11 @@ void WebRenderImageHost::UseRemoteTexture() {
     while (!mPendingRemoteTextureWrappers.empty()) {
       auto* wrapper =
           mPendingRemoteTextureWrappers.front()->AsRemoteTextureHostWrapper();
-      mWaitingReadyCallback = RemoteTextureMap::Get()->GetRemoteTexture(
-          wrapper, readyCallback, mWaitForRemoteTextureOwner);
+      if (mWaitForRemoteTextureOwner) {
+        RemoteTextureMap::Get()->WaitForRemoteTextureOwner(wrapper);
+      }
+      mWaitingReadyCallback =
+          RemoteTextureMap::Get()->GetRemoteTexture(wrapper, readyCallback);
       MOZ_ASSERT_IF(mWaitingReadyCallback, !wrapper->IsReadyForRendering());
       if (!wrapper->IsReadyForRendering()) {
         break;
@@ -221,9 +216,9 @@ void WebRenderImageHost::UseRemoteTexture() {
     mPendingRemoteTextureWrappers.pop_front();
     MOZ_ASSERT(mPendingRemoteTextureWrappers.empty());
 
-    std::function<void(const RemoteTextureInfo&)> function;
-    RemoteTextureMap::Get()->GetRemoteTexture(wrapper, std::move(function),
-                                              mWaitForRemoteTextureOwner);
+    if (mWaitForRemoteTextureOwner) {
+      RemoteTextureMap::Get()->WaitForRemoteTextureOwner(wrapper);
+    }
     mWaitForRemoteTextureOwner = false;
   }
 
@@ -244,41 +239,6 @@ void WebRenderImageHost::UseRemoteTexture() {
       }
     }
   }
-}
-
-void WebRenderImageHost::EnableRemoteTexturePushCallback(
-    const RemoteTextureOwnerId aOwnerId, const base::ProcessId aForPid,
-    const gfx::IntSize aSize, const TextureFlags aFlags) {
-  if (!GetAsyncRef()) {
-    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-    return;
-  }
-
-  if (mRemoteTextureOwnerIdOfPushCallback.isSome()) {
-    RemoteTextureMap::Get()->UnregisterRemoteTexturePushListener(aOwnerId,
-                                                                 aForPid, this);
-  }
-
-  RemoteTextureMap::Get()->RegisterRemoteTexturePushListener(aOwnerId, aForPid,
-                                                             this);
-  mRemoteTextureOwnerIdOfPushCallback = Some(aOwnerId);
-  mForPidOfPushCallback = aForPid;
-  mSizeOfPushCallback = aSize;
-  mFlagsOfPushCallback = aFlags;
-}
-
-void WebRenderImageHost::NotifyPushTexture(const RemoteTextureId aTextureId,
-                                           const RemoteTextureOwnerId aOwnerId,
-                                           const base::ProcessId aForPid) {
-  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-
-  if (mRemoteTextureOwnerIdOfPushCallback != Some(aOwnerId)) {
-    // RemoteTextureOwnerId is already obsoleted
-    return;
-  }
-  PushPendingRemoteTexture(aTextureId, aOwnerId, aForPid, mSizeOfPushCallback,
-                           mFlagsOfPushCallback);
-  UseRemoteTexture();
 }
 
 void WebRenderImageHost::CleanupResources() {

@@ -17,6 +17,7 @@
 #include "jit/CompileWrappers.h"
 #include "jit/JitFrames.h"
 #include "jit/JSJitFrameIter.h"
+#include "js/Prefs.h"
 #include "util/DifferentialTesting.h"
 #include "vm/BigIntType.h"
 #include "vm/JSObject.h"
@@ -540,6 +541,16 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
                                                      Register scratch,
                                                      Label* slowCheck,
                                                      Label* label) {
+  MOZ_ASSERT(objReg != scratch);
+
+  Label done;
+  if (JS::Prefs::use_emulates_undefined_fuse()) {
+    loadPtr(AbsoluteAddress(
+                runtime()->addressOfHasSeenObjectEmulateUndefinedFuse()),
+            scratch);
+    branchPtr(Assembler::Equal, scratch, ImmPtr(nullptr), &done);
+  }
+
   // The branches to out-of-line code here implement a conservative version
   // of the JSObject::isWrapper test performed in EmulatesUndefined.
   loadObjClassUnsafe(objReg, scratch);
@@ -549,6 +560,7 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
   Address flags(scratch, JSClass::offsetOfFlags());
   branchTest32(Assembler::NonZero, flags, Imm32(JSCLASS_EMULATES_UNDEFINED),
                label);
+  bind(&done);
 }
 
 void MacroAssembler::branchFunctionKind(Condition cond,
@@ -594,9 +606,7 @@ void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
   MOZ_ASSERT(obj != scratch);
   MOZ_ASSERT(scratch != spectreRegToZero);
 
-  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
-  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
-  loadPtr(Address(scratch, BaseShape::offsetOfClasp()), scratch);
+  loadObjClassUnsafe(obj, scratch);
   branchPtr(cond, clasp, scratch, label);
 
   if (JitOptions.spectreObjectMitigations) {
@@ -608,9 +618,7 @@ void MacroAssembler::branchTestObjClassNoSpectreMitigations(
     Condition cond, Register obj, const Address& clasp, Register scratch,
     Label* label) {
   MOZ_ASSERT(obj != scratch);
-  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
-  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
-  loadPtr(Address(scratch, BaseShape::offsetOfClasp()), scratch);
+  loadObjClassUnsafe(obj, scratch);
   branchPtr(cond, clasp, scratch, label);
 }
 
@@ -621,9 +629,7 @@ void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
   MOZ_ASSERT(obj != scratch);
   MOZ_ASSERT(scratch != spectreRegToZero);
 
-  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
-  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
-  loadPtr(Address(scratch, BaseShape::offsetOfClasp()), scratch);
+  loadObjClassUnsafe(obj, scratch);
   branchPtr(cond, clasp, scratch, label);
 
   if (JitOptions.spectreObjectMitigations) {
@@ -631,20 +637,51 @@ void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
   }
 }
 
-void MacroAssembler::branchTestClassIsFunction(Condition cond, Register clasp,
-                                               Label* label) {
+void MacroAssembler::branchTestClass(
+    Condition cond, Register clasp,
+    std::pair<const JSClass*, const JSClass*> classes, Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
   if (cond == Assembler::Equal) {
-    branchPtr(Assembler::Equal, clasp, ImmPtr(&FunctionClass), label);
-    branchPtr(Assembler::Equal, clasp, ImmPtr(&ExtendedFunctionClass), label);
+    branchPtr(Assembler::Equal, clasp, ImmPtr(classes.first), label);
+    branchPtr(Assembler::Equal, clasp, ImmPtr(classes.second), label);
     return;
   }
 
-  Label isFunction;
-  branchPtr(Assembler::Equal, clasp, ImmPtr(&FunctionClass), &isFunction);
-  branchPtr(Assembler::NotEqual, clasp, ImmPtr(&ExtendedFunctionClass), label);
-  bind(&isFunction);
+  Label isClass;
+  branchPtr(Assembler::Equal, clasp, ImmPtr(classes.first), &isClass);
+  branchPtr(Assembler::NotEqual, clasp, ImmPtr(classes.second), label);
+  bind(&isClass);
+}
+
+void MacroAssembler::branchTestObjClass(
+    Condition cond, Register obj,
+    std::pair<const JSClass*, const JSClass*> classes, Register scratch,
+    Register spectreRegToZero, Label* label) {
+  MOZ_ASSERT(scratch != spectreRegToZero);
+
+  branchTestObjClassNoSpectreMitigations(cond, obj, classes, scratch, label);
+
+  if (JitOptions.spectreObjectMitigations) {
+    spectreZeroRegister(cond, scratch, spectreRegToZero);
+  }
+}
+
+void MacroAssembler::branchTestObjClassNoSpectreMitigations(
+    Condition cond, Register obj,
+    std::pair<const JSClass*, const JSClass*> classes, Register scratch,
+    Label* label) {
+  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
+  MOZ_ASSERT(obj != scratch);
+
+  loadObjClassUnsafe(obj, scratch);
+  branchTestClass(cond, scratch, classes, label);
+}
+
+void MacroAssembler::branchTestClassIsFunction(Condition cond, Register clasp,
+                                               Label* label) {
+  return branchTestClass(cond, clasp, {&FunctionClass, &ExtendedFunctionClass},
+                         label);
 }
 
 void MacroAssembler::branchTestObjIsFunction(Condition cond, Register obj,
@@ -665,9 +702,7 @@ void MacroAssembler::branchTestObjIsFunctionNoSpectreMitigations(
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
   MOZ_ASSERT(obj != scratch);
 
-  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
-  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
-  loadPtr(Address(scratch, BaseShape::offsetOfClasp()), scratch);
+  loadObjClassUnsafe(obj, scratch);
   branchTestClassIsFunction(cond, scratch, label);
 }
 

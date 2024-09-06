@@ -118,6 +118,16 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 100%);
         transform: scale(1);
       }
     }
+
+    header {
+      color: var(--newtab-primary-action-background);
+    }
+  }
+
+  &:active {
+    header {
+      color: var(--newtab-primary-element-active-color);
+    }
   }
 
   .img {
@@ -131,31 +141,15 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 100%);
   }
 
   .ds-card-link {
+    position: absolute;
     height: 100%;
-    display: flex;
-    flex-direction: column;
+    width: 100%;
     text-decoration: none;
-
-    &:hover {
-      header {
-        color: var(--newtab-primary-action-background);
-      }
-    }
 
     &:focus {
       @include ds-focus;
 
       transition: none;
-
-      header {
-        color: var(--newtab-primary-action-background);
-      }
-    }
-
-    &:active {
-      header {
-        color: var(--newtab-primary-element-active-color);
-      }
     }
   }
 
@@ -233,6 +227,58 @@ $ds-card-image-gradient-solid: rgba(0, 0, 0, 100%);
 
     .meta {
       padding: 3px 15px 11px;
+    }
+  }
+
+  &.ds-card-cta-button.variant-a,
+  &.ds-card-cta-button.variant-b {
+    .img {
+      padding-top: 52.4%;
+    }
+
+    .story-sponsored-label {
+      margin: var(--space-small) 0 0;
+    }
+
+    .source {
+      text-decoration: underline;
+    }
+
+    .story-footer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0 var(--space-small);
+      margin-top: 0;
+    }
+
+    .story-cta-button {
+      cursor: inherit;
+      background: var(--button-background-color);
+      border-radius: var(--border-radius-small);
+      border: none;
+      padding: var(--space-xsmall) 16px;
+      font-size: var(--font-size-small);
+      font-weight: var(--font-weight-bold);
+      min-height: var(--size-item-large);
+      min-width: 97px;
+      color: var(--newtab-text-primary-color);
+      margin-top: var(--space-small);
+
+      &:hover {
+        background: var(--button-background-color-hover);
+      }
+    }
+
+    .cta-header {
+      background: var(--button-background-color);
+      font-size: var(--font-size-root);
+      font-weight: var(--font-weight-bold);
+      text-align: end;
+      padding: var(--space-xsmall) 16px;
+      color: var(--newtab-text-primary-color);
+      min-height: var(--size-item-large);
     }
   }
 

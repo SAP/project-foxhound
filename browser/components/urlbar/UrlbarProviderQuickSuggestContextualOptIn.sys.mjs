@@ -129,7 +129,7 @@ class ProviderQuickSuggestContextualOptIn extends UrlbarProvider {
     );
   }
 
-  getPriority(queryContext) {
+  getPriority() {
     return lazy.UrlbarProviderTopSites.PRIORITY;
   }
 
@@ -138,13 +138,9 @@ class ProviderQuickSuggestContextualOptIn extends UrlbarProvider {
    * the view of one of the results of the provider.  It should return an object
    * describing the view update.
    *
-   * @param {UrlbarResult} result The result whose view will be updated.
-   * @param {Map} idsByName
-   *   A Map from an element's name, as defined by the provider; to its ID in
-   *   the DOM, as defined by the browser.
    * @returns {object} An object describing the view update.
    */
-  getViewUpdate(result, idsByName) {
+  getViewUpdate() {
     let alternativeCopy = lazy.UrlbarPrefs.get(
       "quicksuggest.contextualOptIn.sayHello"
     );

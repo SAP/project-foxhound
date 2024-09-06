@@ -43,7 +43,9 @@ namespace gc {
 enum IncrementalProgress { NotFinished = 0, Finished };
 
 class AutoSetMarkColor;
+class AutoUpdateMarkStackRanges;
 struct Cell;
+class MarkStackIter;
 class ParallelMarker;
 class UnmarkGrayTracer;
 
@@ -141,10 +143,12 @@ class MarkStack {
     size_t start() const;
     TaggedPtr ptr() const;
 
+    void setStart(size_t newStart);
+
+   private:
     static constexpr size_t StartShift = 2;
     static constexpr size_t KindMask = (1 << StartShift) - 1;
 
-   private:
     uintptr_t startAndKind_;
     TaggedPtr ptr_;
   };
@@ -152,11 +156,10 @@ class MarkStack {
   MarkStack();
   ~MarkStack();
 
-  explicit MarkStack(const MarkStack& other);
-  MarkStack& operator=(const MarkStack& other);
+  MarkStack(const MarkStack& other) = delete;
+  MarkStack& operator=(const MarkStack& other) = delete;
 
-  MarkStack(MarkStack&& other) noexcept;
-  MarkStack& operator=(MarkStack&& other) noexcept;
+  void swap(MarkStack& other);
 
   // The unit for MarkStack::capacity() is mark stack words.
   size_t capacity() { return stack().length(); }
@@ -172,13 +175,9 @@ class MarkStack {
 
   template <typename T>
   [[nodiscard]] bool push(T* ptr);
-
-  [[nodiscard]] bool push(JSObject* obj, SlotsOrElementsKind kind,
-                          size_t start);
+  void infalliblePush(JSObject* obj, SlotsOrElementsKind kind, size_t start);
   [[nodiscard]] bool push(const TaggedPtr& ptr);
-  [[nodiscard]] bool push(const SlotsOrElementsRange& array);
   void infalliblePush(const TaggedPtr& ptr);
-  void infalliblePush(const SlotsOrElementsRange& array);
 
   // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
   // storage to hold rope pointers.
@@ -229,6 +228,13 @@ class MarkStack {
   // The maximum stack capacity to grow to.
   MainThreadOrGCTaskData<size_t> maxCapacity_{SIZE_MAX};
 #endif
+
+#ifdef DEBUG
+  MainThreadOrGCTaskData<bool> elementsRangesAreValid;
+  friend class js::GCMarker;
+#endif
+
+  friend class MarkStackIter;
 };
 
 static_assert(unsigned(SlotsOrElementsKind::Unused) ==
@@ -236,6 +242,25 @@ static_assert(unsigned(SlotsOrElementsKind::Unused) ==
               "To split the mark stack we depend on being able to tell the "
               "difference between SlotsOrElementsRange::startAndKind_ and a "
               "tagged SlotsOrElementsRange");
+
+class MOZ_STACK_CLASS MarkStackIter {
+  MarkStack& stack_;
+  size_t pos_;
+
+ public:
+  explicit MarkStackIter(MarkStack& stack);
+
+  bool done() const;
+  void next();
+
+  MarkStack::Tag peekTag() const;
+  bool isSlotsOrElementsRange() const;
+  MarkStack::SlotsOrElementsRange& slotsOrElementsRange();
+
+ private:
+  size_t position() const;
+  MarkStack::TaggedPtr peekPtr() const;
+};
 
 // Bitmask of options to parameterize MarkingTracerT.
 namespace MarkingOptions {
@@ -337,6 +362,7 @@ class GCMarker {
   bool hasEntries(gc::MarkColor color) const;
 
   bool canDonateWork() const;
+  bool shouldDonateWork() const;
 
   void start();
   void stop();
@@ -371,6 +397,8 @@ class GCMarker {
   void setCheckAtomMarking(bool check);
 
   bool shouldCheckCompartments() { return strictCompartmentChecking; }
+
+  bool markOneObjectForTest(JSObject* obj);
 #endif
 
   bool markCurrentColorInParallel(SliceBudget& budget);
@@ -417,6 +445,13 @@ class GCMarker {
   template <typename Tracer>
   void setMarkingStateAndTracer(MarkingState prev, MarkingState next);
 
+  // The mutator can shift object elements which could invalidate any elements
+  // index on the mark stack. Change the index to be relative to the elements
+  // allocation (to ignore shifted elements) while the mutator is running.
+  void updateRangesAtStartOfSlice();
+  void updateRangesAtEndOfSlice();
+  friend class gc::AutoUpdateMarkStackRanges;
+
   template <uint32_t markingOptions>
   bool processMarkStackTop(SliceBudget& budget);
   friend class gc::GCRuntime;
@@ -433,9 +468,12 @@ class GCMarker {
   }
 
   template <uint32_t markingOptions, typename S, typename T>
-  void markAndTraverseEdge(S source, T* target);
+  void markAndTraverseEdge(S* source, T* target);
   template <uint32_t markingOptions, typename S, typename T>
-  void markAndTraverseEdge(S source, const T& target);
+  void markAndTraverseEdge(S* source, const T& target);
+
+  template <uint32_t markingOptions>
+  bool markAndTraversePrivateGCThing(JSObject* source, gc::TenuredCell* target);
 
   template <typename S, typename T>
   void checkTraversedEdge(S source, T* target);
@@ -485,10 +523,6 @@ class GCMarker {
 
   inline void pushValueRange(JSObject* obj, SlotsOrElementsKind kind,
                              size_t start, size_t end);
-
-  // Push an object onto the stack for later tracing and assert that it has
-  // already been marked.
-  inline void repush(JSObject* obj);
 
   template <typename T>
   void markImplicitEdgesHelper(T markedThing);

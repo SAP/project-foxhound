@@ -63,15 +63,17 @@ add_task(async function test_switch_tab() {
     );
   });
 
-  ok(
-    tabSwitchRow != undefined,
+  Assert.notEqual(
+    tabSwitchRow,
+    undefined,
     "Urlbar results contain the switch to tab from another container."
   );
   let element = UrlbarTestUtils.getRowAt(window, resultIndex);
   is(
-    element.querySelectorAll(".urlbarView-action").length,
-    2,
-    "Has switch to tab and user-context chiclet"
+    element.querySelectorAll(".urlbarView-action.urlbarView-userContext")
+      .length,
+    1,
+    "Has switch to tab with user-context chiclet"
   );
   let tabSwitchDonePromise = BrowserTestUtils.waitForEvent(
     window,
@@ -128,8 +130,9 @@ add_task(async function test_chiclet_disabled_on_update() {
   });
 
   let row = UrlbarTestUtils.getRowAt(window, 1);
-  ok(
-    row._elements["user-context"] == undefined,
+  Assert.equal(
+    row._elements["user-context"],
+    undefined,
     "Row doesnt contain user-context chiclet."
   );
 

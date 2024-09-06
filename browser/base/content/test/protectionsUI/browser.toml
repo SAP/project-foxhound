@@ -15,10 +15,6 @@ support-files = [
 
 ["browser_protectionsUI.js"]
 https_first_disabled = true
-skip-if = [
-  "os == 'linux' && !debug && tsan", # Bug 1675107
-  "os == 'mac' && !debug", # Bug 1775855
-]
 
 ["browser_protectionsUI_3.js"]
 
@@ -53,6 +49,8 @@ skip-if = ["a11y_checks"] # Bugs 1858041 and 1849179 for causing intermittent cr
 ["browser_protectionsUI_icon_state.js"]
 https_first_disabled = true
 
+["browser_protectionsUI_info_message.js"]
+
 ["browser_protectionsUI_milestones.js"]
 
 ["browser_protectionsUI_open_preferences.js"]
@@ -60,13 +58,6 @@ https_first_disabled = true
 
 ["browser_protectionsUI_pbmode_exceptions.js"]
 https_first_disabled = true
-
-["browser_protectionsUI_report_breakage.js"]
-https_first_disabled = true
-skip-if = [
-  "debug", # Bug 1546797
-  "asan",
-]
 
 ["browser_protectionsUI_shield_visibility.js"]
 support-files = [

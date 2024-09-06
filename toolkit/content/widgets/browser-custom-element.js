@@ -277,8 +277,6 @@
 
       this.mPrefs = Services.prefs;
 
-      this._mStrBundle = null;
-
       this._audioMuted = false;
 
       this._hasAnyPlayingMediaBeenBlocked = false;
@@ -687,17 +685,6 @@
       return !!this.browsingContext.opener;
     }
 
-    get mStrBundle() {
-      if (!this._mStrBundle) {
-        // need to create string bundle manually instead of using <xul:stringbundle/>
-        // see bug 63370 for details
-        this._mStrBundle = Services.strings.createBundle(
-          "chrome://global/locale/browser.properties"
-        );
-      }
-      return this._mStrBundle;
-    }
-
     get audioMuted() {
       return this._audioMuted;
     }
@@ -885,7 +872,7 @@
       this.webProgress.removeProgressListener(aListener);
     }
 
-    onPageHide(aEvent) {
+    onPageHide() {
       // If we're browsing from the tab crashed UI to a URI that keeps
       // this browser non-remote, we'll handle that here.
       lazy.SessionStore?.maybeExitCrashedState(this);
@@ -1932,7 +1919,7 @@
     // Called immediately after changing remoteness.  If this method returns
     // `true`, Gecko will assume frontend handled resuming the load, and will
     // not attempt to resume the load itself.
-    afterChangeRemoteness(browser, redirectLoadSwitchId) {
+    afterChangeRemoteness() {
       /* no-op unless replaced */
       return false;
     }

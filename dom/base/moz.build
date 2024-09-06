@@ -22,7 +22,6 @@ include("/tools/fuzzing/libfuzzer-config.mozbuild")
 XPIDL_SOURCES += [
     "mozIDOMWindow.idl",
     "nsIContentPolicy.idl",
-    "nsIDOMRequestService.idl",
     "nsIDroppedLinkHandler.idl",
     "nsIEventSourceEventService.idl",
     "nsIImageLoadingContent.idl",
@@ -51,7 +50,6 @@ EXPORTS += [
     "nsAttrValueInlines.h",
     "nsCaseTreatment.h",
     "nsChildContentList.h",
-    "nsContentCID.h",
     "nsContentCreatorFunctions.h",
     "nsContentList.h",
     "nsContentListDeclarations.h",
@@ -146,7 +144,6 @@ EXPORTS.mozilla.dom += [
     "!UseCounterWorkerList.h",
     "AbstractRange.h",
     "AncestorIterator.h",
-    "AnchorAreaFormRelValues.h",
     "AnimationFrameProvider.h",
     "AnonymousContent.h",
     "Attr.h",
@@ -188,7 +185,6 @@ EXPORTS.mozilla.dom += [
     "DOMPoint.h",
     "DOMQuad.h",
     "DOMRect.h",
-    "DOMRequest.h",
     "DOMStringList.h",
     "DOMTokenListSupportedTokens.h",
     "Element.h",
@@ -284,6 +280,7 @@ EXPORTS.mozilla.dom += [
     "TreeOrderedArrayInlines.h",
     "TreeWalker.h",
     "UIDirectionManager.h",
+    "UnbindContext.h",
     "UseCounterMetrics.h",
     "UserActivation.h",
     "ViewportMetaData.h",
@@ -311,7 +308,6 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
 UNIFIED_SOURCES += [
     "!UseCounterMetrics.cpp",
     "AbstractRange.cpp",
-    "AnchorAreaFormRelValues.cpp",
     "AnimationFrameProvider.cpp",
     "AnonymousContent.cpp",
     "Attr.cpp",
@@ -347,7 +343,6 @@ UNIFIED_SOURCES += [
     "DOMPoint.cpp",
     "DOMQuad.cpp",
     "DOMRect.cpp",
-    "DOMRequest.cpp",
     "DOMStringList.cpp",
     "Element.cpp",
     "EventSource.cpp",
@@ -547,7 +542,6 @@ if CONFIG["TARGET_CPU"].startswith("ppc"):
 
 EXTRA_JS_MODULES += [
     "ContentAreaDropListener.sys.mjs",
-    "DOMRequestHelper.sys.mjs",
     "IndexedDBHelper.sys.mjs",
     "LocationHelper.sys.mjs",
     "ProcessSelector.sys.mjs",

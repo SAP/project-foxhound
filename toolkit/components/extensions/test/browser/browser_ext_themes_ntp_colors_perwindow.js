@@ -71,10 +71,9 @@ function test_ntp_theme(browser, theme, isBrightText) {
  * Test whether a given browser has the default theme applied
  *
  * @param {object} browser to test against
- * @param {string} url being tested
  * @returns {Promise} The task as a promise
  */
-function test_ntp_default_theme(browser, url) {
+function test_ntp_default_theme(browser) {
   Services.ppmm.sharedData.flush();
   return SpecialPowers.spawn(
     browser,

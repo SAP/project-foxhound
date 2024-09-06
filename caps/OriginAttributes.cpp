@@ -229,10 +229,6 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
   // naming.
   //
 
-  if (mInIsolatedMozBrowser) {
-    params.Set(u"inBrowser"_ns, u"1"_ns);
-  }
-
   if (mUserContextId != nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
     value.Truncate();
     value.AppendInt(mUserContextId);
@@ -328,14 +324,13 @@ bool OriginAttributes::PopulateFromSuffix(const nsACString& aStr) {
   MOZ_RELEASE_ASSERT(mPartitionKey.IsEmpty());
 
   return URLParams::Parse(
-      Substring(aStr, 1, aStr.Length() - 1),
+      Substring(aStr, 1, aStr.Length() - 1), true,
       [this](const nsAString& aName, const nsAString& aValue) {
         if (aName.EqualsLiteral("inBrowser")) {
           if (!aValue.EqualsLiteral("1")) {
             return false;
           }
 
-          mInIsolatedMozBrowser = true;
           return true;
         }
 

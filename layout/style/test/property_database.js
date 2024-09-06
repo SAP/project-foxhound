@@ -6993,6 +6993,8 @@ var gCSSProperties = {
       "hidden scroll",
       "auto hidden",
       "clip clip",
+      "overlay",
+      "overlay overlay",
     ],
     invalid_values: [
       "clip -moz-scrollbars-none",
@@ -7012,7 +7014,7 @@ var gCSSProperties = {
       contain: "none",
     },
     initial_values: ["visible"],
-    other_values: ["auto", "scroll", "hidden", "clip"],
+    other_values: ["auto", "scroll", "hidden", "clip", "overlay"],
     invalid_values: [],
   },
   "overflow-y": {
@@ -7026,7 +7028,7 @@ var gCSSProperties = {
       contain: "none",
     },
     initial_values: ["visible"],
-    other_values: ["auto", "scroll", "hidden", "clip"],
+    other_values: ["auto", "scroll", "hidden", "clip", "overlay"],
     invalid_values: [],
   },
   "overflow-inline": {
@@ -7284,6 +7286,8 @@ var gCSSProperties = {
     domProp: "paintOrder",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["normal"],
     other_values: [
       "fill",
@@ -8255,6 +8259,29 @@ var gCSSProperties = {
       "uppercase full-width lowercase",
     ],
   },
+  "text-wrap": {
+    domProp: "textWrap",
+    inherited: true,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["text-wrap-mode"],
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    applies_to_marker: true,
+    initial_values: ["wrap"],
+    other_values: ["nowrap"],
+    invalid_values: [],
+  },
+  "text-wrap-mode": {
+    domProp: "textWrapMode",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_cue: true,
+    applies_to_placeholder: true,
+    applies_to_marker: true,
+    initial_values: ["wrap"],
+    other_values: ["nowrap"],
+    invalid_values: ["none", "normal", "on", "off", "wrap nowrap"],
+  },
   top: {
     domProp: "top",
     inherited: false,
@@ -8542,7 +8569,8 @@ var gCSSProperties = {
   "white-space": {
     domProp: "whiteSpace",
     inherited: true,
-    type: CSS_TYPE_LONGHAND,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["white-space-collapse", "text-wrap-mode"],
     applies_to_placeholder: true,
     applies_to_cue: true,
     applies_to_marker: true,
@@ -8556,6 +8584,22 @@ var gCSSProperties = {
       "break-spaces",
     ],
     invalid_values: [],
+  },
+  "white-space-collapse": {
+    domProp: "whiteSpaceCollapse",
+    inherited: true,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    applies_to_marker: true,
+    initial_values: ["collapse"],
+    other_values: [
+      "preserve",
+      "preserve-breaks",
+      "preserve-spaces",
+      "break-spaces",
+    ],
+    invalid_values: ["normal", "auto"],
   },
   width: {
     domProp: "width",
@@ -8837,6 +8881,8 @@ var gCSSProperties = {
     domProp: "fill",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     prerequisites: { color: "blue" },
     initial_values: ["black", "#000", "#000000", "rgb(0,0,0)", "rgba(0,0,0,1)"],
     other_values: [
@@ -8856,6 +8902,8 @@ var gCSSProperties = {
     domProp: "fillOpacity",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["1", "2.8", "1.000", "300%"],
     other_values: [
       "0",
@@ -8872,6 +8920,8 @@ var gCSSProperties = {
     domProp: "fillRule",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["nonzero"],
     other_values: ["evenodd"],
     invalid_values: [],
@@ -9336,6 +9386,8 @@ var gCSSProperties = {
     domProp: "stroke",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["none"],
     other_values: [
       "black",
@@ -9358,6 +9410,8 @@ var gCSSProperties = {
     domProp: "strokeDasharray",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["none"],
     other_values: [
       "5px,3px,2px",
@@ -9374,6 +9428,8 @@ var gCSSProperties = {
   "stroke-dashoffset": {
     domProp: "strokeDashoffset",
     inherited: true,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0", "-0px", "0em"],
     other_values: ["3px", "3%", "1em", "0.0002", "context-value"],
@@ -9383,6 +9439,8 @@ var gCSSProperties = {
     domProp: "strokeLinecap",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["butt"],
     other_values: ["round", "square"],
     invalid_values: [],
@@ -9391,6 +9449,8 @@ var gCSSProperties = {
     domProp: "strokeLinejoin",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["miter"],
     other_values: ["round", "bevel"],
     invalid_values: [],
@@ -9399,6 +9459,8 @@ var gCSSProperties = {
     domProp: "strokeMiterlimit",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["4"],
     other_values: ["0", "0.9", "1", "7", "5000", "1.1"],
     invalid_values: ["-1", "3px", "-0.3"],
@@ -9407,6 +9469,8 @@ var gCSSProperties = {
     domProp: "strokeOpacity",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["1", "2.8", "1.000", "300%"],
     other_values: [
       "0",
@@ -9423,6 +9487,8 @@ var gCSSProperties = {
     domProp: "strokeWidth",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["1px"],
     other_values: [
       "0",
@@ -9503,6 +9569,8 @@ var gCSSProperties = {
     domProp: "textRendering",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["auto"],
     other_values: ["optimizeSpeed", "optimizeLegibility", "geometricPrecision"],
     invalid_values: [],
@@ -9511,6 +9579,8 @@ var gCSSProperties = {
     domProp: "vectorEffect",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
     initial_values: ["none"],
     other_values: ["non-scaling-stroke"],
     invalid_values: [],
@@ -11683,24 +11753,16 @@ function get_computed_value(cs, property) {
   const mozHiddenUnscrollableEnabled = IsCSSPropertyPrefEnabled(
     "layout.css.overflow-moz-hidden-unscrollable.enabled"
   );
-  const overlayEnabled = IsCSSPropertyPrefEnabled(
-    "layout.css.overflow-overlay.enabled"
-  );
   for (let p of ["overflow", "overflow-x", "overflow-y"]) {
     let prop = gCSSProperties[p];
     let mozHiddenUnscrollableValues = mozHiddenUnscrollableEnabled
       ? prop.other_values
       : prop.invalid_values;
-    let overlayValues = overlayEnabled
-      ? prop.other_values
-      : prop.invalid_values;
     mozHiddenUnscrollableValues.push("-moz-hidden-unscrollable");
-    overlayValues.push("overlay");
     if (p == "overflow") {
       mozHiddenUnscrollableValues.push(
         "-moz-hidden-unscrollable -moz-hidden-unscrollable"
       );
-      overlayValues.push("overlay overlay");
     }
   }
 }
@@ -13542,36 +13604,32 @@ if (IsCSSPropertyPrefEnabled("layout.css.backdrop-filter.enabled")) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.math-depth.enabled")) {
-  gCSSProperties["math-depth"] = {
-    domProp: "mathDepth",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["0"],
-    other_values: [
-      // auto-add cannot be tested here because it has no effect when the
-      // inherited math-style is equal to the default (normal).
-      "123",
-      "-123",
-      "add(123)",
-      "add(-123)",
-      "calc(1 + 2*3)",
-      "add(calc(4 - 2/3))",
-    ],
-    invalid_values: ["auto", "1,23", "1.23", "add(1,23)", "add(1.23)"],
-  };
-}
+gCSSProperties["math-depth"] = {
+  domProp: "mathDepth",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["0"],
+  other_values: [
+    // auto-add cannot be tested here because it has no effect when the
+    // inherited math-style is equal to the default (normal).
+    "123",
+    "-123",
+    "add(123)",
+    "add(-123)",
+    "calc(1 + 2*3)",
+    "add(calc(4 - 2/3))",
+  ],
+  invalid_values: ["auto", "1,23", "1.23", "add(1,23)", "add(1.23)"],
+};
 
-if (IsCSSPropertyPrefEnabled("layout.css.math-style.enabled")) {
-  gCSSProperties["math-style"] = {
-    domProp: "mathStyle",
-    inherited: true,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["normal"],
-    other_values: ["compact"],
-    invalid_values: [],
-  };
-}
+gCSSProperties["math-style"] = {
+  domProp: "mathStyle",
+  inherited: true,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["normal"],
+  other_values: ["compact"],
+  invalid_values: [],
+};
 
 if (IsCSSPropertyPrefEnabled("layout.css.forced-color-adjust.enabled")) {
   gCSSProperties["forced-color-adjust"] = {
@@ -13898,8 +13956,8 @@ gCSSProperties["scrollbar-gutter"] = {
 };
 
 if (IsCSSPropertyPrefEnabled("layout.css.text-wrap-balance.enabled")) {
-  gCSSProperties["text-wrap"] = {
-    domProp: "textWrap",
+  gCSSProperties["text-wrap-style"] = {
+    domProp: "textWrapStyle",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
     applies_to_placeholder: true,
@@ -13909,6 +13967,11 @@ if (IsCSSPropertyPrefEnabled("layout.css.text-wrap-balance.enabled")) {
     other_values: ["stable", "balance"],
     invalid_values: ["wrap", "nowrap", "normal"],
   };
+  gCSSProperties["text-wrap"].subproperties.push("text-wrap-style");
+  gCSSProperties["text-wrap"].other_values.push("stable");
+  gCSSProperties["text-wrap"].other_values.push("balance");
+  gCSSProperties["text-wrap"].other_values.push("wrap stable");
+  gCSSProperties["text-wrap"].other_values.push("nowrap balance");
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.prefixes.transforms")) {
@@ -14019,6 +14082,36 @@ if (IsCSSPropertyPrefEnabled("layout.css.prefixes.transitions")) {
       subproperties: ["transition-timing-function"],
     },
   });
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.transition-behavior.enabled")) {
+  Object.assign(gCSSProperties, {
+    "transition-behavior": {
+      domProp: "transitionBehavior",
+      inherited: false,
+      type: CSS_TYPE_LONGHAND,
+      applies_to_marker: true,
+      initial_values: ["normal"],
+      other_values: ["allow-discrete"],
+      invalid_values: ["none", "auto", "discrete"],
+    },
+  });
+
+  gCSSProperties["transition"].subproperties.push("transition-behavior");
+  gCSSProperties["transition"].initial_values.push("normal");
+  gCSSProperties["transition"].other_values.push(
+    "allow-discrete",
+    "width allow-discrete",
+    "1s allow-discrete",
+    "linear allow-discrete"
+  );
+  gCSSProperties["-webkit-transition"].subproperties.push(
+    "transition-behavior"
+  );
+
+  if (IsCSSPropertyPrefEnabled("layout.css.prefixes.transitions")) {
+    gCSSProperties["-moz-transition"].subproperties.push("transition-behavior");
+  }
 }
 
 // Copy aliased properties' fields from their alias targets. Keep this logic

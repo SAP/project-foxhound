@@ -26,6 +26,7 @@ namespace mozilla {
 class PresShell;
 namespace dom {
 class Element;
+class HTMLAreaElement;
 struct FocusOptions;
 class BrowserParent;
 class ContentChild;
@@ -577,6 +578,10 @@ class nsFocusManager final : public nsIFocusManager,
    * aSkipOwner to skip owner while searching. The flag is set when caller is
    * |GetNextTabbableContent| in order to let caller handle owner.
    *
+   * aReachedToEndForDocumentNavigation is true when this is a document
+   * navigation and the focus algorithm has reached to the end of the top-level
+   * document.
+   *
    * NOTE:
    *   Consider the method searches downwards in flattened subtree
    *   rooted at aOwner.
@@ -585,7 +590,8 @@ class nsFocusManager final : public nsIFocusManager,
       nsIContent* aOwner, nsIContent* aStartContent,
       nsIContent* aOriginalStartContent, bool aForward,
       int32_t aCurrentTabIndex, bool aIgnoreTabIndex,
-      bool aForDocumentNavigation, bool aNavigateByKey, bool aSkipOwner);
+      bool aForDocumentNavigation, bool aNavigateByKey, bool aSkipOwner,
+      bool aReachedToEndForDocumentNavigation);
 
   /**
    * Retrieve the next tabbable element in scope including aStartContent
@@ -618,6 +624,10 @@ class nsFocusManager final : public nsIFocusManager,
    * aNavigateByKey to move focus by keyboard as a side effect of computing the
    * next target.
    *
+   * aReachedToEndForDocumentNavigation is true when this is a document
+   * navigation and the focus algorithm has reached to the end of the top-level
+   * document.
+   *
    * NOTE:
    *   Consider the method searches upwards in all shadow host- or slot-rooted
    *   flattened subtrees that contains aStartContent as non-root, except
@@ -627,7 +637,8 @@ class nsFocusManager final : public nsIFocusManager,
       nsIContent* aStartOwner, nsCOMPtr<nsIContent>& aStartContent /* inout */,
       nsIContent* aOriginalStartContent, bool aForward,
       int32_t* aCurrentTabIndex, bool* aIgnoreTabIndex,
-      bool aForDocumentNavigation, bool aNavigateByKey);
+      bool aForDocumentNavigation, bool aNavigateByKey,
+      bool aReachedToEndForDocumentNavigation);
 
   /**
    * Retrieve the next tabbable element within a document, using focusability
@@ -662,13 +673,17 @@ class nsFocusManager final : public nsIFocusManager,
    *
    * aNavigateByKey to move focus by keyboard as a side effect of computing the
    * next target.
+   *
+   * aReachedToEndForDocumentNavigation is true when this is a document
+   * navigation and the focus algorithm has reached to the end of the top-level
+   * document.
    */
   MOZ_CAN_RUN_SCRIPT nsresult GetNextTabbableContent(
       mozilla::PresShell* aPresShell, nsIContent* aRootContent,
       nsIContent* aOriginalStartContent, nsIContent* aStartContent,
       bool aForward, int32_t aCurrentTabIndex, bool aIgnoreTabIndex,
       bool aForDocumentNavigation, bool aNavigateByKey, bool aSkipPopover,
-      nsIContent** aResultContent);
+      bool aReachedToEndForDocumentNavigation, nsIContent** aResultContent);
 
   /**
    * Get the next tabbable image map area and returns it.
@@ -698,9 +713,13 @@ class nsFocusManager final : public nsIFocusManager,
    * Focus the first focusable content within the document with a root node of
    * aRootContent. For content documents, this will be aRootContent itself, but
    * for chrome documents, this will locate the next focusable content.
+   *
+   * aReachedToEndForDocumentNavigation is true when the focus algorithm has
+   * reached to the end of the top-level document.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult FocusFirst(mozilla::dom::Element* aRootContent,
-                                         nsIContent** aNextContent);
+  MOZ_CAN_RUN_SCRIPT nsresult
+  FocusFirst(mozilla::dom::Element* aRootContent, nsIContent** aNextContent,
+             bool aReachedToEndForDocumentNavigation);
 
   /**
    * Retrieves and returns the root node from aDocument to be focused. Will
@@ -760,7 +779,7 @@ class nsFocusManager final : public nsIFocusManager,
   MOZ_CAN_RUN_SCRIPT bool TryToMoveFocusToSubDocument(
       nsIContent* aCurrentContent, nsIContent* aOriginalStartContent,
       bool aForward, bool aForDocumentNavigation, bool aNavigateByKey,
-      nsIContent** aResultContent);
+      bool aReachedToEndForDocumentNavigation, nsIContent** aResultContent);
 
   // Sets the focused BrowsingContext and, if appropriate, syncs it to
   // other processes.
@@ -866,6 +885,10 @@ class nsFocusManager final : public nsIFocusManager,
   // https://html.spec.whatwg.org/#get-the-focusable-area
   static mozilla::dom::Element* GetTheFocusableArea(
       mozilla::dom::Element* aTarget, uint32_t aFlags);
+
+  // Returns true if it's an area element with one or more shapes that are
+  // focusable areas.
+  static bool IsAreaElementFocusable(mozilla::dom::HTMLAreaElement& aArea);
 
  private:
   // In the chrome process, the currently active and front-most top-most

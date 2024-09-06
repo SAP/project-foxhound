@@ -210,11 +210,6 @@ struct nsContentAndOffset {
   int32_t mOffset = 0;
 };
 
-// Some Misc #defines
-#define SELECTION_DEBUG 0
-#define FORCE_SELECTION_UPDATE 1
-#define CALC_DEBUG 0
-
 #include "nsILineIterator.h"
 #include "prenv.h"
 
@@ -763,9 +758,12 @@ void nsIFrame::HandlePrimaryFrameStyleChange(ComputedStyle* aOldStyle) {
   const nsStyleDisplay* disp = StyleDisplay();
   const nsStyleDisplay* oldDisp =
       aOldStyle ? aOldStyle->StyleDisplay() : nullptr;
-  if (!oldDisp || oldDisp->mContainerType != disp->mContainerType) {
+
+  const bool wasQueryContainer = oldDisp && oldDisp->IsQueryContainer();
+  const bool isQueryContainer = disp->IsQueryContainer();
+  if (wasQueryContainer != isQueryContainer) {
     auto* pc = PresContext();
-    if (disp->mContainerType != StyleContainerType::Normal) {
+    if (isQueryContainer) {
       pc->RegisterContainerQueryFrame(this);
     } else {
       pc->UnregisterContainerQueryFrame(this);
@@ -818,7 +816,7 @@ void nsIFrame::Destroy(DestroyContext& aContext) {
   nsPresContext* pc = PresContext();
   mozilla::PresShell* ps = pc->GetPresShell();
   if (IsPrimaryFrame()) {
-    if (disp->mContainerType != StyleContainerType::Normal) {
+    if (disp->IsQueryContainer()) {
       pc->UnregisterContainerQueryFrame(this);
     }
     if (disp->ContentVisibility(*this) == StyleContentVisibility::Auto) {
@@ -2122,8 +2120,8 @@ nsIFrame::CaretBlockAxisMetrics nsIFrame::GetCaretBlockAxisMetrics(
   return CaretBlockAxisMetrics{.mOffset = baseline - ascent, .mExtent = height};
 }
 
-const nsAtom* nsIFrame::ComputePageValue() const {
-  const nsAtom* value = nsGkAtoms::_empty;
+const nsAtom* nsIFrame::ComputePageValue(const nsAtom* aAutoValue) const {
+  const nsAtom* value = aAutoValue ? aAutoValue : nsGkAtoms::_empty;
   const nsIFrame* frame = this;
   // Find what CSS page name value this frame's subtree has, if any.
   // Starting with this frame, check if a page name other than auto is present,
@@ -2489,7 +2487,7 @@ bool nsIFrame::CanBeDynamicReflowRoot() const {
 
   // If we participate in a container's block reflow context, or margins
   // can collapse through us, we can't be a dynamic reflow root.
-  if (IsBlockFrameOrSubclass() && !HasAnyStateBits(NS_BLOCK_BFC_STATE_BITS)) {
+  if (IsBlockFrameOrSubclass() && !HasAnyStateBits(NS_BLOCK_BFC)) {
     return false;
   }
 
@@ -3414,6 +3412,9 @@ void nsIFrame::BuildDisplayListForStackingContext(
     ApplyClipProp(transformedCssClip);
   }
 
+  uint32_t numActiveScrollframesEncounteredBefore =
+      aBuilder->GetNumActiveScrollframesEncountered();
+
   nsDisplayListCollection set(aBuilder);
   Maybe<nsRect> clipForMask;
   {
@@ -3697,17 +3698,22 @@ void nsIFrame::BuildDisplayListForStackingContext(
     if (transformItem) {
       resultList.AppendToTop(transformItem);
       createdContainer = true;
-    }
 
-    if (hasPerspective) {
-      transformItem->MarkWithAssociatedPerspective();
-
-      if (clipCapturedBy == ContainerItemType::Perspective) {
-        clipState.Restore();
+      if (numActiveScrollframesEncounteredBefore !=
+          aBuilder->GetNumActiveScrollframesEncountered()) {
+        transformItem->SetContainsASRs(true);
       }
-      resultList.AppendNewToTop<nsDisplayPerspective>(aBuilder, this,
-                                                      &resultList);
-      createdContainer = true;
+
+      if (hasPerspective) {
+        transformItem->MarkWithAssociatedPerspective();
+
+        if (clipCapturedBy == ContainerItemType::Perspective) {
+          clipState.Restore();
+        }
+        resultList.AppendNewToTop<nsDisplayPerspective>(aBuilder, this,
+                                                        &resultList);
+        createdContainer = true;
+      }
     }
   }
 
@@ -4740,7 +4746,9 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
     return NS_ERROR_FAILURE;
   }
 
-  if (aMouseEvent->mButton == MouseButton::eSecondary &&
+  const bool isSecondaryButton =
+      aMouseEvent->mButton == MouseButton::eSecondary;
+  if (isSecondaryButton &&
       !MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
           *frameselection, *aMouseEvent, *offsets.content,
           // When we collapse selection in nsFrameSelection::TakeFocus,
@@ -4838,7 +4846,14 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
   const nsFrameSelection::FocusMode focusMode = [&]() {
     // If "Shift" and "Ctrl" are both pressed, "Shift" is given precedence. This
     // mimics the old behaviour.
-    if (aMouseEvent->IsShift()) {
+    const bool isShift =
+        aMouseEvent->IsShift() &&
+        // If Shift + secondary button press shoud open context menu without a
+        // contextmenu event, user wants to open context menu like as a
+        // secondary button press without Shift key.
+        !(isSecondaryButton &&
+          StaticPrefs::dom_event_contextmenu_shift_suppresses_event());
+    if (isShift) {
       // If clicked in a link when focused content is editable, we should
       // collapse selection in the link for compatibility with Blink.
       if (isEditor) {
@@ -4893,35 +4908,56 @@ bool nsIFrame::MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
     return false;
   }
 
-  Selection* selection = aFrameSelection.GetSelection(SelectionType::eNormal);
-  if (selection && !selection->IsCollapsed()) {
+  const bool contentIsEditable = aContentAtEventPoint.IsEditable();
+  const TextControlElement* const contentAsTextControl =
+      TextControlElement::FromNodeOrNull(
+          aContentAtEventPoint.IsTextControlElement()
+              ? &aContentAtEventPoint
+              : aContentAtEventPoint.GetClosestNativeAnonymousSubtreeRoot());
+  if (Selection* selection =
+          aFrameSelection.GetSelection(SelectionType::eNormal)) {
+    const bool selectionIsCollapsed = selection->IsCollapsed();
     // If right click in a selection range, we should not collapse selection.
-    if (nsContentUtils::IsPointInSelection(
+    if (!selectionIsCollapsed &&
+        nsContentUtils::IsPointInSelection(
             *selection, aContentAtEventPoint,
             static_cast<uint32_t>(aOffsetAtEventPoint))) {
       return false;
     }
-
-    if (StaticPrefs::
-            ui_mouse_right_click_collapse_selection_stop_if_non_collapsed_selection()) {
+    const bool wantToPreventMoveCaret =
+        StaticPrefs::
+            ui_mouse_right_click_move_caret_stop_if_in_focused_editable_node() &&
+        selectionIsCollapsed && (contentIsEditable || contentAsTextControl);
+    const bool wantToPreventCollapseSelection =
+        StaticPrefs::
+            ui_mouse_right_click_collapse_selection_stop_if_non_collapsed_selection() &&
+        !selectionIsCollapsed;
+    if (wantToPreventMoveCaret || wantToPreventCollapseSelection) {
       // If currently selection is limited in an editing host, we should not
-      // collapse selection if the clicked point is in the ancestor limiter.
-      // Otherwise, this mouse click moves focus from the editing host to
-      // different one or blur the editing host.  In this case, we need to
-      // update selection because keeping current selection in the editing
-      // host looks like it's not blurred.
+      // collapse selection nor move caret if the clicked point is in the
+      // ancestor limiter.  Otherwise, this mouse click moves focus from the
+      // editing host to different one or blur the editing host.  In this case,
+      // we need to update selection because keeping current selection in the
+      // editing host looks like it's not blurred.
       // FIXME: If the active editing host is the document element, editor
       // does not set ancestor limiter properly.  Fix it in the editor side.
       if (nsIContent* ancestorLimiter = selection->GetAncestorLimiter()) {
         MOZ_ASSERT(ancestorLimiter->IsEditable());
         return !aContentAtEventPoint.IsInclusiveDescendantOf(ancestorLimiter);
       }
-      // If currently selection is not limited in an editing host, we should
-      // collapse selection only when this click moves focus to an editing
-      // host because we need to update selection in this case.
-      if (!aContentAtEventPoint.IsEditable()) {
-        return false;
-      }
+    }
+    // If selection is editable and `stop_if_in_focused_editable_node` pref is
+    // set to true, user does not want to move caret to right click place if
+    // clicked in the focused text control element.
+    if (wantToPreventMoveCaret && contentAsTextControl &&
+        contentAsTextControl == nsFocusManager::GetFocusedElementStatic()) {
+      return false;
+    }
+    // If currently selection is not limited in an editing host, we should
+    // collapse selection only when this click moves focus to an editing
+    // host because we need to update selection in this case.
+    if (wantToPreventCollapseSelection && !contentIsEditable) {
+      return false;
     }
   }
 
@@ -4929,13 +4965,11 @@ bool nsIFrame::MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
              ui_mouse_right_click_collapse_selection_stop_if_non_editable_node() ||
          // The user does not want to collapse selection into non-editable
          // content by a right button click.
-         aContentAtEventPoint.IsEditable() ||
+         contentIsEditable ||
          // Treat clicking in a text control as always clicked on editable
          // content because we want a hack only for clicking in normal text
          // nodes which is outside any editing hosts.
-         aContentAtEventPoint.IsTextControlElement() ||
-         TextControlElement::FromNodeOrNull(
-             aContentAtEventPoint.GetClosestNativeAnonymousSubtreeRoot());
+         contentAsTextControl;
 }
 
 nsresult nsIFrame::SelectByTypeAtPoint(nsPresContext* aPresContext,
@@ -5390,7 +5424,15 @@ static FrameTarget GetSelectionClosestFrame(nsIFrame* aFrame,
                                             const nsPoint& aPoint,
                                             uint32_t aFlags);
 
-static bool SelfIsSelectable(nsIFrame* aFrame, uint32_t aFlags) {
+static bool SelfIsSelectable(nsIFrame* aFrame, nsIFrame* aParentFrame,
+                             uint32_t aFlags) {
+  // We should not move selection into a native anonymous subtree when handling
+  // selection outside it.
+  if ((aFlags & nsIFrame::IGNORE_NATIVE_ANONYMOUS_SUBTREE) &&
+      aParentFrame->GetClosestNativeAnonymousSubtreeRoot() !=
+          aFrame->GetClosestNativeAnonymousSubtreeRoot()) {
+    return false;
+  }
   if ((aFlags & nsIFrame::SKIP_HIDDEN) &&
       !aFrame->StyleVisibility()->IsVisible()) {
     return false;
@@ -5453,21 +5495,28 @@ static FrameTarget DrillDownToSelectionFrame(nsIFrame* aFrame, bool aEndFrame,
     nsIFrame* result = nullptr;
     nsIFrame* frame = aFrame->PrincipalChildList().FirstChild();
     if (!aEndFrame) {
-      while (frame && (!SelfIsSelectable(frame, aFlags) || frame->IsEmpty()))
+      while (frame &&
+             (!SelfIsSelectable(frame, aFrame, aFlags) || frame->IsEmpty())) {
         frame = frame->GetNextSibling();
-      if (frame) result = frame;
+      }
+      if (frame) {
+        result = frame;
+      }
     } else {
       // Because the frame tree is singly linked, to find the last frame,
       // we have to iterate through all the frames
       // XXX I have a feeling this could be slow for long blocks, although
       //     I can't find any slowdowns
       while (frame) {
-        if (!frame->IsEmpty() && SelfIsSelectable(frame, aFlags))
+        if (!frame->IsEmpty() && SelfIsSelectable(frame, aFrame, aFlags)) {
           result = frame;
+        }
         frame = frame->GetNextSibling();
       }
     }
-    if (result) return DrillDownToSelectionFrame(result, aEndFrame, aFlags);
+    if (result) {
+      return DrillDownToSelectionFrame(result, aEndFrame, aFlags);
+    }
   }
   // If the current frame has no targetable children, target the current frame
   return FrameTarget{aFrame, true, aEndFrame};
@@ -5479,8 +5528,9 @@ static FrameTarget GetSelectionClosestFrameForLine(
     nsBlockFrame* aParent, nsBlockFrame::LineIterator aLine,
     const nsPoint& aPoint, uint32_t aFlags) {
   // Account for end of lines (any iterator from the block is valid)
-  if (aLine == aParent->LinesEnd())
+  if (aLine == aParent->LinesEnd()) {
     return DrillDownToSelectionFrame(aParent, true, aFlags);
+  }
   nsIFrame* frame = aLine->mFirstChild;
   nsIFrame* closestFromIStart = nullptr;
   nsIFrame* closestFromIEnd = nullptr;
@@ -5496,7 +5546,7 @@ static FrameTarget GetSelectionClosestFrameForLine(
     // the previous thing had a different editableness than us, since then we
     // may end up not being able to select after it if the br is the last thing
     // on the line.
-    if (!SelfIsSelectable(frame, aFlags) || frame->IsEmpty() ||
+    if (!SelfIsSelectable(frame, aParent, aFlags) || frame->IsEmpty() ||
         (canSkipBr && frame->IsBrFrame() &&
          lastFrameWasEditable == frame->GetContent()->IsEditable())) {
       continue;
@@ -5676,7 +5726,7 @@ static FrameTarget GetSelectionClosestFrame(nsIFrame* aFrame,
     // Go through all the child frames to find the closest one
     nsIFrame::FrameWithDistance closest = {nullptr, nscoord_MAX, nscoord_MAX};
     for (; kid; kid = kid->GetNextSibling()) {
-      if (!SelfIsSelectable(kid, aFlags) || kid->IsEmpty()) {
+      if (!SelfIsSelectable(kid, aFrame, aFlags) || kid->IsEmpty()) {
         continue;
       }
 
@@ -5876,7 +5926,7 @@ StyleTouchAction nsIFrame::UsedTouchAction() const {
   return disp.mTouchAction;
 }
 
-Maybe<nsIFrame::Cursor> nsIFrame::GetCursor(const nsPoint&) {
+nsIFrame::Cursor nsIFrame::GetCursor(const nsPoint&) {
   StyleCursorKind kind = StyleUI()->Cursor().keyword;
   if (kind == StyleCursorKind::Auto) {
     // If this is editable, I-beam cursor is better for most elements.
@@ -5889,7 +5939,7 @@ Maybe<nsIFrame::Cursor> nsIFrame::GetCursor(const nsPoint&) {
     kind = StyleCursorKind::VerticalText;
   }
 
-  return Some(Cursor{kind, AllowCustomCursorImage::Yes});
+  return Cursor{kind, AllowCustomCursorImage::Yes};
 }
 
 // Resize and incremental reflow
@@ -6955,15 +7005,7 @@ bool nsIFrame::IsContentRelevant() const {
   MOZ_ASSERT(element);
 
   Maybe<ContentRelevancy> relevancy = element->GetContentRelevancy();
-  if (relevancy.isSome()) {
-    return !relevancy->isEmpty();
-  }
-
-  // If there is no relevancy set, then this frame still has not received had
-  // the initial visibility callback call. In that case, only rely on whether
-  // or not it is inside a top layer element which will never change for this
-  // frame and allows proper rendering of the top layer.
-  return IsDescendantOfTopLayerElement();
+  return relevancy.isSome() && !relevancy->isEmpty();
 }
 
 bool nsIFrame::HidesContent(
@@ -7054,21 +7096,6 @@ bool nsIFrame::HasSelectionInSubtree() {
   return false;
 }
 
-bool nsIFrame::IsDescendantOfTopLayerElement() const {
-  if (!GetContent()) {
-    return false;
-  }
-
-  nsTArray<dom::Element*> topLayer = PresContext()->Document()->GetTopLayer();
-  for (auto* element : topLayer) {
-    if (GetContent()->IsInclusiveFlatTreeDescendantOf(element)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 bool nsIFrame::UpdateIsRelevantContent(
     const ContentRelevancy& aRelevancyToUpdate) {
   MOZ_ASSERT(StyleDisplay()->ContentVisibility(*this) ==
@@ -7110,6 +7137,17 @@ bool nsIFrame::UpdateIsRelevantContent(
       aRelevancyToUpdate.contains(ContentRelevancyReason::Selected)) {
     setRelevancyValue(ContentRelevancyReason::Selected,
                       HasSelectionInSubtree());
+  }
+
+  // If the proximity to the viewport has not been determined yet,
+  // and neither the element nor its contents are focused or selected,
+  // we should wait for the determination of the proximity. Otherwise,
+  // there might be a redundant contentvisibilityautostatechange event.
+  // See https://github.com/w3c/csswg-drafts/issues/9803
+  bool isProximityToViewportDetermined =
+      oldRelevancy ? true : element->GetVisibleForContentVisibility().isSome();
+  if (!isProximityToViewportDetermined && newRelevancy.isEmpty()) {
+    return false;
   }
 
   bool overallRelevancyChanged =
@@ -9112,8 +9150,8 @@ nsresult nsIFrame::PeekOffsetForWord(PeekOffsetStruct* aPos, int32_t aOffset) {
       // significant.
       if (next.mJumpedLine && wordSelectEatSpace &&
           current.mFrame->HasSignificantTerminalNewline() &&
-          current.mFrame->StyleText()->mWhiteSpace !=
-              StyleWhiteSpace::PreLine) {
+          current.mFrame->StyleText()->mWhiteSpaceCollapse !=
+              StyleWhiteSpaceCollapse::PreserveBreaks) {
         current.mOffset -= 1;
       }
       break;
@@ -9357,7 +9395,8 @@ nsresult nsIFrame::PeekOffsetForLineEdge(PeekOffsetStruct* aPos) {
       }
     }
   }
-  FrameTarget targetFrame = DrillDownToSelectionFrame(baseFrame, endOfLine, 0);
+  FrameTarget targetFrame = DrillDownToSelectionFrame(
+      baseFrame, endOfLine, nsIFrame::IGNORE_NATIVE_ANONYMOUS_SUBTREE);
   SetPeekResultFromFrame(*aPos, targetFrame.frame, endOfLine ? -1 : 0,
                          OffsetIsAtLineEdge::Yes);
   if (endOfLine && targetFrame.frame->HasSignificantTerminalNewline()) {
@@ -10173,19 +10212,21 @@ bool nsIFrame::FinishAndStoreOverflow(OverflowAreas& aOverflowAreas,
   // This is now called FinishAndStoreOverflow() instead of
   // StoreOverflow() because frame-generic ways of adding overflow
   // can happen here, e.g. CSS2 outline and native theme.
-  // If the overflow area width or height is nscoord_MAX, then a
-  // saturating union may have encounted an overflow, so the overflow may not
-  // contain the frame border-box. Don't warn in that case.
+  // If the overflow area width or height is nscoord_MAX, then a saturating
+  // union may have encountered an overflow, so the overflow may not contain the
+  // frame border-box. Don't warn in that case.
   // Don't warn for SVG either, since SVG doesn't need the overflow area
   // to contain the frame bounds.
+#ifdef DEBUG
   for (const auto otype : AllOverflowTypes()) {
-    DebugOnly<nsRect*> r = &aOverflowAreas.Overflow(otype);
+    const nsRect& r = aOverflowAreas.Overflow(otype);
     NS_ASSERTION(aNewSize.width == 0 || aNewSize.height == 0 ||
-                     r->width == nscoord_MAX || r->height == nscoord_MAX ||
+                     r.width == nscoord_MAX || r.height == nscoord_MAX ||
                      HasAnyStateBits(NS_FRAME_SVG_LAYOUT) ||
-                     r->Contains(nsRect(nsPoint(0, 0), aNewSize)),
+                     r.Contains(nsRect(nsPoint(), aNewSize)),
                  "Computed overflow area must contain frame bounds");
   }
+#endif
 
   // Overflow area must always include the frame's top-left and bottom-right,
   // even if the frame rect is empty (so we can scroll to those positions).
@@ -11525,11 +11566,44 @@ nsIFrame::PhysicalAxes nsIFrame::ShouldApplyOverflowClipping(
     return PhysicalAxes::None;
   }
 
-  // If we're paginated and a block, and have NS_BLOCK_CLIP_PAGINATED_OVERFLOW
-  // set, then we want to clip our overflow.
-  bool clip = HasAnyStateBits(NS_BLOCK_CLIP_PAGINATED_OVERFLOW) &&
-              PresContext()->IsPaginated() && IsBlockFrame();
-  return clip ? PhysicalAxes::Both : PhysicalAxes::None;
+  return IsSuppressedScrollableBlockForPrint() ? PhysicalAxes::Both
+                                               : PhysicalAxes::None;
+}
+
+bool nsIFrame::IsSuppressedScrollableBlockForPrint() const {
+  // This condition needs to match the suppressScrollFrame logic in the frame
+  // constructor.
+  if (!PresContext()->IsPaginated() || !IsBlockFrame() ||
+      !StyleDisplay()->IsScrollableOverflow() ||
+      !StyleDisplay()->IsBlockOutsideStyle() ||
+      mContent->IsInNativeAnonymousSubtree()) {
+    return false;
+  }
+  if (auto* element = Element::FromNode(mContent);
+      element && PresContext()->ElementWouldPropagateScrollStyles(*element)) {
+    return false;
+  }
+  return true;
+}
+
+bool nsIFrame::HasUnreflowedContainerQueryAncestor() const {
+  // If this frame has done the first reflow, its ancestors are guaranteed to
+  // have as well.
+  if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW) ||
+      !PresContext()->HasContainerQueryFrames()) {
+    return false;
+  }
+  for (nsIFrame* cur = GetInFlowParent(); cur; cur = cur->GetInFlowParent()) {
+    if (!cur->HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
+      // Done first reflow from this ancestor up, including query containers.
+      return false;
+    }
+    if (cur->StyleDisplay()->IsQueryContainer()) {
+      return true;
+    }
+  }
+  // No query container from this frame up to root.
+  return false;
 }
 
 #ifdef DEBUG

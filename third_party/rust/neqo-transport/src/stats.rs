@@ -5,10 +5,7 @@
 // except according to those terms.
 
 // Tracking of some useful statistics.
-#![deny(clippy::pedantic)]
 
-use crate::packet::PacketNumber;
-use neqo_common::qinfo;
 use std::{
     cell::RefCell,
     fmt::{self, Debug},
@@ -16,6 +13,10 @@ use std::{
     rc::Rc,
     time::Duration,
 };
+
+use neqo_common::qinfo;
+
+use crate::packet::PacketNumber;
 
 pub(crate) const MAX_PTO_COUNTS: usize = 16;
 
@@ -141,6 +142,8 @@ pub struct Stats {
     pub rtt: Duration,
     /// The current, estimated round-trip time variation on the primary path.
     pub rttvar: Duration,
+    /// Whether the first RTT sample was guessed from a discarded packet.
+    pub rtt_init_guess: bool,
 
     /// Count PTOs. Single PTOs, 2 PTOs in a row, 3 PTOs in row, etc. are counted
     /// separately.
@@ -174,6 +177,7 @@ impl Stats {
     }
 
     /// # Panics
+    ///
     /// When preconditions are violated.
     pub fn add_pto_count(&mut self, count: usize) {
         debug_assert!(count > 0);

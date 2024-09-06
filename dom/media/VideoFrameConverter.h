@@ -109,8 +109,8 @@ class VideoFrameConverter {
             // for processing so it can be immediately sent.
             mLastFrameQueuedForProcessing.mTime = time;
 
-            MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(
-                NewRunnableMethod<StoreCopyPassByLRef<FrameToProcess>>(
+            MOZ_ALWAYS_SUCCEEDS(
+                mTaskQueue->Dispatch(NewRunnableMethod<FrameToProcess>(
                     "VideoFrameConverter::ProcessVideoFrame", this,
                     &VideoFrameConverter::ProcessVideoFrame,
                     mLastFrameQueuedForProcessing)));
@@ -138,8 +138,8 @@ class VideoFrameConverter {
             mLastFrameQueuedForProcessing.mForceBlack = true;
             mLastFrameQueuedForProcessing.mImage = nullptr;
 
-            MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(
-                NewRunnableMethod<StoreCopyPassByLRef<FrameToProcess>>(
+            MOZ_ALWAYS_SUCCEEDS(
+                mTaskQueue->Dispatch(NewRunnableMethod<FrameToProcess>(
                     "VideoFrameConverter::ProcessVideoFrame", this,
                     &VideoFrameConverter::ProcessVideoFrame,
                     mLastFrameQueuedForProcessing)));
@@ -293,11 +293,10 @@ class VideoFrameConverter {
       return;
     }
 
-    MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(
-        NewRunnableMethod<StoreCopyPassByLRef<FrameToProcess>>(
-            "VideoFrameConverter::ProcessVideoFrame", this,
-            &VideoFrameConverter::ProcessVideoFrame,
-            mLastFrameQueuedForProcessing)));
+    MOZ_ALWAYS_SUCCEEDS(mTaskQueue->Dispatch(NewRunnableMethod<FrameToProcess>(
+        "VideoFrameConverter::ProcessVideoFrame", this,
+        &VideoFrameConverter::ProcessVideoFrame,
+        mLastFrameQueuedForProcessing)));
   }
 
   void ProcessVideoFrame(const FrameToProcess& aFrame) {
@@ -364,7 +363,9 @@ class VideoFrameConverter {
         aFrame.mImage->AsPlanarYCbCrImage();
     if (image) {
       dom::ImageUtils utils(image);
-      if (utils.GetFormat() == dom::ImageBitmapFormat::YUV420P &&
+      Maybe<dom::ImageBitmapFormat> format = utils.GetFormat();
+      if (format.isSome() &&
+          format.value() == dom::ImageBitmapFormat::YUV420P &&
           image->GetData()) {
         const layers::PlanarYCbCrData* data = image->GetData();
         rtc::scoped_refptr<webrtc::I420BufferInterface> video_frame_buffer =

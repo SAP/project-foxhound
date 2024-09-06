@@ -211,6 +211,15 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     eLandmark,
     kNoReqStates
   },
+  { // definition
+    nsGkAtoms::definition,
+    roles::DEFINITION,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+  },
   { // deletion
     nsGkAtoms::deletion,
     roles::CONTENT_DELETION,
@@ -641,6 +650,16 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     kNoReqStates,
     eReadonlyUntilEditable
   },
+  { // emphasis
+    nsGkAtoms::emphasis,
+    roles::EMPHASIS,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates
+  },
   { // feed
     nsGkAtoms::feed,
     roles::GROUPING,
@@ -669,6 +688,16 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     eNoAction,
     eNoLiveAttr,
     eLandmark,
+    kNoReqStates
+  },
+  { // generic
+    nsGkAtoms::generic,
+    roles::SECTION,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
     kNoReqStates
   },
   { // graphics-document
@@ -704,7 +733,7 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // grid
     nsGkAtoms::grid,
-    roles::TABLE,
+    roles::GRID,
     kUseMapRole,
     eNoValue,
     eNoAction,
@@ -1164,6 +1193,16 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     kGenericAccType,
     kNoReqStates
   },
+  { // strong
+    nsGkAtoms::strong,
+    roles::STRONG,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+    kNoReqStates
+  },
   { // subscript
     nsGkAtoms::subscript,
     roles::SUBSCRIPT,
@@ -1269,6 +1308,15 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     eARIAAutoComplete,
     eARIAMultiline,
     eARIAReadonlyOrEditable
+  },
+  { // time
+    nsGkAtoms::time,
+    roles::TIME,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kNoReqStates
   },
   { // timer
     nsGkAtoms::timer,
@@ -1432,7 +1480,8 @@ const nsRoleMapEntry* aria::GetRoleMap(dom::Element* aEl) {
   return GetRoleMapFromIndex(GetRoleMapIndex(aEl));
 }
 
-uint8_t aria::GetRoleMapIndex(dom::Element* aEl) {
+uint8_t aria::GetFirstValidRoleMapIndexExcluding(
+    dom::Element* aEl, std::initializer_list<nsStaticAtom*> aRolesToSkip) {
   nsAutoString roles;
   if (!aEl || !nsAccUtils::GetARIAAttr(aEl, nsGkAtoms::role, roles) ||
       roles.IsEmpty()) {
@@ -1444,6 +1493,19 @@ uint8_t aria::GetRoleMapIndex(dom::Element* aEl) {
   while (tokenizer.hasMoreTokens()) {
     // Do a binary search through table for the next role in role list
     const nsDependentSubstring role = tokenizer.nextToken();
+
+    // Skip any roles that we aren't interested in.
+    bool shouldSkip = false;
+    for (nsStaticAtom* atomRole : aRolesToSkip) {
+      if (role.Equals(atomRole->GetUTF16String())) {
+        shouldSkip = true;
+        break;
+      }
+    }
+    if (shouldSkip) {
+      continue;
+    }
+
     size_t idx;
     auto comparator = [&role](const nsRoleMapEntry& aEntry) {
       return Compare(role, aEntry.ARIARoleString(),
@@ -1458,6 +1520,11 @@ uint8_t aria::GetRoleMapIndex(dom::Element* aEl) {
   // Always use some entry index if there is a non-empty role string
   // To ensure an accessible object is created
   return LANDMARK_ROLE_MAP_ENTRY_INDEX;
+}
+
+uint8_t aria::GetRoleMapIndex(dom::Element* aEl) {
+  // Get the rolemap index of the first valid role, excluding nothing.
+  return GetFirstValidRoleMapIndexExcluding(aEl, {});
 }
 
 const nsRoleMapEntry* aria::GetRoleMapFromIndex(uint8_t aRoleMapIndex) {

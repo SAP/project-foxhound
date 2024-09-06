@@ -614,7 +614,7 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
       // The profiler's symbolication code uses a wasm module to extract symbols
       // from the binary files result of local builds.
       // See bug 1777479
-      "resource://devtools/client/performance-new/shared/symbolication.jsm.js"_ns,
+      "resource://devtools/client/performance-new/shared/symbolication.sys.mjs"_ns,
 
       // The Browser Toolbox/Console
       "debugger"_ns,
@@ -1190,6 +1190,64 @@ bool nsContentSecurityUtils::CheckCSPFrameAncestorAndXFO(nsIChannel* aChannel) {
                                            isFrameOptionsIgnored);
 }
 
+// https://w3c.github.io/webappsec-csp/#is-element-nonceable
+/* static */
+nsString nsContentSecurityUtils::GetIsElementNonceableNonce(
+    const Element& aElement) {
+  // Step 1. If element does not have an attribute named "nonce", return "Not
+  // Nonceable".
+  nsString nonce;
+  if (nsString* cspNonce =
+          static_cast<nsString*>(aElement.GetProperty(nsGkAtoms::nonce))) {
+    nonce = *cspNonce;
+  }
+  if (nonce.IsEmpty()) {
+    return nonce;
+  }
+
+  // Step 2. If element is a script element, then for each attribute of
+  // element’s attribute list:
+  if (nsCOMPtr<nsIScriptElement> script =
+          do_QueryInterface(const_cast<Element*>(&aElement))) {
+    auto containsScriptOrStyle = [](const nsAString& aStr) {
+      return aStr.LowerCaseFindASCII("<script") != kNotFound ||
+             aStr.LowerCaseFindASCII("<style") != kNotFound;
+    };
+
+    nsString value;
+    uint32_t i = 0;
+    while (BorrowedAttrInfo info = aElement.GetAttrInfoAt(i++)) {
+      // Step 2.1. If attribute’s name contains an ASCII case-insensitive match
+      // for "<script" or "<style", return "Not Nonceable".
+      const nsAttrName* name = info.mName;
+      if (nsAtom* prefix = name->GetPrefix()) {
+        if (containsScriptOrStyle(nsDependentAtomString(prefix))) {
+          return EmptyString();
+        }
+      }
+      if (containsScriptOrStyle(nsDependentAtomString(name->LocalName()))) {
+        return EmptyString();
+      }
+
+      // Step 2.2. If attribute’s value contains an ASCII case-insensitive match
+      // for "<script" or "<style", return "Not Nonceable".
+      info.mValue->ToString(value);
+      if (containsScriptOrStyle(value)) {
+        return EmptyString();
+      }
+    }
+  }
+
+  // Step 3. If element had a duplicate-attribute parse error during
+  // tokenization, return "Not Nonceable".
+  if (aElement.HasFlag(ELEMENT_PARSER_HAD_DUPLICATE_ATTR_ERROR)) {
+    return EmptyString();
+  }
+
+  // Step 4. Return "Nonceable".
+  return nonce;
+}
+
 #if defined(DEBUG)
 /* static */
 void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
@@ -1307,6 +1365,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // preferences and downloads allow legacy inline scripts through hash src.
   MOZ_ASSERT(!foundScriptSrc ||
                  StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
+                 StringBeginsWith(aboutSpec, "about:settings"_ns) ||
                  StringBeginsWith(aboutSpec, "about:downloads"_ns) ||
                  StringBeginsWith(aboutSpec, "about:asrouter"_ns) ||
                  StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
@@ -1325,6 +1384,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // remote web resources
   MOZ_ASSERT(!foundWebScheme ||
                  StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
+                 StringBeginsWith(aboutSpec, "about:settings"_ns) ||
                  StringBeginsWith(aboutSpec, "about:addons"_ns) ||
                  StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
                  StringBeginsWith(aboutSpec, "about:debugging"_ns) ||
@@ -1353,6 +1413,7 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
       // Bug 1579160: Remove 'unsafe-inline' from style-src within
       // about:preferences
       "about:preferences"_ns,
+      "about:settings"_ns,
       // Bug 1571346: Remove 'unsafe-inline' from style-src within about:addons
       "about:addons"_ns,
       // Bug 1584485: Remove 'unsafe-inline' from style-src within:
@@ -1495,7 +1556,7 @@ bool nsContentSecurityUtils::ValidateScriptFilename(JSContext* cx,
       // and this is the most reasonable. See 1727770
       u"about:downloads"_ns,
       // We think this is the same problem as about:downloads
-      u"about:preferences"_ns,
+      u"about:preferences"_ns, u"about:settings"_ns,
       // Browser console will give a filename of 'debugger' See 1763943
       // Sometimes it's 'debugger eager eval code', other times just 'debugger
       // eval code'
@@ -1609,37 +1670,25 @@ long nsContentSecurityUtils::ClassifyDownload(
   nsCOMPtr<nsIURI> contentLocation;
   aChannel->GetURI(getter_AddRefs(contentLocation));
 
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();
-  if (!loadingPrincipal) {
-    loadingPrincipal = loadInfo->TriggeringPrincipal();
-  }
-  // Creating a fake Loadinfo that is just used for the MCB check.
-  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new mozilla::net::LoadInfo(
-      loadingPrincipal, loadInfo->TriggeringPrincipal(), nullptr,
-      nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
-      nsIContentPolicy::TYPE_FETCH);
-  // Disable HTTPS-Only checks for that loadinfo. This is required because
-  // otherwise nsMixedContentBlocker::ShouldLoad would assume that the request
-  // is safe, because HTTPS-Only is handling it.
-  secCheckLoadInfo->SetHttpsOnlyStatus(nsILoadInfo::HTTPS_ONLY_EXEMPT);
+  if (StaticPrefs::dom_block_download_insecure()) {
+    // If we are not dealing with a potentially trustworthy origin, or a URI
+    // that is safe to be loaded like e.g. data:, then we block the load.
+    bool isInsecureDownload =
+        !nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(
+            contentLocation) &&
+        !nsMixedContentBlocker::URISafeToBeLoadedInSecureContext(
+            contentLocation);
 
-  int16_t decission = nsIContentPolicy::ACCEPT;
-  nsMixedContentBlocker::ShouldLoad(false,  //  aHadInsecureImageRedirect
-                                    contentLocation,   //  aContentLocation,
-                                    secCheckLoadInfo,  //  aLoadinfo
-                                    false,             //  aReportError
-                                    &decission         // aDecision
-  );
-  Telemetry::Accumulate(mozilla::Telemetry::MIXED_CONTENT_DOWNLOADS,
-                        decission != nsIContentPolicy::ACCEPT);
+    Telemetry::Accumulate(mozilla::Telemetry::INSECURE_DOWNLOADS,
+                          isInsecureDownload);
 
-  if (StaticPrefs::dom_block_download_insecure() &&
-      decission != nsIContentPolicy::ACCEPT) {
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-    if (httpChannel) {
-      LogMessageToConsole(httpChannel, "MixedContentBlockedDownload");
+    if (isInsecureDownload) {
+      nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+      if (httpChannel) {
+        LogMessageToConsole(httpChannel, "BlockedInsecureDownload");
+      }
+      return nsITransfer::DOWNLOAD_POTENTIALLY_UNSAFE;
     }
-    return nsITransfer::DOWNLOAD_POTENTIALLY_UNSAFE;
   }
 
   if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {

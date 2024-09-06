@@ -30,6 +30,7 @@ import {
   setMaxDetectHeight,
   setMaxDetectWidth,
   getBestRectForElement,
+  getElementFromPoint,
   Region,
   WindowDimensions,
 } from "chrome://browser/content/screenshots/overlayHelpers.mjs";
@@ -97,7 +98,7 @@ export class ScreenshotsOverlay {
               <div class="face"></div>
             </div>
             <div class="preview-instructions">${instructions.value}</div>
-            <button class="screenshots-button" id="screenshots-cancel-button">${cancel.value}</button>
+            <button class="screenshots-button ghost-button" id="screenshots-cancel-button">${cancel.value}</button>
           </div>
           <div id="hover-highlight" hidden></div>
           <div id="selection-container" hidden>
@@ -203,7 +204,7 @@ export class ScreenshotsOverlay {
     this.#content.root.appendChild(this.fragment);
 
     this.initializeElements();
-    this.updateWindowDimensions();
+    await this.updateWindowDimensions();
 
     this.#setState(STATES.CROSSHAIRS);
 
@@ -764,7 +765,12 @@ export class ScreenshotsOverlay {
       let direction = event.shiftKey
         ? Services.focus.MOVEFOCUS_BACKWARD
         : Services.focus.MOVEFOCUS_FORWARD;
-      Services.focus.moveFocus(this.window, null, direction, 0);
+      Services.focus.moveFocus(
+        this.window,
+        null,
+        direction,
+        Services.focus.FLAG_BYKEY
+      );
     }
   }
 
@@ -811,7 +817,8 @@ export class ScreenshotsOverlay {
    * @param {object} detail Extra details to send to the child actor
    */
   #dispatchEvent(eventType, detail) {
-    this.window.dispatchEvent(
+    this.window.windowUtils.dispatchEventToChromeOnly(
+      this.window,
       new CustomEvent(eventType, {
         bubbles: true,
         detail,
@@ -1381,18 +1388,27 @@ export class ScreenshotsOverlay {
    * @param {Number} clientX The x position relative to the viewport
    * @param {Number} clientY The y position relative to the viewport
    */
-  handleElementHover(clientX, clientY) {
+  async handleElementHover(clientX, clientY) {
     this.setPointerEventsNone();
-    let ele = this.document.elementFromPoint(clientX, clientY);
+    let promise = getElementFromPoint(clientX, clientY, this.document);
     this.resetPointerEvents();
+    let { ele, rect } = await promise;
 
-    if (this.#cachedEle && this.#cachedEle === ele) {
+    if (
+      this.#cachedEle &&
+      !this.window.HTMLIFrameElement.isInstance(this.#cachedEle) &&
+      this.#cachedEle === ele
+    ) {
       // Still hovering over the same element
       return;
     }
     this.#cachedEle = ele;
 
-    let rect = getBestRectForElement(ele, this.document);
+    if (!rect) {
+      // this means we found an element that wasn't an iframe
+      rect = getBestRectForElement(ele, this.document);
+    }
+
     if (rect) {
       let { scrollX, scrollY } = this.windowDimensions.dimensions;
       let { left, top, right, bottom } = rect;
@@ -1451,13 +1467,13 @@ export class ScreenshotsOverlay {
    * container size so we don't draw outside the page bounds.
    * @param {String} eventType will be "scroll" or "resize"
    */
-  updateScreenshotsOverlayDimensions(eventType) {
-    this.updateWindowDimensions();
+  async updateScreenshotsOverlayDimensions(eventType) {
+    let updateWindowDimensionsPromise = this.updateWindowDimensions();
 
     if (this.#state === STATES.CROSSHAIRS) {
       if (eventType === "resize") {
         this.hideHoverElementContainer();
-        this.updatePreviewContainer();
+        this.#cachedEle = null;
       } else if (eventType === "scroll") {
         if (this.#lastClientX && this.#lastClientY) {
           this.#cachedEle = null;
@@ -1465,6 +1481,9 @@ export class ScreenshotsOverlay {
         }
       }
     } else if (this.#state === STATES.SELECTED) {
+      await updateWindowDimensionsPromise;
+      this.selectionRegion.shift();
+      this.drawSelectionContainer();
       this.drawButtonsContainer();
       this.updateSelectionSizeText();
     }
@@ -1527,13 +1546,21 @@ export class ScreenshotsOverlay {
   }
 
   /**
-   * Update the screenshots container because the window has changed size of
-   * scrolled. The screenshots-overlay-container doesn't shrink with the page
-   * when the window is resized so we have to manually find the width and
-   * height of the page and make sure we aren't drawing outside the actual page
-   * dimensions.
+   * We have to be careful not to draw the overlay larger than the document
+   * because the overlay is absolutely position and within the document so we
+   * can cause the document to overflow when it shouldn't. To mitigate this,
+   * we will temporarily position the overlay to position fixed with width and
+   * height 100% so the overlay is within the document bounds. Then we will get
+   * the dimensions of the document to correctly draw the overlay.
    */
-  updateWindowDimensions() {
+  async updateWindowDimensions() {
+    // Setting the screenshots container attribute "resizing" will make the
+    // overlay fixed position with width and height of 100% percent so it
+    // does not draw outside the actual document.
+    this.screenshotsContainer.toggleAttribute("resizing", true);
+
+    await new Promise(r => this.window.requestAnimationFrame(r));
+
     let {
       clientWidth,
       clientHeight,
@@ -1544,49 +1571,7 @@ export class ScreenshotsOverlay {
       scrollMinX,
       scrollMinY,
     } = this.getDimensionsFromWindow();
-
-    let shouldUpdate = true;
-
-    if (
-      clientHeight < this.windowDimensions.clientHeight ||
-      clientWidth < this.windowDimensions.clientWidth
-    ) {
-      let widthDiff = this.windowDimensions.clientWidth - clientWidth;
-      let heightDiff = this.windowDimensions.clientHeight - clientHeight;
-
-      this.windowDimensions.dimensions = {
-        scrollWidth: scrollWidth - Math.max(widthDiff, 0),
-        scrollHeight: scrollHeight - Math.max(heightDiff, 0),
-        clientWidth,
-        clientHeight,
-      };
-
-      if (this.#state === STATES.SELECTED) {
-        let didShift = this.selectionRegion.shift();
-        if (didShift) {
-          this.drawSelectionContainer();
-          this.drawButtonsContainer();
-        }
-      } else if (this.#state === STATES.CROSSHAIRS) {
-        this.updatePreviewContainer();
-      }
-      this.updateScreenshotsOverlayContainer();
-      // We just updated the screenshots container so we check if the window
-      // dimensions are still accurate
-      let { scrollWidth: updatedWidth, scrollHeight: updatedHeight } =
-        this.getDimensionsFromWindow();
-
-      // If the width and height are the same then we don't need to draw the overlay again
-      if (updatedWidth === scrollWidth && updatedHeight === scrollHeight) {
-        shouldUpdate = false;
-      }
-
-      scrollWidth = updatedWidth;
-      scrollHeight = updatedHeight;
-    }
-
-    setMaxDetectHeight(Math.max(clientHeight + 100, 700));
-    setMaxDetectWidth(Math.max(clientWidth + 100, 1000));
+    this.screenshotsContainer.toggleAttribute("resizing", false);
 
     this.windowDimensions.dimensions = {
       clientWidth,
@@ -1600,9 +1585,10 @@ export class ScreenshotsOverlay {
       devicePixelRatio: this.window.devicePixelRatio,
     };
 
-    if (shouldUpdate) {
-      this.updatePreviewContainer();
-      this.updateScreenshotsOverlayContainer();
-    }
+    this.updatePreviewContainer();
+    this.updateScreenshotsOverlayContainer();
+
+    setMaxDetectHeight(Math.max(clientHeight + 100, 700));
+    setMaxDetectWidth(Math.max(clientWidth + 100, 1000));
   }
 }

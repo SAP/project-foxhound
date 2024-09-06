@@ -187,6 +187,26 @@
       this.updateTabIndicatorAttr(event.target);
     }
 
+    on_TabHoverStart(event) {
+      if (this._showCardPreviews) {
+        const previewContainer = document.getElementById(
+          "tabbrowser-tab-preview"
+        );
+        previewContainer.tab = event.target;
+      }
+    }
+
+    on_TabHoverEnd(event) {
+      if (this._showCardPreviews) {
+        const previewContainer = document.getElementById(
+          "tabbrowser-tab-preview"
+        );
+        if (previewContainer.tab === event.target) {
+          previewContainer.tab = null;
+        }
+      }
+    }
+
     on_transitionend(event) {
       if (event.propertyName != "max-width") {
         return;
@@ -294,8 +314,13 @@
               triggeringEvent: event,
             });
           }
-        } else if (event.originalTarget.closest("scrollbox")) {
-          // The user middleclicked on the tabstrip. Check whether the click
+        } else if (
+          event.originalTarget.closest("scrollbox") &&
+          !Services.prefs.getBoolPref(
+            "widget.gtk.titlebar-action-middle-click-enabled"
+          )
+        ) {
+          // Check whether the click
           // was dispatched on the open space of it.
           let visibleTabs = this._getVisibleTabs();
           let lastTab = visibleTabs[visibleTabs.length - 1];
@@ -1813,22 +1838,6 @@
 
     handleEvent(aEvent) {
       switch (aEvent.type) {
-        case "TabHoverStart":
-          if (this._showCardPreviews) {
-            const previewContainer = document.getElementById(
-              "tabbrowser-tab-preview"
-            );
-            previewContainer.tab = aEvent.target;
-          }
-          break;
-        case "TabHoverEnd":
-          if (this._showCardPreviews) {
-            const previewContainer = document.getElementById(
-              "tabbrowser-tab-preview"
-            );
-            previewContainer.tab = null;
-          }
-          break;
         case "mouseout":
           // If the "related target" (the node to which the pointer went) is not
           // a child of the current document, the mouse just left the window.

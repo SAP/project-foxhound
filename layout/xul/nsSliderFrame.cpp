@@ -542,9 +542,10 @@ void nsSliderFrame::Reflow(nsPresContext* aPresContext,
   NS_ASSERTION(aReflowInput.AvailableHeight() != NS_UNCONSTRAINEDSIZE,
                "Bogus avail height");
 
+  const auto wm = GetWritingMode();
+
   // We always take all the space we're given.
-  aDesiredSize.Width() = aReflowInput.ComputedWidth();
-  aDesiredSize.Height() = aReflowInput.ComputedHeight();
+  aDesiredSize.SetSize(wm, aReflowInput.ComputedSize(wm));
   aDesiredSize.SetOverflowAreasToDesiredBounds();
 
   // Get the thumb, should be our only child.
@@ -556,7 +557,6 @@ void nsSliderFrame::Reflow(nsPresContext* aPresContext,
   nsScrollbarFrame* scrollbarBox = Scrollbar();
   nsIContent* scrollbar = scrollbarBox->GetContent();
   const bool horizontal = scrollbarBox->IsHorizontal();
-  const auto wm = GetWritingMode();
   nsSize availSize = aDesiredSize.PhysicalSize();
   ReflowInput thumbRI(aPresContext, aReflowInput, thumbBox,
                       aReflowInput.AvailableSize(wm));
@@ -1215,14 +1215,6 @@ nsresult nsSliderFrame::StopDrag() {
 
   UnsuppressDisplayport();
 
-#ifdef MOZ_WIDGET_GTK
-  nsIFrame* thumbFrame = mFrames.FirstChild();
-  if (thumbFrame) {
-    RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
-    thumb->UnsetAttr(kNameSpaceID_None, nsGkAtoms::active, true);
-  }
-#endif
-
   if (mRepeatDirection) {
     StopRepeat();
     mRepeatDirection = 0;
@@ -1562,11 +1554,6 @@ void nsSliderFrame::PageScroll(bool aClickAndHold) {
 
 void nsSliderFrame::SetupDrag(WidgetGUIEvent* aEvent, nsIFrame* aThumbFrame,
                               nscoord aPos, bool aIsHorizontal) {
-#ifdef MOZ_WIDGET_GTK
-  RefPtr<dom::Element> thumb = aThumbFrame->GetContent()->AsElement();
-  thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active, u"true"_ns, true);
-#endif
-
   if (aIsHorizontal) {
     mThumbStart = aThumbFrame->GetPosition().x;
   } else {

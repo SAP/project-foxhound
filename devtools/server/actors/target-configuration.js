@@ -13,7 +13,8 @@ const {
   SessionDataHelpers,
 } = require("resource://devtools/server/actors/watcher/SessionDataHelpers.jsm");
 const { isBrowsingContextPartOfContext } = ChromeUtils.importESModule(
-  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+  { global: "contextual" }
 );
 const { SUPPORTED_DATA } = SessionDataHelpers;
 const { TARGET_CONFIGURATION } = SUPPORTED_DATA;
@@ -51,6 +52,8 @@ const SUPPORTED_OPTIONS = {
   setTabOffline: true,
   // Enable touch events simulation
   touchEventsOverride: true,
+  // Used to configure and start/stop the JavaScript tracer
+  tracerOptions: true,
   // Use simplified highlighters when prefers-reduced-motion is enabled.
   useSimpleHighlightersForReducedMotion: true,
 };

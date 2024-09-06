@@ -90,7 +90,7 @@ function resolveURIInternal(
     if (aArgument.startsWith(protocolWithColon)) {
       if (!validateFirefoxProtocol(aCmdLine, launchedWithArg_osint)) {
         throw new Error(
-          "Invalid use of Firefox and Firefox-private protocols."
+          "Invalid use of Firefox-bridge and Firefox-private-bridge protocols."
         );
       }
       aArgument = aArgument.substring(protocolWithColon.length);
@@ -100,7 +100,7 @@ function resolveURIInternal(
         !aArgument.startsWith("https://")
       ) {
         throw new Error(
-          "Firefox and Firefox-private protocols can only be used in conjunction with http and https urls."
+          "Firefox-bridge and Firefox-private-bridge protocols can only be used in conjunction with http and https urls."
         );
       }
 
@@ -113,8 +113,8 @@ function resolveURIInternal(
     }
   };
 
-  handleFirefoxProtocol("firefox");
-  handleFirefoxProtocol("firefox-private");
+  handleFirefoxProtocol("firefox-bridge");
+  handleFirefoxProtocol("firefox-private-bridge");
 
   var uri = aCmdLine.resolveURI(aArgument);
   var uriFixup = Services.uriFixup;
@@ -158,16 +158,27 @@ const OVERRIDE_NEW_MSTONE = 2;
 const OVERRIDE_NEW_BUILD_ID = 3;
 /**
  * Determines whether a home page override is needed.
- * Returns:
- *  OVERRIDE_NEW_PROFILE if this is the first run with a new profile.
- *  OVERRIDE_NEW_MSTONE if this is the first run with a build with a different
- *                      Gecko milestone (i.e. right after an upgrade).
- *  OVERRIDE_NEW_BUILD_ID if this is the first run with a new build ID of the
- *                        same Gecko milestone (i.e. after a nightly upgrade).
- *  OVERRIDE_NONE otherwise.
+ * @param {boolean} [updateMilestones=true]
+ *   True if we should update the milestone prefs after comparing those prefs
+ *   with the current platform version and build ID.
+ *
+ *   If updateMilestones is false, then this function has no side-effects.
+ *
+ * @returns {number}
+ *   One of the following constants:
+ *     OVERRIDE_NEW_PROFILE
+ *       if this is the first run with a new profile.
+ *     OVERRIDE_NEW_MSTONE
+ *       if this is the first run with a build with a different Gecko milestone
+ *       (i.e. right after an upgrade).
+ *     OVERRIDE_NEW_BUILD_ID
+ *       if this is the first run with a new build ID of the same Gecko
+ *       milestone (i.e. after a nightly upgrade).
+ *     OVERRIDE_NONE
+ *       otherwise.
  */
-function needHomepageOverride(prefb) {
-  var savedmstone = prefb.getCharPref(
+function needHomepageOverride(updateMilestones = true) {
+  var savedmstone = Services.prefs.getCharPref(
     "browser.startup.homepage_override.mstone",
     ""
   );
@@ -178,7 +189,7 @@ function needHomepageOverride(prefb) {
 
   var mstone = Services.appinfo.platformVersion;
 
-  var savedBuildID = prefb.getCharPref(
+  var savedBuildID = Services.prefs.getCharPref(
     "browser.startup.homepage_override.buildID",
     ""
   );
@@ -191,19 +202,32 @@ function needHomepageOverride(prefb) {
     // about:rights we've removed the EULA stuff and default pref, but we need
     // a way to make existing profiles retain the default that we removed.
     if (savedmstone) {
-      prefb.setBoolPref("browser.rights.3.shown", true);
+      Services.prefs.setBoolPref("browser.rights.3.shown", true);
 
       // Remember that we saw a major version change.
       gMajorUpgrade = true;
     }
 
-    prefb.setCharPref("browser.startup.homepage_override.mstone", mstone);
-    prefb.setCharPref("browser.startup.homepage_override.buildID", buildID);
+    if (updateMilestones) {
+      Services.prefs.setCharPref(
+        "browser.startup.homepage_override.mstone",
+        mstone
+      );
+      Services.prefs.setCharPref(
+        "browser.startup.homepage_override.buildID",
+        buildID
+      );
+    }
     return savedmstone ? OVERRIDE_NEW_MSTONE : OVERRIDE_NEW_PROFILE;
   }
 
   if (buildID != savedBuildID) {
-    prefb.setCharPref("browser.startup.homepage_override.buildID", buildID);
+    if (updateMilestones) {
+      Services.prefs.setCharPref(
+        "browser.startup.homepage_override.buildID",
+        buildID
+      );
+    }
     return OVERRIDE_NEW_BUILD_ID;
   }
 
@@ -216,10 +240,16 @@ function needHomepageOverride(prefb) {
  * @param  update
  *         The nsIUpdate for the update that has been applied.
  * @param  defaultOverridePage
- *         The default override page.
+ *         The default override page
+ * @param  nimbusOverridePage
+ *         Nimbus provided URL
  * @return The override page.
  */
-function getPostUpdateOverridePage(update, defaultOverridePage) {
+function getPostUpdateOverridePage(
+  update,
+  defaultOverridePage,
+  nimbusOverridePage
+) {
   update = update.QueryInterface(Ci.nsIWritablePropertyBag);
   let actions = update.getProperty("actions");
   // When the update doesn't specify actions fallback to the original behavior
@@ -234,11 +264,14 @@ function getPostUpdateOverridePage(update, defaultOverridePage) {
     return "";
   }
 
-  // If a policy was set to not allow the update.xml-provided
-  // URL to be used, use the default fallback (which will also
-  // be provided by the policy).
+  // If a policy was set to not allow the update.xml-provided URL to be used,
+  // use the default fallback (which will also be provided by the policy).
   if (!Services.policies.isAllowed("postUpdateCustomPage")) {
     return defaultOverridePage;
+  }
+
+  if (nimbusOverridePage) {
+    return nimbusOverridePage;
   }
 
   return update.getProperty("openURL") || defaultOverridePage;
@@ -575,7 +608,7 @@ nsBrowserContentHandler.prototype = {
       if (urlFlagIdx > -1 && cmdLine.length > 1) {
         url = cmdLine.getArgument(urlFlagIdx + 1);
       }
-      if (privateWindowParam || url?.startsWith("firefox-private:")) {
+      if (privateWindowParam || url?.startsWith("firefox-private-bridge:")) {
         // Check if the osint flag is present on Windows
         let launchedWithArg_osint =
           AppConstants.platform == "win" &&
@@ -590,7 +623,7 @@ nsBrowserContentHandler.prototype = {
             uri: Services.io.newURI("about:privatebrowsing"),
             principal: lazy.gSystemPrincipal,
           };
-        } else if (url?.startsWith("firefox-private:")) {
+        } else if (url?.startsWith("firefox-private-bridge:")) {
           cmdLine.removeArguments(urlFlagIdx, urlFlagIdx + 1);
           resolvedInfo = resolveURIInternal(
             cmdLine,
@@ -663,7 +696,12 @@ nsBrowserContentHandler.prototype = {
     }
 
     if (cmdLine.handleFlag("first-startup", false)) {
-      lazy.FirstStartup.init();
+      // We don't want subsequent calls to needHompageOverride to have different
+      // values because the milestones in prefs got updated, so we intentionally
+      // tell needHomepageOverride to leave the milestone prefs alone when doing
+      // this check.
+      let override = needHomepageOverride(false /* updateMilestones */);
+      lazy.FirstStartup.init(override == OVERRIDE_NEW_PROFILE /* newProfile */);
     }
 
     var fileParam = cmdLine.handleFlagWithParam("file", false);
@@ -751,7 +789,7 @@ nsBrowserContentHandler.prototype = {
         "browser.startup.homepage_override.buildID",
         "unknown"
       );
-      override = needHomepageOverride(prefb);
+      override = needHomepageOverride();
       if (override != OVERRIDE_NONE) {
         switch (override) {
           case OVERRIDE_NEW_PROFILE:
@@ -769,7 +807,7 @@ nsBrowserContentHandler.prototype = {
             // Turn on 'later run' pages for new profiles.
             lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_NEW_PROFILE);
             break;
-          case OVERRIDE_NEW_MSTONE:
+          case OVERRIDE_NEW_MSTONE: {
             // Check whether we will restore a session. If we will, we assume
             // that this is an "update" session. This does not take crashes
             // into account because that requires waiting for the session file
@@ -782,11 +820,70 @@ nsBrowserContentHandler.prototype = {
               "startup.homepage_override_url"
             );
             let update = lazy.UpdateManager.readyUpdate;
+
+            /** If the override URL is provided by an experiment, is a valid
+             * Firefox What's New Page URL, and the update version is less than
+             * or equal to the maxVersion set by the experiment, we'll try to use
+             * the experiment override URL instead of the default or the
+             * update-provided URL. Additional policy checks are done in
+             * @see getPostUpdateOverridePage */
+            const nimbusOverrideUrl = Services.urlFormatter.formatURLPref(
+              "startup.homepage_override_url_nimbus"
+            );
+            const maxVersion = Services.prefs.getCharPref(
+              "startup.homepage_override_nimbus_maxVersion",
+              ""
+            );
+            let nimbusWNP;
+
+            // Update version should be less than or equal to maxVersion set by
+            // the experiment
+            if (
+              nimbusOverrideUrl &&
+              Services.vc.compare(update.appVersion, maxVersion) <= 0
+            ) {
+              try {
+                let uri = Services.io.newURI(nimbusOverrideUrl);
+                // Only allow https://www.mozilla.org and https://www.mozilla.com
+                if (
+                  uri.scheme === "https" &&
+                  ["www.mozilla.org", "www.mozilla.com"].includes(uri.host)
+                ) {
+                  nimbusWNP = uri.spec;
+                } else {
+                  throw new Error("Bad URL");
+                }
+              } catch {
+                console.error("Invalid WNP URL: ", nimbusOverrideUrl);
+              }
+            }
+
             if (
               update &&
               Services.vc.compare(update.appVersion, old_mstone) > 0
             ) {
-              overridePage = getPostUpdateOverridePage(update, overridePage);
+              overridePage = getPostUpdateOverridePage(
+                update,
+                overridePage,
+                nimbusWNP
+              );
+              // Record a Nimbus exposure event for the whatsNewPage feature.
+              // The override page could be set in 3 ways: 1. set by Nimbus 2.
+              // set by the update file(openURL) 3. The default evergreen page(Set by the
+              // startup.homepage_override_url pref, could be different
+              // depending on the Fx channel). This is done to record that the
+              // control cohort could have seen the experimental What's New Page
+              // (and will instead see the default What's New Page).
+              // recordExposureEvent only records an event if the user is
+              // enrolled in an experiment or rollout on the whatsNewPage
+              // feature, so it's safe to call it unconditionally.
+              if (overridePage) {
+                let nimbusWNPFeature = lazy.NimbusFeatures.whatsNewPage;
+                nimbusWNPFeature
+                  .ready()
+                  .then(() => nimbusWNPFeature.recordExposureEvent());
+              }
+
               // Send the update ping to signal that the update was successful.
               lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
               lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_UPDATE_APPLIED);
@@ -794,6 +891,7 @@ nsBrowserContentHandler.prototype = {
 
             overridePage = overridePage.replace("%OLD_VERSION%", old_mstone);
             break;
+          }
           case OVERRIDE_NEW_BUILD_ID:
             if (lazy.UpdateManager.readyUpdate) {
               // Send the update ping to signal that the update was successful.
@@ -1112,13 +1210,6 @@ nsDefaultCommandLineHandler.prototype = {
     var urilist = [];
     var principalList = [];
 
-    if (cmdLine && cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH) {
-      // Since the purpose of this is to record early in startup,
-      // only record on launches, not already-running invocations.
-      Services.telemetry.setEventRecordingEnabled("telemetry", true);
-      Glean.fogValidation.validateEarlyEvent.record();
-    }
-
     if (AppConstants.platform == "win") {
       // Windows itself does disk I/O when the notification service is
       // initialized, so make sure that is lazy.
@@ -1366,29 +1457,6 @@ nsDefaultCommandLineHandler.prototype = {
       console.error(e);
     }
 
-    if (
-      AppConstants.platform == "win" &&
-      cmdLine.handleFlag("to-handle-default-browser-agent", false)
-    ) {
-      // The Default Browser Agent launches Firefox in response to a Windows
-      // native notification, but it does so in a non-standard manner.
-      Services.telemetry.setEventRecordingEnabled(
-        "browser.launched_to_handle",
-        true
-      );
-      Glean.browserLaunchedToHandle.systemNotification.record({
-        name: "default-browser-agent",
-      });
-
-      let thanksURI = Services.io.newURI(
-        Services.urlFormatter.formatURLPref(
-          "browser.shell.defaultBrowserAgent.thanksURL"
-        )
-      );
-      urilist.push(thanksURI);
-      principalList.push(lazy.gSystemPrincipal);
-    }
-
     if (cmdLine.findFlag("screenshot", true) != -1) {
       // Shouldn't have to push principal here with the screenshot flag
       lazy.HeadlessShell.handleCmdLineArgs(
@@ -1439,7 +1507,7 @@ nsDefaultCommandLineHandler.prototype = {
       }
 
       // Can't open multiple URLs without using system principal.
-      // The firefox and firefox-private protocols should only
+      // The firefox-bridge and firefox-private-bridge protocols should only
       // accept a single URL due to using the -osint option
       // so this isn't very relevant.
       var URLlist = urilist.filter(shouldLoadURI).map(u => u.spec);

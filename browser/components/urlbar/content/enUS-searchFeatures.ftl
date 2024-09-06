@@ -15,6 +15,7 @@
 
 -mdn-brand-name = MDN Web Docs
 -mdn-brand-short-name = MDN
+-yelp-brand-name = Yelp
 
 ## These strings are used in the urlbar panel.
 
@@ -42,6 +43,12 @@ urlbar-group-mdn =
 urlbar-group-pocket =
   .label = Recommended reads
 
+# A label shown above urlbar suggestions for businesses and other locations
+# in the user's city or a city they included in their search string (e.g., Yelp
+# suggestions).
+urlbar-group-local =
+  .label = Local recommendations
+
 # Block menu item shown in the result menu of top pick and quick suggest
 # results.
 urlbar-result-menu-dismiss-firefox-suggest =
@@ -52,6 +59,11 @@ urlbar-result-menu-dismiss-firefox-suggest =
 urlbar-result-menu-learn-more-about-firefox-suggest =
     .label = Learn more about { -firefox-suggest-brand-name }
     .accesskey = L
+
+# Manage menu item shown in the result menu of Firefox Suggest results.
+urlbar-result-menu-manage-firefox-suggest =
+    .label = Manage { -firefox-suggest-brand-name }
+    .accesskey = M
 
 # A message shown in a result when the user gives feedback on it.
 firefox-suggest-feedback-acknowledgment = Thanks for your feedback
@@ -67,9 +79,15 @@ firefox-suggest-dismissal-acknowledgment-all = Thanks for your feedback. You won
 # suggestion.
 firefox-suggest-dismissal-acknowledgment-one-mdn = Thanks for your feedback. You won’t see this { -mdn-brand-short-name } suggestion again.
 
-# A message that replaces a result when the user dismisses all MDN suggestions of
-# a particular type.
+# A message that replaces a result when the user dismisses all MDN suggestions.
 firefox-suggest-dismissal-acknowledgment-all-mdn = Thanks for your feedback. You won’t see { -mdn-brand-short-name } suggestions anymore.
+
+# A message that replaces a result when the user dismisses a single Yelp
+# suggestion.
+firefox-suggest-dismissal-acknowledgment-one-yelp = Thanks for your feedback. You won’t see this { -yelp-brand-name } suggestion again.
+
+# A message that replaces a result when the user dismisses all Yelp suggestions.
+firefox-suggest-dismissal-acknowledgment-all-yelp = Thanks for your feedback. You won’t see { -yelp-brand-name } suggestions anymore.
 
 ## These strings are used for weather suggestions in the urlbar.
 
@@ -145,7 +163,7 @@ firefox-suggest-pocket-bottom-text = { -pocket-brand-name } · Related to <stron
 
 # This string is shown in Yelp suggestions and indicates the suggestion is for
 # Yelp.
-firefox-suggest-yelp-bottom-text = Yelp
+firefox-suggest-yelp-bottom-text = Yelp · Sponsored
 
 ## These strings are used in the preferences UI (about:preferences). Their names
 ## follow the naming conventions of other strings used in the preferences UI.

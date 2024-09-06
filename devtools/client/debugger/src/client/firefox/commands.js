@@ -111,11 +111,11 @@ function forEachThread(iteratee) {
   return Promise.all(promises);
 }
 
-async function toggleTracing(logMethod) {
-  return commands.tracerCommand.toggle(logMethod);
+async function toggleTracing() {
+  return commands.tracerCommand.toggle();
 }
 
-function resume(thread, frameId) {
+function resume(thread) {
   return lookupThreadFront(thread).resume();
 }
 

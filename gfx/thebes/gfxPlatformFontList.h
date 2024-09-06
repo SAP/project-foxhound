@@ -245,6 +245,8 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return sPlatformFontList;
   }
 
+  void GetMissingFonts(nsCString& aMissingFonts);
+
   static bool Initialize(gfxPlatformFontList* aList);
 
   static void Shutdown() {
@@ -658,6 +660,9 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   mutable mozilla::RecursiveMutex mLock;
 
  protected:
+  virtual nsTArray<std::pair<const char**, uint32_t>>
+  GetFilteredPlatformFontLists() = 0;
+
   friend class mozilla::fontlist::FontList;
   friend class InitOtherFamilyNamesForStylo;
 
@@ -867,7 +872,10 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   // load the bad underline blocklist from pref.
   void LoadBadUnderlineList();
 
+  // This version of the function will not modify aKeyName
   void GenerateFontListKey(const nsACString& aKeyName, nsACString& aResult);
+  // This version of the function WILL modify aKeyName
+  void GenerateFontListKey(nsACString& aKeyName);
 
   virtual void GetFontFamilyNames(nsTArray<nsCString>& aFontFamilyNames)
       MOZ_REQUIRES(mLock);
@@ -1010,13 +1018,14 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   // When system-wide font lookup fails for a character, cache it to skip future
   // searches. This is an array of bitsets, one for each FontVisibility level.
-  mozilla::EnumeratedArray<FontVisibility, FontVisibility::Count,
-                           gfxSparseBitSet>
+  mozilla::EnumeratedArray<FontVisibility, gfxSparseBitSet,
+                           size_t(FontVisibility::Count)>
       mCodepointsWithNoFonts MOZ_GUARDED_BY(mLock);
 
   // the family to use for U+FFFD fallback, to avoid expensive search every time
   // on pages with lots of problems
-  mozilla::EnumeratedArray<FontVisibility, FontVisibility::Count, FontFamily>
+  mozilla::EnumeratedArray<FontVisibility, FontFamily,
+                           size_t(FontVisibility::Count)>
       mReplacementCharFallbackFamily MOZ_GUARDED_BY(mLock);
 
   // Sorted array of lowercased family names; use ContainsSorted to test

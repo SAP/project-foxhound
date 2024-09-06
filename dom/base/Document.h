@@ -57,7 +57,6 @@
 #include "mozilla/dom/LargestContentfulPaint.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WakeLockBinding.h"
-#include "mozilla/glean/GleanMetrics.h"
 #include "nsAtom.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
@@ -200,7 +199,6 @@ class FullscreenExit;
 class FullscreenRequest;
 class HTMLEditor;
 struct LangGroupFontPrefs;
-class PendingAnimationTracker;
 class PermissionDelegateHandler;
 class PresShell;
 class ScrollTimelineAnimationTracker;
@@ -321,6 +319,9 @@ enum BFCacheStatus {
 };
 
 }  // namespace dom
+namespace glean::perf {
+struct PageLoadExtra;
+}
 }  // namespace mozilla
 
 namespace mozilla::net {
@@ -1191,11 +1192,6 @@ class Document : public nsINode,
   const SVGContextPaint* GetCurrentContextPaint() const {
     return mCurrentContextPaint;
   }
-
-  /**
-   * Are plugins allowed in this document ?
-   */
-  bool GetAllowPlugins();
 
   /**
    * Set the sub document for aContent to aSubDoc.
@@ -2695,19 +2691,6 @@ class Document : public nsINode,
   // If HasAnimationController is true, this is guaranteed to return non-null.
   SMILAnimationController* GetAnimationController();
 
-  // Gets the tracker for animations that are waiting to start.
-  // Returns nullptr if there is no pending animation tracker for this document
-  // which will be the case if there have never been any CSS animations or
-  // transitions on elements in the document.
-  PendingAnimationTracker* GetPendingAnimationTracker() {
-    return mPendingAnimationTracker;
-  }
-
-  // Gets the tracker for animations that are waiting to start and
-  // creates it if it doesn't already exist. As a result, the return value
-  // will never be nullptr.
-  PendingAnimationTracker* GetOrCreatePendingAnimationTracker();
-
   // Gets the tracker for scroll-driven animations that are waiting to start.
   // Returns nullptr if there is no scroll-driven animation tracker for this
   // document which will be the case if there have never been any scroll-driven
@@ -2949,10 +2932,11 @@ class Document : public nsINode,
    */
   void MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
                          ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                         bool aLinkPreload);
+                         bool aLinkPreload, const nsAString& aFetchPriority);
   void PreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
                     ReferrerPolicyEnum aReferrerPolicy, bool aIsImgSet,
-                    bool aLinkPreload, uint64_t aEarlyHintPreloaderId);
+                    bool aLinkPreload, uint64_t aEarlyHintPreloaderId,
+                    const nsAString& aFetchPriority);
 
   /**
    * Called by images to forget an image preload when they start doing
@@ -3442,8 +3426,6 @@ class Document : public nsINode,
   mozilla::dom::HTMLAllCollection* All();
 
   static bool DocumentSupportsL10n(JSContext* aCx, JSObject* aObject);
-  static bool IsWebAnimationsGetAnimationsEnabled(JSContext* aCx,
-                                                  JSObject* aObject);
   static bool AreWebAnimationsTimelinesEnabled(JSContext* aCx,
                                                JSObject* aObject);
   // Checks that the caller is either chrome or some addon.
@@ -3743,12 +3725,12 @@ class Document : public nsINode,
   DOMIntersectionObserver* GetLazyLoadObserver() { return mLazyLoadObserver; }
   DOMIntersectionObserver& EnsureLazyLoadObserver();
 
-  ResizeObserver* GetLastRememberedSizeObserver() {
-    return mLastRememberedSizeObserver;
+  bool HasElementsWithLastRememberedSize() const {
+    return !mElementsObservedForLastRememberedSize.IsEmpty();
   }
-  ResizeObserver& EnsureLastRememberedSizeObserver();
   void ObserveForLastRememberedSize(Element&);
   void UnobserveForLastRememberedSize(Element&);
+  void UpdateLastRememberedSizes();
 
   // Dispatch a runnable related to the document.
   nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const;
@@ -3895,6 +3877,17 @@ class Document : public nsINode,
 
   void SetAllowDeclarativeShadowRoots(bool aAllowDeclarativeShadowRoots);
   bool AllowsDeclarativeShadowRoots() const;
+
+  void SuspendDOMNotifications() {
+    MOZ_ASSERT(IsHTMLDocument(),
+               "Currently suspending DOM notifications is supported only on "
+               "HTML documents.");
+    mSuspendDOMNotifications = true;
+  }
+
+  void ResumeDOMNotifications() { mSuspendDOMNotifications = false; }
+
+  bool DOMNotificationsSuspended() const { return mSuspendDOMNotifications; }
 
  protected:
   RefPtr<DocumentL10n> mDocumentL10n;
@@ -4887,6 +4880,8 @@ class Document : public nsINode,
 
   bool mAllowDeclarativeShadowRoots : 1;
 
+  bool mSuspendDOMNotifications : 1;
+
   // The fingerprinting protections overrides for this document. The value will
   // override the default enabled fingerprinting protections for this document.
   // This will only get populated if these is one that comes from the local
@@ -5146,7 +5141,11 @@ class Document : public nsINode,
   // https://drafts.csswg.org/css-round-display/#viewport-fit-descriptor
   ViewportFitType mViewportFit;
 
-  PLDHashTable* mSubDocuments;
+  // XXXdholbert This should really be modernized to a nsTHashMap or similar,
+  // though note that the modernization will need to take care to also convert
+  // the special hash_table_ops logic (e.g. how SubDocClearEntry clears the
+  // parent document as part of cleaning up an entry in this table).
+  UniquePtr<PLDHashTable> mSubDocuments;
 
   class HeaderData;
   UniquePtr<HeaderData> mHeaderData;
@@ -5183,9 +5182,9 @@ class Document : public nsINode,
 
   RefPtr<DOMIntersectionObserver> mLazyLoadObserver;
 
-  // ResizeObserver for storing and removing the last remembered size.
+  // Elements observed for a last remembered size.
   // @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
-  RefPtr<ResizeObserver> mLastRememberedSizeObserver;
+  nsTHashSet<RefPtr<Element>> mElementsObservedForLastRememberedSize;
 
   // Stack of top layer elements.
   nsTArray<nsWeakPtr> mTopLayer;
@@ -5205,10 +5204,6 @@ class Document : public nsINode,
   LinkedList<DocumentTimeline> mTimelines;
 
   RefPtr<dom::ScriptLoader> mScriptLoader;
-
-  // Tracker for animations that are waiting to start.
-  // nullptr until GetOrCreatePendingAnimationTracker is called.
-  RefPtr<PendingAnimationTracker> mPendingAnimationTracker;
 
   // Tracker for scroll-driven animations that are waiting to start.
   // nullptr until GetOrCreateScrollTimelineAnimationTracker is called.
@@ -5249,7 +5244,7 @@ class Document : public nsINode,
   // TODO(emilio): There are other meta tags in the spec that have a similar
   // processing model to color-scheme. We could store all in-document meta tags
   // here to get sane and fast <meta> element processing.
-  TreeOrderedArray<HTMLMetaElement> mColorSchemeMetaTags;
+  TreeOrderedArray<HTMLMetaElement*> mColorSchemeMetaTags;
 
   // These member variables cache information about the viewport so we don't
   // have to recalculate it each time.

@@ -45,7 +45,7 @@ const BOTTOM_LEFT_QUADRANT = 3;
 const BOTTOM_RIGHT_QUADRANT = 4;
 
 /**
- * Public function to be called from PictureInPicture.jsm. This is the main
+ * Public function to be called from PictureInPicture.sys.mjs. This is the main
  * entrypoint for initializing the player window.
  *
  * @param {Number} id
@@ -61,7 +61,7 @@ function setupPlayer(id, wgp, videoRef) {
 }
 
 /**
- * Public function to be called from PictureInPicture.jsm. This update the
+ * Public function to be called from PictureInPicture.sys.mjs. This update the
  * controls based on whether or not the video is playing.
  *
  * @param {Boolean} isPlaying
@@ -72,7 +72,7 @@ function setIsPlayingState(isPlaying) {
 }
 
 /**
- * Public function to be called from PictureInPicture.jsm. This update the
+ * Public function to be called from PictureInPicture.sys.mjs. This update the
  * controls based on whether or not the video is muted.
  *
  * @param {Boolean} isMuted
@@ -247,10 +247,10 @@ let Player = {
       this.audioScrubbing = true;
       this.handleAudioScrubbing(event.target.value);
     });
-    this.audioScrubber.addEventListener("change", event => {
+    this.audioScrubber.addEventListener("change", () => {
       this.audioScrubbing = false;
     });
-    this.audioScrubber.addEventListener("pointerdown", event => {
+    this.audioScrubber.addEventListener("pointerdown", () => {
       if (this.isMuted) {
         this.audioScrubber.max = 1;
       }
@@ -1140,7 +1140,7 @@ let Player = {
    * @param {Event} event
    *  Event context data object
    */
-  onResize(event) {
+  onResize() {
     this.toggleSubtitlesSettingsPanel({ forceHide: true });
     this.resizeDebouncer.disarm();
     this.resizeDebouncer.arm();
@@ -1152,7 +1152,7 @@ let Player = {
    * @param {Event} event
    *  Event context data object
    */
-  onCommand(event) {
+  onCommand() {
     this.closePipWindow({ reason: "shortcut" });
   },
 

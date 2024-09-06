@@ -128,7 +128,6 @@ skip-if = ["os == 'linux'"] # focusEditableField times out consistently on linux
 
 ["browser_rules_gridline-names-autocomplete.js"]
 skip-if = [
-  "win10_2004", # Bug 1723573
   "os == 'mac' && !debug", # Bug 1675592; high frequency with/out fission
 ]
 
@@ -283,6 +282,9 @@ skip-if = [
 
 ["browser_rules_refresh-on-stylesheet-change.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+
+["browser_rules_registered-custom-properties.js"]
+skip-if = ["!fission"]
 
 ["browser_rules_search-filter-computed-list_01.js"]
 

@@ -131,15 +131,20 @@ Test preset with fuzzy subcommand
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "rebuild": 5,
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "rebuild": 5,
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
 
@@ -150,15 +155,20 @@ Test preset with fuzzy subcommand
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "rebuild": 5,
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "rebuild": 5,
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
  
@@ -171,16 +181,21 @@ Queries can be appended to presets
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "rebuild": 5,
+              "tasks": [
+                  "build-baz",
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "rebuild": 5,
-      "tasks": [
-          "build-baz",
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
 
@@ -191,14 +206,19 @@ Queries can be appended to presets
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "rebuild": 5,
+              "tasks": [
+                  "test/foo-opt"
+              ]
+          }
       },
-      "rebuild": 5,
-      "tasks": [
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
 
@@ -277,17 +297,22 @@ Test gecko-profile argument handling. Add in profiling to a preset.
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "gecko-profile": true,
+              "gecko-profile-features": "nostacksampling,cpu",
+              "rebuild": 5,
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "gecko-profile": true,
-      "gecko-profile-features": "nostacksampling,cpu",
-      "rebuild": 5,
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
 Check whether the gecko-profile flags can be used from a preset, and check
@@ -304,17 +329,22 @@ settings; everything else uses dashes.)
   Pushed via `mach try fuzzy`
   Calculated try_task_config.json:
   {
-      "env": {
-          "TRY_SELECTOR": "fuzzy"
+      "parameters": {
+          "optimize_target_tasks": false,
+          "try_task_config": {
+              "env": {
+                  "TRY_SELECTOR": "fuzzy"
+              },
+              "gecko-profile": true,
+              "gecko-profile-features": "nostacksampling,cpu",
+              "rebuild": 5,
+              "tasks": [
+                  "test/foo-debug",
+                  "test/foo-opt"
+              ]
+          }
       },
-      "gecko-profile": true,
-      "gecko-profile-features": "nostacksampling,cpu",
-      "rebuild": 5,
-      "tasks": [
-          "test/foo-debug",
-          "test/foo-opt"
-      ],
-      "version": 1
+      "version": 2
   }
   
   $ EDITOR=cat ./mach try fuzzy $testargs --edit-preset profile

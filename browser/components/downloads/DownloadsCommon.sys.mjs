@@ -696,7 +696,7 @@ export var DownloadsCommon = {
         message = s.unblockTypePotentiallyUnwanted2;
         break;
       case lazy.Downloads.Error.BLOCK_VERDICT_INSECURE:
-        message = s.unblockInsecure2;
+        message = s.unblockInsecure3;
         break;
       default:
         // Assume Downloads.Error.BLOCK_VERDICT_MALWARE
@@ -1166,7 +1166,7 @@ const DownloadsViewPrototype = {
    *
    * @note Subclasses should override this.
    */
-  onDownloadStateChanged(download) {
+  onDownloadStateChanged() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 

@@ -127,6 +127,7 @@ ENameValueFlag LocalAccessible::Name(nsString& aName) const {
   if (!aName.IsEmpty()) return eNameOK;
 
   ENameValueFlag nameFlag = NativeName(aName);
+  nsCoreUtils::TrimNonBreakingSpaces(aName);
   if (!aName.IsEmpty()) return nameFlag;
 
   // In the end get the name from tooltip.
@@ -1212,10 +1213,15 @@ already_AddRefed<AccAttributes> LocalAccessible::NativeAttributes() {
   // Expose tag.
   attributes->SetAttribute(nsGkAtoms::tag, mContent->NodeInfo()->NameAtom());
 
-  // Expose draggable object attribute.
   if (auto htmlElement = nsGenericHTMLElement::FromNode(mContent)) {
+    // Expose draggable object attribute.
     if (htmlElement->Draggable()) {
       attributes->SetAttribute(nsGkAtoms::draggable, true);
+    }
+    nsString popover;
+    htmlElement->GetPopover(popover);
+    if (!popover.IsEmpty()) {
+      attributes->SetAttribute(nsGkAtoms::ispopup, std::move(popover));
     }
   }
 
@@ -1299,7 +1305,8 @@ bool LocalAccessible::AttributeChangesState(nsAtom* aAttribute) {
          aAttribute == nsGkAtoms::aria_busy ||
          aAttribute == nsGkAtoms::aria_multiline ||
          aAttribute == nsGkAtoms::aria_multiselectable ||
-         aAttribute == nsGkAtoms::contenteditable;
+         aAttribute == nsGkAtoms::contenteditable ||
+         aAttribute == nsGkAtoms::popovertarget;
 }
 
 void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
@@ -1483,6 +1490,11 @@ void LocalAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
       aAttribute == nsGkAtoms::aria_details ||
       aAttribute == nsGkAtoms::aria_errormessage) {
     mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
+  }
+
+  if (aAttribute == nsGkAtoms::popovertarget) {
+    mDoc->QueueCacheUpdate(this, CacheDomain::Relations);
+    return;
   }
 
   if (aAttribute == nsGkAtoms::alt &&
@@ -1829,10 +1841,40 @@ bool LocalAccessible::SetCurValue(double aValue) {
       kNameSpaceID_None, nsGkAtoms::aria_valuenow, strValue, true));
 }
 
+role LocalAccessible::FindNextValidARIARole(
+    std::initializer_list<nsStaticAtom*> aRolesToSkip) const {
+  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+  if (roleMapEntry && mContent && mContent->IsElement()) {
+    dom::Element* elem = mContent->AsElement();
+    if (!nsAccUtils::ARIAAttrValueIs(elem, nsGkAtoms::role,
+                                     roleMapEntry->roleAtom, eIgnoreCase)) {
+      // Get the next valid token that isn't in the list of roles to skip.
+      uint8_t roleMapIndex =
+          aria::GetFirstValidRoleMapIndexExcluding(elem, aRolesToSkip);
+      // If we don't find a valid token, fall back to the native role.
+      if (roleMapIndex == aria::NO_ROLE_MAP_ENTRY_INDEX ||
+          roleMapIndex == aria::LANDMARK_ROLE_MAP_ENTRY_INDEX) {
+        return NativeRole();
+      }
+      const nsRoleMapEntry* fallbackRoleMapEntry =
+          aria::GetRoleMapFromIndex(roleMapIndex);
+      if (!fallbackRoleMapEntry) {
+        return NativeRole();
+      }
+      // Return the next valid role, but validate that first, too.
+      return ARIATransformRole(fallbackRoleMapEntry->role);
+    }
+  }
+  // Fall back to the native role.
+  return NativeRole();
+}
+
 role LocalAccessible::ARIATransformRole(role aRole) const {
   // Beginning with ARIA 1.1, user agents are expected to use the native host
-  // language role of the element when the region role is used without a name.
-  // https://rawgit.com/w3c/aria/master/core-aam/core-aam.html#role-map-region
+  // language role of the element when the form or region roles are used without
+  // a name. Says the spec, "the user agent MUST treat such elements as if no
+  // role had been provided."
+  // https://w3c.github.io/aria/#document-handling_author-errors_roles
   //
   // XXX: While the name computation algorithm can be non-trivial in the general
   // case, it should not be especially bad here: If the author hasn't used the
@@ -1840,10 +1882,18 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
   // calculation rule excludes name from content. That said, this use case is
   // another example of why we should consider caching the accessible name. See:
   // https://bugzilla.mozilla.org/show_bug.cgi?id=1378235.
-  if (aRole == roles::REGION) {
-    nsAutoString name;
-    Name(name);
-    return name.IsEmpty() ? NativeRole() : aRole;
+  if (aRole == roles::REGION || aRole == roles::FORM) {
+    if (NameIsEmpty()) {
+      // If we have a "form" or "region" role, but no accessible name, we need
+      // to search for the next valid role. First, we search through the role
+      // attribute value string - there might be a valid fallback there. Skip
+      // all "form" or "region" attributes; we know they're not valid since
+      // there's no accessible name. If we find a valid role that's not "form"
+      // or "region", fall back to it (but run it through ARIATransformRole
+      // first). Otherwise, fall back to the element's native role.
+      return FindNextValidARIARole({nsGkAtoms::region, nsGkAtoms::form});
+    }
+    return aRole;
   }
 
   // XXX: these unfortunate exceptions don't fit into the ARIA table. This is
@@ -1894,6 +1944,19 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
     }
   }
 
+  return aRole;
+}
+
+role LocalAccessible::GetMinimumRole(role aRole) const {
+  if (aRole != roles::TEXT && aRole != roles::TEXT_CONTAINER &&
+      aRole != roles::SECTION) {
+    // This isn't a generic role, so aRole is specific enough.
+    return aRole;
+  }
+  dom::Element* el = Elm();
+  if (el && el->IsHTMLElement() && el->HasAttr(nsGkAtoms::popover)) {
+    return roles::GROUPING;
+  }
   return aRole;
 }
 
@@ -2000,6 +2063,30 @@ nsIContent* LocalAccessible::GetAtomicRegion() const {
   }
 
   return atomic.EqualsLiteral("true") ? loopContent : nullptr;
+}
+
+LocalAccessible* LocalAccessible::GetPopoverTargetDetailsRelation() const {
+  dom::Element* targetEl = mContent->GetEffectivePopoverTargetElement();
+  if (!targetEl) {
+    return nullptr;
+  }
+  LocalAccessible* targetAcc = mDoc->GetAccessible(targetEl);
+  if (!targetAcc) {
+    return nullptr;
+  }
+  // Even if the popovertarget is valid, there are a few cases where we must not
+  // expose it via the details relation.
+  if (const nsAttrValue* actionVal =
+          Elm()->GetParsedAttr(nsGkAtoms::popovertargetaction)) {
+    if (static_cast<PopoverTargetAction>(actionVal->GetEnumValue()) ==
+        PopoverTargetAction::Hide) {
+      return nullptr;
+    }
+  }
+  if (targetAcc->NextSibling() == this || targetAcc->PrevSibling() == this) {
+    return nullptr;
+  }
+  return targetAcc;
 }
 
 Relation LocalAccessible::RelationByType(RelationType aType) const {
@@ -2282,13 +2369,35 @@ Relation LocalAccessible::RelationByType(RelationType aType) const {
     case RelationType::CONTAINING_APPLICATION:
       return Relation(ApplicationAcc());
 
-    case RelationType::DETAILS:
-      return Relation(
-          new IDRefsIterator(mDoc, mContent, nsGkAtoms::aria_details));
+    case RelationType::DETAILS: {
+      if (mContent->IsElement() &&
+          mContent->AsElement()->HasAttr(nsGkAtoms::aria_details)) {
+        return Relation(
+            new IDRefsIterator(mDoc, mContent, nsGkAtoms::aria_details));
+      }
+      if (LocalAccessible* target = GetPopoverTargetDetailsRelation()) {
+        return Relation(target);
+      }
+      return Relation();
+    }
 
-    case RelationType::DETAILS_FOR:
-      return Relation(
+    case RelationType::DETAILS_FOR: {
+      Relation rel(
           new RelatedAccIterator(mDoc, mContent, nsGkAtoms::aria_details));
+      RelatedAccIterator invokers(mDoc, mContent, nsGkAtoms::popovertarget);
+      while (Accessible* invoker = invokers.Next()) {
+        // We should only expose DETAILS_FOR if DETAILS was exposed on the
+        // invoker. However, DETAILS exposure on popover invokers is
+        // conditional.
+        LocalAccessible* popoverTarget =
+            invoker->AsLocal()->GetPopoverTargetDetailsRelation();
+        if (popoverTarget) {
+          MOZ_ASSERT(popoverTarget == this);
+          rel.AppendTarget(invoker);
+        }
+      }
+      return rel;
+    }
 
     case RelationType::ERRORMSG:
       return Relation(
@@ -2440,6 +2549,10 @@ void LocalAccessible::Shutdown() {
 
 // LocalAccessible protected
 void LocalAccessible::ARIAName(nsString& aName) const {
+  // 'slot' elements should ignore aria-label and aria-labelledby.
+  if (mContent->IsHTMLElement(nsGkAtoms::slot)) {
+    return;
+  }
   // aria-labelledby now takes precedence over aria-label
   nsresult rv = nsTextEquivUtils::GetTextEquivFromIDRefs(
       this, nsGkAtoms::aria_labelledby, aName);
@@ -2940,11 +3053,10 @@ LocalAccessible* LocalAccessible::CurrentItem() const {
   // For activedescendant, the ARIA spec does not require that the user agent
   // checks whether pointed node is actually a DOM descendant of the element
   // with the aria-activedescendant attribute.
-  nsAutoString id;
-  if (HasOwnContent() && mContent->IsElement() &&
-      mContent->AsElement()->GetAttr(nsGkAtoms::aria_activedescendant, id)) {
-    dom::Element* activeDescendantElm = IDRefsIterator::GetElem(mContent, id);
-    if (activeDescendantElm) {
+  if (HasOwnContent() && mContent->IsElement()) {
+    if (dom::Element* activeDescendantElm =
+            nsCoreUtils::GetAriaActiveDescendantElement(
+                mContent->AsElement())) {
       if (mContent->IsInclusiveDescendantOf(activeDescendantElm)) {
         // Don't want a cyclical descendant relationship. That would be bad.
         return nullptr;
@@ -2973,8 +3085,8 @@ LocalAccessible* LocalAccessible::ContainerWidget() const {
          parent = parent->LocalParent()) {
       nsIContent* parentContent = parent->GetContent();
       if (parentContent && parentContent->IsElement() &&
-          parentContent->AsElement()->HasAttr(
-              nsGkAtoms::aria_activedescendant)) {
+          nsCoreUtils::GetAriaActiveDescendantElement(
+              parentContent->AsElement())) {
         return parent;
       }
 
@@ -2985,7 +3097,7 @@ LocalAccessible* LocalAccessible::ContainerWidget() const {
   return nullptr;
 }
 
-bool LocalAccessible::IsActiveDescendant(LocalAccessible** aWidget) const {
+bool LocalAccessible::IsActiveDescendantId(LocalAccessible** aWidget) const {
   if (!HasOwnContent() || !mContent->HasID()) {
     return false;
   }
@@ -3829,11 +3941,16 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
                 dom::HTMLLabelElement::FromNode(mContent)) {
           rel.AppendTarget(mDoc, labelEl->GetControl());
         }
+      } else if (data.mType == RelationType::DETAILS) {
+        // We need to use RelationByType for details because it might include
+        // popovertarget. Nothing exposes an implicit reverse details
+        // relation, so using RelationByType here is fine.
+        rel = RelationByType(RelationType::DETAILS);
       } else {
         // We use an IDRefsIterator here instead of calling RelationByType
         // directly because we only want to cache explicit relations. Implicit
-        // relations will be computed and stored separately in the parent
-        // process.
+        // relations (e.g. LABEL_FOR exposed on the target of aria-labelledby)
+        // will be computed and stored separately in the parent process.
         rel.AppendIter(new IDRefsIterator(mDoc, mContent, relAtom));
       }
 
@@ -3887,6 +4004,17 @@ already_AddRefed<AccAttributes> LocalAccessible::BundleFieldsForCache(
           nsAutoString role;
           nsAccUtils::GetARIAAttr(el, nsGkAtoms::role, role);
           fields->SetAttribute(CacheKey::ARIARole, std::move(role));
+        }
+      }
+
+      if (auto* htmlEl = nsGenericHTMLElement::FromNode(mContent)) {
+        // Changing popover recreates the Accessible, so it's immutable in the
+        // cache.
+        nsAutoString popover;
+        htmlEl->GetPopover(popover);
+        if (!popover.IsEmpty()) {
+          fields->SetAttribute(CacheKey::PopupType,
+                               RefPtr{NS_Atomize(popover)});
         }
       }
     }

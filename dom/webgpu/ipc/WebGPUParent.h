@@ -8,6 +8,7 @@
 
 #include <unordered_map>
 
+#include "mozilla/WeakPtr.h"
 #include "mozilla/webgpu/ffi/wgpu.h"
 #include "mozilla/webgpu/PWebGPUParent.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -40,7 +41,7 @@ class PresentationData;
 //   needs to be dropped when the last reference to it dies on the child
 //   process.
 
-class WebGPUParent final : public PWebGPUParent {
+class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(WebGPUParent, override)
 
  public:
@@ -59,7 +60,7 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvDeviceCreateBuffer(RawId aDeviceId, RawId aBufferId,
                                         dom::GPUBufferDescriptor&& aDesc,
                                         ipc::UnsafeSharedMemoryHandle&& aShmem);
-  ipc::IPCResult RecvBufferMap(RawId aBufferId, uint32_t aMode,
+  ipc::IPCResult RecvBufferMap(RawId aDeviceId, RawId aBufferId, uint32_t aMode,
                                uint64_t aOffset, uint64_t size,
                                BufferMapResolver&& aResolver);
   ipc::IPCResult RecvBufferUnmap(RawId aDeviceId, RawId aBufferId, bool aFlush);
@@ -76,7 +77,8 @@ class WebGPUParent final : public PWebGPUParent {
   ipc::IPCResult RecvCommandBufferDrop(RawId aCommandBufferId);
   ipc::IPCResult RecvRenderBundleDrop(RawId aBundleId);
   ipc::IPCResult RecvQueueSubmit(RawId aQueueId, RawId aDeviceId,
-                                 const nsTArray<RawId>& aCommandBuffers);
+                                 const nsTArray<RawId>& aCommandBuffers,
+                                 const nsTArray<RawId>& aTextureIds);
   ipc::IPCResult RecvQueueOnSubmittedWorkDone(
       RawId aQueueId, std::function<void(mozilla::void_t)>&& aResolver);
   ipc::IPCResult RecvQueueWriteAction(RawId aQueueId, RawId aDeviceId,
@@ -103,8 +105,9 @@ class WebGPUParent final : public PWebGPUParent {
       RawId aTextureId, RawId aCommandEncoderId,
       const layers::RemoteTextureId& aRemoteTextureId,
       const layers::RemoteTextureOwnerId& aOwnerId);
-  ipc::IPCResult RecvSwapChainDrop(
-      const layers::RemoteTextureOwnerId& aOwnerId);
+  ipc::IPCResult RecvSwapChainDrop(const layers::RemoteTextureOwnerId& aOwnerId,
+                                   layers::RemoteTextureTxnType aTxnType,
+                                   layers::RemoteTextureTxnId aTxnId);
 
   ipc::IPCResult RecvDeviceAction(RawId aDeviceId,
                                   const ipc::ByteBuf& aByteBuf);
@@ -115,6 +118,10 @@ class WebGPUParent final : public PWebGPUParent {
                                    const ipc::ByteBuf& aByteBuf);
   ipc::IPCResult RecvCommandEncoderAction(RawId aEncoderId, RawId aDeviceId,
                                           const ipc::ByteBuf& aByteBuf);
+  ipc::IPCResult RecvRenderPass(RawId aEncoderId, RawId aDeviceId,
+                                const ipc::ByteBuf& aByteBuf);
+  ipc::IPCResult RecvComputePass(RawId aEncoderId, RawId aDeviceId,
+                                 const ipc::ByteBuf& aByteBuf);
   ipc::IPCResult RecvBumpImplicitBindGroupLayout(RawId aPipelineId,
                                                  bool aIsCompute,
                                                  uint32_t aIndex,
@@ -165,9 +172,15 @@ class WebGPUParent final : public PWebGPUParent {
       const layers::RemoteTextureId aRemoteTextureId,
       const layers::RemoteTextureOwnerId aOwnerId);
 
+  bool ForwardError(const RawId aDeviceId, ErrorBuffer& aError) {
+    return ForwardError(Some(aDeviceId), aError);
+  }
+
  private:
   static void MapCallback(ffi::WGPUBufferMapAsyncStatus aStatus,
                           uint8_t* aUserData);
+  static void DeviceLostCallback(uint8_t* aUserData, uint8_t aReason,
+                                 const char* aMessage);
   void DeallocBufferShmem(RawId aBufferId);
 
   void RemoveExternalTexture(RawId aTextureId);
@@ -177,9 +190,6 @@ class WebGPUParent final : public PWebGPUParent {
   void LoseDevice(const RawId aDeviceId, Maybe<uint8_t> aReason,
                   const nsACString& aMessage);
 
-  bool ForwardError(const RawId aDeviceId, ErrorBuffer& aError) {
-    return ForwardError(Some(aDeviceId), aError);
-  }
   bool ForwardError(Maybe<RawId> aDeviceId, ErrorBuffer& aError);
 
   void ReportError(Maybe<RawId> aDeviceId, GPUErrorFilter,
@@ -211,6 +221,19 @@ class WebGPUParent final : public PWebGPUParent {
   // Store a set of DeviceIds that have been SendDeviceLost. We use this to
   // limit each Device to one DeviceLost message.
   nsTHashSet<RawId> mLostDeviceIds;
+
+  // Shared handle of wgpu device's fence.
+  std::unordered_map<RawId, RefPtr<gfx::FileHandleWrapper>> mDeviceFenceHandles;
+
+  // Store DeviceLostRequest structs for each device as unique_ptrs mapped
+  // to their device ids. We keep these unique_ptrs alive as long as the
+  // device is alive.
+  struct DeviceLostRequest {
+    WeakPtr<WebGPUParent> mParent;
+    RawId mDeviceId;
+  };
+  std::unordered_map<RawId, std::unique_ptr<DeviceLostRequest>>
+      mDeviceLostRequests;
 };
 
 }  // namespace webgpu

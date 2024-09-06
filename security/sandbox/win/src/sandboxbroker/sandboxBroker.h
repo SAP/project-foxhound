@@ -75,7 +75,8 @@ class SandboxBroker : public AbstractSandboxBroker {
  public:
   SandboxBroker();
 
-  static void Initialize(sandbox::BrokerServices* aBrokerServices);
+  static void Initialize(sandbox::BrokerServices* aBrokerServices,
+                         const nsAString& aBinDir);
 
   static void EnsureLpacPermsissionsOnDir(const nsString& aDir);
 
@@ -108,12 +109,6 @@ class SandboxBroker : public AbstractSandboxBroker {
 
   // File system permissions
   bool AllowReadFile(wchar_t const* file) override;
-
-  /**
-   * Exposes AddTargetPeer from broker services, so that non-sandboxed
-   * processes can be added as handle duplication targets.
-   */
-  static bool AddTargetPeer(HANDLE aPeerProcess);
 
   /**
    * Share a HANDLE with the child process. The HANDLE will be made available

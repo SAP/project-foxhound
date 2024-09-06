@@ -16,33 +16,33 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=232227
 
 function runTest(testCanvasColors) {
   var colorNames = [
-    [ "AppWorkspace", 0xAB, 0xAB, 0xAB ],
-    [ "Background", 0x00, 0x00, 0x00 ],
-    [ "ButtonFace", 0xe9, 0xe9, 0xed],
-    [ "ButtonHighlight", 0xFF, 0xFF, 0xFF ],
-    [ "ButtonShadow", 0xA0, 0xA0, 0xA0 ],
+    [ "AppWorkspace", 0xFF, 0xFF, 0xFF ], // deprecated, same as Canvas/Window (bug 1803930)
+    [ "Background", 0xFF, 0xFF, 0xFF ], // deprecated, same as Canvas/Window (bug 1803930)
+    [ "ButtonFace", 0xE9, 0xE9, 0xED ],
+    [ "ButtonHighlight", 0xE9, 0xE9, 0xED ], // deprecated, same as ButtonFace (bug 1803932)
+    [ "ButtonShadow", 0xE9, 0xE9, 0xED ], // deprecated, same as ButtonFace (bug 1803932)
     [ "ButtonText", 0x00, 0x00, 0x00 ],
     [ "GrayText", 0x6D, 0x6D, 0x6D ],
     [ "Highlight", 0x33, 0x99, 0xFF ],
     [ "HighlightText", 0xFF, 0xFF, 0xFF ],
-    [ "InfoBackground", 0xFF, 0xFF, 0xE1 ],
-    [ "InfoText", 0x00, 0x00, 0x00 ],
-    [ "Menu", 0xF0, 0xF0, 0xF0 ],
-    [ "MenuText", 0x00, 0x00, 0x00 ],
-    [ "Scrollbar", 0xC8, 0xC8, 0xC8 ],
-    [ "ThreeDDarkShadow", 0x69, 0x69, 0x69 ],
-    [ "ThreeDFace", 0xF0, 0xF0, 0xF0 ],
-    [ "ThreeDHighlight", 0xFF, 0xFF, 0xFF ],
+    [ "InfoBackground", 0xFF, 0xFF, 0xFF ], // deprecated, same as Canvas/Window (bug 1874065)
+    [ "InfoText", 0x00, 0x00, 0x00 ], // deprecated, same as CanvasText/WindowText (bug 1803931)
+    [ "Menu", 0xFF, 0xFF, 0xFF ], // deprecated, same as Canvas/Window (bug 1803930)
+    [ "MenuText", 0x00, 0x00, 0x00 ], // deprecated, same as CanvasText/WindowText (bug 1873951)
+    [ "Scrollbar", 0xFF, 0xFF, 0xFF ], // deprecated, same as Canvas/Window (bug 1803930)
+    [ "ThreeDDarkShadow", 0xE3, 0xE3, 0xE3 ], // deprecated, same as ButtonBorder (bug 1803933)
+    [ "ThreeDFace", 0xE9, 0xE9, 0xED ], // deprecated, same as ButtonFace (bug 1874064)
+    [ "ThreeDHighlight", 0xE3, 0xE3, 0xE3 ], // deprecated, same as ButtonBorder (bug 1803933)
     [ "ThreeDLightShadow", 0xE3, 0xE3, 0xE3 ],
-    [ "ThreeDShadow", 0xA0, 0xA0, 0xA0 ],
+    [ "ThreeDShadow", 0xE3, 0xE3, 0xE3 ], // deprecated, same as ButtonBorder (bug 1803933)
     [ "Window", 0xFF, 0xFF, 0xFF ],
-    [ "WindowFrame", 0x64, 0x64, 0x64 ],
+    [ "WindowFrame", 0xE3, 0xE3, 0xE3 ], // deprecated, same as ButtonBorder (bug 1803933)
     [ "WindowText", 0x00, 0x00, 0x00 ],
-    [ "-moz-ButtonHoverFace", 0xd0, 0xd0, 0xd7 ],
+    [ "-moz-ButtonHoverFace", 0xD0, 0xD0, 0xD7 ],
     [ "-moz-ButtonHoverText", 0x00, 0x00, 0x00 ],
     [ "-moz-CellHighlight", 0xF0, 0xF0, 0xF0 ],
     [ "-moz-CellHighlightText", 0x00, 0x00, 0x00 ],
-    [ "-moz-Combobox", 0xe9, 0xe9, 0xed],
+    [ "-moz-Combobox", 0xE9, 0xE9, 0xED ],
     [ "-moz-ComboboxText", 0x00, 0x00, 0x00 ],
     [ "-moz-Dialog", 0xF0, 0xF0, 0xF0 ],
     [ "-moz-DialogText", 0x00, 0x00, 0x00 ],

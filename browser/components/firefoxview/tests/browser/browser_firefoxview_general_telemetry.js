@@ -39,7 +39,7 @@ add_task(async function firefox_view_entered_telemetry() {
     enteredTelemetry[4] = { page: "recentlyclosed" };
     enteredAndTabSelectedEvents = [tabSelectedTelemetry, enteredTelemetry];
 
-    navigateToCategory(document, "recentlyclosed");
+    await navigateToViewAndWait(document, "recentlyclosed");
     await clearAllParentTelemetryEvents();
     await BrowserTestUtils.openNewForegroundTab(gBrowser, "about:robots");
     is(
@@ -107,9 +107,9 @@ add_task(async function test_change_page_telemetry() {
       ],
     ];
     await clearAllParentTelemetryEvents();
-    navigateToCategory(document, "recentlyclosed");
+    await navigateToViewAndWait(document, "recentlyclosed");
     await telemetryEvent(changePageEvent);
-    navigateToCategory(document, "recentbrowsing");
+    await navigateToViewAndWait(document, "recentbrowsing");
 
     let openTabsComponent = document.querySelector(
       "view-opentabs[slot=opentabs]"
@@ -189,7 +189,7 @@ add_task(async function test_context_menu_new_window_telemetry() {
     );
 
     // Test history context menu options
-    await navigateToCategoryAndWait(document, "history");
+    await navigateToViewAndWait(document, "history");
     let historyComponent = document.querySelector("view-history");
     await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
     await TestUtils.waitForCondition(
@@ -198,7 +198,11 @@ add_task(async function test_context_menu_new_window_telemetry() {
     let firstTabList = historyComponent.lists[0];
     let firstItem = firstTabList.rowEls[0];
     let panelList = historyComponent.panelList;
-    EventUtils.synthesizeMouseAtCenter(firstItem.buttonEl, {}, content);
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     await clearAllParentTelemetryEvents();
     let panelItems = Array.from(panelList.children).filter(
@@ -245,7 +249,7 @@ add_task(async function test_context_menu_private_window_telemetry() {
     );
 
     // Test history context menu options
-    await navigateToCategoryAndWait(document, "history");
+    await navigateToViewAndWait(document, "history");
     let historyComponent = document.querySelector("view-history");
     await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
     await TestUtils.waitForCondition(
@@ -254,14 +258,22 @@ add_task(async function test_context_menu_private_window_telemetry() {
     let firstTabList = historyComponent.lists[0];
     let firstItem = firstTabList.rowEls[0];
     let panelList = historyComponent.panelList;
-    EventUtils.synthesizeMouseAtCenter(firstItem.buttonEl, {}, content);
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     await clearAllParentTelemetryEvents();
     let panelItems = Array.from(panelList.children).filter(
       panelItem => panelItem.nodeName === "PANEL-ITEM"
     );
 
-    EventUtils.synthesizeMouseAtCenter(firstItem.buttonEl, {}, content);
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
     info("Context menu button clicked.");
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("Context menu shown.");
@@ -314,7 +326,7 @@ add_task(async function test_context_menu_delete_from_history_telemetry() {
     );
 
     // Test history context menu options
-    await navigateToCategoryAndWait(document, "history");
+    await navigateToViewAndWait(document, "history");
     let historyComponent = document.querySelector("view-history");
     await TestUtils.waitForCondition(() => historyComponent.fullyUpdated);
     await TestUtils.waitForCondition(
@@ -323,14 +335,22 @@ add_task(async function test_context_menu_delete_from_history_telemetry() {
     let firstTabList = historyComponent.lists[0];
     let firstItem = firstTabList.rowEls[0];
     let panelList = historyComponent.panelList;
-    EventUtils.synthesizeMouseAtCenter(firstItem.buttonEl, {}, content);
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     await clearAllParentTelemetryEvents();
     let panelItems = Array.from(panelList.children).filter(
       panelItem => panelItem.nodeName === "PANEL-ITEM"
     );
 
-    EventUtils.synthesizeMouseAtCenter(firstItem.buttonEl, {}, content);
+    EventUtils.synthesizeMouseAtCenter(
+      firstItem.secondaryButtonEl,
+      {},
+      content
+    );
     info("Context menu button clicked.");
     await BrowserTestUtils.waitForEvent(panelList, "shown");
     info("Context menu shown.");

@@ -8,16 +8,15 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   _ExperimentFeature: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ASRouterTargeting:
+    // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+    "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   CleanupManager: "resource://normandy/lib/CleanupManager.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
   JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ASRouterTargeting: "resource://activity-stream/lib/ASRouterTargeting.jsm",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -351,7 +350,7 @@ export class _RemoteSettingsExperimentLoader {
     }
   }
 
-  observe(aSubect, aTopic, aData) {
+  observe(aSubect, aTopic) {
     if (aTopic === STUDIES_ENABLED_CHANGED) {
       this.onEnabledPrefChange();
     }

@@ -7,7 +7,7 @@
 
 use gleam::gl;
 use std::cell::RefCell;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use std::ffi::OsString;
 use std::ffi::{CStr, CString};
 use std::io::Cursor;
@@ -16,7 +16,7 @@ use std::ops::Range;
 #[cfg(target_os = "android")]
 use std::os::raw::c_int;
 use std::os::raw::{c_char, c_float, c_void};
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 use std::os::unix::ffi::OsStringExt;
 #[cfg(target_os = "windows")]
 use std::os::windows::ffi::OsStringExt;
@@ -2001,11 +2001,9 @@ pub extern "C" fn wr_transaction_append_transform_properties(
 #[no_mangle]
 pub extern "C" fn wr_transaction_scroll_layer(
     txn: &mut Transaction,
-    pipeline_id: WrPipelineId,
-    scroll_id: u64,
+    scroll_id: ExternalScrollId,
     sampled_scroll_offsets: &ThinVec<SampledScrollOffset>,
 ) {
-    let scroll_id = ExternalScrollId(scroll_id, pipeline_id);
     txn.set_scroll_offsets(scroll_id, sampled_scroll_offsets.to_vec());
 }
 
@@ -2020,17 +2018,11 @@ pub extern "C" fn wr_transaction_set_is_transform_async_zooming(
 
 #[no_mangle]
 pub extern "C" fn wr_transaction_add_minimap_data(
-  txn: &mut Transaction,
-  pipeline_id: WrPipelineId,
-  scroll_id: u64,
-  minimap_data: MinimapData
+    txn: &mut Transaction,
+    scroll_id: ExternalScrollId,
+    minimap_data: MinimapData,
 ) {
-  // FIXME: It would be a nice simplification (to both this function and
-  // wr_transaction_scroll_layer) to expose ExternalScrollId to C++ code
-  // and let it pass it in as a single argument (which on the C++ side
-  // we can construct from a ScrollableLayerGuid).
-  let scroll_id = ExternalScrollId(scroll_id, pipeline_id);
-  txn.set_minimap_data(scroll_id, minimap_data);
+    txn.set_minimap_data(scroll_id, minimap_data);
 }
 
 #[no_mangle]
@@ -2334,7 +2326,7 @@ fn read_font_descriptor(bytes: &mut WrVecU8, index: u32) -> NativeFontHandle {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 fn read_font_descriptor(bytes: &mut WrVecU8, index: u32) -> NativeFontHandle {
     // On macOS, the descriptor string is a concatenation of the PostScript name
     // and the font file path (to disambiguate cases where there are multiple
@@ -2348,7 +2340,7 @@ fn read_font_descriptor(bytes: &mut WrVecU8, index: u32) -> NativeFontHandle {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 fn read_font_descriptor(bytes: &mut WrVecU8, index: u32) -> NativeFontHandle {
     let chars = bytes.flush_into_vec();
     NativeFontHandle {

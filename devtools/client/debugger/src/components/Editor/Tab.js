@@ -15,7 +15,6 @@ import actions from "../../actions/index";
 import {
   getDisplayPath,
   getFileURL,
-  getSourceQueryString,
   getTruncatedFileName,
   isPretty,
 } from "../../utils/source";
@@ -87,14 +86,13 @@ class Tab extends PureComponent {
     });
 
     const path = getDisplayPath(source, tabSources);
-    const query = getSourceQueryString(source);
     return div(
       {
         draggable: true,
-        onDragOver: onDragOver,
-        onDragStart: onDragStart,
-        onDragEnd: onDragEnd,
-        className: className,
+        onDragOver,
+        onDragStart,
+        onDragEnd,
+        className,
         "data-index": index,
         "data-source-id": sourceId,
         onClick: handleTabClick,
@@ -115,7 +113,7 @@ class Tab extends PureComponent {
         {
           className: "filename",
         },
-        getTruncatedFileName(source, query),
+        getTruncatedFileName(source),
         path && span(null, `../${path}/..`)
       ),
       React.createElement(CloseButton, {

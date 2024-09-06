@@ -355,6 +355,12 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
   pref("media.peerconnection.ice.proxy_only", false);
   pref("media.peerconnection.ice.proxy_only_if_pbmode", false);
   pref("media.peerconnection.turn.disable", false);
+  pref("media.peerconnection.treat_warnings_as_errors", false);
+  #ifdef NIGHTLY_BUILD
+    pref("media.peerconnection.description.legacy.enabled", false);
+  #else
+    pref("media.peerconnection.description.legacy.enabled", true);
+  #endif
 
   // 770 = DTLS 1.0, 771 = DTLS 1.2, 772 = DTLS 1.3
 pref("media.peerconnection.dtls.version.min", 771);
@@ -641,6 +647,19 @@ pref("toolkit.telemetry.dap_helper", "https://dap.services.mozilla.com");
 pref("toolkit.telemetry.dap_helper_owner", "Mozilla");
 pref("toolkit.telemetry.dap.logLevel", "Warn");
 
+// pref for mozilla to induce a new ping from users. This value should only ever be increased
+// and doing so will induce a new data ping from all users, so be careful. Mozilla may edit
+// this pref via our remote update/experimentation system
+pref("toolkit.telemetry.user_characteristics_ping.current_version", 0);
+// pref containing the value for the user of the last version of the ping we sent
+// if a user wants to disable this type of ping explicitly, set this to -1
+// firefox/mozilla will not modify this value if a negative number is present.
+pref("toolkit.telemetry.user_characteristics_ping.last_version_sent", 0);
+// A unique identifier for the user characteristics ping. This is not the same as
+// the telemetry client id (which is not sent in this ping), it is cleared when a
+// user opts-out of telemetry, it is set upon first telemetry submission
+pref("toolkit.telemetry.user_characteristics_ping.uuid", "");
+
 // AsyncShutdown delay before crashing in case of shutdown freeze
 // ASan, TSan and code coverage builds can be considerably slower. Extend the
 // grace period for both the asyncshutdown and the terminator.
@@ -737,6 +756,7 @@ pref("devtools.performance.recording.threads.remote", "[\"GeckoMain\",\"Composit
 // build artifacts of local builds.
 pref("devtools.performance.recording.objdirs", "[]");
 pref("devtools.performance.recording.power.external-url", "");
+pref("devtools.performance.recording.markers.external-url", "");
 // The popup will display some introductory text the first time it is displayed.
 pref("devtools.performance.popup.intro-displayed", false);
 
@@ -843,8 +863,6 @@ pref("dom.storage.snapshot_prefill", 16384);
 pref("dom.storage.snapshot_gradual_prefill", 4096);
 pref("dom.storage.snapshot_reusing", true);
 pref("dom.storage.client_validation", true);
-
-pref("dom.send_after_paint_to_content", false);
 
 // Enable time picker UI. By default, disabled.
 pref("dom.forms.datetime.timepicker", false);
@@ -963,7 +981,11 @@ pref("javascript.options.mem.gc_compacting", true);
 
 // JSGC_PARALLEL_MARKING_ENABLED
 // This only applies to the main runtime and does not affect workers.
+#ifndef ANDROID
+pref("javascript.options.mem.gc_parallel_marking", true);
+#else
 pref("javascript.options.mem.gc_parallel_marking", false);
+#endif
 
 // JSGC_PARALLEL_MARKING_THRESHOLD_MB
 // Minimum heap size at which to use parallel marking, if enabled.
@@ -1028,6 +1050,14 @@ pref("javascript.options.mem.gc_helper_thread_ratio", 50);
 // JSGC_MAX_HELPER_THREADS
 pref("javascript.options.mem.gc_max_helper_threads", 8);
 
+// Eager nursery collection parameters:
+// JSGC_NURSERY_EAGER_COLLECTION_THRESHOLD_KB
+pref("javascript.options.mem.nursery_eager_collection_threshold_kb", 256);
+// JSGC_NURSERY_EAGER_COLLECTION_THRESHOLD_PERCENT
+pref("javascript.options.mem.nursery_eager_collection_threshold_percent", 25);
+// JSGC_NURSERY_EAGER_COLLECTION_TIMEOUT_MS
+pref("javascript.options.mem.nursery_eager_collection_timeout_ms", 5000);
+
 pref("javascript.options.shared_memory", true);
 
 pref("javascript.options.throw_on_debuggee_would_run", false);
@@ -1084,8 +1114,8 @@ pref("network.protocol-handler.external.disk", false);
 pref("network.protocol-handler.external.disks", false);
 pref("network.protocol-handler.external.afp", false);
 pref("network.protocol-handler.external.moz-icon", false);
-pref("network.protocol-handler.external.firefox", false);
-pref("network.protocol-handler.external.firefox-private", false);
+pref("network.protocol-handler.external.firefox-bridge", false);
+pref("network.protocol-handler.external.firefox-private-bridge", false);
 
 // Don't allow  external protocol handlers for common typos
 pref("network.protocol-handler.external.ttp", false);  // http
@@ -1281,9 +1311,6 @@ pref("network.http.tcp_keepalive.long_lived_idle_time", 600);
 pref("network.http.enforce-framing.http1", false); // should be named "strict"
 pref("network.http.enforce-framing.soft", true);
 pref("network.http.enforce-framing.strict_chunked_encoding", true);
-
-// Max size, in bytes, for received HTTP response header.
-pref("network.http.max_response_header_size", 393216);
 
 // The ratio of the transaction count for the focused window and the count of
 // all available active connections.
@@ -1977,13 +2004,6 @@ pref("mousewheel.with_shift.delta_multiplier_x", 100);
 pref("mousewheel.with_shift.delta_multiplier_y", 100);
 pref("mousewheel.with_shift.delta_multiplier_z", 100);
 
-// pref for which side vertical scrollbars should be on
-// 0 = end-side in UI direction
-// 1 = end-side in document/content direction
-// 2 = right
-// 3 = left
-pref("layout.scrollbar.side", 0);
-
 // enable single finger gesture input (win7+ tablets)
 pref("gestures.enable_single_finger_input", true);
 
@@ -1994,9 +2014,6 @@ pref("dom.global_stop_script", true);
 
 // Support the input event queue on the main thread of content process
 pref("input_event_queue.supported", true);
-
-// The default value for nsIPluginTag.enabledState (STATE_ENABLED = 2)
-pref("plugin.default.state", 2);
 
 // Enable multi by default.
 #if !defined(MOZ_ASAN) && !defined(MOZ_TSAN)
@@ -2034,9 +2051,6 @@ pref("dom.ipc.keepProcessesAlive.privilegedabout", 1);
 
 // Disable support for SVG
 pref("svg.disabled", false);
-
-// Disable e10s for Gecko by default. This is overridden in firefox.js.
-pref("browser.tabs.remote.autostart", false);
 
 // This pref will cause assertions when a remoteType triggers a process switch
 // to a new remoteType it should not be able to trigger.
@@ -3217,11 +3231,7 @@ pref("alerts.showFavicons", false);
 // DOM full-screen API.
 #ifdef XP_MACOSX
   // Whether to use macOS native full screen for Fullscreen API
-  #ifdef NIGHTLY_BUILD
-    pref("full-screen-api.macos-native-full-screen", true);
-  #else
-    pref("full-screen-api.macos-native-full-screen", false);
-  #endif
+  pref("full-screen-api.macos-native-full-screen", true);
 #endif
 // transition duration of fade-to-black and fade-from-black, unit: ms
 #ifndef MOZ_WIDGET_GTK
@@ -3660,6 +3670,11 @@ pref("browser.translations.simulateUnsupportedEngine", false);
 pref("browser.translations.chaos.errors", false);
 pref("browser.translations.chaos.timeoutMS", 0);
 
+// Enable the experimental machine learning inference engine.
+pref("browser.ml.enable", false);
+// Set to "All" to see all logs, which are useful for debugging.
+pref("browser.ml.logLevel", "Error");
+
 // When a user cancels this number of authentication dialogs coming from
 // a single web page in a row, all following authentication dialogs will
 // be blocked (automatically canceled) for that page. The counter resets
@@ -3971,9 +3986,15 @@ pref("security.external_protocol_requires_permission", true);
 pref("extensions.formautofill.available", "detect");
 pref("extensions.formautofill.addresses.supported", "detect");
 pref("extensions.formautofill.addresses.enabled", true);
-pref("extensions.formautofill.addresses.capture.enabled", false);
-// This preference should be removed entirely once address capture v2 developing is finished
-pref("extensions.formautofill.addresses.capture.v2.enabled", false);
+pref("extensions.formautofill.addresses.capture.enabled", true);
+#if defined(ANDROID)
+  // On android we have custom logic to control this. Ideally we should use nimbus there as well.
+  // https://github.com/mozilla-mobile/firefox-android/blob/d566743ea0f041ce27c1204da903de380f96b46e/fenix/app/src/main/java/org/mozilla/fenix/utils/Settings.kt#L1502-L1510
+  pref("extensions.formautofill.addresses.experiments.enabled", true);
+#else
+  // Whether address autofill is enabled or not ( this is set via Nimbus )
+  pref("extensions.formautofill.addresses.experiments.enabled", false);
+#endif
 // Defies the required address form fields to trigger the display of the address capture doorhanger
 pref("extensions.formautofill.addresses.capture.requiredFields", "street-address,postal-code,address-level1,address-level2");
 pref("extensions.formautofill.addresses.ignoreAutocompleteOff", true);
@@ -4001,9 +4022,9 @@ pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0"
 
 pref("extensions.formautofill.loglevel", "Warn");
 
-// Temporary prefs that we will be removed when enabling capture on form removal and on page navigation in Fx123.
-pref("extensions.formautofill.heuristics.captureOnFormRemoval", false);
-pref("extensions.formautofill.heuristics.captureOnPageNavigation", false);
+// Temporary prefs that we will be removed if the telemetry data (added in Fx123) does not show any problems with the new heuristics.
+pref("extensions.formautofill.heuristics.captureOnFormRemoval", true);
+pref("extensions.formautofill.heuristics.captureOnPageNavigation", true);
 // The interactivityCheckMode pref is only temporary.
 // It will be removed when we decide to only support the `focusability` mode
 pref("extensions.formautofill.heuristics.interactivityCheckMode", "focusability");
@@ -4012,7 +4033,7 @@ pref("toolkit.osKeyStore.loglevel", "Warn");
 
 pref("extensions.formautofill.supportRTL", false);
 
-// Controls the log level for CookieBannerListService.jsm.
+// Controls the log level for CookieBannerListService.sys.mjs.
 pref("cookiebanners.listService.logLevel", "Error");
 
 // Controls the log level for Cookie Banner Auto Clicking.

@@ -25,6 +25,11 @@ const IGNORED_EXTENSIONS = ["css", "svg", "png"];
 import { isPretty, getRawSourceURL } from "../utils/source";
 import { prefs } from "../utils/prefs";
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
+});
+
 export function initialSourcesTreeState() {
   return {
     // List of all Thread Tree Items.
@@ -210,18 +215,25 @@ function addThread(state, thread) {
   });
   if (!threadItem) {
     threadItem = createThreadTreeItem(threadActorID);
-    state.threadItems = [...state.threadItems, threadItem];
+    state.threadItems = [...state.threadItems];
+    threadItem.thread = thread;
+    addSortedItem(state.threadItems, threadItem, sortThreadItems);
   } else {
     // We force updating the list to trigger mapStateToProps
     // as the getSourcesTreeSources selector is awaiting for the `thread` attribute
     // which we will set here.
     state.threadItems = [...state.threadItems];
+
+    // Inject the reducer thread object on Thread Tree Items
+    // (this is handy shortcut to have access to from React components)
+    // (this is also used by sortThreadItems to sort the thread as a Tree in the Browser Toolbox)
+    threadItem.thread = thread;
+
+    // We have to remove and re-insert the thread as its order will be based on the newly set `thread` attribute
+    state.threadItems = [...state.threadItems];
+    state.threadItems.splice(state.threadItems.indexOf(threadItem), 1);
+    addSortedItem(state.threadItems, threadItem, sortThreadItems);
   }
-  // Inject the reducer thread object on Thread Tree Items
-  // (this is handy shortcut to have access to from React components)
-  // (this is also used by sortThreadItems to sort the thread as a Tree in the Browser Toolbox)
-  threadItem.thread = thread;
-  state.threadItems.sort(sortThreadItems);
 }
 
 function updateBlackbox(state, sources, shouldBlackBox) {
@@ -290,6 +302,23 @@ function isSourceVisibleInSourceTree(
   );
 }
 
+/**
+ * Generic Array helper to add a new value at the right position
+ * given that the array is already sorted.
+ *
+ * @param {Array} array
+ *        The already sorted into which a value should be added.
+ * @param {any} newValue
+ *        The value to add in the array while keeping the array sorted.
+ * @param {Function} comparator
+ *        A function to compare two array values and their ordering.
+ *        Follow same behavior as Array sorting function.
+ */
+function addSortedItem(array, newValue, comparator) {
+  const index = lazy.BinarySearch.insertionIndexOf(comparator, array, newValue);
+  array.splice(index, 0, newValue);
+}
+
 function addSource(threadItems, source, sourceActor) {
   // Ensure creating or fetching the related Thread Item
   let threadItem = threadItems.find(item => {
@@ -299,8 +328,7 @@ function addSource(threadItems, source, sourceActor) {
     threadItem = createThreadTreeItem(sourceActor.thread);
     // Note that threadItems will be cloned once to force a state update
     // by the callsite of `addSourceActor`
-    threadItems.push(threadItem);
-    threadItems.sort(sortThreadItems);
+    addSortedItem(threadItems, threadItem, sortThreadItems);
   }
 
   // Then ensure creating or fetching the related Group Item
@@ -316,9 +344,9 @@ function addSource(threadItems, source, sourceActor) {
     groupItem = createGroupTreeItem(group, threadItem, source);
     // Copy children in order to force updating react in case we picked
     // this directory as a project root
-    threadItem.children = [...threadItem.children, groupItem];
-    // As we add a new item, re-sort the groups in this thread
-    threadItem.children.sort(sortItems);
+    threadItem.children = [...threadItem.children];
+
+    addSortedItem(threadItem.children, groupItem, sortItems);
   }
 
   // Then ensure creating or fetching all possibly nested Directory Item(s)
@@ -340,9 +368,8 @@ function addSource(threadItems, source, sourceActor) {
   const sourceItem = createSourceTreeItem(source, sourceActor, directoryItem);
   // Copy children in order to force updating react in case we picked
   // this directory as a project root
-  directoryItem.children = [...directoryItem.children, sourceItem];
-  // Re-sort the items in this directory
-  directoryItem.children.sort(sortItems);
+  directoryItem.children = [...directoryItem.children];
+  addSortedItem(directoryItem.children, sourceItem, sortItems);
 
   return true;
 }
@@ -375,12 +402,12 @@ function sortItems(a, b) {
     return -1;
   } else if (b.type == "directory" && a.type == "source") {
     return 1;
+  } else if (a.type == "group" && b.type == "group") {
+    return a.groupName.localeCompare(b.groupName);
   } else if (a.type == "directory" && b.type == "directory") {
     return a.path.localeCompare(b.path);
   } else if (a.type == "source" && b.type == "source") {
-    return a.source.displayURL.filename.localeCompare(
-      b.source.displayURL.filename
-    );
+    return a.source.longName.localeCompare(b.source.longName);
   }
   return 0;
 }
@@ -426,7 +453,7 @@ function sortThreadItems(a, b) {
   if (a.thread.processID > b.thread.processID) {
     return 1;
   } else if (a.thread.processID < b.thread.processID) {
-    return 0;
+    return -1;
   }
 
   // Order the frame targets and the worker targets by their target name
@@ -476,9 +503,9 @@ function addOrGetParentDirectory(groupItem, path) {
   const directory = createDirectoryTreeItem(path, parentDirectory);
   // Copy children in order to force updating react in case we picked
   // this directory as a project root
-  parentDirectory.children = [...parentDirectory.children, directory];
-  // Re-sort the items in this directory
-  parentDirectory.children.sort(sortItems);
+  parentDirectory.children = [...parentDirectory.children];
+
+  addSortedItem(parentDirectory.children, directory, sortItems);
 
   // Also maintain the list of all group items,
   // Which helps speedup querying for existing items.
