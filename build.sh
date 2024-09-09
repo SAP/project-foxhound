@@ -28,6 +28,7 @@ PLAYWRIGHT_DIR=
 PLAYWRIGHT_VERSION=
 WITH_PLAYWRIGHT_INTEGRATION=
 NO_CLOBBER=
+SKIP_PREPARATION=
 
 _determine_obj_dir() {
   if [ ! -d "${FOXHOUND_OBJ_DIR}" ]; then
@@ -89,8 +90,6 @@ _prepare_foxhound() {
     ./mach --no-interactive clobber
   fi
  ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser
- _determine_obj_dir
- _status "Determined MOZ_OBJDIR as: $FOXHOUND_OBJ_DIR"
   popd > /dev/null || exit 1
 }
 
@@ -130,14 +129,18 @@ _package_foxhound() {
 main() {
   FOXHOUND_DIR="${CURRENT_DIR}"
   PLAYWRIGHT_DIR="${BASEDIR}/playwright"
-  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ ! -d "${PLAYWRIGHT_DIR}" ]; then
+  if [ -z "$SKIP_PREPARATION" ] && [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ ! -d "${PLAYWRIGHT_DIR}" ]; then
     _checkout_playwright
   fi
-  _prepare_foxhound
-  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
+  if [ -z "$SKIP_PREPARATION" ]; then
+    _prepare_foxhound
+  fi
+  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ -z "$SKIP_PREPARATION" ]; then
     _prepare_playwright
     _patch_foxhound
   fi
+  _determine_obj_dir
+  _status "Determined MOZ_OBJDIR as: $FOXHOUND_OBJ_DIR"
   _build_foxhound
   _package_foxhound
 }
@@ -145,19 +148,22 @@ main() {
 _help() {
    echo "Builds project foxhound"
    echo
-   echo "Syntax: build.sh [-h|c|p]"
+   echo "Syntax: build.sh [-h|c|p|s]"
    echo "options:"
    echo "c     Does not clobber the build prior to building."
-   echo "h     Print this Help."
+   echo "s     Skip the preparation phase (i.e., avoid applying playwright patches again)."
    echo "p     Builds with playwright integration."
+   echo "h     Print this Help."
    echo
 }
 
-while getopts "hpc" option; do
+while getopts "hpcs" option; do
   case $option in
     h)
         _help
         exit;;
+    s) 
+        SKIP_PREPARATION=1;;
     c) 
         NO_CLOBBER=1;;
     p) 
@@ -167,5 +173,6 @@ while getopts "hpc" option; do
         exit;;
   esac
 done
+
 main
 
