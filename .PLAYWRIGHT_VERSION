@@ -1,0 +1,4 @@
+# This is the version of playwright compatible with this foxhound Git commit.
+# In case the patches from this version do not apply cleanly, please open an issue!
+# For advice on how to build foxhound with playwright support, see build.sh
+PLAYWRIGHT_VERSION="v1.44.0"
