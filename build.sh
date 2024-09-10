@@ -28,6 +28,7 @@ PLAYWRIGHT_DIR=
 PLAYWRIGHT_VERSION=
 WITH_PLAYWRIGHT_INTEGRATION=
 NO_CLOBBER=
+MAKE_GIT_COMMIT=
 SKIP_PREPARATION=
 SKIP_BOOTSTRAP=
 RESET_GIT_REPO=
@@ -108,6 +109,10 @@ _patch_foxhound() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
   cp -r "${PLAYWRIGHT_DIR}/browser_patches/firefox/juggler" "juggler"
   git apply --verbose --index --whitespace=nowarn --recount "${PLAYWRIGHT_DIR}/browser_patches/firefox/patches"/* || _die "Playwright patches failed to apply."
+  if [ -n "$MAKE_GIT_COMMIT" ]; then
+    _status "Creating Git commit"
+    _make_git_commit
+  fi
   popd > /dev/null || exit 1
 }
 
@@ -166,11 +171,12 @@ _help() {
    echo "b     Skip './mach bootstrap' (This can help if the binaries are not available for download anymore)."
    echo "r     Resets the Git repository prior to building. This will delete any (uncommitted) changes you made!"
    echo "p     Builds with playwright integration."
+   echo "g     Create a Git commit with the playwright patches."
    echo "h     Print this Help."
    echo
 }
 
-while getopts "hpcsrb" option; do
+while getopts "hpcsrbg" option; do
   case $option in
     h)
         _help
@@ -183,6 +189,8 @@ while getopts "hpcsrb" option; do
         SKIP_PREPARATION=1;;
     c) 
         NO_CLOBBER=1;;
+    g) 
+        MAKE_GIT_COMMIT=1;;
     p) 
         WITH_PLAYWRIGHT_INTEGRATION=1;;
     \?) 
