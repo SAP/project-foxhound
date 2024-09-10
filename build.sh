@@ -29,6 +29,7 @@ PLAYWRIGHT_VERSION=
 WITH_PLAYWRIGHT_INTEGRATION=
 NO_CLOBBER=
 SKIP_PREPARATION=
+SKIP_BOOTSTRAP=
 RESET_GIT_REPO=
 
 _determine_obj_dir() {
@@ -95,7 +96,10 @@ _prepare_foxhound() {
     _status "Clobbering the build environment"
     ./mach --no-interactive clobber
   fi
- ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser
+  if [ -z "$SKIP_BOOTSTRAP" ]; then
+    _status "Preparing environment via './mach bootstrap'"
+    ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser || _die "Bootstrapping failed! You can install dependencies manually and skip this step via the '-b' flag"
+  fi
   popd > /dev/null || exit 1
 }
 
@@ -158,16 +162,20 @@ _help() {
    echo "options:"
    echo "c     Does not clobber the build prior to building."
    echo "s     Skip the preparation phase (i.e., avoid applying playwright patches again)."
+   echo "b     Skip './mach bootstrap' (This can help if the binaries are not available for download anymore)."
+   echo "r     Resets the Git repository prior to building. This will delete any (uncommitted) changes you made!"
    echo "p     Builds with playwright integration."
    echo "h     Print this Help."
    echo
 }
 
-while getopts "hpcsr" option; do
+while getopts "hpcsrb" option; do
   case $option in
     h)
         _help
         exit;;
+    b) 
+        SKIP_BOOTSTRAP=1;;
     r) 
         RESET_GIT_REPO=1;;
     s) 
