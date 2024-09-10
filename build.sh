@@ -164,7 +164,7 @@ main() {
 _help() {
    echo "Builds project foxhound"
    echo
-   echo "Syntax: build.sh [-h|c|p|s]"
+   echo "Syntax: build.sh [-h|c|p|b|r|g|s]"
    echo "options:"
    echo "c     Does not clobber the build prior to building."
    echo "s     Skip the preparation phase (i.e., avoid applying playwright patches again)."
