@@ -29,6 +29,7 @@ PLAYWRIGHT_VERSION=
 WITH_PLAYWRIGHT_INTEGRATION=
 NO_CLOBBER=
 SKIP_PREPARATION=
+RESET_GIT_REPO=
 
 _determine_obj_dir() {
   if [ ! -d "${FOXHOUND_OBJ_DIR}" ]; then
@@ -86,7 +87,12 @@ _prepare_foxhound() {
     _status "Setting default mozconfig from Ubuntu profile"
     cp "${FOXHOUND_DIR}/taintfox_mozconfig_ubuntu" "${FOXHOUND_DIR}/.mozconfig" 
   fi
-  if [ -n "$NO_CLOBBER" ]; then
+  if [ -n "$RESET_GIT_REPO" ]; then
+    _status "Resetting Git repository"
+    git reset --hard HEAD
+  fi
+  if [ -z "$NO_CLOBBER" ]; then
+    _status "Clobbering the build environment"
     ./mach --no-interactive clobber
   fi
  ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser
@@ -157,11 +163,13 @@ _help() {
    echo
 }
 
-while getopts "hpcs" option; do
+while getopts "hpcsr" option; do
   case $option in
     h)
         _help
         exit;;
+    r) 
+        RESET_GIT_REPO=1;;
     s) 
         SKIP_PREPARATION=1;;
     c) 
