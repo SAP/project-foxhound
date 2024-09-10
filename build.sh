@@ -71,7 +71,7 @@ _checkout_playwright() {
   git clone https://github.com/microsoft/playwright.git "${PLAYWRIGHT_DIR}" || _die "Cloning playwright failed!"
 }
 
-_check_repo_foxhound_repo_state() {
+_check_foxhound_repo_state() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
  test -z "$(git status --porcelain)" || _die "Dirty Worktree, please commit all changes before running the build script!"
   popd > /dev/null || exit 1
@@ -146,6 +146,7 @@ main() {
     _prepare_foxhound
   fi
   if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ -z "$SKIP_PREPARATION" ]; then
+    _check_foxhound_repo_state
     _prepare_playwright
     _patch_foxhound
   fi
