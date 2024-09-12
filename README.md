@@ -2,19 +2,21 @@
 
 This is the repository for project "Foxhound", a Firefox fork capable of tracking taint flows through the browser.
 
-Taint tracking makes it possible to automatically detect client-side cross-site-scripting flaws in websites by marking certain attacker-controlled strings (e.g. `location.hash`) as tainted and notifying the user when tainted data reaches a set of predefined sinks (e.g. `eval()`, `.innerHTML()`, ...).
+Taint tracking makes it possible to automatically detect client-side cross-site-scripting flaws in websites by marking certain attacker-controlled strings (e.g. `location.hash`) as tainted and notifying the user when tainted data reaches a set of predefined sinks (e.g. `eval()`, `.innerHTML`, ...).
 
 ## Usage
 
-If an insecure data flow is discovered by the browser, it will output a warning message to the JavaScript console and trigger the ```__taintreport``` event.
+If an insecure data flow is discovered by the browser, it will output a warning message to the JavaScript console and trigger the `__taintreport` event.
 To get more information about the discovered data flow, you can add an event listener like this:
-```JavaScript
+
+```javascript
 function handleTaintReport(report) {
   console.log(report.detail);
 }
 
 window.addEventListener("__taintreport", handleTaintReport);
 ```
+
 This functionality can be expanded in a web extension in order to alert the user or to export findings for reporting.
 
 More information on the sources and sinks which are instrumented as part of the code can be found [here](taint).
@@ -26,14 +28,14 @@ The "Foxhound" browser can be built mostly by following instructions on how to b
 First, you need to install the toolchains (compilers etc.) required to build project "Foxhound". Luckily, these are provided by Mozilla, so there is no need to install them by hand.
 If you are feeling lucky, just install the toolchains via the bootstrap command:
 
-```
+```bash
 ./mach  --no-interactive bootstrap --application-choice=browser
 ```
 
 Unfortunately, the toolchains are only available for certain versions of Firefox, computed via a hash over various files in the source tree.
-The above command might fail with a message about toolschains not being found. If this is the case, try checking out the release branch first:
+The above command might fail with a message about toolchains not being found. If this is the case, try checking out the release branch first:
 
-```
+```bash
 git checkout firefox-release
 ./mach  --no-interactive bootstrap --application-choice=browser
 ```
@@ -41,26 +43,29 @@ git checkout firefox-release
 There are also sometimes issues that the rust compiler version downloaded by bootstrap is too new and causes compiler errors or crashes.
 If you need to downgrade rust, try this:
 
-```
+```bash
 ${HOME}/.cargo/bin/rustup install 1.66
 ${HOME}/.cargo/bin/rustup default 1.66
 ${HOME}/.cargo/bin/rustup override set 1.66
 ```
 
-To install version ```1.66``` of the rust compiler. You need to start a new shell for the changes to take effect.
+To install version `1.66` of the rust compiler. You need to start a new shell for the changes to take effect.
+The [Firefox documentation](https://firefox-source-docs.mozilla.org/writing-rust-code/update-policy.html#schedule) provides information about the matching rust version for each Firefox release.
 
-## Compiling
-
+### Compiling
 
 Choose the appropriate mozconfig by copying "taintfox_mozconfig\_[mac|win|ubuntu]" to ".mozconfig".
+
 ```bash
 cp taintfox_mozconfig .mozconfig
 ```
 
 And start the build like this:
+
 ```bash
 ./mach build
 ```
+
 If you need an windows installer follow up with
 ```bash
 ./mach build installer
@@ -72,12 +77,19 @@ If you need an ubuntu zip package follow up with
 ./mach package
 ```
 To run the browser, use:
-```
+```bash
 ./mach run
 ```
 
 ### Docker Containers
 Instructions for building and running project "Foxhound" inside a docker container (useful for getting dependencies right) can be found in the [dockerfiles](dockerfiles) folder.
+
+### Building with [Playwright](https://playwright.dev) support
+
+We support the Playwright browser automation framework to enable automatic testing with Foxhound.
+This has been successfully used for large scale vulnerability scanning and is extensively tested by us.
+For information on how to build Foxhound with Playwright, please check out the [Wiki](https://github.com/SAP/project-foxhound/wiki/Building-Foxhound-(with-playwright-integration)).
+
 
 ## Internals
 
@@ -89,15 +101,15 @@ The StringTaint class represents taint information for string-like objects and i
 correctly handle taint information.
 
 The JavaScript public API (jsapi.h) has been extended to support access to taint information for JavaScript strings. The API also provides
-JS_ReportTaintSink which takes care of reporting a flow of tainted data into a predefined sink. In this case a message will be written to
-stdout and a custom JavaScript Event will be triggered that can then be processed by a Firefox extension.
+`JS_ReportTaintSink` which takes care of reporting a flow of tainted data into a predefined sink.
+In this case a message will be written to stdout and a custom JavaScript Event will be triggered that can then be processed by a Firefox extension.
 
 All code related to taint tracking has been marked with a `// TaintFox` comment, making it easy to search for modifications in the source code.
 Finding the `location.hash` taint source becomes as easy as `git grep -n TaintFox | grep location.hash`.
 
 Taint information is available in JavaScript via the `.taint` property of string instances:
 
-```JavaScript
+```javaScript
 var a = taint("abc");
 var b = "def";
 var c = a.toUpperCase() + b;
@@ -128,4 +140,4 @@ If you would like to use project Foxhound in your own research, please cite our 
 }
 ```
 
-If you think your work would also be useful for the wider research community, feel free to open a Pull Request with your changes!
+If you think your work would also be useful for the wider community, feel free to open a Pull Request with your changes!
