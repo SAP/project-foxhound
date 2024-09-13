@@ -4,6 +4,8 @@ This is the repository for project "Foxhound", a Firefox fork capable of trackin
 
 Taint tracking makes it possible to automatically detect client-side cross-site-scripting flaws in websites by marking certain attacker-controlled strings (e.g. `location.hash`) as tainted and notifying the user when tainted data reaches a set of predefined sinks (e.g. `eval()`, `.innerHTML`, ...).
 
+Foxhound has been successfully used for a wide range of academic studies (e.g., the [publications](https://github.com/SAP/project-foxhound/wiki/Publications) listed in the Wiki) as well as for security testing in industrial use cases.
+
 ## Usage
 
 If an insecure data flow is discovered by the browser, it will output a warning message to the JavaScript console and trigger the `__taintreport` event.
@@ -126,7 +128,7 @@ cd js/src
 ./tests/jstests.py ../../obj-tf-release/dist/bin/js taint/
 ```
 
-## Citations
+## Cite us!
 
 If you would like to use project Foxhound in your own research, please cite our EuroS&P paper where we describe the browser:
 
