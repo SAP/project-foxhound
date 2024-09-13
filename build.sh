@@ -31,6 +31,9 @@ NO_CLOBBER=
 MAKE_GIT_COMMIT=
 SKIP_PREPARATION=
 SKIP_BOOTSTRAP=
+SKIP_PATCHING=
+SKIP_BUILD=
+SKIP_PACKAGE=
 RESET_GIT_REPO=
 
 _determine_obj_dir() {
@@ -150,24 +153,35 @@ main() {
   if [ -z "$SKIP_PREPARATION" ]; then
     _prepare_foxhound
   fi
-  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ -z "$SKIP_PREPARATION" ]; then
+  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ -z "$SKIP_PATCHING" ]; then
     _check_foxhound_repo_state
     _prepare_playwright
     _patch_foxhound
   fi
   _determine_obj_dir
   _status "Determined MOZ_OBJDIR as: $FOXHOUND_OBJ_DIR"
-  _build_foxhound
-  _package_foxhound
+  if [ -z "$SKIP_BUILD" ]; then
+      _build_foxhound
+  fi
+  if [ -z "$SKIP_PACKAGE" ]; then
+     _package_foxhound
+  fi
 }
 
 _help() {
    echo "Builds project foxhound"
    echo
-   echo "Syntax: build.sh [-h|c|p|b|r|g|s]"
+   echo "Syntax: build.sh [-h|c|p|b|r|g|s|t|u|v]"
+   echo
+   echo "For example, to build from scratch with playwright:"
+   echo "> bash build.sh -p"
+   echo
    echo "options:"
    echo "c     Does not clobber the build prior to building."
    echo "s     Skip the preparation phase (i.e., avoid applying playwright patches again)."
+   echo "t     Skip applying the playwright patches"
+   echo "u     Skip the build itself"
+   echo "v     Skip the packaging stage"
    echo "b     Skip './mach bootstrap' (This can help if the binaries are not available for download anymore)."
    echo "r     Resets the Git repository prior to building. This will delete any (uncommitted) changes you made!"
    echo "p     Builds with playwright integration."
@@ -176,7 +190,7 @@ _help() {
    echo
 }
 
-while getopts "hpcsrbg" option; do
+while getopts "hpcstuvrbg" option; do
   case $option in
     h)
         _help
@@ -187,6 +201,12 @@ while getopts "hpcsrbg" option; do
         RESET_GIT_REPO=1;;
     s) 
         SKIP_PREPARATION=1;;
+    t)
+        SKIP_PATCHING=1;;
+    u)
+        SKIP_BUILD=1;;
+    v)
+        SKIP_PACKAGE=1;;
     c) 
         NO_CLOBBER=1;;
     g) 
