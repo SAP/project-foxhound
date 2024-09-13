@@ -137,6 +137,9 @@ _package_foxhound() {
   fi
   pushd "${FOXHOUND_OBJ_DIR}/dist" || exit 1
   zip -r foxhound_linux.zip foxhound
+  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
+      cp foxhound_linux.zip foxhound_linux_${PLAYWRIGHT_VERSION}.zip
+  fi
   _status "Zip located at '$(pwd  || true)/foxhound_linux.zip', done!"
   popd > /dev/null || exit 1
   popd > /dev/null || exit 1
