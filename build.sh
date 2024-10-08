@@ -35,6 +35,7 @@ SKIP_PATCHING=
 SKIP_BUILD=
 SKIP_PACKAGE=
 RESET_GIT_REPO=
+DRY_RUN=
 
 _determine_obj_dir() {
   if [ ! -d "${FOXHOUND_OBJ_DIR}" ]; then
@@ -49,7 +50,7 @@ _determine_obj_dir() {
 
 _make_git_commit() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
-  NEW_BRANCHNAME="pw-build-$(date +%s)" 
+  NEW_BRANCHNAME="pw-build-$(date +%s)"
   git switch -c "${NEW_BRANCHNAME}" || _die "Can't create new Git branch called: ${NEW_BRANCHNAME}"
   git add .
   git commit --author="Foxhound builder <foxhound@whereismymind.info>" --message="Added Playwright support to Foxhound."
@@ -64,15 +65,20 @@ _prepare_playwright() {
   . "${CURRENT_DIR}/.PLAYWRIGHT_VERSION"
   _status "Set playwright version to: ${PLAYWRIGHT_VERSION}"
   popd > /dev/null || exit 1
-  pushd "${PLAYWRIGHT_DIR}" > /dev/null || _die "Can't change into playwright dir: ${PLAYWRIGHT_DIR}"
-  git fetch --all || _die "Git fetch failed for Playwright"
-  git checkout "${PLAYWRIGHT_VERSION}" || _die "Can't checkout playwright version ${PLAYWRIGHT_VERSION}.."
-  popd > /dev/null || exit 1
+  _status "Fetching Playwright and checking out ${PLAYWRIGHT_VERSION} branch"
+  if [ -z "$DRY_RUN" ]; then
+    pushd "${PLAYWRIGHT_DIR}" > /dev/null || _die "Can't change into playwright dir: ${PLAYWRIGHT_DIR}"
+    git fetch --all || _die "Git fetch failed for Playwright"
+    git checkout "${PLAYWRIGHT_VERSION}" || _die "Can't checkout playwright version ${PLAYWRIGHT_VERSION}.."
+    popd > /dev/null || exit 1
+  fi
 }
 
 _checkout_playwright() {
   _status "Cloning playwright into ${PLAYWRIGHT_DIR}"
-  git clone https://github.com/microsoft/playwright.git "${PLAYWRIGHT_DIR}" || _die "Cloning playwright failed!"
+  if [ -z "$DRY_RUN" ]; then
+    git clone https://github.com/microsoft/playwright.git "${PLAYWRIGHT_DIR}" || _die "Cloning playwright failed!"
+  fi
 }
 
 _check_foxhound_repo_state() {
@@ -86,23 +92,33 @@ _prepare_foxhound() {
  _status "Preparing the foxhound build environment"
   if [ -d "./juggler" ]; then
     _status "Deleting stale juggler"
-    rm -rf "${FOXHOUND_DIR}/juggler"
+    if [ -z "$DRY_RUN" ]; then
+      rm -rf "${FOXHOUND_DIR}/juggler"
+    fi
   fi
   if [ ! -f "${FOXHOUND_DIR}/.mozconfig" ]; then
     _status "Setting default mozconfig from Ubuntu profile"
-    cp "${FOXHOUND_DIR}/taintfox_mozconfig_ubuntu" "${FOXHOUND_DIR}/.mozconfig" 
+    if [ -z "$DRY_RUN" ]; then
+      cp "${FOXHOUND_DIR}/taintfox_mozconfig_ubuntu" "${FOXHOUND_DIR}/.mozconfig"
+    fi
   fi
   if [ -n "$RESET_GIT_REPO" ]; then
     _status "Resetting Git repository"
-    git reset --hard HEAD
+    if [ -z "$DRY_RUN" ]; then
+      git reset --hard HEAD
+    fi
   fi
   if [ -z "$NO_CLOBBER" ]; then
     _status "Clobbering the build environment"
-    ./mach --no-interactive clobber
+    if [ -z "$DRY_RUN" ]; then
+      ./mach --no-interactive clobber
+    fi
   fi
   if [ -z "$SKIP_BOOTSTRAP" ]; then
     _status "Preparing environment via './mach bootstrap'"
-    ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser || _die "Bootstrapping failed! You can install dependencies manually and skip this step via the '-b' flag"
+    if [ -z "$DRY_RUN" ]; then
+      ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser || _die "Bootstrapping failed! You can install dependencies manually and skip this step via the '-b' flag"
+    fi
   fi
   popd > /dev/null || exit 1
 }
@@ -110,38 +126,54 @@ _prepare_foxhound() {
 _patch_foxhound() {
   _status "Patching foxhound for playwright integration"
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
-  cp -r "${PLAYWRIGHT_DIR}/browser_patches/firefox/juggler" "juggler"
-  git apply --verbose --index --whitespace=nowarn --recount "${PLAYWRIGHT_DIR}/browser_patches/firefox/patches"/* || _die "Playwright patches failed to apply."
+  if [ -z "$DRY_RUN" ]; then
+    cp -r "${PLAYWRIGHT_DIR}/browser_patches/firefox/juggler" "juggler"
+    git apply --verbose --index --whitespace=nowarn --recount "${PLAYWRIGHT_DIR}/browser_patches/firefox/patches"/* || _die "Playwright patches failed to apply."
+  fi
   if [ -n "$MAKE_GIT_COMMIT" ]; then
     _status "Creating Git commit"
-    _make_git_commit
+    if [ -z "$DRY_RUN" ]; then
+      _make_git_commit
+    fi
   fi
   popd > /dev/null || exit 1
 }
 
 _build_foxhound() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
-  ./mach build || _die "./mach build error"
+  _status "Starting Foxhound build.. This can take a while"
+  if [ -z "$DRY_RUN" ]; then
+    ./mach build || _die "./mach build error"
+  fi
   popd > /dev/null || exit 1
 }
 
 _package_foxhound() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
  _status "Packaging foxhound.."
-  ./mach package || _die "./mach package error"
+
+  if [ -z "$DRY_RUN" ]; then
+    ./mach package || _die "./mach package error"
+  fi
 
   if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
-    mkdir -p "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref"
-    cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/playwright.cfg" "${FOXHOUND_OBJ_DIR}/dist/foxhound/"
-    cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/00-playwright-prefs.js" "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref/"
+    _status "Applying playwright preferences"
+    if [ -z "$DRY_RUN" ]; then
+      mkdir -p "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref"
+      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/playwright.cfg" "${FOXHOUND_OBJ_DIR}/dist/foxhound/"
+      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/00-playwright-prefs.js" "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref/"
+    fi
   fi
-  pushd "${FOXHOUND_OBJ_DIR}/dist" || exit 1
-  zip -r foxhound_linux.zip foxhound
-  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
-      cp foxhound_linux.zip foxhound_linux_${PLAYWRIGHT_VERSION}.zip
+  _status "Creating Foxhound zip"
+  if [ -z "$DRY_RUN" ]; then
+    pushd "${FOXHOUND_OBJ_DIR}/dist" || exit 1
+    zip -r foxhound_linux.zip foxhound
+    if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
+        cp foxhound_linux.zip "foxhound_linux_${PLAYWRIGHT_VERSION}.zip"
+    fi
+    _status "Zip located at '$(pwd  || true)/foxhound_linux.zip', done!"
+    popd > /dev/null || exit 1
   fi
-  _status "Zip located at '$(pwd  || true)/foxhound_linux.zip', done!"
-  popd > /dev/null || exit 1
   popd > /dev/null || exit 1
 }
 
@@ -156,8 +188,11 @@ main() {
   if [ -z "$SKIP_PREPARATION" ]; then
     _prepare_foxhound
   fi
-  if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ -z "$SKIP_PATCHING" ]; then
-    _check_foxhound_repo_state
+  if [[ -n "$WITH_PLAYWRIGHT_INTEGRATION" && ( -z "$SKIP_PREPARATION" && -z "$SKIP_PATCHING") ]]; then
+    if [ -z "$SKIP_GIT_CHECK" ]; then
+      _check_foxhound_repo_state
+    fi
+
     _prepare_playwright
     _patch_foxhound
   fi
@@ -174,7 +209,7 @@ main() {
 _help() {
    echo "Builds project foxhound"
    echo
-   echo "Syntax: build.sh [-h|c|p|b|r|g|s|t|u|v]"
+   echo "Syntax: build.sh [-c|s|t|u|v|b|r|p|g|n|h]"
    echo
    echo "For example, to build from scratch with playwright:"
    echo "> bash build.sh -p"
@@ -189,20 +224,29 @@ _help() {
    echo "r     Resets the Git repository prior to building. This will delete any (uncommitted) changes you made!"
    echo "p     Builds with playwright integration."
    echo "g     Create a Git commit with the playwright patches."
+   echo "n     Dry run. Only print the step the script would perform."
    echo "h     Print this Help."
    echo
+   echo
+   echo "Environment variables:"
+   echo
+   echo "These are meant to be used if you know what you are doing and can lead to states that are difficult to revert. Use with caution!"
+   echo
+   echo "SKIP_GIT_CHECK:"
+   echo "If set to any value this skips the check whether the git repository is dirty."
+   echo "Warning: When used together with Playwright support this can lead to a state where untangling the Playwright patches from your changes to commit them is very cumbersome!"
 }
 
-while getopts "hpcstuvrbg" option; do
-  case $option in
+while getopts "hpcstuvrbgn" option; do
+  case "$option" in
     h)
         _help
         exit;;
-    b) 
+    b)
         SKIP_BOOTSTRAP=1;;
-    r) 
+    r)
         RESET_GIT_REPO=1;;
-    s) 
+    s)
         SKIP_PREPARATION=1;;
     t)
         SKIP_PATCHING=1;;
@@ -210,15 +254,16 @@ while getopts "hpcstuvrbg" option; do
         SKIP_BUILD=1;;
     v)
         SKIP_PACKAGE=1;;
-    c) 
+    c)
         NO_CLOBBER=1;;
-    g) 
+    g)
         MAKE_GIT_COMMIT=1;;
-    p) 
+    p)
         WITH_PLAYWRIGHT_INTEGRATION=1;;
-    \?) 
-        echo "Error: Invalid option"
-        exit;;
+    n)
+        DRY_RUN=1;;
+    \?)
+        _die "Error: Invalid option: $option";;
   esac
 done
 
