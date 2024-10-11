@@ -142,4 +142,12 @@ If you would like to use project Foxhound in your own research, please cite our 
 }
 ```
 
-If you think your work would also be useful for the wider community, feel free to open a Pull Request with your changes!
+If your work includes changes to foxhound that you believe would also be useful for the wider community, feel free to open a Pull Request with your changes! We are happy to accept external contributions.
+
+Additionally, if you get a paper accepted using project Foxhound, we are happy to add you to the [Hall of Fame](https://github.com/SAP/project-foxhound/wiki/Publications). Please open an issue to notify us.
+
+## Contributors
+
+We want to thank everybody wo contributed to the development of Foxhound!
+
+In no particular order: [tmbrbr](https://github.com/tmbrbr), [leeN](https://github.com/leeN), [saelo](https://github.com/saelo), [soumboussaha](https://github.com/soumboussaha) [LukasHock](https://github.com/LukasHock), [0drai](https://github.com/0drai), [alexbara2000](https://github.com/alexbara2000), [moorts](https://github.com/moorts), [unqrf](https://github.com/unqrf), ..
