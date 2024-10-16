@@ -43,9 +43,15 @@ jobs:
       - name: Dry Run
         run: |
           cd foxhound
+          cp taintfox_mozconfig_ubuntu .mozconfig
           bash build.sh -p -n   
     
       - name: Patch
         run: |
           cd foxhound
           bash build.sh -p -u -v
+
+      - name: Configure
+        run: |
+          cd foxhound
+          ./mach configure
