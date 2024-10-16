@@ -43,9 +43,9 @@ jobs:
       - name: Dry Run
         run: |
           cd foxhound
-          bash -p -n   
+          bash build.sh -p -n   
     
       - name: Patch
         run: |
           cd foxhound
-          bash -p -u -v
+          bash build.sh -p -u -v
