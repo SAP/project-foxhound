@@ -26,6 +26,8 @@ FOXHOUND_OBJ_DIR=
 FOXHOUND_DIR=
 PLAYWRIGHT_DIR=
 PLAYWRIGHT_VERSION=
+FIREFOX_VERSION=
+RUST_VERSION=
 WITH_PLAYWRIGHT_INTEGRATION=
 NO_CLOBBER=
 MAKE_GIT_COMMIT=
@@ -57,14 +59,20 @@ _make_git_commit() {
   popd > /dev/null || exit 1
 }
 
-_prepare_playwright() {
+_get_playwright_version() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
   if [ ! -f "${CURRENT_DIR}/.PLAYWRIGHT_VERSION" ]; then
     _die "Can not determine playwright version, as \".PLAYWRIGHT_VERSION\" file is missing. Please open an issue on Github!"
   fi
+  # This file also contains the rust version
   . "${CURRENT_DIR}/.PLAYWRIGHT_VERSION"
+  _status "Detected Firefox version: ${FIREFOX_VERSION}"
   _status "Set playwright version to: ${PLAYWRIGHT_VERSION}"
+  _status "Required Rust version: ${RUST_VERSION}"
   popd > /dev/null || exit 1
+}
+
+_prepare_playwright() {
   _status "Fetching Playwright and checking out ${PLAYWRIGHT_VERSION} branch"
   if [ -z "$DRY_RUN" ]; then
     pushd "${PLAYWRIGHT_DIR}" > /dev/null || _die "Can't change into playwright dir: ${PLAYWRIGHT_DIR}"
@@ -118,6 +126,11 @@ _prepare_foxhound() {
     _status "Preparing environment via './mach bootstrap'"
     if [ -z "$DRY_RUN" ]; then
       ./mach --no-interactive bootstrap --no-system-changes --application-choice=browser || _die "Bootstrapping failed! You can install dependencies manually and skip this step via the '-b' flag"
+    fi
+    _status "Installing Rust"
+    if [ -z "$DRY_RUN" ]; then
+      # This is the recommended way to install rust from https://www.rust-lang.org/tools/install
+      curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain ${RUST_VERSION} || _die "Rust installation failed! You can install dependencies manually and skip this step via the '-b' flag"
     fi
   fi
   popd > /dev/null || exit 1
@@ -182,6 +195,12 @@ _package_foxhound() {
 main() {
   FOXHOUND_DIR="${CURRENT_DIR}"
   PLAYWRIGHT_DIR="${BASEDIR}/playwright"
+
+  _status "Starting Foxhound build in ${FOXHOUND_DIR}"
+
+  # First get playwright / rust versions
+  _get_playwright_version
+
   if [ -z "$SKIP_PREPARATION" ] && [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ] && [ ! -d "${PLAYWRIGHT_DIR}" ]; then
     _checkout_playwright
   fi
