@@ -23,7 +23,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-               apt-get install -y   \
+          sudo apt-get install -y   \
                curl                 \
                python3              \
                python3-pip          \
