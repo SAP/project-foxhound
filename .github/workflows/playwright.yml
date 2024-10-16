@@ -31,8 +31,8 @@ jobs:
                tar                  \
                zip                  \
                unzip                \
-               git                  \
-               python3 -m pip install setuptools
+               git
+          python3 -m pip install setuptools
 
       - name: Checkout release branch
         uses: actions/checkout@v3
