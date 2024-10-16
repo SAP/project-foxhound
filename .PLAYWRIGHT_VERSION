@@ -2,3 +2,9 @@
 # In case the patches from this version do not apply cleanly, please open an issue!
 # For advice on how to build foxhound with playwright support, see build.sh
 PLAYWRIGHT_VERSION="v1.44.0"
+# This tells the build script which rust version to download and install
+# See here for the correct version mapping: https://firefox-source-docs.mozilla.org/writing-rust-code/update-policy.html
+# also available in-tree here: docs/writing-rust-code/update-policy.md
+RUST_VERSION="1.75.0"
+# The current firefox version can be found here: browser/config/version.txt
+FIREFOX_VERSION=$(cat browser/config/version.txt)
