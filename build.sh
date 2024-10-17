@@ -23,6 +23,7 @@ _status() {
 
 # Shared variables
 FOXHOUND_OBJ_DIR=
+FOXHOUND_NAME=
 FOXHOUND_DIR=
 PLAYWRIGHT_DIR=
 PLAYWRIGHT_VERSION=
@@ -49,6 +50,18 @@ _determine_obj_dir() {
     fi
     FOXHOUND_OBJ_DIR="$OBJ_DIR"
 }
+
+_determine_bin_name() {
+  if [ ! -d "${FOXHOUND_NAME}" ]; then
+      BIN_NAME="$(grep -v -e "^#" "${FOXHOUND_DIR}/.mozconfig" | grep "MOZ_APP_NAME=" | cut -d "=" -f 2)"
+      if [ -z "${BIN_NAME}" ]; then
+          _status "Could not find MOZ_APP_NAME in .mozconfig, using default firefox"
+          BIN_NAME=firefox
+      fi
+    fi
+    FOXHOUND_NAME="$BIN_NAME"
+}
+
 
 _make_git_commit() {
   pushd "${FOXHOUND_DIR}" > /dev/null || _die "Can't change into foxhound dir: ${FOXHOUND_DIR}"
@@ -180,7 +193,7 @@ _package_foxhound() {
   _status "Creating Foxhound zip"
   if [ -z "$DRY_RUN" ]; then
     pushd "${FOXHOUND_OBJ_DIR}/dist" || exit 1
-    zip -r foxhound_linux.zip foxhound
+    zip -r foxhound_linux.zip $FOXHOUND_NAME
     if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
         cp foxhound_linux.zip "foxhound_linux_${PLAYWRIGHT_VERSION}.zip"
     fi
@@ -217,6 +230,8 @@ main() {
   fi
   _determine_obj_dir
   _status "Determined MOZ_OBJDIR as: $FOXHOUND_OBJ_DIR"
+  _determine_bin_name
+  _status "Determined binary name as: $FOXHOUND_NAME"
   if [ -z "$SKIP_BUILD" ]; then
       _build_foxhound
   fi
