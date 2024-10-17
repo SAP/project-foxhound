@@ -185,9 +185,9 @@ _package_foxhound() {
   if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
     _status "Applying playwright preferences"
     if [ -z "$DRY_RUN" ]; then
-      mkdir -p "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref"
-      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/playwright.cfg" "${FOXHOUND_OBJ_DIR}/dist/foxhound/"
-      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/00-playwright-prefs.js" "${FOXHOUND_OBJ_DIR}/dist/foxhound/defaults/pref/"
+      mkdir -p "${FOXHOUND_OBJ_DIR}/dist/${FOXHOUND_NAME}/defaults/pref"
+      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/playwright.cfg" "${FOXHOUND_OBJ_DIR}/dist/${FOXHOUND_NAME}/"
+      cp "${PLAYWRIGHT_DIR}/browser_patches/firefox/preferences/00-playwright-prefs.js" "${FOXHOUND_OBJ_DIR}/dist/${FOXHOUND_NAME}/defaults/pref/"
     fi
   fi
   _status "Creating Foxhound zip"
