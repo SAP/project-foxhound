@@ -112,6 +112,9 @@ struct SizeComputationInput {
   nsMargin ComputedPhysicalBorderPadding() const {
     return mComputedBorderPadding.GetPhysicalMargin(mWritingMode);
   }
+  nsMargin ComputedPhysicalBorder() const {
+    return ComputedLogicalBorder(mWritingMode).GetPhysicalMargin(mWritingMode);
+  }
   nsMargin ComputedPhysicalPadding() const {
     return mComputedPadding.GetPhysicalMargin(mWritingMode);
   }
@@ -396,7 +399,7 @@ struct ReflowInput : public SizeComputationInput {
   }
 
   nsSize ComputedPhysicalSize() const {
-    return nsSize(ComputedWidth(), ComputedHeight());
+    return mComputedSize.GetPhysicalSize(mWritingMode);
   }
 
   nsMargin ComputedPhysicalOffsets() const {
@@ -414,16 +417,7 @@ struct ReflowInput : public SizeComputationInput {
 
   // Return ReflowInput's computed size including border-padding, with
   // unconstrained dimensions replaced by zero.
-  nsSize ComputedSizeAsContainerIfConstrained() const {
-    const nscoord wd = ComputedWidth();
-    const nscoord ht = ComputedHeight();
-    return nsSize(wd == NS_UNCONSTRAINEDSIZE
-                      ? 0
-                      : wd + ComputedPhysicalBorderPadding().LeftRight(),
-                  ht == NS_UNCONSTRAINEDSIZE
-                      ? 0
-                      : ht + ComputedPhysicalBorderPadding().TopBottom());
-  }
+  nsSize ComputedSizeAsContainerIfConstrained() const;
 
   // Our saved containing block dimensions.
   LogicalSize mContainingBlockSize{mWritingMode};

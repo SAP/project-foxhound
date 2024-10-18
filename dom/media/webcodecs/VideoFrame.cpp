@@ -51,15 +51,31 @@ namespace mozilla::dom {
 #define LOG_INTERNAL(level, msg, ...) \
   MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
 
+#ifdef LOG
+#  undef LOG
+#endif  // LOG
+#define LOG(msg, ...) LOG_INTERNAL(Debug, msg, ##__VA_ARGS__)
+
 #ifdef LOGW
 #  undef LOGW
 #endif  // LOGW
 #define LOGW(msg, ...) LOG_INTERNAL(Warning, msg, ##__VA_ARGS__)
 
-// Only needed for refcounted objects.
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(VideoFrame, mParent)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(VideoFrame)
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(VideoFrame)
+  tmp->CloseIfNeeded();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(VideoFrame)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
 NS_IMPL_CYCLE_COLLECTING_ADDREF(VideoFrame)
-NS_IMPL_CYCLE_COLLECTING_RELEASE(VideoFrame)
+// VideoFrame should be released as soon as its refcount drops to zero,
+// without waiting for async deletion by the cycle collector, since it may hold
+// a large-size image.
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(VideoFrame, CloseIfNeeded())
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(VideoFrame)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
@@ -582,8 +598,6 @@ static bool IsYUVFormat(const VideoPixelFormat& aFormat) {
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return false;
-    case VideoPixelFormat::EndGuard_:
-      MOZ_ASSERT_UNREACHABLE("unsupported format");
   }
   return false;
 }
@@ -625,8 +639,6 @@ static VideoColorSpaceInit PickColorSpace(
       colorSpace.mPrimaries.SetValue(VideoColorPrimaries::Bt709);
       colorSpace.mTransfer.SetValue(VideoTransferCharacteristics::Iec61966_2_1);
       break;
-    case VideoPixelFormat::EndGuard_:
-      MOZ_ASSERT_UNREACHABLE("unsupported format");
   }
 
   return colorSpace;
@@ -795,7 +807,7 @@ static Result<RefPtr<layers::Image>, nsCString> CreateYUVImageFromBuffer(
 
     RefPtr<layers::PlanarYCbCrImage> image =
         new layers::RecyclingPlanarYCbCrImage(new layers::BufferRecycleBin());
-    if (!image->CopyData(data)) {
+    if (NS_FAILED(image->CopyData(data))) {
       return Err(nsPrintfCString(
           "Failed to create I420%s image",
           (aFormat.PixelFormat() == VideoPixelFormat::I420A ? "A" : "")));
@@ -865,8 +877,6 @@ static Result<RefPtr<layers::Image>, nsCString> CreateImageFromBuffer(
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return CreateRGBAImageFromBuffer(aFormat, aSize, aBuffer);
-    case VideoPixelFormat::EndGuard_:
-      MOZ_ASSERT_UNREACHABLE("unsupported format");
   }
   return Err(nsCString("Invalid image format"));
 }
@@ -930,8 +940,7 @@ static Result<RefPtr<VideoFrame>, nsCString> CreateVideoFrameFromBuffer(
           return Err(nsCString("data is too small"));
         }
 
-        return CreateImageFromBuffer(format, colorSpace, codedSize,
-                                     Span(aData.Elements(), aData.Length()));
+        return CreateImageFromBuffer(format, colorSpace, codedSize, aData);
       }));
 
   MOZ_ASSERT(data);
@@ -1024,7 +1033,8 @@ InitializeFrameWithResourceAndSize(
   Maybe<uint64_t> duration = OptionalToMaybe(aInit.mDuration);
 
   VideoColorSpaceInit colorSpace{};
-  if (IsYUVFormat(SurfaceFormatToVideoPixelFormat(surface->GetFormat()).ref())) {
+  if (IsYUVFormat(
+          SurfaceFormatToVideoPixelFormat(surface->GetFormat()).ref())) {
     colorSpace = FallbackColorSpaceForVideoContent();
   } else {
     colorSpace = FallbackColorSpaceForWebContent();
@@ -1113,6 +1123,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mTimestamp(aTimestamp),
       mColorSpace(aColorSpace) {
   MOZ_ASSERT(mParent);
+  LOG("VideoFrame %p ctor", this);
   mResource.emplace(
       Resource(aImage, aFormat.map([](const VideoPixelFormat& aPixelFormat) {
         return VideoFrame::Format(aPixelFormat);
@@ -1120,6 +1131,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
   if (!mResource->mFormat) {
     LOGW("Create a VideoFrame with an unrecognized image format");
   }
+  StartAutoClose();
 }
 
 VideoFrame::VideoFrame(nsIGlobalObject* aParent,
@@ -1132,6 +1144,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mTimestamp(aData.mTimestamp),
       mColorSpace(aData.mColorSpace) {
   MOZ_ASSERT(mParent);
+  LOG("VideoFrame %p ctor", this);
   mResource.emplace(Resource(
       aData.mImage, aData.mFormat.map([](const VideoPixelFormat& aPixelFormat) {
         return VideoFrame::Format(aPixelFormat);
@@ -1139,6 +1152,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
   if (!mResource->mFormat) {
     LOGW("Create a VideoFrame with an unrecognized image format");
   }
+  StartAutoClose();
 }
 
 VideoFrame::VideoFrame(const VideoFrame& aOther)
@@ -1151,6 +1165,13 @@ VideoFrame::VideoFrame(const VideoFrame& aOther)
       mTimestamp(aOther.mTimestamp),
       mColorSpace(aOther.mColorSpace) {
   MOZ_ASSERT(mParent);
+  LOG("VideoFrame %p ctor", this);
+  StartAutoClose();
+}
+
+VideoFrame::~VideoFrame() {
+  MOZ_ASSERT(IsClosed());
+  LOG("VideoFrame %p dtor", this);
 }
 
 nsIGlobalObject* VideoFrame::GetParentObject() const {
@@ -1363,8 +1384,9 @@ already_AddRefed<VideoFrame> VideoFrame::Constructor(
   }
 
   const ImageUtils imageUtils(image);
+  Maybe<dom::ImageBitmapFormat> f = imageUtils.GetFormat();
   Maybe<VideoPixelFormat> format =
-      ImageBitmapFormatToVideoPixelFormat(imageUtils.GetFormat());
+      f.isSome() ? ImageBitmapFormatToVideoPixelFormat(f.value()) : Nothing();
 
   // TODO: Retrive/infer the duration, and colorspace.
   auto r = InitializeFrameFromOtherFrame(
@@ -1734,17 +1756,18 @@ already_AddRefed<VideoFrame> VideoFrame::Clone(ErrorResult& aRv) const {
 // https://w3c.github.io/webcodecs/#close-videoframe
 void VideoFrame::Close() {
   AssertIsOnOwningThread();
+  LOG("VideoFrame %p is closed", this);
 
   mResource.reset();
   mCodedSize = gfx::IntSize();
   mVisibleRect = gfx::IntRect();
   mDisplaySize = gfx::IntSize();
   mColorSpace = VideoColorSpaceInit();
+
+  StopAutoClose();
 }
 
-bool VideoFrame::IsClosed() const {
-  return !mResource;
-}
+bool VideoFrame::IsClosed() const { return !mResource; }
 
 already_AddRefed<layers::Image> VideoFrame::GetImage() const {
   if (!mResource) {
@@ -1761,15 +1784,13 @@ nsCString VideoFrame::ToString() const {
     return rv;
   }
 
-  rv.AppendPrintf(
-      "VideoFrame ts: %" PRId64
-      ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
-      mTimestamp,
-      dom::VideoPixelFormatValues::GetString(mResource->mFormat->PixelFormat())
-          .data(),
-      mCodedSize.width, mCodedSize.height, mVisibleRect.width,
-      mVisibleRect.height, mDisplaySize.width, mDisplaySize.height,
-      ColorSpaceInitToString(mColorSpace).get());
+  rv.AppendPrintf("VideoFrame ts: %" PRId64
+                  ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
+                  mTimestamp,
+                  dom::GetEnumString(mResource->mFormat->PixelFormat()).get(),
+                  mCodedSize.width, mCodedSize.height, mVisibleRect.width,
+                  mVisibleRect.height, mDisplaySize.width, mDisplaySize.height,
+                  ColorSpaceInitToString(mColorSpace).get());
 
   if (mDuration) {
     rv.AppendPrintf(" dur: %" PRId64, mDuration.value());
@@ -1843,6 +1864,58 @@ VideoFrameData VideoFrame::GetVideoFrameData() const {
   return VideoFrameData(mResource->mImage.get(), mResource->TryPixelFormat(),
                         mVisibleRect, mDisplaySize, mDuration, mTimestamp,
                         mColorSpace);
+}
+
+void VideoFrame::StartAutoClose() {
+  AssertIsOnOwningThread();
+
+  LOG("VideoFrame %p, start monitoring resource release", this);
+
+  if (NS_IsMainThread()) {
+    mShutdownBlocker = media::ShutdownBlockingTicket::Create(
+        u"VideoFrame::mShutdownBlocker"_ns,
+        NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__);
+    if (mShutdownBlocker) {
+      mShutdownBlocker->ShutdownPromise()->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr{this}](bool /* aUnUsed*/) {
+            LOG("VideoFrame %p gets shutdown notification", self.get());
+            self->CloseIfNeeded();
+          },
+          [self = RefPtr{this}](bool /* aUnUsed*/) {
+            LOG("VideoFrame %p removes shutdown-blocker before getting "
+                "shutdown "
+                "notification",
+                self.get());
+          });
+    }
+  } else if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
+    // Clean up all the resources when the worker is going away.
+    mWorkerRef = WeakWorkerRef::Create(workerPrivate, [self = RefPtr{this}]() {
+      LOG("VideoFrame %p, worker is going away", self.get());
+      self->CloseIfNeeded();
+    });
+  }
+}
+
+void VideoFrame::StopAutoClose() {
+  AssertIsOnOwningThread();
+
+  LOG("VideoFrame %p, stop monitoring resource release", this);
+
+  mShutdownBlocker = nullptr;
+  mWorkerRef = nullptr;
+}
+
+void VideoFrame::CloseIfNeeded() {
+  AssertIsOnOwningThread();
+
+  LOG("VideoFrame %p, needs to close itself? %s", this,
+      IsClosed() ? "no" : "yes");
+  if (!IsClosed()) {
+    LOG("Close VideoFrame %p obligatorily", this);
+    Close();
+  }
 }
 
 /*
@@ -1952,8 +2025,6 @@ gfx::SurfaceFormat VideoFrame::Format::ToSurfaceFormat() const {
     case VideoPixelFormat::BGRX:
       format = gfx::SurfaceFormat::B8G8R8X8;
       break;
-    case VideoPixelFormat::EndGuard_:
-      MOZ_ASSERT_UNREACHABLE("unsupported format");
   }
   return format;
 }
@@ -1976,8 +2047,6 @@ void VideoFrame::Format::MakeOpaque() {
     case VideoPixelFormat::RGBX:
     case VideoPixelFormat::BGRX:
       return;
-    case VideoPixelFormat::EndGuard_:
-      break;
   }
   MOZ_ASSERT_UNREACHABLE("unsupported format");
 }
@@ -1997,8 +2066,6 @@ nsTArray<VideoFrame::Format::Plane> VideoFrame::Format::Planes() const {
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return {Plane::RGBA};
-    case VideoPixelFormat::EndGuard_:
-      break;
   }
   MOZ_ASSERT_UNREACHABLE("unsupported format");
   return {};
@@ -2045,8 +2112,6 @@ uint32_t VideoFrame::Format::SampleBytes(const Plane& aPlane) const {
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return 4;  // 8 bits/sample, 32 bits/pixel
-    case VideoPixelFormat::EndGuard_:
-      break;
   }
   MOZ_ASSERT_UNREACHABLE("unsupported format");
   return 0;
@@ -2074,7 +2139,6 @@ gfx::IntSize VideoFrame::Format::SampleSize(const Plane& aPlane) const {
         case VideoPixelFormat::RGBX:
         case VideoPixelFormat::BGRA:
         case VideoPixelFormat::BGRX:
-        case VideoPixelFormat::EndGuard_:
           MOZ_ASSERT_UNREACHABLE("invalid format");
           return {0, 0};
       }
@@ -2097,8 +2161,6 @@ bool VideoFrame::Format::IsValidSize(const gfx::IntSize& aSize) const {
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return true;
-    case VideoPixelFormat::EndGuard_:
-      break;
   }
   MOZ_ASSERT_UNREACHABLE("unsupported format");
   return false;
@@ -2125,8 +2187,6 @@ size_t VideoFrame::Format::SampleCount(const gfx::IntSize& aSize) const {
     case VideoPixelFormat::BGRA:
     case VideoPixelFormat::BGRX:
       return (count * 4).value();
-    case VideoPixelFormat::EndGuard_:
-      break;
   }
 
   MOZ_ASSERT_UNREACHABLE("unsupported format");
@@ -2172,8 +2232,6 @@ uint32_t VideoFrame::Resource::Stride(const Format::Plane& aPlane) const {
         case VideoPixelFormat::BGRA:
         case VideoPixelFormat::BGRX:
           return (width * mFormat->SampleBytes(aPlane)).value();
-        case VideoPixelFormat::EndGuard_:
-          MOZ_ASSERT_UNREACHABLE("invalid format");
       }
       return 0;
     case Format::Plane::U:  // and UV
@@ -2189,7 +2247,6 @@ uint32_t VideoFrame::Resource::Stride(const Format::Plane& aPlane) const {
         case VideoPixelFormat::RGBX:
         case VideoPixelFormat::BGRA:
         case VideoPixelFormat::BGRX:
-        case VideoPixelFormat::EndGuard_:
           MOZ_ASSERT_UNREACHABLE("invalid format");
       }
       return 0;

@@ -55,12 +55,6 @@ function triggerClickOn(target, options) {
   return promise;
 }
 
-async function add_new_tab(URL) {
-  let tab = BrowserTestUtils.addTab(gBrowser, URL);
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
-  return tab;
-}
-
 add_task(async function aria_attributes() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
   is(
@@ -210,9 +204,9 @@ add_task(async function test_firefoxview_view_count() {
 
   let tab = await openFirefoxViewTab(window);
 
-  ok(
-    SpecialPowers.getIntPref("browser.firefox-view.view-count") ===
-      startViews + 1,
+  Assert.strictEqual(
+    SpecialPowers.getIntPref("browser.firefox-view.view-count"),
+    startViews + 1,
     "View count pref value is incremented when tab is selected"
   );
 

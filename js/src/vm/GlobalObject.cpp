@@ -54,6 +54,7 @@
 #include "gc/GCContext.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/WindowProxy.h"    // js::ToWindowProxyIfWindow
+#include "js/Prefs.h"                 // JS::Prefs
 #include "js/PropertyAndElement.h"    // JS_DefineFunctions, JS_DefineProperties
 #include "js/ProtoKey.h"
 #include "vm/AsyncFunction.h"
@@ -105,6 +106,14 @@ static const JSClass* const protoTable[JSProto_LIMIT] = {
 JS_PUBLIC_API const JSClass* js::ProtoKeyToClass(JSProtoKey key) {
   MOZ_ASSERT(key < JSProto_LIMIT);
   return protoTable[key];
+}
+
+static bool IsIteratorHelpersEnabled() {
+#ifdef NIGHTLY_BUILD
+  return JS::Prefs::experimental_iterator_helpers();
+#else
+  return false;
+#endif
 }
 
 /* static */
@@ -196,7 +205,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
       return false;
 
     case JSProto_Segmenter:
-#  if defined(MOZ_ICU4X) && defined(NIGHTLY_BUILD)
+#  if defined(MOZ_ICU4X)
       return false;
 #  else
       return true;
@@ -226,15 +235,14 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
 
     case JSProto_WeakRef:
     case JSProto_FinalizationRegistry:
-      return cx->realm()->creationOptions().getWeakRefsEnabled() ==
-             JS::WeakRefSpecifier::Disabled;
+      return JS::GetWeakRefsEnabled() == JS::WeakRefSpecifier::Disabled;
 
     case JSProto_Iterator:
     case JSProto_AsyncIterator:
-      return !cx->realm()->creationOptions().getIteratorHelpersEnabled();
+      return !IsIteratorHelpersEnabled();
 
     case JSProto_ShadowRealm:
-      return !cx->realm()->creationOptions().getShadowRealmsEnabled();
+      return !JS::Prefs::experimental_shadow_realms();
 
     default:
       MOZ_CRASH("unexpected JSProtoKey");
@@ -661,6 +669,13 @@ GlobalObject* GlobalObject::new_(JSContext* cx, const JSClass* clasp,
       return nullptr;
     }
 
+    // Create a shape for plain objects with zero slots. This is required to be
+    // present in case allocating dynamic slots for objects fails, so we can
+    // leave a valid object in the heap.
+    if (!createPlainObjectShapeWithDefaultProto(cx, gc::AllocKind::OBJECT0)) {
+      return nullptr;
+    }
+
     realm->clearInitializingGlobal();
     if (hookOption == JS::FireOnNewGlobalHook) {
       JS_FireOnNewGlobalObject(cx, global);
@@ -980,7 +995,7 @@ bool GlobalObject::addIntrinsicValue(JSContext* cx,
 /* static */
 JSObject* GlobalObject::createIteratorPrototype(JSContext* cx,
                                                 Handle<GlobalObject*> global) {
-  if (!cx->realm()->creationOptions().getIteratorHelpersEnabled()) {
+  if (!IsIteratorHelpersEnabled()) {
     return getOrCreateBuiltinProto(cx, global, ProtoKind::IteratorProto,
                                    initIteratorProto);
   }
@@ -996,7 +1011,7 @@ JSObject* GlobalObject::createIteratorPrototype(JSContext* cx,
 /* static */
 JSObject* GlobalObject::createAsyncIteratorPrototype(
     JSContext* cx, Handle<GlobalObject*> global) {
-  if (!cx->realm()->creationOptions().getIteratorHelpersEnabled()) {
+  if (!IsIteratorHelpersEnabled()) {
     return getOrCreateBuiltinProto(cx, global, ProtoKind::AsyncIteratorProto,
                                    initAsyncIteratorProto);
   }

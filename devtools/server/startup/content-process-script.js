@@ -37,7 +37,7 @@ class ContentProcessStartup {
     this.maybeCreateExistingTargetActors();
   }
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "xpcom-shutdown": {
         this.destroy();
@@ -143,7 +143,7 @@ class ContentProcessStartup {
 
   /**
    * Called when the content process just started.
-   * This will start creating ContentProcessTarget actors, but only if DevTools code (WatcherActor / WatcherRegistry.jsm)
+   * This will start creating ContentProcessTarget actors, but only if DevTools code (WatcherActor / WatcherRegistry.sys.mjs)
    * put some data in `sharedData` telling us to do so.
    */
   maybeCreateExistingTargetActors() {

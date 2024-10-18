@@ -564,17 +564,23 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(Label* profilerExitTail,
   loadPtr(Address(rsp, ResumeFromException::offsetOfStackPointer()), rsp);
   jmp(Operand(rax));
 
-  // If we found a finally block, this must be a baseline frame. Push two
-  // values expected by the finally block: the exception and BooleanValue(true).
+  // If we found a finally block, this must be a baseline frame. Push three
+  // values expected by the finally block: the exception, the exception stack,
+  // and BooleanValue(true).
   bind(&finally);
   ValueOperand exception = ValueOperand(rcx);
-  loadValue(Address(esp, ResumeFromException::offsetOfException()), exception);
+  loadValue(Address(rsp, ResumeFromException::offsetOfException()), exception);
+
+  ValueOperand exceptionStack = ValueOperand(rdx);
+  loadValue(Address(rsp, ResumeFromException::offsetOfExceptionStack()),
+            exceptionStack);
 
   loadPtr(Address(rsp, ResumeFromException::offsetOfTarget()), rax);
   loadPtr(Address(rsp, ResumeFromException::offsetOfFramePointer()), rbp);
   loadPtr(Address(rsp, ResumeFromException::offsetOfStackPointer()), rsp);
 
   pushValue(exception);
+  pushValue(exceptionStack);
   pushValue(BooleanValue(true));
   jmp(Operand(rax));
 
@@ -1453,7 +1459,7 @@ static void AtomicFetchOp64(MacroAssembler& masm,
                             Register output) {
   // NOTE: the generated code must match the assembly code in gen_fetchop in
   // GenerateAtomicOperations.py
-  if (op == AtomicFetchAddOp) {
+  if (op == AtomicOp::Add) {
     if (value != output) {
       masm.movq(value, output);
     }
@@ -1462,7 +1468,7 @@ static void AtomicFetchOp64(MacroAssembler& masm,
                   FaultingCodeOffset(masm.currentOffset()));
     }
     masm.lock_xaddq(output, Operand(mem));
-  } else if (op == AtomicFetchSubOp) {
+  } else if (op == AtomicOp::Sub) {
     if (value != output) {
       masm.movq(value, output);
     }
@@ -1486,13 +1492,13 @@ static void AtomicFetchOp64(MacroAssembler& masm,
     masm.bind(&again);
     masm.movq(rax, temp);
     switch (op) {
-      case AtomicFetchAndOp:
+      case AtomicOp::And:
         masm.andq(value, temp);
         break;
-      case AtomicFetchOrOp:
+      case AtomicOp::Or:
         masm.orq(value, temp);
         break;
-      case AtomicFetchXorOp:
+      case AtomicOp::Xor:
         masm.xorq(value, temp);
         break;
       default:
@@ -1526,19 +1532,19 @@ static void AtomicEffectOp64(MacroAssembler& masm,
                 FaultingCodeOffset(masm.currentOffset()));
   }
   switch (op) {
-    case AtomicFetchAddOp:
+    case AtomicOp::Add:
       masm.lock_addq(value, Operand(mem));
       break;
-    case AtomicFetchSubOp:
+    case AtomicOp::Sub:
       masm.lock_subq(value, Operand(mem));
       break;
-    case AtomicFetchAndOp:
+    case AtomicOp::And:
       masm.lock_andq(value, Operand(mem));
       break;
-    case AtomicFetchOrOp:
+    case AtomicOp::Or:
       masm.lock_orq(value, Operand(mem));
       break;
-    case AtomicFetchXorOp:
+    case AtomicOp::Xor:
       masm.lock_xorq(value, Operand(mem));
       break;
     default:
@@ -1552,8 +1558,8 @@ void MacroAssembler::wasmAtomicEffectOp64(const wasm::MemoryAccessDesc& access,
   AtomicEffectOp64(*this, &access, op, value.reg, mem);
 }
 
-void MacroAssembler::compareExchange64(const Synchronization&,
-                                       const Address& mem, Register64 expected,
+void MacroAssembler::compareExchange64(Synchronization, const Address& mem,
+                                       Register64 expected,
                                        Register64 replacement,
                                        Register64 output) {
   // NOTE: the generated code must match the assembly code in gen_cmpxchg in
@@ -1565,8 +1571,7 @@ void MacroAssembler::compareExchange64(const Synchronization&,
   lock_cmpxchgq(replacement.reg, Operand(mem));
 }
 
-void MacroAssembler::compareExchange64(const Synchronization&,
-                                       const BaseIndex& mem,
+void MacroAssembler::compareExchange64(Synchronization, const BaseIndex& mem,
                                        Register64 expected,
                                        Register64 replacement,
                                        Register64 output) {
@@ -1577,9 +1582,8 @@ void MacroAssembler::compareExchange64(const Synchronization&,
   lock_cmpxchgq(replacement.reg, Operand(mem));
 }
 
-void MacroAssembler::atomicExchange64(const Synchronization&,
-                                      const Address& mem, Register64 value,
-                                      Register64 output) {
+void MacroAssembler::atomicExchange64(Synchronization, const Address& mem,
+                                      Register64 value, Register64 output) {
   // NOTE: the generated code must match the assembly code in gen_exchange in
   // GenerateAtomicOperations.py
   if (value != output) {
@@ -1588,33 +1592,32 @@ void MacroAssembler::atomicExchange64(const Synchronization&,
   xchgq(output.reg, Operand(mem));
 }
 
-void MacroAssembler::atomicExchange64(const Synchronization&,
-                                      const BaseIndex& mem, Register64 value,
-                                      Register64 output) {
+void MacroAssembler::atomicExchange64(Synchronization, const BaseIndex& mem,
+                                      Register64 value, Register64 output) {
   if (value != output) {
     movq(value.reg, output.reg);
   }
   xchgq(output.reg, Operand(mem));
 }
 
-void MacroAssembler::atomicFetchOp64(const Synchronization& sync, AtomicOp op,
+void MacroAssembler::atomicFetchOp64(Synchronization sync, AtomicOp op,
                                      Register64 value, const Address& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value.reg, mem, temp.reg, output.reg);
 }
 
-void MacroAssembler::atomicFetchOp64(const Synchronization& sync, AtomicOp op,
+void MacroAssembler::atomicFetchOp64(Synchronization sync, AtomicOp op,
                                      Register64 value, const BaseIndex& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value.reg, mem, temp.reg, output.reg);
 }
 
-void MacroAssembler::atomicEffectOp64(const Synchronization& sync, AtomicOp op,
+void MacroAssembler::atomicEffectOp64(Synchronization sync, AtomicOp op,
                                       Register64 value, const Address& mem) {
   AtomicEffectOp64(*this, nullptr, op, value.reg, mem);
 }
 
-void MacroAssembler::atomicEffectOp64(const Synchronization& sync, AtomicOp op,
+void MacroAssembler::atomicEffectOp64(Synchronization sync, AtomicOp op,
                                       Register64 value, const BaseIndex& mem) {
   AtomicEffectOp64(*this, nullptr, op, value.reg, mem);
 }

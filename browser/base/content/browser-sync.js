@@ -154,16 +154,16 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
           container.classList.add("PanelUI-remotetabs-clientcontainer");
           container.setAttribute("role", "group");
           container.setAttribute("aria-labelledby", labelId);
-          if (paginationInfo && paginationInfo.clientId == client.id) {
-            this._appendSyncClient(
-              client,
-              container,
-              labelId,
-              paginationInfo.maxTabs
-            );
-          } else {
-            this._appendSyncClient(client, container, labelId);
-          }
+          let clientPaginationInfo =
+            paginationInfo && paginationInfo.clientId == client.id
+              ? paginationInfo
+              : { clientId: client.id };
+          this._appendSyncClient(
+            client,
+            container,
+            labelId,
+            clientPaginationInfo
+          );
           fragment.appendChild(container);
         }
         this.tabsList.appendChild(fragment);
@@ -201,12 +201,11 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     return messageLabel;
   }
 
-  _appendSyncClient(
-    client,
-    container,
-    labelId,
-    maxTabs = SyncedTabsPanelList.sRemoteTabsPerPage
-  ) {
+  _appendSyncClient(client, container, labelId, paginationInfo) {
+    let {
+      maxTabs = SyncedTabsPanelList.sRemoteTabsPerPage,
+      showInactive = false,
+    } = paginationInfo;
     // Create the element for the remote client.
     let clientItem = document.createXULElement("label");
     clientItem.setAttribute("id", labelId);
@@ -228,29 +227,39 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
       );
       label.setAttribute("class", "PanelUI-remotetabs-notabsforclient-label");
     } else {
+      let tabs = client.tabs.filter(t => showInactive || !t.inactive);
+      let numInactive = client.tabs.length - tabs.length;
+
       // If this page will display all tabs, show no additional buttons.
       // Otherwise, show a "Show More" button
-      let hasNextPage = client.tabs.length > maxTabs;
+      let hasNextPage = tabs.length > maxTabs;
       let nextPageIsLastPage =
         hasNextPage &&
-        maxTabs + SyncedTabsPanelList.sRemoteTabsPerPage >= client.tabs.length;
+        maxTabs + SyncedTabsPanelList.sRemoteTabsPerPage >= tabs.length;
       if (nextPageIsLastPage) {
         // When the user clicks "Show More", try to have at least sRemoteTabsNextPageMinTabs more tabs
         // to display in order to avoid user frustration
         maxTabs = Math.min(
-          client.tabs.length - SyncedTabsPanelList.sRemoteTabsNextPageMinTabs,
+          tabs.length - SyncedTabsPanelList.sRemoteTabsNextPageMinTabs,
           maxTabs
         );
       }
       if (hasNextPage) {
-        client.tabs = client.tabs.slice(0, maxTabs);
+        tabs = tabs.slice(0, maxTabs);
       }
-      for (let [index, tab] of client.tabs.entries()) {
+      for (let [index, tab] of tabs.entries()) {
         let tabEnt = this._createSyncedTabElement(tab, index);
         container.appendChild(tabEnt);
       }
+      if (numInactive) {
+        let elt = this._createShowInactiveTabsElement(
+          paginationInfo,
+          numInactive
+        );
+        container.appendChild(elt);
+      }
       if (hasNextPage) {
-        let showAllEnt = this._createShowMoreSyncedTabsElement(client.id);
+        let showAllEnt = this._createShowMoreSyncedTabsElement(paginationInfo);
         container.appendChild(showAllEnt);
       }
     }
@@ -297,9 +306,7 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     return item;
   }
 
-  _createShowMoreSyncedTabsElement(clientId) {
-    let showCount = Infinity;
-
+  _createShowMoreSyncedTabsElement(paginationInfo) {
     let showMoreItem = document.createXULElement("toolbarbutton");
     showMoreItem.setAttribute("itemtype", "showmorebutton");
     showMoreItem.setAttribute("closemenu", "none");
@@ -310,12 +317,34 @@ this.SyncedTabsPanelList = class SyncedTabsPanelList {
     );
     document.l10n.setAttributes(showMoreItem, "appmenu-remote-tabs-showmore");
 
+    paginationInfo.maxTabs = Infinity;
     showMoreItem.addEventListener("click", e => {
       e.preventDefault();
       e.stopPropagation();
-      this._showSyncedTabs({ clientId, maxTabs: showCount });
+      this._showSyncedTabs(paginationInfo);
     });
     return showMoreItem;
+  }
+
+  _createShowInactiveTabsElement(paginationInfo, count) {
+    let showItem = document.createXULElement("toolbarbutton");
+    showItem.setAttribute("itemtype", "showmorebutton");
+    showItem.setAttribute("closemenu", "none");
+    showItem.classList.add(
+      "subviewbutton",
+      "subviewbutton-nav",
+      "subviewbutton-nav-down"
+    );
+    document.l10n.setAttributes(showItem, "appmenu-remote-tabs-showinactive");
+    document.l10n.setArgs(showItem, { count });
+
+    paginationInfo.showInactive = true;
+    showItem.addEventListener("click", e => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._showSyncedTabs(paginationInfo);
+    });
+    return showItem;
   }
 
   destroy() {
@@ -356,8 +385,6 @@ var gSync = {
         "browser/appmenu.ftl",
         "browser/sync.ftl",
         "toolkit/branding/accounts.ftl",
-        // untranslated FTL
-        "preview/appmenu.ftl",
       ],
       true
     ));
@@ -810,9 +837,19 @@ var gSync = {
         this.updateFxAPanel(UIState.get());
         this.updateCTAPanel();
         PanelUI.showSubView("PanelUI-fxa", anchor, aEvent);
-      } else {
+      } else if (anchor == document.getElementById("fxa-toolbar-menu-button")) {
+        // The fxa toolbar button doesn't have much context before the user
+        // clicks it so instead of going straight to the login page,
+        // we take them to a page that has more information
         this.emitFxaToolbarTelemetry("toolbar_icon", anchor);
         openTrustedLinkIn("about:preferences#sync", "tab");
+        PanelUI.hide();
+      } else {
+        let panel =
+          anchor.id == "appMenu-fxa-label2"
+            ? PanelMultiView.getViewNode(document, "PanelUI-fxa")
+            : undefined;
+        this.openFxAEmailFirstPageFromFxaMenu(panel);
         PanelUI.hide();
       }
       return;
@@ -896,7 +933,7 @@ var gSync = {
     syncSetupButtonEl.removeAttribute("hidden");
 
     let headerTitleL10nId = this.PXI_TOOLBAR_ENABLED
-      ? "appmenuitem-moz-accounts-sign-in"
+      ? "appmenuitem-sign-in-account"
       : "appmenuitem-fxa-sign-in";
     let headerDescription;
     if (state.status === UIState.STATUS_NOT_CONFIGURED) {
@@ -1240,7 +1277,7 @@ var gSync = {
     this.emitFxaToolbarTelemetry("login", panel);
     let entryPoint = "fxa_discoverability_native";
     if (panel) {
-      entryPoint = "fxa_app_menu";
+      entryPoint = "fxa_toolbar_button";
     }
     this.openFxAEmailFirstPage(entryPoint, extraParams);
   },
@@ -1877,6 +1914,12 @@ var gSync = {
     this.openPrefs(entryPoint);
   },
 
+  openPrefsFromFxaButton(type, panel) {
+    let entryPoint = "fxa_toolbar_button_sync";
+    this.emitFxaToolbarTelemetry(type, panel);
+    this.openPrefs(entryPoint);
+  },
+
   openSyncedTabsPanel() {
     let placement = CustomizableUI.getPlacementOfWidget("sync-button");
     let area = placement?.area;
@@ -2009,7 +2052,7 @@ var gSync = {
   updateCTAPanel() {
     const mainPanelEl = PanelMultiView.getViewNode(
       document,
-      "PanelUI-fxa-pxi-cta-menu"
+      "PanelUI-fxa-cta-menu"
     );
 
     const syncCtaEl = PanelMultiView.getViewNode(
@@ -2027,12 +2070,51 @@ var gSync = {
     // If we're already signed in an syncing, we shouldn't show the sync CTA
     syncCtaEl.hidden = this.isSignedIn;
 
-    // ensure the container is visible
+    // Monitor checks
+    let monitorPanelEl = PanelMultiView.getViewNode(
+      document,
+      "PanelUI-fxa-menu-monitor-button"
+    );
+    let monitorEnabled = Services.prefs.getBoolPref(
+      "identity.fxaccounts.toolbar.pxiToolbarEnabled.monitorEnabled",
+      false
+    );
+    monitorPanelEl.hidden = !monitorEnabled;
+
+    // Relay checks
+    let relayPanelEl = PanelMultiView.getViewNode(
+      document,
+      "PanelUI-fxa-menu-relay-button"
+    );
+    let relayEnabled =
+      BrowserUtils.shouldShowPromo(BrowserUtils.PromoType.RELAY) &&
+      Services.prefs.getBoolPref(
+        "identity.fxaccounts.toolbar.pxiToolbarEnabled.relayEnabled",
+        false
+      );
+    relayPanelEl.hidden = !relayEnabled;
+
+    // VPN checks
+    let VpnPanelEl = PanelMultiView.getViewNode(
+      document,
+      "PanelUI-fxa-menu-vpn-button"
+    );
+    let vpnEnabled =
+      BrowserUtils.shouldShowPromo(BrowserUtils.PromoType.VPN) &&
+      Services.prefs.getBoolPref(
+        "identity.fxaccounts.toolbar.pxiToolbarEnabled.vpnEnabled",
+        false
+      );
+    VpnPanelEl.hidden = !vpnEnabled;
+
+    // We should only the show the separator if we have at least one CTA enabled
+    PanelMultiView.getViewNode(document, "PanelUI-products-separator").hidden =
+      !monitorEnabled && !relayEnabled && !vpnEnabled;
     mainPanelEl.hidden = false;
   },
   async openMonitorLink(panel) {
     this.emitFxaToolbarTelemetry("monitor_cta", panel);
-    await this.openPXILink(
+    await this.openCtaLink(
       FX_MONITOR_OAUTH_CLIENT_ID,
       new URL("https://monitor.firefox.com"),
       new URL("https://monitor.firefox.com/user/breaches")
@@ -2041,7 +2123,7 @@ var gSync = {
 
   async openRelayLink(panel) {
     this.emitFxaToolbarTelemetry("relay_cta", panel);
-    await this.openPXILink(
+    await this.openCtaLink(
       FX_RELAY_OAUTH_CLIENT_ID,
       new URL("https://relay.firefox.com"),
       new URL("https://relay.firefox.com/accounts/profile")
@@ -2050,7 +2132,7 @@ var gSync = {
 
   async openVPNLink(panel) {
     this.emitFxaToolbarTelemetry("vpn_cta", panel);
-    await this.openPXILink(
+    await this.openCtaLink(
       VPN_OAUTH_CLIENT_ID,
       new URL("https://www.mozilla.org/en-US/products/vpn/"),
       new URL("https://www.mozilla.org/en-US/products/vpn/")
@@ -2058,17 +2140,17 @@ var gSync = {
   },
 
   // A generic opening based on
-  async openPXILink(clientId, defaultUrl, signedInUrl) {
+  async openCtaLink(clientId, defaultUrl, signedInUrl) {
     const params = {
       utm_medium: "firefox-desktop",
       utm_source: "toolbar",
       utm_campaign: "discovery",
     };
-    const pxiSearchParams = new URLSearchParams(params);
+    const searchParams = new URLSearchParams(params);
 
     if (!this.isSignedIn) {
       // Add the base params + not signed in
-      defaultUrl.search = pxiSearchParams.toString();
+      defaultUrl.search = searchParams.toString();
       defaultUrl.searchParams.append("utm_content", "notsignedin");
       this.openLink(defaultUrl);
       PanelUI.hide();
@@ -2082,7 +2164,7 @@ var gSync = {
 
     const url = hasPXIClient ? signedInUrl : defaultUrl;
     // Add base params + signed in
-    url.search = pxiSearchParams.toString();
+    url.search = searchParams.toString();
     url.searchParams.append("utm_content", "signedIn");
 
     this.openLink(url);

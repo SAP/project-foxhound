@@ -1,21 +1,11 @@
 /**
- * Copyright 2020 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2020 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import expect from 'expect';
-import type {WebWorker} from 'puppeteer-core/internal/cdp/WebWorker.js';
+import type {WebWorker} from 'puppeteer-core/internal/api/WebWorker.js';
 import type {ConsoleMessage} from 'puppeteer-core/internal/common/ConsoleMessage.js';
 
 import {getTestState, setupTestBrowserHooks} from './mocha-utils.js';
@@ -62,7 +52,10 @@ describe('Workers', function () {
     const error = await workerThisObj.getProperty('self').catch(error => {
       return error;
     });
-    expect(error.message).toContain('Most likely the worker has been closed.');
+    expect(error.message).atLeastOneToContain([
+      'Most likely the worker has been closed.',
+      'Realm already destroyed.',
+    ]);
   });
   it('should report console logs', async () => {
     const {page} = await getTestState();
@@ -80,7 +73,7 @@ describe('Workers', function () {
       columnNumber: 8,
     });
   });
-  it('should have JSHandles for console logs', async () => {
+  it('should work with console logs', async () => {
     const {page} = await getTestState();
 
     const logPromise = waitEvent<ConsoleMessage>(page, 'console');
@@ -90,9 +83,6 @@ describe('Workers', function () {
     const log = await logPromise;
     expect(log.text()).toBe('1 2 3 JSHandle@object');
     expect(log.args()).toHaveLength(4);
-    expect(await (await log.args()[3]!.getProperty('origin')).jsonValue()).toBe(
-      'null'
-    );
   });
   it('should have an execution context', async () => {
     const {page} = await getTestState();
@@ -115,5 +105,18 @@ describe('Workers', function () {
     });
     const errorLog = await errorPromise;
     expect(errorLog.message).toContain('this is my error');
+  });
+
+  it('can be closed', async () => {
+    const {page, server} = await getTestState();
+
+    await Promise.all([
+      waitEvent(page, 'workercreated'),
+      page.goto(server.PREFIX + '/worker/worker.html'),
+    ]);
+    const worker = page.workers()[0]!;
+    expect(worker?.url()).toContain('worker.js');
+
+    await Promise.all([waitEvent(page, 'workerdestroyed'), worker?.close()]);
   });
 });

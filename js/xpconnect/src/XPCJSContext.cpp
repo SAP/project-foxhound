@@ -45,6 +45,7 @@
 #include "js/HelperThreadAPI.h"
 #include "js/Initialization.h"
 #include "js/MemoryMetrics.h"
+#include "js/Prefs.h"
 #include "js/WasmFeatures.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
@@ -777,49 +778,12 @@ bool xpc::ShouldDiscardSystemSource() { return sDiscardSystemSource; }
 static mozilla::Atomic<bool> sSharedMemoryEnabled(false);
 static mozilla::Atomic<bool> sStreamsEnabled(false);
 
-static mozilla::Atomic<bool> sPropertyErrorMessageFixEnabled(false);
-static mozilla::Atomic<bool> sWeakRefsEnabled(false);
-static mozilla::Atomic<bool> sWeakRefsExposeCleanupSome(false);
-static mozilla::Atomic<bool> sIteratorHelpersEnabled(false);
-static mozilla::Atomic<bool> sShadowRealmsEnabled(false);
-static mozilla::Atomic<bool> sWellFormedUnicodeStringsEnabled(true);
-static mozilla::Atomic<bool> sArrayGroupingEnabled(false);
-#ifdef NIGHTLY_BUILD
-static mozilla::Atomic<bool> sNewSetMethodsEnabled(false);
-static mozilla::Atomic<bool> sSymbolsAsWeakMapKeysEnabled(false);
-#endif
-static mozilla::Atomic<bool> sArrayBufferTransferEnabled(false);
-
-static JS::WeakRefSpecifier GetWeakRefsEnabled() {
-  if (!sWeakRefsEnabled) {
-    return JS::WeakRefSpecifier::Disabled;
-  }
-
-  if (sWeakRefsExposeCleanupSome) {
-    return JS::WeakRefSpecifier::EnabledWithCleanupSome;
-  }
-
-  return JS::WeakRefSpecifier::EnabledWithoutCleanupSome;
-}
-
 void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(sSharedMemoryEnabled)
       .setCoopAndCoepEnabled(
           StaticPrefs::browser_tabs_remote_useCrossOriginOpenerPolicy() &&
-          StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy())
-      .setPropertyErrorMessageFixEnabled(sPropertyErrorMessageFixEnabled)
-      .setWeakRefsEnabled(GetWeakRefsEnabled())
-      .setIteratorHelpersEnabled(sIteratorHelpersEnabled)
-      .setShadowRealmsEnabled(sShadowRealmsEnabled)
-      .setWellFormedUnicodeStringsEnabled(sWellFormedUnicodeStringsEnabled)
-      .setArrayGroupingEnabled(sArrayGroupingEnabled)
-      .setArrayBufferTransferEnabled(sArrayBufferTransferEnabled)
-#ifdef NIGHTLY_BUILD
-      .setNewSetMethodsEnabled(sNewSetMethodsEnabled)
-      .setSymbolsAsWeakMapKeysEnabled(sSymbolsAsWeakMapKeysEnabled)
-#endif
-      ;
+          StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy());
 }
 
 void xpc::SetPrefableCompileOptions(JS::PrefableCompileOptions& options) {
@@ -848,17 +812,10 @@ void xpc::SetPrefableContextOptions(JS::ContextOptions& options) {
       .setWasmIon(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_optimizingjit"))
       .setWasmBaseline(
           Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_baselinejit"))
-#define WASM_FEATURE(NAME, LOWER_NAME, STAGE, COMPILE_PRED, COMPILER_PRED, \
-                     FLAG_PRED, FLAG_FORCE_ON, FLAG_FUZZ_ON, SHELL, PREF)  \
-  .setWasm##NAME(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_" PREF))
-          JS_FOR_WASM_FEATURES(WASM_FEATURE)
-#undef WASM_FEATURE
       .setWasmVerbose(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_verbose"))
       .setAsyncStack(Preferences::GetBool(JS_OPTIONS_DOT_STR "asyncstack"))
       .setAsyncStackCaptureDebuggeeOnly(Preferences::GetBool(
-          JS_OPTIONS_DOT_STR "asyncstack_capture_debuggee_only"))
-      .setEnableDestructuringFuse(
-          StaticPrefs::javascript_options_destructuring_fuse());
+          JS_OPTIONS_DOT_STR "asyncstack_capture_debuggee_only"));
 
   SetPrefableCompileOptions(options.compileOptions());
 }
@@ -872,6 +829,9 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   // races or get us into an inconsistent state.
   //
   // 'Live' prefs are handled by ReloadPrefsCallback below.
+
+  // Note: JS::Prefs are set earlier in startup, in InitializeJS in
+  // XPCOMInit.cpp.
 
   JSContext* cx = xpccx->Context();
 
@@ -990,14 +950,13 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
     bool disabledHugeMemory = JS::DisableWasmHugeMemory();
     MOZ_RELEASE_ASSERT(disabledHugeMemory);
   }
-
-  JS::SetSiteBasedPretenuringEnabled(
-      StaticPrefs::
-          javascript_options_site_based_pretenuring_DoNotUseDirectly());
 }
 
 static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   // Note: Prefs that require a restart are handled in LoadStartupJSPrefs above.
+
+  // Update all non-startup JS::Prefs.
+  SET_NON_STARTUP_JS_PREFS_FROM_BROWSER_PREFS;
 
   auto xpccx = static_cast<XPCJSContext*>(aXpccx);
   JSContext* cx = xpccx->Context();
@@ -1007,27 +966,6 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
   sSharedMemoryEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "shared_memory");
   sStreamsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "streams");
-  sPropertyErrorMessageFixEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "property_error_message_fix");
-  sWeakRefsEnabled = Preferences::GetBool(JS_OPTIONS_DOT_STR "weakrefs");
-  sWeakRefsExposeCleanupSome = Preferences::GetBool(
-      JS_OPTIONS_DOT_STR "experimental.weakrefs.expose_cleanupSome");
-  sShadowRealmsEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.shadow_realms");
-  sWellFormedUnicodeStringsEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "well_formed_unicode_strings");
-  sArrayGroupingEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "array_grouping");
-#ifdef NIGHTLY_BUILD
-  sIteratorHelpersEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.iterator_helpers");
-  sNewSetMethodsEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.new_set_methods");
-  sSymbolsAsWeakMapKeysEnabled = Preferences::GetBool(
-      JS_OPTIONS_DOT_STR "experimental.symbols_as_weakmap_keys");
-#endif
-  sArrayBufferTransferEnabled =
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "arraybuffer_transfer");
 
 #ifdef JS_GC_ZEAL
   int32_t zeal = Preferences::GetInt(JS_OPTIONS_DOT_STR "gczeal", -1);
@@ -1047,9 +985,6 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
           JS_OPTIONS_DOT_STR "throw_on_debuggee_would_run"))
       .setDumpStackOnDebuggeeWouldRun(Preferences::GetBool(
           JS_OPTIONS_DOT_STR "dump_stack_on_debuggee_would_run"));
-
-  JS::SetUseFdlibmForSinCosTan(
-      Preferences::GetBool(JS_OPTIONS_DOT_STR "use_fdlibm_for_sin_cos_tan"));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
   if (xr) {

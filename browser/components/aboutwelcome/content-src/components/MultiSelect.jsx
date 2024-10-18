@@ -55,6 +55,8 @@ function getValidStyle(style, validStyles, allowVars) {
 
 export const MultiSelect = ({
   content,
+  screenMultiSelects,
+  setScreenMultiSelects,
   activeMultiSelect,
   setActiveMultiSelect,
 }) => {
@@ -72,6 +74,27 @@ export const MultiSelect = ({
     setActiveMultiSelect(newActiveMultiSelect);
   }, [setActiveMultiSelect]);
 
+  const items = useMemo(
+    () => {
+      function getOrderedIds() {
+        if (screenMultiSelects) {
+          return screenMultiSelects;
+        }
+        let orderedIds = data
+          .map(item => ({
+            id: item.id,
+            rank: item.randomize ? Math.random() : NaN,
+          }))
+          .sort((a, b) => b.rank - a.rank)
+          .map(({ id }) => id);
+        setScreenMultiSelects(orderedIds);
+        return orderedIds;
+      }
+      return getOrderedIds().map(id => data.find(item => item.id === id));
+    },
+    [] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   const containerStyle = useMemo(
     () => getValidStyle(content.tiles.style, MULTI_SELECT_STYLES, true),
     [content.tiles.style]
@@ -82,7 +105,7 @@ export const MultiSelect = ({
   useEffect(() => {
     if (!activeMultiSelect) {
       let newActiveMultiSelect = [];
-      data.forEach(({ id, defaultValue }) => {
+      items.forEach(({ id, defaultValue }) => {
         if (defaultValue && id) {
           newActiveMultiSelect.push(id);
         }
@@ -92,8 +115,22 @@ export const MultiSelect = ({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="multi-select-container" style={containerStyle}>
-      {data.map(({ id, label, icon, type = "checkbox", group, style }) => (
+    <div
+      className="multi-select-container"
+      style={containerStyle}
+      role={
+        items.some(({ type, group }) => type === "radio" && group)
+          ? "radiogroup"
+          : "group"
+      }
+      aria-labelledby="multi-stage-multi-select-label"
+    >
+      {content.tiles.label ? (
+        <Localized text={content.tiles.label}>
+          <h2 id="multi-stage-multi-select-label" />
+        </Localized>
+      ) : null}
+      {items.map(({ id, label, icon, type = "checkbox", group, style }) => (
         <div
           key={id + label}
           className="checkbox-container multi-select-item"

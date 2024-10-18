@@ -40,7 +40,6 @@
 #include "nsCaret.h"
 #include "nsCharTraits.h"
 #include "nsComponentManagerUtils.h"
-#include "nsContentCID.h"
 #include "nsContentList.h"
 #include "nsDebug.h"
 #include "nsDependentSubstring.h"
@@ -599,8 +598,13 @@ nsresult TextEditor::HandlePasteAsQuotation(
     return NS_OK;
   }
 
+  auto* windowContext = GetDocument()->GetWindowContext();
+  if (!windowContext) {
+    NS_WARNING("Editor didn't have document window context");
+    return NS_ERROR_FAILURE;
+  }
   // Get the Data from the clipboard
-  clipboard->GetData(trans, aClipboardType);
+  rv = clipboard->GetData(trans, aClipboardType, windowContext);
 
   // Now we ask the transferable for the data
   // it still owns the data, we just have a pointer to it.

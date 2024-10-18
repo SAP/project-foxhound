@@ -286,8 +286,9 @@ OverOutElementsWrapper::OverOutElementsWrapper() : mLastOverFrame(nullptr) {}
 
 OverOutElementsWrapper::~OverOutElementsWrapper() = default;
 
-NS_IMPL_CYCLE_COLLECTION(OverOutElementsWrapper, mLastOverElement,
-                         mFirstOverEventElement, mFirstOutEventElement)
+NS_IMPL_CYCLE_COLLECTION(OverOutElementsWrapper, mDeepestEnterEventTarget,
+                         mDispatchingOverEventTarget,
+                         mDispatchingOutOrDeepestLeaveEventTarget)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(OverOutElementsWrapper)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(OverOutElementsWrapper)
 
@@ -1040,6 +1041,24 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
   return NS_OK;
 }
 
+// Returns true if this event is likely an user activation for a link or
+// a link-like button, where modifier keys are likely be used for controlling
+// where the link is opened.
+//
+// The modifiers associated with the user activation is used for controlling
+// where the `window.open` is opened into.
+static bool CanReflectModifiersToUserActivation(WidgetInputEvent* aEvent) {
+  MOZ_ASSERT(aEvent->mMessage == eKeyDown || aEvent->mMessage == eMouseDown ||
+             aEvent->mMessage == ePointerDown || aEvent->mMessage == eTouchEnd);
+
+  WidgetKeyboardEvent* keyEvent = aEvent->AsKeyboardEvent();
+  if (keyEvent) {
+    return keyEvent->CanReflectModifiersToUserActivation();
+  }
+
+  return true;
+}
+
 void EventStateManager::NotifyTargetUserActivation(WidgetEvent* aEvent,
                                                    nsIContent* aTargetContent) {
   if (!aEvent->IsTrusted()) {
@@ -1099,17 +1118,19 @@ void EventStateManager::NotifyTargetUserActivation(WidgetEvent* aEvent,
              aEvent->mMessage == ePointerDown || aEvent->mMessage == eTouchEnd);
   UserActivation::Modifiers modifiers;
   if (WidgetInputEvent* inputEvent = aEvent->AsInputEvent()) {
-    if (inputEvent->IsShift()) {
-      modifiers.SetShift();
-    }
-    if (inputEvent->IsMeta()) {
-      modifiers.SetMeta();
-    }
-    if (inputEvent->IsControl()) {
-      modifiers.SetControl();
-    }
-    if (inputEvent->IsAlt()) {
-      modifiers.SetAlt();
+    if (CanReflectModifiersToUserActivation(inputEvent)) {
+      if (inputEvent->IsShift()) {
+        modifiers.SetShift();
+      }
+      if (inputEvent->IsMeta()) {
+        modifiers.SetMeta();
+      }
+      if (inputEvent->IsControl()) {
+        modifiers.SetControl();
+      }
+      if (inputEvent->IsAlt()) {
+        modifiers.SetAlt();
+      }
     }
   }
   doc->NotifyUserGestureActivation(modifiers);
@@ -1719,7 +1740,8 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
     }
     case eDragEventClass: {
       RefPtr<BrowserParent> browserParent = remote;
-      browserParent->Manager()->MaybeInvokeDragSession(browserParent);
+      browserParent->Manager()->MaybeInvokeDragSession(browserParent,
+                                                       aEvent->mMessage);
 
       nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
       uint32_t dropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
@@ -2636,7 +2658,7 @@ static nsIFrame* GetParentFrameToScroll(nsIFrame* aFrame) {
 
   if (aFrame->StyleDisplay()->mPosition == StylePositionProperty::Fixed &&
       nsLayoutUtils::IsReallyFixedPos(aFrame))
-    return aFrame->PresContext()->GetPresShell()->GetRootScrollFrame();
+    return aFrame->PresShell()->GetRootScrollFrame();
 
   return aFrame->GetParent();
 }
@@ -4171,7 +4193,6 @@ struct CursorImage {
 //
 // We will not honor it all of the following are true:
 //
-//  * layout.cursor.block.enabled is true.
 //  * the size of the custom cursor is bigger than layout.cursor.block.max-size.
 //  * the bounds of the cursor would end up outside of the viewport of the
 //    top-level content document.
@@ -4181,10 +4202,6 @@ struct CursorImage {
 static bool ShouldBlockCustomCursor(nsPresContext* aPresContext,
                                     WidgetEvent* aEvent,
                                     const CursorImage& aCursor) {
-  if (!StaticPrefs::layout_cursor_block_enabled()) {
-    return false;
-  }
-
   int32_t width = 0;
   int32_t height = 0;
   aCursor.mContainer->GetWidth(&width);
@@ -4326,23 +4343,9 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
     // If not locked, look for correct cursor
     nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
         aEvent, RelativeTo{aTargetFrame});
-    Maybe<nsIFrame::Cursor> framecursor = aTargetFrame->GetCursor(pt);
-    // Avoid setting cursor when the mouse is over a windowless plugin.
-    if (!framecursor) {
-      if (XRE_IsContentProcess()) {
-        mLastFrameConsumedSetCursor = true;
-      }
-      return;
-    }
-    // Make sure cursors get reset after the mouse leaves a
-    // windowless plugin frame.
-    if (mLastFrameConsumedSetCursor) {
-      ClearCachedWidgetCursor(aTargetFrame);
-      mLastFrameConsumedSetCursor = false;
-    }
-
+    const nsIFrame::Cursor framecursor = aTargetFrame->GetCursor(pt);
     const CursorImage customCursor =
-        ComputeCustomCursor(aPresContext, aEvent, *aTargetFrame, *framecursor);
+        ComputeCustomCursor(aPresContext, aEvent, *aTargetFrame, framecursor);
 
     // If the current cursor is from the same frame, and it is now
     // loading some new image for the cursor, we should wait for a
@@ -4353,7 +4356,7 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
             TimeDuration::FromMilliseconds(kCursorLoadingTimeout)) {
       return;
     }
-    cursor = framecursor->mCursor;
+    cursor = framecursor.mCursor;
     container = std::move(customCursor.mContainer);
     resolution = customCursor.mResolution;
     hotspot = Some(customCursor.mHotspot);
@@ -4802,16 +4805,25 @@ void EventStateManager::NotifyMouseOut(WidgetMouseEvent* aMouseEvent,
                                        nsIContent* aMovingInto) {
   RefPtr<OverOutElementsWrapper> wrapper = GetWrapperByEventID(aMouseEvent);
 
-  if (!wrapper || !wrapper->mLastOverElement) {
+  // If there is no deepest "leave" event target, that means the last "over"
+  // target has already been removed from the tree.  Therefore, checking only
+  // the "leave" event target is enough.
+  if (!wrapper || !wrapper->GetDeepestLeaveEventTarget()) {
     return;
   }
-  // Before firing mouseout, check for recursion
-  if (wrapper->mLastOverElement == wrapper->mFirstOutEventElement) {
+  // Before firing "out" and/or "leave" events, check for recursion
+  if (wrapper->IsDispatchingOutEventOnLastOverEventTarget()) {
     return;
   }
 
+  // XXX If a content node is a container of remove content, it should be
+  // replaced with them and its children should not be visible.  Therefore,
+  // if the deepest "enter" target is not the last "over" target, i.e., the
+  // last "over" target has been removed from the DOM tree, it means that the
+  // child/descendant was not replaced by remote content.  So,
+  // wrapper->GetOutEventTaget() may be enough here.
   if (RefPtr<nsFrameLoaderOwner> flo =
-          do_QueryObject(wrapper->mLastOverElement)) {
+          do_QueryObject(wrapper->GetDeepestLeaveEventTarget())) {
     if (BrowsingContext* bc = flo->GetExtantBrowsingContext()) {
       if (nsIDocShell* docshell = bc->GetDocShell()) {
         if (RefPtr<nsPresContext> presContext = docshell->GetPresContext()) {
@@ -4824,13 +4836,11 @@ void EventStateManager::NotifyMouseOut(WidgetMouseEvent* aMouseEvent,
   }
   // That could have caused DOM events which could wreak havoc. Reverify
   // things and be careful.
-  if (!wrapper->mLastOverElement) {
+  if (!wrapper->GetDeepestLeaveEventTarget()) {
     return;
   }
 
-  // Store the first mouseOut event we fire and don't refire mouseOut
-  // to that element while the first mouseOut is still ongoing.
-  wrapper->mFirstOutEventElement = wrapper->mLastOverElement;
+  wrapper->WillDispatchOutAndOrLeaveEvent();
 
   // Don't touch hover state if aMovingInto is non-null.  Caller will update
   // hover state itself, and we have optimizations for hover switching between
@@ -4842,27 +4852,26 @@ void EventStateManager::NotifyMouseOut(WidgetMouseEvent* aMouseEvent,
     SetContentState(nullptr, ElementState::HOVER);
   }
 
-  EnterLeaveDispatcher leaveDispatcher(this, wrapper->mLastOverElement,
-                                       aMovingInto, aMouseEvent,
-                                       isPointer ? ePointerLeave : eMouseLeave);
+  EnterLeaveDispatcher leaveDispatcher(
+      this, wrapper->GetDeepestLeaveEventTarget(), aMovingInto, aMouseEvent,
+      isPointer ? ePointerLeave : eMouseLeave);
 
-  // Fire mouseout
-  nsCOMPtr<nsIContent> lastOverElement = wrapper->mLastOverElement;
-  DispatchMouseOrPointerEvent(aMouseEvent, isPointer ? ePointerOut : eMouseOut,
-                              lastOverElement, aMovingInto);
+  // "out" events hould be fired only when the deepest "leave" event target
+  // is the last "over" event target.
+  if (nsCOMPtr<nsIContent> outEventTarget = wrapper->GetOutEventTarget()) {
+    DispatchMouseOrPointerEvent(aMouseEvent,
+                                isPointer ? ePointerOut : eMouseOut,
+                                outEventTarget, aMovingInto);
+  }
   leaveDispatcher.Dispatch();
 
-  wrapper->mLastOverFrame = nullptr;
-  wrapper->mLastOverElement = nullptr;
-
-  // Turn recursion protection back off
-  wrapper->mFirstOutEventElement = nullptr;
+  wrapper->DidDispatchOutAndOrLeaveEvent();
 }
 
 void EventStateManager::RecomputeMouseEnterStateForRemoteFrame(
     Element& aElement) {
   if (!mMouseEnterLeaveHelper ||
-      mMouseEnterLeaveHelper->mLastOverElement != &aElement) {
+      mMouseEnterLeaveHelper->GetDeepestLeaveEventTarget() != &aElement) {
     return;
   }
 
@@ -4877,10 +4886,16 @@ void EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
 
   RefPtr<OverOutElementsWrapper> wrapper = GetWrapperByEventID(aMouseEvent);
 
-  if (!wrapper || wrapper->mLastOverElement == aContent) return;
+  // If we have next "out" event target and it's the new "over" target, we don't
+  // need to dispatch "out" nor "enter" event.
+  if (!wrapper || aContent == wrapper->GetOutEventTarget()) {
+    return;
+  }
 
-  // Before firing mouseover, check for recursion
-  if (aContent == wrapper->mFirstOverEventElement) return;
+  // Before firing "over" and "enter" events, check for recursion
+  if (wrapper->IsDispatchingOverEventOn(aContent)) {
+    return;
+  }
 
   // Check to see if we're a subdocument and if so update the parent
   // document's ESM state to indicate that the mouse is over the
@@ -4897,16 +4912,19 @@ void EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
   }
   // Firing the DOM event in the parent document could cause all kinds
   // of havoc.  Reverify and take care.
-  if (wrapper->mLastOverElement == aContent) return;
+  if (aContent == wrapper->GetOutEventTarget()) {
+    return;
+  }
 
-  // Remember mLastOverElement as the related content for the
+  // Remember the deepest leave event target as the related content for the
   // DispatchMouseOrPointerEvent() call below, since NotifyMouseOut() resets it,
   // bug 298477.
-  nsCOMPtr<nsIContent> lastOverElement = wrapper->mLastOverElement;
+  nsCOMPtr<nsIContent> deepestLeaveEventTarget =
+      wrapper->GetDeepestLeaveEventTarget();
 
   bool isPointer = aMouseEvent->mClass == ePointerEventClass;
 
-  EnterLeaveDispatcher enterDispatcher(this, aContent, lastOverElement,
+  EnterLeaveDispatcher enterDispatcher(this, aContent, deepestLeaveEventTarget,
                                        aMouseEvent,
                                        isPointer ? ePointerEnter : eMouseEnter);
 
@@ -4916,19 +4934,17 @@ void EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
 
   NotifyMouseOut(aMouseEvent, aContent);
 
-  // Store the first mouseOver event we fire and don't refire mouseOver
-  // to that element while the first mouseOver is still ongoing.
-  wrapper->mFirstOverEventElement = aContent;
+  wrapper->WillDispatchOverAndEnterEvent(aContent);
 
   // Fire mouseover
+  // XXX If aContent has already been removed from the DOM tree, what should we
+  // do? At least, dispatching `mouseover` on it is odd.
   wrapper->mLastOverFrame = DispatchMouseOrPointerEvent(
       aMouseEvent, isPointer ? ePointerOver : eMouseOver, aContent,
-      lastOverElement);
+      deepestLeaveEventTarget);
   enterDispatcher.Dispatch();
-  wrapper->mLastOverElement = aContent;
 
-  // Turn recursion protection back off
-  wrapper->mFirstOverEventElement = nullptr;
+  wrapper->DidDispatchOverAndEnterEvent();
 }
 
 // Returns the center point of the window's client area. This is
@@ -5078,7 +5094,7 @@ void EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent) {
         RefPtr<OverOutElementsWrapper> helper =
             GetWrapperByEventID(aMouseEvent);
         if (helper) {
-          helper->mLastOverElement = targetElement;
+          helper->OverrideOverEventTarget(targetElement);
         }
         NotifyMouseOut(aMouseEvent, nullptr);
       }
@@ -5970,16 +5986,6 @@ bool EventStateManager::SetContentState(nsIContent* aContent,
   return true;
 }
 
-void EventStateManager::ResetLastOverForContent(
-    const uint32_t& aIdx, const RefPtr<OverOutElementsWrapper>& aElemWrapper,
-    nsIContent* aContent) {
-  if (aElemWrapper && aElemWrapper->mLastOverElement &&
-      nsContentUtils::ContentIsFlattenedTreeDescendantOf(
-          aElemWrapper->mLastOverElement, aContent)) {
-    aElemWrapper->mLastOverElement = nullptr;
-  }
-}
-
 void EventStateManager::RemoveNodeFromChainIfNeeded(ElementState aState,
                                                     nsIContent* aContentRemoved,
                                                     bool aNotify) {
@@ -6088,10 +6094,24 @@ void EventStateManager::ContentRemoved(Document* aDocument,
 
   PointerEventHandler::ReleaseIfCaptureByDescendant(aContent);
 
-  // See bug 292146 for why we want to null this out
-  ResetLastOverForContent(0, mMouseEnterLeaveHelper, aContent);
+  if (mMouseEnterLeaveHelper) {
+    const bool hadMouseOutTarget =
+        mMouseEnterLeaveHelper->GetOutEventTarget() != nullptr;
+    mMouseEnterLeaveHelper->ContentRemoved(*aContent);
+    // If we lose the mouseout target, we need to dispatch mouseover on an
+    // ancestor.  For ensuring the chance to do it before next user input, we
+    // need a synthetic mouse move.
+    if (hadMouseOutTarget && !mMouseEnterLeaveHelper->GetOutEventTarget()) {
+      if (PresShell* presShell =
+              mPresContext ? mPresContext->GetPresShell() : nullptr) {
+        presShell->SynthesizeMouseMove(false);
+      }
+    }
+  }
   for (const auto& entry : mPointersEnterLeaveHelper) {
-    ResetLastOverForContent(entry.GetKey(), entry.GetData(), aContent);
+    if (entry.GetData()) {
+      entry.GetData()->ContentRemoved(*aContent);
+    }
   }
 }
 
@@ -6873,6 +6893,42 @@ bool EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedY(
   Init(index);
   return Abs(mMultiplierY[index]) >=
          MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL;
+}
+
+void OverOutElementsWrapper::ContentRemoved(nsIContent& aContent) {
+  if (!mDeepestEnterEventTarget) {
+    return;
+  }
+
+  if (!nsContentUtils::ContentIsFlattenedTreeDescendantOf(
+          mDeepestEnterEventTarget, &aContent)) {
+    return;
+  }
+
+  if (!StaticPrefs::
+          dom_events_mouse_pointer_boundary_keep_enter_targets_after_over_target_removed()) {
+    mDeepestEnterEventTarget = nullptr;
+    return;
+  }
+
+  if (mDispatchingOverEventTarget &&
+      (mDeepestEnterEventTarget == mDispatchingOverEventTarget ||
+       nsContentUtils::ContentIsFlattenedTreeDescendantOf(
+           mDispatchingOverEventTarget, &aContent))) {
+    if (mDispatchingOverEventTarget ==
+        mDispatchingOutOrDeepestLeaveEventTarget) {
+      mDispatchingOutOrDeepestLeaveEventTarget = nullptr;
+    }
+    mDispatchingOverEventTarget = nullptr;
+  }
+  if (mDispatchingOutOrDeepestLeaveEventTarget &&
+      (mDeepestEnterEventTarget == mDispatchingOutOrDeepestLeaveEventTarget ||
+       nsContentUtils::ContentIsFlattenedTreeDescendantOf(
+           mDispatchingOutOrDeepestLeaveEventTarget, &aContent))) {
+    mDispatchingOutOrDeepestLeaveEventTarget = nullptr;
+  }
+  mDeepestEnterEventTarget = aContent.GetFlattenedTreeParent();
+  mDeepestEnterEventTargetIsOverEventTarget = false;
 }
 
 }  // namespace mozilla

@@ -39,7 +39,7 @@ static float WeightedSumBorder(const ImageF& in, const WrapY wrap_y,
   const float sum_2 = wx2 * (in_m2 + in_p2);
   const float sum_1 = wx1 * (in_m1 + in_p1);
   const float sum_0 = wx0 * in_00;
-  return sum_2 + sum_1 + sum_0;
+  return sum_2 + (sum_1 + sum_0);
 }
 
 template <class WrapY, class V>
@@ -175,14 +175,13 @@ HWY_EXPORT(Symmetric5);
 void Symmetric5(const ImageF& in, const Rect& in_rect,
                 const WeightsSymmetric5& weights, ThreadPool* pool,
                 ImageF* JXL_RESTRICT out, const Rect& out_rect) {
-  return HWY_DYNAMIC_DISPATCH(Symmetric5)(in, in_rect, weights, pool, out,
-                                          out_rect);
+  HWY_DYNAMIC_DISPATCH(Symmetric5)(in, in_rect, weights, pool, out, out_rect);
 }
 
 void Symmetric5(const ImageF& in, const Rect& rect,
                 const WeightsSymmetric5& weights, ThreadPool* pool,
                 ImageF* JXL_RESTRICT out) {
-  return Symmetric5(in, rect, weights, pool, out, Rect(*out));
+  Symmetric5(in, rect, weights, pool, out, Rect(*out));
 }
 
 }  // namespace jxl

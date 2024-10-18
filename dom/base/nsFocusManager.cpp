@@ -53,6 +53,7 @@
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLSlotElement.h"
+#include "mozilla/dom/HTMLAreaElement.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/XULPopupElement.h"
@@ -1424,10 +1425,11 @@ void nsFocusManager::ActivateOrDeactivate(nsPIDOMWindowOuter* aWindow,
 
     chromeTop->SetIsActiveBrowserWindow(aActive);
     chromeTop->CallOnAllTopDescendants(
-        [aActive](CanonicalBrowsingContext* aBrowsingContext) -> CallState {
+        [aActive](CanonicalBrowsingContext* aBrowsingContext) {
           aBrowsingContext->SetIsActiveBrowserWindow(aActive);
           return CallState::Continue;
-        });
+        },
+        /* aIncludeNestedBrowsers = */ true);
   }
 
   if (aWindow->GetExtantDoc()) {
@@ -1849,14 +1851,13 @@ Maybe<uint64_t> nsFocusManager::SetFocusInner(Element* aNewContent,
   return Some(actionId);
 }
 
-static already_AddRefed<BrowsingContext> GetParentIgnoreChromeBoundary(
-    BrowsingContext* aBC) {
+static BrowsingContext* GetParentIgnoreChromeBoundary(BrowsingContext* aBC) {
   // Chrome BrowsingContexts are only available in the parent process, so if
   // we're in a content process, we only worry about the context tree.
   if (XRE_IsParentProcess()) {
     return aBC->Canonical()->GetParentCrossChromeBoundary();
   }
-  return do_AddRef(aBC->GetParent());
+  return aBC->GetParent();
 }
 
 bool nsFocusManager::IsSameOrAncestor(BrowsingContext* aPossibleAncestor,
@@ -1865,7 +1866,7 @@ bool nsFocusManager::IsSameOrAncestor(BrowsingContext* aPossibleAncestor,
     return false;
   }
 
-  for (RefPtr<BrowsingContext> bc = aContext; bc;
+  for (BrowsingContext* bc = aContext; bc;
        bc = GetParentIgnoreChromeBoundary(bc)) {
     if (bc == aPossibleAncestor) {
       return true;
@@ -3357,7 +3358,7 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
     }
     return GetNextTabbableContent(presShell, startContent, nullptr,
                                   startContent, true, 1, false, false,
-                                  aNavigateByKey, false, aNextContent);
+                                  aNavigateByKey, false, false, aNextContent);
   }
   if (aType == MOVEFOCUS_LAST) {
     if (!aStartContent) {
@@ -3365,7 +3366,7 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
     }
     return GetNextTabbableContent(presShell, startContent, nullptr,
                                   startContent, false, 0, false, false,
-                                  aNavigateByKey, false, aNextContent);
+                                  aNavigateByKey, false, false, aNextContent);
   }
 
   bool forward = (aType == MOVEFOCUS_FORWARD || aType == MOVEFOCUS_FORWARDDOC ||
@@ -3536,7 +3537,7 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
           MOZ_KnownLive(skipOriginalContentCheck ? nullptr
                                                  : originalStartContent.get()),
           startContent, forward, tabIndex, ignoreTabIndex,
-          forDocumentNavigation, aNavigateByKey, false,
+          forDocumentNavigation, aNavigateByKey, false, false,
           getter_AddRefs(nextFocus));
       NS_ENSURE_SUCCESS(rv, rv);
       if (rv == NS_SUCCESS_DOM_NO_OPERATION) {
@@ -3659,15 +3660,16 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
       // If the focus started in this window outside a popup however, we should
       // continue by looping around to the end again.
       if (forDocumentNavigation && (forward || mayFocusRoot || popupFrame)) {
-        // HTML content documents can have their root element focused (a focus
-        // ring appears around the entire content area frame). This root
-        // appears in the tab order before all of the elements in the document.
-        // Chrome documents however cannot be focused directly, so instead we
-        // focus the first focusable element within the window.
+        // HTML content documents can have their root element focused by
+        // pressing F6(a focus ring appears around the entire content area
+        // frame). This root appears in the tab order before all of the elements
+        // in the document. Chrome documents however cannot be focused directly,
+        // so instead we focus the first focusable element within the window.
         // For example, the urlbar.
         RefPtr<Element> rootElementForFocus =
             GetRootForFocus(piWindow, doc, true, true);
-        return FocusFirst(rootElementForFocus, aNextContent);
+        return FocusFirst(rootElementForFocus, aNextContent,
+                          true /* aReachedToEndForDocumentNavigation */);
       }
 
       // Once we have hit the top-level and have iterated to the end again, we
@@ -3888,7 +3890,7 @@ nsIContent* nsFocusManager::GetNextTabbableContentInScope(
     nsIContent* aOwner, nsIContent* aStartContent,
     nsIContent* aOriginalStartContent, bool aForward, int32_t aCurrentTabIndex,
     bool aIgnoreTabIndex, bool aForDocumentNavigation, bool aNavigateByKey,
-    bool aSkipOwner) {
+    bool aSkipOwner, bool aReachedToEndForDocumentNavigation) {
   MOZ_ASSERT(
       IsHostOrSlot(aOwner) || IsOpenPopoverWithInvoker(aOwner),
       "Scope owner should be host, slot or an open popover with invoker set.");
@@ -3971,6 +3973,7 @@ nsIContent* nsFocusManager::GetNextTabbableContentInScope(
         if (TryToMoveFocusToSubDocument(iterContent, aOriginalStartContent,
                                         aForward, aForDocumentNavigation,
                                         aNavigateByKey,
+                                        aReachedToEndForDocumentNavigation,
                                         getter_AddRefs(elementInFrame))) {
           return elementInFrame;
         }
@@ -3983,7 +3986,8 @@ nsIContent* nsFocusManager::GetNextTabbableContentInScope(
       nsIContent* contentToFocus = GetNextTabbableContentInScope(
           iterContent, iterContent, aOriginalStartContent, aForward,
           aForward ? 1 : 0, aIgnoreTabIndex, aForDocumentNavigation,
-          aNavigateByKey, false /* aSkipOwner */);
+          aNavigateByKey, false /* aSkipOwner */,
+          aReachedToEndForDocumentNavigation);
       if (contentToFocus) {
         return contentToFocus;
       }
@@ -4023,7 +4027,8 @@ nsIContent* nsFocusManager::GetNextTabbableContentInScope(
 nsIContent* nsFocusManager::GetNextTabbableContentInAncestorScopes(
     nsIContent* aStartOwner, nsCOMPtr<nsIContent>& aStartContent /* inout */,
     nsIContent* aOriginalStartContent, bool aForward, int32_t* aCurrentTabIndex,
-    bool* aIgnoreTabIndex, bool aForDocumentNavigation, bool aNavigateByKey) {
+    bool* aIgnoreTabIndex, bool aForDocumentNavigation, bool aNavigateByKey,
+    bool aReachedToEndForDocumentNavigation) {
   MOZ_ASSERT(aStartOwner == FindScopeOwner(aStartContent),
              "aStartOWner should be the scope owner of aStartContent");
   MOZ_ASSERT(IsHostOrSlot(aStartOwner), "scope owner should be host or slot");
@@ -4042,7 +4047,7 @@ nsIContent* nsFocusManager::GetNextTabbableContentInAncestorScopes(
     nsIContent* contentToFocus = GetNextTabbableContentInScope(
         owner, startContent, aOriginalStartContent, aForward, tabIndex,
         tabIndex < 0, aForDocumentNavigation, aNavigateByKey,
-        false /* aSkipOwner */);
+        false /* aSkipOwner */, aReachedToEndForDocumentNavigation);
     if (contentToFocus) {
       return contentToFocus;
     }
@@ -4088,7 +4093,8 @@ nsresult nsFocusManager::GetNextTabbableContent(
     PresShell* aPresShell, nsIContent* aRootContent,
     nsIContent* aOriginalStartContent, nsIContent* aStartContent, bool aForward,
     int32_t aCurrentTabIndex, bool aIgnoreTabIndex, bool aForDocumentNavigation,
-    bool aNavigateByKey, bool aSkipPopover, nsIContent** aResultContent) {
+    bool aNavigateByKey, bool aSkipPopover,
+    bool aReachedToEndForDocumentNavigation, nsIContent** aResultContent) {
   *aResultContent = nullptr;
 
   if (!aStartContent) {
@@ -4108,7 +4114,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
     nsIContent* contentToFocus = GetNextTabbableContentInScope(
         startContent, startContent, aOriginalStartContent, aForward, 1,
         aIgnoreTabIndex, aForDocumentNavigation, aNavigateByKey,
-        true /* aSkipOwner */);
+        true /* aSkipOwner */, aReachedToEndForDocumentNavigation);
     if (contentToFocus) {
       NS_ADDREF(*aResultContent = contentToFocus);
       return NS_OK;
@@ -4124,7 +4130,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
         nsIContent* contentToFocus = GetNextTabbableContentInScope(
             popover, popover, aOriginalStartContent, aForward, 1,
             aIgnoreTabIndex, aForDocumentNavigation, aNavigateByKey,
-            true /* aSkipOwner */);
+            true /* aSkipOwner */, aReachedToEndForDocumentNavigation);
         if (contentToFocus) {
           NS_ADDREF(*aResultContent = contentToFocus);
           return NS_OK;
@@ -4139,7 +4145,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
     nsIContent* contentToFocus = GetNextTabbableContentInAncestorScopes(
         owner, startContent /* inout */, aOriginalStartContent, aForward,
         &aCurrentTabIndex, &aIgnoreTabIndex, aForDocumentNavigation,
-        aNavigateByKey);
+        aNavigateByKey, aReachedToEndForDocumentNavigation);
     if (contentToFocus) {
       NS_ADDREF(*aResultContent = contentToFocus);
       return NS_OK;
@@ -4170,7 +4176,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
 
       // look for the next or previous content node in tree order
       iterStartContent = aForward ? iterStartContent->GetNextNode()
-                                  : iterStartContent->GetPreviousContent();
+                                  : iterStartContent->GetPrevNode();
       if (!iterStartContent) {
         break;
       }
@@ -4184,7 +4190,8 @@ nsresult nsFocusManager::GetNextTabbableContent(
           nsIContent* contentToFocus = GetNextTabbableContentInScope(
               iterStartContent, iterStartContent, aOriginalStartContent,
               aForward, aForward ? 1 : 0, aIgnoreTabIndex,
-              aForDocumentNavigation, aNavigateByKey, true /* aSkipOwner */);
+              aForDocumentNavigation, aNavigateByKey, true /* aSkipOwner */,
+              aReachedToEndForDocumentNavigation);
           if (contentToFocus) {
             NS_ADDREF(*aResultContent = contentToFocus);
             return NS_OK;
@@ -4275,7 +4282,8 @@ nsresult nsFocusManager::GetNextTabbableContent(
                 (aIgnoreTabIndex || aCurrentTabIndex == tabIndex)) {
               nsresult rv = GetNextTabbableContent(
                   aPresShell, rootElement, nullptr, invokerContent, true,
-                  tabIndex, false, false, aNavigateByKey, true, aResultContent);
+                  tabIndex, false, false, aNavigateByKey, true,
+                  aReachedToEndForDocumentNavigation, aResultContent);
               if (NS_SUCCEEDED(rv) && *aResultContent) {
                 return rv;
               }
@@ -4297,7 +4305,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
           nsIContent* contentToFocus = GetNextTabbableContentInScope(
               popover, popover, aOriginalStartContent, aForward, 0,
               aIgnoreTabIndex, aForDocumentNavigation, aNavigateByKey,
-              true /* aSkipOwner */);
+              true /* aSkipOwner */, aReachedToEndForDocumentNavigation);
 
           if (contentToFocus) {
             NS_ADDREF(*aResultContent = contentToFocus);
@@ -4339,7 +4347,8 @@ nsresult nsFocusManager::GetNextTabbableContent(
             // want to locate the first content, not the first document.
             nsresult rv = GetNextTabbableContent(
                 aPresShell, currentContent, nullptr, currentContent, true, 1,
-                false, false, aNavigateByKey, false, aResultContent);
+                false, false, aNavigateByKey, false,
+                aReachedToEndForDocumentNavigation, aResultContent);
             if (NS_SUCCEEDED(rv) && *aResultContent) {
               return rv;
             }
@@ -4367,7 +4376,7 @@ nsresult nsFocusManager::GetNextTabbableContent(
               currentTopLevelScopeOwner, currentTopLevelScopeOwner,
               aOriginalStartContent, aForward, aForward ? 1 : 0,
               aIgnoreTabIndex, aForDocumentNavigation, aNavigateByKey,
-              true /* aSkipOwner */);
+              true /* aSkipOwner */, aReachedToEndForDocumentNavigation);
           if (contentToFocus) {
             NS_ADDREF(*aResultContent = contentToFocus);
             return NS_OK;
@@ -4468,7 +4477,8 @@ nsresult nsFocusManager::GetNextTabbableContent(
             // frame. If so, navigate into the child frame instead.
             if (TryToMoveFocusToSubDocument(
                     currentContent, aOriginalStartContent, aForward,
-                    aForDocumentNavigation, aNavigateByKey, aResultContent)) {
+                    aForDocumentNavigation, aNavigateByKey,
+                    aReachedToEndForDocumentNavigation, aResultContent)) {
               MOZ_ASSERT(*aResultContent);
               return NS_OK;
             }
@@ -4483,6 +4493,24 @@ nsresult nsFocusManager::GetNextTabbableContent(
                      currentContent != startContent) {
               NS_ADDREF(*aResultContent = currentContent);
               return NS_OK;
+            }
+          } else if (currentContent && aReachedToEndForDocumentNavigation &&
+                     StaticPrefs::dom_disable_tab_focus_to_root_element() &&
+                     nsContentUtils::IsChromeDoc(
+                         currentContent->GetComposedDoc())) {
+            // aReachedToEndForDocumentNavigation is true means
+            //   1. This is a document navigation (VK_F6)
+            //   2. This is the top-level document (Note that we may start from
+            //      a subdocument)
+            //   3. We've searched through the this top-level document already
+            if (!GetRootForChildDocument(currentContent)) {
+              // We'd like to focus the first focusable element of this
+              // top-level chrome document.
+              if (currentContent == aRootContent ||
+                  currentContent != startContent) {
+                NS_ADDREF(*aResultContent = currentContent);
+                return NS_OK;
+              }
             }
           }
         }
@@ -4521,13 +4549,14 @@ nsresult nsFocusManager::GetNextTabbableContent(
     if (aCurrentTabIndex == (aForward ? 0 : 1)) {
       // if going backwards, the canvas should be focused once the beginning
       // has been reached, so get the root element.
-      if (!aForward) {
+      if (!aForward && !StaticPrefs::dom_disable_tab_focus_to_root_element()) {
         nsCOMPtr<nsPIDOMWindowOuter> window = GetCurrentWindow(aRootContent);
         NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
         RefPtr<Element> docRoot = GetRootForFocus(
             window, aRootContent->GetComposedDoc(), false, true);
-        FocusFirst(docRoot, aResultContent);
+        FocusFirst(docRoot, aResultContent,
+                   false /* aReachedToEndForDocumentNavigation */);
       }
       break;
     }
@@ -4555,7 +4584,8 @@ bool nsFocusManager::TryDocumentNavigation(nsIContent* aCurrentContent,
     // the frameset's frames and locate the first focusable frame.
     if (!rootElementForChildDocument->IsHTMLElement(nsGkAtoms::frameset)) {
       *aCheckSubDocument = false;
-      Unused << FocusFirst(rootElementForChildDocument, aResultContent);
+      Unused << FocusFirst(rootElementForChildDocument, aResultContent,
+                           false /* aReachedToEndForDocumentNavigation */);
       return *aResultContent != nullptr;
     }
   } else {
@@ -4570,12 +4600,12 @@ bool nsFocusManager::TryDocumentNavigation(nsIContent* aCurrentContent,
 bool nsFocusManager::TryToMoveFocusToSubDocument(
     nsIContent* aCurrentContent, nsIContent* aOriginalStartContent,
     bool aForward, bool aForDocumentNavigation, bool aNavigateByKey,
-    nsIContent** aResultContent) {
+    bool aReachedToEndForDocumentNavigation, nsIContent** aResultContent) {
   Document* doc = aCurrentContent->GetComposedDoc();
   NS_ASSERTION(doc, "content not in document");
   Document* subdoc = doc->GetSubDocumentFor(aCurrentContent);
   if (subdoc && !subdoc->EventHandlingSuppressed()) {
-    if (aForward) {
+    if (aForward && !StaticPrefs::dom_disable_tab_focus_to_root_element()) {
       // When tabbing forward into a frame, return the root
       // frame so that the canvas becomes focused.
       if (nsCOMPtr<nsPIDOMWindowOuter> subframe = subdoc->GetWindow()) {
@@ -4591,9 +4621,17 @@ bool nsFocusManager::TryToMoveFocusToSubDocument(
         nsresult rv = GetNextTabbableContent(
             subPresShell, rootElement, aOriginalStartContent, rootElement,
             aForward, (aForward ? 1 : 0), false, aForDocumentNavigation,
-            aNavigateByKey, false, aResultContent);
+            aNavigateByKey, false, aReachedToEndForDocumentNavigation,
+            aResultContent);
         NS_ENSURE_SUCCESS(rv, false);
         if (*aResultContent) {
+          return true;
+        }
+        if (rootElement->IsEditable() &&
+            StaticPrefs::dom_disable_tab_focus_to_root_element()) {
+          // Only move to the root element with a valid reason
+          *aResultContent = rootElement;
+          NS_ADDREF(*aResultContent);
           return true;
         }
       }
@@ -4710,7 +4748,8 @@ int32_t nsFocusManager::GetNextTabIndex(nsIContent* aParent,
 }
 
 nsresult nsFocusManager::FocusFirst(Element* aRootElement,
-                                    nsIContent** aNextContent) {
+                                    nsIContent** aNextContent,
+                                    bool aReachedToEndForDocumentNavigation) {
   if (!aRootElement) {
     return NS_OK;
   }
@@ -4740,9 +4779,12 @@ nsresult nsFocusManager::FocusFirst(Element* aRootElement,
       // tabbable item so that the first item is focused. Note that we
       // always go forward and not back here.
       if (RefPtr<PresShell> presShell = doc->GetPresShell()) {
-        return GetNextTabbableContent(presShell, aRootElement, nullptr,
-                                      aRootElement, true, 1, false, false, true,
-                                      false, aNextContent);
+        return GetNextTabbableContent(
+            presShell, aRootElement, nullptr, aRootElement, true, 1, false,
+            StaticPrefs::dom_disable_tab_focus_to_root_element()
+                ? aReachedToEndForDocumentNavigation
+                : false,
+            true, false, aReachedToEndForDocumentNavigation, aNextContent);
       }
     }
   }
@@ -5455,14 +5497,8 @@ Element* nsFocusManager::GetTheFocusableArea(Element* aTarget,
 
   // If focus target is an area element with one or more shapes that are
   // focusable areas.
-  if (aTarget->IsHTMLElement(nsGkAtoms::area)) {
-    // HTML areas do not have their own frame, and the img frame we get from
-    // GetPrimaryFrame() is not relevant as to whether it is focusable or
-    // not, so we have to do all the relevant checks manually for them.
-    return frame->IsVisibleConsideringAncestors() &&
-                   aTarget->IsFocusableWithoutStyle()
-               ? aTarget
-               : nullptr;
+  if (auto* area = HTMLAreaElement::FromNode(aTarget)) {
+    return IsAreaElementFocusable(*area) ? area : nullptr;
   }
 
   // For these 3 steps mentioned in the spec
@@ -5499,6 +5535,19 @@ Element* nsFocusManager::GetTheFocusableArea(Element* aTarget,
     }
   }
   return nullptr;
+}
+
+/* static */
+bool nsFocusManager::IsAreaElementFocusable(HTMLAreaElement& aArea) {
+  nsIFrame* frame = aArea.GetPrimaryFrame();
+  if (!frame) {
+    return false;
+  }
+  // HTML areas do not have their own frame, and the img frame we get from
+  // GetPrimaryFrame() is not relevant as to whether it is focusable or
+  // not, so we have to do all the relevant checks manually for them.
+  return frame->IsVisibleConsideringAncestors() &&
+         aArea.IsFocusableWithoutStyle(false /* aWithMouse */);
 }
 
 nsresult NS_NewFocusManager(nsIFocusManager** aResult) {

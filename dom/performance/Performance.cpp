@@ -11,6 +11,11 @@
 
 #include <sstream>
 
+#if defined(XP_LINUX)
+#  include <fcntl.h>
+#  include <sys/mman.h>
+#endif
+
 #include "ETWTools.h"
 #include "GeckoProfiler.h"
 #include "nsRFPService.h"
@@ -83,19 +88,24 @@ already_AddRefed<Performance> Performance::CreateForWorker(
 already_AddRefed<Performance> Performance::Get(JSContext* aCx,
                                                nsIGlobalObject* aGlobal) {
   RefPtr<Performance> performance;
-  nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
-  if (window) {
-    performance = window->GetPerformance();
-  } else {
-    const WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
-    if (!workerPrivate) {
+  if (NS_IsMainThread()) {
+    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
+    if (!window) {
       return nullptr;
     }
 
-    WorkerGlobalScope* scope = workerPrivate->GlobalScope();
-    MOZ_ASSERT(scope);
-    performance = scope->GetPerformance();
+    performance = window->GetPerformance();
+    return performance.forget();
   }
+
+  const WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
+  if (!workerPrivate) {
+    return nullptr;
+  }
+
+  WorkerGlobalScope* scope = workerPrivate->GlobalScope();
+  MOZ_ASSERT(scope);
+  performance = scope->GetPerformance();
 
   return performance.forget();
 }
@@ -399,17 +409,15 @@ DOMHighResTimeStamp Performance::ConvertMarkToTimestampWithString(
     return ConvertNameToTimestamp(aName, aRv);
   }
 
-  AutoTArray<RefPtr<PerformanceEntry>, 1> arr;
-  Optional<nsAString> typeParam;
-  nsAutoString str;
-  str.AssignLiteral("mark");
-  typeParam = &str;
-  GetEntriesByName(aName, typeParam, arr);
-  if (!arr.IsEmpty()) {
-    if (aReturnUnclamped) {
-      return arr.LastElement()->UnclampedStartTime();
+  RefPtr<nsAtom> name = NS_Atomize(aName);
+  // Just loop over the user entries
+  for (const PerformanceEntry* entry : Reversed(mUserEntries)) {
+    if (entry->GetName() == name && entry->GetEntryType() == nsGkAtoms::mark) {
+      if (aReturnUnclamped) {
+        return entry->UnclampedStartTime();
+      }
+      return entry->StartTime();
     }
-    return arr.LastElement()->StartTime();
   }
 
   nsPrintfCString errorMsg("Given mark name, %s, is unknown",
@@ -593,18 +601,66 @@ std::pair<TimeStamp, TimeStamp> Performance::GetTimeStampsForMarker(
   return std::make_pair(startTimeStamp, endTimeStamp);
 }
 
+static FILE* MaybeOpenMarkerFile() {
+  if (!getenv("MOZ_USE_PERFORMANCE_MARKER_FILE")) {
+    return nullptr;
+  }
+
+#ifdef XP_LINUX
+  // We treat marker files similar to Jitdump files (see PerfSpewer.cpp) and
+  // mmap them if needed.
+  int fd = open(GetMarkerFilename().c_str(), O_CREAT | O_TRUNC | O_RDWR, 0666);
+  FILE* markerFile = fdopen(fd, "w+");
+
+  if (!markerFile) {
+    return nullptr;
+  }
+
+  // On Linux and Android, we need to mmap the file so that the path makes it
+  // into the perf.data file or into samply.
+  // On non-Android, make the mapping executable, otherwise the MMAP event may
+  // not be recorded by perf (see perf_event_open mmap_data).
+  // But on Android, don't make the mapping executable, because doing so can
+  // make the mmap call fail on some Android devices. It's also not required on
+  // Android because simpleperf sets mmap_data = 1 for unrelated reasons (it
+  // wants to know about vdex files for Java JIT profiling, see
+  // SetRecordNotExecutableMaps).
+  int protection = PROT_READ;
+#  ifndef ANDROID
+  protection |= PROT_EXEC;
+#  endif
+
+  // Mmap just the first page - that's enough to ensure the path makes it into
+  // the recording.
+  long page_size = sysconf(_SC_PAGESIZE);
+  void* mmap_address = mmap(nullptr, page_size, protection, MAP_PRIVATE, fd, 0);
+  if (mmap_address == MAP_FAILED) {
+    fclose(markerFile);
+    return nullptr;
+  }
+  return markerFile;
+#else
+  // On macOS, we just need to `open` or `fopen` the marker file, and samply
+  // will know its path because it hooks those functions - no mmap needed.
+  // On Windows, there's no need to use MOZ_USE_PERFORMANCE_MARKER_FILE because
+  // we have ETW trace events for UserTiming measures. Still, we want this code
+  // to compile successfully on Windows, so we use fopen rather than
+  // open+fdopen.
+  return fopen(GetMarkerFilename().c_str(), "w+");
+#endif
+}
+
 // This emits markers to an external marker-[pid].txt file for use by an
 // external profiler like samply or etw-gecko
 void Performance::MaybeEmitExternalProfilerMarker(
     const nsAString& aName, Maybe<const PerformanceMeasureOptions&> aOptions,
     Maybe<const nsAString&> aStartMark, const Optional<nsAString>& aEndMark) {
-  static FILE* markerFile = getenv("MOZ_USE_PERFORMANCE_MARKER_FILE")
-                                ? fopen(GetMarkerFilename().c_str(), "w+")
-                                : nullptr;
+  static FILE* markerFile = MaybeOpenMarkerFile();
   if (!markerFile) {
     return;
   }
 
+#if defined(XP_LINUX) || defined(XP_WIN) || defined(XP_MACOSX)
   ErrorResult rv;
   auto [startTimeStamp, endTimeStamp] =
       GetTimeStampsForMarker(aStartMark, aEndMark, aOptions, rv);
@@ -612,6 +668,7 @@ void Performance::MaybeEmitExternalProfilerMarker(
   if (NS_WARN_IF(rv.Failed())) {
     return;
   }
+#endif
 
 #ifdef XP_LINUX
   uint64_t rawStart = startTimeStamp.RawClockMonotonicNanosecondsSinceBoot();
@@ -620,8 +677,8 @@ void Performance::MaybeEmitExternalProfilerMarker(
   uint64_t rawStart = startTimeStamp.RawQueryPerformanceCounterValue().value();
   uint64_t rawEnd = endTimeStamp.RawQueryPerformanceCounterValue().value();
 #elif XP_MACOSX
-  uint64_t rawStart = startTimeStamp.RawMachAbsoluteTimeValue();
-  uint64_t rawEnd = endTimeStamp.RawMachAbsoluteTimeValue();
+  uint64_t rawStart = startTimeStamp.RawMachAbsoluteTimeNanoseconds();
+  uint64_t rawEnd = endTimeStamp.RawMachAbsoluteTimeNanoseconds();
 #else
   uint64_t rawStart = 0;
   uint64_t rawEnd = 0;

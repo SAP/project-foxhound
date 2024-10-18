@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
+requestLongerTimeout(2);
 
 /* import-globals-from ../../mochitest/role.js */
 /* import-globals-from ../../mochitest/states.js */
@@ -484,31 +485,223 @@ addAccessibleTask(
 );
 
 /**
- * Test caching of the expanded state for popover target element.
+ * Test caching of the expanded state for the popovertarget content attribute.
  */
 addAccessibleTask(
   `
   <button id="show-popover-btn" popovertarget="mypopover" popovertargetaction="show">Show popover</button>
   <button id="hide-popover-btn" popovertarget="mypopover" popovertargetaction="hide">Hide popover</button>
-  <div id="mypopover" popover>Popover content</div>
+  <button id="toggle">toggle</button>
+  <div id="mypopover" popover>
+    Popover content
+    <button id="hide-inside" popovertarget="mypopover" popovertargetaction="hide">Hide inside popover</button>
+  </div>
   `,
   async function (browser, docAcc) {
     const show = findAccessibleChildByID(docAcc, "show-popover-btn");
     const hide = findAccessibleChildByID(docAcc, "hide-popover-btn");
     testStates(show, STATE_COLLAPSED, 0);
     testStates(hide, STATE_COLLAPSED, 0);
+    const toggle = findAccessibleChildByID(docAcc, "toggle");
+    testStates(
+      toggle,
+      0,
+      0,
+      STATE_EXPANDED | STATE_COLLAPSED,
+      EXT_STATE_EXPANDABLE
+    );
 
+    info("Setting toggle's popovertarget");
+    let stateChanged = waitForStateChange(
+      toggle,
+      EXT_STATE_EXPANDABLE,
+      true,
+      true
+    );
+    await invokeContentTask(browser, [], () => {
+      content.document
+        .getElementById("toggle")
+        .setAttribute("popovertarget", "mypopover");
+    });
+    await stateChanged;
+
+    // Changes to the popover should fire events on all invokers.
+    const changeEvents = [
+      [EVENT_STATE_CHANGE, show],
+      [EVENT_STATE_CHANGE, hide],
+      [EVENT_STATE_CHANGE, toggle],
+    ];
     info("Expanding popover");
-    let onShowing = waitForEvent(EVENT_STATE_CHANGE, show);
+    let onShowing = waitForEvents(changeEvents);
     await show.doAction(0);
-    let showingEvent = await onShowing;
-    testStates(showingEvent.accessible, STATE_EXPANDED, 0);
+    await onShowing;
+    testStates(show, STATE_EXPANDED, 0);
+    testStates(hide, STATE_EXPANDED, 0);
+    testStates(toggle, STATE_EXPANDED, 0);
+    const hideInside = findAccessibleChildByID(show, "hide-inside");
+    testStates(hideInside, 0, 0, STATE_EXPANDED | STATE_COLLAPSED, 0);
 
     info("Collapsing popover");
-    let onHiding = waitForEvent(EVENT_STATE_CHANGE, hide);
+    let onHiding = waitForEvents(changeEvents);
     await hide.doAction(0);
-    let hidingEvent = await onHiding;
-    testStates(hidingEvent.accessible, STATE_COLLAPSED, 0);
+    await onHiding;
+    testStates(hide, STATE_COLLAPSED, 0);
+    testStates(show, STATE_COLLAPSED, 0);
+    testStates(toggle, STATE_COLLAPSED, 0);
   },
   { chrome: true, topLevel: true, remoteIframe: true }
+);
+
+/**
+ * Test caching of the expanded state for the popoverTargetElement WebIDL
+ * attribute.
+ */
+addAccessibleTask(
+  `
+<button id="toggle1">toggle</button>
+<div id="popover1" popover>popover1</div>
+<button id="toggle2">toggle2</button>
+<button id="toggle3">toggle3</button>
+<div id="shadowHost"><template shadowrootmode="open">
+  <button id="toggle4">toggle4</button>
+  <div id="popover2" popover>popover2</div>
+  <button id="toggle5">toggle5</button>
+</template></div>
+<script>
+  const toggle1 = document.getElementById("toggle1");
+  const popover1 = document.getElementById("popover1");
+  toggle1.popoverTargetElement = popover1;
+  const toggle3 = document.getElementById("toggle3");
+  const shadow = document.getElementById("shadowHost").shadowRoot;
+  const toggle4 = shadow.getElementById("toggle4");
+  const popover2 = shadow.getElementById("popover2");
+  toggle3.popoverTargetElement = popover2;
+  toggle4.popoverTargetElement = popover2;
+  const toggle5 = shadow.getElementById("toggle5");
+  toggle5.popoverTargetElement = popover1;
+</script>
+  `,
+  async function (browser, docAcc) {
+    const toggle1 = findAccessibleChildByID(docAcc, "toggle1");
+    // toggle1's popover target is set and connected to the document.
+    testStates(toggle1, STATE_COLLAPSED);
+
+    const toggle2 = findAccessibleChildByID(docAcc, "toggle2");
+    // toggle2's popover target isn't set yet.
+    testStates(
+      toggle2,
+      0,
+      0,
+      STATE_EXPANDED | STATE_COLLAPSED,
+      EXT_STATE_EXPANDABLE
+    );
+    info("Setting toggle2's popoverTargetElement");
+    let changed = waitForStateChange(toggle2, EXT_STATE_EXPANDABLE, true, true);
+    await invokeContentTask(browser, [], () => {
+      const toggle2Dom = content.document.getElementById("toggle2");
+      const popover1 = content.document.getElementById("popover1");
+      toggle2Dom.popoverTargetElement = popover1;
+    });
+    await changed;
+    testStates(toggle2, STATE_COLLAPSED);
+
+    const toggle5 = findAccessibleChildByID(docAcc, "toggle5");
+    // toggle5 is inside the shadow DOM and popover1 is outside, so the target
+    // is valid.
+    testStates(toggle5, STATE_COLLAPSED);
+
+    // Changes to the popover should fire events on all invokers.
+    const changeEvents = [
+      [EVENT_STATE_CHANGE, toggle1],
+      [EVENT_STATE_CHANGE, toggle2],
+      [EVENT_STATE_CHANGE, toggle5],
+    ];
+    info("Showing popover1");
+    changed = waitForEvents(changeEvents);
+    toggle1.doAction(0);
+    await changed;
+    testStates(toggle1, STATE_EXPANDED);
+    testStates(toggle2, STATE_EXPANDED);
+
+    info("Hiding popover1");
+    changed = waitForEvents(changeEvents);
+    toggle1.doAction(0);
+    await changed;
+    testStates(toggle1, STATE_COLLAPSED);
+    testStates(toggle2, STATE_COLLAPSED);
+
+    info("Clearing toggle1's popover target");
+    changed = waitForStateChange(toggle1, EXT_STATE_EXPANDABLE, false, true);
+    await invokeContentTask(browser, [], () => {
+      const toggle1Dom = content.document.getElementById("toggle1");
+      toggle1Dom.popoverTargetElement = null;
+    });
+    await changed;
+    testStates(
+      toggle1,
+      0,
+      0,
+      STATE_EXPANDED | STATE_COLLAPSED,
+      EXT_STATE_EXPANDABLE
+    );
+
+    info("Setting toggle2's popover target to a disconnected node");
+    changed = waitForStateChange(toggle2, EXT_STATE_EXPANDABLE, false, true);
+    await invokeContentTask(browser, [], () => {
+      const toggle2Dom = content.document.getElementById("toggle2");
+      const popover3 = content.document.createElement("div");
+      popover3.popover = "auto";
+      popover3.textContent = "popover3";
+      // We don't append popover3 anywhere, so it is disconnected.
+      toggle2Dom.popoverTargetElement = popover3;
+    });
+    await changed;
+    testStates(
+      toggle2,
+      0,
+      0,
+      STATE_EXPANDED | STATE_COLLAPSED,
+      EXT_STATE_EXPANDABLE
+    );
+
+    const toggle3 = findAccessibleChildByID(docAcc, "toggle3");
+    // toggle3 is outside popover2's shadow DOM, so the target isn't valid.
+    testStates(
+      toggle3,
+      0,
+      0,
+      STATE_EXPANDED | STATE_COLLAPSED,
+      EXT_STATE_EXPANDABLE
+    );
+    const toggle4 = findAccessibleChildByID(docAcc, "toggle4");
+    // toggle4 is in the same shadow DOM as popover2.
+    testStates(toggle4, STATE_COLLAPSED);
+  },
+  { chrome: true, topLevel: true }
+);
+
+/**
+ * Test the mixed state of indeterminate HTML checkboxes.
+ */
+addAccessibleTask(
+  `<input type="checkbox" id="checkbox">`,
+  async function testHTMLCheckboxMixed(browser, docAcc) {
+    const checkbox = findAccessibleChildByID(docAcc, "checkbox");
+    testStates(checkbox, 0, 0, STATE_MIXED);
+    info("Setting indeterminate on checkbox");
+    let changed = waitForStateChange(checkbox, STATE_MIXED, true);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("checkbox").indeterminate = true;
+    });
+    await changed;
+    testStates(checkbox, STATE_MIXED);
+    info("Clearing indeterminate on checkbox");
+    changed = waitForStateChange(checkbox, STATE_MIXED, false);
+    await invokeContentTask(browser, [], () => {
+      content.document.getElementById("checkbox").indeterminate = false;
+    });
+    await changed;
+    testStates(checkbox, 0, 0, STATE_MIXED);
+  },
+  { chrome: true, topLevel: true, iframe: true, remoteIframe: true }
 );

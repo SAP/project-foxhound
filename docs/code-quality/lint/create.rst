@@ -80,10 +80,14 @@ Each ``.yml`` file must have at least one linter defined in it. Here are the sup
 * include - A list of file paths that will be considered (optional)
 * exclude - A list of file paths or glob patterns that must not be matched (optional)
 * extensions - A list of file extensions to be considered (optional)
+* exclude_extensions - A list of file extensions to be excluded (optional)
 * setup - A function that sets up external dependencies (optional)
 * support-files - A list of glob patterns matching configuration files (optional)
 * find-dotfiles - If set to ``true``, run on dot files (.*) (optional)
 * ignore-case - If set to ``true`` and ``type`` is regex, ignore the case (optional)
+
+Note that a linter may not have both ``extensions`` and ``exclude_extensions`` specified at the
+same time.
 
 In addition to the above, some ``.yml`` files correspond to a single lint rule. For these, the
 following additional keys may be specified:
@@ -211,7 +215,10 @@ When generating the list of results, the following values are available.
 Automated testing
 -----------------
 
-Every new checker must have tests associated.
+Every new checker must have associated tests. If your linter is ``mylinter`` then the
+test file should be named ``tools/lint/test/test_mylinter.py`` and any example files
+named like ``tools/lint/test/files/mylinter/my-example-file``. Be sure that your test
+has been added as a section ``["test_mylinter.py"]`` in the manifest ``tools/lint/test/python.toml``.
 
 They should be pretty easy to write as most of the work is managed by the Mozlint
 framework. The key declaration is the ``LINTER`` variable which must match

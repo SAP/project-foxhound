@@ -72,6 +72,13 @@ const size_t CellBytesPerMarkBit = CellAlignBytes;
 const size_t MarkBitsPerCell = 2;
 
 /*
+ * The minimum cell size ends up as twice the cell alignment because the mark
+ * bitmap contains one bit per CellBytesPerMarkBit bytes (which is equal to
+ * CellAlignBytes) and we need two mark bits per cell.
+ */
+const size_t MinCellSize = CellBytesPerMarkBit * MarkBitsPerCell;
+
+/*
  * The mark bitmap has one bit per each possible cell start position. This
  * wastes some space for larger GC things but allows us to avoid division by the
  * cell's size when accessing the bitmap.
@@ -533,9 +540,11 @@ static MOZ_ALWAYS_INLINE TenuredChunkBase* GetCellChunkBase(
   return chunk;
 }
 
-static MOZ_ALWAYS_INLINE JS::Zone* GetTenuredGCThingZone(const uintptr_t addr) {
-  MOZ_ASSERT(addr);
-  const uintptr_t zone_addr = (addr & ~ArenaMask) | ArenaZoneOffset;
+static MOZ_ALWAYS_INLINE JS::Zone* GetTenuredGCThingZone(const void* ptr) {
+  // This takes a void* because the compiler can't see type relationships in
+  // this header. |ptr| must be a pointer to a tenured GC thing.
+  MOZ_ASSERT(ptr);
+  const uintptr_t zone_addr = (uintptr_t(ptr) & ~ArenaMask) | ArenaZoneOffset;
   return *reinterpret_cast<JS::Zone**>(zone_addr);
 }
 
@@ -629,7 +638,7 @@ MOZ_ALWAYS_INLINE bool IsCellPointerValid(const void* ptr) {
 
   auto* cell = reinterpret_cast<const Cell*>(ptr);
   if (!IsInsideNursery(cell)) {
-    return detail::GetTenuredGCThingZone(addr) != nullptr;
+    return detail::GetTenuredGCThingZone(cell) != nullptr;
   }
 
   return true;
@@ -647,16 +656,13 @@ MOZ_ALWAYS_INLINE bool IsCellPointerValidOrNull(const void* cell) {
 
 namespace JS {
 
-static MOZ_ALWAYS_INLINE Zone* GetTenuredGCThingZone(GCCellPtr thing) {
-  MOZ_ASSERT(!js::gc::IsInsideNursery(thing.asCell()));
-  return js::gc::detail::GetTenuredGCThingZone(thing.unsafeAsUIntPtr());
-}
+extern JS_PUBLIC_API Zone* GetTenuredGCThingZone(GCCellPtr thing);
 
 extern JS_PUBLIC_API Zone* GetNurseryCellZone(js::gc::Cell* cell);
 
 static MOZ_ALWAYS_INLINE Zone* GetGCThingZone(GCCellPtr thing) {
   if (!js::gc::IsInsideNursery(thing.asCell())) {
-    return js::gc::detail::GetTenuredGCThingZone(thing.unsafeAsUIntPtr());
+    return js::gc::detail::GetTenuredGCThingZone(thing.asCell());
   }
 
   return GetNurseryCellZone(thing.asCell());
@@ -664,9 +670,9 @@ static MOZ_ALWAYS_INLINE Zone* GetGCThingZone(GCCellPtr thing) {
 
 static MOZ_ALWAYS_INLINE Zone* GetStringZone(JSString* str) {
   if (!js::gc::IsInsideNursery(str)) {
-    return js::gc::detail::GetTenuredGCThingZone(
-        reinterpret_cast<uintptr_t>(str));
+    return js::gc::detail::GetTenuredGCThingZone(str);
   }
+
   return GetNurseryCellZone(reinterpret_cast<js::gc::Cell*>(str));
 }
 
@@ -765,7 +771,7 @@ static MOZ_ALWAYS_INLINE void ExposeGCThingToActiveJS(JS::GCCellPtr thing) {
   // GC things owned by other runtimes are always black.
   MOZ_ASSERT(!thing.mayBeOwnedByOtherRuntime());
 
-  auto* zone = JS::shadow::Zone::from(JS::GetTenuredGCThingZone(thing));
+  auto* zone = JS::shadow::Zone::from(detail::GetTenuredGCThingZone(cell));
   if (zone->needsIncrementalBarrier()) {
     PerformIncrementalReadBarrier(thing);
   } else if (!zone->isGCPreparing() && detail::NonBlackCellIsMarkedGray(cell)) {
@@ -783,8 +789,8 @@ static MOZ_ALWAYS_INLINE void IncrementalReadBarrier(JS::GCCellPtr thing) {
     return;
   }
 
-  auto* zone = JS::shadow::Zone::from(JS::GetTenuredGCThingZone(thing));
   auto* cell = reinterpret_cast<TenuredCell*>(thing.asCell());
+  auto* zone = JS::shadow::Zone::from(detail::GetTenuredGCThingZone(cell));
   if (zone->needsIncrementalBarrier() &&
       !detail::TenuredCellIsMarkedBlack(cell)) {
     // GC things owned by other runtimes are always black.
@@ -805,8 +811,7 @@ static MOZ_ALWAYS_INLINE bool EdgeNeedsSweepUnbarriered(JSObject** objp) {
     return false;
   }
 
-  auto zone =
-      JS::shadow::Zone::from(detail::GetTenuredGCThingZone(uintptr_t(*objp)));
+  auto zone = JS::shadow::Zone::from(detail::GetTenuredGCThingZone(*objp));
   if (!zone->isGCSweepingOrCompacting()) {
     return false;
   }

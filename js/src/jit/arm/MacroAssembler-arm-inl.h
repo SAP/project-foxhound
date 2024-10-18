@@ -271,6 +271,11 @@ void MacroAssembler::add32(Imm32 imm, Register dest) {
   ma_add(imm, dest, scratch, SetCC);
 }
 
+void MacroAssembler::add32(Imm32 imm, Register src, Register dest) {
+  ScratchRegisterScope scratch(*this);
+  ma_add(src, imm, dest, scratch, SetCC);
+}
+
 void MacroAssembler::add32(Imm32 imm, const Address& dest) {
   ScratchRegisterScope scratch(*this);
   SecondScratchRegisterScope scratch2(*this);
@@ -2412,6 +2417,13 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
                                  const Address& src, Register dest) {
   // This is never used, but must be present to facilitate linking on arm.
   MOZ_CRASH("No known use cases");
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Imm32 rhs,
+                                 const Address& src, Register dest) {
+  cmp32(lhs, rhs);
+  ScratchRegisterScope scratch(*this);
+  ma_ldr(src, dest, scratch, Offset, cond);
 }
 
 void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,

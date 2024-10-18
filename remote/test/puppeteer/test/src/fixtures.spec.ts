@@ -1,17 +1,7 @@
 /**
- * Copyright 2019 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2019 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import {spawn, execSync} from 'child_process';
@@ -28,7 +18,7 @@ describe('Fixtures', function () {
   it('dumpio option should work with pipe option', async () => {
     const {defaultBrowserOptions, puppeteerPath, headless} =
       await getTestState();
-    if (headless !== 'true') {
+    if (headless !== 'shell') {
       // This test only works in the old headless mode.
       return;
     }
@@ -52,7 +42,8 @@ describe('Fixtures', function () {
     expect(dumpioData).toContain('message from dumpio');
   });
   it('should dump browser process stderr', async () => {
-    const {defaultBrowserOptions, puppeteerPath} = await getTestState();
+    const {defaultBrowserOptions, isFirefox, puppeteerPath} =
+      await getTestState();
 
     let dumpioData = '';
     const options = Object.assign({}, defaultBrowserOptions, {dumpio: true});
@@ -67,7 +58,11 @@ describe('Fixtures', function () {
     await new Promise(resolve => {
       return res.on('close', resolve);
     });
-    expect(dumpioData).toContain('DevTools listening on ws://');
+    if (isFirefox && defaultBrowserOptions.protocol === 'webDriverBiDi') {
+      expect(dumpioData).toContain('WebDriver BiDi listening on ws://');
+    } else {
+      expect(dumpioData).toContain('DevTools listening on ws://');
+    }
   });
   it('should close the browser when the node process closes', async () => {
     const {defaultBrowserOptions, puppeteerPath, puppeteer} =

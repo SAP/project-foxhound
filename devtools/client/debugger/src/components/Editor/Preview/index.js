@@ -44,7 +44,7 @@ class Preview extends PureComponent {
     codeMirrorWrapper.removeEventListener("mousedown", this.onMouseDown);
   }
 
-  updateListeners(prevProps) {
+  updateListeners() {
     const { codeMirror } = this.props.editor;
     const codeMirrorWrapper = codeMirror.getWrapperElement();
     codeMirror.on("tokenenter", this.onTokenEnter);
@@ -107,7 +107,7 @@ class Preview extends PureComponent {
       return null;
     }
     return React.createElement(Popup, {
-      preview: preview,
+      preview,
       editor: this.props.editor,
       editorRef: this.props.editorRef,
       clearPreview: this.clearPreview,

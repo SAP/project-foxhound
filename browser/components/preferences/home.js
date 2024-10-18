@@ -160,13 +160,14 @@ var gHomePane = {
       }
 
       let extensionOptions;
+      await ExtensionSettingsStore.initialize();
       if (select.id === "homeMode") {
-        extensionOptions = await ExtensionSettingsStore.getAllSettings(
+        extensionOptions = ExtensionSettingsStore.getAllSettings(
           PREF_SETTING_TYPE,
           HOMEPAGE_OVERRIDE_KEY
         );
       } else {
-        extensionOptions = await ExtensionSettingsStore.getAllSettings(
+        extensionOptions = ExtensionSettingsStore.getAllSettings(
           URL_OVERRIDES_TYPE,
           NEW_TAB_KEY
         );
@@ -344,12 +345,15 @@ var gHomePane = {
   },
 
   /**
-   * _isTabAboutPreferences: Is a given tab set to about:preferences?
+   * _isTabAboutPreferencesOrSettings: Is a given tab set to about:preferences or about:settings?
    * @param {Element} aTab A tab element
-   * @returns {bool} Is the linkedBrowser of aElement set to about:preferences?
+   * @returns {bool} Is the linkedBrowser of aElement set to about:preferences or about:settings?
    */
-  _isTabAboutPreferences(aTab) {
-    return aTab.linkedBrowser.currentURI.spec.startsWith("about:preferences");
+  _isTabAboutPreferencesOrSettings(aTab) {
+    return (
+      aTab.linkedBrowser.currentURI.spec.startsWith("about:preferences") ||
+      aTab.linkedBrowser.currentURI.spec.startsWith("about:settings")
+    );
   },
 
   /**
@@ -367,7 +371,7 @@ var gHomePane = {
         "navigator:browser"
     ) {
       tabs = win.gBrowser.visibleTabs.slice(win.gBrowser._numPinnedTabs);
-      tabs = tabs.filter(tab => !this._isTabAboutPreferences(tab));
+      tabs = tabs.filter(tab => !this._isTabAboutPreferencesOrSettings(tab));
       // XXX: Bug 1441637 - Fix tabbrowser to report tab.closing before it blurs it
       tabs = tabs.filter(tab => !tab.closing);
     }

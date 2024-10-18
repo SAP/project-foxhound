@@ -3,6 +3,13 @@
 
 "use strict";
 
+/**
+ * @type {import("../../../ml/content/EngineProcess.sys.mjs")}
+ */
+const { EngineProcess } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/EngineProcess.sys.mjs"
+);
+
 // Avoid about:blank's non-standard behavior.
 const BLANK_PAGE =
   "data:text/html;charset=utf-8,<!DOCTYPE html><title>Blank</title>Blank page";
@@ -130,10 +137,11 @@ async function openAboutTranslations({
     runInPage
   );
 
+  await loadBlankPage();
   BrowserTestUtils.removeTab(tab);
 
   await removeMocks();
-  await TranslationsParent.destroyEngineProcess();
+  await EngineProcess.destroyTranslationsEngine();
 
   await SpecialPowers.popPrefEnv();
 }
@@ -141,6 +149,7 @@ async function openAboutTranslations({
 /**
  * Naively prettify's html based on the opening and closing tags. This is not robust
  * for general usage, but should be adequate for these tests.
+ *
  * @param {string} html
  * @returns {string}
  */
@@ -339,11 +348,23 @@ function getTranslationsParent() {
 }
 
 /**
- * Closes the context menu if it is open.
+ * Closes all open panels and menu popups related to Translations.
  */
-function closeContextMenuIfOpen() {
-  return waitForCondition(async () => {
-    const contextMenu = document.getElementById("contentAreaContextMenu");
+async function closeAllOpenPanelsAndMenus() {
+  await closeSettingsMenuIfOpen();
+  await closeFullPageTranslationsPanelIfOpen();
+  await closeSelectTranslationsPanelIfOpen();
+  await closeContextMenuIfOpen();
+}
+
+/**
+ * Closes the popup element with the given Id if it is open.
+ *
+ * @param {string} popupElementId
+ */
+async function closePopupIfOpen(popupElementId) {
+  await waitForCondition(async () => {
+    const contextMenu = document.getElementById(popupElementId);
     if (!contextMenu) {
       return true;
     }
@@ -361,50 +382,31 @@ function closeContextMenuIfOpen() {
 }
 
 /**
+ * Closes the context menu if it is open.
+ */
+async function closeContextMenuIfOpen() {
+  await closePopupIfOpen("contentAreaContextMenu");
+}
+
+/**
  * Closes the translations panel settings menu if it is open.
  */
-function closeSettingsMenuIfOpen() {
-  return waitForCondition(async () => {
-    const settings = document.getElementById(
-      "translations-panel-settings-menupopup"
-    );
-    if (!settings) {
-      return true;
-    }
-    if (settings.state === "closed") {
-      return true;
-    }
-    let popuphiddenPromise = BrowserTestUtils.waitForEvent(
-      settings,
-      "popuphidden"
-    );
-    PanelMultiView.hidePopup(settings);
-    await popuphiddenPromise;
-    return false;
-  });
+async function closeSettingsMenuIfOpen() {
+  await closePopupIfOpen("full-page-translations-panel-settings-menupopup");
 }
 
 /**
  * Closes the translations panel if it is open.
  */
-async function closeTranslationsPanelIfOpen() {
-  await closeSettingsMenuIfOpen();
-  return waitForCondition(async () => {
-    const panel = document.getElementById("translations-panel");
-    if (!panel) {
-      return true;
-    }
-    if (panel.state === "closed") {
-      return true;
-    }
-    let popuphiddenPromise = BrowserTestUtils.waitForEvent(
-      panel,
-      "popuphidden"
-    );
-    PanelMultiView.hidePopup(panel);
-    await popuphiddenPromise;
-    return false;
-  });
+async function closeFullPageTranslationsPanelIfOpen() {
+  await closePopupIfOpen("full-page-translations-panel");
+}
+
+/**
+ * Closes the translations panel if it is open.
+ */
+async function closeSelectTranslationsPanelIfOpen() {
+  await closePopupIfOpen("select-translations-panel");
 }
 
 /**
@@ -441,9 +443,9 @@ async function setupActorTest({
     actor,
     remoteClients,
     async cleanup() {
-      await TranslationsParent.destroyEngineProcess();
-      await closeTranslationsPanelIfOpen();
-      await closeContextMenuIfOpen();
+      await closeAllOpenPanelsAndMenus();
+      await loadBlankPage();
+      await EngineProcess.destroyTranslationsEngine();
       BrowserTestUtils.removeTab(tab);
       await removeMocks();
       TestTranslationsTelemetry.reset();
@@ -498,7 +500,7 @@ async function loadTestPage({
 }) {
   info(`Loading test page starting at url: ${page}`);
   // Ensure no engine is being carried over from a previous test.
-  await TranslationsParent.destroyEngineProcess();
+  await EngineProcess.destroyTranslationsEngine();
   Services.fog.testResetFOG();
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -550,7 +552,7 @@ async function loadTestPage({
   if (autoOffer && TranslationsParent.shouldAlwaysOfferTranslations()) {
     info("Waiting for the popup to be automatically shown.");
     await waitForCondition(() => {
-      const panel = document.getElementById("translations-panel");
+      const panel = document.getElementById("full-page-translations-panel");
       return panel && panel.state === "open";
     });
   }
@@ -583,9 +585,9 @@ async function loadTestPage({
      * @returns {Promise<void>}
      */
     async cleanup() {
-      await TranslationsParent.destroyEngineProcess();
-      await closeTranslationsPanelIfOpen();
-      await closeContextMenuIfOpen();
+      await closeAllOpenPanelsAndMenus();
+      await loadBlankPage();
+      await EngineProcess.destroyTranslationsEngine();
       await removeMocks();
       Services.fog.testResetFOG();
       TranslationsParent.testAutomaticPopup = false;
@@ -655,7 +657,8 @@ async function captureTranslationsError(callback) {
 
 /**
  * Load a test page and run
- * @param {Object} options - The options for `loadTestPage` plus a `runInPage` function.
+ *
+ * @param {object} options - The options for `loadTestPage` plus a `runInPage` function.
  */
 async function autoTranslatePage(options) {
   const { prefs, languagePairs, ...otherOptions } = options;
@@ -671,6 +674,10 @@ async function autoTranslatePage(options) {
   await runInPage(options.runInPage);
   await cleanup();
 }
+
+/**
+ * @typedef {ReturnType<createAttachmentMock>} AttachmentMock
+ */
 
 /**
  * @param {RemoteSettingsClient} client
@@ -823,7 +830,7 @@ let _remoteSettingsMockId = 0;
  * Creates a local RemoteSettingsClient for use within tests.
  *
  * @param {boolean} autoDownloadFromRemoteSettings
- * @param {Object[]} langPairs
+ * @param {object[]} langPairs
  * @returns {RemoteSettingsClient}
  */
 async function createTranslationModelsRemoteClient(
@@ -971,23 +978,28 @@ function hitEnterKey(button, message) {
 }
 
 /**
- * @param {Object} options
+ * Similar to assertVisibility, but is asynchronous and attempts
+ * to wait for the elements to match the expected states if they
+ * do not already.
+ *
+ * @see assertVisibility
+ *
+ * @param {object} options
  * @param {string} options.message
  * @param {Record<string, Element[]>} options.visible
  * @param {Record<string, Element[]>} options.hidden
  */
-async function assertVisibility({ message, visible, hidden }) {
-  info(message);
+async function ensureVisibility({ message = null, visible = {}, hidden = {} }) {
   try {
     // First wait for the condition to be met.
     await waitForCondition(() => {
       for (const element of Object.values(visible)) {
-        if (element.hidden) {
+        if (BrowserTestUtils.isHidden(element)) {
           return false;
         }
       }
       for (const element of Object.values(hidden)) {
-        if (!element.hidden) {
+        if (BrowserTestUtils.isVisible(element)) {
           return false;
         }
       }
@@ -997,11 +1009,26 @@ async function assertVisibility({ message, visible, hidden }) {
     // Ignore, this will get caught below.
   }
   // Now report the conditions.
+  assertVisibility({ message, visible, hidden });
+}
+
+/**
+ * Asserts that the provided elements are either visible or hidden.
+ *
+ * @param {object} options
+ * @param {string} options.message
+ * @param {Record<string, Element[]>} options.visible
+ * @param {Record<string, Element[]>} options.hidden
+ */
+function assertVisibility({ message = null, visible = {}, hidden = {} }) {
+  if (message) {
+    info(message);
+  }
   for (const [name, element] of Object.entries(visible)) {
-    ok(!element.hidden, `${name} is visible.`);
+    ok(BrowserTestUtils.isVisible(element), `${name} is visible.`);
   }
   for (const [name, element] of Object.entries(hidden)) {
-    ok(element.hidden, `${name} is hidden.`);
+    ok(BrowserTestUtils.isHidden(element), `${name} is hidden.`);
   }
 }
 
@@ -1043,9 +1070,9 @@ async function setupAboutPreferences(
   const elements = await selectAboutPreferencesElements();
 
   async function cleanup() {
-    await TranslationsParent.destroyEngineProcess();
-    await closeTranslationsPanelIfOpen();
-    await closeContextMenuIfOpen();
+    await closeAllOpenPanelsAndMenus();
+    await loadBlankPage();
+    await EngineProcess.destroyTranslationsEngine();
     BrowserTestUtils.removeTab(tab);
     await removeMocks();
     await SpecialPowers.popPrefEnv();
@@ -1113,8 +1140,8 @@ class TestTranslationsTelemetry {
    * Asserts qualities about a counter telemetry metric.
    *
    * @param {string} name - The name of the metric.
-   * @param {Object} counter - The Glean counter object.
-   * @param {Object} expectedCount - The expected value of the counter.
+   * @param {object} counter - The Glean counter object.
+   * @param {object} expectedCount - The expected value of the counter.
    */
   static async assertCounter(name, counter, expectedCount) {
     // Ensures that glean metrics are collected from all child processes
@@ -1131,16 +1158,16 @@ class TestTranslationsTelemetry {
   /**
    * Asserts qualities about an event telemetry metric.
    *
-   * @param {string} name - The name of the metric.
-   * @param {Object} event - The Glean event object.
-   * @param {Object} expectations - The test expectations.
+   * @param {object} event - The Glean event object.
+   * @param {object} expectations - The test expectations.
    * @param {number} expectations.expectedEventCount - The expected count of events.
    * @param {boolean} expectations.expectNewFlowId
+   * @param {boolean} [expectations.expectFirstInteraction]
    * - Expects the flowId to be different than the previous flowId if true,
    *   and expects it to be the same if false.
-   * @param {Array<function>} [expectations.allValuePredicates=[]]
+   * @param {Array<Function>} [expectations.allValuePredicates=[]]
    * - An array of function predicates to assert for all event values.
-   * @param {Array<function>} [expectations.finalValuePredicates=[]]
+   * @param {Array<Function>} [expectations.finalValuePredicates=[]]
    * - An array of function predicates to assert for only the final event value.
    */
   static async assertEvent(
@@ -1240,8 +1267,8 @@ class TestTranslationsTelemetry {
    * Asserts qualities about a rate telemetry metric.
    *
    * @param {string} name - The name of the metric.
-   * @param {Object} rate - The Glean rate object.
-   * @param {Object} expectations - The test expectations.
+   * @param {object} rate - The Glean rate object.
+   * @param {object} expectations - The test expectations.
    * @param {number} expectations.expectedNumerator - The expected value of the numerator.
    * @param {number} expectations.expectedDenominator - The expected value of the denominator.
    */
@@ -1271,7 +1298,7 @@ class TestTranslationsTelemetry {
  * Provide longer defaults for the waitForCondition.
  *
  * @param {Function} callback
- * @param {string} messages
+ * @param {string} message
  */
 function waitForCondition(callback, message) {
   const interval = 100;
@@ -1322,9 +1349,10 @@ function getNeverTranslateSitesFromPerms() {
 
 /**
  * Opens a dialog window for about:preferences
+ *
  * @param {string} dialogUrl - The URL of the dialog window
  * @param {Function} callback - The function to open the dialog via UI
- * @returns {Object} The dialog window object
+ * @returns {object} The dialog window object
  */
 async function waitForOpenDialogWindow(dialogUrl, callback) {
   const dialogLoaded = promiseLoadSubDialog(dialogUrl);
@@ -1336,7 +1364,7 @@ async function waitForOpenDialogWindow(dialogUrl, callback) {
 /**
  * Closes an open dialog window and waits for it to close.
  *
- * @param {Object} dialogWindow
+ * @param {object} dialogWindow
  */
 async function waitForCloseDialogWindow(dialogWindow) {
   const closePromise = BrowserTestUtils.waitForEvent(
@@ -1403,4 +1431,16 @@ function promiseLoadSubDialog(aURL) {
       }
     );
   });
+}
+
+/**
+ * Loads the blank-page URL.
+ *
+ * This is useful for resetting the state during cleanup, and also
+ * before starting a test, to further help ensure that there is no
+ * unintentional state left over from test case.
+ */
+async function loadBlankPage() {
+  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, BLANK_PAGE);
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
 }

@@ -7,7 +7,10 @@
 #ifndef mozilla_BounceTrackingState_h
 #define mozilla_BounceTrackingState_h
 
+#include "BounceTrackingRecord.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/OriginAttributes.h"
+#include "nsIPrincipal.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsStringFwd.h"
 #include "nsIWebProgressListener.h"
@@ -20,7 +23,6 @@ class nsIPrincipal;
 namespace mozilla {
 
 class BounceTrackingProtection;
-class BounceTrackingRecord;
 
 namespace dom {
 class CanonicalBrowsingContext;
@@ -48,8 +50,12 @@ class BounceTrackingState : public nsIWebProgressListener,
   // Reset state for all BounceTrackingState instances this includes resetting
   // BounceTrackingRecords and cancelling any running timers.
   static void ResetAll();
+  static void ResetAllForOriginAttributes(
+      const OriginAttributes& aOriginAttributes);
+  static void ResetAllForOriginAttributesPattern(
+      const OriginAttributesPattern& aPattern);
 
-  BounceTrackingRecord* GetBounceTrackingRecord();
+  const Maybe<BounceTrackingRecord>& GetBounceTrackingRecord();
 
   void ResetBounceTrackingRecord();
 
@@ -88,6 +94,8 @@ class BounceTrackingState : public nsIWebProgressListener,
 
   uint64_t GetBrowserId() { return mBrowserId; }
 
+  const OriginAttributes& OriginAttributesRef();
+
   // Create a string that describes this object. Used for logging.
   nsCString Describe();
 
@@ -97,15 +105,24 @@ class BounceTrackingState : public nsIWebProgressListener,
 
   uint64_t mBrowserId{};
 
+  // OriginAttributes associated with the browser this state is attached to.
+  OriginAttributes mOriginAttributes;
+
   // Reference to the BounceTrackingProtection singleton.
   RefPtr<BounceTrackingProtection> mBounceTrackingProtection;
 
   // Record to keep track of extended navigation data. Reset on extended
   // navigation end.
-  RefPtr<BounceTrackingRecord> mBounceTrackingRecord;
+  Maybe<BounceTrackingRecord> mBounceTrackingRecord;
 
   // Timer to wait to wait for a client redirect after a navigation ends.
   RefPtr<nsITimer> mClientBounceDetectionTimeout;
+
+  // Reset state for all BounceTrackingState instances this includes resetting
+  // BounceTrackingRecords and cancelling any running timers.
+  // Optionally filter by OriginAttributes or OriginAttributesPattern.
+  static void Reset(const OriginAttributes* aOriginAttributes,
+                    const OriginAttributesPattern* aPattern);
 
   // Whether the given web progress should hold a BounceTrackingState
   // instance to monitor bounce tracking navigations.

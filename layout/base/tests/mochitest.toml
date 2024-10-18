@@ -201,7 +201,8 @@ support-files = ["bug1093686_inner.html"]
 skip-if = [
   "os == 'android'", # android does not have clickable scrollbars
   "os == 'mac'", # mac does not have scrollbar down and up buttons
-  "toolkit == 'gtk'", # gtk may or may not have scrollbar buttons depending on theme
+  "os == 'linux' && os_version == '18.04'", # linux may or may not have scrollbar buttons depending on theme
+  "os == 'linux' && os_version == '22.04'", # linux may or may not have scrollbar buttons depending on theme
 ]
 
 ["test_bug1153130.html"]
@@ -232,6 +233,8 @@ support-files = ["bug1448730.html"]
 ["test_bug1714640.html"]
 
 ["test_bug1756118.html"]
+
+["test_bug1836801.html"]
 
 ["test_caret_browsing_around_form_controls.html"]
 skip-if = ["os == 'android'"]

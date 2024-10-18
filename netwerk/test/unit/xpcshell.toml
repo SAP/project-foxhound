@@ -35,9 +35,11 @@ support-files = [
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1816325
 # Several tests rely on redirecting to data: URIs, which was allowed for a long
 # time but now forbidden. So we enable it just for these tests.
+# Native HTTPS query changes timings for some tests. Disable it for now.
 prefs = [
   "dom.serviceWorkers.enabled=true",
- "network.allow_redirect_to_data=true",
+  "network.allow_redirect_to_data=true",
+  "network.dns.native_https_query=false",
 ]
 
 ["test_1073747.js"]
@@ -91,10 +93,8 @@ run-sequentially = "node server exceptions dont replay well"
 
 ["test_altsvc_http3.js"]
 skip-if = [
-  "true", # Bug 1675008
-  "asan",
-  "tsan",
   "os == 'android'",
+  "os == 'win' && msix", # Bug 1807931
 ]
 run-sequentially = "http3server"
 
@@ -107,8 +107,6 @@ skip-if = [
 ["test_anonymous-coalescing.js"]
 
 ["test_auth_dialog_permission.js"]
-
-["test_auth_jar.js"]
 
 ["test_auth_multiple.js"]
 
@@ -436,7 +434,6 @@ run-sequentially = "node server exceptions dont replay well"
 run-sequentially = "node server exceptions dont replay well"
 
 ["test_channel_close.js"]
-skip-if = ["os == 'win' && socketprocess_networking && !debug"]
 
 ["test_channel_long_domain.js"]
 
@@ -446,7 +443,9 @@ skip-if = ["os == 'win' && socketprocess_networking && !debug"]
 prefs = ["security.allow_eval_with_system_principal=true"]
 
 ["test_client_auth_with_proxy.js"]
-skip-if = ["os == 'android'"]
+skip-if = [
+  "os == 'android'",
+]
 
 ["test_coaleasing_h2_and_h3_connection.js"]
 skip-if = [
@@ -473,6 +472,8 @@ run-sequentially = "http3server"
 
 ["test_cookie_ipv6.js"]
 
+["test_cookie_partitioned_attribute.js"]
+
 ["test_cookiejars.js"]
 
 ["test_cookiejars_safebrowsing.js"]
@@ -496,12 +497,8 @@ skip-if = ["os == 'android'"] # Bug 1700483
 ["test_cookies_sync_failure.js"]
 
 ["test_cookies_thirdparty.js"]
-skip-if = ["appname == 'thunderbird'"]
-reason = "Thunderbird runs with fission enabled. This test requires fission.autostart=false. Bug 1749403."
 
 ["test_cookies_thirdparty_session.js"]
-skip-if = ["appname == 'thunderbird'"]
-reason = "Thunderbird runs with fission enabled. This test requires fission.autostart=false. Bug 1749403."
 
 ["test_cookies_upgrade_10.js"]
 
@@ -610,6 +607,9 @@ skip-if = ["!nightly_build"] # OHTTP Config manager not currently shipped to rel
 
 ["test_http2-proxy-failing.js"]
 run-sequentially = "node server exceptions dont replay well"
+skip-if = [
+  "os == 'win'" # https://bugzilla.mozilla.org/show_bug.cgi?id=1881334
+]
 
 ["test_http2-proxy.js"]
 run-sequentially = "one http2 node proxy is used for all tests, this test is using global session counter"
@@ -735,6 +735,7 @@ run-sequentially = "http3server"
 skip-if = [
   "os == 'android'",
   "os == 'win' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807931
+  "true", # Will be reenabled in bug 1865394
 ]
 run-sequentially = "http3server"
 
@@ -859,6 +860,8 @@ run-sequentially = "node server exceptions dont replay well"
 ["test_multipart_streamconv_missing_boundary_lead_dashes.js"]
 
 ["test_multipart_streamconv_missing_lead_boundary.js"]
+
+["test_multipart_set_cookie.js"]
 
 ["test_nestedabout_serialize.js"]
 
@@ -1039,6 +1042,10 @@ run-sequentially = "tlsserver uses fixed port"
 ["test_safeoutputstream.js"]
 
 ["test_safeoutputstream_append.js"]
+
+["test_schema_13_db.js"]
+
+["test_schema_12_migration.js"]
 
 ["test_schema_10_migration.js"]
 

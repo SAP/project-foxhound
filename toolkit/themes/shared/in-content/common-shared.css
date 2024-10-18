@@ -30,7 +30,6 @@
   --in-content-border-hover: var(--grey-90-a50);
   --in-content-border-invalid: var(--red-50);
   --in-content-border-color: #d7d7db;
-  --in-content-error-text-color: #c50042;
   --in-content-warning-icon-color: #ffa436;
   --in-content-success-icon-color: #2ac3a2;
   --in-content-button-text-color: var(--in-content-text-color);
@@ -105,6 +104,7 @@
   --card-outline-color: var(--grey-30);
   --card-shadow-hover: var(--card-shadow), 0 0 0 5px var(--card-outline-color);
 
+  -moz-theme: non-native;
   accent-color: var(--in-content-accent-color);
   color-scheme: light dark;
 }
@@ -132,7 +132,6 @@
     --in-content-border-hover: rgba(249,249,250,0.3);
     --in-content-border-invalid: rgb(255,132,139);
 
-    --in-content-error-text-color: #FF9AA2;
     --in-content-warning-icon-color: #ffbd4f;
     --in-content-success-icon-color: #54FFBD;
 
@@ -235,7 +234,6 @@
 
 :root:not(.system-font-size) {
   font-size: var(--font-size-root);
-  line-height: var(--line-height-default);
 }
 
 html|body {
@@ -325,7 +323,6 @@ xul|tab[selected]:hover:active {
 
 html|button {
   font: inherit;
-  line-height: var(--button-line-height);
 }
 
 /* xul buttons and menulists */
@@ -341,7 +338,6 @@ xul|menulist {
   border-radius: 4px;
   background-color: var(--in-content-button-background);
   font-weight: 400;
-  line-height: var(--button-line-height);
   padding: .45em 1em;
   text-decoration: none;
   margin: 4px 8px;
@@ -616,10 +612,13 @@ html|textarea {
   box-sizing: border-box;
   font-family: inherit;
   font-size: inherit;
-  line-height: var(--input-text-line-height);
   padding: .45em;
   margin: 2px 4px;
   min-height: var(--input-text-min-height);
+}
+
+html|textarea {
+  min-height: auto
 }
 
 html|input:where([type="email"], [type="tel"], [type="text"], [type="password"], [type="url"], [type="number"]):focus,
@@ -692,11 +691,12 @@ button.text-link {
 xul|*.radio-check,
 xul|*.checkbox-check,
 html|input:where([type="checkbox"], [type="radio"]) {
+  /* TODO Bug 1876537: Make this em-based, probably? */
   height: 16px;
   width: 16px;
   padding: 0;
-  margin-block: 2px;
-  margin-inline: 0 6px;
+  margin-block: var(--space-xxsmall);
+  margin-inline: 0 var(--checkbox-margin-inline);
   flex-shrink: 0; /* avoid shrinking inside flex container */
 }
 

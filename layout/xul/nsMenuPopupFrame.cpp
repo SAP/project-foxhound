@@ -220,21 +220,16 @@ widget::PopupLevel nsMenuPopupFrame::GetPopupLevel(bool aIsNoAutoHide) const {
   }
 
   // If the level attribute has been set, use that.
-  static Element::AttrValuesArray strings[] = {
-      nsGkAtoms::top, nsGkAtoms::parent, nsGkAtoms::floating, nullptr};
+  static Element::AttrValuesArray strings[] = {nsGkAtoms::top,
+                                               nsGkAtoms::parent, nullptr};
   switch (mContent->AsElement()->FindAttrValueIn(
       kNameSpaceID_None, nsGkAtoms::level, strings, eCaseMatters)) {
     case 0:
       return PopupLevel::Top;
     case 1:
       return PopupLevel::Parent;
-    case 2:
-      return PopupLevel::Floating;
-  }
-
-  // Panels with titlebars most likely want to be floating popups.
-  if (mContent->AsElement()->HasAttr(nsGkAtoms::titlebar)) {
-    return PopupLevel::Floating;
+    default:
+      break;
   }
 
   // If this panel is a noautohide panel, the default is the parent level.
@@ -268,7 +263,6 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
   widget::InitData widgetData;
   widgetData.mWindowType = widget::WindowType::Popup;
   widgetData.mBorderStyle = widget::BorderStyle::Default;
-  widgetData.mForMenupopupFrame = true;
   widgetData.mClipSiblings = true;
   widgetData.mPopupHint = mPopupType;
   widgetData.mNoAutoHide = IsNoAutoHide();
@@ -279,20 +273,6 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
         mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
                                            nsGkAtoms::drag, eIgnoreCase)) {
       widgetData.mIsDragPopup = true;
-    }
-  }
-
-  nsAutoString title;
-  if (widgetData.mNoAutoHide &&
-      mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::titlebar,
-                                         nsGkAtoms::normal, eCaseMatters)) {
-    widgetData.mBorderStyle = widget::BorderStyle::Title;
-
-    mContent->AsElement()->GetAttr(nsGkAtoms::label, title);
-    if (mContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::close,
-                                           nsGkAtoms::_true, eCaseMatters)) {
-      widgetData.mBorderStyle =
-          widgetData.mBorderStyle | widget::BorderStyle::Close;
     }
   }
 
@@ -328,12 +308,6 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
   widget->SetTransparencyMode(mode);
 
   PropagateStyleToWidget();
-
-  // most popups don't have a title so avoid setting the title if there isn't
-  // one
-  if (!title.IsEmpty()) {
-    widget->SetTitle(title);
-  }
 
   return NS_OK;
 }

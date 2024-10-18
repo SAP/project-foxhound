@@ -90,7 +90,7 @@ _ContextualIdentityService.prototype = {
       name: "userContextIdInternal.thumbnail",
       accessKey: "",
     },
-    // This userContextId is used by ExtensionStorageIDB.jsm to create an IndexedDB database
+    // This userContextId is used by ExtensionStorageIDB.sys.mjs to create an IndexedDB database
     // opened with the extension principal but not directly accessible to the extension code
     // (do not change the userContextId assigned here, otherwise the installed extensions will
     // not be able to access the data previously stored with the browser.storage.local API).
@@ -567,7 +567,7 @@ _ContextualIdentityService.prototype = {
     return count;
   },
 
-  closeContainerTabs(userContextId = 0) {
+  closeContainerTabs(userContextId = 0, removeTabOptions = {}) {
     return new Promise(resolve => {
       let remoteTabIds = new Set();
       this._forEachContainerTab((tab, tabbrowser) => {
@@ -578,7 +578,7 @@ _ContextualIdentityService.prototype = {
           remoteTabIds.add(frameLoader.remoteTab.tabId);
         }
 
-        tabbrowser.removeTab(tab);
+        tabbrowser.removeTab(tab, removeTabOptions);
       }, userContextId);
 
       if (remoteTabIds.size == 0) {

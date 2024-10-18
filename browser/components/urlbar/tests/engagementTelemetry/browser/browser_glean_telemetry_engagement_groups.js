@@ -8,6 +8,9 @@
 // - results
 // - n_results
 
+// This test has many subtests and can time out in verify mode.
+requestLongerTimeout(5);
+
 add_setup(async function () {
   await initGroupTest();
 });
@@ -194,7 +197,9 @@ add_task(async function suggest() {
       assertEngagementTelemetry([
         {
           groups: "heuristic,suggest",
-          results: "search_engine,rs_adm_nonsponsored",
+          results: UrlbarPrefs.get("quickSuggestRustEnabled")
+            ? "search_engine,rust_adm_nonsponsored"
+            : "search_engine,rs_adm_nonsponsored",
           n_results: 2,
         },
       ]),
@@ -242,13 +247,13 @@ add_task(async function always_empty_if_drop_go() {
     },
   ];
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await doDropAndGo("example.com");
 
     assertEngagementTelemetry(expected);
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     // Open the results view once.
     await showResultByArrowDown();
     await UrlbarTestUtils.promisePopupClose(window);
@@ -269,13 +274,13 @@ add_task(async function always_empty_if_paste_go() {
     },
   ];
 
-  await doTest(async browser => {
+  await doTest(async () => {
     await doPasteAndGo("example.com");
 
     assertEngagementTelemetry(expected);
   });
 
-  await doTest(async browser => {
+  await doTest(async () => {
     // Open the results view once.
     await showResultByArrowDown();
     await UrlbarTestUtils.promisePopupClose(window);

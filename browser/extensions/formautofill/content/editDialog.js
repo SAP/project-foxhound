@@ -8,7 +8,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  AutofillTelemetry: "resource://autofill/AutofillTelemetry.sys.mjs",
+  AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
 });
 
@@ -107,10 +107,8 @@ class AutofillEditDialog {
 
   /**
    * Handle input events
-   *
-   * @param  {DOMEvent} event
    */
-  handleInput(event) {
+  handleInput(_e) {
     this.updateSaveButtonState();
   }
 

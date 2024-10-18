@@ -49,6 +49,12 @@ if CONFIG["INTEL_ARCHITECTURE"]:
         SOURCES[
             "/third_party/gemmology/kernels/GemmologyEngineAVX512BW.cpp"
         ].flags += CONFIG["AVX512BW_FLAGS"]
+    if CONFIG["AVX512VNNI_FLAGS"]:
+        DEFINES["USE_AVX512VNNI"] = True
+        SOURCES += ["/third_party/gemmology/kernels/GemmologyEngineAVX512VNNI.cpp"]
+        SOURCES[
+            "/third_party/gemmology/kernels/GemmologyEngineAVX512VNNI.cpp"
+        ].flags += CONFIG["AVX512VNNI_FLAGS"]
 
 
 if CONFIG["TARGET_CPU"] == "aarch64":
@@ -57,6 +63,12 @@ if CONFIG["TARGET_CPU"] == "aarch64":
     SOURCES["/third_party/gemmology/kernels/GemmologyEngineNeon64.cpp"].flags += CONFIG[
         "NEON_FLAGS"
     ]
+
+    DEFINES["USE_NEON_I8MM"] = True
+    SOURCES += ["/third_party/gemmology/kernels/GemmologyEngineNeon64I8mm.cpp"]
+    SOURCES[
+        "/third_party/gemmology/kernels/GemmologyEngineNeon64I8mm.cpp"
+    ].flags += CONFIG["NEON_I8MM_FLAGS"]
 
 SOURCES += [
     "IntegerGemmIntrinsic.cpp",

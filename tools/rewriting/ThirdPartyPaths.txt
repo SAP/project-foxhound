@@ -9,6 +9,7 @@ devtools/client/jsonview/lib/require.js
 devtools/client/shared/build/babel.js
 devtools/client/shared/source-map/
 devtools/client/shared/sourceeditor/codemirror/
+devtools/client/shared/sourceeditor/codemirror6/
 devtools/client/shared/sourceeditor/test/cm_mode_ruby.js
 devtools/client/shared/sourceeditor/test/codemirror/
 devtools/client/shared/vendor/
@@ -155,7 +156,7 @@ security/nss/
 security/sandbox/chromium/
 security/sandbox/chromium-shim/
 services/common/kinto-http-client.sys.mjs
-services/common/kinto-offline-client.js
+services/common/kinto-offline-client.sys.mjs
 testing/gtest/gmock/
 testing/gtest/gtest/
 testing/mochitest/MochiKit/
@@ -187,7 +188,7 @@ toolkit/components/translation/cld2/
 toolkit/components/translations/bergamot-translator/thirdparty
 toolkit/components/translations/bergamot-translator/bergamot-translator.js
 toolkit/components/url-classifier/chromium/
-toolkit/components/utils/mozjexl.js
+toolkit/components/utils/mozjexl.sys.mjs
 toolkit/components/viaduct/fetch_msg_types.pb.cc
 toolkit/components/viaduct/fetch_msg_types.pb.h
 toolkit/content/widgets/vendor/lit.all.mjs

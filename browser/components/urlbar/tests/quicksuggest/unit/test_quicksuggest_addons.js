@@ -42,7 +42,7 @@ const REMOTE_SETTINGS_RESULTS = [
         icon: "https://example.com/first-addon.svg",
         title: "First Addon",
         rating: "4.7",
-        keywords: ["first", "1st", "two words", "a b c"],
+        keywords: ["first", "1st", "two words", "aa b c"],
         description: "Description for the First Addon",
         number_of_ratings: 1256,
         score: 0.25,
@@ -353,35 +353,35 @@ add_tasks_with_rust(async function remoteSettings() {
       }),
     },
     {
-      input: "a",
+      input: "aa",
       expected: makeExpectedResult({
         suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
         source: "remote-settings",
       }),
     },
     {
-      input: "a ",
+      input: "aa ",
       expected: makeExpectedResult({
         suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
         source: "remote-settings",
       }),
     },
     {
-      input: "a b",
+      input: "aa b",
       expected: makeExpectedResult({
         suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
         source: "remote-settings",
       }),
     },
     {
-      input: "a b ",
+      input: "aa b ",
       expected: makeExpectedResult({
         suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
         source: "remote-settings",
       }),
     },
     {
-      input: "a b c",
+      input: "aa b c",
       expected: makeExpectedResult({
         suggestion: REMOTE_SETTINGS_RESULTS[0].attachment[0],
         source: "remote-settings",
@@ -545,35 +545,14 @@ function makeExpectedResult({ suggestion, source, setUtmParams = true }) {
       break;
   }
 
-  let url;
-  if (setUtmParams) {
-    url = new URL(suggestion.url);
-    url.searchParams.set("utm_medium", "firefox-desktop");
-    url.searchParams.set("utm_source", "firefox-suggest");
-    url = url.href;
-  } else {
-    url = suggestion.url;
-  }
-
-  return {
-    isBestMatch: true,
-    suggestedIndex: 1,
-    type: UrlbarUtils.RESULT_TYPE.URL,
-    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
-    heuristic: false,
-    payload: {
-      telemetryType: "amo",
-      title: suggestion.title,
-      url,
-      originalUrl: suggestion.url,
-      displayUrl: url.replace(/^https:\/\//, ""),
-      shouldShowUrl: true,
-      icon: suggestion.icon,
-      description: suggestion.description,
-      bottomTextL10n: { id: "firefox-suggest-addons-recommended" },
-      helpUrl: QuickSuggest.HELP_URL,
-      source,
-      provider,
-    },
-  };
+  return makeAmoResult({
+    source,
+    provider,
+    setUtmParams,
+    title: suggestion.title,
+    description: suggestion.description,
+    url: suggestion.url,
+    originalUrl: suggestion.url,
+    icon: suggestion.icon,
+  });
 }

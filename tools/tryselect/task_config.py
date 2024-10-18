@@ -19,14 +19,17 @@ from contextlib import contextmanager
 from textwrap import dedent
 
 import mozpack.path as mozpath
+import requests
 import six
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
 from mozversioncontrol import Repository
+from taskgraph.util import taskcluster
 
 from .tasks import resolve_tests_by_suite
+from .util.ssh import get_ssh_user
 
-here = os.path.abspath(os.path.dirname(__file__))
-build = MozbuildObject.from_environment(cwd=here)
+here = pathlib.Path(__file__).parent
+build = MozbuildObject.from_environment(cwd=str(here))
 
 
 @contextmanager
@@ -47,7 +50,7 @@ def try_config_commit(vcs: Repository, commit_message: str):
         vcs.remove_current_commit()
 
 
-class TryConfig:
+class ParameterConfig:
     __metaclass__ = ABCMeta
 
     def __init__(self):
@@ -63,11 +66,23 @@ class TryConfig:
         pass
 
     @abstractmethod
-    def try_config(self, **kwargs):
+    def get_parameters(self, **kwargs) -> dict:
         pass
 
     def validate(self, **kwargs):
         pass
+
+
+class TryConfig(ParameterConfig):
+    @abstractmethod
+    def try_config(self, **kwargs) -> dict:
+        pass
+
+    def get_parameters(self, **kwargs):
+        result = self.try_config(**kwargs)
+        if not result:
+            return None
+        return {"try_task_config": result}
 
 
 class Artifact(TryConfig):
@@ -143,13 +158,7 @@ class Pernosco(TryConfig):
                 # log in. Prevent people with non-Mozilla addresses from using this
                 # flag so they don't end up consuming time and resources only to
                 # realize they can't actually log in and see the reports.
-                cmd = ["ssh", "-G", "hg.mozilla.org"]
-                output = subprocess.check_output(
-                    cmd, universal_newlines=True
-                ).splitlines()
-                address = [
-                    l.rsplit(" ", 1)[-1] for l in output if l.startswith("user")
-                ][0]
+                address = get_ssh_user()
                 if not address.endswith("@mozilla.com"):
                     print(
                         dedent(
@@ -184,7 +193,8 @@ class Pernosco(TryConfig):
         }
 
     def validate(self, **kwargs):
-        if kwargs["try_config"].get("use-artifact-builds"):
+        try_config = kwargs["try_config_params"].get("try_task_config") or {}
+        if try_config.get("use-artifact-builds"):
             print(
                 "Pernosco does not support artifact builds at this time. "
                 "Please try again with '--no-artifact'."
@@ -247,6 +257,70 @@ class Environment(TryConfig):
         }
 
 
+class ExistingTasks(ParameterConfig):
+    TREEHERDER_PUSH_ENDPOINT = (
+        "https://treeherder.mozilla.org/api/project/try/push/?count=1&author={user}"
+    )
+    TREEHERDER_PUSH_URL = (
+        "https://treeherder.mozilla.org/jobs?repo={branch}&revision={revision}"
+    )
+
+    arguments = [
+        [
+            ["-E", "--use-existing-tasks"],
+            {
+                "const": "last_try_push",
+                "default": None,
+                "nargs": "?",
+                "help": """
+                    Use existing tasks from a previous push. Without args this
+                uses your most recent try push. You may also specify
+                `rev=<revision>` where <revision> is the head revision of the
+                try push or `task-id=<task id>` where <task id> is the Decision
+                task id of the push. This last method even works for non-try
+                branches.
+                """,
+            },
+        ]
+    ]
+
+    def find_decision_task(self, use_existing_tasks):
+        branch = "try"
+        if use_existing_tasks == "last_try_push":
+            # Use existing tasks from user's previous try push.
+            user = get_ssh_user()
+            url = self.TREEHERDER_PUSH_ENDPOINT.format(user=user)
+            res = requests.get(url, headers={"User-Agent": "gecko-mach-try/1.0"})
+            res.raise_for_status()
+            data = res.json()
+            if data["meta"]["count"] == 0:
+                raise Exception(f"Could not find a try push for '{user}'!")
+            revision = data["results"][0]["revision"]
+
+        elif use_existing_tasks.startswith("rev="):
+            revision = use_existing_tasks[len("rev=") :]
+
+        else:
+            raise Exception("Unable to parse '{use_existing_tasks}'!")
+
+        url = self.TREEHERDER_PUSH_URL.format(branch=branch, revision=revision)
+        print(f"Using existing tasks from: {url}")
+        index_path = f"gecko.v2.{branch}.revision.{revision}.taskgraph.decision"
+        return taskcluster.find_task_id(index_path)
+
+    def get_parameters(self, use_existing_tasks, **kwargs):
+        if not use_existing_tasks:
+            return
+
+        if use_existing_tasks.startswith("task-id="):
+            tid = use_existing_tasks[len("task-id=") :]
+        else:
+            tid = self.find_decision_task(use_existing_tasks)
+
+        label_to_task_id = taskcluster.get_artifact(tid, "public/label-to-taskid.json")
+        return {"existing_tasks": label_to_task_id}
+
+
 class RangeAction(Action):
     def __init__(self, min, max, *args, **kwargs):
         self.min = min
@@ -282,7 +356,11 @@ class Rebuild(TryConfig):
         if not rebuild:
             return
 
-        if kwargs.get("full") and rebuild > 3:
+        if (
+            not kwargs.get("new_test_config", False)
+            and kwargs.get("full")
+            and rebuild > 3
+        ):
             print(
                 "warning: limiting --rebuild to 3 when using --full. "
                 "Use custom push actions to add more."
@@ -329,7 +407,7 @@ class ChemspillPrio(TryConfig):
 
     def try_config(self, chemspill_prio, **kwargs):
         if chemspill_prio:
-            return {"chemspill-prio": {}}
+            return {"chemspill-prio": True}
 
 
 class GeckoProfile(TryConfig):
@@ -405,7 +483,7 @@ class GeckoProfile(TryConfig):
         gecko_profile_entries,
         gecko_profile_features,
         gecko_profile_threads,
-        **kwargs
+        **kwargs,
     ):
         if profile or not all(
             s is None for s in (gecko_profile_features, gecko_profile_threads)
@@ -456,6 +534,24 @@ class DisablePgo(TryConfig):
             }
 
 
+class NewConfig(TryConfig):
+    arguments = [
+        [
+            ["--new-test-config"],
+            {
+                "action": "store_true",
+                "help": "When a test fails (mochitest only) restart the browser and start from the next test",
+            },
+        ],
+    ]
+
+    def try_config(self, new_test_config, **kwargs):
+        if new_test_config:
+            return {
+                "new-test-config": True,
+            }
+
+
 class WorkerOverrides(TryConfig):
     arguments = [
         [
@@ -483,9 +579,18 @@ class WorkerOverrides(TryConfig):
                 ),
             },
         ],
+        [
+            ["--worker-type"],
+            {
+                "action": "append",
+                "dest": "worker_types",
+                "default": [],
+                "help": "Select tasks that only run on the specified worker.",
+            },
+        ],
     ]
 
-    def try_config(self, worker_overrides, worker_suffixes, **kwargs):
+    def try_config(self, worker_overrides, worker_suffixes, worker_types, **kwargs):
         from gecko_taskgraph.util.workertypes import get_worker_type
         from taskgraph.config import load_graph_config
 
@@ -525,8 +630,13 @@ class WorkerOverrides(TryConfig):
                     provisioner=provisioner, worker_type=worker_type, suffix=suffix
                 )
 
+        retVal = {}
+        if worker_types:
+            retVal["worker-types"] = list(overrides.keys()) + worker_types
+
         if overrides:
-            return {"worker-overrides": overrides}
+            retVal["worker-overrides"] = overrides
+        return retVal
 
 
 all_task_configs = {
@@ -535,7 +645,9 @@ all_task_configs = {
     "chemspill-prio": ChemspillPrio,
     "disable-pgo": DisablePgo,
     "env": Environment,
+    "existing-tasks": ExistingTasks,
     "gecko-profile": GeckoProfile,
+    "new-test-config": NewConfig,
     "path": Path,
     "pernosco": Pernosco,
     "rebuild": Rebuild,

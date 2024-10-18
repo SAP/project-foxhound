@@ -518,6 +518,11 @@ bool net_NormalizeFileURL(const nsACString& aURL, nsCString& aResultBuf) {
       aResultBuf += '/';
       begin = s + 1;
     }
+    if (*s == '#') {
+      // Don't normalize any backslashes following the hash.
+      s = endIter.get();
+      break;
+    }
   }
   if (writing && s > begin) aResultBuf.Append(begin, s - begin);
 
@@ -1245,10 +1250,11 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
 }
 
 /* static */
-bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
-                                  const char* stringStart, const StringTaint& aTaint,
-                                  nsAString* aOutDecodedName,
-                                  nsAString* aOutDecodedValue) {
+bool URLParams::ParseNextInternal(const char*& aStart, const char* aEnd,
+                                const char* stringStart, const StringTaint& aTaint,
+                                bool aShouldDecode, nsAString* aOutputName,
+                                nsAString* aOutputValue)
+{
   nsDependentCSubstring string;
 
   const char* const iter = std::find(aStart, aEnd, '&');
@@ -1256,13 +1262,13 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
     string.Rebind(aStart, iter);
     // Taintfox: propagate taint
     string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
-                                                  std::distance(stringStart, iter)));
+                                           std::distance(stringStart, iter)));
     aStart = iter + 1;
   } else {
     string.Rebind(aStart, aEnd);
     // Taintfox: propagate taint
     string.AssignTaint(aTaint.safeSubTaint(std::distance(stringStart, aStart),
-                                                  std::distance(stringStart, aEnd)));
+                                           std::distance(stringStart, aEnd)));
     aStart = aEnd;
   }
 
@@ -1281,19 +1287,24 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
     name.Rebind(eqStart, eqIter);
     // Taintfox: propagate taint
     name.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqStart),
-                                                        std::distance(eqStart, eqIter)));
+                                                 std::distance(eqStart, eqIter)));
     value.Rebind(eqIter + 1, eqEnd);
     // Taintfox: propagate taint
     value.AssignTaint(string.Taint().safeSubTaint(std::distance(eqStart, eqIter + 1),
-                                                         std::distance(eqStart, eqEnd)));
+                                                  std::distance(eqStart, eqEnd)));
   } else {
     // Taintfox: taint should be propagated here
     name.Rebind(string, 0);
   }
 
-  DecodeString(name, *aOutDecodedName);
-  DecodeString(value, *aOutDecodedValue);
+  if (aShouldDecode) {
+    DecodeString(name, *aOutputName);
+    DecodeString(value, *aOutputValue);
+    return true;
+  }
 
+  ConvertString(name, *aOutputName);
+  ConvertString(value, *aOutputValue);
   return true;
 }
 
@@ -1302,7 +1313,7 @@ bool URLParams::Extract(const nsACString& aInput, const nsAString& aName,
                         nsAString& aValue) {
   aValue.SetIsVoid(true);
   return !URLParams::Parse(
-      aInput, [&aName, &aValue](const nsAString& name, nsString&& value) {
+      aInput, true, [&aName, &aValue](const nsAString& name, nsString&& value) {
         if (aName == name) {
           aValue = std::move(value);
           return false;
@@ -1315,7 +1326,7 @@ void URLParams::ParseInput(const nsACString& aInput) {
   // Remove all the existing data before parsing a new input.
   DeleteAll();
 
-  URLParams::Parse(aInput, [this](nsString&& name, nsString&& value) {
+  URLParams::Parse(aInput, true, [this](nsString&& name, nsString&& value) {
     mParams.AppendElement(Param{std::move(name), std::move(value)});
     return true;
   });

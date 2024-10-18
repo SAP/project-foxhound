@@ -65,7 +65,7 @@ void a11y::PlatformInit() {
 
   // Preload any roles that have localized versions
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, nameRule)                     \
+             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
   rv = stringBundle->GetStringFromName(stringRole, localizedStr);           \
   if (NS_SUCCEEDED(rv)) {                                                   \
     sLocalizedStrings.InsertOrUpdate(u##stringRole##_ns, localizedStr);     \
@@ -100,7 +100,7 @@ void a11y::PlatformEvent(Accessible* aTarget, uint32_t aEventType) {
       if (Accessible* result = AccessibleWrap::DoPivot(
               aTarget, java::SessionAccessibility::HTML_GRANULARITY_DEFAULT,
               true, true)) {
-        sessionAcc->SendAccessibilityFocusedEvent(result);
+        sessionAcc->SendAccessibilityFocusedEvent(result, false);
       }
       break;
     default:
@@ -167,7 +167,7 @@ void a11y::PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
       if (Accessible* result = AccessibleWrap::DoPivot(
               leaf, java::SessionAccessibility::HTML_GRANULARITY_DEFAULT, true,
               true)) {
-        sessionAcc->SendAccessibilityFocusedEvent(result);
+        sessionAcc->SendAccessibilityFocusedEvent(result, false);
       }
     }
   }

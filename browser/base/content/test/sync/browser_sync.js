@@ -607,7 +607,7 @@ add_task(async function test_experiment_ui_state_unconfigured() {
   checkFxAAvatar("not_configured");
 
   let expectedLabel = gSync.fluentStrings.formatValueSync(
-    "appmenuitem-moz-accounts-sign-in"
+    "appmenuitem-sign-in-account"
   );
 
   await openMainPanel();
@@ -616,7 +616,7 @@ add_task(async function test_experiment_ui_state_unconfigured() {
     headerTitle: expectedLabel,
     headerDescription: "",
     enabledItems: [
-      "PanelUI-fxa-pxi-cta-menu",
+      "PanelUI-fxa-cta-menu",
       "PanelUI-fxa-menu-sync-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-relay-button",
@@ -689,7 +689,7 @@ add_task(async function test_experiment_ui_state_signedin() {
       "PanelUI-fxa-menu-syncnow-button",
       "PanelUI-fxa-menu-sync-prefs-button",
       "PanelUI-fxa-menu-account-signout-button",
-      "PanelUI-fxa-pxi-cta-menu",
+      "PanelUI-fxa-cta-menu",
       "PanelUI-fxa-menu-sync-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-relay-button",
@@ -861,8 +861,9 @@ function checkFxAAvatar(fxaStatus) {
       signedin: 'url("chrome://browser/skin/fxa/avatar.svg")',
       "login-failed": 'url("chrome://browser/skin/fxa/avatar.svg")',
     };
-    ok(
-      avatarURL == expected[fxaStatus],
+    Assert.equal(
+      avatarURL,
+      expected[fxaStatus],
       `expected avatar URL to be ${expected[fxaStatus]}, got ${avatarURL}`
     );
   }
@@ -871,7 +872,7 @@ function checkFxAAvatar(fxaStatus) {
 function checkAppMenuFxAText(hideStatus) {
   let fxaText = document.getElementById("appMenu-fxa-text");
   let isHidden = fxaText.hidden || fxaText.style.visibility == "collapse";
-  ok(isHidden == hideStatus, "FxA text has correct hidden state");
+  Assert.equal(isHidden, hideStatus, "FxA text has correct hidden state");
 }
 
 // Only one item visible at a time.

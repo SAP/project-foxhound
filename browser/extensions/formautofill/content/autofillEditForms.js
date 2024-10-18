@@ -112,10 +112,8 @@ class EditAutofillForm {
 
   /**
    * Handle input events
-   *
-   * @param  {DOMEvent} event
    */
-  handleInput(event) {}
+  handleInput(_e) {}
 
   /**
    * Attach event listener
@@ -140,9 +138,9 @@ class EditAutofillForm {
   /**
    * Run custom validity routines specific to the field and type of form.
    *
-   * @param {DOMElement} field The field that will be validated.
+   * @param {DOMElement} _field The field that will be validated.
    */
-  updateCustomValidity(field) {}
+  updateCustomValidity(_field) {}
 }
 
 class EditAddress extends EditAutofillForm {
@@ -340,12 +338,10 @@ class EditAddress extends EditAutofillForm {
       containerInputs.forEach(function (input) {
         input.disabled = false;
         // libaddressinput doesn't list 'country' or 'name' as required.
-        // The additional-name field should never get marked as required.
         input.required =
-          (fieldId == "country" ||
-            fieldId == "name" ||
-            requiredFields.has(fieldId)) &&
-          input.id != "additional-name";
+          fieldId == "country" ||
+          fieldId == "name" ||
+          requiredFields.has(fieldId);
       });
       inputs.push(...containerInputs);
       container.style.display = "flex";

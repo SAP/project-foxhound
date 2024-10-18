@@ -7,7 +7,7 @@ import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import AccessibleImage from "../../shared/AccessibleImage";
 import { formatDisplayName } from "../../../utils/pause/frames/index";
-import { getFilename, getFileURL } from "../../../utils/source";
+import { getFileURL } from "../../../utils/source";
 import FrameIndent from "./FrameIndent";
 const classnames = require("resource://devtools/client/shared/classnames.js");
 
@@ -52,7 +52,7 @@ const FrameLocation = memo(
     const location = getFrameLocation(frame, shouldDisplayOriginalLocation);
     const filename = displayFullUrl
       ? getFileURL(location.source, false)
-      : getFilename(location.source);
+      : location.source.shortName;
     return React.createElement(
       "span",
       {
@@ -124,7 +124,7 @@ export default class FrameComponent extends Component {
     this.props.showFrameContextMenu(event, frame);
   }
 
-  onMouseDown(e, frame, selectedFrame) {
+  onMouseDown(e, frame) {
     if (e.button !== 0) {
       return;
     }
@@ -132,7 +132,7 @@ export default class FrameComponent extends Component {
     this.props.selectFrame(frame);
   }
 
-  onKeyUp(event, frame, selectedFrame) {
+  onKeyUp(event, frame) {
     if (event.key != "Enter") {
       return;
     }
@@ -167,12 +167,12 @@ export default class FrameComponent extends Component {
       {
         role: "listitem",
         key: frame.id,
-        className: className,
+        className,
         onMouseDown: e => this.onMouseDown(e, frame, selectedFrame),
         onKeyUp: e => this.onKeyUp(e, frame, selectedFrame),
         onContextMenu: disableContextMenu ? null : e => this.onContextMenu(e),
         tabIndex: 0,
-        title: title,
+        title,
       },
       frame.asyncCause &&
         React.createElement(

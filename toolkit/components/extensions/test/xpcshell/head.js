@@ -3,8 +3,9 @@
             promiseQuotaManagerServiceReset, promiseQuotaManagerServiceClear,
             runWithPrefs, testEnv, withHandlingUserInput, resetHandlingUserInput,
             assertPersistentListeners, promiseExtensionEvent, assertHasPersistedScriptsCachedFlag,
-            assertIsPersistedScriptsCachedFlag
-            setup_crash_reporter_override_and_cleaner crashFrame crashExtensionBackground
+            assertIsPersistedScriptsCachedFlag,
+            setup_crash_reporter_override_and_cleaner, crashFrame, crashExtensionBackground,
+            makeRkvDatabaseDir
 */
 
 var { AppConstants } = ChromeUtils.importESModule(
@@ -56,7 +57,6 @@ Services.prefs.setBoolPref("dom.security.https_first", false);
 
 // These values may be changed in later head files and tested in check_remote
 // below.
-Services.prefs.setBoolPref("browser.tabs.remote.autostart", false);
 Services.prefs.setBoolPref("extensions.webextensions.remote", false);
 const testEnv = {
   expectRemote: false,
@@ -81,6 +81,19 @@ var createHttpServer = (...args) => {
   AddonTestUtils.maybeInit(this);
   return AddonTestUtils.createHttpServer(...args);
 };
+
+async function makeRkvDatabaseDir(name, { mockCorrupted = false } = {}) {
+  const databaseDir = PathUtils.join(PathUtils.profileDir, name);
+  await IOUtils.makeDirectory(databaseDir);
+  if (mockCorrupted) {
+    // Mock a corrupted db.
+    await IOUtils.write(
+      PathUtils.join(databaseDir, "data.safe.bin"),
+      new Uint8Array([0x00, 0x00, 0x00, 0x00])
+    );
+  }
+  return databaseDir;
+}
 
 // Some tests load non-moz-extension:-URLs in their extension document. When
 // extensions run in-process (extensions.webextensions.remote set to false),
@@ -286,7 +299,7 @@ function handlingUserInputFrameScript() {
 
   let handle;
   MessageChannel.addListener(this, "ExtensionTest:HandleUserInput", {
-    receiveMessage({ name, data }) {
+    receiveMessage({ data }) {
       if (data) {
         handle = content.windowUtils.setHandlingUserInput(true);
       } else if (handle) {
@@ -368,7 +381,7 @@ const optionalPermissionsPromptHandler = {
     });
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     if (topic == "webextension-optional-permission-prompt") {
       this.sawPrompt = true;
       let { resolve } = subject.wrappedJSObject;

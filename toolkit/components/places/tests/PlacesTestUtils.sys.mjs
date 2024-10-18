@@ -64,6 +64,9 @@ export var PlacesTestUtils = Object.freeze({
       let info = { url: place.uri || place.url };
       let spec =
         info.url instanceof Ci.nsIURI ? info.url.spec : new URL(info.url).href;
+      info.exposableURI = Services.io.createExposableURI(
+        Services.io.newURI(spec)
+      );
       info.title = "title" in place ? place.title : "test visit for " + spec;
       let visitDate = place.visitDate;
       if (visitDate) {
@@ -107,7 +110,7 @@ export var PlacesTestUtils = Object.freeze({
     }
     if (lastStoredVisit) {
       await lazy.TestUtils.waitForCondition(
-        () => lazy.PlacesUtils.history.fetch(lastStoredVisit.url),
+        () => lazy.PlacesUtils.history.fetch(lastStoredVisit.exposableURI),
         "Ensure history has been updated and is visible to read-only connections"
       );
     }
@@ -556,7 +559,9 @@ export var PlacesTestUtils = Object.freeze({
    * @param {string} field - The name of the field to retrieve a value from.
    * @param {Object} [conditions] - An object containing the conditions to
    * filter the query results. The keys represent the names of the columns to
-   * filter by, and the values represent the filter values.
+   * filter by, and the values represent the filter values.  It's possible to
+   * pass an array as value where the first element is an operator
+   * (e.g. "<", ">") and the second element is the actual value.
    * @return {Promise} A Promise that resolves to the value of the specified
    * field from the database table, or null if the query returns no results.
    * @throws If more than one result is found for the given conditions.
@@ -579,9 +584,11 @@ export var PlacesTestUtils = Object.freeze({
    * conditions.
    * @param {string} table - The name of the database table to add to.
    * @param {string} fields - an object with field, value pairs
-   * @param {Object} [conditions] - An object containing the conditions to filter
-   * the query results. The keys represent the names of the columns to filter
-   * by, and the values represent the filter values.
+   * @param {Object} [conditions] - An object containing the conditions to
+   * filter the query results. The keys represent the names of the columns to
+   * filter by, and the values represent the filter values. It's possible to
+   * pass an array as value where the first element is an operator
+   * (e.g. "<", ">") and the second element is the actual value.
    * @return {Promise} A Promise that resolves to the number of affected rows.
    * @throws If no rows were affected.
    */
@@ -636,6 +643,11 @@ export var PlacesTestUtils = Object.freeze({
       }
       if (column == "url" && table == "moz_places") {
         fragments.push("url_hash = hash(:url) AND url = :url");
+      } else if (Array.isArray(value)) {
+        // First element is the operator, second element is the value.
+        let [op, actualValue] = value;
+        fragments.push(`${column} ${op} :${column}`);
+        value = actualValue;
       } else {
         fragments.push(`${column} = :${column}`);
       }

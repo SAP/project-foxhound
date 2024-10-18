@@ -4,7 +4,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Localized } from "./MSLocalized";
-import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils";
+import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
 import { MobileDownloads } from "./MobileDownloads";
 import { MultiSelect } from "./MultiSelect";
 import { Themes } from "./Themes";
@@ -45,6 +45,8 @@ export const MultiStageProtonScreen = props => {
       id={props.id}
       order={props.order}
       activeTheme={props.activeTheme}
+      screenMultiSelects={props.screenMultiSelects}
+      setScreenMultiSelects={props.setScreenMultiSelects}
       activeMultiSelect={props.activeMultiSelect}
       setActiveMultiSelect={props.setActiveMultiSelect}
       totalNumberOfScreens={props.totalNumberOfScreens}
@@ -147,7 +149,11 @@ export const ProtonScreenActionButtons = props => {
         </div>
       ) : null}
       {content.secondary_button ? (
-        <SecondaryCTA content={content} handleAction={props.handleAction} />
+        <SecondaryCTA
+          content={content}
+          handleAction={props.handleAction}
+          activeMultiSelect={activeMultiSelect}
+        />
       ) : null}
     </div>
   );
@@ -298,13 +304,17 @@ export class ProtonScreen extends React.PureComponent {
         content.tiles.data ? (
           <MultiSelect
             content={content}
+            screenMultiSelects={this.props.screenMultiSelects}
+            setScreenMultiSelects={this.props.setScreenMultiSelects}
             activeMultiSelect={this.props.activeMultiSelect}
             setActiveMultiSelect={this.props.setActiveMultiSelect}
-            handleAction={this.props.handleAction}
           />
         ) : null}
         {content.tiles && content.tiles.type === "migration-wizard" ? (
-          <EmbeddedMigrationWizard handleAction={this.props.handleAction} />
+          <EmbeddedMigrationWizard
+            handleAction={this.props.handleAction}
+            content={content}
+          />
         ) : null}
       </React.Fragment>
     );
@@ -493,6 +503,7 @@ export class ProtonScreen extends React.PureComponent {
       <main
         className={`screen ${this.props.id || ""}
           ${screenClassName} ${textColorClass}`}
+        reverse-split={content.reverse_split ? "" : null}
         role={ariaRole ?? "alertdialog"}
         layout={content.layout}
         pos={content.position || "center"}
@@ -501,6 +512,7 @@ export class ProtonScreen extends React.PureComponent {
         ref={input => {
           this.mainContentHeader = input;
         }}
+        no-rdm={content.no_rdm ? "" : null}
       >
         {isCenterPosition ? null : this.renderSecondarySection(content)}
         <div
@@ -522,6 +534,7 @@ export class ProtonScreen extends React.PureComponent {
             />
           ) : null}
           {includeNoodles ? this.renderNoodles() : null}
+          {content.dismiss_button ? this.renderDismissButton() : null}
           <div
             className={`main-content ${hideStepsIndicator ? "no-steps" : ""}`}
             style={{
@@ -533,6 +546,12 @@ export class ProtonScreen extends React.PureComponent {
                 content.width && content.position !== "split"
                   ? content.width
                   : null,
+              paddingBlock: content.split_content_padding_block
+                ? content.split_content_padding_block
+                : null,
+              paddingInline: content.split_content_padding_inline
+                ? content.split_content_padding_inline
+                : null,
             }}
           >
             {content.logo ? this.renderPicture(content.logo) : null}
@@ -583,11 +602,11 @@ export class ProtonScreen extends React.PureComponent {
                   handleAction={this.props.handleAction}
                 />
               ) : null}
+              {this.renderContentTiles()}
+              {this.renderLanguageSwitcher()}
               {content.above_button_content
                 ? this.renderOrderedContent(content.above_button_content)
                 : null}
-              {this.renderContentTiles()}
-              {this.renderLanguageSwitcher()}
               {!hideStepsIndicator && aboveButtonStepsIndicator
                 ? this.renderStepsIndicator()
                 : null}
@@ -602,7 +621,6 @@ export class ProtonScreen extends React.PureComponent {
               ? this.renderStepsIndicator()
               : null}
           </div>
-          {content.dismiss_button ? this.renderDismissButton() : null}
         </div>
         <Localized text={content.info_text}>
           <span className="info-text" />

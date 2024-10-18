@@ -51,6 +51,7 @@ async function createDoc(html, options) {
   /**
    * Test utility to check that the document matches the expected markup
    *
+   * @param {string} message
    * @param {string} html
    */
   async function htmlMatches(message, html) {
@@ -716,6 +717,105 @@ add_task(async function test_presumed_inlines3() {
     </div>
     `
   );
+
+  cleanup();
+});
+
+/**
+ * Test the display "none" properties properly subdivide in block elements.
+ */
+add_task(async function test_display_none() {
+  const { translate, htmlMatches, cleanup } = await createDoc(
+    /* html */ `
+      <p>
+        This is some text.
+        <span>It has inline elements</span>
+        <style></style>
+      </p>
+    `,
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
+  );
+
+  translate();
+
+  // Note: The bergamot translator does not translate style elements, while our fake
+  // translator does translate the inside of style elements. That is why in the assertion
+  // here the style element is blank rather than containing style.
+  await htmlMatches(
+    "Display none",
+    /* html */ `
+    <p>
+      aaaa aa aaaa aaaa.
+      <span data-moz-translations-id="0">
+        aa aaa aaaaaa aaaaaaaa
+      </span>
+      <style data-moz-translations-id="1">
+      </style>
+    </p>
+    `
+  );
+
+  cleanup();
+});
+
+/**
+ * Test the display "none" properties properly subdivide in block elements.
+ *
+ * TODO - See Bug 1885235
+ *
+ * This assertion is wrong, as our test suite doesn't properly compute the style for
+ * elements. The div with "display; none;" is still block, not "none".
+ */
+add_task(async function test_display_none_div() {
+  const { translate, htmlMatches, cleanup } = await createDoc(
+    /* html */ `
+      <div>
+        <span>
+          Start of inline text
+        </span>
+        <div style="display: none;">
+          hidden portion of
+        </div>
+        <span>
+          rest of inline text.
+        </span>
+      </div>
+    `,
+    { mockedTranslatorPort: createBatchedMockedTranslatorPort() }
+  );
+
+  translate();
+
+  // eslint-disable-next-line no-unused-vars
+  const _realExpectedResults = /* html */ `
+    <div>
+      <span>
+        aaaaa aa aaaaaa aaaa
+      </span>
+      <div style="display: none;">
+        aaaaaa aaaaaaa aa
+      </div>
+      <span>
+        aaaa aa aaaaaa aaaa.
+      </span>
+    </div>
+  `;
+
+  const currentResults = /* html */ `
+    <div>
+      <span>
+        aaaaa aa aaaaaa aaaa
+      </span>
+      <div style="display: none;">
+        bbbbbb bbbbbbb bb
+      </div>
+      <span>
+        cccc cc cccccc cccc.
+      </span>
+    </div>
+  `;
+
+  await htmlMatches("Display none", currentResults);
 
   cleanup();
 });

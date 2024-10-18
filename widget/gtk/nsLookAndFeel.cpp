@@ -189,6 +189,9 @@ nsLookAndFeel::nsLookAndFeel() {
       "notify::gtk-menu-popup-delay"_ns,
       // Affects DragThresholdX/Y
       "notify::gtk-dnd-drag-threshold"_ns,
+      // Affects titlebar actions loaded at moz_gtk_refresh().
+      "notify::gtk-titlebar-double-click"_ns,
+      "notify::gtk-titlebar-middle-click"_ns,
   };
 
   GtkSettings* settings = gtk_settings_get_default();
@@ -902,10 +905,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = (int32_t)delay;
       break;
     }
-    case IntID::TooltipDelay: {
-      aResult = 500;
-      break;
-    }
     case IntID::MenusCanOverlapOSBar:
       // we want XUL popups to be able to overlap the task bar.
       aResult = 1;
@@ -1030,6 +1029,11 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::TitlebarRadius: {
       EnsureInit();
       aResult = EffectiveTheme().mTitlebarRadius;
+      break;
+    }
+    case IntID::TitlebarButtonSpacing: {
+      EnsureInit();
+      aResult = EffectiveTheme().mTitlebarButtonSpacing;
       break;
     }
     case IntID::AllowOverlayScrollbarsOverlap: {
@@ -1618,6 +1622,36 @@ void nsLookAndFeel::InitializeGlobalSettings() {
       *pos = i;
     }
   }
+
+  struct actionMapping {
+    TitlebarAction action;
+    char name[100];
+  } ActionMapping[] = {
+      {TitlebarAction::None, "none"},
+      {TitlebarAction::WindowLower, "lower"},
+      {TitlebarAction::WindowMenu, "menu"},
+      {TitlebarAction::WindowMinimize, "minimize"},
+      {TitlebarAction::WindowMaximize, "maximize"},
+      {TitlebarAction::WindowMaximizeToggle, "toggle-maximize"},
+  };
+
+  auto GetWindowAction = [&](const char* eventName) -> TitlebarAction {
+    gchar* action = nullptr;
+    g_object_get(settings, eventName, &action, nullptr);
+    if (!action) {
+      return TitlebarAction::None;
+    }
+    auto free = mozilla::MakeScopeExit([&] { g_free(action); });
+    for (auto const& mapping : ActionMapping) {
+      if (!strncmp(action, mapping.name, strlen(mapping.name))) {
+        return mapping.action;
+      }
+    }
+    return TitlebarAction::None;
+  };
+
+  mDoubleClickAction = GetWindowAction("gtk-titlebar-double-click");
+  mMiddleClickAction = GetWindowAction("gtk-titlebar-middle-click");
 }
 
 void nsLookAndFeel::ConfigureFinalEffectiveTheme() {
@@ -1943,6 +1977,10 @@ void nsLookAndFeel::PerThemeData::Init() {
     mTitlebar = GetColorPair(style, GTK_STATE_FLAG_NORMAL);
     mTitlebarInactive = GetColorPair(style, GTK_STATE_FLAG_BACKDROP);
     mTitlebarRadius = IsSolidCSDStyleUsed() ? 0 : GetBorderRadius(style);
+    // Get titlebar spacing, a default one is 6 pixels (gtk/gtkheaderbar.c)
+    mTitlebarButtonSpacing = 6;
+    g_object_get(GetWidget(MOZ_GTK_HEADER_BAR), "spacing",
+                 &mTitlebarButtonSpacing, nullptr);
   }
 
   // We special-case the header bar color in Adwaita, Yaru and Breeze to be the
@@ -2227,6 +2265,12 @@ char16_t nsLookAndFeel::GetPasswordCharacterImpl() {
 bool nsLookAndFeel::GetEchoPasswordImpl() { return false; }
 
 bool nsLookAndFeel::GetDefaultDrawInTitlebar() { return sCSDAvailable; }
+
+nsXPLookAndFeel::TitlebarAction nsLookAndFeel::GetTitlebarAction(
+    TitlebarEvent aEvent) {
+  return aEvent == TitlebarEvent::Double_Click ? mDoubleClickAction
+                                               : mMiddleClickAction;
+}
 
 void nsLookAndFeel::GetThemeInfo(nsACString& aInfo) {
   aInfo.Append(mSystemTheme.mName);

@@ -12,6 +12,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/IPCBlobUtils.h"
+#include "mozilla/net/ContentRange.h"
 #include "nsStreamUtils.h"
 #include "nsMimeTypes.h"
 
@@ -488,9 +489,9 @@ nsresult BlobURLInputStream::StoreBlobImplStream(
   // If a Range header was in the request then fetch/XHR will have set a
   // ContentRange on the channel earlier so we may slice the blob now.
   blobImpl->GetType(blobContentType);
-  const Maybe<nsBaseChannel::ContentRange>& contentRange =
-      mChannel->GetContentRange();
-  if (contentRange.isSome()) {
+  const RefPtr<mozilla::net::ContentRange>& contentRange =
+      mChannel->ContentRange();
+  if (contentRange) {
     IgnoredErrorResult result;
     uint64_t start = contentRange->Start();
     uint64_t end = contentRange->End();

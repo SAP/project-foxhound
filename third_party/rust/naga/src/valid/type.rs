@@ -107,6 +107,12 @@ pub enum TypeError {
     MatrixElementNotFloat,
     #[error("The constant {0:?} is specialized, and cannot be used as an array size")]
     UnsupportedSpecializedArrayLength(Handle<crate::Constant>),
+    #[error("{} of dimensionality {dim:?} and class {class:?} are not supported", if *.arrayed {"Arrayed images"} else {"Images"})]
+    UnsupportedImageType {
+        dim: crate::ImageDimension,
+        arrayed: bool,
+        class: crate::ImageClass,
+    },
     #[error("Array stride {stride} does not match the expected {expected}")]
     InvalidArrayStride { stride: u32, expected: u32 },
     #[error("Field '{0}' can't be dynamically-sized, has type {1:?}")]
@@ -140,9 +146,6 @@ pub enum WidthError {
         name: &'static str,
         flag: &'static str,
     },
-
-    #[error("64-bit integers are not yet supported")]
-    Unsupported64Bit,
 
     #[error("Abstract types may only appear in constant expressions")]
     Abstract,
@@ -245,11 +248,31 @@ impl super::Validator {
                     scalar.width == 4
                 }
             }
-            crate::ScalarKind::Sint | crate::ScalarKind::Uint => {
+            crate::ScalarKind::Sint => {
                 if scalar.width == 8 {
-                    return Err(WidthError::Unsupported64Bit);
+                    if !self.capabilities.contains(Capabilities::SHADER_INT64) {
+                        return Err(WidthError::MissingCapability {
+                            name: "i64",
+                            flag: "SHADER_INT64",
+                        });
+                    }
+                    true
+                } else {
+                    scalar.width == 4
                 }
-                scalar.width == 4
+            }
+            crate::ScalarKind::Uint => {
+                if scalar.width == 8 {
+                    if !self.capabilities.contains(Capabilities::SHADER_INT64) {
+                        return Err(WidthError::MissingCapability {
+                            name: "u64",
+                            flag: "SHADER_INT64",
+                        });
+                    }
+                    true
+                } else {
+                    scalar.width == 4
+                }
             }
             crate::ScalarKind::AbstractInt | crate::ScalarKind::AbstractFloat => {
                 return Err(WidthError::Abstract);
@@ -596,8 +619,15 @@ impl super::Validator {
             Ti::Image {
                 dim,
                 arrayed,
-                class: _,
+                class,
             } => {
+                if arrayed && matches!(dim, crate::ImageDimension::D3) {
+                    return Err(TypeError::UnsupportedImageType {
+                        dim,
+                        arrayed,
+                        class,
+                    });
+                }
                 if arrayed && matches!(dim, crate::ImageDimension::Cube) {
                     self.require_type_capability(Capabilities::CUBE_ARRAY_TEXTURES)?;
                 }

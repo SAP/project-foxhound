@@ -22,6 +22,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUParent.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/APZSampler.h"
 #include "mozilla/layers/APZUpdater.h"
@@ -140,7 +141,7 @@ void gfx_wr_set_crash_annotation(mozilla::wr::CrashAnnotation aAnnotation,
     return;
   }
 
-  CrashReporter::AnnotateCrashReport(annotation, nsDependentCString(aValue));
+  CrashReporter::RecordAnnotationCString(annotation, aValue);
 }
 
 void gfx_wr_clear_crash_annotation(mozilla::wr::CrashAnnotation aAnnotation) {
@@ -149,7 +150,7 @@ void gfx_wr_clear_crash_annotation(mozilla::wr::CrashAnnotation aAnnotation) {
     return;
   }
 
-  CrashReporter::RemoveCrashReportAnnotation(annotation);
+  CrashReporter::UnrecordAnnotation(annotation);
 }
 }
 
@@ -200,9 +201,8 @@ class SceneBuiltNotification : public wr::NotificationHandler {
                             MarkerTiming::Interval(startTime, endTime),
                             ContentBuildMarker);
           }
-          Telemetry::Accumulate(
-              Telemetry::CONTENT_FULL_PAINT_TIME,
-              static_cast<uint32_t>((endTime - startTime).ToMilliseconds()));
+          mozilla::glean::gfx_content::full_paint_time.AccumulateRawDuration(
+              endTime - startTime);
           parent->NotifySceneBuiltForEpoch(epoch, endTime);
         }));
   }
@@ -1188,7 +1188,8 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
       IsRootWebRenderBridgeParent());
 
   if (!IsRootWebRenderBridgeParent()) {
-    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aTxnURL);
+    CrashReporter::RecordAnnotationNSCString(CrashReporter::Annotation::URL,
+                                             aTxnURL);
   }
 
   CompositorBridgeParent* cbp = GetRootCompositorBridgeParent();
@@ -1330,7 +1331,8 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
       IsRootWebRenderBridgeParent());
 
   if (!IsRootWebRenderBridgeParent()) {
-    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, aTxnURL);
+    CrashReporter::RecordAnnotationNSCString(CrashReporter::Annotation::URL,
+                                             aTxnURL);
   }
 
   AUTO_PROFILER_TRACING_MARKER("Paint", "EmptyTransaction", GRAPHICS);

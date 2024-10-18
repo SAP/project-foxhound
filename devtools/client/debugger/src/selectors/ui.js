@@ -3,6 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { getSelectedSource } from "./sources";
+import { getIsThreadCurrentlyTracing, getAllThreads } from "./threads";
 
 export function getSelectedPrimaryPaneTab(state) {
   return state.ui.selectedPrimaryPaneTab;
@@ -68,6 +69,17 @@ export function getEditorWrapping(state) {
   return state.ui.editorWrappingEnabled;
 }
 
+export function getIsJavascriptTracingEnabled(state) {
+  // Check for the global state which may be set by debugger toggling,
+  // but also on individual thread state which will be set by the `:trace` console command.
+  return (
+    state.ui.javascriptTracingEnabled ||
+    getAllThreads(state).some(thread =>
+      getIsThreadCurrentlyTracing(state, thread.actor)
+    )
+  );
+}
+
 export function getJavascriptTracingLogMethod(state) {
   return state.ui.javascriptTracingLogMethod;
 }
@@ -78,6 +90,14 @@ export function getJavascriptTracingValues(state) {
 
 export function getJavascriptTracingOnNextInteraction(state) {
   return state.ui.javascriptTracingOnNextInteraction;
+}
+
+export function getJavascriptTracingOnNextLoad(state) {
+  return state.ui.javascriptTracingOnNextLoad;
+}
+
+export function getJavascriptTracingFunctionReturn(state) {
+  return state.ui.javascriptTracingFunctionReturn;
 }
 
 export function getSearchOptions(state, searchKey) {
@@ -94,4 +114,8 @@ export function getHideIgnoredSources(state) {
 
 export function isSourceMapIgnoreListEnabled(state) {
   return state.ui.sourceMapIgnoreListEnabled;
+}
+
+export function areSourceMapsEnabled(state) {
+  return state.ui.sourceMapsEnabled;
 }

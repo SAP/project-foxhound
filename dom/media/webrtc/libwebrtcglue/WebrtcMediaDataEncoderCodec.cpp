@@ -475,7 +475,7 @@ int32_t WebrtcMediaDataEncoder::Encode(
                                        "invalid timestamp from encoder");
             break;
           }
-          image.SetTimestamp(time.value());
+          image.SetRtpTimestamp(time.value());
           image._frameType = frame->mKeyframe
                                  ? webrtc::VideoFrameType::kVideoFrameKey
                                  : webrtc::VideoFrameType::kVideoFrameDelta;

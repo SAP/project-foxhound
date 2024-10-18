@@ -28,7 +28,7 @@ const SIGNUP = "/account/create";
 const DEVICES_FILTER_DAYS = 21;
 
 export var FxAccountsClient = function (
-  host = Services.prefs.getCharPref(HOST_PREF)
+  host = Services.prefs.getStringPref(HOST_PREF)
 ) {
   this.host = host;
 
@@ -59,7 +59,7 @@ FxAccountsClient.prototype = {
   /*
    * Return current time in milliseconds
    *
-   * Not used by this module, but made available to the FxAccounts.jsm
+   * Not used by this module, but made available to the FxAccounts.sys.mjs
    * that uses this client.
    */
   now() {
@@ -498,7 +498,7 @@ FxAccountsClient.prototype = {
    */
   accountExists(email) {
     return this.signIn(email, "").then(
-      cantHappen => {
+      () => {
         throw new Error("How did I sign in with an empty password?");
       },
       expectedError => {

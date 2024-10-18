@@ -698,10 +698,12 @@ var AddonManagerInternal = {
       Services.obs.addObserver(this, AMBrowserExtensionsImport.TOPIC_COMPLETE);
       Services.obs.addObserver(this, AMBrowserExtensionsImport.TOPIC_PENDING);
 
-      // Ensure all default providers have had a chance to register themselves
-      ({ XPIProvider: gXPIProvider } = ChromeUtils.import(
-        "resource://gre/modules/addons/XPIProvider.jsm"
-      ));
+      // Ensure all default providers have had a chance to register themselves.
+      const { XPIExports } = ChromeUtils.importESModule(
+        "resource://gre/modules/addons/XPIExports.sys.mjs"
+      );
+      gXPIProvider = XPIExports.XPIProvider;
+      gXPIProvider.registerProvider();
 
       // Load any providers registered in the category manager
       for (let { entry, value: url } of Services.catMan.enumerateCategory(
@@ -1608,10 +1610,10 @@ var AddonManagerInternal = {
 
     // Temporary hack until bug 520124 lands.
     // We can get here during synchronous startup, at which point it's
-    // considered unsafe (and therefore disallowed by AddonManager.jsm) to
+    // considered unsafe (and therefore disallowed by AddonManager.sys.mjs) to
     // access providers that haven't been initialized yet. Since this is when
     // XPIProvider is starting up, XPIProvider can't access itself via APIs
-    // going through AddonManager.jsm. Thankfully, this is the only use
+    // going through AddonManager.sys.mjs. Thankfully, this is the only use
     // of this API, and we know it's safe to use this API with both
     // providers; so we have this hack to allow bypassing the normal
     // safetey guard.

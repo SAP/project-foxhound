@@ -522,6 +522,10 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
     if (SUCCEEDED(hr)) {
       return hr;
     }
+    hr = uiaRawElmProvider::QueryInterface(iid, ppv);
+    if (SUCCEEDED(hr)) {
+      return hr;
+    }
   }
   if (*ppv) {
     (reinterpret_cast<IUnknown*>(*ppv))->AddRef();
@@ -604,16 +608,20 @@ MsaaAccessible::get_accChildCount(long __RPC_FAR* pcountChildren) {
 
   if (!mAcc) return CO_E_OBJNOTCONNECTED;
 
-  if (Compatibility::IsA11ySuppressedForClipboardCopy() && mAcc->IsRoot()) {
+  if ((Compatibility::A11ySuppressionReasons() &
+       SuppressionReasons::Clipboard) &&
+      mAcc->IsRoot()) {
     // Bug 1798098: Windows Suggested Actions (introduced in Windows 11 22H2)
-    // might walk the entire a11y tree using UIA whenever anything is copied to
-    // the clipboard. This causes an unacceptable hang, particularly when the
-    // cache is disabled. We prevent this tree walk by returning a 0 child count
-    // for the root window, from which Windows might walk.
+    // might walk the entire a11y tree using UIA whenever anything is copied
+    // to the clipboard. This causes an unacceptable hang, particularly when
+    // the cache is disabled. We prevent this tree walk by returning a 0 child
+    // count for the root window, from which Windows might walk.
     return S_OK;
   }
 
-  if (nsAccUtils::MustPrune(mAcc)) return S_OK;
+  if (nsAccUtils::MustPrune(mAcc)) {
+    return S_OK;
+  }
 
   *pcountChildren = mAcc->ChildCount();
   return S_OK;
@@ -761,7 +769,7 @@ MsaaAccessible::get_accRole(
   uint32_t msaaRole = 0;
 
 #define ROLE(_geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             _msaaRole, ia2Role, androidClass, nameRule)                     \
+             _msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
   case roles::_geckoRole:                                                    \
     msaaRole = _msaaRole;                                                    \
     break;

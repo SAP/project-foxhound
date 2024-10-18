@@ -22,7 +22,6 @@
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/MathAlgorithms.h"
-#include "mozilla/Scoped.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Unused.h"
@@ -61,6 +60,10 @@ Maybe<TexUnpackBlobDesc> FromImageBitmap(const GLenum target, Maybe<uvec3> size,
   }
 
   const RefPtr<gfx::DataSourceSurface> surf = cloneData->mSurface;
+  if (NS_WARN_IF(!surf)) {
+    return {};
+  }
+
   const auto imageSize = *uvec2::FromSize(surf->GetSize());
   if (!size) {
     size.emplace(imageSize.x, imageSize.y, 1);
@@ -926,23 +929,7 @@ void WebGLTexture::TexStorage(TexTarget target, uint32_t levels,
 void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
                             const uvec3& offset, const webgl::PackingInfo& pi,
                             const webgl::TexUnpackBlobDesc& src) {
-  Maybe<RawBuffer<>> cpuDataView;
-  if (src.cpuData) {
-    cpuDataView = Some(RawBuffer<>{src.cpuData->Data()});
-  }
-  const auto srcViewDesc = webgl::TexUnpackBlobDesc{src.imageTarget,
-                                                    src.size,
-                                                    src.srcAlphaType,
-                                                    std::move(cpuDataView),
-                                                    src.pboOffset,
-                                                    src.structuredSrcSize,
-                                                    src.image,
-                                                    src.sd,
-                                                    src.dataSurf,
-                                                    src.unpacking,
-                                                    src.applyUnpackTransforms};
-
-  const auto blob = webgl::TexUnpackBlob::Create(srcViewDesc);
+  const auto blob = webgl::TexUnpackBlob::Create(src);
   if (!blob) {
     MOZ_ASSERT(false);
     return;

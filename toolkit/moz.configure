@@ -60,7 +60,7 @@ set_config("MOZ_CONFIGURE_OPTIONS", all_configure_options)
 
 @depends(target)
 def fold_libs(target):
-    return target.os in ("WINNT", "OSX", "Android")
+    return target.os in ("WINNT", "OSX", "iOS", "Android")
 
 
 set_config("MOZ_FOLD_LIBS", fold_libs)
@@ -87,16 +87,21 @@ set_config("MOZ_JPROF", jprof)
 set_define("MOZ_JPROF", jprof)
 imply_option("--enable-profiling", jprof)
 
+option("--disable-gecko-profiler", help="Disable the Gecko profiler")
 
-@depends(target)
-def gecko_profiler(target):
+
+@depends("--disable-gecko-profiler", target)
+def gecko_profiler(enable_gecko_profiler, target):
+    if not enable_gecko_profiler:
+        return False
+
     if target.os == "Android":
         return target.cpu in ("aarch64", "arm", "x86", "x86_64")
     elif target.kernel == "Linux":
         return target.cpu in ("aarch64", "arm", "x86", "x86_64", "mips64")
     elif target.kernel == "FreeBSD":
         return target.cpu in ("aarch64", "x86_64")
-    return target.os in ("OSX", "WINNT")
+    return target.kernel in ("Darwin", "WINNT")
 
 
 @depends(gecko_profiler)
@@ -202,6 +207,8 @@ def audio_backends_default(target):
         return ("sndio",)
     elif target.os == "OSX":
         return ("audiounit",)
+    elif target.os == "iOS":
+        return None
     elif target.os == "NetBSD":
         return ("sunaudio",)
     elif target.os == "SunOS":
@@ -276,7 +283,7 @@ def imply_opensl(values, target):
 @depends("--enable-audio-backends", target)
 def imply_oss(values, target):
     if any("oss" in value for value in values) and (
-        target.os == "Android" or target.os == "OSX" or target.os == "WINNT"
+        target.os in ("Android", "OSX", "iOS", "WINNT")
     ):
         die("Cannot enable OSS on %s", target.os)
     return any("oss" in value for value in values) or None
@@ -285,7 +292,7 @@ def imply_oss(values, target):
 @depends("--enable-audio-backends", target)
 def imply_pulseaudio(values, target):
     if any("pulseaudio" in value for value in values) and (
-        target.os == "Android" or target.os == "OSX" or target.os == "WINNT"
+        target.os in ("Android", "OSX", "iOS", "WINNT")
     ):
         die("Cannot enable PulseAudio on %s", target.os)
     return any("pulseaudio" in value for value in values) or None
@@ -294,7 +301,7 @@ def imply_pulseaudio(values, target):
 @depends("--enable-audio-backends", target)
 def imply_sndio(values, target):
     if any("sndio" in value for value in values) and (
-        target.os == "Android" or target.os == "OSX" or target.os == "WINNT"
+        target.os in ("Android", "OSX", "iOS", "WINNT")
     ):
         die("Cannot enable sndio on %s", target.os)
     return any("sndio" in value for value in values) or None
@@ -430,6 +437,8 @@ def toolkit_choices(target):
         return ("cairo-windows",)
     elif target.os == "OSX":
         return ("cairo-cocoa",)
+    elif target.os == "iOS":
+        return ("cairo-uikit",)
     elif target.os == "Android":
         return ("cairo-android",)
     else:
@@ -979,6 +988,8 @@ project_flag(
 def check_places_and_android_history(places, android_history):
     if places and android_history:
         die("Cannot use MOZ_ANDROID_HISTORY alongside MOZ_PLACES.")
+    if not places and not android_history:
+        die("One of MOZ_ANDROID_HISTORY or MOZ_PLACES must be set.")
 
 
 option(
@@ -1067,9 +1078,19 @@ def app_system_headers(value):
 set_config("MOZ_APP_SYSTEM_HEADERS", app_system_headers)
 set_define("MOZ_APP_SYSTEM_HEADERS", app_system_headers)
 
+
 # Printing
 # ==============================================================
-option("--disable-printing", help="Disable printing support")
+@depends(target)
+def printing_default(target):
+    return target.os != "iOS"
+
+
+option(
+    "--disable-printing",
+    default=printing_default,
+    help="{Enable|Disable} printing support",
+)
 
 
 @depends("--disable-printing")
@@ -2377,89 +2398,77 @@ with only_when(compile_environment):
 
 # FFmpeg's ffvpx configuration
 # ==============================================================
-with only_when(compile_environment):
-
-    @depends(target)
-    def libav_fft(target):
-        if target.os == "Android" and target.cpu != "arm":
-            return True
-        return target.kernel in ("WINNT", "Darwin") or target.cpu == "x86_64"
-
-    set_config("MOZ_LIBAV_FFT", depends(when=libav_fft)(lambda: True))
-    set_define("MOZ_LIBAV_FFT", depends(when=libav_fft)(lambda: True))
 
 
-# Artifact builds need MOZ_FFVPX defined as if compilation happened.
-with only_when(compile_environment | artifact_builds):
+@depends(target)
+def ffvpx(target):
+    use_nasm = True
+    audio_only = False
+    flags = []
 
-    @depends(target)
-    def ffvpx(target):
-        enable = use_nasm = True
-        flac_only = False
-        flags = []
-
-        if target.kernel == "WINNT":
-            if target.cpu == "x86":
-                # 32-bit windows need to prefix symbols with an underscore.
-                flags = ["-DPIC", "-DWIN32", "-DPREFIX", "-Pconfig_win32.asm"]
-            elif target.cpu == "x86_64":
-                flags = [
-                    "-D__x86_64__",
-                    "-DPIC",
-                    "-DWIN64",
-                    "-DMSVC",
-                    "-Pconfig_win64.asm",
-                ]
-            elif target.cpu == "aarch64":
-                flags = ["-DPIC", "-DWIN64"]
-                use_nasm = False
-        elif target.kernel == "Darwin":
-            # 32/64-bit macosx assemblers need to prefix symbols with an
-            # underscore.
-            flags = ["-DPIC", "-DMACHO", "-DPREFIX"]
-            if target.cpu == "x86_64":
-                flags += [
-                    "-D__x86_64__",
-                    "-Pconfig_darwin64.asm",
-                ]
-            elif target.cpu == "aarch64":
-                use_nasm = False
+    # This enables audio and video codecs paths on Windows  x86 and x86_64,
+    # macOS (all arch), and Linux x86_64. On other arch / OS combinations,
+    # only audio codecs are enabled.
+    if target.kernel == "WINNT":
+        if target.cpu == "x86":
+            # 32-bit windows need to prefix symbols with an underscore.
+            flags = ["-DPIC", "-DWIN32", "-DPREFIX", "-Pconfig_win32.asm"]
         elif target.cpu == "x86_64":
-            flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_unix64.asm"]
-        elif target.cpu in ("x86", "arm", "aarch64"):
-            flac_only = True
-        else:
-            enable = False
-
-        if flac_only or not enable:
+            flags = [
+                "-D__x86_64__",
+                "-DPIC",
+                "-DWIN64",
+                "-DMSVC",
+                "-Pconfig_win64.asm",
+            ]
+        elif target.cpu == "aarch64":
+            flags = ["-DPIC", "-DWIN64"]
             use_nasm = False
+    elif target.kernel == "Darwin":
+        # 32/64-bit macosx assemblers need to prefix symbols with an
+        # underscore.
+        flags = ["-DPIC", "-DMACHO", "-DPREFIX"]
+        if target.cpu == "x86_64":
+            flags += [
+                "-D__x86_64__",
+                "-Pconfig_darwin64.asm",
+            ]
+        elif target.cpu == "aarch64":
+            use_nasm = False
+    elif target.cpu == "x86_64":
+        flags = ["-D__x86_64__", "-DPIC", "-DELF", "-Pconfig_unix64.asm"]
+    else:
+        audio_only = True
 
-        return namespace(
-            enable=enable,
-            use_nasm=use_nasm,
-            flac_only=flac_only,
-            flags=flags,
-        )
+    if audio_only:
+        use_nasm = False
 
-    @depends(when=ffvpx.use_nasm)
-    def ffvpx_nasm():
-        # nasm 2.10 for AVX-2 support.
-        return namespace(version="2.10", what="FFVPX")
+    return namespace(
+        use_nasm=use_nasm,
+        audio_only=audio_only,
+        flags=flags,
+    )
 
-    # ffvpx_nasm can't indirectly depend on vpx_as_flags, because it depends
-    # on a compiler test, so we have to do a little bit of dance here.
-    @depends(ffvpx, vpx_as_flags, target)
-    def ffvpx(ffvpx, vpx_as_flags, target):
-        if ffvpx and vpx_as_flags and target.cpu in ("arm", "aarch64"):
-            ffvpx.flags.extend(vpx_as_flags)
-        return ffvpx
 
-    set_config("MOZ_FFVPX", True, when=ffvpx.enable)
-    set_define("MOZ_FFVPX", True, when=ffvpx.enable)
-    set_config("MOZ_FFVPX_AUDIOONLY", True, when=ffvpx.flac_only)
-    set_define("MOZ_FFVPX_AUDIOONLY", True, when=ffvpx.flac_only)
-    set_config("FFVPX_ASFLAGS", ffvpx.flags)
-    set_config("FFVPX_USE_NASM", True, when=ffvpx.use_nasm)
+@depends(when=ffvpx.use_nasm)
+def ffvpx_nasm():
+    # nasm 2.10 for AVX-2 support.
+    return namespace(version="2.10", what="FFVPX")
+
+
+# ffvpx_nasm can't indirectly depend on vpx_as_flags, because it depends
+# on a compiler test, so we have to do a little bit of dance here.
+@depends(ffvpx, vpx_as_flags, target)
+def ffvpx(ffvpx, vpx_as_flags, target):
+    if ffvpx and vpx_as_flags and target.cpu in ("arm", "aarch64"):
+        ffvpx.flags.extend(vpx_as_flags)
+    return ffvpx
+
+
+set_config("MOZ_FFVPX_AUDIOONLY", True, when=ffvpx.audio_only)
+set_define("MOZ_FFVPX_AUDIOONLY", True, when=ffvpx.audio_only)
+set_config("FFVPX_ASFLAGS", ffvpx.flags)
+set_config("FFVPX_USE_NASM", True, when=ffvpx.use_nasm)
 
 
 # nasm detection
@@ -2520,11 +2529,11 @@ def check_nasm_version(nasm_version, versioned):
 @depends(target, when=check_nasm_version)
 def nasm_asflags(target):
     asflags = {
-        ("OSX", "x86"): ["-f", "macho32"],
-        ("OSX", "x86_64"): ["-f", "macho64"],
+        ("Darwin", "x86"): ["-f", "macho32"],
+        ("Darwin", "x86_64"): ["-f", "macho64"],
         ("WINNT", "x86"): ["-f", "win32"],
         ("WINNT", "x86_64"): ["-f", "win64"],
-    }.get((target.os, target.cpu), None)
+    }.get((target.kernel, target.cpu), None)
     if asflags is None:
         # We're assuming every x86 platform we support that's
         # not Windows or Mac is ELF.
@@ -2846,18 +2855,8 @@ def pdbstr_paths(valid_windows_sdk_dir, host):
     ]
 
 
-check_prog(
-    "PDBSTR",
-    ["pdbstr.exe"],
-    allow_missing=True,
-    when=compile_environment & target_is_windows,
-    paths=pdbstr_paths,
-    allow_spaces=True,
-)
-
-
 @depends("MOZ_AUTOMATION", c_compiler)
-def allow_missing_winchecksec(automation, c_compiler):
+def allow_missing_wintools(automation, c_compiler):
     if not automation:
         return True
     if c_compiler and c_compiler.type != "clang-cl":
@@ -2865,10 +2864,20 @@ def allow_missing_winchecksec(automation, c_compiler):
 
 
 check_prog(
+    "PDBSTR",
+    ["pdbstr.exe"],
+    allow_missing=allow_missing_wintools,
+    when=compile_environment & target_is_windows,
+    paths=pdbstr_paths,
+    allow_spaces=True,
+)
+
+
+check_prog(
     "WINCHECKSEC",
     ["winchecksec.exe", "winchecksec"],
     bootstrap="winchecksec",
-    allow_missing=allow_missing_winchecksec,
+    allow_missing=allow_missing_wintools,
     when=compile_environment & target_is_windows,
 )
 
@@ -3092,7 +3101,7 @@ with only_when(compile_environment):
 # ==============================================================
 @depends(target, developer_options, artifact_builds)
 def crashreporter_default(target, developer_options, artifacts):
-    if target.kernel in ("WINNT", "Darwin"):
+    if target.os in ("WINNT", "OSX"):
         return True
     if target.kernel == "Linux" and target.cpu in ("x86", "x86_64", "arm", "aarch64"):
         # The crash reporter prevents crash stacktraces to be logged in the
@@ -3573,3 +3582,112 @@ def perl_version_check(min_version):
 
 with only_when(need_perl):
     perl_version_check("5.006")
+
+
+# windows-rs as bootstrappable toolchain
+# ==============================================================
+# The in-tree windows crate's purpose is to avoid vendoring the
+# original windows crate, which is too large.
+# The ideal solution would be for cargo to allow exceptions to
+# vendoring, but it doesn't.
+# The adopted solution is to somehow use the crate contents from
+# a directory given via the mozbuild config, or bootstrapped.
+#
+# Unfortunately, doing `include!(mozbuild::windows_rs_path!("src/lib.rs"))`
+# in the crate's lib.rs doesn't work because of
+# https://github.com/rust-lang/rust/issues/66920.
+#
+# Previous versions of the windows crate had submodules declared
+# directly in lib.rs. Annotating each of them with
+# `#[path = concat!(mozbuild::windows_rs_path!("path/to/mod.rs"))]`
+# unfortunately also didn't work, because of
+# https://github.com/rust-lang/rust/issues/48250.
+#
+# Thankfully, newer versions of the windows crate now only have an
+# `include!` at the end of lib.rs, so we can get away with simply
+# replacing it with an `include!` that uses `mozbuild::windows_rs_path!`.
+#
+# We ensure that the in-tree contents match what we expect based on
+# the original crate.
+# The expectations are as such:
+# - Cargo.toml is identical to the original one with the addition of the
+#   following two lines at the end (after an empty line):
+#     [dependencies.mozbuild]
+#     version = "0.1"
+# - src/lib.rs is mostly identical to the original one, with two notable
+#   differences:
+#   - the addition of `#![allow(warnings)]` on the first line, because if
+#     the crate had been vendored normally, it would not be affected by
+#     `-D warnings`, and `#![allow(warnings)]` mimicks that.
+#   - the replacement of any
+#     `include!("path/file.rs")`
+#     with
+#     `include!(mozbuild::windows_rs_path!("src/path/file.rs"))`
+with only_when(target_is_windows & compile_environment):
+    option(
+        env="MOZ_WINDOWS_RS_DIR",
+        nargs=1,
+        help="Path to the source of the 'windows' Rust crate",
+    )
+
+    @depends(
+        "MOZ_WINDOWS_RS_DIR",
+        bootstrap_path(
+            "windows-rs",
+            when=depends("MOZ_WINDOWS_RS_DIR")(lambda x: not x),
+        ),
+        build_environment.topsrcdir,
+    )
+    @checking("for the windows rust crate source")
+    @imports(_from="__builtin__", _import="open")
+    @imports("re")
+    @imports("toml")
+    def windows_rs_dir(dir, bootstrapped, topsrcdir):
+        if bootstrapped:
+            dir = bootstrapped
+        elif dir:
+            dir = dir[0]
+
+        raw_cargo_toml = open(
+            os.path.join(topsrcdir, "build/rust/windows/Cargo.toml")
+        ).read()
+        cargo_toml = toml.loads(raw_cargo_toml)
+        expected_version = cargo_toml["package"]["version"]
+
+        if not dir:
+            raise FatalCheckError(
+                "Cannot find the windows rust crate source.\n"
+                f"Try downloading it with `cargo download -x windows={expected_version}`\n"
+                "(you may need to `cargo install cargo-download` first)\n"
+                f"and set `MOZ_WINDOWS_RS_DIR` to location of the `windows-{expected_version}`"
+                " directory"
+            )
+
+        raw_cargo_toml_orig = open(os.path.join(dir, "Cargo.toml")).read()
+        cargo_toml = toml.loads(raw_cargo_toml_orig)
+        version = cargo_toml["package"]["version"]
+        if version != expected_version:
+            raise FatalCheckError(
+                f"The windows rust crate source in {dir} contains version "
+                f"{version}, but expected {expected_version}."
+            )
+        # Now that we've done the basic sanity check, let's go deeper.
+        DEPENDENCIES = '\n[dependencies.mozbuild]\nversion = "0.1"\n'
+        if not raw_cargo_toml.endswith(DEPENDENCIES):
+            configure_error("In-tree windows crate is missing dependency on mozbuild")
+        if raw_cargo_toml[: -len(DEPENDENCIES)] != raw_cargo_toml_orig:
+            configure_error("In-tree windows crate Cargo.toml doesn't match original")
+
+        lib_rs = open(os.path.join(topsrcdir, "build/rust/windows/src/lib.rs")).read()
+        lib_rs_orig = open(os.path.join(dir, "src/lib.rs")).read()
+        lib_rs_expected = "#![allow(warnings)]\n" + re.sub(
+            r'include!\("([^"]*)"\)',
+            r'include!(mozbuild::windows_rs_path!("src/\1"))',
+            lib_rs_orig,
+        )
+        if lib_rs != lib_rs_expected:
+            configure_error("In-tree windows crate lib.rs doesn't match original")
+
+        return dir
+
+    set_config("MOZ_WINDOWS_RS_DIR", windows_rs_dir)

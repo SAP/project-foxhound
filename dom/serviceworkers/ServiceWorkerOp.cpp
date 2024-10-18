@@ -271,13 +271,15 @@ bool DispatchFailed(nsresult aStatus) {
 
 }  // anonymous namespace
 
-class ServiceWorkerOp::ServiceWorkerOpRunnable : public WorkerDebuggeeRunnable {
+class ServiceWorkerOp::ServiceWorkerOpRunnable final
+    : public WorkerDebuggeeRunnable {
  public:
   NS_DECL_ISUPPORTS_INHERITED
 
   ServiceWorkerOpRunnable(RefPtr<ServiceWorkerOp> aOwner,
                           WorkerPrivate* aWorkerPrivate)
-      : WorkerDebuggeeRunnable(aWorkerPrivate, WorkerThread),
+      : WorkerDebuggeeRunnable(aWorkerPrivate, "ServiceWorkerOpRunnable",
+                               WorkerThread),
         mOwner(std::move(aOwner)) {
     AssertIsOnMainThread();
     MOZ_ASSERT(mOwner);
@@ -1426,8 +1428,7 @@ void FetchEventOp::ResolvedCallback(JSContext* aCx,
 
   if (response->Type() == ResponseType::Opaque &&
       requestMode != RequestMode::No_cors) {
-    NS_ConvertASCIItoUTF16 modeString(
-        RequestModeValues::GetString(requestMode));
+    NS_ConvertASCIItoUTF16 modeString(GetEnumString(requestMode));
 
     nsAutoString requestURL;
     GetRequestURL(requestURL);

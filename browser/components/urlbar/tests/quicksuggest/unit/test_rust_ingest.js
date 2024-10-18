@@ -68,8 +68,9 @@ add_task(async function firstRun() {
   info("Enabling the Rust backend");
   UrlbarPrefs.set("quicksuggest.rustEnabled", true);
   Assert.ok(QuickSuggest.rustBackend.isEnabled, "Rust backend is now enabled");
-  let { ingestPromise } = QuickSuggest.rustBackend;
-  Assert.ok(ingestPromise, "Ingest started");
+
+  // An ingest should start.
+  let { ingestPromise } = await waitForIngestStart(null);
 
   info("Awaiting ingest promise");
   await ingestPromise;
@@ -77,15 +78,15 @@ add_task(async function firstRun() {
 
   await checkSuggestions();
 
-  // Disable and re-enable the backend. No new ingestion should start
-  // immediately since this isn't the first time the backend has been enabled.
+  // Disable and re-enable the backend. Another ingest should start immediately
+  // since ingest is done every time the backend is re-enabled.
   UrlbarPrefs.set("quicksuggest.rustEnabled", false);
   UrlbarPrefs.set("quicksuggest.rustEnabled", true);
-  Assert.equal(
-    QuickSuggest.rustBackend.ingestPromise,
-    ingestPromise,
-    "No new ingest started"
-  );
+  ({ ingestPromise } = await waitForIngestStart(ingestPromise));
+
+  info("Awaiting ingest promise");
+  await ingestPromise;
+  info("Done awaiting ingest promise");
 
   await checkSuggestions();
 
@@ -104,18 +105,18 @@ add_task(async function interval() {
     "Sanity check: Rust backend is initially disabled"
   );
 
-  // Set a small interval and enable the backend. No new ingestion should start
-  // immediately since this isn't the first time the backend has been enabled.
+  // Set a small interval and enable the backend. A new ingest will immediately
+  // start.
   let intervalSecs = 1;
   UrlbarPrefs.set("quicksuggest.rustIngestIntervalSeconds", intervalSecs);
   UrlbarPrefs.set("quicksuggest.rustEnabled", true);
-  Assert.equal(
-    QuickSuggest.rustBackend.ingestPromise,
-    ingestPromise,
-    "No new ingest has started"
-  );
+  ({ ingestPromise } = await waitForIngestStart(ingestPromise));
 
-  // Wait for a few ingests to happen.
+  info("Awaiting ingest promise");
+  await ingestPromise;
+  info("Done awaiting ingest promise");
+
+  // Wait for a few ingests to happen due to the timer firing.
   for (let i = 0; i < 3; i++) {
     info("Preparing for ingest at index " + i);
 
@@ -178,7 +179,10 @@ async function waitForIngestStart(oldIngestPromise) {
   let newIngestPromise;
   await TestUtils.waitForCondition(() => {
     let { ingestPromise } = QuickSuggest.rustBackend;
-    if (ingestPromise != oldIngestPromise) {
+    if (
+      (oldIngestPromise && ingestPromise != oldIngestPromise) ||
+      (!oldIngestPromise && ingestPromise)
+    ) {
       newIngestPromise = ingestPromise;
       return true;
     }

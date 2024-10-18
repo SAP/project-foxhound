@@ -7,6 +7,7 @@
 #ifndef mozilla_StyleSheet_h
 #define mozilla_StyleSheet_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/CSSStyleSheetBinding.h"
 #include "mozilla/dom/SRIMetadata.h"
@@ -15,11 +16,13 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoTypes.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StyleSheetInfo.h"
 #include "nsICSSLoaderObserver.h"
 #include "nsIPrincipal.h"
 #include "nsWrapperCache.h"
 #include "nsStringFwd.h"
+#include "nsProxyRelease.h"
 
 class nsIGlobalObject;
 class nsINode;
@@ -44,6 +47,7 @@ class Loader;
 class LoaderReusableStyleSheets;
 class Rule;
 class SheetLoadData;
+using SheetLoadDataHolder = nsMainThreadPtrHolder<SheetLoadData>;
 }  // namespace css
 
 namespace dom {
@@ -112,9 +116,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // SheetLoadData for this stylesheet.
   // NOTE: ParseSheet can run synchronously or asynchronously
   //       based on the result of `AllowParallelParse`
-  RefPtr<StyleSheetParsePromise> ParseSheet(css::Loader&,
-                                            const nsACString& aBytes,
-                                            css::SheetLoadData&);
+  RefPtr<StyleSheetParsePromise> ParseSheet(
+      css::Loader&, const nsACString& aBytes,
+      const RefPtr<css::SheetLoadDataHolder>& aLoadData);
 
   // Common code that needs to be called after servo finishes parsing. This is
   // shared between the parallel and sequential paths.
@@ -301,7 +305,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
    */
   void SetPrincipal(nsIPrincipal* aPrincipal) {
     StyleSheetInfo& info = Inner();
-    MOZ_ASSERT(!info.mPrincipalSet, "Should only set principal once");
+    MOZ_ASSERT_IF(info.mPrincipalSet, info.mPrincipal == aPrincipal);
     if (aPrincipal) {
       info.mPrincipal = aPrincipal;
 #ifdef DEBUG
@@ -468,6 +472,23 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // Gets the relevant global if exists.
   nsISupports* GetRelevantGlobal() const;
 
+  // Blocks/Unblocks resolution of parse promise
+  void BlockParsePromise() {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    uint32_t count =
+#endif
+        ++mAsyncParseBlockers;
+    MOZ_DIAGNOSTIC_ASSERT(count);
+  }
+
+  void UnblockParsePromise() {
+    uint32_t count = --mAsyncParseBlockers;
+    MOZ_DIAGNOSTIC_ASSERT(count != UINT32_MAX);
+    if (!count && !mParsePromise.IsEmpty()) {
+      mParsePromise.Resolve(true, __func__);
+    }
+  }
+
  private:
   void SetModifiedRules() {
     mState |= State::ModifiedRules | State::ModifiedRulesForDevtools;
@@ -590,6 +611,8 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   css::SheetParsingMode mParsingMode;
 
   State mState;
+
+  Atomic<uint32_t, ReleaseAcquire> mAsyncParseBlockers{0};
 
   // Core information we get from parsed sheets, which are shared amongst
   // StyleSheet clones.

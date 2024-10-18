@@ -85,9 +85,6 @@ add_task(async function context_one() {
 
 add_task(async function context_invalid() {
   info("Checks the context menu with a page that offers an invalid engine.");
-  await SpecialPowers.pushPrefEnv({
-    set: [["prompts.contentPromptSubDialog", false]],
-  });
 
   let url = getRootDirectory(gTestPath) + "add_search_engine_invalid.html";
   await BrowserTestUtils.withNewTab(url, async tab => {
@@ -321,5 +318,5 @@ function promiseEngine(expectedData, expectedEngineName) {
         expectedEngineName == engine.wrappedJSObject.name
       );
     }
-  ).then(([engine, data]) => engine);
+  ).then(([engine]) => engine);
 }

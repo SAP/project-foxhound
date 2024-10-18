@@ -44,6 +44,10 @@ export class MDNSuggestions extends BaseFeature {
     return "mdn";
   }
 
+  get rustSuggestionTypes() {
+    return ["Mdn"];
+  }
+
   enable(enabled) {
     if (enabled) {
       lazy.QuickSuggest.jsBackend.register(this);
@@ -87,7 +91,7 @@ export class MDNSuggestions extends BaseFeature {
     this.#suggestionsMap = suggestionsMap;
   }
 
-  async makeResult(queryContext, suggestion, searchString) {
+  async makeResult(queryContext, suggestion) {
     if (!this.isEnabled) {
       // The feature is disabled on the client, but Merino may still return
       // mdn suggestions anyway, and we filter them out here.
@@ -130,7 +134,7 @@ export class MDNSuggestions extends BaseFeature {
     );
   }
 
-  getResultCommands(result) {
+  getResultCommands() {
     return [
       {
         l10n: {

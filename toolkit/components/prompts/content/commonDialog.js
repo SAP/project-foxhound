@@ -95,7 +95,6 @@ function commonDialogOnLoad() {
     infoBody: document.getElementById("infoBody"),
     infoTitle: document.getElementById("infoTitle"),
     infoIcon: document.getElementById("infoIcon"),
-    spinnerContainer: document.getElementById("spinnerContainer"),
     checkbox: document.getElementById("checkbox"),
     checkboxContainer: document.getElementById("checkboxContainer"),
     button3: dialog.getButton("extra2"),
@@ -159,7 +158,7 @@ function commonDialogOnLoad() {
               resources: [],
               analysisType: Ci.nsIContentAnalysisRequest.eBulkDataEntry,
               operationTypeForDisplay: Ci.nsIContentAnalysisRequest.eClipboard,
-              url: args.owningBrowsingContext.currentURI.spec,
+              url: args.owningBrowsingContext.currentURI,
               textContent: data,
               windowGlobalParent:
                 args.owningBrowsingContext.currentWindowContext,

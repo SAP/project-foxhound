@@ -137,6 +137,8 @@ rsync_filter_list = """
 + /mfbt/**
 + /nsprpub/**
 
++ /intl/bidi/**
+
 - /intl/icu/source/data
 - /intl/icu/source/test
 - /intl/icu/source/tools
@@ -204,6 +206,9 @@ rsync_filter_list = """
 + /toolkit/mozapps/installer/package-name.mk
 
 + /xpcom/geckoprocesstypes_generator/**
+
+# List of prefs.
++ /modules/libpref/init/StaticPrefList.yaml
 
 # SpiderMonkey itself
 

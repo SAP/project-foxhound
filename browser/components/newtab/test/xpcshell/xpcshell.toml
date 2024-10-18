@@ -1,18 +1,10 @@
 [DEFAULT]
-head = "head.js"
 firefox-appdir = "browser"
-skip-if = ["toolkit == 'android'"] # bug 1730213
+skip-if = ["os == 'android'"] # bug 1730213
 prefs = [
   "browser.startup.homepage.abouthome_cache.enabled=true",
- "browser.startup.homepage.abouthome_cache.testing=true",
+  "browser.startup.homepage.abouthome_cache.testing=true",
 ]
-
-["test_ASRouterTargeting_attribution.js"]
-run-if = ["os == 'mac'"] # osx specific tests
-
-["test_ASRouterTargeting_snapshot.js"]
-
-["test_ASRouter_getTargetingParameters.js"]
 
 ["test_AboutHomeStartupCacheChild.js"]
 
@@ -22,28 +14,15 @@ skip-if = ["socketprocess_networking"] # Bug 1759035
 
 ["test_AboutNewTab.js"]
 
-["test_AboutWelcomeAttribution.js"]
+["test_HighlightsFeed.js"]
 
-["test_AboutWelcomeTelemetry.js"]
-
-["test_AboutWelcomeTelemetry_glean.js"]
-
-["test_CFRMessageProvider.js"]
-
-["test_InflightAssetsMessageProvider.js"]
-
-["test_NimbusRolloutMessageProvider.js"]
-
-["test_OnboardingMessageProvider.js"]
-
-["test_PanelTestProvider.js"]
-
-["test_TopSitesFeed_glean.js"]
-
-["test_reach_experiments.js"]
-
-["test_remoteExperiments.js"]
+["test_PlacesFeed.js"]
 
 ["test_Store.js"]
 
+["test_TelemetryFeed.js"]
+support-files = ["../schemas/*.schema.json"]
+
 ["test_TopSitesFeed.js"]
+
+["test_TopSitesFeed_glean.js"]

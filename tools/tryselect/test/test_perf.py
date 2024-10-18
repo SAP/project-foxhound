@@ -815,6 +815,34 @@ def test_category_expansion(
 
 
 @pytest.mark.parametrize(
+    "category_options, call_counts",
+    [
+        (
+            {},
+            0,
+        ),
+        (
+            {"non_pgo": True},
+            58,
+        ),
+    ],
+)
+def test_category_expansion_with_non_pgo_flag(category_options, call_counts):
+    PerfParser.categories = TEST_CATEGORIES
+    PerfParser.variants = TEST_VARIANTS
+
+    expanded_cats = PerfParser.get_categories(**category_options)
+
+    non_shippable_count = 0
+    for cat_name in expanded_cats:
+        queries = str(expanded_cats[cat_name].get("queries", None))
+        if "!shippable !nightlyasrelease" in queries and "'shippable" not in queries:
+            non_shippable_count += 1
+
+    assert non_shippable_count == call_counts
+
+
+@pytest.mark.parametrize(
     "options, call_counts, log_ind, expected_log_message",
     [
         (
@@ -910,8 +938,8 @@ def test_category_expansion(
             (
                 "\n!!!NOTE!!!\n You'll be able to find a performance comparison "
                 "here once the tests are complete (ensure you select the right framework): "
-                "https://beta--mozilla-perfcompare.netlify.app/#/compare-results?"
-                "revs=revision,revision&repos=try,try\n"
+                "https://beta--mozilla-perfcompare.netlify.app/compare-results?"
+                "baseRev=revision&newRev=revision&baseRepo=try&newRepo=try\n"
             ),
         ),
     ],
@@ -1270,7 +1298,10 @@ def test_save_revision_treeherder(args, call_counts, exists_cache_file):
         ),
         (
             int((MAX_PERF_TASKS + 2) / 2),
-            {"show_all": True, "try_config": {"rebuild": 2}},
+            {
+                "show_all": True,
+                "try_config_params": {"try_task_config": {"rebuild": 2}},
+            },
             [1, 0, 0, 1],
             (
                 "\n\n----------------------------------------------------------------------------------------------\n"
@@ -1354,7 +1385,7 @@ def test_max_perf_tasks(
     ],
 )
 def test_artifact_mode_autodisable(try_config, selected_tasks, expected_try_config):
-    PerfParser.setup_try_config(try_config, [], selected_tasks)
+    PerfParser.setup_try_config({"try_task_config": try_config}, [], selected_tasks)
     assert (
         try_config["use-artifact-builds"] == expected_try_config["use-artifact-builds"]
     )

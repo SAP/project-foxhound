@@ -104,7 +104,7 @@ WINDOWS_WORKER_TYPES = {
 MACOSX_WORKER_TYPES = {
     "macosx1015-64": "t-osx-1015-r8",
     "macosx1100-64": "t-osx-1100-m1",
-    "macosx1300-64": "t-osx-1300-m2",
+    "macosx1400-64": "t-osx-1400-m2",
 }
 
 transforms = TransformSequence()
@@ -125,8 +125,8 @@ def set_worker_type(config, tasks):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1015-64"]
         elif test_platform.startswith("macosx1100-64"):
             task["worker-type"] = MACOSX_WORKER_TYPES["macosx1100-64"]
-        elif test_platform.startswith("macosx1300-64"):
-            task["worker-type"] = MACOSX_WORKER_TYPES["macosx1300-64"]
+        elif test_platform.startswith("macosx1400-64"):
+            task["worker-type"] = MACOSX_WORKER_TYPES["macosx1400-64"]
         elif test_platform.startswith("win"):
             # figure out what platform the job needs to run on
             if task["virtualization"] == "hardware":
@@ -164,6 +164,11 @@ def set_worker_type(config, tasks):
                 task["worker-type"] = "t-bitbar-gw-unit-p6"
             else:
                 task["worker-type"] = "t-bitbar-gw-perf-p6"
+        elif test_platform.startswith("android-hw-s21"):
+            if task["suite"] != "raptor":
+                task["worker-type"] = "t-bitbar-gw-unit-s21"
+            else:
+                task["worker-type"] = "t-bitbar-gw-perf-s21"
         elif test_platform.startswith("android-hw-a51"):
             if task["suite"] != "raptor":
                 task["worker-type"] = "t-bitbar-gw-unit-a51"

@@ -29,8 +29,7 @@
 
 using mozilla::layout::TextDrawTarget;
 
-namespace mozilla {
-namespace css {
+namespace mozilla::css {
 
 class LazyReferenceRenderingDrawTargetGetterFromFrame final
     : public gfxFontGroup::LazyReferenceDrawTargetGetter {
@@ -165,8 +164,7 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
     *aSnap = false;
-    nsRect shadowRect = nsLayoutUtils::GetTextShadowRectsUnion(mRect, mFrame);
-    return mRect.Union(shadowRect);
+    return nsLayoutUtils::GetTextShadowRectsUnion(mRect, mFrame);
   }
 
   virtual nsRect GetComponentAlphaBounds(
@@ -835,9 +833,10 @@ bool TextOverflow::CanHaveOverflowMarkers(nsBlockFrame* aBlockFrame,
     return false;
   }
 
-  // Skip ComboboxControlFrame because it would clip the drop-down arrow.
-  // Its anon block inherits 'text-overflow' and does what is expected.
-  if (aBlockFrame->IsComboboxControlFrame()) {
+  // Skip the combobox anonymous block because it would clip the drop-down
+  // arrow. The inner label inherits 'text-overflow' and does the right thing.
+  if (aBlockFrame->GetParent() &&
+      aBlockFrame->GetParent()->IsComboboxControlFrame()) {
     return false;
   }
 
@@ -932,5 +931,4 @@ void TextOverflow::Marker::SetupString(nsIFrame* aFrame) {
   mInitialized = true;
 }
 
-}  // namespace css
-}  // namespace mozilla
+}  // namespace mozilla::css

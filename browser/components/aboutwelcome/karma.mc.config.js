@@ -72,22 +72,22 @@ module.exports = function (config) {
       // This will make karma fail if coverage reporting is less than the minimums here
       thresholds: !isTDD && {
         each: {
-          statements: 100,
-          lines: 100,
-          functions: 100,
-          branches: 66,
+          statements: 80,
+          lines: 80,
+          functions: 80,
+          branches: 80,
           overrides: {
-            "modules/*.jsm": {
-              statements: 0,
-              lines: 0,
-              functions: 0,
-              branches: 0,
+            "modules/AboutWelcomeDefaults.sys.mjs": {
+              statements: 48.15,
+              lines: 48.75,
+              functions: 61.54,
+              branches: 37.04,
             },
-            "content-src/lib/aboutwelcome-utils.js": {
-              statements: 50,
-              lines: 50,
-              functions: 50,
-              branches: 0,
+            "content-src/lib/aboutwelcome-utils.mjs": {
+              statements: 73.68,
+              lines: 73.68,
+              functions: 71.43,
+              branches: 66.67,
             },
             "content-src/components/LanguageSwitcher.jsx": {
               // This file is covered by the mochitest: browser_aboutwelcome_multistage_languageSwitcher.js
@@ -120,17 +120,46 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            "content-src/components/**/*.jsx": {
-              statements: 51.1,
-              lines: 52.38,
-              functions: 31.2,
-              branches: 31.2,
+            "content-src/components/MSLocalized.jsx": {
+              statements: 77.42,
+              lines: 77.42,
+              functions: 75,
+              branches: 73.08,
             },
-            "content-src/**/*.jsx": {
-              statements: 62,
-              lines: 60,
+            "content-src/components/CTAParagraph.jsx": {
               functions: 50,
+              branches: 75,
+            },
+            "content-src/components/HeroImage.jsx": {
+              branches: 62.5,
+            },
+            "content-src/components/LinkParagraph.jsx": {
+              functions: 75,
+              branches: 37.5,
+            },
+            "content-src/components/MRColorways.jsx": {
+              statements: 76.09,
+              lines: 75,
+              functions: 76.92,
+              branches: 74.07,
+            },
+            "content-src/components/MobileDownloads.jsx": {
+              branches: 56.25,
+            },
+            "content-src/components/Themes.jsx": {
               branches: 50,
+            },
+            "content-src/components/MultiStageAboutWelcome.jsx": {
+              statements: 78.06,
+              lines: 79.89,
+              functions: 73.17,
+              branches: 61.74,
+            },
+            "content-src/components/AdditionalCTA.jsx": {
+              branches: 75,
+            },
+            "content-src/components/MultiStageProtonScreen.jsx": {
+              branches: 79.07,
             },
           },
         },
@@ -141,13 +170,7 @@ module.exports = function (config) {
     webpack: {
       mode: "none",
       devtool: "inline-source-map",
-      // This loader allows us to override required files in tests
-      resolveLoader: {
-        alias: {
-          inject: path.join(__dirname, "../newtab/loaders/inject-loader"),
-        },
-      },
-      // This resolve config allows us to import with paths relative to the root directory, e.g. "lib/ActivityStream.jsm"
+      // This resolve config allows us to import with paths relative to the root directory
       resolve: {
         extensions: [".js", ".jsx"],
         modules: [
@@ -155,20 +178,25 @@ module.exports = function (config) {
           "node_modules",
           PATHS.newtabResolveDirectory,
         ],
-        fallback: {
-          stream: require.resolve("stream-browserify"),
-          buffer: require.resolve("buffer"),
-        },
         alias: {
           newtab: path.join(__dirname, "../newtab"),
+          asrouter: path.join(__dirname, "../asrouter"),
         },
       },
       plugins: [
         // The ResourceUriPlugin handles translating resource URIs in import
-        // statements in .mjs files, in a similar way to what
-        // babel-jsm-to-commonjs does for jsm files.
+        // statements in .mjs files to paths on the filesystem.
         new ResourceUriPlugin({
-          resourcePathRegEx: PATHS.resourcePathRegEx,
+          resourcePathRegExes: [
+            [
+              new RegExp("^resource://activity-stream/"),
+              path.join(__dirname, "../newtab/"),
+            ],
+            [
+              new RegExp("^resource:///modules/asrouter/"),
+              path.join(__dirname, "../asrouter/modules/"),
+            ],
+          ],
         }),
         new webpack.DefinePlugin({
           "process.env.NODE_ENV": JSON.stringify("development"),
@@ -183,29 +211,6 @@ module.exports = function (config) {
       },
       module: {
         rules: [
-          // This rule rewrites importing/exporting in .jsm files to be compatible with esmodules
-          {
-            test: /\.jsm$/,
-            exclude: [/node_modules/],
-            use: [
-              {
-                loader: "babel-loader", // require("babel-core")
-                options: {
-                  plugins: [
-                    // Converts .jsm files into common-js modules
-                    [
-                      "../newtab/tools/babel-jsm-to-commonjs.js",
-                      {
-                        basePath: PATHS.resourcePathRegEx,
-                        removeOtherImports: true,
-                        replace: true,
-                      },
-                    ],
-                  ],
-                },
-              },
-            ],
-          },
           {
             test: /\.js$/,
             exclude: [/node_modules\/(?!@fluent\/).*/, /tests/],
@@ -225,7 +230,7 @@ module.exports = function (config) {
           },
           {
             enforce: "post",
-            test: /\.js[mx]?$/,
+            test: /\.m?js[mx]?$/,
             loader: "@jsdevtools/coverage-istanbul-loader",
             options: { esModules: true },
             include: [path.resolve("content-src"), path.resolve("modules")],

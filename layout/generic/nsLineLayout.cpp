@@ -78,7 +78,8 @@ nsLineLayout::nsLineLayout(nsPresContext* aPresContext,
       mDirtyNextLine(false),
       mLineAtStart(false),
       mHasRuby(false),
-      mSuppressLineWrap(LineContainerFrame()->IsInSVGTextSubtree())
+      mSuppressLineWrap(LineContainerFrame()->IsInSVGTextSubtree()),
+      mUsedOverflowWrap(false)
 #ifdef DEBUG
       ,
       mSpansAllocated(0),
@@ -195,8 +196,8 @@ void nsLineLayout::BeginLineReflow(nscoord aICoord, nscoord aBCoord,
   psd->mICoord = aICoord;
   psd->mIEnd = aICoord + aISize;
   // Set up inset to be used for text-wrap:balance implementation, but only if
-  // the available size is at least 2*inset.
-  psd->mInset = aISize < aInset * 2 ? 0 : aInset;
+  // the available size is greater than inset.
+  psd->mInset = aISize > aInset ? aInset : 0;
   mContainerSize = aContainerSize;
 
   mBStartEdge = aBCoord;
@@ -251,7 +252,7 @@ void nsLineLayout::BeginLineReflow(nscoord aICoord, nscoord aBCoord,
   }
 }
 
-void nsLineLayout::EndLineReflow() {
+bool nsLineLayout::EndLineReflow() {
 #ifdef NOISY_REFLOW
   LineContainerFrame()->ListTag(stdout);
   printf(": EndLineReflow: width=%d\n",
@@ -282,6 +283,8 @@ void nsLineLayout::EndLineReflow() {
     maxFramesAllocated = mFramesAllocated;
   }
 #endif
+
+  return mUsedOverflowWrap;
 }
 
 // XXX swtich to a single mAvailLineWidth that we adjust as each frame
@@ -427,7 +430,7 @@ void nsLineLayout::BeginSpan(nsIFrame* aFrame,
   psd->mIStart = aIStart;
   psd->mICoord = aIStart;
   psd->mIEnd = aIEnd;
-  psd->mInset = mCurrentSpan->mInset;
+  psd->mInset = 0;  // inset applies only to the root span
   psd->mBaseline = aBaseline;
 
   nsIFrame* frame = aSpanReflowInput->mFrame;
@@ -732,8 +735,7 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
           disp->DisplayInside() == StyleDisplayInside::Table)) ||
         fType == LayoutFrameType::HTMLButtonControl ||
         fType == LayoutFrameType::GfxButtonControl ||
-        fType == LayoutFrameType::FieldSet ||
-        fType == LayoutFrameType::ComboboxDisplay) {
+        fType == LayoutFrameType::FieldSet) {
       return true;
     }
 

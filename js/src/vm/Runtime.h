@@ -53,6 +53,7 @@
 #include "vm/Caches.h"  // js::RuntimeCaches
 #include "vm/CodeCoverage.h"
 #include "vm/GeckoProfiler.h"
+#include "vm/InvalidatingFuse.h"
 #include "vm/JSScript.h"
 #include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
 #include "vm/SharedScriptDataTableHolder.h"   // js::SharedScriptDataTableHolder
@@ -298,6 +299,17 @@ class Metrics {
 #undef DECLARE_METRIC_HELPER
 };
 
+class HasSeenObjectEmulateUndefinedFuse : public js::InvalidatingRuntimeFuse {
+  virtual const char* name() override {
+    return "HasSeenObjectEmulateUndefinedFuse";
+  }
+  virtual bool checkInvariant(JSContext* cx) override {
+    // Without traversing the GC heap I don't think it's possible to assert
+    // this invariant directly.
+    return true;
+  }
+};
+
 }  // namespace js
 
 struct JSRuntime {
@@ -517,9 +529,9 @@ struct JSRuntime {
   js::GeckoProfilerRuntime& geckoProfiler() { return geckoProfiler_.ref(); }
 
   // Heap GC roots for PersistentRooted pointers.
-  js::MainThreadData<
-      mozilla::EnumeratedArray<JS::RootKind, JS::RootKind::Limit,
-                               mozilla::LinkedList<js::PersistentRootedBase>>>
+  js::MainThreadData<mozilla::EnumeratedArray<
+      JS::RootKind, mozilla::LinkedList<js::PersistentRootedBase>,
+      size_t(JS::RootKind::Limit)>>
       heapRoots;
 
   void tracePersistentRoots(JSTracer* trc);
@@ -1090,6 +1102,9 @@ struct JSRuntime {
 
   js::MainThreadData<JS::GlobalCreationCallback>
       shadowRealmGlobalCreationCallback;
+
+  js::MainThreadData<js::HasSeenObjectEmulateUndefinedFuse>
+      hasSeenObjectEmulateUndefinedFuse;
 };
 
 namespace js {

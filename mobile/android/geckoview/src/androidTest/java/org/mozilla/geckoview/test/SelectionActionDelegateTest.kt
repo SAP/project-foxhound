@@ -355,9 +355,8 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         )
     }
 
-    @Test fun compareClientRect() {
-        // TODO: intermittent failure, bug 1829615
-        assumeThat(sessionRule.env.isFission, equalTo(false))
+    @Test
+    fun compareClientRect() {
         val jsCssReset = """(function() {
             document.querySelector('$id').style.display = "block";
             document.querySelector('$id').style.border = "0";
@@ -394,8 +393,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             override fun onShowClipboardPermissionRequest(
                 session: GeckoSession,
                 perm: ClipboardPermission,
-            ):
-                GeckoResult<AllowOrDeny> {
+            ): GeckoResult<AllowOrDeny> {
                 assertThat(
                     "Type should match",
                     perm.type,
@@ -409,8 +407,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             override fun onAlertPrompt(
                 session: GeckoSession,
                 prompt: PromptDelegate.AlertPrompt,
-            ):
-                GeckoResult<PromptDelegate.PromptResponse> {
+            ): GeckoResult<PromptDelegate.PromptResponse> {
                 assertThat("Message should match", "allow", equalTo(prompt.message))
                 result.complete(null)
                 return GeckoResult.fromValue(prompt.dismiss())
@@ -441,8 +438,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             override fun onShowClipboardPermissionRequest(
                 session: GeckoSession,
                 perm: ClipboardPermission,
-            ):
-                GeckoResult<AllowOrDeny>? {
+            ): GeckoResult<AllowOrDeny>? {
                 assertThat(
                     "Type should match",
                     perm.type,
@@ -455,8 +451,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             override fun onAlertPrompt(
                 session: GeckoSession,
                 prompt: PromptDelegate.AlertPrompt,
-            ):
-                GeckoResult<PromptDelegate.PromptResponse> {
+            ): GeckoResult<PromptDelegate.PromptResponse> {
                 assertThat("Message should match", "deny", equalTo(prompt.message))
                 result.complete(null)
                 return GeckoResult.fromValue(prompt.dismiss())
@@ -487,8 +482,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             override fun onShowClipboardPermissionRequest(
                 session: GeckoSession,
                 perm: ClipboardPermission,
-            ):
-                GeckoResult<AllowOrDeny>? {
+            ): GeckoResult<AllowOrDeny>? {
                 assertThat(
                     "Type should match",
                     perm.type,
@@ -512,6 +506,51 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         mainSession.loadTestPath(HELLO_HTML_PATH)
         sessionRule.waitForResult(permissionResult)
         sessionRule.waitForPageStop()
+    }
+
+    @WithDisplay(width = 100, height = 100)
+    @Test
+    fun clipboardReadDismiss() {
+        assumeThat("Unnecessary to run multiple times", id, equalTo("#text"))
+
+        sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
+
+        withClipboard("clipboardReadDismiss") {} // Reset clipboard data
+
+        val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
+        mainSession.loadUri(url)
+        mainSession.waitForPageStop()
+
+        val result = GeckoResult<Void>()
+        val permissionResult = GeckoResult<AllowOrDeny>()
+        mainSession.delegateDuringNextWait(object : SelectionActionDelegate {
+            @AssertCalled(count = 1)
+            override fun onShowClipboardPermissionRequest(
+                session: GeckoSession,
+                perm: ClipboardPermission,
+            ): GeckoResult<AllowOrDeny>? {
+                assertThat(
+                    "Type should match",
+                    perm.type,
+                    equalTo(SelectionActionDelegate.PERMISSION_CLIPBOARD_READ),
+                )
+                result.complete(null)
+                return permissionResult
+            }
+        })
+
+        mainSession.synthesizeTap(50, 50) // Provides user activation.
+        sessionRule.waitForResult(result)
+
+        mainSession.delegateDuringNextWait(object : SelectionActionDelegate {
+            @AssertCalled
+            override fun onDismissClipboardPermissionRequest(session: GeckoSession) {
+                permissionResult.complete(AllowOrDeny.DENY)
+            }
+        })
+
+        mainSession.synthesizeTap(10, 10) // click to dismiss.
+        sessionRule.waitForResult(permissionResult)
     }
 
     /** Interface that defines behavior for a particular type of content */
@@ -584,10 +623,12 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
         mainSession.loadTestPath(INPUTS_PATH)
         mainSession.waitForPageStop()
+        sessionRule.waitForContentTransformsReceived(mainSession)
 
         val requestClientRect: (String) -> RectF = {
             mainSession.reload()
             mainSession.waitForPageStop()
+            sessionRule.waitForContentTransformsReceived(mainSession)
 
             mainSession.evaluateJS(it)
             content.focus()
@@ -614,7 +655,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
             fuzzyEqual(screenRectA.height(), screenRectB.height(), expectedDiff.height())
 
         assertThat(
-            "Selection rect is not at expected location. a$screenRectA b$screenRectB",
+            "Selection rect is not at expected location. a$screenRectA b$screenRectB expectedDiff$expectedDiff",
             result,
             equalTo(true),
         )

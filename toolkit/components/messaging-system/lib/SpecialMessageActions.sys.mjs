@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const DOH_DOORHANGER_DECISION_PREF = "doh-rollout.doorhanger-decision";
 const NETWORK_TRR_MODE_PREF = "network.trr.mode";
 
@@ -13,12 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UITour: "resource:///modules/UITour.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  Spotlight: "resource://activity-stream/lib/Spotlight.jsm",
 });
 
 export const SpecialMessageActions = {
@@ -186,6 +182,7 @@ export const SpecialMessageActions = {
   setPref(pref) {
     // Array of prefs that are allowed to be edited by SET_PREF
     const allowedPrefs = [
+      "browser.aboutwelcome.didSeeFinalScreen",
       "browser.dataFeatureRecommendations.enabled",
       "browser.migrate.content-modal.about-welcome-behavior",
       "browser.migrate.content-modal.import-all.enabled",

@@ -3930,7 +3930,6 @@ HttpBaseChannel::GetRequestMode(RequestMode* aMode) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetRequestMode(RequestMode aMode) {
-  MOZ_ASSERT(aMode != RequestMode::EndGuard_);
   mRequestMode = aMode;
   return NS_OK;
 }
@@ -4441,6 +4440,9 @@ void HttpBaseChannel::DoNotifyListener() {
   // as not-pending.
   StoreIsPending(false);
 
+  // notify "http-on-before-stop-request" observers
+  gHttpHandler->OnBeforeStopRequest(this);
+
   if (mListener && !LoadOnStopRequestCalled()) {
     nsCOMPtr<nsIStreamListener> listener = mListener;
     StoreOnStopRequestCalled(true);
@@ -4448,7 +4450,7 @@ void HttpBaseChannel::DoNotifyListener() {
   }
   StoreOnStopRequestCalled(true);
 
-  // notify "http-on-stop-connect" observers
+  // notify "http-on-stop-request" observers
   gHttpHandler->OnStopRequest(this);
 
   // This channel has finished its job, potentially release any tail-blocked

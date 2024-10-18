@@ -22,7 +22,6 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/MessageLink.h"
@@ -100,20 +99,6 @@ class NeckoParent;
 }  // namespace net
 
 namespace ipc {
-
-// Scoped base::ProcessHandle to ensure base::CloseProcessHandle is called.
-struct ScopedProcessHandleTraits {
-  typedef base::ProcessHandle type;
-
-  static type empty() { return base::kInvalidProcessHandle; }
-
-  static void release(type aProcessHandle) {
-    if (aProcessHandle && aProcessHandle != base::kInvalidProcessHandle) {
-      base::CloseProcessHandle(aProcessHandle);
-    }
-  }
-};
-typedef mozilla::Scoped<ScopedProcessHandleTraits> ScopedProcessHandle;
 
 class ProtocolFdMapping;
 class ProtocolCloneContext;
@@ -356,6 +341,9 @@ class IProtocol : public HasResultCodes {
   mozilla::ipc::IPCResult::FailUnsafePrintfImpl(   \
       WrapNotNull(actor), __func__, nsPrintfCString(format, ##__VA_ARGS__))
 
+#define IPC_TEST_FAIL(actor) \
+  mozilla::ipc::IPCResult::FailForTesting(WrapNotNull(actor), __func__, "")
+
 /**
  * All message deserializers and message handlers should return this type via
  * the above macros. We use a less generic name here to avoid conflict with
@@ -393,6 +381,10 @@ class IPCResult {
                                         nsPrintfCString const& aWhy) {
     return FailImpl(aActor, aWhere, aWhy.get());
   }
+
+  // Only used in testing.
+  static IPCResult FailForTesting(NotNull<IProtocol*> aActor,
+                                  const char* aWhere, const char* aWhy);
 
  private:
   static IPCResult FailImpl(NotNull<IProtocol*> aActor, const char* aWhere,
@@ -538,7 +530,7 @@ class IToplevelProtocol : public IRefCountedProtocol {
   // Used to be on mState
   int32_t mLastLocalId;
   IDMap<IProtocol*> mActorMap;
-  IDMap<Shmem::SharedMemory*> mShmemMap;
+  IDMap<RefPtr<Shmem::SharedMemory>> mShmemMap;
 
   MessageChannel mChannel;
 };
@@ -721,7 +713,7 @@ class IPDLResolverInner final {
 
   template <typename F>
   void Resolve(F&& aWrite) {
-    ResolveOrReject(true, aWrite);
+    ResolveOrReject(true, std::forward<F>(aWrite));
   }
 
  private:

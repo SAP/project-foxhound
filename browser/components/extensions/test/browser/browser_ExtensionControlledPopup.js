@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
 });
 
-function createMarkup(doc, popup) {
+function createMarkup(doc) {
   let panel = ExtensionControlledPopup._getAndMaybeCreatePanel(doc);
   let popupnotification = doc.createXULElement("popupnotification");
   let attributes = {
@@ -98,7 +98,7 @@ add_task(async function testExtensionControlledPopup() {
     return popupShown;
   }
 
-  function closePopupWithAction(action, extensionId) {
+  function closePopupWithAction(action) {
     let done;
     if (action == "ignore") {
       panel.hidePopup();
@@ -134,7 +134,11 @@ add_task(async function testExtensionControlledPopup() {
   onObserverAdded.resetHistory();
   ok(!onObserverRemoved.called, "Observing the event");
   ok(!beforeDisableAddon.called, "Settings have not been restored");
-  ok(panel.getAttribute("panelopen") != "true", "The panel is closed");
+  Assert.notEqual(
+    panel.getAttribute("panelopen"),
+    "true",
+    "The panel is closed"
+  );
   is(popupnotification.hidden, true, "The popup is hidden");
   is(addon.userDisabled, false, "The extension is enabled");
   is(

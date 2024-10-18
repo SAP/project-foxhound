@@ -36,6 +36,7 @@ const errors = [
   error.StaleElementReferenceError,
   error.TimeoutError,
   error.UnableToSetCookieError,
+  error.UnableToSetFileInputError,
   error.UnexpectedAlertOpenError,
   error.UnknownCommandError,
   error.UnknownError,
@@ -454,6 +455,14 @@ add_task(function test_NoSuchShadowRootError() {
   ok(err instanceof error.WebDriverError);
 });
 
+add_task(function test_NoSuchUserContextError() {
+  let err = new error.NoSuchUserContextError("foo");
+  equal("NoSuchUserContextError", err.name);
+  equal("foo", err.message);
+  equal("no such user context", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
 add_task(function test_NoSuchWindowError() {
   let err = new error.NoSuchWindowError("foo");
   equal("NoSuchWindowError", err.name);
@@ -499,6 +508,14 @@ add_task(function test_UnableToSetCookieError() {
   equal("UnableToSetCookieError", err.name);
   equal("foo", err.message);
   equal("unable to set cookie", err.status);
+  ok(err instanceof error.WebDriverError);
+});
+
+add_task(function test_UnableToSetFileInputError() {
+  let err = new error.UnableToSetFileInputError("foo");
+  equal("UnableToSetFileInputError", err.name);
+  equal("foo", err.message);
+  equal("unable to set file input", err.status);
   ok(err instanceof error.WebDriverError);
 });
 

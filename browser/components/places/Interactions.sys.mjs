@@ -448,11 +448,8 @@ class _Interactions {
 
   /**
    * Handles a window going inactive.
-   *
-   * @param {DOMWindow} win
-   *   The window that is going inactive.
    */
-  #onDeactivateWindow(win) {
+  #onDeactivateWindow() {
     lazy.logConsole.debug("Window deactivate");
 
     this.#updateInteraction();
@@ -504,10 +501,8 @@ class _Interactions {
    *   The subject of the notification.
    * @param {string} topic
    *   The topic of the notification.
-   * @param {string} data
-   *   The data attached to the notification.
    */
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case DOMWINDOW_OPENED_TOPIC:
         this.#onWindowOpen(subject);
@@ -617,7 +612,7 @@ class InteractionsStore {
     // Block async shutdown to ensure the last write goes through.
     this.progress = {};
     lazy.PlacesUtils.history.shutdownClient.jsclient.addBlocker(
-      "Interactions.jsm:: store",
+      "Interactions.sys.mjs:: store",
       async () => this.flush(),
       { fetchState: () => this.progress }
     );
@@ -645,7 +640,7 @@ class InteractionsStore {
    */
   async reset() {
     await lazy.PlacesUtils.withConnectionWrapper(
-      "Interactions.jsm::reset",
+      "Interactions.sys.mjs::reset",
       async db => {
         await db.executeCached(`DELETE FROM moz_places_metadata`);
       }
@@ -740,7 +735,7 @@ class InteractionsStore {
 
     this.progress.pendingUpdates = i;
     await lazy.PlacesUtils.withConnectionWrapper(
-      "Interactions.jsm::updateDatabase",
+      "Interactions.sys.mjs::updateDatabase",
       async db => {
         await db.executeCached(
           `

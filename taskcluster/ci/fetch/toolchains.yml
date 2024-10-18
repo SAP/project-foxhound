@@ -150,23 +150,22 @@ nasm-2.15.05:
         size: 995732
 
 wix-3.14.0:
-    description: wix 3.14.0.2812 binary release
+    description: wix 3.14.0 binary release
     # WIX doesn't use a wrapping toplevel DIR, so we should really repackage it when
     # Bug 1479533 and related code is ready.
     fetch:
         type: static-url
-        # This is a dev version of the toolset, upstream will purge over time...
-        url: http://wixtoolset.org/downloads/v3.14.0.2812/wix314-binaries.zip
-        sha256: 923892298f37514622c58cbbd9c2cadf2822d9bb53df8ee83aaeb05280777611
-        size: 34664320
+        url: https://github.com/wixtoolset/wix3/releases/download/wix314rtm/wix314-binaries.zip
+        sha256: 13f067f38969faf163d93a804b48ea0576790a202c8f10291f2000f0e356e934
+        size: 41282726
 
-zlib-1.3:
-    description: zlib 1.3 source code
+zlib-1.3.1:
+    description: zlib 1.3.1 source code
     fetch:
         type: static-url
-        url: https://zlib.net/fossils/zlib-1.3.tar.gz
-        sha256: ff0ba4c292013dbc27530b3a81e1f9a813cd39de01ca5e0f8bf355702efa593e
-        size: 1495873
+        url: https://zlib.net/fossils/zlib-1.3.1.tar.gz
+        sha256: 9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+        size: 1512791
 
 nsis-3.07:
     description: nsis 3.07 source code
@@ -297,8 +296,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.7.4 release
-        revision: fb0ab0c42268c2ea9bbc1ec9bc848330cfdf08ec
+        # 0.7.7 release
+        revision: e976c42c2141969915bdd39dd3177db6f27405a8
 
 fxc2:
     description: fxc2 source code
@@ -362,6 +361,13 @@ clang-17:
         repo: https://github.com/llvm/llvm-project
         revision: 6009708b4367171ccdbf4b5905cb6a803753fe18
 
+clang-18:
+    description: clang 18.1.0-rc2 source code
+    fetch:
+        type: git
+        repo: https://github.com/llvm/llvm-project
+        revision: c6c86965d967886ca5a2ed8968c949cd42cdd49a
+
 clang-trunk:
     description: clang main branch source code
     attributes:
@@ -374,13 +380,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.75.0:
-    description: Rust 1.75.0 source code
+rust-1.76.0:
+    description: Rust 1.76.0 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 82e1608dfa6e0b5569232559e3d385fea5a93112
+        revision: 07dca489ac2d933c78d3c5158e3f43beefeb02ce
 
 wasi-sdk-11:
     description: wasi-sdk-11 source code
@@ -485,90 +491,57 @@ nodejs-12-linux64:
         strip-components: 1
         add-prefix: node/
 
-nodejs-16-linux64:
-    description: nodejs 16 for x64 linux
+nodejs-18-macosx64:
+    description: nodejs 18 for x64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.19.0/node-v16.19.0-linux-x64.tar.xz
-        sha256: c88b52497ab38a3ddf526e5b46a41270320409109c3f74171b241132984fd08f
-        size: 22492000
+        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-darwin-x64.tar.xz
+        sha256: 4f60b40071c6a67482b99d22a5265839177b8706a2b13b493396f368f0b42b00
+        size: 22496376
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-12-macosx64:
-    description: nodejs 12 for x64 macOS
+nodejs-18-macosx64-arm64:
+    description: nodejs 18 for arm64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-darwin-x64.tar.xz
-        sha256: 95799e1276d65b599635f839248d3b3f7d3986873da8f01902a541b9588a6c71
-        size: 13678092
+        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-darwin-arm64.tar.xz
+        sha256: 857885257c586fb13c93d33d326ca82056ba8b7445ce27cf34dd406add04158e
+        size: 20768464
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-16-macosx64:
-    description: nodejs 16 for x64 macOS
+nodejs-18-win32:
+    description: nodejs 18 for x86 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.19.0/node-v16.19.0-darwin-x64.tar.xz
-        sha256: 601d1d632b9815dbb647f5cd440a95fa651110b5b4bcaf07ed3aa7886525716b
-        size: 20975524
+        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-win-x86.zip
+        sha256: 3171148f735954bdca8adccb2200379e61142e0f5a2bdb4ca6432afb0d9951df
+        size: 27504941
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-16-macosx64-arm64:
-    description: nodejs 16 for arm64 macOS
+nodejs-18-win64:
+    description: nodejs 18 for x64 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v16.19.0/node-v16.19.0-darwin-arm64.tar.xz
-        sha256: 7313c9db5f5140ece847a97f366032a10bddb6d87fa28a361ada918addcd5c73
-        size: 19363804
+        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-win-x64.zip
+        sha256: 5311913d45e1fcc3643c58d1e3926eb85437b180f025fe5857413c9f02403645
+        size: 29332158
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-12-win32:
-    description: nodejs 12 for x86 Windows
+nodejs-18-source:
+    description: nodejs 18 source
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-win-x86.zip
-        sha256: 2f7fa563c9477d5e9fddc5c22451b21b8a963c9b5004c80dd0140c3a3675a4e8
-        size: 17134607
-        artifact-name: nodejs.tar.zst
-        strip-components: 1
-        add-prefix: node/
-
-nodejs-16-win32:
-    description: nodejs 16 for x86 Windows
-    fetch:
-        type: static-url
-        url: https://nodejs.org/dist/v16.19.0/node-v16.19.0-win-x86.zip
-        sha256: 17e2bf8ed00b3d15321743104104c8b6ef55677dfc18ee2ed44de64fbf2c4def
-        size: 25424808
-        artifact-name: nodejs.tar.zst
-        strip-components: 1
-        add-prefix: node/
-
-nodejs-12-win64:
-    description: nodejs 12 for x64 Windows
-    fetch:
-        type: static-url
-        url: https://nodejs.org/dist/v12.22.12/node-v12.22.12-win-x64.zip
-        sha256: 09639bac66d4dc4dd52179968209413ad4b7360e917dcbe8834052a4b936a087
-        size: 18681823
-        artifact-name: nodejs.tar.zst
-        strip-components: 1
-        add-prefix: node/
-
-nodejs-16-win64:
-    description: nodejs 16 for x64 Windows
-    fetch:
-        type: static-url
-        url: https://nodejs.org/dist/v16.19.0/node-v16.19.0-win-x64.zip
-        sha256: 534ca7a24e999c81cec847a498cc43d47e2bb158f6edf639e5297f2718350e96
-        size: 27072850
+        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0.tar.xz
+        sha256: f52b41af20596a9abd8ed75241837ec43945468221448bbf841361e2091819b6
+        size: 41248748
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -607,21 +580,21 @@ afl-plus-plus-4.0:
     fetch:
         type: git
         repo: https://github.com/AFLplusplus/AFLplusplus
-        revision: d09950f4bb98431576b872436f0fbf773ab895db
+        revision: 0d164e4c1811c4d05f940f78e90fc56b661fb3b4
 
 cargo-vet:
     description: cargo-vet source
     fetch:
         type: git
         repo: https://github.com/mozilla/cargo-vet
-        revision: 67e92b6d03f48802907b2c80119ed328289a114d
+        revision: 5bd670061a22074eb5ee9d69feccc5900df00ec3
 
 symbol-scrapers:
     description: Linux distribution symbol scraper source
     fetch:
         type: git
         repo: https://github.com/mozilla/symbol-scrapers
-        revision: f3778f70e2c34315b4759b58c8284b76a6d71dfc
+        revision: 95ea2e4c5f82469cb394620c8d332e3457466e45
 
 xz-5.4.4:
     description: xz 5.4.4 source code
@@ -673,3 +646,25 @@ cpython-3.11.7.exe:
         sha256: c117c6444494bbe4cc937e8a5a61899d53f7f5c5bc573c5d130304e457d54024
         size: 26009544
         artifact-name: python-3.11.7-amd64.exe
+
+windows-rs:
+    description: Source of the windows rust crate
+    fetch:
+        type: static-url
+        url: https://crates.io/api/v1/crates/windows/0.52.0/download
+        sha256: e48a53791691ab099e5e2ad123536d0fff50652600abaf43bbf952894110d0be
+        size: 11843715
+        artifact-name: windows-rs.tar.zst
+        strip-components: 1
+        add-prefix: windows-rs/
+
+libxml2:
+    description: Source of the libxml2 library
+    fetch:
+        type: static-url
+        url: https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.9.12/libxml2-v2.9.12.tar.gz
+        sha256: 98bfa7a9a5e2a75638422050740448ee9f02bf4dc2075c9822d7747d5ff9e617
+        size: 5233674
+        artifact-name: libxml2.tar.zst
+        strip-components: 1
+        add-prefix: libxml2/

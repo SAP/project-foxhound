@@ -719,14 +719,33 @@ void HTMLEditor::UpdateRootElement() {
 
 nsresult HTMLEditor::FocusedElementOrDocumentBecomesEditable(
     Document& aDocument, Element* aElement) {
+  const bool isInDesignMode =
+      (IsInDesignMode() && (!aElement || aElement->IsInDesignMode()));
+
   // If we should've already handled focus event, selection limiter should not
-  // be set.  Therefore, if it's set, we should do nothing here.
+  // be set.  However, IMEStateManager is not notified the pseudo focus change
+  // in this case. Therefore, we need to notify IMEStateManager of this.
   if (GetSelectionAncestorLimiter()) {
+    if (isInDesignMode) {
+      return NS_OK;
+    }
+    // Although editor is already initialized due to re-used, ISM may not
+    // create IME content observer yet. So we have to create it.
+    IMEState newState;
+    nsresult rv = GetPreferredIMEState(&newState);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("EditorBase::GetPreferredIMEState() failed");
+      return NS_OK;
+    }
+    if (const RefPtr<Element> focusedElement = GetFocusedElement()) {
+      MOZ_ASSERT(focusedElement == aElement);
+      IMEStateManager::UpdateIMEState(newState, focusedElement, *this);
+    }
     return NS_OK;
   }
   // If we should be in the design mode, we want to handle focus event fired
   // on the document node.  Therefore, we should emulate it here.
-  if (IsInDesignMode() && (!aElement || aElement->IsInDesignMode())) {
+  if (isInDesignMode) {
     MOZ_ASSERT(&aDocument == GetDocument());
     nsresult rv = OnFocus(aDocument);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "HTMLEditor::OnFocus() failed");
@@ -910,7 +929,11 @@ void HTMLEditor::CreateEventListeners() {
 }
 
 nsresult HTMLEditor::InstallEventListeners() {
-  if (NS_WARN_IF(!IsInitialized()) || NS_WARN_IF(!mEventListener)) {
+  // FIXME InstallEventListeners() should not be called if we failed to set
+  // document or create an event listener.  So, these checks should be
+  // MOZ_DIAGNOSTIC_ASSERT instead.
+  MOZ_ASSERT(GetDocument());
+  if (MOZ_UNLIKELY(!GetDocument()) || NS_WARN_IF(!mEventListener)) {
     return NS_ERROR_NOT_INITIALIZED;
   }
 
@@ -923,14 +946,6 @@ nsresult HTMLEditor::InstallEventListeners() {
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditorEventListener::Connect() failed");
   return rv;
-}
-
-void HTMLEditor::RemoveEventListeners() {
-  if (!IsInitialized()) {
-    return;
-  }
-
-  EditorBase::RemoveEventListeners();
 }
 
 void HTMLEditor::Detach(
@@ -5953,14 +5968,23 @@ bool HTMLEditor::IsEmpty() const {
     return true;
   }
 
-  // XXX Oddly, we check body or document element's state instead of
-  //     active editing host.  Must be a bug.
-  Element* bodyOrDocumentElement = GetRoot();
-  if (!bodyOrDocumentElement) {
-    return true;
+  const Element* activeElement =
+      GetDocument() ? GetDocument()->GetActiveElement() : nullptr;
+  const Element* editingHostOrBodyOrRootElement =
+      activeElement && activeElement->IsEditable()
+          ? ComputeEditingHost(*activeElement, LimitInBodyElement::No)
+          : ComputeEditingHost(LimitInBodyElement::No);
+  if (MOZ_UNLIKELY(!editingHostOrBodyOrRootElement)) {
+    // If there is no active element nor no selection range in the document,
+    // let's check entire the document as what we do traditionally.
+    editingHostOrBodyOrRootElement = GetRoot();
+    if (!editingHostOrBodyOrRootElement) {
+      return true;
+    }
   }
 
-  for (nsIContent* childContent = bodyOrDocumentElement->GetFirstChild();
+  for (nsIContent* childContent =
+           editingHostOrBodyOrRootElement->GetFirstChild();
        childContent; childContent = childContent->GetNextSibling()) {
     if (!childContent->IsText() || childContent->Length()) {
       return false;
@@ -7002,8 +7026,8 @@ EventTarget* HTMLEditor::GetDOMEventTarget() const {
   // Don't use getDocument here, because we have no way of knowing
   // whether Init() was ever called.  So we need to get the document
   // ourselves, if it exists.
-  MOZ_ASSERT(IsInitialized(), "The HTMLEditor has not been initialized yet");
   Document* doc = GetDocument();
+  MOZ_ASSERT(doc, "The HTMLEditor has not been initialized yet");
   if (!doc) {
     return nullptr;
   }
@@ -7076,8 +7100,8 @@ void HTMLEditor::NotifyRootChanged() {
 }
 
 Element* HTMLEditor::GetBodyElement() const {
-  MOZ_ASSERT(IsInitialized(), "The HTMLEditor hasn't been initialized yet");
   Document* document = GetDocument();
+  MOZ_ASSERT(document, "The HTMLEditor hasn't been initialized yet");
   if (NS_WARN_IF(!document)) {
     return nullptr;
   }

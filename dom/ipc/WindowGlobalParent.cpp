@@ -230,10 +230,8 @@ void WindowGlobalParent::OriginCounter::UpdateSiteOriginsFrom(
 }
 
 void WindowGlobalParent::OriginCounter::Accumulate() {
-  mozilla::Telemetry::Accumulate(
-      mozilla::Telemetry::HistogramID::
-          FX_NUMBER_OF_UNIQUE_SITE_ORIGINS_PER_DOCUMENT,
-      mMaxOrigins);
+  mozilla::glean::geckoview::per_document_site_origins.AccumulateSamples(
+      {mMaxOrigins});
 
   mMaxOrigins = 0;
   mOriginMap.Clear();
@@ -381,7 +379,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvInternalLoad(
   return IPC_OK();
 }
 
-IPCResult WindowGlobalParent::RecvUpdateDocumentURI(nsIURI* aURI) {
+IPCResult WindowGlobalParent::RecvUpdateDocumentURI(NotNull<nsIURI*> aURI) {
   // XXX(nika): Assert that the URI change was one which makes sense (either
   // about:blank -> a real URI, or a legal push/popstate URI change):
   if (StaticPrefs::dom_security_setdocumenturi()) {
@@ -1175,7 +1173,6 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
           nsContentUtils::TruncatedURLForDisplay(mDocumentURI));
     }
 
-    Telemetry::Accumulate(Telemetry::TOP_LEVEL_CONTENT_DOCUMENTS_DESTROYED, 1);
     glean::use_counter::top_level_content_documents_destroyed.Add();
 
     bool any = false;
@@ -1185,14 +1182,11 @@ void WindowGlobalParent::FinishAccumulatingPageUseCounters() {
         continue;
       }
       any = true;
-      auto id = static_cast<Telemetry::HistogramID>(
-          Telemetry::HistogramFirstUseCounter + uc * 2 + 1);
+      const char* metricName = IncrementUseCounter(uc, /* aIsPage = */ true);
       if (dumpCounters) {
-        printf_stderr("USE_COUNTER_PAGE: %s - %s\n",
-                      Telemetry::GetHistogramName(id), urlForLogging->get());
+        printf_stderr("USE_COUNTER_PAGE: %s - %s\n", metricName,
+                      urlForLogging->get());
       }
-      Telemetry::Accumulate(id, 1);
-      IncrementUseCounter(uc, /* aIsPage = */ true);
     }
 
     if (!any) {
@@ -1334,7 +1328,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvSetSingleChannelId(
 }
 
 mozilla::ipc::IPCResult WindowGlobalParent::RecvSetDocumentDomain(
-    nsIURI* aDomain) {
+    NotNull<nsIURI*> aDomain) {
   if (mSandboxFlags & SANDBOXED_DOMAIN) {
     // We're sandboxed; disallow setting domain
     return IPC_FAIL(this, "Sandbox disallows domain setting.");
@@ -1352,7 +1346,7 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvSetDocumentDomain(
     }
   }
 
-  if (!aDomain || !Document::IsValidDomain(uri, aDomain)) {
+  if (!Document::IsValidDomain(uri, aDomain)) {
     // Error: illegal domain
     return IPC_FAIL(
         this, "Setting domain that's not a suffix of existing domain value.");

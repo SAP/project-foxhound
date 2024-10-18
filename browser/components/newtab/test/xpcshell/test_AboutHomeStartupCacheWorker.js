@@ -21,8 +21,8 @@ const { TestUtils } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-const { DiscoveryStreamFeed } = ChromeUtils.import(
-  "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
+const { DiscoveryStreamFeed } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/DiscoveryStreamFeed.sys.mjs"
 );
 
 SearchTestUtils.init(this);
@@ -37,8 +37,8 @@ AddonTestUtils.createAppInfo(
 const { AboutNewTab } = ChromeUtils.importESModule(
   "resource:///modules/AboutNewTab.sys.mjs"
 );
-const { PREFS_CONFIG } = ChromeUtils.import(
-  "resource://activity-stream/lib/ActivityStream.jsm"
+const { PREFS_CONFIG } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/ActivityStream.sys.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {

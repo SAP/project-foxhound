@@ -254,7 +254,7 @@ export class TranslationsDocument {
   /**
    * The BCP 47 language tag that is used on the page.
    *
-   * @type {string} */
+    @type {string} */
   documentLanguage;
 
   /**
@@ -292,7 +292,7 @@ export class TranslationsDocument {
    * The list of nodes that need updating with the translated HTML. These are batched
    * into an update.
    *
-   * @type {Set<{ node: Node, translatedHTML: string }}
+   * @type {Set<{ node: Node, translatedHTML: string }>}
    */
   #nodesWithTranslatedHTML = new Set();
 
@@ -300,7 +300,7 @@ export class TranslationsDocument {
    * The list of nodes that need updating with the translated Attribute HTML. These are batched
    * into an update.
    *
-   * @type {Set<{ node: Node, translation: string, attribute: string }}
+   * @type {Set<{ node: Node, translation: string, attribute: string }>}
    */
   #nodesWithTranslatedAttributes = new Set();
 
@@ -475,8 +475,9 @@ export class TranslationsDocument {
 
   /**
    * Queue a node for translation of attributes.
+   *
    * @param {Node} node
-   * @param {Array<String>}
+   * @param {Array<string>} attributeList
    */
   queueAttributeNodeForTranslation(node, attributeList) {
     /** @type {NodeVisibility} */
@@ -522,6 +523,7 @@ export class TranslationsDocument {
   /**
    * Helper function for adding a new root to the mutation
    * observer.
+   *
    * @param {Node} root
    */
   observeNewRoot(root) {
@@ -689,6 +691,7 @@ export class TranslationsDocument {
    * Get all the nodes which have selected attributes
    * from the node/document and queue them.
    * Call the translate function on these nodes
+   *
    * @param {Node} node
    * @returns {Array<Promise<void>> | null}
    */
@@ -773,7 +776,7 @@ export class TranslationsDocument {
    * Runs `determineTranslationStatus`, but only on unprocessed nodes.
    *
    * @param {Node} node
-   * @return {number} - One of the NodeStatus values.
+   * @returns {number} - One of the NodeStatus values.
    */
   determineTranslationStatusForUnprocessedNodes = node => {
     if (this.#processedNodes.has(node)) {
@@ -840,6 +843,7 @@ export class TranslationsDocument {
 
   /**
    * Queue a node for translation.
+   *
    * @param {Node} node
    */
   queueNodeForTranslation(node) {
@@ -856,6 +860,7 @@ export class TranslationsDocument {
 
   /**
    * Submit the translations giving priority to nodes in the viewport.
+   *
    * @returns {Array<Promise<void>> | null}
    */
   dispatchQueuedTranslations() {
@@ -905,6 +910,7 @@ export class TranslationsDocument {
 
   /**
    * Submit the Attribute translations giving priority to nodes in the viewport.
+   *
    * @returns {Array<Promise<void>> | null}
    */
   dispatchQueuedAttributeTranslations() {
@@ -1124,9 +1130,10 @@ export class TranslationsDocument {
   /**
    * A single function to update pendingTranslationsCount while
    * calling the translate function
+   *
    * @param {Node} node
    * @param {string} text
-   * @prop {boolean} isHTML
+   * @property {boolean} isHTML
    * @returns {Promise<string | null>}
    */
   async maybeTranslate(node, text, isHTML) {
@@ -1223,6 +1230,7 @@ export class TranslationsDocument {
   /**
    * Stop the mutations so that the updates of the translations
    * in the nodes won't trigger observations.
+   *
    * @param {Function} run The function to update translations
    */
   pauseMutationObserverAndRun(run) {
@@ -1286,7 +1294,8 @@ export class TranslationsDocument {
 /**
  * Get the list of attributes that need to be translated
  * in a given node.
- * @returns Array<string>
+ *
+ * @returns {Array<string>}
  */
 function getTranslatableAttributes(node) {
   if (node.nodeType !== Node.ELEMENT_NODE) {
@@ -1342,7 +1351,7 @@ function langTagsMatch(knownLanguage, otherLanguage) {
  * style of node.
  *
  * @param {Node} node
- * @returns {HTMLElement} */
+  @returns {HTMLElement} */
 function getElementForStyle(node) {
   if (node.nodeType != Node.TEXT_NODE) {
     return node;
@@ -1424,6 +1433,7 @@ function updateElement(translationsDocument, element) {
 
   /**
    * The Set of translation IDs for nodes that have been cloned.
+   *
    * @type {Set<number>}
    */
   const clonedNodes = new Set();
@@ -1649,6 +1659,7 @@ function removeTextNodes(node) {
  *   - `<p>test</p>`: yes
  *   - `<p> </p>`: no
  *   - `<p><b>test</b></p>`: no
+ *
  * @param {Node} node
  * @returns {boolean}
  */
@@ -1723,18 +1734,21 @@ function isNodeQueued(node, queuedNodes) {
 }
 
 /**
- * Reads the elements computed style and determines if the element is inline or not.
+ * Reads the elements computed style and determines if the element is a block-like
+ * element or not. Every element that lays out like a block should be sent in as one
+ * cohesive unit to be translated.
  *
  * @param {Element} element
  */
-function getIsInline(element) {
+function getIsBlockLike(element) {
   const win = element.ownerGlobal;
   if (element.namespaceURI === "http://www.w3.org/2000/svg") {
     // SVG elements will report as inline, but there is no block layout in SVG.
     // Treat every SVG element as being block so that every node will be subdivided.
-    return false;
+    return true;
   }
-  return win.getComputedStyle(element).display === "inline";
+  const { display } = win.getComputedStyle(element);
+  return display !== "inline" && display !== "none";
 }
 
 /**
@@ -1751,7 +1765,8 @@ function nodeNeedsSubdividing(node) {
     return false;
   }
 
-  if (getIsInline(node)) {
+  if (!getIsBlockLike(node)) {
+    // This element is inline, or not displayed.
     return false;
   }
 
@@ -1761,12 +1776,12 @@ function nodeNeedsSubdividing(node) {
         // Keep checking for more inline or text nodes.
         continue;
       case Node.ELEMENT_NODE: {
-        if (getIsInline(child)) {
-          // Keep checking for more inline or text nodes.
-          continue;
+        if (getIsBlockLike(child)) {
+          // This node is a block node, so it needs further subdividing.
+          return true;
         }
-        // A child element is not inline, so subdivide this node further.
-        return true;
+        // Keep checking for more inline or text nodes.
+        continue;
       }
       default:
         return true;
@@ -1795,12 +1810,12 @@ function* getAncestorsIterator(node) {
 /**
  * This contains all of the information needed to perform a translation request.
  *
- * @typedef {Object} TranslationRequest
- * @prop {Node} node
- * @prop {string} sourceText
- * @prop {boolean} isHTML
- * @prop {Function} resolve
- * @prop {Function} reject
+ * @typedef {object} TranslationRequest
+ * @property {Node} node
+ * @property {string} sourceText
+ * @property {boolean} isHTML
+ * @property {Function} resolve
+ * @property {Function} reject
  */
 
 /**
@@ -1827,13 +1842,15 @@ class QueuedTranslator {
 
   /**
    * Tie together a message id to a resolved response.
-   * @type {Map<number, TranslationRequest}
+   *
+   * @type {Map<number, TranslationRequest>}
    */
   #requests = new Map();
 
   /**
    * If the translations are paused, they are queued here. This Map is ordered by
    * from oldest to newest requests with stale requests being removed.
+   *
    * @type {Map<Node, TranslationRequest>}
    */
   #queue = new Map();
@@ -1845,7 +1862,6 @@ class QueuedTranslator {
 
   /**
    * @param {MessagePort} port
-   * @param {Document} document
    * @param {() => void} actorRequestNewPort
    */
   constructor(port, actorRequestNewPort) {
@@ -1902,6 +1918,7 @@ class QueuedTranslator {
   /**
    * Request a new port. The port will come in via `acquirePort`, and then resolved
    * through the `this.#portRequest.resolve`.
+   *
    * @returns {Promise<void>}
    */
   #requestNewPort() {
@@ -1956,7 +1973,7 @@ class QueuedTranslator {
    * then the request is stale. A rejection means there was an error in the translation.
    * This request may be queued.
    *
-   * @param {node} Node
+   * @param {Node} node
    * @param {string} sourceText
    * @param {boolean} isHTML
    */
@@ -1997,7 +2014,7 @@ class QueuedTranslator {
    * @param {Node} node
    * @param {string} sourceText
    * @param {boolean} isHTML
-   * @return {{ translateText: TranslationFunction, translateHTML: TranslationFunction}}
+   * @returns {{ translateText: TranslationFunction, translateHTML: TranslationFunction}}
    */
   #postTranslationRequest(node, sourceText, isHTML) {
     return new Promise((resolve, reject) => {
@@ -2049,6 +2066,7 @@ class QueuedTranslator {
   /**
    * Acquires a port, checks on the engine status, and then starts or resumes
    * translations.
+   *
    * @param {MessagePort} port
    */
   acquirePort(port) {

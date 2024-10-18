@@ -152,7 +152,7 @@ class ContentChild final : public PContentChild,
 
   static void AppendProcessId(nsACString& aName);
 
-  static void UpdateCookieStatus(nsIChannel* aChannel);
+  static RefPtr<GenericPromise> UpdateCookieStatus(nsIChannel* aChannel);
 
   mozilla::ipc::IPCResult RecvInitGMPService(
       Endpoint<PGMPServiceChild>&& aGMPService);
@@ -226,9 +226,6 @@ class ContentChild final : public PContentChild,
       const bool& wantCacheData) override;
 
   PRemotePrintJobChild* AllocPRemotePrintJobChild();
-
-  already_AddRefed<PClipboardReadRequestChild> AllocPClipboardReadRequestChild(
-      const nsTArray<nsCString>& aTypes);
 
   PMediaChild* AllocPMediaChild();
 
@@ -414,6 +411,10 @@ class ContentChild final : public PContentChild,
       const MaybeDiscarded<WindowContext>& aSourceWindowContext,
       const MaybeDiscarded<WindowContext>& aSourceTopWindowContext,
       nsTArray<IPCTransferableData>&& aTransferables, const uint32_t& aAction);
+
+  mozilla::ipc::IPCResult RecvUpdateDragSession(
+      nsTArray<IPCTransferableData>&& aTransferables,
+      EventMessage aEventMessage);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvEndDragSession(

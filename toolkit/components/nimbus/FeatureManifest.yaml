@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+# yaml-language-server: $schema=schemas/ExperimentFeatureManifest.schema.json
+
 # Features must be added here to be accessible through the NimbusFeature API.
 
 "no-feature-firefox-desktop":
@@ -31,7 +33,9 @@ testFeature:
       description: Int pref used by platform API tests
     testSetString:
       type: string
-      setPref: nimbus.testing.testSetString
+      setPref:
+        branch: user
+        pref: nimbus.testing.testSetString
       description: A string pref set by Nimbus tests
 
 nimbus-qa-1:
@@ -41,18 +45,21 @@ nimbus-qa-1:
   variables:
     value:
       type: string
-      setPref: nimbus.qa.pref-1
+      setPref:
+        branch: default
+        pref: nimbus.qa.pref-1
       description: The value to set for the pref.
 
 nimbus-qa-2:
   description: A feature for testing pref-setting on the user branch.
   owner: barret@mozilla.com
-  isEarlyStartup: true
   hasExposure: false
   variables:
     value:
       type: string
-      setPref: nimbus.qa.pref-2
+      setPref:
+        branch: user
+        pref: nimbus.qa.pref-2
       description: The value to set for the pref.
 
 # `search` is for search engine experimentation features which do not require
@@ -92,42 +99,42 @@ search:
 
         If the key is not referenced in the search configuration, then no parameter
         will be added. Only the search team can update the configuration.
-    cbhStudyUs:
-      type: string
-      setPref: browser.search.param.google_channel_us
-      description: >-
-        NOTE: Please use `extraParams` rather than this field.
-        A string pref set by Nimbus tests for US search cohort
-    cbhStudyRow:
-      type: string
-      setPref: browser.search.param.google_channel_row
-      description: >-
-        NOTE: Please use `extraParams` rather than this field.
-        A string pref set by Nimbus tests for Rest of World (ROW) search cohort
     richSuggestionsFeatureGate:
       type: boolean
-      setPref: browser.urlbar.richSuggestions.featureGate
+      setPref:
+        branch: default
+        pref: browser.urlbar.richSuggestions.featureGate
       description: >-
         Feature gate that controls whether Rich Suggestions are enabled.
     serpEventTelemetryEnabled:
       type: boolean
-      setPref: browser.search.serpEventTelemetry.enabled
+      setPref:
+        branch: default
+        pref: browser.search.serpEventTelemetry.enabled
       description: Whether the Glean SERP event telemetry is enabled.
     serpEventTelemetryCategorizationEnabled:
       type: boolean
-      setPref: browser.search.serpEventTelemetryCategorization.enabled
+      setPref:
+        branch: default
+        pref: browser.search.serpEventTelemetryCategorization.enabled
       description: Whether the Glean SERP event telemetry for SERP categorization is enabled.
     trendingEnabled:
       type: boolean
-      setPref: browser.urlbar.trending.featureGate
+      setPref:
+        branch: default
+        pref: browser.urlbar.trending.featureGate
       description: Feature gate that controls whether trending suggestions are enabled.
     trendingRequireSearchMode:
       type: boolean
-      setPref: browser.urlbar.trending.requireSearchMode
+      setPref:
+        branch: default
+        pref: browser.urlbar.trending.requireSearchMode
       description: Controls whether trending suggestions are only shown in search mode or not.
     trendingMaxResultsNoSearchMode:
       type: int
-      setPref: browser.urlbar.trending.maxResultsNoSearchMode
+      setPref:
+        branch: default
+        pref: browser.urlbar.trending.maxResultsNoSearchMode
       description: The maximum number of trending results mode outside search mode.
 
 # `searchConfiguration` is for search experiment features for items that require
@@ -188,14 +195,15 @@ urlbar:
       description: This value assumes float expression like "0.47". Threshold for use count of input history that we handle as adaptive history autofill. If the use count is this value or more, it will be a candidate.
     experimentType:
       type: string
-      description: The type of the experiment (or rollout). If "best-match", then the Nimbus exposure event will be recorded when the user first triggers a best match (or would have triggered a best match, for users in the control group). If "modal", the event will be recorded when the user first triggers to show the onbording dialog. If empty, the event will be recorded when the user first triggers any type of Suggest suggestion.
+      description: The type of the experiment (or rollout). If "best-match", then the Nimbus exposure event will be recorded when the user first triggers a best match (or would have triggered a best match, for users in the control group). If empty, the event will be recorded when the user first triggers any type of Suggest suggestion.
       enum:
         - best-match
-        - modal
         - ""
     mdnFeatureGate:
       type: boolean
-      setPref: browser.urlbar.mdn.featureGate
+      setPref:
+        branch: default
+        pref: browser.urlbar.mdn.featureGate
       description: >-
         Feature gate that controls whether all aspects of the mdn suggestion
         feature are exposed to the user.
@@ -223,12 +231,16 @@ urlbar:
       description: Timeout for Merino fetches (ms)
     exposureResults:
       type: string
-      setPref: browser.urlbar.exposureResults
+      setPref:
+        branch: default
+        pref: browser.urlbar.exposureResults
       description: >-
         Comma-separated list of result type combinations, that are used to determine if an exposure event should be fired.
     showExposureResults:
       type: boolean
-      setPref: browser.urlbar.showExposureResults
+      setPref:
+        branch: default
+        pref: browser.urlbar.showExposureResults
       description: >-
         Boolean used to determine if the results defined in `exposureResults` should be shown in search results. Should be false for Control branch of an experiment.
     pocketFeatureGate:
@@ -250,15 +262,21 @@ urlbar:
       description: Whether quick suggest results can be shown in position specified in the suggestions.
     quickSuggestContextualOptInEnabled:
       type: boolean
-      setPref: browser.urlbar.quicksuggest.contextualOptIn
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn
       description: Whether the Firefox Suggest contextual opt-in result is enabled. If true, this implicitly disables shouldShowOnboardingDialog.
     quickSuggestContextualOptInSayHello:
       type: boolean
-      setPref: browser.urlbar.quicksuggest.contextualOptIn.sayHello
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn.sayHello
       description: Controls which variant of the copy is used for the Firefox Suggest contextual opt-in result.
     quickSuggestContextualOptInTopPosition:
       type: boolean
-      setPref: browser.urlbar.quicksuggest.contextualOptIn.topPosition
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn.topPosition
       description: Controls whether the Firefox Suggest contextual opt-in result appears at the top of results or at the bottom, after one-off buttons.
     quickSuggestDataCollectionEnabled:
       type: boolean
@@ -298,7 +316,7 @@ urlbar:
         Whether Firefox Suggest will use the new Rust backend instead of the
         original JS backend.
     quickSuggestScenario:
-      # IMPORTANT: This should not have a fallbackPref. See UrlbarPrefs.jsm.
+      # IMPORTANT: This should not have a fallbackPref. See UrlbarPrefs.sys.mjs.
       type: string
       description: The Firefox Suggest scenario in which the user is enrolled
       enum:
@@ -343,11 +361,15 @@ urlbar:
         * Handle as top pick.
     recentSearchesFeatureGate:
       type: boolean
-      setPref: browser.urlbar.recentsearches.featureGate
+      setPref:
+        branch: default
+        pref: browser.urlbar.recentsearches.featureGate
       description: Gate for the recent searches feature.
     recentSearchesMaxResults:
       type: int
-      setPref: browser.urlbar.recentsearches.maxResults
+      setPref:
+        branch: default
+        pref: browser.urlbar.recentsearches.maxResults
       description: The maximum number of recent searches to show.
     recordNavigationalSuggestionTelemetry:
       type: boolean
@@ -400,19 +422,45 @@ urlbar:
         If neither Nimbus nor remote settings defines a cap, no cap will be
         used, and the user will be able to increment the minimum length without
         any limit.
+    weatherSimpleUI:
+      type: boolean
+      description: >-
+        If true, show the weather suggestion by simple UI edition as follows.
+        * Remove the forcast text from the summary text.
+    yelpMinKeywordLength:
+      type: int
+      fallbackPref: browser.urlbar.yelp.minKeywordLength
+      description: >-
+        If the length of user's query is less than this value plus
+        "yelp.showLessFrequentlyCount", Yelp suggestion never be shown.
     yelpFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.yelp.featureGate
       description: >-
         Feature gate that controls whether all aspects of the Yelp suggestion
         feature are exposed to the user.
-
-frecency:
-  description: "The address bar ranking algorithm"
-  owner: search-and-suggest-program@mozilla.com
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
+    yelpShowLessFrequentlyCap:
+      type: int
+      fallbackPref: browser.urlbar.yelp.showLessFrequentlyCap
+      description: >-
+        If defined and non-zero, this is the maximum number of times the user
+        will be able to click the "Show less frequently" command for Yelp
+        suggestions. If undefined or zero, the user will be able to click the
+        command without any limit.
+    yelpSuggestNonPriorityIndex:
+      type: int
+      fallbackPref: browser.urlbar.yelp.suggestedIndex
+      description: >-
+        The group-relative suggestedIndex of Yelp suggestions within the Firefox
+        Suggest section. Ignored when `yelpSuggestPriority` is true.
+    yelpSuggestPriority:
+      type: boolean
+      fallbackPref: browser.urlbar.yelp.priority
+      description: >-
+        Whether or not showing yelp suggestion as priority.
+        If this variable is true, the following things are processed.
+        * Change the suggested index to 1.
+        * Handle as top pick.
     originsAlternativeEnable:
       description: >-
         Use an alternative ranking algorithm for autofilling origins, that is
@@ -420,47 +468,63 @@ frecency:
         origin, we autofill the whole origin. Whether autofill happens depends
         on the ranking algorithm. Bookmarks are always autofilled anyway.
       type: boolean
-      setPref: "places.frecency.origins.alternative.featureGate"
+      setPref:
+        branch: user
+        pref: "places.frecency.origins.alternative.featureGate"
     originsDaysCutOff:
       description: >-
         The alternative ranking algorithm only considers pages visited in the
         last N days, where N is controlled by this variable.
       type: int
-      setPref: "places.frecency.origins.alternative.daysCutOff"
+      setPref:
+        branch: user
+        pref: "places.frecency.origins.alternative.daysCutOff"
     pagesAlternativeEnable:
       description: >-
         Use an alternative ranking algorithm for sorting history and bookmarks
         among the urlbar results.
       type: boolean
-      setPref: "places.frecency.pages.alternative.featureGate"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.featureGate"
     pagesNumSampledVisits:
       description: >-
         The number of recent visits to sample when calculating the ranking of
         a page. Examining all the visits would be expensive, so we only sample
         recent visits.
       type: int
-      setPref: "places.frecency.pages.alternative.numSampledVisits"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.numSampledVisits"
     pagesHalfLifeDays:
       description: >-
         The number of days after which the ranking halves. This implements the
         "recency" part of the algorithm.
       type: int
-      setPref: "places.frecency.pages.alternative.halfLifeDays"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.halfLifeDays"
     pagesHighWeight:
       description: >-
         The weight to use for the high importance bucket.
       type: int
-      setPref: "places.frecency.pages.alternative.highWeight"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.highWeight"
     pagesMediumWeight:
       description: >-
         The weight to use for the medium importance bucket.
       type: int
-      setPref: "places.frecency.pages.alternative.mediumWeight"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.mediumWeight"
     pagesLowWeight:
       description: >-
         The weight to use for the low importance bucket.
       type: int
-      setPref: "places.frecency.pages.alternative.lowWeight"
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.lowWeight"
 
 aboutwelcome:
   description: "The about:welcome page"
@@ -509,6 +573,13 @@ aboutwelcome:
       fallbackPref: browser.aboutwelcome.newtabUrlBarFocus
       description: >-
         Should the urlbar be focused when the new tab page loads after new user onboarding
+    toolbarButtonEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.aboutwelcome.toolbarButtonEnabled
+      description: >-
+        Should the return to about:welcome toolbar button be shown
 
 moreFromMozilla:
   description: "New page on about:preferences to suggest more Mozilla products"
@@ -537,18 +608,21 @@ windowsLaunchOnLogin:
   variables:
     enabled:
       type: boolean
-      setPref: browser.startup.windowsLaunchOnLogin.enabled
+      setPref:
+        branch: default
+        pref: browser.startup.windowsLaunchOnLogin.enabled
       description: Should users see the Windows launch on login checkbox.
 
 windowsJumpList:
   description: "Controls for the Windows Jump List integration."
   owner: mconley@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     legacyBackend:
       type: boolean
-      setPref: browser.taskbar.lists.legacyBackend
+      setPref:
+        branch: user
+        pref: browser.taskbar.lists.legacyBackend
       description: True if users should use the legacy Windows Jump List backend.
 
 abouthomecache:
@@ -773,19 +847,42 @@ pocketNewtab:
     discoveryStreamConfig:
       description: A JSON blob of discovery stream configuration.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.config"
+      setPref:
+        branch: user
+        pref: "browser.newtabpage.activity-stream.discoverystream.config"
     spocsEndpoint:
       description: The URL for the spocs endpoint.
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.spocs-endpoint"
+      setPref:
+        branch: user
+        pref: "browser.newtabpage.activity-stream.discoverystream.spocs-endpoint"
     spocsEndpointAllowlist:
       description: Comma separated list of allowed endpoints for fetching spocs
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.endpoints"
+      setPref:
+        branch: user
+        pref: "browser.newtabpage.activity-stream.discoverystream.endpoints"
     spocsClearEndpoint:
       description: URL for deleting any server data when a user opts out of sponsored content
       type: string
-      setPref: "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear"
+      setPref:
+        branch: user
+        pref: "browser.newtabpage.activity-stream.discoverystream.endpointSpocsClear"
+    ctaButtonSponsors:
+      description: A CSV list of sponsors that should use a button CTA.
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.ctaButtonSponsors
+    ctaButtonVariant:
+      description: Specifies which variant to use for any sponsors in ctaButtonSponsors
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.ctaButtonVariant
+    spocMessageVariant:
+      description: Adds some message dialogs explainging sponsored content to the user
+      type: string
+      fallbackPref: >-
+        browser.newtabpage.activity-stream.discoverystream.spocMessageVariant
     regionStoriesConfig:
       description: A comma-separated list of region to get stories for.
       type: string
@@ -870,7 +967,9 @@ cm-csv-import:
     csvImport:
       type: boolean
       description: Can show CSV Import in about:logins or Migration Wizard
-      setPref: "signon.management.page.fileImport.enabled"
+      setPref:
+        branch: default
+        pref: "signon.management.page.fileImport.enabled"
 
 # This feature flag mirrors the one used for ios
 # https://github.com/mozilla-mobile/firefox-ios/blob/main/nimbus-features/addressAutofillFeature.yaml
@@ -881,6 +980,9 @@ address-autofill-feature:
   variables:
     status:
       type: boolean
+      setPref:
+        branch: default
+        pref: extensions.formautofill.addresses.experiments.enabled
       description: If true, we will allow user to use address autofill
 
 shellService:
@@ -924,10 +1026,9 @@ cfr:
   owner: omc@mozilla.com
   hasExposure: true
   exposureDescription: "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 "moments-page":
@@ -936,10 +1037,9 @@ cfr:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 infobar:
@@ -948,10 +1048,9 @@ infobar:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 spotlight:
@@ -960,10 +1059,9 @@ spotlight:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 # Before 117, this feature only included one variable, pdfJsTourProgress. So,
@@ -974,33 +1072,48 @@ featureCallout:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fullPageTranslation:
   description: This feature opens a popup panel to offer to translate a page.
   owner: gtatum@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     boolean:
       description: Set to true to enable the translations feature
       type: boolean
-      setPref: browser.translations.enable
+      setPref:
+        branch: user
+        pref: browser.translations.enable
 
 fullPageTranslationAutomaticPopup:
   description: Controls whether the popup automatically shows for translations.
   owner: gtatum@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     boolean:
       description: Set to true to automatically popup, and false to only show the button.
       type: boolean
-      setPref: browser.translations.automaticallyPopup
+      setPref:
+        branch: user
+        pref: browser.translations.automaticallyPopup
+
+pdfjs:
+  description: The Firefox pdf reader.
+  owner: pdfjs-team@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is sent each time a pdf is displayed.
+  variables:
+    addHighlight:
+      description: Set to true to highlight some text or something else in an existing pdf.
+      type: boolean
+      setPref:
+        branch: default
+        pref: pdfjs.enableHighlightEditor
 
 addAnImageInPDF:
   description: Add an image in an existing pdf.
@@ -1010,7 +1123,9 @@ addAnImageInPDF:
     boolean:
       description: Set to true to enable the add-an-image feature
       type: boolean
-      setPref: pdfjs.enableStampEditor
+      setPref:
+        branch: default
+        pref: pdfjs.enableStampEditor
 
 # fxms-message-* placeholder feature ids
 #
@@ -1031,10 +1146,9 @@ fxms-message-1:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-2:
@@ -1043,10 +1157,9 @@ fxms-message-2:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-3:
@@ -1055,10 +1168,9 @@ fxms-message-3:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-4:
@@ -1067,10 +1179,9 @@ fxms-message-4:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-5:
@@ -1079,10 +1190,9 @@ fxms-message-5:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-6:
@@ -1091,10 +1201,9 @@ fxms-message-6:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-7:
@@ -1103,10 +1212,9 @@ fxms-message-7:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-8:
@@ -1115,10 +1223,9 @@ fxms-message-8:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-9:
@@ -1127,10 +1234,9 @@ fxms-message-9:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-10:
@@ -1139,10 +1245,9 @@ fxms-message-10:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 fxms-message-11:
@@ -1151,11 +1256,30 @@ fxms-message-11:
   hasExposure: true
   exposureDescription: >-
     "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
+
+whatsNewPage:
+  description: "A Firefox Messaging System message for the What's new page channel"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  variables:
+    overrideUrl:
+      description: URL of the What's new page
+      type: string
+      setPref:
+        branch: user
+        pref: startup.homepage_override_url_nimbus
+    maxVersion:
+      description: Maximum Firefox update version
+      type: string
+      setPref:
+        branch: user
+        pref: startup.homepage_override_nimbus_maxVersion
 
 pbNewtab:
   description: "A Firefox Messaging System message for the pbNewtab message channel"
@@ -1163,10 +1287,9 @@ pbNewtab:
   hasExposure: true
   exposureDescription: >-
     Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched.
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/MessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/MessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
   variables: {}
 
 backgroundTaskMessage:
@@ -1177,10 +1300,9 @@ backgroundTaskMessage:
   hasExposure: true
   exposureDescription: >-
     Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched.
-  isEarlyStartup: false
   schema:
-    uri: "resource://activity-stream/schemas/BackgroundTaskMessagingExperiment.schema.json"
-    path: "browser/components/newtab/content-src/asrouter/schemas/BackgroundTaskMessagingExperiment.schema.json"
+    uri: "chrome://browser/content/asrouter/schemas/BackgroundTaskMessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/BackgroundTaskMessagingExperiment.schema.json"
   variables: {}
 
 backgroundUpdateAutomaticRestart:
@@ -1189,7 +1311,6 @@ backgroundUpdateAutomaticRestart:
   applications:
     - firefox-desktop-background-task
   hasExposure: false
-  isEarlyStartup: false
   variables:
     enabled:
       type: boolean
@@ -1198,7 +1319,6 @@ backgroundUpdateAutomaticRestart:
         When true, make the background update task restart when the final update state is `READY_FOR_RESTART`.
         Generally, this will finish applying a staged update, completing the update earlier than it
         otherwise would have been completed.
-
 
 pictureinpicture:
   description: Message for first time Picture-in-Picture users
@@ -1240,6 +1360,7 @@ glean:
 
 gleanInternalSdk:
   description: "The Glean internal SDK feature intended only for internal Glean Team use"
+  owner: glean-team@mozilla.com
   hasExposure: false
   # Some variables are used through the C++ API and thus require pref-storage.
   # We rely on those values at Glean.init time, which happens at startup.
@@ -1297,15 +1418,21 @@ browserLowMemoryPrefs:
     lowMemoryResponseMask:
       description: Control the response on macOS when under memory pressure.
       type: int
-      setPref: "browser.lowMemoryResponseMask"
+      setPref:
+        branch: default
+        pref: "browser.lowMemoryResponseMask"
     lowMemoryResponseOnWarn:
       description: Controls which macOS memory-pressure levels trigger the browser low memory response.
       type: boolean
-      setPref: "browser.lowMemoryResponseOnWarn"
+      setPref:
+        branch: default
+        pref: "browser.lowMemoryResponseOnWarn"
     tabsUnloadOnLowMemory:
       description: Whether to unload tabs when available memory is running low.
       type: boolean
-      setPref: "browser.tabs.unloadOnLowMemory"
+      setPref:
+        branch: default
+        pref: "browser.tabs.unloadOnLowMemory"
 
 scriptLoaderPrefs:
   description: Prefs that control the script loader.
@@ -1318,7 +1445,9 @@ scriptLoaderPrefs:
         parsing scripts off-main-thread. See DelazificationOption in
         CompileOptions.h for values.
       type: int
-      setPref: "dom.script_loader.delazification.strategy"
+      setPref:
+        branch: default
+        pref: "dom.script_loader.delazification.strategy"
 
 echPrefs:
   description: Prefs that control Encrypted Client Hello.
@@ -1328,35 +1457,51 @@ echPrefs:
     tlsEnabled:
       description: Whether to enable ECH for connections using TLS
       type: boolean
-      setPref: "network.dns.echconfig.enabled"
+      setPref:
+        branch: default
+        pref: "network.dns.echconfig.enabled"
     h3Enabled:
       description: Whether to enable ECH for connections using H3/QUIC
       type: boolean
-      setPref: "network.dns.http3_echconfig.enabled"
+      setPref:
+        branch: default
+        pref: "network.dns.http3_echconfig.enabled"
     forceWaitHttpsRR:
       description: Whether to force waiting for HTTPS DNS records, which ECH requires.
       type: boolean
-      setPref: "network.dns.force_waiting_https_rr"
+      setPref:
+        branch: default
+        pref: "network.dns.force_waiting_https_rr"
     insecureFallback:
       description: Whether to fallback to non-ECH connections if all ECH RRs fail.
       type: boolean
-      setPref: "network.dns.echconfig.fallback_to_origin_when_all_failed"
+      setPref:
+        branch: default
+        pref: "network.dns.echconfig.fallback_to_origin_when_all_failed"
     tlsGreaseProb:
       description: Probability of GREASEing a TLS connection with ECH (0-100).
       type: int
-      setPref: "security.tls.ech.grease_probability"
+      setPref:
+        branch: default
+        pref: "security.tls.ech.grease_probability"
     h3GreaseEnabled:
       description: Whether to apply GREASE settings to H3/QUIC connections.
       type: boolean
-      setPref: "security.tls.ech.grease_http3"
+      setPref:
+        branch: default
+        pref: "security.tls.ech.grease_http3"
     disableGreaseOnFallback:
       description: Whether to disable GREASE when retrying a connection.
       type: boolean
-      setPref: "security.tls.ech.disable_grease_on_fallback"
+      setPref:
+        branch: default
+        pref: "security.tls.ech.disable_grease_on_fallback"
     greasePaddingSize:
       description: Assumed echConfig padding length for GREASE extensions (1-255).
       type: int
-      setPref: "security.tls.ech.grease_size"
+      setPref:
+        branch: default
+        pref: "security.tls.ech.grease_size"
 
 dohPrefs:
   description: Prefs that control DNS over HTTPS.
@@ -1366,27 +1511,39 @@ dohPrefs:
     trrMode:
       description: Has a value of 2 for TRR first, 3 for TRR only, 0 for off.
       type: int
-      setPref: "network.trr.mode"
+      setPref:
+        branch: default
+        pref: "network.trr.mode"
     trrUri:
       description: The URL of the DNS over HTTPS endpoint
       type: string
-      setPref: "network.trr.uri"
+      setPref:
+        branch: default
+        pref: "network.trr.uri"
     dohMode:
       description: Same as trrMode, but set by the DoHController module.
       type: int
-      setPref: "doh-rollout.mode"
+      setPref:
+        branch: default
+        pref: "doh-rollout.mode"
     dohUri:
       description: Same as trrUri, but set by the DoHController module.
       type: string
-      setPref: "doh-rollout.uri"
+      setPref:
+        branch: default
+        pref: "doh-rollout.uri"
     enableFallbackWarningPage:
       description: Whether DoH fallback warning page will be displayed when DoH doesn't work in TRR first mode.
       type: boolean
-      setPref: "network.trr.display_fallback_warning"
+      setPref:
+        branch: default
+        pref: "network.trr.display_fallback_warning"
     showFallbackCheckbox:
       description: Whether the checkbox to enable the fallback warning page is displayed in the settings UI.
       type: boolean
-      setPref: "network.trr_ui.show_fallback_warning_option"
+      setPref:
+        branch: default
+        pref: "network.trr_ui.show_fallback_warning_option"
 
 dooh:
   description: "DNS over Oblivious HTTP"
@@ -1396,19 +1553,27 @@ dooh:
     ohttpEnabled:
       description: Whether to use Oblivious HTTP for the resolution
       type: boolean
-      setPref: "network.trr.use_ohttp"
+      setPref:
+        branch: default
+        pref: "network.trr.use_ohttp"
     ohttpRelayUri:
       description: The URL of the Oblivious HTTP relay
       type: string
-      setPref: "network.trr.ohttp.relay_uri"
+      setPref:
+        branch: default
+        pref: "network.trr.ohttp.relay_uri"
     ohttpConfigUri:
       description: The URL used to fetch the configuration of the Oblivious HTTP gateway
       type: string
-      setPref: "network.trr.ohttp.config_uri"
+      setPref:
+        branch: default
+        pref: "network.trr.ohttp.config_uri"
     ohttpUri:
       description: The URL of the Oblivious DNS over HTTPS target resource
       type: string
-      setPref: "network.trr.ohttp.uri"
+      setPref:
+        branch: default
+        pref: "network.trr.ohttp.uri"
 
 networking:
   description: "Firefox Networking (Necko)"
@@ -1418,48 +1583,69 @@ networking:
     ehPreloadEnabled:
       description: Whether Early Hints preload is enabled
       type: boolean
-      setPref: "network.early-hints.enabled"
+      setPref:
+        branch: default
+        pref: "network.early-hints.enabled"
     ehPreconnectEnabled:
       description: Whether Early Hints preconnect is enabled
       type: boolean
-      setPref: "network.early-hints.preconnect.enabled"
+      setPref:
+        branch: default
+        pref: "network.early-hints.preconnect.enabled"
     dnsMaxPriorityThreads:
       description: The maximum number of high priority DNS threads that can be created.
       type: int
-      setPref: "network.dns.max_high_priority_threads"
+      setPref:
+        branch: default
+        pref: "network.dns.max_high_priority_threads"
     dnsMaxAnyPriorityThreads:
       description: The maximum number of DNS threads that can be created to handle any priority DNS requests.
       type: int
-      setPref: "network.dns.max_any_priority_threads"
+      setPref:
+        branch: default
+        pref: "network.dns.max_any_priority_threads"
     preconnect:
       description: Whether the rel=preconnect feature is enabled
       type: boolean
-      setPref: "network.preconnect"
+      setPref:
+        branch: default
+        pref: "network.preconnect"
     networkPredictor:
       description: Whether the Necko predictor is enabled
       type: boolean
-      setPref: "network.predictor.enabled"
+      setPref:
+        branch: default
+        pref: "network.predictor.enabled"
     http3CCalgorithm:
       description: The congestion control algorithm with which to configure neqo. 0 for NewReno, 1 for Cubic
       type: int
-      setPref: "network.http.http3.cc_algorithm"
+      setPref:
+        branch: default
+        pref: "network.http.http3.cc_algorithm"
     sendOnDataFinished:
       description: Whether we can send OnDataFinished in the content process
       type: boolean
-      setPref: "network.send_OnDataFinished"
+      setPref:
+        branch: default
+        pref: "network.send_OnDataFinished"
     sendOnDataFinshedFromInputStreamPump:
       description: Whether we can send OnDataFinished to the content process from InputStreamPump
       type: boolean
-      setPref: "network.send_OnDataFinished.nsInputStreamPump"
+      setPref:
+        branch: default
+        pref: "network.send_OnDataFinished.nsInputStreamPump"
     sendOnDataFinishedToHtml5parser:
       description: Whether we can send OnDataFinished to the html5parser in content process
       type: boolean
-      setPref: "network.send_OnDataFinished.html5parser"
+      setPref:
+        branch: default
+        pref: "network.send_OnDataFinished.html5parser"
     sendOnDataFinishedToCssLoader:
       description: Whether we can send OnDataFinished to the cssLoader in content process
       type: boolean
-      setPref: "network.send_OnDataFinished.cssLoader"
-
+      setPref:
+        branch: default
+        pref: "network.send_OnDataFinished.cssLoader"
 
 pingsender:
   description: "In-product usage of the pingsender telemetry reporter."
@@ -1506,24 +1692,50 @@ etpLevel2PBMPref:
     enabled:
       description: Whether to enable ETP level 2 list in the private browsing mode.
       type: boolean
-      setPref: "privacy.annotate_channels.strict_list.pbmode.enabled"
+      setPref:
+        branch: default
+        pref: "privacy.annotate_channels.strict_list.pbmode.enabled"
 
 fxaButtonVisibility:
   description: Prefs to control the visibility of the Firefox Accounts toolbar button when not signed in.
   owner: mconley@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     boolean:
       description: True if the Firefox Accounts toolbar button should be visible when not signed in.
       type: boolean
-      setPref: identity.fxaccounts.toolbar.defaultVisible
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.defaultVisible
     pxiToolbarEnabled:
       description: >-
         True if we're enabling the PXI dropdown menu for the FxA toolbar button instead of
         taking the user straight to login
       type: boolean
-      setPref: identity.fxaccounts.toolbar.pxiToolbarEnabled
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.pxiToolbarEnabled
+    monitorEnabled:
+      description: >-
+        Toggle the Monitor CTA
+      type: boolean
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.pxiToolbarEnabled.monitorEnabled
+    relayEnabled:
+      description: >-
+        Toggle the Relay CTA
+      type: boolean
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.pxiToolbarEnabled.relayEnabled
+    vpnEnabled:
+      description: >-
+        Toggle the VPN CTA
+      type: boolean
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.pxiToolbarEnabled.vpnEnabled
 
 legacyHeartbeat:
   description: Normandy Heartbeat exposed to Nimbus
@@ -1544,21 +1756,29 @@ queryStripping:
   variables:
     enabledNormalBrowsing:
       type: boolean
-      setPref: privacy.query_stripping.enabled
+      setPref:
+        branch: default
+        pref: privacy.query_stripping.enabled
       description: Enables / disables URL query string stripping in normal browsing mode.
     enabledPrivateBrowsing:
       type: boolean
-      setPref: privacy.query_stripping.enabled.pbmode
+      setPref:
+        branch: default
+        pref: privacy.query_stripping.enabled.pbmode
       description: Enables / disables URL query string stripping in private browsing mode.
     allowList:
       type: string
-      setPref: privacy.query_stripping.allow_list
+      setPref:
+        branch: default
+        pref: privacy.query_stripping.allow_list
       description: >-
         List of sites exempt from query stripping. This list will be merged with
         records coming from RemoteSettings.
     stripList:
       type: string
-      setPref: privacy.query_stripping.strip_list
+      setPref:
+        branch: default
+        pref: privacy.query_stripping.strip_list
       description: >-
         List of query params to be stripped from URIs. This list will be merged
         with records coming from RemoteSettings.
@@ -1570,15 +1790,21 @@ fontvisibility:
   variables:
     enabledETP:
       type: int
-      setPref: layout.css.font-visibility.trackingprotection
+      setPref:
+        branch: default
+        pref: layout.css.font-visibility.trackingprotection
       description: Set the Font Visibility level when Enhanced Tracking Protection is enabled
     enabledStandard:
       type: int
-      setPref: layout.css.font-visibility.standard
+      setPref:
+        branch: default
+        pref: layout.css.font-visibility.standard
       description: Set the Font Visibility level for normal browsing
     enabledPBM:
       type: int
-      setPref: layout.css.font-visibility.private
+      setPref:
+        branch: default
+        pref: layout.css.font-visibility.private
       description: Set the Font Visibility level for private browsing (will override ETP)
 
 fingerprintingProtection:
@@ -1588,15 +1814,21 @@ fingerprintingProtection:
   variables:
     enabledNormal:
       type: boolean
-      setPref: privacy.fingerprintingProtection
+      setPref:
+        branch: default
+        pref: privacy.fingerprintingProtection
       description: Enables / disables fingerprinting protection in normal browsing mode.
     enabledPrivate:
       type: boolean
-      setPref: privacy.fingerprintingProtection.pbmode
+      setPref:
+        branch: default
+        pref: privacy.fingerprintingProtection.pbmode
       description: Enables / disables fingerprinting protection in private browsing mode.
     overrides:
       type: string
-      setPref: privacy.fingerprintingProtection.overrides
+      setPref:
+        branch: default
+        pref: privacy.fingerprintingProtection.overrides
       description: >-
         The protection overrides to add or remove fingerprinting protection
         targets. Please check RFPTargets.inc for all supported targets.
@@ -1605,16 +1837,19 @@ migrationWizard:
   description: Prefs to control the Migration Wizard UI.
   owner: mconley@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     showImportAll:
       description: True if the "Variant 2" of the Migration Wizard browser / profile selection UI should be used. This is only meaningful in the new Migration Wizard.
       type: boolean
-      setPref: browser.migrate.content-modal.import-all.enabled
+      setPref:
+        branch: user
+        pref: browser.migrate.content-modal.import-all.enabled
     showPreferencesEntrypoint:
       description: True if an entrypoint to the migration wizard should be visible in about:preferences.
       type: boolean
-      setPref: browser.migrate.preferences-entrypoint.enabled
+      setPref:
+        branch: user
+        pref: browser.migrate.preferences-entrypoint.enabled
     aboutWelcomeBehavior:
       description: >-
         When migration is kicked off from about:welcome, there are
@@ -1639,11 +1874,15 @@ migrationWizard:
           about:preferences. The tab will not close once the
           user closes the wizard.
       type: string
-      setPref: browser.migrate.content-modal.about-welcome-behavior
+      setPref:
+        branch: user
+        pref: browser.migrate.content-modal.about-welcome-behavior
     migrateExtensions:
       description: True if importing extensions is enabled.
       type: boolean
-      setPref: browser.migrate.chrome.extensions.enabled
+      setPref:
+        branch: user
+        pref: browser.migrate.chrome.extensions.enabled
     chromeCanRequestPermissions:
       description: >-
         True if Chrome-based browsers can request read permissions on
@@ -1652,7 +1891,9 @@ migrationWizard:
         is only relevant to the Linux platform when the browser is installed
         as a Snap package.
       type: boolean
-      setPref: browser.migrate.chrome.get_permissions.enabled
+      setPref:
+        branch: user
+        pref: browser.migrate.chrome.get_permissions.enabled
 
 mixedContentUpgrading:
   description: Prefs to control whether we upgrade mixed passive content (images, audio, video) from http to https
@@ -1662,83 +1903,277 @@ mixedContentUpgrading:
     enabled:
       description: True if the mixed content upgrading pref is enabled
       type: boolean
-      setPref: security.mixed_content.upgrade_display_content
+      setPref:
+        branch: default
+        pref: security.mixed_content.upgrade_display_content
     image:
       description: True if the mixed content upgrading is enabled for images
       type: boolean
-      setPref: security.mixed_content.upgrade_display_content.image
+      setPref:
+        branch: default
+        pref: security.mixed_content.upgrade_display_content.image
     audio:
       description: True if the mixed content upgrading is enabled for audio
       type: boolean
-      setPref: security.mixed_content.upgrade_display_content.audio
+      setPref:
+        branch: default
+        pref: security.mixed_content.upgrade_display_content.audio
     video:
       description: True if the mixed content upgrading is enabled for videos
       type: boolean
-      setPref: security.mixed_content.upgrade_display_content.video
+      setPref:
+        branch: default
+        pref: security.mixed_content.upgrade_display_content.video
+
+gc:
+  description: Prefs that control gc heuristics.
+  owner: dpalmeiro@mozilla.com
+  hasExposure: false
+  variables:
+    max_nursery_size:
+      description: Set the maximum size of the GC nursery, in kb.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.nursery.max_kb"
+    min_nursery_size:
+      description: Set the minimum size of the GC nursery, in kb.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.nursery.min_kb"
+    gc_allocation_threshold_mb:
+      description: Lower limit for collecting a zone, in MB.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_allocation_threshold_mb"
+    gc_balanced_heap_limits:
+      description: Whether balanced heap limits are enabled.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_balanced_heap_limits"
+    gc_compacting:
+      description: Whether compacting GC is enabled.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_compacting"
+    gc_heap_growth_factor:
+      description: Heap growth parameter for balanced heap limit calculation.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_heap_growth_factor"
+    gc_helper_thread_ratio:
+      description: Number of threads to use for parallel GC work.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_helper_thread_ratio"
+    gc_high_frequency_large_heap_growth:
+      description: Heap growth factor for large heaps in the high-frequency GC state.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_high_frequency_large_heap_growth"
+    gc_high_frequency_small_heap_growth:
+      description: Heap growth factor for small heaps in the high-frequency GC state.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_high_frequency_small_heap_growth"
+    gc_high_frequency_time_limit_ms:
+      description: GCs less than this far apart in milliseconds will be
+                   considered high-frequency GCs.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_high_frequency_time_limit_ms"
+    gc_incremental:
+      description: Whether incremental GC is enabled. If not, GC will always run to completion.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_incremental"
+    incremental_weakmap:
+      description: Enable incremental weakmap marking.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.incremental_weakmap"
+    gc_incremental_slice_ms:
+      description: Max milliseconds to spend in an incremental GC slice.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_incremental_slice_ms"
+    gc_large_heap_incremental_limit:
+      description: Limit of how far over the incremental trigger threshold we allow the
+                   heap to grow before finishing a collection non-incrementally, for large heaps.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_large_heap_incremental_limit"
+    gc_large_heap_size_min_mb:
+      description: Lower limit for classifying a heap as large, in MB.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_large_heap_size_min_mb"
+    gc_low_frequency_heap_growth:
+      description: Heap growth factor for low frequency GCs.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_low_frequency_heap_growth"
+    gc_malloc_threshold_base_mb:
+      description: Set the malloc threshold base value in MB.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_malloc_threshold_base_mb"
+    gc_max_empty_chunk_count:
+      description: Do not keep more than this many unused chunks in the free chunk pool.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_max_empty_chunk_count"
+    gc_max_helper_threads:
+      description: The maximum number of background threads to use for parallel GC work.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_max_helper_threads"
+    gc_min_empty_chunk_count:
+      description: We try to keep at least this many unused chunks in the free chunk
+                   pool at all times, even after a shrinking GC.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_min_empty_chunk_count"
+    gc_parallel_marking:
+      description: Enable parallel marking.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_parallel_marking"
+    gc_parallel_marking_threshold_mb:
+      description: The heap size above which to use parallel marking.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_parallel_marking_threshold_mb"
+    gc_per_zone:
+      description: Whether per-zone GC is enabled. If not, all zones are collected every time.
+      type: boolean
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_per_zone"
+    gc_small_heap_incremental_limit:
+      description: Limit of how far over the incremental trigger threshold we allow the heap
+                   to grow before finishing a collection non-incrementally, for small heaps.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_small_heap_incremental_limit"
+    gc_small_heap_size_max_mb:
+      description: Upper limit for classifying a heap as small, in MB.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_small_heap_size_max_mb"
+    gc_urgent_threshold_mb:
+      description: Set the urgent threshold, in MB.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.gc_urgent_threshold_mb"
+    nursery_eager_collection_threshold_kb:
+      description: Set the eager collection threshold, in kb, for the nursery.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.nursery_eager_collection_threshold_kb"
+    nursery_eager_collection_threshold_percent:
+      description: Set the eager collection percent threshold for the nursery.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.nursery_eager_collection_threshold_percent"
+    nursery_eager_collection_timeout_ms:
+      description: Set the eager collection timeout, in ms, for the nursery.
+      type: int
+      setPref:
+        branch: user
+        pref: "javascript.options.mem.nursery_eager_collection_timeout_ms"
 
 jsParallelParsing:
   description: Pref to toggle JS parallel parsing.
   owner: dpalmeiro@mozilla.com, nbp@mozilla.com
-  isEarlyStartup: true
   hasExposure: false
   variables:
     enabled:
       description: True to enable parallel parsing.
       type: boolean
-      setPref: "javascript.options.parallel_parsing"
-
-gcParallelMarking:
-  description: Pref to toggle parallel marking in the GC.
-  owner: dpalmeiro@mozilla.com, jonco@mozilla.com
-  isEarlyStartup: true
-  hasExposure: false
-  variables:
-    enabled:
-      description: True to enable parallel marking.
-      type: boolean
-      setPref: "javascript.options.mem.gc_parallel_marking"
+      setPref:
+        branch: user
+        pref: "javascript.options.parallel_parsing"
 
 jitThresholds:
   description: Prefs that control jit tier thresholds.
   owner: dpalmeiro@mozilla.com, jdemooij@mozilla.com
-  isEarlyStartup: true
   hasExposure: false
   variables:
     blinterp_threshold:
       description: Set the threshold to enable blinterp compilation.
       type: int
-      setPref: "javascript.options.blinterp.threshold"
+      setPref:
+        branch: user
+        pref: "javascript.options.blinterp.threshold"
     baseline_threshold:
       description: Set the threshold to enable baseline compilation.
       type: int
-      setPref: "javascript.options.baselinejit.threshold"
+      setPref:
+        branch: user
+        pref: "javascript.options.baselinejit.threshold"
     ion_threshold:
       description: Set the threshold to enable ion compilation.
       type: int
-      setPref: "javascript.options.ion.threshold"
+      setPref:
+        branch: user
+        pref: "javascript.options.ion.threshold"
     ion_bailout_threshold:
       description: Set the ion frequent bailout threshold.
       type: int
-      setPref: "javascript.options.ion.frequent_bailout_threshold"
+      setPref:
+        branch: user
+        pref: "javascript.options.ion.frequent_bailout_threshold"
     ion_offthread_compilation:
       description: True to enable offthread ion compilations.
       type: boolean
-      setPref: "javascript.options.ion.offthread_compilation"
+      setPref:
+        branch: user
+        pref: "javascript.options.ion.offthread_compilation"
     inlining_max_length:
       description: Set the max bytecode length considered for inlining.
       type: int
-      setPref: "javascript.options.inlining_bytecode_max_length"
+      setPref:
+        branch: user
+        pref: "javascript.options.inlining_bytecode_max_length"
 
 jitHintsCache:
   description: Pref to toggle the JIT hints cache.
   owner: dpalmeiro@mozilla.com
-  isEarlyStartup: true
   hasExposure: false
   variables:
     enabled:
       description: True to enable the hints cache.
       type: boolean
-      setPref: "javascript.options.jithints"
+      setPref:
+        branch: user
+        pref: "javascript.options.jithints"
 
 raceCacheWithNetwork:
   description: Prefs to toggle the race cache with network.
@@ -1748,7 +2183,9 @@ raceCacheWithNetwork:
     enabled:
       description: True to enable the rcwn feature.
       type: boolean
-      setPref: "network.http.rcwn.enabled"
+      setPref:
+        branch: default
+        pref: "network.http.rcwn.enabled"
 
 httpSpeculativeParallelLimit:
   description: Prefs to control the http speculative parallel limit.
@@ -1758,18 +2195,9 @@ httpSpeculativeParallelLimit:
     speculative_parallel_limit:
       description: Maximum number of parallel speculative connections.
       type: int
-      setPref: "network.http.speculative-parallel-limit"
-
-deviceMigration:
-  description: Prefs to control aspects of the new device migration experiment
-  owner: hjones@mozilla.com
-  hasExposure: false
-  isEarlyStartup: true
-  variables:
-    helpMenuHidden:
-      description: True if new help menu item should be hidden
-      type: boolean
-      fallbackPref: browser.device-migration.help-menu.hidden
+      setPref:
+        branch: default
+        pref: "network.http.speculative-parallel-limit"
 
 shopping2023:
   description: Prefs to control the 2023 shopping experiment.
@@ -1791,11 +2219,15 @@ shopping2023:
     adsEnabled:
       description: True if showing recommended products is enabled
       type: boolean
-      setPref: browser.shopping.experience2023.ads.enabled
+      setPref:
+        branch: default
+        pref: browser.shopping.experience2023.ads.enabled
     adsExposure:
       description: True if we want to record ad inventory for opted-in users, even if ads are disabled
       type: boolean
-      setPref: browser.shopping.experience2023.ads.exposure
+      setPref:
+        branch: default
+        pref: browser.shopping.experience2023.ads.exposure
     surveyEnabled:
       description: True if showing survey is enabled
       type: boolean
@@ -1803,7 +2235,9 @@ shopping2023:
     autoOpenEnabled:
       description: True if auto-open behavior for the sidebar is enabled
       type: boolean
-      setPref: browser.shopping.experience2023.autoOpen.enabled
+      setPref:
+        branch: default
+        pref: browser.shopping.experience2023.autoOpen.enabled
 
 shoppingOHTTP:
   description: Prefs to control the OHTTP URLs used for shopping.
@@ -1813,36 +2247,47 @@ shoppingOHTTP:
     ohttpRelayURL:
       description: What OHTTP relay URL to use
       type: string
-      setPref: toolkit.shopping.ohttpRelayURL
+      setPref:
+        branch: default
+        pref: toolkit.shopping.ohttpRelayURL
     ohttpConfigURL:
       description: URL for the OHTTP config to use
       type: string
-      setPref: toolkit.shopping.ohttpConfigURL
+      setPref:
+        branch: default
+        pref: toolkit.shopping.ohttpConfigURL
 
 opaqueResponseBlocking:
   description: Prefs to enable Opaque Response Blocking
   owner: farre@mozilla.com
-  isEarlyStartup: true
   hasExposure: true
   exposureDescription: Exposure is sent when a response is blocked
   variables:
     enabled:
       description: Whether ORB is enabled
       type: boolean
-      setPref: "browser.opaqueResponseBlocking"
+      setPref:
+        branch: user
+        pref: "browser.opaqueResponseBlocking"
     javascriptValidator:
       description: Whether JavaScript validation for ORB is enabled
       type: boolean
-      setPref: "browser.opaqueResponseBlocking.javascriptValidator"
+      setPref:
+        branch: user
+        pref: "browser.opaqueResponseBlocking.javascriptValidator"
     filterFetchResponse:
       description: Whether filtering of internal responses in the parent ORB is enabled
       type: int
-      setPref: "browser.opaqueResponseBlocking.filterFetchResponse"
+      setPref:
+        branch: user
+        pref: "browser.opaqueResponseBlocking.filterFetchResponse"
     mediaExceptionsStrategy:
       description: >-
         If we partially or wholly allow audio and video MIME types in conflict with spec.
       type: int
-      setPref: "browser.opaqueResponseBlocking.mediaExceptionsStrategy"
+      setPref:
+        branch: user
+        pref: "browser.opaqueResponseBlocking.mediaExceptionsStrategy"
 
 updatePrompt:
   description: Prefs to control content and behavior of update notifications
@@ -1869,27 +2314,34 @@ powerSaver:
   description: Prefs to control power saving behaviors
   owner: florian@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     reduceFrameRates:
       type: int
-      setPref: "gfx.display.max-frame-rate"
+      setPref:
+        branch: user
+        pref: "gfx.display.max-frame-rate"
       description: >-
         Limit the number of frames displayed per second.
         If omitted, the refresh rate of the screen will be used.
     mediaAutoPlay:
       type: int
-      setPref: "media.autoplay.default"
+      setPref:
+        branch: user
+        pref: "media.autoplay.default"
       description: >-
         Control if media is allowed to auto-play, with and without sound.
     backgroundTimerMinTime:
       type: int
-      setPref: "dom.min_background_timeout_value"
+      setPref:
+        branch: user
+        pref: "dom.min_background_timeout_value"
       description: >-
         Limit how frequently timers are allowed to run in background tabs.
     backgroundTimerRegenerationRate:
       type: int
-      setPref: "dom.timeout.background_budget_regeneration_rate"
+      setPref:
+        branch: user
+        pref: "dom.timeout.background_budget_regeneration_rate"
       description: >-
         Limit how quickly the background tab timer budget regenerates.
 
@@ -1902,7 +2354,6 @@ backgroundUpdate:
     feature is enabled and the service registry key (Mozilla Maintenance
     Service) is *not* available for this installation. That is the first time
     the feature can impact Firefox behaviour and the user experience.
-  isEarlyStartup: true
   variables:
     enableUpdatesForUnelevatedInstallations:
       description: >-
@@ -1910,7 +2361,9 @@ backgroundUpdate:
         the Mozilla Maintenance Service is unavailable but the installation
         directory can be written.
       type: boolean
-      setPref: app.update.background.allowUpdatesForUnelevatedInstallations
+      setPref:
+        branch: user
+        pref: app.update.background.allowUpdatesForUnelevatedInstallations
 
 defaultAgent:
   description: >-
@@ -1930,11 +2383,12 @@ bookmarks:
   description: Prefs to control aspects of the bookmarks system.
   owner: omc@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     enableBookmarksToolbar:
       type: string
-      setPref: browser.toolbars.bookmarks.visibility
+      setPref:
+        branch: user
+        pref: browser.toolbars.bookmarks.visibility
       description: If the bookmarks toolbar should never, always, or only show on newtab.
 
 cookieBannerHandling:
@@ -1944,86 +2398,111 @@ cookieBannerHandling:
   variables:
     modeNormalBrowsing:
       type: int
-      setPref: cookiebanners.service.mode
+      setPref:
+        branch: default
+        pref: cookiebanners.service.mode
       description: >-
         Controls the cookie banner handling mode in normal browsing.
         Values: 0 - disabled, 1 - reject all, 2 - reject all with accept all fallback.
     modePrivateBrowsing:
       type: int
-      setPref: cookiebanners.service.mode.privateBrowsing
+      setPref:
+        branch: default
+        pref: cookiebanners.service.mode.privateBrowsing
       description: >-
         Controls the cookie banner handling mode in private browsing.
         Values: 0 - disabled, 1 - reject all, 2 - reject all with accept all fallback.
     enableGlobalRules:
       type: boolean
-      setPref: cookiebanners.service.enableGlobalRules
+      setPref:
+        branch: default
+        pref: cookiebanners.service.enableGlobalRules
       description: >-
         Enables use of global CookieBannerRules, which apply to all sites.
         This enables handling of CMPs across sites without the use of site-specific rules.
     enableGlobalRulesSubFrames:
       type: boolean
-      setPref: cookiebanners.service.enableGlobalRules.subFrames
+      setPref:
+        branch: default
+        pref: cookiebanners.service.enableGlobalRules.subFrames
       description: >-
         Whether global rules are allowed to run in sub-frames. Running query
         selectors in every sub-frame may negatively impact performance, but is
         required for some CMPs.
     enableDetectOnly:
       type: boolean
-      setPref: cookiebanners.service.detectOnly
+      setPref:
+        branch: default
+        pref: cookiebanners.service.detectOnly
       description: >-
         When set to true, cookie banners are detected and detection events are
         dispatched, but they will not be handled.
         This pref applies to both normal and private browsing windows.
     enableFirefoxDesktopUI:
       type: boolean
-      setPref: cookiebanners.ui.desktop.enabled
+      setPref:
+        branch: default
+        pref: cookiebanners.ui.desktop.enabled
       description: Enables the cookie banner desktop UI.
     enablePromo:
       type: boolean
-      setPref: browser.promo.cookiebanners.enabled
+      setPref:
+        branch: default
+        pref: browser.promo.cookiebanners.enabled
       description: Enables the cookie banner promo in about:privatebrowsing.
     enableDesktopFeatureCallout:
       type: boolean
-      setPref: cookiebanners.ui.desktop.showCallout
+      setPref:
+        branch: default
+        pref: cookiebanners.ui.desktop.showCallout
       description: Enables the cookie banner feature callout on desktop.
 
 backgroundThreads:
   description: Prefs to control MacOS thread priorities for power savings.
   owner: kwright@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     use_low_power:
       description: >-
         Use the MacOS QoS libraries to deprioritize select threads.
       type: boolean
-      setPref: threads.use_low_power.enabled
+      setPref:
+        branch: user
+        pref: threads.use_low_power.enabled
     lower_mainthread_priority_in_background:
       description: >-
         When a browsing context is put in the background and isn't actively playing
         media, deprioritize its main thread.
       type: boolean
-      setPref: threads.lower_mainthread_priority_in_background.enabled
+      setPref:
+        branch: user
+        pref: threads.lower_mainthread_priority_in_background.enabled
 
 reportBrokenSite:
-  description: the Report Broken Site feature
+  description: The Report Broken Site feature
+  owner: twisniewski@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     enabled:
       type: boolean
-      setPref: ui.new-webcompat-reporter.enabled
+      setPref:
+        branch: user
+        pref: ui.new-webcompat-reporter.enabled
       description: >-
         Whether Report Broken Site is enabled
     sendMoreInfo:
       type: boolean
-      setPref: ui.new-webcompat-reporter.send-more-info-link
+      setPref:
+        branch: user
+        pref: ui.new-webcompat-reporter.send-more-info-link
       description: >-
         Whether Report Broken Site shows the send more info link directing
         users to webcompat.com (defaults to true for prerelease channels)
     reasonDropdown:
       type: int
-      setPref: ui.new-webcompat-reporter.reason-dropdown
+      setPref:
+        branch: user
+        pref: ui.new-webcompat-reporter.reason-dropdown
       description: >-
         0 = do not show the "reason" dropdown
         1 = show an optional "reason" dropdown
@@ -2037,13 +2516,17 @@ feltPrivacy:
   variables:
     feltPrivacy:
       type: boolean
-      setPref: browser.privatebrowsing.felt-privacy-v1
+      setPref:
+        branch: default
+        pref: browser.privatebrowsing.felt-privacy-v1
       description: >-
         When true, new styles and copy enabled on about:privatebrowsing. When true,
         a toggle for showing or hiding quick suggestions appears in about:preferences.
     resetPBMAction:
       type: boolean
-      setPref: browser.privatebrowsing.resetPBM.enabled
+      setPref:
+        branch: default
+        pref: browser.privatebrowsing.resetPBM.enabled
       description: >-
         Enables the reset PBM feature button and confirmation panel.
 
@@ -2051,16 +2534,37 @@ phc:
   description: Prefs to control the Probabalistic Heap Checker (PHC)
   owner: pbone@mozilla.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     phcEnabled:
       description: Whether to enable PHC
       type: boolean
-      setPref: memory.phc.enabled
+      setPref:
+        branch: user
+        pref: memory.phc.enabled
     phcMinRamMB:
       description: The minimum amount of RAM required to enable PHC
       type: int
-      setPref: memory.phc.min_ram_mb
+      setPref:
+        branch: user
+        pref: memory.phc.min_ram_mb
+    phcAvgDelayFirst:
+      description: The delay before the first PHC allocation
+      type: int
+      setPref:
+        branch: user
+        pref: memory.phc.avg_delay.first
+    phcAvgDelayNormal:
+      description: The delay between PHC allocations
+      type: int
+      setPref:
+        branch: user
+        pref: memory.phc.avg_delay.normal
+    phcAvgDelayPageReuse:
+      description: The delay before reusing a PHC page
+      type: int
+      setPref:
+        branch: user
+        pref: memory.phc.avg_delay.page_reuse
 
 mailto:
   description: Prefs to control aspects of the mailto handler
@@ -2069,7 +2573,6 @@ mailto:
   exposureDescription: >-
     The exposure event is sent when a webmail site calls the
     registerProtocolHandler function and when users use mailto links in Firefox.
-  isEarlyStartup: false
   variables:
     dualPrompt:
       type: boolean
@@ -2095,3 +2598,53 @@ nimbusIsReady:
     eventCount:
       description: The number of events that should be sent.
       type: int
+
+nimbusTelemetry:
+  description: A feature that enables or disables Nimbus telemetry.
+  owner: chumphreys@mozilla.com
+  hasExposure: false
+  applications:
+    - firefox-desktop
+  variables:
+    gleanMetricConfiguration:
+      description: A Glean metric configuration JSON blob.
+      type: json
+
+httpsFirst:
+  description: >-
+    Prefs for HTTPS-First, which upgrades all top-level page loads to HTTPS and
+    provides a automatic fallback to HTTP if the site isn't available via HTTPS.
+  owner: mjurgens@mozilla.com, seceng-telemetry@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: Enable HTTPS-First
+      type: boolean
+      setPref:
+        branch: default
+        pref: dom.security.https_first
+    enabledPbm:
+      description: Enable HTTPS-First in private browsing only
+      type: boolean
+      setPref:
+        branch: default
+        pref: dom.security.https_first_pbm
+    enabledSchemeless:
+      description: >-
+        Enables schemeless HTTPS-First, which will only apply HTTPS-First to address
+        bar inputs without a scheme. This essentially makes HTTPS the default
+        scheme in the address bar, while providing a fallback to HTTP.
+      type: boolean
+      setPref:
+        branch: default
+        pref: dom.security.https_first_schemeless
+    backgroundTimerMs:
+      description: >-
+        After a request gets upgraded to HTTPS, specifies the time after which a
+        second HTTP request is fired to check if the site is available via
+        HTTPS, but timing out via HTTPS. This also applies to HTTPS-Only, not
+        just HTTPS-First.
+      type: int
+      setPref:
+        branch: default
+        pref: dom.security.https_only_fire_http_request_background_timer_ms

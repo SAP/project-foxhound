@@ -131,16 +131,9 @@ ReferrerPolicy ReferrerPolicyFromToken(const nsAString& aContent,
     }
   }
 
-  // Supported tokes - ReferrerPolicyValues, are generated from
-  // ReferrerPolicy.webidl
-  for (uint8_t i = 0; ReferrerPolicyValues::strings[i].value; i++) {
-    if (lowerContent.EqualsASCII(ReferrerPolicyValues::strings[i].value)) {
-      return static_cast<enum ReferrerPolicy>(i);
-    }
-  }
-
-  // Return no referrer policy (empty string) if none of the previous match
-  return ReferrerPolicy::_empty;
+  // Return no referrer policy (empty string) if it's not a valid enum value.
+  return StringToEnum<ReferrerPolicy>(lowerContent)
+      .valueOr(ReferrerPolicy::_empty);
 }
 
 // static
@@ -185,18 +178,6 @@ ReferrerPolicy ReferrerInfo::ReferrerPolicyFromHeaderString(
     }
   }
   return referrerPolicy;
-}
-
-// static
-const char* ReferrerInfo::ReferrerPolicyToString(ReferrerPolicyEnum aPolicy) {
-  uint8_t index = static_cast<uint8_t>(aPolicy);
-  uint8_t referrerPolicyCount = ArrayLength(ReferrerPolicyValues::strings);
-  MOZ_ASSERT(index < referrerPolicyCount);
-  if (index >= referrerPolicyCount) {
-    return "";
-  }
-
-  return ReferrerPolicyValues::strings[index].value;
 }
 
 /* static */
@@ -831,11 +812,8 @@ bool ReferrerInfo::ShouldIgnoreLessRestrictedPolicies(
     nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
     NS_ENSURE_SUCCESS(rv, true);
 
-    uint32_t idx = static_cast<uint32_t>(aPolicy);
-
     AutoTArray<nsString, 2> params = {
-        NS_ConvertUTF8toUTF16(
-            nsDependentCString(ReferrerPolicyValues::strings[idx].value)),
+        NS_ConvertUTF8toUTF16(GetEnumString(aPolicy)),
         NS_ConvertUTF8toUTF16(uri->GetSpecOrDefault())};
     LogMessageToConsole(aChannel, "ReferrerPolicyDisallowRelaxingMessage",
                         params);
@@ -1051,7 +1029,7 @@ ReferrerInfo::GetReferrerPolicy(
 
 NS_IMETHODIMP
 ReferrerInfo::GetReferrerPolicyString(nsACString& aResult) {
-  aResult.AssignASCII(ReferrerPolicyToString(mPolicy));
+  aResult.AssignASCII(GetEnumString(mPolicy));
   return NS_OK;
 }
 
@@ -1719,7 +1697,9 @@ void ReferrerInfo::RecordTelemetry(nsIHttpChannel* aChannel) {
   // requests and the rest 9 buckets are for cross-site requests.
   uint32_t telemetryOffset =
       IsCrossSiteRequest(aChannel)
-          ? static_cast<uint32_t>(ReferrerPolicy::EndGuard_)
+          ? UnderlyingValue(
+                MaxContiguousEnumValue<dom::ReferrerPolicy>::value) +
+                1
           : 0;
 
   Telemetry::Accumulate(Telemetry::REFERRER_POLICY_COUNT,

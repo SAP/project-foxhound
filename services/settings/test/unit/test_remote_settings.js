@@ -64,12 +64,12 @@ function run_test() {
   Policy.getChannel = () => "nightly";
 
   // Point the blocklist clients to use this local HTTP server.
-  Services.prefs.setCharPref(
+  Services.prefs.setStringPref(
     "services.settings.server",
     `http://localhost:${server.identity.primaryPort}/v1`
   );
 
-  Services.prefs.setCharPref("services.settings.loglevel", "debug");
+  Services.prefs.setStringPref("services.settings.loglevel", "debug");
 
   client = RemoteSettings("password-fields");
   clientWithDump = RemoteSettings("language-dictionaries");
@@ -133,7 +133,11 @@ add_task(
     await clientWithDump.maybeSync(timestamp);
 
     const list = await clientWithDump.get();
-    ok(list.length > 20, `The dump was loaded (${list.length} records)`);
+    Assert.greater(
+      list.length,
+      20,
+      `The dump was loaded (${list.length} records)`
+    );
     equal(received.created[0].id, "xx", "Record from the sync come first.");
 
     const createdById = received.created.reduce((acc, r) => {
@@ -328,8 +332,9 @@ add_task(async function test_get_sorts_results_if_specified() {
   );
 
   const records = await client.get({ order: "field" });
-  ok(
-    records[0].field < records[records.length - 1].field,
+  Assert.less(
+    records[0].field,
+    records[records.length - 1].field,
     "records are sorted"
   );
 });
@@ -350,6 +355,7 @@ add_task(async function test_get_falls_back_sorts_results() {
     order: "-id",
   });
 
+  // eslint-disable-next-line mozilla/no-comparison-or-assignment-inside-ok
   ok(records[0].id > records[records.length - 1].id, "records are sorted");
 
   clientWithDump.db.getLastModified = backup;
@@ -539,7 +545,7 @@ add_task(async function test_get_does_not_verify_signature_if_load_dump() {
 
   let called;
   clientWithDump._verifier = {
-    async asyncVerifyContentSignature(serialized, signature) {
+    async asyncVerifyContentSignature() {
       called = true;
       return true;
     },
@@ -577,7 +583,7 @@ add_task(
     const backup = clientWithDump._verifier;
     let callCount = 0;
     clientWithDump._verifier = {
-      async asyncVerifyContentSignature(serialized, signature) {
+      async asyncVerifyContentSignature() {
         callCount++;
         return true;
       },
@@ -634,7 +640,7 @@ add_task(
 
     let called;
     clientWithDump._verifier = {
-      async asyncVerifyContentSignature(serialized, signature) {
+      async asyncVerifyContentSignature() {
         called = true;
         return true;
       },
@@ -1168,7 +1174,7 @@ add_task(clear_state);
 
 add_task(async function test_sync_event_is_not_sent_from_get_when_no_dump() {
   let called = false;
-  client.on("sync", e => {
+  client.on("sync", () => {
     called = true;
   });
 

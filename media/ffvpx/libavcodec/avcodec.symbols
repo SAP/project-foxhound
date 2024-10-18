@@ -30,11 +30,9 @@ av_packet_free
 av_parser_close
 av_parser_init
 av_parser_parse2
-#ifdef MOZ_LIBAV_FFT
 av_rdft_calc
 av_rdft_end
 av_rdft_init
-#endif
 av_shrink_packet
 av_vorbis_parse_frame
 av_vorbis_parse_frame_flags
@@ -79,7 +77,5 @@ avcodec_send_packet
 avcodec_string
 avcodec_version
 avsubtitle_free
-ff_init_vlc_from_lengths
-ff_init_vlc_sparse
 ff_mpa_freq_tab
 ff_mpa_bitrate_tab

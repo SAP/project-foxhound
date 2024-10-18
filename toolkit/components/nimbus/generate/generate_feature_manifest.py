@@ -14,12 +14,30 @@ HEADER_LINE = (
     " DO NOT EDIT.\n"
 )
 
-FEATURE_MANIFEST_SCHEMA = Path("schemas", "ExperimentFeatureManifest.schema.json")
+FEATURE_SCHEMA = Path("schemas", "ExperimentFeature.schema.json")
 
 NIMBUS_FALLBACK_PREFS = (
     "constexpr std::pair<nsLiteralCString, nsLiteralCString>"
     "NIMBUS_FALLBACK_PREFS[]{{{}}};"
 )
+
+# Do not add new feature IDs to this list! isEarlyStartup is being deprecated.
+# See https://bugzilla.mozilla.org/show_bug.cgi?id=1875331 for details.
+ALLOWED_ISEARLYSTARTUP_FEATURE_IDS = {
+    "abouthomecache",
+    "aboutwelcome",
+    "dapTelemetry",
+    "gleanInternalSdk",
+    "majorRelease2022",
+    "newtab",
+    "pocketNewtab",
+    "saveToPocket",
+    "searchConfiguration",
+    "shellService",
+    "testFeature",
+    "updatePrompt",
+    "upgradeDialog",
+}
 
 
 def write_fm_headers(fd):
@@ -33,19 +51,42 @@ def validate_feature_manifest(schema_path, manifest_path, manifest):
     set_prefs = {}
     fallback_prefs = {}
 
-    for feature, feature_def in manifest.items():
+    for feature_id, feature in manifest.items():
         try:
-            jsonschema.validate(feature_def, schema)
+            jsonschema.validate(feature, schema)
 
-            for variable, variable_def in feature_def.get("variables", {}).items():
+            is_early_startup = feature.get("isEarlyStartup", False)
+            allowed_is_early_startup = feature_id in ALLOWED_ISEARLYSTARTUP_FEATURE_IDS
+            if is_early_startup != allowed_is_early_startup:
+                if is_early_startup:
+                    print(f"Feature {feature_id} is marked isEarlyStartup: true")
+                    print(
+                        "isEarlyStartup is deprecated and no new isEarlyStartup features can be added"
+                    )
+                    print(
+                        "See https://bugzilla.mozilla.org/show_bug.cgi?id=1875331 for details"
+                    )
+                    raise Exception("isEarlyStartup is deprecated")
+                else:
+                    print(
+                        f"Feature {feature_id} is not early startup but is in the allow list."
+                    )
+                    print("Please remove it from generate_feature_manifest.py")
+                raise Exception("isEarlyStartup is deprecated")
+
+            for variable, variable_def in feature.get("variables", {}).items():
                 set_pref = variable_def.get("setPref")
+
+                if isinstance(set_pref, dict):
+                    set_pref = set_pref.get("pref")
+
                 if set_pref is not None:
                     if set_pref in set_prefs:
                         other_feature = set_prefs[set_pref][0]
                         other_variable = set_prefs[set_pref][1]
                         print("Multiple variables cannot declare the same setPref")
                         print(
-                            f"{feature} variable {variable} wants to set pref {set_pref}"
+                            f"{feature_id} variable {variable} wants to set pref {set_pref}"
                         )
                         print(
                             f"{other_feature} variable {other_variable} wants to set pref "
@@ -53,11 +94,11 @@ def validate_feature_manifest(schema_path, manifest_path, manifest):
                         )
                         raise Exception("Set prefs are exclusive")
 
-                    set_prefs[set_pref] = (feature, variable)
+                    set_prefs[set_pref] = (feature_id, variable)
 
                 fallback_pref = variable_def.get("fallbackPref")
                 if fallback_pref is not None:
-                    fallback_prefs[fallback_pref] = (feature, variable)
+                    fallback_prefs[fallback_pref] = (feature_id, variable)
 
                 conflicts = [
                     (
@@ -75,7 +116,7 @@ def validate_feature_manifest(schema_path, manifest_path, manifest):
                             "The same pref cannot be specified in setPref and fallbackPref"
                         )
                         print(
-                            f"{feature} variable {variable} has specified {kind} {pref}"
+                            f"{feature_id} variable {variable} has specified {kind} {pref}"
                         )
                         print(
                             f"{conflict[0]} variable {conflict[1]} has specified {other_kind} "
@@ -85,7 +126,7 @@ def validate_feature_manifest(schema_path, manifest_path, manifest):
 
         except Exception as e:
             print("Error while validating FeatureManifest.yaml")
-            print(f"On key: {feature}")
+            print(f"On key: {feature_id}")
             print(f"Input file: {manifest_path}")
             raise e
 
@@ -98,7 +139,7 @@ def generate_feature_manifest(fd, input_file):
             manifest = yaml.safe_load(f)
 
         validate_feature_manifest(
-            Path(input_file).parent / FEATURE_MANIFEST_SCHEMA, input_file, manifest
+            Path(input_file).parent / FEATURE_SCHEMA, input_file, manifest
         )
 
         fd.write(f"export const FeatureManifest = {json.dumps(manifest)};")

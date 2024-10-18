@@ -165,7 +165,7 @@ enum class OpKind {
   ReturnCall,
   CallIndirect,
   ReturnCallIndirect,
-#  ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#  ifdef ENABLE_WASM_GC
   CallRef,
   ReturnCallRef,
 #  endif
@@ -430,6 +430,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   // immutable global. Otherwise this is always set to zero, and only imported
   // immutable globals are allowed.
   uint32_t maxInitializedGlobalsIndexPlus1_;
+  FeatureUsage featureUsage_;
 
 #ifdef DEBUG
   OpBytes op_;
@@ -492,7 +493,8 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   [[nodiscard]] bool getControl(uint32_t relativeDepth, Control** controlEntry);
   [[nodiscard]] bool checkBranchValueAndPush(uint32_t relativeDepth,
                                              ResultType* type,
-                                             ValueVector* values);
+                                             ValueVector* values,
+                                             bool rewriteStackTypes);
   [[nodiscard]] bool checkBrTableEntryAndPush(uint32_t* relativeDepth,
                                               ResultType prevBranchType,
                                               ResultType* branchType,
@@ -520,19 +522,19 @@ class MOZ_STACK_CLASS OpIter : private Policy {
     controlStack_.back().setPolymorphicBase();
   }
 
-  inline bool checkIsSubtypeOf(FieldType actual, FieldType expected);
+  inline bool checkIsSubtypeOf(StorageType actual, StorageType expected);
 
   inline bool checkIsSubtypeOf(RefType actual, RefType expected) {
-    return checkIsSubtypeOf(ValType(actual).fieldType(),
-                            ValType(expected).fieldType());
+    return checkIsSubtypeOf(ValType(actual).storageType(),
+                            ValType(expected).storageType());
   }
   inline bool checkIsSubtypeOf(ValType actual, ValType expected) {
-    return checkIsSubtypeOf(actual.fieldType(), expected.fieldType());
+    return checkIsSubtypeOf(actual.storageType(), expected.storageType());
   }
 
   inline bool checkIsSubtypeOf(ResultType params, ResultType results);
 
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
   inline bool checkIsSubtypeOf(uint32_t actualTypeIndex,
                                uint32_t expectedTypeIndex);
 #endif
@@ -545,6 +547,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
         d_(decoder),
         env_(env),
         maxInitializedGlobalsIndexPlus1_(0),
+        featureUsage_(FeatureUsage::None),
         op_(OpBytes(Op::Limit)),
         offsetOfLastReadOp_(0) {}
 #else
@@ -554,8 +557,11 @@ class MOZ_STACK_CLASS OpIter : private Policy {
         d_(decoder),
         env_(env),
         maxInitializedGlobalsIndexPlus1_(0),
+        featureUsage_(FeatureUsage::None),
         offsetOfLastReadOp_(0) {}
 #endif
+
+  FeatureUsage featureUsage() const { return featureUsage_; }
 
   // Return the decoding byte offset.
   uint32_t currentOffset() const { return d_.currentOffset(); }
@@ -698,7 +704,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
                                             uint32_t* tableIndex, Value* callee,
                                             ValueVector* argValues);
 #endif
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
   [[nodiscard]] bool readCallRef(const FuncType** funcType, Value* callee,
                                  ValueVector* argValues);
 
@@ -900,8 +906,8 @@ class MOZ_STACK_CLASS OpIter : private Policy {
 };
 
 template <typename Policy>
-inline bool OpIter<Policy>::checkIsSubtypeOf(FieldType subType,
-                                             FieldType superType) {
+inline bool OpIter<Policy>::checkIsSubtypeOf(StorageType subType,
+                                             StorageType superType) {
   return CheckIsSubtypeOf(d_, env_, lastOpcodeOffset(), subType, superType);
 }
 
@@ -927,7 +933,7 @@ inline bool OpIter<Policy>::checkIsSubtypeOf(ResultType params,
   return true;
 }
 
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
 template <typename Policy>
 inline bool OpIter<Policy>::checkIsSubtypeOf(uint32_t actualTypeIndex,
                                              uint32_t expectedTypeIndex) {
@@ -1475,14 +1481,15 @@ inline void OpIter<Policy>::popEnd() {
 template <typename Policy>
 inline bool OpIter<Policy>::checkBranchValueAndPush(uint32_t relativeDepth,
                                                     ResultType* type,
-                                                    ValueVector* values) {
+                                                    ValueVector* values,
+                                                    bool rewriteStackTypes) {
   Control* block = nullptr;
   if (!getControl(relativeDepth, &block)) {
     return false;
   }
 
   *type = block->branchTargetType();
-  return checkTopTypeMatches(*type, values, /*rewriteStackTypes=*/false);
+  return checkTopTypeMatches(*type, values, rewriteStackTypes);
 }
 
 template <typename Policy>
@@ -1494,7 +1501,8 @@ inline bool OpIter<Policy>::readBr(uint32_t* relativeDepth, ResultType* type,
     return fail("unable to read br depth");
   }
 
-  if (!checkBranchValueAndPush(*relativeDepth, type, values)) {
+  if (!checkBranchValueAndPush(*relativeDepth, type, values,
+                               /*rewriteStackTypes=*/false)) {
     return false;
   }
 
@@ -1515,7 +1523,8 @@ inline bool OpIter<Policy>::readBrIf(uint32_t* relativeDepth, ResultType* type,
     return false;
   }
 
-  return checkBranchValueAndPush(*relativeDepth, type, values);
+  return checkBranchValueAndPush(*relativeDepth, type, values,
+                                 /*rewriteStackTypes=*/true);
 }
 
 #define UNKNOWN_ARITY UINT32_MAX
@@ -1598,6 +1607,7 @@ inline bool OpIter<Policy>::readBrTable(Uint32Vector* depths,
 template <typename Policy>
 inline bool OpIter<Policy>::readTry(ResultType* paramType) {
   MOZ_ASSERT(Classify(op_) == OpKind::Try);
+  featureUsage_ |= FeatureUsage::LegacyExceptions;
 
   BlockType type;
   if (!readBlockType(&type)) {
@@ -1675,6 +1685,17 @@ inline bool OpIter<Policy>::readTryTable(ResultType* paramType,
     if (!readVarU32(&tryTableCatch.labelRelativeDepth)) {
       return fail("unable to read catch depth");
     }
+
+    // The target branch depth is relative to the control labels outside of
+    // this try_table. e.g. `0` is a branch to the control outside of this
+    // try_table, not to the try_table itself. However, we've already pushed
+    // the control block for the try_table, and users will read it after we've
+    // returned, so we need to return the relative depth adjusted by 1 to
+    // account for our own control block.
+    if (tryTableCatch.labelRelativeDepth == UINT32_MAX) {
+      return fail("catch depth out of range");
+    }
+    tryTableCatch.labelRelativeDepth += 1;
 
     // Tagged catches will unpack the exception package and pass it to the
     // branch
@@ -2375,10 +2396,10 @@ inline bool OpIter<Policy>::readRefFunc(uint32_t* funcIndex) {
         "function index is not declared in a section before the code section");
   }
 
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
   // When function references enabled, push type index on the stack, e.g. for
   // validation of the call_ref instruction.
-  if (env_.functionReferencesEnabled()) {
+  if (env_.gcEnabled()) {
     const uint32_t typeIndex = env_.funcs[*funcIndex].typeIndex;
     const TypeDef& typeDef = env_.types->type(typeIndex);
     return push(RefType::fromTypeDef(&typeDef, false));
@@ -2440,7 +2461,8 @@ inline bool OpIter<Policy>::readBrOnNull(uint32_t* relativeDepth,
     return false;
   }
 
-  if (!checkBranchValueAndPush(*relativeDepth, type, values)) {
+  if (!checkBranchValueAndPush(*relativeDepth, type, values,
+                               /*rewriteStackTypes=*/true)) {
     return false;
   }
 
@@ -2488,7 +2510,7 @@ inline bool OpIter<Policy>::readBrOnNonNull(uint32_t* relativeDepth,
   }
 
   // Check if the type stack matches the branch target type.
-  if (!checkTopTypeMatches(*type, values, /*rewriteStackTypes=*/false)) {
+  if (!checkTopTypeMatches(*type, values, /*rewriteStackTypes=*/true)) {
     return false;
   }
 
@@ -2676,7 +2698,7 @@ inline bool OpIter<Policy>::readReturnCallIndirect(uint32_t* funcTypeIndex,
 }
 #endif
 
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
 template <typename Policy>
 inline bool OpIter<Policy>::readCallRef(const FuncType** funcType,
                                         Value* callee, ValueVector* argValues) {
@@ -2702,7 +2724,7 @@ inline bool OpIter<Policy>::readCallRef(const FuncType** funcType,
 }
 #endif
 
-#if defined(ENABLE_WASM_TAIL_CALLS) && defined(ENABLE_WASM_FUNCTION_REFERENCES)
+#if defined(ENABLE_WASM_TAIL_CALLS) && defined(ENABLE_WASM_GC)
 template <typename Policy>
 inline bool OpIter<Policy>::readReturnCallRef(const FuncType** funcType,
                                               Value* callee,
@@ -3364,17 +3386,17 @@ inline bool OpIter<Policy>::readStructGet(uint32_t* typeIndex,
     return false;
   }
 
-  FieldType fieldType = structType.fields_[*fieldIndex].type;
+  StorageType StorageType = structType.fields_[*fieldIndex].type;
 
-  if (fieldType.isValType() && wideningOp != FieldWideningOp::None) {
+  if (StorageType.isValType() && wideningOp != FieldWideningOp::None) {
     return fail("must not specify signedness for unpacked field type");
   }
 
-  if (!fieldType.isValType() && wideningOp == FieldWideningOp::None) {
+  if (!StorageType.isValType() && wideningOp == FieldWideningOp::None) {
     return fail("must specify signedness for packed field type");
   }
 
-  return push(fieldType.widenToValType());
+  return push(StorageType.widenToValType());
 }
 
 template <typename Policy>
@@ -3507,7 +3529,7 @@ inline bool OpIter<Policy>::readArrayNewData(uint32_t* typeIndex,
 
   const TypeDef& typeDef = env_.types->type(*typeIndex);
   const ArrayType& arrayType = typeDef.arrayType();
-  FieldType elemType = arrayType.elementType_;
+  StorageType elemType = arrayType.elementType_;
   if (!elemType.isNumber() && !elemType.isPacked() && !elemType.isVector()) {
     return fail("element type must be i8/i16/i32/i64/f32/f64/v128");
   }
@@ -3544,7 +3566,7 @@ inline bool OpIter<Policy>::readArrayNewElem(uint32_t* typeIndex,
 
   const TypeDef& typeDef = env_.types->type(*typeIndex);
   const ArrayType& arrayType = typeDef.arrayType();
-  FieldType dstElemType = arrayType.elementType_;
+  StorageType dstElemType = arrayType.elementType_;
   if (!dstElemType.isRefType()) {
     return fail("element type is not a reftype");
   }
@@ -3586,7 +3608,7 @@ inline bool OpIter<Policy>::readArrayInitData(uint32_t* typeIndex,
 
   const TypeDef& typeDef = env_.types->type(*typeIndex);
   const ArrayType& arrayType = typeDef.arrayType();
-  FieldType elemType = arrayType.elementType_;
+  StorageType elemType = arrayType.elementType_;
   if (!elemType.isNumber() && !elemType.isPacked() && !elemType.isVector()) {
     return fail("element type must be i8/i16/i32/i64/f32/f64/v128");
   }
@@ -3629,7 +3651,7 @@ inline bool OpIter<Policy>::readArrayInitElem(uint32_t* typeIndex,
 
   const TypeDef& typeDef = env_.types->type(*typeIndex);
   const ArrayType& arrayType = typeDef.arrayType();
-  FieldType dstElemType = arrayType.elementType_;
+  StorageType dstElemType = arrayType.elementType_;
   if (!arrayType.isMutable_) {
     return fail("destination array is not mutable");
   }
@@ -3680,17 +3702,17 @@ inline bool OpIter<Policy>::readArrayGet(uint32_t* typeIndex,
     return false;
   }
 
-  FieldType fieldType = arrayType.elementType_;
+  StorageType elementType = arrayType.elementType_;
 
-  if (fieldType.isValType() && wideningOp != FieldWideningOp::None) {
+  if (elementType.isValType() && wideningOp != FieldWideningOp::None) {
     return fail("must not specify signedness for unpacked element type");
   }
 
-  if (!fieldType.isValType() && wideningOp == FieldWideningOp::None) {
+  if (!elementType.isValType() && wideningOp == FieldWideningOp::None) {
     return fail("must specify signedness for packed element type");
   }
 
-  return push(fieldType.widenToValType());
+  return push(elementType.widenToValType());
 }
 
 template <typename Policy>
@@ -3757,8 +3779,8 @@ inline bool OpIter<Policy>::readArrayCopy(int32_t* elemSize,
   const ArrayType& dstArrayType = dstTypeDef.arrayType();
   const TypeDef& srcTypeDef = env_.types->type(srcTypeIndex);
   const ArrayType& srcArrayType = srcTypeDef.arrayType();
-  FieldType dstElemType = dstArrayType.elementType_;
-  FieldType srcElemType = srcArrayType.elementType_;
+  StorageType dstElemType = dstArrayType.elementType_;
+  StorageType srcElemType = srcArrayType.elementType_;
   if (!dstArrayType.isMutable_) {
     return fail("destination array is not mutable");
   }
@@ -3984,7 +4006,7 @@ inline bool OpIter<Policy>::readBrOnCast(bool onSuccess,
   fallthroughTypes[labelTypeNumValues - 1] = typeOnFallthrough;
 
   return checkTopTypeMatches(ResultType::Vector(fallthroughTypes), values,
-                             /*rewriteStackTypes=*/false);
+                             /*rewriteStackTypes=*/true);
 }
 
 template <typename Policy>
@@ -4211,18 +4233,18 @@ inline bool OpIter<Policy>::readCallBuiltinModuleFunc(
     return fail("index out of range");
   }
 
-  *builtinModuleFunc = &BuiltinModuleFunc::getFromId(BuiltinModuleFuncId(id));
+  *builtinModuleFunc = &BuiltinModuleFuncs::getFromId(BuiltinModuleFuncId(id));
 
-  if ((*builtinModuleFunc)->usesMemory && env_.numMemories() == 0) {
+  if ((*builtinModuleFunc)->usesMemory() && env_.numMemories() == 0) {
     return fail("can't touch memory without memory");
   }
-  if (!popWithTypes((*builtinModuleFunc)->params, params)) {
+
+  const FuncType& funcType = *(*builtinModuleFunc)->funcType();
+  if (!popCallArgs(funcType.args(), params)) {
     return false;
   }
-  if ((*builtinModuleFunc)->result.isNothing()) {
-    return true;
-  }
-  return push(*(*builtinModuleFunc)->result);
+
+  return push(ResultType::Vector(funcType.results()));
 }
 
 }  // namespace wasm

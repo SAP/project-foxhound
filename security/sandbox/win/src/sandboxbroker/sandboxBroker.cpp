@@ -25,11 +25,11 @@
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WinDllServices.h"
 #include "mozilla/WindowsVersion.h"
-#include "mozilla/WinHeaderOnlyUtils.h"
 #include "mozilla/ipc/LaunchError.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCOMPtr.h"
@@ -65,11 +65,11 @@ sandbox::BrokerServices* sBrokerService = nullptr;
 bool SandboxBroker::sRunningFromNetworkDrive = false;
 
 // Cached special directories used for adding policy rules.
-static UniquePtr<nsString> sBinDir;
-static UniquePtr<nsString> sProfileDir;
-static UniquePtr<nsString> sLocalAppDataDir;
+static StaticAutoPtr<nsString> sBinDir;
+static StaticAutoPtr<nsString> sProfileDir;
+static StaticAutoPtr<nsString> sLocalAppDataDir;
 #ifdef ENABLE_SYSTEM_EXTENSION_DIRS
-static UniquePtr<nsString> sUserExtensionsDir;
+static StaticAutoPtr<nsString> sUserExtensionsDir;
 #endif
 
 static LazyLogModule sSandboxBrokerLog("SandboxBroker");
@@ -80,7 +80,7 @@ static LazyLogModule sSandboxBrokerLog("SandboxBroker");
 
 // Used to store whether we have accumulated an error combination for this
 // session.
-static UniquePtr<nsTHashtable<nsCStringHashKey>> sLaunchErrors;
+static StaticAutoPtr<nsTHashtable<nsCStringHashKey>> sLaunchErrors;
 
 // This helper function is our version of SandboxWin::AddWin32kLockdownPolicy
 // of Chromium, making sure the MITIGATION_WIN32K_DISABLE flag is set before
@@ -115,15 +115,31 @@ static sandbox::ResultCode AddWin32kLockdownPolicy(
   return result;
 }
 
+static void CacheDirAndAutoClear(const nsAString& aDir,
+                                 StaticAutoPtr<nsString>* cacheVar) {
+  *cacheVar = new nsString(aDir);
+  ClearOnShutdown(cacheVar);
+
+  // Convert network share path to format for sandbox policy.
+  if (Substring(**cacheVar, 0, 2).Equals(u"\\\\"_ns)) {
+    (*cacheVar)->InsertLiteral(u"??\\UNC", 1);
+  }
+}
+
 /* static */
-void SandboxBroker::Initialize(sandbox::BrokerServices* aBrokerServices) {
+void SandboxBroker::Initialize(sandbox::BrokerServices* aBrokerServices,
+                               const nsAString& aBinDir) {
   sBrokerService = aBrokerServices;
 
   sRunningFromNetworkDrive = widget::WinUtils::RunningFromANetworkDrive();
+
+  if (!aBinDir.IsEmpty()) {
+    CacheDirAndAutoClear(aBinDir, &sBinDir);
+  }
 }
 
 static void CacheDirAndAutoClear(nsIProperties* aDirSvc, const char* aDirKey,
-                                 UniquePtr<nsString>* cacheVar) {
+                                 StaticAutoPtr<nsString>* cacheVar) {
   nsCOMPtr<nsIFile> dirToCache;
   nsresult rv =
       aDirSvc->Get(aDirKey, NS_GET_IID(nsIFile), getter_AddRefs(dirToCache));
@@ -134,14 +150,9 @@ static void CacheDirAndAutoClear(nsIProperties* aDirSvc, const char* aDirKey,
     return;
   }
 
-  *cacheVar = MakeUnique<nsString>();
-  ClearOnShutdown(cacheVar);
-  MOZ_ALWAYS_SUCCEEDS(dirToCache->GetPath(**cacheVar));
-
-  // Convert network share path to format for sandbox policy.
-  if (Substring(**cacheVar, 0, 2).Equals(u"\\\\"_ns)) {
-    (*cacheVar)->InsertLiteral(u"??\\UNC", 1);
-  }
+  nsAutoString dirPath;
+  MOZ_ALWAYS_SUCCEEDS(dirToCache->GetPath(dirPath));
+  CacheDirAndAutoClear(dirPath, cacheVar);
 }
 
 /* static */
@@ -165,7 +176,6 @@ void SandboxBroker::GeckoDependentInitialize() {
       return;
     }
 
-    CacheDirAndAutoClear(dirSvc, NS_GRE_DIR, &sBinDir);
     CacheDirAndAutoClear(dirSvc, NS_APP_USER_PROFILE_50_DIR, &sProfileDir);
     CacheDirAndAutoClear(dirSvc, NS_WIN_LOCAL_APPDATA_DIR, &sLocalAppDataDir);
 #ifdef ENABLE_SYSTEM_EXTENSION_DIRS
@@ -176,7 +186,7 @@ void SandboxBroker::GeckoDependentInitialize() {
 
   // Create sLaunchErrors up front because ClearOnShutdown must be called on the
   // main thread.
-  sLaunchErrors = MakeUnique<nsTHashtable<nsCStringHashKey>>();
+  sLaunchErrors = new nsTHashtable<nsCStringHashKey>();
   ClearOnShutdown(&sLaunchErrors);
 }
 
@@ -424,7 +434,7 @@ Result<Ok, mozilla::ipc::LaunchError> SandboxBroker::LaunchApp(
 
 static void AddCachedDirRule(sandbox::TargetPolicy* aPolicy,
                              sandbox::TargetPolicy::Semantics aAccess,
-                             const UniquePtr<nsString>& aBaseDir,
+                             const StaticAutoPtr<nsString>& aBaseDir,
                              const nsLiteralString& aRelativePath) {
   if (!aBaseDir) {
     // This can only be an NS_WARNING, because it can null for xpcshell tests.
@@ -480,33 +490,11 @@ static sandbox::ResultCode AllowProxyLoadFromBinDir(
     sandbox::TargetPolicy* aPolicy) {
   // Allow modules in the directory containing the executable such as
   // mozglue.dll, nss3.dll, etc.
-  static UniquePtr<nsString> sInstallDir;
-  if (!sInstallDir) {
-    // Since this function can be called before sBinDir is initialized,
-    // we cache the install path by ourselves.
-    UniquePtr<wchar_t[]> appDirStr;
-    if (GetInstallDirectory(appDirStr)) {
-      sInstallDir = MakeUnique<nsString>(appDirStr.get());
-      sInstallDir->Append(u"\\*");
-
-      auto setClearOnShutdown = [ptr = &sInstallDir]() -> void {
-        ClearOnShutdown(ptr);
-      };
-      if (NS_IsMainThread()) {
-        setClearOnShutdown();
-      } else {
-        SchedulerGroup::Dispatch(NS_NewRunnableFunction(
-            "InitSignedPolicyRulesToBypassCig", std::move(setClearOnShutdown)));
-      }
-    }
-
-    if (!sInstallDir) {
-      return sandbox::SBOX_ERROR_GENERIC;
-    }
-  }
+  nsAutoString rulePath(*sBinDir);
+  rulePath.Append(u"\\*"_ns);
   return aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_SIGNED_BINARY,
                           sandbox::TargetPolicy::SIGNED_ALLOW_LOAD,
-                          sInstallDir->get());
+                          rulePath.get());
 }
 
 static sandbox::ResultCode AddCigToPolicy(
@@ -799,6 +787,11 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
     accessTokenLevel = sandbox::USER_LOCKDOWN;
     initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
     delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_UNTRUSTED;
+  } else if (aSandboxLevel >= 7) {
+    jobLevel = sandbox::JOB_LOCKDOWN;
+    accessTokenLevel = sandbox::USER_LIMITED;
+    initialIntegrityLevel = sandbox::INTEGRITY_LEVEL_LOW;
+    delayedIntegrityLevel = sandbox::INTEGRITY_LEVEL_UNTRUSTED;
   } else if (aSandboxLevel >= 4) {
     jobLevel = sandbox::JOB_LOCKDOWN;
     accessTokenLevel = sandbox::USER_LIMITED;
@@ -976,48 +969,6 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::SBOX_ALL_OK == result,
       "With these static arguments AddRule should never fail, what happened?");
 
-  // The content process needs to be able to duplicate named pipes back to the
-  // broker and other child processes, which are File type handles.
-  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                            sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"File");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                            sandbox::TargetPolicy::HANDLES_DUP_ANY, L"File");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-
-  // The content process needs to be able to duplicate shared memory handles,
-  // which are Section handles, to the broker process and other child processes.
-  result =
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Section");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                            sandbox::TargetPolicy::HANDLES_DUP_ANY, L"Section");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-
-  // The content process needs to be able to duplicate semaphore handles,
-  // to the broker process and other child processes.
-  result =
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Semaphore");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-  result =
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_ANY, L"Semaphore");
-  MOZ_RELEASE_ASSERT(
-      sandbox::SBOX_ALL_OK == result,
-      "With these static arguments AddRule should never fail, what happened?");
-
   // Allow content processes to use complex line breaking brokering.
   result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_LINE_BREAK,
                             sandbox::TargetPolicy::LINE_BREAK_ALLOW, nullptr);
@@ -1120,6 +1071,10 @@ void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
                        sandbox::TargetPolicy::FILES_ALLOW_ANY,
                        L"\\??\\pipe\\gecko-crash-server-pipe.*"));
 
+  // Add rule to allow read access to installation directory.
+  AddCachedDirRule(mPolicy, sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+                   sBinDir, u"\\*"_ns);
+
   // The GPU process needs to write to a shader cache for performance reasons
   if (sProfileDir) {
     AddCachedDirRule(mPolicy, sandbox::TargetPolicy::FILES_ALLOW_DIR_ANY,
@@ -1128,16 +1083,6 @@ void SandboxBroker::SetSecurityLevelForGPUProcess(int32_t aSandboxLevel) {
     AddCachedDirRule(mPolicy, sandbox::TargetPolicy::FILES_ALLOW_ANY,
                      sProfileDir, u"\\shader-cache\\*"_ns);
   }
-
-  // The process needs to be able to duplicate shared memory handles,
-  // which are Section handles, to the broker process and other child processes.
-  SANDBOX_SUCCEED_OR_CRASH(
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Section"));
-
-  SANDBOX_SUCCEED_OR_CRASH(
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_ANY, L"Section"));
 }
 
 #define SANDBOX_ENSURE_SUCCESS(result, message)          \
@@ -1231,24 +1176,6 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
       result,
       "With these static arguments AddRule should never fail, what happened?");
 
-  // The process needs to be able to duplicate shared memory handles,
-  // which are Section handles, to the content processes.
-  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                            sandbox::TargetPolicy::HANDLES_DUP_ANY, L"Section");
-  SANDBOX_ENSURE_SUCCESS(
-      result,
-      "With these static arguments AddRule should never fail, what happened?");
-
-  // This section is needed to avoid an assert during crash reporting code
-  // when running mochitests.  The assertion is here:
-  // toolkit/crashreporter/nsExceptionHandler.cpp:2041
-  result =
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Section");
-  SANDBOX_ENSURE_SUCCESS(
-      result,
-      "With these static arguments AddRule should never fail, what happened?");
-
   return true;
 }
 
@@ -1335,16 +1262,6 @@ bool SandboxBroker::SetSecurityLevelForSocketProcess() {
   result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
                             sandbox::TargetPolicy::FILES_ALLOW_ANY,
                             L"\\??\\pipe\\gecko-crash-server-pipe.*");
-  SANDBOX_ENSURE_SUCCESS(
-      result,
-      "With these static arguments AddRule should never fail, what happened?");
-
-  // This section is needed to avoid an assert during crash reporting code
-  // when running mochitests.  The assertion is here:
-  // toolkit/crashreporter/nsExceptionHandler.cpp:2041
-  result =
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Section");
   SANDBOX_ENSURE_SUCCESS(
       result,
       "With these static arguments AddRule should never fail, what happened?");
@@ -1863,19 +1780,6 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
       result,
       "With these static arguments AddRule should never fail, what happened?");
 
-  // The GMP process needs to be able to share memory with the main process for
-  // crash reporting. On arm64 when we are launching remotely via an x86 broker,
-  // we need the rule to be HANDLES_DUP_ANY, because we still need to duplicate
-  // to the main process not the child's broker.
-  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                            aIsRemoteLaunch
-                                ? sandbox::TargetPolicy::HANDLES_DUP_ANY
-                                : sandbox::TargetPolicy::HANDLES_DUP_BROKER,
-                            L"Section");
-  SANDBOX_ENSURE_SUCCESS(
-      result,
-      "With these static arguments AddRule should never fail, what happened?");
-
   return true;
 }
 #undef SANDBOX_ENSURE_SUCCESS
@@ -1894,16 +1798,6 @@ bool SandboxBroker::AllowReadFile(wchar_t const* file) {
   }
 
   return true;
-}
-
-/* static */
-bool SandboxBroker::AddTargetPeer(HANDLE aPeerProcess) {
-  if (!sBrokerService) {
-    return false;
-  }
-
-  sandbox::ResultCode result = sBrokerService->AddTargetPeer(aPeerProcess);
-  return (sandbox::SBOX_ALL_OK == result);
 }
 
 void SandboxBroker::AddHandleToShare(HANDLE aHandle) {
@@ -1930,8 +1824,6 @@ void SandboxBroker::ApplyLoggingPolicy() {
                    L"HKEY_CURRENT_USER\\dummy");
   mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_SYNC,
                    sandbox::TargetPolicy::EVENTS_ALLOW_READONLY, L"dummy");
-  mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
-                   sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"dummy");
 }
 
 SandboxBroker::~SandboxBroker() {

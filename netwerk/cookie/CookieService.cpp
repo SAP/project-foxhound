@@ -13,6 +13,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/CookiePersistentStorage.h"
 #include "mozilla/net/CookiePrivateStorage.h"
@@ -372,44 +373,14 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> principal = aDocument->EffectiveCookiePrincipal();
+  nsCOMPtr<nsIPrincipal> cookiePrincipal =
+      aDocument->EffectiveCookiePrincipal();
 
-  if (!CookieCommons::IsSchemeSupported(principal)) {
-    return NS_OK;
-  }
-
-  CookieStorage* storage = PickStorage(principal->OriginAttributesRef());
-
-  nsAutoCString baseDomain;
-  rv = CookieCommons::GetBaseDomain(principal, baseDomain);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return NS_OK;
-  }
-
-  nsAutoCString hostFromURI;
-  rv = nsContentUtils::GetHostOrIPv6WithBrackets(principal, hostFromURI);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return NS_OK;
-  }
-
-  nsAutoCString pathFromURI;
-  rv = principal->GetFilePath(pathFromURI);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return NS_OK;
-  }
-
-  int64_t currentTimeInUsec = PR_Now();
-  int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
-
-  const nsTArray<RefPtr<Cookie>>* cookies =
-      storage->GetCookiesFromHost(baseDomain, principal->OriginAttributesRef());
-  if (!cookies) {
-    return NS_OK;
-  }
-
-  // check if the nsIPrincipal is using an https secure protocol.
-  // if it isn't, then we can't send a secure cookie over the connection.
-  bool potentiallyTurstworthy = principal->GetIsOriginPotentiallyTrustworthy();
+  // TODO (Bug 1874174): A document could access both unpartitioned and
+  // partitioned cookie jars. We will need to prepare partitioned and
+  // unpartitioned principals for access both cookie jars.
+  nsTArray<nsCOMPtr<nsIPrincipal>> principals;
+  principals.AppendElement(cookiePrincipal);
 
   bool thirdParty = true;
   nsPIDOMWindowInner* innerWindow = aDocument->GetInnerWindow();
@@ -424,58 +395,103 @@ CookieService::GetCookieStringFromDocument(Document* aDocument,
     }
   }
 
-  bool stale = false;
   nsTArray<Cookie*> cookieList;
 
-  // iterate the cookies!
-  for (Cookie* cookie : *cookies) {
-    // check the host, since the base domain lookup is conservative.
-    if (!CookieCommons::DomainMatches(cookie, hostFromURI)) {
+  for (auto& principal : principals) {
+    if (!CookieCommons::IsSchemeSupported(principal)) {
+      return NS_OK;
+    }
+
+    CookieStorage* storage = PickStorage(principal->OriginAttributesRef());
+
+    nsAutoCString baseDomain;
+    rv = CookieCommons::GetBaseDomain(principal, baseDomain);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return NS_OK;
+    }
+
+    nsAutoCString hostFromURI;
+    rv = nsContentUtils::GetHostOrIPv6WithBrackets(principal, hostFromURI);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return NS_OK;
+    }
+
+    nsAutoCString pathFromURI;
+    rv = principal->GetFilePath(pathFromURI);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return NS_OK;
+    }
+
+    int64_t currentTimeInUsec = PR_Now();
+    int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
+
+    const nsTArray<RefPtr<Cookie>>* cookies = storage->GetCookiesFromHost(
+        baseDomain, principal->OriginAttributesRef());
+    if (!cookies) {
       continue;
     }
 
-    // if the cookie is httpOnly and it's not going directly to the HTTP
-    // connection, don't send it
-    if (cookie->IsHttpOnly()) {
+    // check if the nsIPrincipal is using an https secure protocol.
+    // if it isn't, then we can't send a secure cookie over the connection.
+    bool potentiallyTrustworthy =
+        principal->GetIsOriginPotentiallyTrustworthy();
+
+    bool stale = false;
+
+    // iterate the cookies!
+    for (Cookie* cookie : *cookies) {
+      // check the host, since the base domain lookup is conservative.
+      if (!CookieCommons::DomainMatches(cookie, hostFromURI)) {
+        continue;
+      }
+
+      // if the cookie is httpOnly and it's not going directly to the HTTP
+      // connection, don't send it
+      if (cookie->IsHttpOnly()) {
+        continue;
+      }
+
+      if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
+                            cookie, aDocument)) {
+        continue;
+      }
+
+      // if the cookie is secure and the host scheme isn't, we can't send it
+      if (cookie->IsSecure() && !potentiallyTrustworthy) {
+        continue;
+      }
+
+      // if the nsIURI path doesn't match the cookie path, don't send it back
+      if (!CookieCommons::PathMatches(cookie, pathFromURI)) {
+        continue;
+      }
+
+      // check if the cookie has expired
+      if (cookie->Expiry() <= currentTime) {
+        continue;
+      }
+
+      // all checks passed - add to list and check if lastAccessed stamp needs
+      // updating
+      cookieList.AppendElement(cookie);
+      if (cookie->IsStale()) {
+        stale = true;
+      }
+    }
+
+    if (cookieList.IsEmpty()) {
       continue;
     }
 
-    if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
-                          cookie, aDocument)) {
-      continue;
-    }
-
-    // if the cookie is secure and the host scheme isn't, we can't send it
-    if (cookie->IsSecure() && !potentiallyTurstworthy) {
-      continue;
-    }
-
-    // if the nsIURI path doesn't match the cookie path, don't send it back
-    if (!CookieCommons::PathMatches(cookie, pathFromURI)) {
-      continue;
-    }
-
-    // check if the cookie has expired
-    if (cookie->Expiry() <= currentTime) {
-      continue;
-    }
-
-    // all checks passed - add to list and check if lastAccessed stamp needs
-    // updating
-    cookieList.AppendElement(cookie);
-    if (cookie->IsStale()) {
-      stale = true;
+    // update lastAccessed timestamps. we only do this if the timestamp is stale
+    // by a certain amount, to avoid thrashing the db during pageload.
+    if (stale) {
+      storage->StaleCookies(cookieList, currentTimeInUsec);
     }
   }
 
   if (cookieList.IsEmpty()) {
     return NS_OK;
-  }
-
-  // update lastAccessed timestamps. we only do this if the timestamp is stale
-  // by a certain amount, to avoid thrashing the db during pageload.
-  if (stale) {
-    storage->StaleCookies(cookieList, currentTimeInUsec);
   }
 
   // return cookies in order of path length; longest to shortest.
@@ -512,6 +528,12 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
   bool isSameSiteForeign = CookieCommons::IsSameSiteForeign(
       aChannel, aHostURI, &hadCrossSiteRedirects);
 
+  // TODO (Bug 1874174): A channel could load both unpartitioned and partitioned
+  // cookie jars together. We will need to get cookies from both unpartitioned
+  // and partitioned cookie jars according to storage access.
+  nsTArray<OriginAttributes> originAttributesList;
+  originAttributesList.AppendElement(attrs);
+
   AutoTArray<Cookie*, 8> foundCookieList;
   GetCookiesForURI(
       aHostURI, aChannel, result.contains(ThirdPartyAnalysis::IsForeign),
@@ -519,7 +541,8 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
       result.contains(ThirdPartyAnalysis::IsThirdPartySocialTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       rejectedReason, isSafeTopLevelNav, isSameSiteForeign,
-      hadCrossSiteRedirects, true, false, attrs, foundCookieList);
+      hadCrossSiteRedirects, true, false, originAttributesList,
+      foundCookieList);
 
   ComposeCookieString(foundCookieList, aCookieString);
 
@@ -936,7 +959,8 @@ void CookieService::GetCookiesForURI(
     bool aIsSafeTopLevelNav, bool aIsSameSiteForeign,
     bool aHadCrossSiteRedirects, bool aHttpBound,
     bool aAllowSecureCookiesToInsecureOrigin,
-    const OriginAttributes& aOriginAttrs, nsTArray<Cookie*>& aCookieList) {
+    const nsTArray<OriginAttributes>& aOriginAttrsList,
+    nsTArray<Cookie*>& aCookieList) {
   NS_ASSERTION(aHostURI, "null host!");
 
   if (!CookieCommons::IsSchemeSupported(aHostURI)) {
@@ -947,152 +971,165 @@ void CookieService::GetCookiesForURI(
     return;
   }
 
-  CookieStorage* storage = PickStorage(aOriginAttrs);
-
-  // get the base domain, host, and path from the URI.
-  // e.g. for "www.bbc.co.uk", the base domain would be "bbc.co.uk".
-  // file:// URI's (i.e. with an empty host) are allowed, but any other
-  // scheme must have a non-empty host. A trailing dot in the host
-  // is acceptable.
-  bool requireHostMatch;
-  nsAutoCString baseDomain;
-  nsAutoCString hostFromURI;
-  nsAutoCString pathFromURI;
-  nsresult rv = CookieCommons::GetBaseDomain(mTLDService, aHostURI, baseDomain,
-                                             requireHostMatch);
-  if (NS_SUCCEEDED(rv)) {
-    rv = nsContentUtils::GetHostOrIPv6WithBrackets(aHostURI, hostFromURI);
-  }
-  if (NS_SUCCEEDED(rv)) {
-    rv = aHostURI->GetFilePath(pathFromURI);
-  }
-  if (NS_FAILED(rv)) {
-    COOKIE_LOGFAILURE(GET_COOKIE, aHostURI, VoidCString(),
-                      "invalid host/path from URI");
-    return;
-  }
-
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings =
       CookieCommons::GetCookieJarSettings(aChannel);
 
-  nsAutoCString normalizedHostFromURI(hostFromURI);
-  rv = NormalizeHost(normalizedHostFromURI);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsAutoCString baseDomainFromURI;
-  rv = CookieCommons::GetBaseDomainFromHost(mTLDService, normalizedHostFromURI,
-                                            baseDomainFromURI);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  // check default prefs
-  uint32_t rejectedReason = aRejectedReason;
-  uint32_t priorCookieCount = storage->CountCookiesFromHost(
-      baseDomainFromURI, aOriginAttrs.mPrivateBrowsingId);
-
   nsCOMPtr<nsIConsoleReportCollector> crc = do_QueryInterface(aChannel);
-  CookieStatus cookieStatus = CheckPrefs(
-      crc, cookieJarSettings, aHostURI, aIsForeign,
-      aIsThirdPartyTrackingResource, aIsThirdPartySocialTrackingResource,
-      aStorageAccessPermissionGranted, VoidCString(), priorCookieCount,
-      aOriginAttrs, &rejectedReason);
 
-  MOZ_ASSERT_IF(rejectedReason, cookieStatus == STATUS_REJECTED);
+  for (const auto& attrs : aOriginAttrsList) {
+    CookieStorage* storage = PickStorage(attrs);
 
-  // for GetCookie(), we only fire acceptance/rejection notifications
-  // (but not if there was an error)
-  switch (cookieStatus) {
-    case STATUS_REJECTED:
-      // If we don't have any cookies from this host, fail silently.
-      if (priorCookieCount) {
-        CookieCommons::NotifyRejected(aHostURI, aChannel, rejectedReason,
-                                      OPERATION_READ);
-      }
+    // get the base domain, host, and path from the URI.
+    // e.g. for "www.bbc.co.uk", the base domain would be "bbc.co.uk".
+    // file:// URI's (i.e. with an empty host) are allowed, but any other
+    // scheme must have a non-empty host. A trailing dot in the host
+    // is acceptable.
+    bool requireHostMatch;
+    nsAutoCString baseDomain;
+    nsAutoCString hostFromURI;
+    nsAutoCString pathFromURI;
+    nsresult rv = CookieCommons::GetBaseDomain(mTLDService, aHostURI,
+                                               baseDomain, requireHostMatch);
+    if (NS_SUCCEEDED(rv)) {
+      rv = nsContentUtils::GetHostOrIPv6WithBrackets(aHostURI, hostFromURI);
+    }
+    if (NS_SUCCEEDED(rv)) {
+      rv = aHostURI->GetFilePath(pathFromURI);
+    }
+    if (NS_FAILED(rv)) {
+      COOKIE_LOGFAILURE(GET_COOKIE, aHostURI, VoidCString(),
+                        "invalid host/path from URI");
       return;
-    default:
-      break;
-  }
-
-  // Note: The following permissions logic is mirrored in
-  // extensions::MatchPattern::MatchesCookie.
-  // If it changes, please update that function, or file a bug for someone
-  // else to do so.
-
-  // check if aHostURI is using an https secure protocol.
-  // if it isn't, then we can't send a secure cookie over the connection.
-  // if SchemeIs fails, assume an insecure connection, to be on the safe side
-  bool potentiallyTurstworthy =
-      nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aHostURI);
-
-  int64_t currentTimeInUsec = PR_Now();
-  int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
-  bool stale = false;
-
-  const nsTArray<RefPtr<Cookie>>* cookies =
-      storage->GetCookiesFromHost(baseDomain, aOriginAttrs);
-  if (!cookies) {
-    return;
-  }
-
-  bool laxByDefault =
-      StaticPrefs::network_cookie_sameSite_laxByDefault() &&
-      !nsContentUtils::IsURIInPrefList(
-          aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
-
-  // iterate the cookies!
-  for (Cookie* cookie : *cookies) {
-    // check the host, since the base domain lookup is conservative.
-    if (!CookieCommons::DomainMatches(cookie, hostFromURI)) {
-      continue;
     }
 
-    // if the cookie is secure and the host scheme isn't, we avoid sending
-    // cookie if possible. But for process synchronization purposes, we may want
-    // the content process to know about the cookie (without it's value). In
-    // which case we will wipe the value before sending
-    if (cookie->IsSecure() && !potentiallyTurstworthy &&
-        !aAllowSecureCookiesToInsecureOrigin) {
-      continue;
-    }
+    nsAutoCString normalizedHostFromURI(hostFromURI);
+    rv = NormalizeHost(normalizedHostFromURI);
+    NS_ENSURE_SUCCESS_VOID(rv);
 
-    // if the cookie is httpOnly and it's not going directly to the HTTP
-    // connection, don't send it
-    if (cookie->IsHttpOnly() && !aHttpBound) {
-      continue;
-    }
+    nsAutoCString baseDomainFromURI;
+    rv = CookieCommons::GetBaseDomainFromHost(
+        mTLDService, normalizedHostFromURI, baseDomainFromURI);
+    NS_ENSURE_SUCCESS_VOID(rv);
 
-    // if the nsIURI path doesn't match the cookie path, don't send it back
-    if (!CookieCommons::PathMatches(cookie, pathFromURI)) {
-      continue;
-    }
+    // check default prefs
+    uint32_t rejectedReason = aRejectedReason;
+    uint32_t priorCookieCount = storage->CountCookiesFromHost(
+        baseDomainFromURI, attrs.mPrivateBrowsingId);
 
-    // check if the cookie has expired
-    if (cookie->Expiry() <= currentTime) {
-      continue;
-    }
+    CookieStatus cookieStatus = CheckPrefs(
+        crc, cookieJarSettings, aHostURI, aIsForeign,
+        aIsThirdPartyTrackingResource, aIsThirdPartySocialTrackingResource,
+        aStorageAccessPermissionGranted, VoidCString(), priorCookieCount, attrs,
+        &rejectedReason);
 
-    if (aHttpBound && aIsSameSiteForeign) {
-      bool blockCookie = !ProcessSameSiteCookieForForeignRequest(
-          aChannel, cookie, aIsSafeTopLevelNav, aHadCrossSiteRedirects,
-          laxByDefault);
+    MOZ_ASSERT_IF(rejectedReason, cookieStatus == STATUS_REJECTED);
 
-      if (blockCookie) {
-        if (aHadCrossSiteRedirects) {
-          CookieLogging::LogMessageToConsole(
-              crc, aHostURI, nsIScriptError::warningFlag,
-              CONSOLE_REJECTION_CATEGORY, "CookieBlockedCrossSiteRedirect"_ns,
-              AutoTArray<nsString, 1>{
-                  NS_ConvertUTF8toUTF16(cookie->Name()),
-              });
+    // for GetCookie(), we only fire acceptance/rejection notifications
+    // (but not if there was an error)
+    switch (cookieStatus) {
+      case STATUS_REJECTED:
+        // If we don't have any cookies from this host, fail silently.
+        if (priorCookieCount) {
+          CookieCommons::NotifyRejected(aHostURI, aChannel, rejectedReason,
+                                        OPERATION_READ);
         }
+        return;
+      default:
+        break;
+    }
+
+    // Note: The following permissions logic is mirrored in
+    // extensions::MatchPattern::MatchesCookie.
+    // If it changes, please update that function, or file a bug for someone
+    // else to do so.
+
+    // check if aHostURI is using an https secure protocol.
+    // if it isn't, then we can't send a secure cookie over the connection.
+    // if SchemeIs fails, assume an insecure connection, to be on the safe side
+    bool potentiallyTrustworthy =
+        nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aHostURI);
+
+    int64_t currentTimeInUsec = PR_Now();
+    int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
+    bool stale = false;
+
+    const nsTArray<RefPtr<Cookie>>* cookies =
+        storage->GetCookiesFromHost(baseDomain, attrs);
+    if (!cookies) {
+      continue;
+    }
+
+    bool laxByDefault =
+        StaticPrefs::network_cookie_sameSite_laxByDefault() &&
+        !nsContentUtils::IsURIInPrefList(
+            aHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
+
+    // iterate the cookies!
+    for (Cookie* cookie : *cookies) {
+      // check the host, since the base domain lookup is conservative.
+      if (!CookieCommons::DomainMatches(cookie, hostFromURI)) {
         continue;
       }
+
+      // if the cookie is secure and the host scheme isn't, we avoid sending
+      // cookie if possible. But for process synchronization purposes, we may
+      // want the content process to know about the cookie (without it's value).
+      // In which case we will wipe the value before sending
+      if (cookie->IsSecure() && !potentiallyTrustworthy &&
+          !aAllowSecureCookiesToInsecureOrigin) {
+        continue;
+      }
+
+      // if the cookie is httpOnly and it's not going directly to the HTTP
+      // connection, don't send it
+      if (cookie->IsHttpOnly() && !aHttpBound) {
+        continue;
+      }
+
+      // if the nsIURI path doesn't match the cookie path, don't send it back
+      if (!CookieCommons::PathMatches(cookie, pathFromURI)) {
+        continue;
+      }
+
+      // check if the cookie has expired
+      if (cookie->Expiry() <= currentTime) {
+        continue;
+      }
+
+      if (aHttpBound && aIsSameSiteForeign) {
+        bool blockCookie = !ProcessSameSiteCookieForForeignRequest(
+            aChannel, cookie, aIsSafeTopLevelNav, aHadCrossSiteRedirects,
+            laxByDefault);
+
+        if (blockCookie) {
+          if (aHadCrossSiteRedirects) {
+            CookieLogging::LogMessageToConsole(
+                crc, aHostURI, nsIScriptError::warningFlag,
+                CONSOLE_REJECTION_CATEGORY, "CookieBlockedCrossSiteRedirect"_ns,
+                AutoTArray<nsString, 1>{
+                    NS_ConvertUTF8toUTF16(cookie->Name()),
+                });
+          }
+          continue;
+        }
+      }
+
+      // all checks passed - add to list and check if lastAccessed stamp needs
+      // updating
+      aCookieList.AppendElement(cookie);
+      if (cookie->IsStale()) {
+        stale = true;
+      }
     }
 
-    // all checks passed - add to list and check if lastAccessed stamp needs
-    // updating
-    aCookieList.AppendElement(cookie);
-    if (cookie->IsStale()) {
-      stale = true;
+    if (aCookieList.IsEmpty()) {
+      continue;
+    }
+
+    // update lastAccessed timestamps. we only do this if the timestamp is stale
+    // by a certain amount, to avoid thrashing the db during pageload.
+    if (stale) {
+      storage->StaleCookies(aCookieList, currentTimeInUsec);
     }
   }
 
@@ -1103,12 +1140,6 @@ void CookieService::GetCookiesForURI(
   // Send a notification about the acceptance of the cookies now that we found
   // some.
   NotifyAccepted(aChannel);
-
-  // update lastAccessed timestamps. we only do this if the timestamp is stale
-  // by a certain amount, to avoid thrashing the db during pageload.
-  if (stale) {
-    storage->StaleCookies(aCookieList, currentTimeInUsec);
-  }
 
   // return cookies in order of path length; longest to shortest.
   // this is required per RFC2109.  if cookies match in length,
@@ -1187,7 +1218,7 @@ bool CookieService::CanSetCookie(
   // 1 = nonsecure and "https:"
   // 2 = secure and "http:"
   // 3 = secure and "https:"
-  bool potentiallyTurstworthy =
+  bool potentiallyTrustworthy =
       nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aHostURI);
 
   int64_t currentTimeInUsec = PR_Now();
@@ -1272,7 +1303,7 @@ bool CookieService::CanSetCookie(
   }
 
   // magic prefix checks. MUST be run after CheckDomain() and CheckPath()
-  if (!CheckPrefixes(aCookieData, potentiallyTurstworthy)) {
+  if (!CheckPrefixes(aCookieData, potentiallyTrustworthy)) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, savedCookieHeader,
                       "failed the prefix tests");
     CookieLogging::LogMessageToConsole(
@@ -1312,7 +1343,7 @@ bool CookieService::CanSetCookie(
   // If the new cookie is non-https and wants to set secure flag,
   // browser have to ignore this new cookie.
   // (draft-ietf-httpbis-cookie-alone section 3.1)
-  if (aCookieData.isSecure() && !potentiallyTurstworthy) {
+  if (aCookieData.isSecure() && !potentiallyTrustworthy) {
     COOKIE_LOGFAILURE(SET_COOKIE, aHostURI, aCookieHeader,
                       "non-https cookie can't set secure flag");
     CookieLogging::LogMessageToConsole(
@@ -1663,6 +1694,19 @@ bool CookieService::ParseAttributes(nsIConsoleReportCollector* aCRC,
                                 SAMESITE_MDN_URL});
   }
 
+  // Ensure the partitioned cookie is set with the secure attribute.
+  if (aCookieData.isPartitioned() && !aCookieData.isSecure()) {
+    CookieLogging::LogMessageToConsole(
+        aCRC, aHostURI, nsIScriptError::errorFlag, CONSOLE_REJECTION_CATEGORY,
+        "CookieRejectedPartitionedRequiresSecure"_ns,
+        AutoTArray<nsString, 1>{NS_ConvertUTF8toUTF16(aCookieData.name())});
+
+    // We only drop the cookie if CHIPS is enabled.
+    if (StaticPrefs::network_cookie_cookieBehavior_optInPartitioning()) {
+      return newCookie;
+    }
+  }
+
   if (aCookieData.rawSameSite() == nsICookie::SAMESITE_NONE &&
       aCookieData.sameSite() == nsICookie::SAMESITE_LAX) {
     bool laxByDefault =
@@ -1980,22 +2024,6 @@ bool CookieService::CheckPath(CookieStruct& aCookieData,
   // if a path is given, check the host has permission
   if (aCookieData.path().IsEmpty() || aCookieData.path().First() != '/') {
     aCookieData.path() = GetPathFromURI(aHostURI);
-
-#if 0
-  } else {
-    /**
-     * The following test is part of the RFC2109 spec.  Loosely speaking, it says that a site
-     * cannot set a cookie for a path that it is not on.  See bug 155083.  However this patch
-     * broke several sites -- nordea (bug 155768) and citibank (bug 156725).  So this test has
-     * been disabled, unless we can evangelize these sites.
-     */
-    // get path from aHostURI
-    nsAutoCString pathFromURI;
-    if (NS_FAILED(aHostURI->GetPathQueryRef(pathFromURI)) ||
-        !StringBeginsWith(pathFromURI, aCookieData.path())) {
-      return false;
-    }
-#endif
   }
 
   if (!CookieCommons::CheckPathSize(aCookieData)) {

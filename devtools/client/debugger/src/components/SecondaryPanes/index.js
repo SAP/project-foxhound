@@ -52,7 +52,7 @@ const classnames = require("resource://devtools/client/shared/classnames.js");
 function debugBtn(onClick, type, className, tooltip) {
   return button(
     {
-      onClick: onClick,
+      onClick,
       className: `${type} ${className}`,
       key: type,
       title: tooltip,
@@ -136,7 +136,7 @@ class SecondaryPanes extends Component {
         },
         "plus",
         "active",
-        L10N.getStr("expressions.placeholder")
+        L10N.getStr("expressions.placeholder2")
       )
     );
     return buttons;
@@ -214,7 +214,7 @@ class SecondaryPanes extends Component {
           input({
             type: "checkbox",
             checked: mapScopesEnabled ? "checked" : "",
-            onChange: e => this.props.toggleMapScopes(),
+            onChange: () => this.props.toggleMapScopes(),
           }),
           L10N.getStr("scopes.showOriginalScopes")
         ),
@@ -249,7 +249,7 @@ class SecondaryPanes extends Component {
           input({
             type: "checkbox",
             checked: logEventBreakpoints ? "checked" : "",
-            onChange: e => this.props.toggleEventLogging(),
+            onChange: () => this.props.toggleEventLogging(),
           }),
           L10N.getStr("eventlisteners.log")
         )

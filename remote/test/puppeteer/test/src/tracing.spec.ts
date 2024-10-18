@@ -1,23 +1,15 @@
 /**
- * Copyright 2017 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2017 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import fs from 'fs';
 import path from 'path';
 
 import expect from 'expect';
+import * as utils from 'puppeteer-core/internal/common/util.js';
+import sinon from 'sinon';
 
 import {launch} from './mocha-utils.js';
 
@@ -123,16 +115,26 @@ describe('Tracing', function () {
     await page.tracing.start({screenshots: true});
     await page.goto(server.PREFIX + '/grid.html');
 
-    const oldBufferConcat = Buffer.concat;
-    try {
-      Buffer.concat = () => {
-        throw new Error('error');
-      };
-      const trace = await page.tracing.stop();
-      expect(trace).toEqual(undefined);
-    } finally {
-      Buffer.concat = oldBufferConcat;
-    }
+    const oldGetReadableAsBuffer = utils.getReadableAsBuffer;
+    sinon.stub(utils, 'getReadableAsBuffer').callsFake(() => {
+      return oldGetReadableAsBuffer({
+        getReader() {
+          return {
+            done: false,
+            read() {
+              if (!this.done) {
+                this.done = true;
+                return {done: false, value: 42};
+              }
+              return {done: true};
+            },
+          };
+        },
+      } as unknown as ReadableStream);
+    });
+
+    const trace = await page.tracing.stop();
+    expect(trace).toEqual(undefined);
   });
 
   it('should support a buffer without a path', async () => {

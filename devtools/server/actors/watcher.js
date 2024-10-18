@@ -9,21 +9,18 @@ const { watcherSpec } = require("resource://devtools/shared/specs/watcher.js");
 const Resources = require("resource://devtools/server/actors/resources/index.js");
 const { TargetActorRegistry } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
-  {
-    loadInDevToolsLoader: false,
-  }
+  { global: "shared" }
 );
 const { WatcherRegistry } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/watcher/WatcherRegistry.sys.mjs",
-  {
-    // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
-    // which also has to be a true singleton.
-    loadInDevToolsLoader: false,
-  }
+  // WatcherRegistry needs to be a true singleton and loads ActorManagerParent
+  // which also has to be a true singleton.
+  { global: "shared" }
 );
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 const { getAllBrowsingContextsForContext } = ChromeUtils.importESModule(
-  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs"
+  "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+  { global: "contextual" }
 );
 const {
   SESSION_TYPES,
@@ -257,11 +254,11 @@ exports.WatcherActor = class WatcherActor extends Actor {
     const targetHelperModule = TARGET_HELPERS[targetType];
     targetHelperModule.destroyTargets(this, options);
 
-    // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource,
+    // Unregister the JS Actors if there is no more DevTools code observing any target/resource,
     // unless we're switching mode (having both condition at the same time should only
     // happen in tests).
     if (!options.isModeSwitching) {
-      WatcherRegistry.maybeUnregisteringJSWindowActor();
+      WatcherRegistry.maybeUnregisterJSActors();
     }
   }
 
@@ -637,7 +634,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
     }
 
     // Unregister the JS Window Actor if there is no more DevTools code observing any target/resource
-    WatcherRegistry.maybeUnregisteringJSWindowActor();
+    WatcherRegistry.maybeUnregisterJSActors();
   }
 
   clearResources(resourceTypes) {

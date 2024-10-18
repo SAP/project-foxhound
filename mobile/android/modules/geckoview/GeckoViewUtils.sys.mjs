@@ -25,7 +25,7 @@ class AndroidFormatter extends Log.BasicFormatter {
 
 /*
  * AndroidAppender
- * Logs to Android logcat using AndroidLog.jsm
+ * Logs to Android logcat using AndroidLog.sys.mjs
  */
 class AndroidAppender extends Log.Appender {
   constructor(aFormatter) {
@@ -49,7 +49,7 @@ class AndroidAppender extends Log.Appender {
       return;
     }
 
-    // AndroidLog.jsm always prepends "Gecko" to the tag, so we strip any
+    // AndroidLog.sys.mjs always prepends "Gecko" to the tag, so we strip any
     // leading "Gecko" here. Also strip dots to save space.
     const tag = aMessage.loggerName.replace(/^Gecko|\./g, "");
     const msg = this._formatter.format(aMessage);
@@ -257,9 +257,7 @@ export var GeckoViewUtils = {
       (handlers, observer, args) => {
         if (!once) {
           Services.prefs.removeObserver(args[2], observer);
-          handlers.forEach(handler =>
-            Services.prefs.addObserver(args[2], observer)
-          );
+          handlers.forEach(() => Services.prefs.addObserver(args[2], observer));
         }
         handlers.forEach(handler => handler.observe(...args));
       }
@@ -386,7 +384,7 @@ export var GeckoViewUtils = {
    *   do_something(bar); // No log.
    *   do_something(debug.foo = bar); // Output "foo = 42" to the log.
    *
-   * @param aTag Name of the Log.jsm logger to forward logs to.
+   * @param aTag Name of the Log.sys.mjs logger to forward logs to.
    * @param aScope Scope to add the logging functions to.
    */
   initLogging(aTag, aScope) {

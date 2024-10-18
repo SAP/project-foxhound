@@ -783,8 +783,16 @@ function verifyRequestItemTarget(
       .getAttribute("title");
     info("Displayed time: " + value);
     info("Tooltip time: " + tooltip);
-    ok(~~value.match(/[0-9]+/) >= 0, "The displayed time is correct.");
-    ok(~~tooltip.match(/[0-9]+/) >= 0, "The tooltip time is correct.");
+    Assert.greaterOrEqual(
+      ~~value.match(/[0-9]+/),
+      0,
+      "The displayed time is correct."
+    );
+    Assert.greaterOrEqual(
+      ~~tooltip.match(/[0-9]+/),
+      0,
+      "The tooltip time is correct."
+    );
   }
 
   if (visibleIndex !== -1) {
@@ -870,7 +878,7 @@ function testFilterButtonsCustom(monitor, isChecked) {
  *
  */
 function promiseXHR(data) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     const xhr = new content.XMLHttpRequest();
 
     const method = data.method || "GET";
@@ -883,7 +891,7 @@ function promiseXHR(data) {
 
     xhr.addEventListener(
       "loadend",
-      function (event) {
+      function () {
         resolve({ status: xhr.status, response: xhr.response });
       },
       { once: true }
@@ -917,7 +925,7 @@ function promiseXHR(data) {
  *
  */
 function promiseWS(data) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     let url = data.url;
 
     if (data.nocache) {
@@ -928,7 +936,7 @@ function promiseWS(data) {
     const socket = new content.WebSocket(url);
 
     /* Since we only use HTTP server to mock websocket, so just ignore the error */
-    socket.onclose = e => {
+    socket.onclose = () => {
       socket.close();
       resolve({
         status: 101,
@@ -936,7 +944,7 @@ function promiseWS(data) {
       });
     };
 
-    socket.onerror = e => {
+    socket.onerror = () => {
       socket.close();
       resolve({
         status: 101,
@@ -1148,7 +1156,11 @@ function checkTelemetryEvent(expectedEvent, query) {
   is(events.length, 1, "There was only 1 event logged");
 
   const [event] = events;
-  ok(event.session_id > 0, "There is a valid session_id in the logged event");
+  Assert.greater(
+    Number(event.session_id),
+    0,
+    "There is a valid session_id in the logged event"
+  );
 
   const f = e => JSON.stringify(e, null, 2);
   is(
@@ -1220,8 +1232,9 @@ function validateRequests(requests, monitor, options = {}) {
 
     if (stack) {
       ok(stacktrace, `Request #${i} has a stacktrace`);
-      ok(
-        stackLen > 0,
+      Assert.greater(
+        stackLen,
+        0,
         `Request #${i} (${causeType}) has a stacktrace with ${stackLen} items`
       );
 
@@ -1382,7 +1395,7 @@ function clickElement(element, monitor) {
  *        Target browser to observe the favicon load.
  */
 function registerFaviconNotifier(browser) {
-  const listener = async (name, data) => {
+  const listener = async name => {
     if (name == "SetIcon" || name == "SetFailedIcon") {
       await SpecialPowers.spawn(browser, [], async () => {
         content.document

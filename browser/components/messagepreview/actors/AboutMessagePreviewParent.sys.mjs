@@ -3,21 +3,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { JsonSchema } from "resource://gre/modules/JsonSchema.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  CFRPageActions: "resource:///modules/asrouter/CFRPageActions.sys.mjs",
+  FeatureCalloutBroker:
+    "resource:///modules/asrouter/FeatureCalloutBroker.sys.mjs",
+  InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
-  FeatureCalloutBroker:
-    "resource://activity-stream/lib/FeatureCalloutBroker.sys.mjs",
-});
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  InfoBar: "resource://activity-stream/lib/InfoBar.jsm",
-  Spotlight: "resource://activity-stream/lib/Spotlight.jsm",
-  CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
+  Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
 });
 
 function dispatchCFRAction({ type, data }, browser) {
@@ -65,7 +62,7 @@ export class AboutMessagePreviewParent extends JSWindowActorParent {
     }
 
     const schema = await fetch(
-      "resource://activity-stream/schemas/MessagingExperiment.schema.json",
+      "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json",
       { credentials: "omit" }
     ).then(rsp => rsp.json());
 

@@ -113,12 +113,12 @@ Tracker.prototype = {
   },
 
   // Also unsupported.
-  async addChangedID(id, when) {
+  async addChangedID() {
     throw new TypeError("Can't add changed ID to this tracker");
   },
 
   // Ditto.
-  async removeChangedID(...ids) {
+  async removeChangedID() {
     throw new TypeError("Can't remove changed IDs from this tracker");
   },
 
@@ -155,7 +155,7 @@ Tracker.prototype = {
   // Override these in your subclasses.
   onStart() {},
   onStop() {},
-  async observe(subject, topic, data) {},
+  async observe() {},
 
   engineIsEnabled() {
     if (!this.engine) {
@@ -437,7 +437,7 @@ Store.prototype = {
    * @param record
    *        The store record to create an item from
    */
-  async create(record) {
+  async create() {
     throw new Error("override create in a subclass");
   },
 
@@ -450,7 +450,7 @@ Store.prototype = {
    * @param record
    *        The store record to delete an item from
    */
-  async remove(record) {
+  async remove() {
     throw new Error("override remove in a subclass");
   },
 
@@ -463,7 +463,7 @@ Store.prototype = {
    * @param record
    *        The record to use to update an item from
    */
-  async update(record) {
+  async update() {
     throw new Error("override update in a subclass");
   },
 
@@ -477,7 +477,7 @@ Store.prototype = {
    *         string record ID
    * @return boolean indicating whether record exists locally
    */
-  async itemExists(id) {
+  async itemExists() {
     throw new Error("override itemExists in a subclass");
   },
 
@@ -495,7 +495,7 @@ Store.prototype = {
    *         constructor for the newly-created record.
    * @return record type for this engine
    */
-  async createRecord(id, collection) {
+  async createRecord() {
     throw new Error("override createRecord in a subclass");
   },
 
@@ -507,7 +507,7 @@ Store.prototype = {
    * @param  newID
    *         string new record ID
    */
-  async changeItemID(oldID, newID) {
+  async changeItemID() {
     throw new Error("override changeItemID in a subclass");
   },
 
@@ -647,7 +647,7 @@ EngineManager.prototype = {
   },
 
   persistDeclined() {
-    Svc.PrefBranch.setCharPref(
+    Svc.PrefBranch.setStringPref(
       "declinedEngines",
       [...this._declined].join(",")
     );
@@ -1007,7 +1007,7 @@ SyncEngine.prototype = {
     );
     await this.resetClient();
     Svc.PrefBranch.setStringPref(this.name + ".syncID", newSyncID);
-    Svc.PrefBranch.setCharPref(this.name + ".lastSync", "0");
+    Svc.PrefBranch.setStringPref(this.name + ".lastSync", "0");
     return newSyncID;
   },
 
@@ -1040,7 +1040,7 @@ SyncEngine.prototype = {
    * Note: Overriding engines must take resyncs into account -- score will not
    * be cleared.
    */
-  shouldSkipSync(syncReason) {
+  shouldSkipSync() {
     return false;
   },
 
@@ -1052,7 +1052,7 @@ SyncEngine.prototype = {
   },
   async setLastSync(lastSync) {
     // Store the value as a string to keep floating point precision
-    Svc.PrefBranch.setCharPref(this.name + ".lastSync", lastSync.toString());
+    Svc.PrefBranch.setStringPref(this.name + ".lastSync", lastSync.toString());
   },
   async resetLastSync() {
     this._log.debug("Resetting " + this.name + " last sync time");
@@ -1550,7 +1550,7 @@ SyncEngine.prototype = {
   // Indicates whether an incoming item should be deleted from the server at
   // the end of the sync. Engines can override this method to clean up records
   // that shouldn't be on the server.
-  _shouldDeleteRemotely(remoteItem) {
+  _shouldDeleteRemotely() {
     return false;
   },
 
@@ -1560,7 +1560,7 @@ SyncEngine.prototype = {
    *
    * @return GUID of the similar item; falsy otherwise
    */
-  async _findDupe(item) {
+  async _findDupe() {
     // By default, assume there's no dupe items for the engine
   },
 
@@ -1568,7 +1568,7 @@ SyncEngine.prototype = {
    * Called before a remote record is discarded due to failed reconciliation.
    * Used by bookmark sync to merge folder child orders.
    */
-  beforeRecordDiscard(localRecord, remoteRecord, remoteIsNewer) {},
+  beforeRecordDiscard() {},
 
   // Called when the server has a record marked as deleted, but locally we've
   // changed it more recently than the deletion. If we return false, the
@@ -1576,7 +1576,7 @@ SyncEngine.prototype = {
   // record to the server -- any extra work that's needed as part of this
   // process should be done at this point (such as mark the record's parent
   // for reuploading in the case of bookmarks).
-  async _shouldReviveRemotelyDeletedRecord(remoteItem) {
+  async _shouldReviveRemotelyDeletedRecord() {
     return true;
   },
 
@@ -1948,7 +1948,7 @@ SyncEngine.prototype = {
     }
   },
 
-  async _onRecordsWritten(succeeded, failed, serverModifiedTime) {
+  async _onRecordsWritten() {
     // Implement this method to take specific actions against successfully
     // uploaded records and failed records.
   },

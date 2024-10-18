@@ -27,18 +27,24 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
     XPIDL_SOURCES += [
         "nsIMacPreferencesReader.idl",
     ]
-    EXPORTS += [
-        "nsObjCExceptions.h",
-    ]
     EXPORTS.mozilla += [
         "MacHelpers.h",
-        "MacStringHelpers.h",
         "nsMacPreferencesReader.h",
     ]
     UNIFIED_SOURCES += [
         "MacHelpers.mm",
-        "MacStringHelpers.mm",
         "nsMacPreferencesReader.mm",
+    ]
+if CONFIG["OS_ARCH"] == "Darwin":
+    EXPORTS += [
+        "CFTypeRefPtr.h",
+        "nsObjCExceptions.h",
+    ]
+    EXPORTS.mozilla += [
+        "MacStringHelpers.h",
+    ]
+    UNIFIED_SOURCES += [
+        "MacStringHelpers.mm",
         "nsObjCExceptions.mm",
     ]
 

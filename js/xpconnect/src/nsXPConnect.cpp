@@ -156,7 +156,6 @@ void nsXPConnect::InitStatics() {
   // as possible to avoid missing any classes' creations.
   JS::SetLogCtorDtorFunctions(NS_LogCtor, NS_LogDtor);
 #endif
-  ReadOnlyPage::Init();
 
   gSelf = new nsXPConnect();
   gOnceAliveNowDead = false;
@@ -570,8 +569,7 @@ nsresult InitClassesWithNewWrappedGlobal(JSContext* aJSContext,
   MOZ_ASSERT(helper.GetScriptableFlags() & XPC_SCRIPTABLE_IS_GLOBAL_OBJECT);
   RefPtr<XPCWrappedNative> wrappedGlobal;
   nsresult rv = XPCWrappedNative::WrapNewGlobal(
-      aJSContext, helper, aPrincipal, aFlags & xpc::INIT_JS_STANDARD_CLASSES,
-      aOptions, getter_AddRefs(wrappedGlobal));
+      aJSContext, helper, aPrincipal, aOptions, getter_AddRefs(wrappedGlobal));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Grab a copy of the global and enter its compartment.

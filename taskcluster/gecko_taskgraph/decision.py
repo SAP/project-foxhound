@@ -26,11 +26,9 @@ from taskgraph.generator import TaskGraphGenerator
 from taskgraph.parameters import Parameters
 from taskgraph.taskgraph import TaskGraph
 from taskgraph.util.python_path import find_object
-from taskgraph.util.schema import Schema, validate_schema
 from taskgraph.util.taskcluster import get_artifact
 from taskgraph.util.vcs import get_repository
 from taskgraph.util.yaml import load_yaml
-from voluptuous import Any, Optional, Required
 
 from . import GECKO
 from .actions import render_actions_json
@@ -98,8 +96,12 @@ PER_PROJECT_PARAMETERS = {
         "release_type": "esr115",
     },
     "pine": {
-        "target_tasks_method": "default",
+        "target_tasks_method": "pine_tasks",
         "release_type": "nightly-pine",
+    },
+    "larch": {
+        "target_tasks_method": "larch_tasks",
+        "release_type": "nightly-larch",
     },
     "kaios": {
         "target_tasks_method": "kaios_tasks",
@@ -112,51 +114,6 @@ PER_PROJECT_PARAMETERS = {
         "target_tasks_method": "default",
     },
 }
-
-try_task_config_schema = Schema(
-    {
-        Required("tasks"): [str],
-        Optional("browsertime"): bool,
-        Optional("chemspill-prio"): bool,
-        Optional("disable-pgo"): bool,
-        Optional("env"): {str: str},
-        Optional("gecko-profile"): bool,
-        Optional("gecko-profile-interval"): float,
-        Optional("gecko-profile-entries"): int,
-        Optional("gecko-profile-features"): str,
-        Optional("gecko-profile-threads"): str,
-        Optional(
-            "perftest-options",
-            description="Options passed from `mach perftest` to try.",
-        ): object,
-        Optional(
-            "optimize-strategies",
-            description="Alternative optimization strategies to use instead of the default. "
-            "A module path pointing to a dict to be use as the `strategy_override` "
-            "argument in `taskgraph.optimize.base.optimize_task_graph`.",
-        ): str,
-        Optional("rebuild"): int,
-        Optional("tasks-regex"): {
-            "include": Any(None, [str]),
-            "exclude": Any(None, [str]),
-        },
-        Optional("use-artifact-builds"): bool,
-        Optional(
-            "worker-overrides",
-            description="Mapping of worker alias to worker pools to use for those aliases.",
-        ): {str: str},
-        Optional("routes"): [str],
-    }
-)
-"""
-Schema for try_task_config.json files.
-"""
-
-try_task_config_schema_v2 = Schema(
-    {
-        Optional("parameters"): {str: object},
-    }
-)
 
 
 def full_task_graph_to_runnable_jobs(full_task_json):
@@ -471,21 +428,11 @@ def set_try_config(parameters, task_config_file):
             task_config = json.load(fh)
         task_config_version = task_config.pop("version", 1)
         if task_config_version == 1:
-            validate_schema(
-                try_task_config_schema,
-                task_config,
-                "Invalid v1 `try_task_config.json`.",
-            )
             parameters["try_mode"] = "try_task_config"
             parameters["try_task_config"] = task_config
         elif task_config_version == 2:
-            validate_schema(
-                try_task_config_schema_v2,
-                task_config,
-                "Invalid v2 `try_task_config.json`.",
-            )
             parameters.update(task_config["parameters"])
-            return
+            parameters["try_mode"] = "try_task_config"
         else:
             raise Exception(
                 f"Unknown `try_task_config.json` version: {task_config_version}"
@@ -496,16 +443,6 @@ def set_try_config(parameters, task_config_file):
         parameters.update(parse_message(parameters["message"]))
     else:
         parameters["try_options"] = None
-
-    if parameters["try_mode"] == "try_task_config":
-        # The user has explicitly requested a set of jobs, so run them all
-        # regardless of optimization.  Their dependencies can be optimized,
-        # though.
-        parameters["optimize_target_tasks"] = False
-    else:
-        # For a try push with no task selection, apply the default optimization
-        # process to all of the tasks.
-        parameters["optimize_target_tasks"] = True
 
 
 def set_decision_indexes(decision_task_id, params, graph_config):

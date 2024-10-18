@@ -82,11 +82,11 @@ we don't bother with that combination.
 */
 
 ///cbindgen:ignore
-#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
+#[cfg(not(any(windows, webgl)))]
 mod egl;
-#[cfg(target_os = "emscripten")]
+#[cfg(Emscripten)]
 mod emscripten;
-#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+#[cfg(webgl)]
 mod web;
 #[cfg(windows)]
 mod wgl;
@@ -99,14 +99,14 @@ mod queue;
 
 use crate::{CopyExtent, TextureDescriptor};
 
-#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
+#[cfg(not(any(windows, webgl)))]
 pub use self::egl::{AdapterContext, AdapterContextLock};
-#[cfg(not(any(windows, all(target_arch = "wasm32", not(target_os = "emscripten")))))]
+#[cfg(not(any(windows, webgl)))]
 use self::egl::{Instance, Surface};
 
-#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+#[cfg(webgl)]
 pub use self::web::AdapterContext;
-#[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+#[cfg(webgl)]
 use self::web::{Instance, Surface};
 
 #[cfg(windows)]
@@ -215,7 +215,7 @@ bitflags::bitflags! {
         // (https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/4972/diffs?diff_id=75888#22f5d1004713c9bbf857988c7efb81631ab88f99_323_327)
         // seems to indicate all skylake models are effected.
         const MESA_I915_SRGB_SHADER_CLEAR = 1 << 0;
-        /// Buffer map must emulated becuase it is not supported natively
+        /// Buffer map must emulated because it is not supported natively
         const EMULATE_BUFFER_MAP = 1 << 1;
     }
 }
@@ -251,6 +251,11 @@ struct AdapterShared {
     next_shader_id: AtomicU32,
     program_cache: Mutex<ProgramCache>,
     es: bool,
+
+    /// Result of `gl.get_parameter_i32(glow::MAX_SAMPLES)`.
+    /// Cached here so it doesn't need to be queried every time texture format capabilities are requested.
+    /// (this has been shown to be a significant enough overhead)
+    max_msaa_samples: i32,
 }
 
 pub struct Adapter {
@@ -260,8 +265,13 @@ pub struct Adapter {
 pub struct Device {
     shared: Arc<AdapterShared>,
     main_vao: glow::VertexArray,
-    #[cfg(all(not(target_arch = "wasm32"), feature = "renderdoc"))]
+    #[cfg(all(native, feature = "renderdoc"))]
     render_doc: crate::auxil::renderdoc::RenderDoc,
+}
+
+pub struct ShaderClearProgram {
+    pub program: glow::Program,
+    pub color_uniform_location: glow::UniformLocation,
 }
 
 pub struct Queue {
@@ -271,9 +281,7 @@ pub struct Queue {
     copy_fbo: glow::Framebuffer,
     /// Shader program used to clear the screen for [`Workarounds::MESA_I915_SRGB_SHADER_CLEAR`]
     /// devices.
-    shader_clear_program: glow::Program,
-    /// The uniform location of the color uniform in the shader clear program
-    shader_clear_program_color_uniform_location: glow::UniformLocation,
+    shader_clear_program: Option<ShaderClearProgram>,
     /// Keep a reasonably large buffer filled with zeroes, so that we can implement `ClearBuffer` of
     /// zeroes by copying from it.
     zero_buffer: glow::Buffer,
@@ -291,17 +299,9 @@ pub struct Buffer {
     data: Option<Arc<std::sync::Mutex<Vec<u8>>>>,
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for Buffer {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for Buffer {}
 
 #[derive(Clone, Debug)]
@@ -314,23 +314,15 @@ pub enum TextureInner {
         raw: glow::Texture,
         target: BindTarget,
     },
-    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+    #[cfg(webgl)]
     ExternalFramebuffer {
         inner: web_sys::WebGlFramebuffer,
     },
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for TextureInner {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for TextureInner {}
 
 impl TextureInner {
@@ -340,7 +332,7 @@ impl TextureInner {
                 panic!("Unexpected renderbuffer");
             }
             Self::Texture { raw, target } => (raw, target),
-            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+            #[cfg(webgl)]
             Self::ExternalFramebuffer { .. } => panic!("Unexpected external framebuffer"),
         }
     }
@@ -382,6 +374,8 @@ impl Texture {
     /// Returns the `target`, whether the image is 3d and whether the image is a cubemap.
     fn get_info_from_desc(desc: &TextureDescriptor) -> u32 {
         match desc.dimension {
+            // WebGL (1 and 2) as well as some GLES versions do not have 1D textures, so we are
+            // doing `TEXTURE_2D` instead
             wgt::TextureDimension::D1 => glow::TEXTURE_2D,
             wgt::TextureDimension::D2 => {
                 // HACK: detect a cube map; forces cube compatible textures to be cube textures
@@ -394,6 +388,43 @@ impl Texture {
             }
             wgt::TextureDimension::D3 => glow::TEXTURE_3D,
         }
+    }
+
+    /// More information can be found in issues #1614 and #1574
+    fn log_failing_target_heuristics(view_dimension: wgt::TextureViewDimension, target: u32) {
+        let expected_target = match view_dimension {
+            wgt::TextureViewDimension::D1 => glow::TEXTURE_2D,
+            wgt::TextureViewDimension::D2 => glow::TEXTURE_2D,
+            wgt::TextureViewDimension::D2Array => glow::TEXTURE_2D_ARRAY,
+            wgt::TextureViewDimension::Cube => glow::TEXTURE_CUBE_MAP,
+            wgt::TextureViewDimension::CubeArray => glow::TEXTURE_CUBE_MAP_ARRAY,
+            wgt::TextureViewDimension::D3 => glow::TEXTURE_3D,
+        };
+
+        if expected_target == target {
+            return;
+        }
+
+        let buffer;
+        let got = match target {
+            glow::TEXTURE_2D => "D2",
+            glow::TEXTURE_2D_ARRAY => "D2Array",
+            glow::TEXTURE_CUBE_MAP => "Cube",
+            glow::TEXTURE_CUBE_MAP_ARRAY => "CubeArray",
+            glow::TEXTURE_3D => "D3",
+            target => {
+                buffer = target.to_string();
+                &buffer
+            }
+        };
+
+        log::error!(
+            "wgpu-hal heuristics assumed that the view dimension will be equal to `{got}` rather than `{view_dimension:?}`.\n{}\n{}\n{}\n{}",
+            "`D2` textures with `depth_or_array_layers == 1` are assumed to have view dimension `D2`",
+            "`D2` textures with `depth_or_array_layers > 1` are assumed to have view dimension `D2Array`",
+            "`D2` textures with `depth_or_array_layers == 6` are assumed to have view dimension `Cube`",
+            "`D2` textures with `depth_or_array_layers > 6 && depth_or_array_layers % 6 == 0` are assumed to have view dimension `CubeArray`",
+        );
     }
 }
 
@@ -524,17 +555,9 @@ struct PushConstantDesc {
     size_bytes: u32,
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for PushConstantDesc {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for PushConstantDesc {}
 
 /// For each texture in the pipeline layout, store the index of the only
@@ -602,17 +625,9 @@ pub struct RenderPipeline {
     alpha_to_coverage_enabled: bool,
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for RenderPipeline {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for RenderPipeline {}
 
 #[derive(Debug)]
@@ -620,17 +635,9 @@ pub struct ComputePipeline {
     inner: Arc<PipelineInner>,
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for ComputePipeline {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for ComputePipeline {}
 
 #[derive(Debug)]
@@ -792,7 +799,7 @@ enum Command {
         dst_target: BindTarget,
         copy: crate::BufferCopy,
     },
-    #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+    #[cfg(webgl)]
     CopyExternalImageToTexture {
         src: wgt::ImageCopyExternalImage,
         dst: glow::Texture,
@@ -951,17 +958,9 @@ impl fmt::Debug for CommandBuffer {
     }
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for CommandBuffer {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for CommandBuffer {}
 
 //TODO: we would have something like `Arc<typed_arena::Arena>`
@@ -982,20 +981,12 @@ impl fmt::Debug for CommandEncoder {
     }
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for CommandEncoder {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for CommandEncoder {}
 
-#[cfg(not(all(target_arch = "wasm32", not(target_os = "emscripten"))))]
+#[cfg(not(webgl))]
 fn gl_debug_message_callback(source: u32, gltype: u32, id: u32, severity: u32, message: &str) {
     let source_str = match source {
         glow::DEBUG_SOURCE_API => "API",

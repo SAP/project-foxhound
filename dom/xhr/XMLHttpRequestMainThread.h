@@ -46,12 +46,12 @@
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/URLSearchParams.h"
+#include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/XMLHttpRequest.h"
 #include "mozilla/dom/XMLHttpRequestBinding.h"
 #include "mozilla/dom/XMLHttpRequestEventTarget.h"
 #include "mozilla/dom/XMLHttpRequestString.h"
 #include "mozilla/Encoding.h"
-#include "nsBaseChannel.h"
 
 #ifdef Status
 /* Xlib headers insist on this for some reason... Nuke it because
@@ -67,6 +67,10 @@ class nsILoadGroup;
 
 namespace mozilla {
 class ProfileChunkedBuffer;
+
+namespace net {
+class ContentRange;
+}
 
 namespace dom {
 
@@ -201,17 +205,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   friend class XMLHttpRequestDoneNotifier;
 
  public:
-  enum class ProgressEventType : uint8_t {
-    loadstart,
-    progress,
-    error,
-    abort,
-    timeout,
-    load,
-    loadend,
-    ENUM_MAX
-  };
-
   // Make sure that any additions done to ErrorType enum are also mirrored in
   // XHR_ERROR_TYPE enum of TelemetrySend.sys.mjs.
   enum class ErrorType : uint16_t {
@@ -439,7 +432,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   // doesn't bubble.
   nsresult FireReadystatechangeEvent();
   void DispatchProgressEvent(DOMEventTargetHelper* aTarget,
-                             const ProgressEventType aType, int64_t aLoaded,
+                             const ProgressEventType& aType, int64_t aLoaded,
                              int64_t aTotal);
 
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(
@@ -462,6 +455,12 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
                           nsresult aResult) override;
 
   void LocalFileToBlobCompleted(BlobImpl* aBlobImpl);
+
+#ifdef DEBUG
+  // For logging when there's trouble
+  RefPtr<ThreadSafeWorkerRef> mTSWorkerRef MOZ_GUARDED_BY(mTSWorkerRefMutex);
+  Mutex mTSWorkerRefMutex;
+#endif
 
  protected:
   nsresult DetectCharset();
@@ -539,7 +538,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   void AbortInternal(ErrorResult& aRv);
 
-  Maybe<nsBaseChannel::ContentRange> GetRequestedContentRange() const;
+  bool BadContentRangeRequested();
+  RefPtr<mozilla::net::ContentRange> GetRequestedContentRange() const;
   void GetContentRangeHeader(nsACString&) const;
 
   struct PendingEvent {
@@ -763,7 +763,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
    *
    * @param aType The progress event type.
    */
-  void CloseRequestWithError(const ProgressEventType aType);
+  void CloseRequestWithError(const ErrorProgressEventType& aType);
 
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mRedirectCallback;
   nsCOMPtr<nsIChannel> mNewRedirectChannel;

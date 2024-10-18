@@ -55,6 +55,7 @@ BROWSER_CHROME_MANIFESTS += [
     "content/test/sync/browser.toml",
     "content/test/tabcrashed/browser.toml",
     "content/test/tabcrashed/browser_aboutRestartRequired.toml",
+    "content/test/tabcrashed/browser_aboutRestartRequired_noForkServer.toml",
     "content/test/tabdialogs/browser.toml",
     "content/test/tabMediaIndicator/browser.toml",
     "content/test/tabPrompts/browser.toml",
@@ -83,9 +84,5 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk", "cocoa"):
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("windows", "gtk"):
     DEFINES["MENUBAR_CAN_AUTOHIDE"] = 1
-
-if CONFIG["OS_ARCH"] == "WINNT" and CONFIG["MOZ_DEFAULT_BROWSER_AGENT"]:
-    # Impacts `/toolkit/content/license.html`.
-    DEFINES["MOZ_DEFAULT_BROWSER_AGENT"] = True
 
 JAR_MANIFESTS += ["jar.mn"]

@@ -62,7 +62,13 @@ static_assert(Simd128DataSize == 4 * sizeof(float),
 static_assert(Simd128DataSize == 2 * sizeof(double),
               "SIMD data should be able to contain float64x2");
 
-enum Scale { TimesOne = 0, TimesTwo = 1, TimesFour = 2, TimesEight = 3 };
+enum Scale {
+  TimesOne = 0,
+  TimesTwo = 1,
+  TimesFour = 2,
+  TimesEight = 3,
+  Invalid = -1
+};
 
 static_assert(sizeof(JS::Value) == 8,
               "required for TimesEight and 3 below to be correct");
@@ -99,6 +105,24 @@ static inline Scale ScaleFromScalarType(Scalar::Type type) {
   return ScaleFromElemWidth(Scalar::byteSize(type));
 }
 
+#ifdef JS_JITSPEW
+static inline const char* StringFromScale(Scale scale) {
+  switch (scale) {
+    case TimesOne:
+      return "TimesOne";
+    case TimesTwo:
+      return "TimesTwo";
+    case TimesFour:
+      return "TimesFour";
+    case TimesEight:
+      return "TimesEight";
+    default:
+      break;
+  }
+  MOZ_CRASH("Unknown Scale");
+}
+#endif
+
 // Used for 32-bit immediates which do not require relocation.
 struct Imm32 {
   int32_t value;
@@ -117,8 +141,9 @@ struct Imm32 {
         return Imm32(2);
       case TimesEight:
         return Imm32(3);
+      default:
+        MOZ_CRASH("Invalid scale");
     };
-    MOZ_CRASH("Invalid scale");
   }
 
   static inline Imm32 FactorOf(enum Scale s) {
@@ -527,7 +552,7 @@ class MemoryAccessDesc {
   explicit MemoryAccessDesc(
       uint32_t memoryIndex, Scalar::Type type, uint32_t align, uint64_t offset,
       BytecodeOffset trapOffset, mozilla::DebugOnly<bool> hugeMemory,
-      const jit::Synchronization& sync = jit::Synchronization::None())
+      jit::Synchronization sync = jit::Synchronization::None())
       : memoryIndex_(memoryIndex),
         offset64_(offset),
         align_(align),
@@ -567,7 +592,7 @@ class MemoryAccessDesc {
   uint32_t align() const { return align_; }
   Scalar::Type type() const { return type_; }
   unsigned byteSize() const { return Scalar::byteSize(type()); }
-  const jit::Synchronization& sync() const { return sync_; }
+  jit::Synchronization sync() const { return sync_; }
   BytecodeOffset trapOffset() const { return trapOffset_; }
   wasm::SimdOp widenSimdOp() const {
     MOZ_ASSERT(isWidenSimd128Load());

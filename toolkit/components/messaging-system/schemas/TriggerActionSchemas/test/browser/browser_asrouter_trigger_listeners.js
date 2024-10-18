@@ -1,9 +1,6 @@
-ChromeUtils.defineModuleGetter(
-  this,
-  "ASRouterTriggerListeners",
-  "resource://activity-stream/lib/ASRouterTriggerListeners.jsm"
-);
 ChromeUtils.defineESModuleGetters(this, {
+  ASRouterTriggerListeners:
+    "resource:///modules/asrouter/ASRouterTriggerListeners.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
 });
@@ -291,7 +288,7 @@ add_task(async function check_contentBlocking_listener() {
       1,
       `event ${type} is valid`
     );
-    ok(pageLoadSum <= pageLoad, "pageLoad is non-decreasing");
+    Assert.lessOrEqual(pageLoadSum, pageLoad, "pageLoad is non-decreasing");
 
     observerEvent += 1;
     pageLoadSum = pageLoad;

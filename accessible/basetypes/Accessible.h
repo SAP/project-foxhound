@@ -253,6 +253,11 @@ class Accessible {
   virtual ENameValueFlag Name(nsString& aName) const = 0;
 
   /*
+   * Return true if the accessible name is empty.
+   */
+  bool NameIsEmpty() const;
+
+  /*
    * Get the description of this accessible.
    */
   virtual void Description(nsString& aDescription) const = 0;

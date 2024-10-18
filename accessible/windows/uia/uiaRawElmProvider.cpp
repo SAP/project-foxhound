@@ -10,6 +10,9 @@
 #include "AccessibleWrap.h"
 #include "ARIAMap.h"
 #include "LocalAccessible-inl.h"
+#include "mozilla/a11y/RemoteAccessible.h"
+#include "MsaaAccessible.h"
+#include "nsTextEquivUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -17,6 +20,23 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 // uiaRawElmProvider
 ////////////////////////////////////////////////////////////////////////////////
+
+Accessible* uiaRawElmProvider::Acc() {
+  return static_cast<MsaaAccessible*>(this)->Acc();
+}
+
+// IUnknown
+
+// Because uiaRawElmProvider inherits multiple COM interfaces (and thus multiple
+// IUnknowns), we need to explicitly implement AddRef and Release to make
+// our QueryInterface implementation (IMPL_IUNKNOWN2) happy.
+ULONG STDMETHODCALLTYPE uiaRawElmProvider::AddRef() {
+  return static_cast<MsaaAccessible*>(this)->AddRef();
+}
+
+ULONG STDMETHODCALLTYPE uiaRawElmProvider::Release() {
+  return static_cast<MsaaAccessible*>(this)->Release();
+}
 
 IMPL_IUNKNOWN2(uiaRawElmProvider, IAccessibleEx, IRawElementProviderSimple)
 
@@ -30,7 +50,7 @@ uiaRawElmProvider::GetObjectForChild(
 
   *aAccEx = nullptr;
 
-  return mAcc->IsDefunct() ? CO_E_OBJNOTCONNECTED : S_OK;
+  return Acc() ? S_OK : CO_E_OBJNOTCONNECTED;
 }
 
 STDMETHODIMP
@@ -41,11 +61,12 @@ uiaRawElmProvider::GetIAccessiblePair(__RPC__deref_out_opt IAccessible** aAcc,
   *aAcc = nullptr;
   *aIdChild = 0;
 
-  if (mAcc->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  if (!Acc()) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
   *aIdChild = CHILDID_SELF;
-  RefPtr<IAccessible> copy;
-  mAcc->GetNativeInterface(getter_AddRefs(copy));
+  RefPtr<IAccessible> copy = static_cast<MsaaAccessible*>(this);
   copy.forget(aAcc);
 
   return S_OK;
@@ -54,9 +75,12 @@ uiaRawElmProvider::GetIAccessiblePair(__RPC__deref_out_opt IAccessible** aAcc,
 STDMETHODIMP
 uiaRawElmProvider::GetRuntimeId(__RPC__deref_out_opt SAFEARRAY** aRuntimeIds) {
   if (!aRuntimeIds) return E_INVALIDARG;
+  Accessible* acc = Acc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
 
-  int ids[] = {UiaAppendRuntimeId,
-               static_cast<int>(reinterpret_cast<intptr_t>(mAcc->UniqueID()))};
+  int ids[] = {UiaAppendRuntimeId, MsaaAccessible::GetChildIDFor(acc)};
   *aRuntimeIds = SafeArrayCreateVector(VT_I4, 0, 2);
   if (!*aRuntimeIds) return E_OUTOFMEMORY;
 
@@ -108,16 +132,24 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
                                     __RPC__out VARIANT* aPropertyValue) {
   if (!aPropertyValue) return E_INVALIDARG;
 
-  if (mAcc->IsDefunct()) return CO_E_OBJNOTCONNECTED;
+  Accessible* acc = Acc();
+  if (!acc) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  LocalAccessible* localAcc = acc->AsLocal();
 
   aPropertyValue->vt = VT_EMPTY;
 
   switch (aPropertyId) {
     // Accelerator Key / shortcut.
     case UIA_AcceleratorKeyPropertyId: {
+      if (!localAcc) {
+        // KeyboardShortcut is only currently relevant for LocalAccessible.
+        break;
+      }
       nsAutoString keyString;
 
-      mAcc->KeyboardShortcut().ToString(keyString);
+      localAcc->KeyboardShortcut().ToString(keyString);
 
       if (!keyString.IsEmpty()) {
         aPropertyValue->vt = VT_BSTR;
@@ -132,7 +164,7 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
     case UIA_AccessKeyPropertyId: {
       nsAutoString keyString;
 
-      mAcc->AccessKey().ToString(keyString);
+      acc->AccessKey().ToString(keyString);
 
       if (!keyString.IsEmpty()) {
         aPropertyValue->vt = VT_BSTR;
@@ -147,7 +179,7 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
     case UIA_AriaRolePropertyId: {
       nsAutoString xmlRoles;
 
-      RefPtr<AccAttributes> attributes = mAcc->Attributes();
+      RefPtr<AccAttributes> attributes = acc->Attributes();
       attributes->GetAttribute(nsGkAtoms::xmlroles, xmlRoles);
 
       if (!xmlRoles.IsEmpty()) {
@@ -161,9 +193,16 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
 
     // ARIA Properties
     case UIA_AriaPropertiesPropertyId: {
+      if (!localAcc) {
+        // XXX Implement a unified version of this. We don't cache explicit
+        // values for many ARIA attributes in RemoteAccessible; e.g. we use the
+        // checked state rather than caching aria-checked:true. Thus, a unified
+        // implementation will need to work with State(), etc.
+        break;
+      }
       nsAutoString ariaProperties;
 
-      aria::AttrIterator attribIter(mAcc->GetContent());
+      aria::AttrIterator attribIter(localAcc->GetContent());
       while (attribIter.Next()) {
         nsAutoString attribName, attribValue;
         nsAutoString value;
@@ -190,6 +229,12 @@ uiaRawElmProvider::GetPropertyValue(PROPERTYID aPropertyId,
 
       break;
     }
+
+    case UIA_IsControlElementPropertyId:
+    case UIA_IsContentElementPropertyId:
+      aPropertyValue->vt = VT_BOOL;
+      aPropertyValue->boolVal = IsControl() ? VARIANT_TRUE : VARIANT_FALSE;
+      return S_OK;
   }
 
   return S_OK;
@@ -203,4 +248,69 @@ uiaRawElmProvider::get_HostRawElementProvider(
   // This method is not used with IAccessibleEx implementations.
   *aRawElmProvider = nullptr;
   return S_OK;
+}
+
+// Private methods
+
+bool uiaRawElmProvider::IsControl() {
+  // UIA provides multiple views of the tree: raw, control and content. The
+  // control and content views should only contain elements which a user cares
+  // about when navigating.
+  Accessible* acc = Acc();
+  MOZ_ASSERT(acc);
+  if (acc->IsTextLeaf()) {
+    // If an ancestor control allows the name to be generated from content, do
+    // not expose this text leaf as a control. Otherwise, the user will see the
+    // text twice: once as the label of the control and once for the text leaf.
+    for (Accessible* ancestor = acc->Parent(); ancestor && !ancestor->IsDoc();
+         ancestor = ancestor->Parent()) {
+      if (nsTextEquivUtils::HasNameRule(ancestor, eNameFromSubtreeRule)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (acc->HasNumericValue() || acc->ActionCount() > 0) {
+    return true;
+  }
+  uint64_t state = acc->State();
+  if (state & states::FOCUSABLE) {
+    return true;
+  }
+  if (state & states::EDITABLE) {
+    Accessible* parent = acc->Parent();
+    if (parent && !(parent->State() & states::EDITABLE)) {
+      // This is the root of a rich editable control.
+      return true;
+    }
+  }
+
+  // Don't treat generic or text containers as controls unless they have a name
+  // or description.
+  switch (acc->Role()) {
+    case roles::EMPHASIS:
+    case roles::MARK:
+    case roles::PARAGRAPH:
+    case roles::SECTION:
+    case roles::STRONG:
+    case roles::SUBSCRIPT:
+    case roles::SUPERSCRIPT:
+    case roles::TEXT:
+    case roles::TEXT_CONTAINER: {
+      if (!acc->NameIsEmpty()) {
+        return true;
+      }
+      nsAutoString text;
+      acc->Description(text);
+      if (!text.IsEmpty()) {
+        return true;
+      }
+      return false;
+    }
+    default:
+      break;
+  }
+
+  return true;
 }

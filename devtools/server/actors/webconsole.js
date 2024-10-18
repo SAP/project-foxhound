@@ -933,6 +933,11 @@ class WebConsoleActor extends Actor {
       // * prevent spawning Debugger.Source for the evaluated JS and showing it in Debugger UI
       // This is only set to false when evaluating the console input.
       disableBreaks: !!request.disableBreaks,
+      // Optional flag, to be set to true when Console Commands should override local symbols with
+      // the same name. Like if the page defines `$`, the evaluated string will use the `$` implemented
+      // by the console command instead of the page's function.
+      preferConsoleCommandsOverLocalSymbols:
+        !!request.preferConsoleCommandsOverLocalSymbols,
     };
 
     const { mapped } = request;
@@ -1699,7 +1704,7 @@ class WebConsoleActor extends Actor {
    * The "will-navigate" progress listener. This is used to clear the current
    * eval scope.
    */
-  _onWillNavigate({ window, isTopLevel }) {
+  _onWillNavigate({ isTopLevel }) {
     if (isTopLevel) {
       this._evalGlobal = null;
       EventEmitter.off(this.parentActor, "will-navigate", this._onWillNavigate);

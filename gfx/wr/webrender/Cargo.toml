@@ -18,12 +18,12 @@ serialize_program = ["serde", "webrender_build/serialize_program"]
 dynamic_freetype = ["glyph_rasterizer/dynamic_freetype"]
 static_freetype = ["glyph_rasterizer/static_freetype"]
 leak_checks = []
-gecko = ["firefox-on-glean", "glyph_rasterizer/gecko"]
+gecko = ["firefox-on-glean", "glean", "glyph_rasterizer/gecko"]
 sw_compositor = ["swgl"]
 
 [build-dependencies]
 build-parallel = "0.1.2"
-glslopt = "0.1.9"
+glslopt = "0.1.10"
 webrender_build = { version = "0.0.2", path = "../webrender_build" }
 
 [dependencies]
@@ -52,7 +52,7 @@ svg_fmt = "0.4"
 tracy-rs = "0.1.2"
 derive_more = { version = "0.99", default-features = false, features = ["add_assign"] }
 etagere = "0.2.6"
-glean = "56.1.0"
+glean = { version = "58.1.0", optional = true }
 firefox-on-glean = { version = "0.1.0", optional = true }
 swgl = { path = "../swgl", optional = true }
 topological-sort = "0.1"

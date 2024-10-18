@@ -19,6 +19,7 @@
 #include "mozilla/dom/SVGGraphicsElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/SVGSwitchElement.h"
 #include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
 #include "nsGkAtoms.h"
@@ -166,8 +167,8 @@ nsresult SVGUseElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-void SVGUseElement::UnbindFromTree(bool aNullParent) {
-  SVGUseElementBase::UnbindFromTree(aNullParent);
+void SVGUseElement::UnbindFromTree(UnbindContext& aContext) {
+  SVGUseElementBase::UnbindFromTree(aContext);
   OwnerDoc()->UnscheduleSVGUseElementShadowTreeUpdate(*this);
 }
 
@@ -251,7 +252,17 @@ static bool NodeCouldBeRendered(const nsINode& aNode) {
   if (const auto* symbol = SVGSymbolElement::FromNode(aNode)) {
     return symbol->CouldBeRendered();
   }
-  // TODO: Do we have other cases we can optimize out easily?
+  if (const auto* svgGraphics = SVGGraphicsElement::FromNode(aNode)) {
+    if (!svgGraphics->PassesConditionalProcessingTests()) {
+      return false;
+    }
+  }
+  if (auto* svgSwitch =
+          SVGSwitchElement::FromNodeOrNull(aNode.GetParentNode())) {
+    if (&aNode != svgSwitch->GetActiveChild()) {
+      return false;
+    }
+  }
   return true;
 }
 

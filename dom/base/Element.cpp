@@ -58,7 +58,6 @@
 #include "mozilla/PresShellForwards.h"
 #include "mozilla/ReflowOutput.h"
 #include "mozilla/RelativeTo.h"
-#include "mozilla/ScrollOrigin.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoStyleConstsInlines.h"
@@ -110,6 +109,7 @@
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/UnbindContext.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "mozilla/dom/XULCommandEvent.h"
 #include "mozilla/dom/nsCSPContext.h"
@@ -117,6 +117,7 @@
 #include "mozilla/gfx/BaseRect.h"
 #include "mozilla/gfx/BaseSize.h"
 #include "mozilla/gfx/Matrix.h"
+#include "mozilla/widget/Screen.h"
 #include "nsAtom.h"
 #include "nsAttrName.h"
 #include "nsAttrValueInlines.h"
@@ -165,7 +166,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIMemoryReporter.h"
 #include "nsIPrincipal.h"
-#include "nsIScreenManager.h"
 #include "nsIScriptError.h"
 #include "nsIScrollableFrame.h"
 #include "nsISpeculativeConnect.h"
@@ -286,6 +286,9 @@ nsIFrame* nsIContent::GetPrimaryFrame(mozilla::FlushType aType) {
 }
 
 namespace mozilla::dom {
+
+const DOMTokenListSupportedToken Element::sSupportedBlockingValues[] = {
+    "render", nullptr};
 
 nsDOMAttributeMap* Element::Attributes() {
   nsDOMSlots* slots = DOMSlots();
@@ -688,20 +691,23 @@ nsIScrollableFrame* Element::GetScrollFrame(nsIFrame** aFrame,
   Document* doc = OwnerDoc();
   // Note: This IsScrollingElement() call can flush frames, if we're the body of
   // a quirks mode document.
-  bool isScrollingElement = doc->IsScrollingElement(this);
-  // Now reget *aStyledFrame if the caller asked for it, because that frame
-  // flush can kill it.
-  if (aFrame) {
-    *aFrame = GetPrimaryFrame(FlushType::None);
-  }
-
+  const bool isScrollingElement = doc->IsScrollingElement(this);
   if (isScrollingElement) {
     // Our scroll info should map to the root scrollable frame if there is one.
     if (PresShell* presShell = doc->GetPresShell()) {
-      return presShell->GetRootScrollFrameAsScrollable();
+      if ((frame = presShell->GetRootScrollFrame())) {
+        if (aFrame) {
+          *aFrame = frame;
+        }
+        return do_QueryFrame(frame);
+      }
     }
   }
-
+  if (aFrame) {
+    // Re-get *aFrame if the caller asked for it, because that frame flush can
+    // kill it.
+    *aFrame = GetPrimaryFrame(FlushType::None);
+  }
   return nullptr;
 }
 
@@ -785,8 +791,6 @@ void Element::ScrollIntoView(const ScrollIntoViewOptions& aOptions) {
         return WhereToScroll::Center;
       case ScrollLogicalPosition::End:
         return WhereToScroll::End;
-      case ScrollLogicalPosition::EndGuard_:
-        MOZ_FALLTHROUGH_ASSERT("Unexpected block direction value");
       case ScrollLogicalPosition::Nearest:
         break;
     }
@@ -810,161 +814,128 @@ void Element::ScrollIntoView(const ScrollIntoViewOptions& aOptions) {
       ScrollAxis(inline_, WhenToScroll::Always), scrollFlags);
 }
 
-void Element::Scroll(const CSSIntPoint& aScroll,
-                     const ScrollOptions& aOptions) {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (sf) {
-    ScrollMode scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
-                                ? ScrollMode::SmoothMsd
-                                : ScrollMode::Instant;
-
-    sf->ScrollToCSSPixels(aScroll, scrollMode);
-  }
-}
-
-void Element::Scroll(double aXScroll, double aYScroll) {
-  // Convert -Inf, Inf, and NaN to 0; otherwise, convert by C-style cast.
-  auto scrollPos = CSSIntPoint::Truncate(mozilla::ToZeroIfNonfinite(aXScroll),
-                                         mozilla::ToZeroIfNonfinite(aYScroll));
-
-  Scroll(scrollPos, ScrollOptions());
-}
-
-void Element::Scroll(const ScrollToOptions& aOptions) {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (sf) {
-    CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
-    if (aOptions.mLeft.WasPassed()) {
-      scrollPos.x = static_cast<int32_t>(
-          mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
-    }
-    if (aOptions.mTop.WasPassed()) {
-      scrollPos.y = static_cast<int32_t>(
-          mozilla::ToZeroIfNonfinite(aOptions.mTop.Value()));
-    }
-    Scroll(scrollPos, aOptions);
-  }
-}
-
 void Element::ScrollTo(double aXScroll, double aYScroll) {
-  Scroll(aXScroll, aYScroll);
+  ScrollToOptions options;
+  options.mLeft.Construct(aXScroll);
+  options.mTop.Construct(aYScroll);
+  ScrollTo(options);
 }
 
-void Element::ScrollTo(const ScrollToOptions& aOptions) { Scroll(aOptions); }
+void Element::ScrollTo(const ScrollToOptions& aOptions) {
+  // When the scroll top is 0, we don't need to flush layout to scroll to that
+  // point; we know 0 is always in range.  At least we think so...  But we do
+  // need to flush frames so we ensure we find the right scrollable frame if
+  // there is one. If it's nonzero, we need to flush layout because we need to
+  // figure out what our real scrollTopMax is.
+  //
+  // If we have a left value, we can't assume things based on it's value,
+  // depending on our direction and layout 0 may or may not be in our scroll
+  // range.  So we need to flush layout no matter what then.
+  const bool needsLayoutFlush =
+      aOptions.mLeft.WasPassed() ||
+      (aOptions.mTop.WasPassed() && aOptions.mTop.Value() != 0.0);
+
+  nsIFrame* frame;
+  nsIScrollableFrame* sf = GetScrollFrame(
+      &frame, needsLayoutFlush ? FlushType::Layout : FlushType::Frames);
+  if (!sf) {
+    return;
+  }
+  CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
+  if (aOptions.mLeft.WasPassed()) {
+    scrollPos.x = int32_t(mozilla::ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value())));
+  }
+  if (aOptions.mTop.WasPassed()) {
+    scrollPos.y = int32_t(mozilla::ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value())));
+  }
+  ScrollMode scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
+                              ? ScrollMode::SmoothMsd
+                              : ScrollMode::Instant;
+  sf->ScrollToCSSPixels(scrollPos, scrollMode);
+}
 
 void Element::ScrollBy(double aXScrollDif, double aYScrollDif) {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (sf) {
-    ScrollToOptions options;
-    options.mLeft.Construct(aXScrollDif);
-    options.mTop.Construct(aYScrollDif);
-    ScrollBy(options);
-  }
+  ScrollToOptions options;
+  options.mLeft.Construct(aXScrollDif);
+  options.mTop.Construct(aYScrollDif);
+  ScrollBy(options);
 }
 
 void Element::ScrollBy(const ScrollToOptions& aOptions) {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (sf) {
-    CSSIntPoint scrollDelta;
-    if (aOptions.mLeft.WasPassed()) {
-      scrollDelta.x = static_cast<int32_t>(
-          mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
-    }
-    if (aOptions.mTop.WasPassed()) {
-      scrollDelta.y = static_cast<int32_t>(
-          mozilla::ToZeroIfNonfinite(aOptions.mTop.Value()));
-    }
-
-    ScrollMode scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
-                                ? ScrollMode::SmoothMsd
-                                : ScrollMode::Instant;
-
-    sf->ScrollByCSSPixels(scrollDelta, scrollMode);
+  nsIFrame* frame;
+  nsIScrollableFrame* sf = GetScrollFrame(&frame);
+  if (!sf) {
+    return;
   }
+
+  CSSIntPoint scrollDelta;
+  if (aOptions.mLeft.WasPassed()) {
+    scrollDelta.x = int32_t(mozilla::ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mLeft.Value())));
+  }
+
+  if (aOptions.mTop.WasPassed()) {
+    scrollDelta.y = int32_t(mozilla::ToZeroIfNonfinite(
+        frame->Style()->EffectiveZoom().Zoom(aOptions.mTop.Value())));
+  }
+
+  auto scrollMode = sf->IsSmoothScroll(aOptions.mBehavior)
+                        ? ScrollMode::SmoothMsd
+                        : ScrollMode::Instant;
+  sf->ScrollByCSSPixels(scrollDelta, scrollMode);
 }
 
 int32_t Element::ScrollTop() {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  return sf ? sf->GetRoundedScrollPositionCSSPixels().y.value : 0;
+  return CSSPixel::FromAppUnitsRounded(GetScrollOrigin().y);
 }
 
 void Element::SetScrollTop(int32_t aScrollTop) {
-  // When aScrollTop is 0, we don't need to flush layout to scroll to that
-  // point; we know 0 is always in range.  At least we think so...  But we do
-  // need to flush frames so we ensure we find the right scrollable frame if
-  // there is one.
-  //
-  // If aScrollTop is nonzero, we need to flush layout because we need to figure
-  // out what our real scrollTopMax is.
-  FlushType flushType = aScrollTop == 0 ? FlushType::Frames : FlushType::Layout;
-  nsIScrollableFrame* sf = GetScrollFrame(nullptr, flushType);
-  if (sf) {
-    ScrollMode scrollMode =
-        sf->IsSmoothScroll() ? ScrollMode::SmoothMsd : ScrollMode::Instant;
-
-    sf->ScrollToCSSPixels(
-        CSSIntPoint(sf->GetRoundedScrollPositionCSSPixels().x, aScrollTop),
-        scrollMode);
-  }
+  ScrollToOptions options;
+  options.mTop.Construct(aScrollTop);
+  ScrollTo(options);
 }
 
 int32_t Element::ScrollLeft() {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  return sf ? sf->GetRoundedScrollPositionCSSPixels().x.value : 0;
+  return CSSPixel::FromAppUnitsRounded(GetScrollOrigin().x);
 }
 
 void Element::SetScrollLeft(int32_t aScrollLeft) {
-  // We can't assume things here based on the value of aScrollLeft, because
-  // depending on our direction and layout 0 may or may not be in our scroll
-  // range.  So we need to flush layout no matter what.
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (sf) {
-    ScrollMode scrollMode =
-        sf->IsSmoothScroll() ? ScrollMode::SmoothMsd : ScrollMode::Instant;
-
-    sf->ScrollToCSSPixels(
-        CSSIntPoint(aScrollLeft, sf->GetRoundedScrollPositionCSSPixels().y),
-        scrollMode);
-  }
+  ScrollToOptions options;
+  options.mLeft.Construct(aScrollLeft);
+  ScrollTo(options);
 }
 
 void Element::MozScrollSnap() {
-  nsIScrollableFrame* sf = GetScrollFrame(nullptr, FlushType::None);
-  if (sf) {
+  if (nsIScrollableFrame* sf = GetScrollFrame(nullptr, FlushType::None)) {
     sf->ScrollSnap();
   }
 }
 
-int32_t Element::ScrollTopMin() {
-  nsIScrollableFrame* sf = GetScrollFrame();
+nsRect Element::GetScrollRange() {
+  nsIFrame* frame;
+  nsIScrollableFrame* sf = GetScrollFrame(&frame);
   if (!sf) {
-    return 0;
+    return nsRect();
   }
-  return CSSPixel::FromAppUnits(sf->GetScrollRange().y).Rounded();
+  return frame->Style()->EffectiveZoom().Unzoom(sf->GetScrollRange());
+}
+
+int32_t Element::ScrollTopMin() {
+  return CSSPixel::FromAppUnitsRounded(GetScrollRange().Y());
 }
 
 int32_t Element::ScrollTopMax() {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (!sf) {
-    return 0;
-  }
-  return CSSPixel::FromAppUnits(sf->GetScrollRange().YMost()).Rounded();
+  return CSSPixel::FromAppUnitsRounded(GetScrollRange().YMost());
 }
 
 int32_t Element::ScrollLeftMin() {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (!sf) {
-    return 0;
-  }
-  return CSSPixel::FromAppUnits(sf->GetScrollRange().x).Rounded();
+  return CSSPixel::FromAppUnitsRounded(GetScrollRange().X());
 }
 
 int32_t Element::ScrollLeftMax() {
-  nsIScrollableFrame* sf = GetScrollFrame();
-  if (!sf) {
-    return 0;
-  }
-  return CSSPixel::FromAppUnits(sf->GetScrollRange().XMost()).Rounded();
+  return CSSPixel::FromAppUnitsRounded(GetScrollRange().XMost());
 }
 
 static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame) {
@@ -989,30 +960,35 @@ static nsSize GetScrollRectSizeForOverflowVisibleFrame(nsIFrame* aFrame) {
       .Size();
 }
 
-int32_t Element::ScrollHeight() {
+nsSize Element::GetScrollSize() {
+  nsIFrame* frame;
+  nsSize size;
+  if (nsIScrollableFrame* sf = GetScrollFrame(&frame)) {
+    size = sf->GetScrollRange().Size() + sf->GetScrollPortRect().Size();
+  } else {
+    size = GetScrollRectSizeForOverflowVisibleFrame(frame);
+  }
+  if (!frame) {
+    return size;
+  }
+  return frame->Style()->EffectiveZoom().Unzoom(size);
+}
+
+nsPoint Element::GetScrollOrigin() {
   nsIFrame* frame;
   nsIScrollableFrame* sf = GetScrollFrame(&frame);
-  nscoord height;
-  if (sf) {
-    height = sf->GetScrollRange().Height() + sf->GetScrollPortRect().Height();
-  } else {
-    height = GetScrollRectSizeForOverflowVisibleFrame(frame).height;
+  if (!sf) {
+    return nsPoint();
   }
+  return frame->Style()->EffectiveZoom().Unzoom(sf->GetScrollPosition());
+}
 
-  return nsPresContext::AppUnitsToIntCSSPixels(height);
+int32_t Element::ScrollHeight() {
+  return nsPresContext::AppUnitsToIntCSSPixels(GetScrollSize().height);
 }
 
 int32_t Element::ScrollWidth() {
-  nsIFrame* frame;
-  nsIScrollableFrame* sf = GetScrollFrame(&frame);
-  nscoord width;
-  if (sf) {
-    width = sf->GetScrollRange().Width() + sf->GetScrollPortRect().Width();
-  } else {
-    width = GetScrollRectSizeForOverflowVisibleFrame(frame).width;
-  }
-
-  return nsPresContext::AppUnitsToIntCSSPixels(width);
+  return nsPresContext::AppUnitsToIntCSSPixels(GetScrollSize().width);
 }
 
 nsRect Element::GetClientAreaRect() {
@@ -1052,7 +1028,7 @@ nsRect Element::GetClientAreaRect() {
     // The scroll port value might be expanded to the minimum scale size, we
     // should limit the size to the ICB in such cases.
     scrollPort.SizeTo(sf->GetLayoutSize());
-    return scrollPort;
+    return frame->Style()->EffectiveZoom().Unzoom(scrollPort);
   }
 
   if (frame &&
@@ -1062,11 +1038,12 @@ nsRect Element::GetClientAreaRect() {
       (!frame->StyleDisplay()->IsInlineFlow() || frame->IsReplaced())) {
     // Special case code to make client area work even when there isn't
     // a scroll view, see bug 180552, bug 227567.
-    return frame->GetPaddingRect() - frame->GetPositionIgnoringScrolling();
+    return frame->Style()->EffectiveZoom().Unzoom(
+        frame->GetPaddingRect() - frame->GetPositionIgnoringScrolling());
   }
 
   // SVG nodes reach here and just return 0
-  return nsRect(0, 0, 0, 0);
+  return nsRect();
 }
 
 int32_t Element::ScreenX() {
@@ -1080,20 +1057,13 @@ int32_t Element::ScreenY() {
 }
 
 already_AddRefed<nsIScreen> Element::GetScreen() {
-  nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
-  if (!frame) {
-    return nullptr;
+  // Flush layout to guarantee that frames are created if needed, and preserve
+  // behavior.
+  Unused << GetPrimaryFrame(FlushType::Frames);
+  if (nsIWidget* widget = nsContentUtils::WidgetForContent(this)) {
+    return widget->GetWidgetScreen();
   }
-  nsCOMPtr<nsIScreenManager> screenMgr =
-      do_GetService("@mozilla.org/gfx/screenmanager;1");
-  if (!screenMgr) {
-    return nullptr;
-  }
-  nsPresContext* pc = frame->PresContext();
-  const CSSIntRect rect = frame->GetScreenRect();
-  DesktopRect desktopRect = rect * pc->CSSToDevPixelScale() /
-                            pc->DeviceContext()->GetDesktopToDeviceScale();
-  return screenMgr->ScreenForRect(DesktopIntRect::Round(desktopRect));
+  return nullptr;
 }
 
 already_AddRefed<DOMRect> Element::GetBoundingClientRect() {
@@ -1124,6 +1094,9 @@ already_AddRefed<DOMRectList> Element::GetClientRects() {
       nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
   return rectList.forget();
 }
+
+const DOMTokenListSupportedToken Element::sAnchorAndFormRelValues[] = {
+    "noreferrer", "noopener", "opener", nullptr};
 
 // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attribute
 static constexpr nsAttrValue::EnumTable kLoadingTable[] = {
@@ -1754,8 +1727,7 @@ already_AddRefed<nsIHTMLCollection> Element::GetElementsByClassName(
 }
 
 Element* Element::GetAttrAssociatedElement(nsAtom* aAttr) const {
-  const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
-  if (slots) {
+  if (const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
     nsWeakPtr weakAttrEl = slots->mExplicitlySetAttrElements.Get(aAttr);
     if (nsCOMPtr<Element> attrEl = do_QueryReferent(weakAttrEl)) {
       // If reflectedTarget's explicitly set attr-element |attrEl| is
@@ -1799,19 +1771,63 @@ Element* Element::GetAttrAssociatedElement(nsAtom* aAttr) const {
   return nullptr;
 }
 
+void Element::ClearExplicitlySetAttrElement(nsAtom* aAttr) {
+  if (auto* slots = GetExistingExtendedDOMSlots()) {
+    slots->mExplicitlySetAttrElements.Remove(aAttr);
+  }
+}
+
 void Element::ExplicitlySetAttrElement(nsAtom* aAttr, Element* aElement) {
+#ifdef ACCESSIBILITY
+  nsAccessibilityService* accService = GetAccService();
+#endif
+  // Accessibility requires that no other attribute changes occur between
+  // AttrElementWillChange and AttrElementChanged. Scripts could cause
+  // this, so don't let them run here. We do this even if accessibility isn't
+  // running so that the JS behavior is consistent regardless of accessibility.
+  // Otherwise, JS might be able to use this difference to determine whether
+  // accessibility is running, which would be a privacy concern.
+  nsAutoScriptBlocker scriptBlocker;
   if (aElement) {
+#ifdef ACCESSIBILITY
+    if (accService) {
+      accService->NotifyAttrElementWillChange(this, aAttr);
+    }
+#endif
+    SetAttr(aAttr, EmptyString(), IgnoreErrors());
     nsExtendedDOMSlots* slots = ExtendedDOMSlots();
     slots->mExplicitlySetAttrElements.InsertOrUpdate(
         aAttr, do_GetWeakReference(aElement));
-    SetAttr(aAttr, EmptyString(), IgnoreErrors());
+#ifdef ACCESSIBILITY
+    if (accService) {
+      accService->NotifyAttrElementChanged(this, aAttr);
+    }
+#endif
     return;
   }
 
-  if (auto* slots = GetExistingExtendedDOMSlots()) {
-    slots->mExplicitlySetAttrElements.Remove(aAttr);
-    UnsetAttr(aAttr, IgnoreErrors());
+#ifdef ACCESSIBILITY
+  if (accService) {
+    accService->NotifyAttrElementWillChange(this, aAttr);
   }
+#endif
+  ClearExplicitlySetAttrElement(aAttr);
+  UnsetAttr(aAttr, IgnoreErrors());
+#ifdef ACCESSIBILITY
+  if (accService) {
+    accService->NotifyAttrElementChanged(this, aAttr);
+  }
+#endif
+}
+
+Element* Element::GetExplicitlySetAttrElement(nsAtom* aAttr) const {
+  if (const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
+    nsWeakPtr weakAttrEl = slots->mExplicitlySetAttrElements.Get(aAttr);
+    if (nsCOMPtr<Element> attrEl = do_QueryReferent(weakAttrEl)) {
+      return attrEl;
+    }
+  }
+  return nullptr;
 }
 
 void Element::GetElementsWithGrid(nsTArray<RefPtr<Element>>& aElements) {
@@ -1843,7 +1859,7 @@ void Element::GetElementsWithGrid(nsTArray<RefPtr<Element>>& aElements) {
 
 bool Element::HasVisibleScrollbars() {
   nsIScrollableFrame* scrollFrame = GetScrollFrame();
-  return scrollFrame && (!scrollFrame->GetScrollbarVisibility().isEmpty());
+  return scrollFrame && !scrollFrame->GetScrollbarVisibility().isEmpty();
 }
 
 nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
@@ -1986,7 +2002,8 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-bool WillDetachFromShadowOnUnbind(const Element& aElement, bool aNullParent) {
+static bool WillDetachFromShadowOnUnbind(const Element& aElement,
+                                         bool aNullParent) {
   // If our parent still is in a shadow tree by now, and we're not removing
   // ourselves from it, then we're still going to be in a shadow tree after
   // this.
@@ -1994,12 +2011,14 @@ bool WillDetachFromShadowOnUnbind(const Element& aElement, bool aNullParent) {
          (aNullParent || !aElement.GetParent()->IsInShadowTree());
 }
 
-void Element::UnbindFromTree(bool aNullParent) {
-  HandleShadowDOMRelatedRemovalSteps(aNullParent);
+void Element::UnbindFromTree(UnbindContext& aContext) {
+  const bool nullParent = aContext.IsUnbindRoot(this);
+
+  HandleShadowDOMRelatedRemovalSteps(nullParent);
 
   if (HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) &&
       !IsHTMLElement(nsGkAtoms::datalist)) {
-    if (aNullParent) {
+    if (nullParent) {
       UnsetFlags(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR);
     } else {
       nsIContent* parent = GetParent();
@@ -2011,7 +2030,7 @@ void Element::UnbindFromTree(bool aNullParent) {
   }
 
   const bool detachingFromShadow =
-      WillDetachFromShadowOnUnbind(*this, aNullParent);
+      WillDetachFromShadowOnUnbind(*this, nullParent);
   // Make sure to only remove from the ID table if our subtree root is actually
   // changing.
   if (IsInUncomposedDoc() || detachingFromShadow) {
@@ -2061,7 +2080,7 @@ void Element::UnbindFromTree(bool aNullParent) {
     data->ClearAllAnimationCollections();
   }
 
-  if (aNullParent) {
+  if (nullParent) {
     if (GetParent()) {
       RefPtr<nsINode> p;
       p.swap(mParent);
@@ -2099,15 +2118,13 @@ void Element::UnbindFromTree(bool aNullParent) {
     ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n();
   }
 
-  if (aNullParent || !mParent->IsInShadowTree()) {
+  if (nullParent || !mParent->IsInShadowTree()) {
     UnsetFlags(NODE_IS_IN_SHADOW_TREE);
 
     // Begin keeping track of our subtree root.
-    SetSubtreeRootPointer(aNullParent ? this : mParent->SubtreeRoot());
-  }
+    SetSubtreeRootPointer(nullParent ? this : mParent->SubtreeRoot());
 
-  if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
-    if (aNullParent || !mParent->IsInShadowTree()) {
+    if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
       slots->mContainingShadow = nullptr;
     }
   }
@@ -2131,11 +2148,10 @@ void Element::UnbindFromTree(bool aNullParent) {
     }
 
     if (HasLastRememberedBSize() || HasLastRememberedISize()) {
-      // Need to remove the last remembered size at the next ResizeObserver
-      // opportunity, so observe the element. But if already observed, we still
-      // want the callback to be invoked even if the size was already 0x0, so
-      // unobserve it first.
-      document->UnobserveForLastRememberedSize(*this);
+      // Make sure the element is observed so that remembered sizes are kept
+      // until the next time "ResizeObserver events are determined and
+      // delivered". See "Disconnected element" tests from
+      // css/css-sizing/contain-intrinsic-size/auto-006.html
       document->ObserveForLastRememberedSize(*this);
     }
   }
@@ -2149,9 +2165,7 @@ void Element::UnbindFromTree(bool aNullParent) {
 
   for (nsIContent* child = GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    // Note that we pass false for aNullParent here, since we don't want
-    // the kids to forget us.
-    child->UnbindFromTree(false);
+    child->UnbindFromTree(aContext);
   }
 
   MutationObservers::NotifyParentChainChanged(this);
@@ -2790,6 +2804,12 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       return true;
     }
 
+    if (aAttribute == nsGkAtoms::aria_activedescendant) {
+      // String in aria-activedescendant is an id, so store as an atom.
+      aResult.ParseAtom(aValue);
+      return true;
+    }
+
     if (aAttribute == nsGkAtoms::id) {
       // Store id as an atom.  id="" means that the element has no id,
       // not that it has an emptystring as the id.
@@ -2872,6 +2892,8 @@ void Element::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       if (ShadowRoot* shadow = GetParent()->GetShadowRoot()) {
         shadow->MaybeReassignContent(*this);
       }
+    } else if (aName == nsGkAtoms::aria_activedescendant) {
+      ClearExplicitlySetAttrElement(aName);
     }
   }
 }
@@ -2922,6 +2944,11 @@ void Element::OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
       nsContentUtils::EnqueueLifecycleCallback(
           ElementCallbackType::eAttributeChanged, this, args, definition);
     }
+  }
+
+  if (aNamespaceID == kNameSpaceID_None &&
+      aName == nsGkAtoms::aria_activedescendant) {
+    ClearExplicitlySetAttrElement(aName);
   }
 }
 
@@ -3471,14 +3498,6 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
 }
 
 void Element::GetLinkTarget(nsAString& aTarget) { aTarget.Truncate(); }
-
-static nsStaticAtom* const sPropertiesToTraverseAndUnlink[] = {
-    nsGkAtoms::dirAutoSetBy, nullptr};
-
-// static
-nsStaticAtom* const* Element::HTMLSVGPropertiesToTraverseAndUnlink() {
-  return sPropertiesToTraverseAndUnlink;
-}
 
 nsresult Element::CopyInnerTo(Element* aDst, ReparseAttributes aReparse) {
   nsresult rv = aDst->mAttrs.EnsureCapacityToClone(mAttrs);
@@ -4423,7 +4442,8 @@ bool Element::IsPopoverOpen() const {
   return htmlElement && htmlElement->PopoverOpen();
 }
 
-Element* Element::GetTopmostPopoverAncestor(const Element* aInvoker) const {
+Element* Element::GetTopmostPopoverAncestor(const Element* aInvoker,
+                                            bool isPopover) const {
   const Element* newPopover = this;
 
   nsTHashMap<nsPtrHashKey<const Element>, size_t> popoverPositions;
@@ -4431,7 +4451,10 @@ Element* Element::GetTopmostPopoverAncestor(const Element* aInvoker) const {
   for (Element* popover : OwnerDoc()->AutoPopoverList()) {
     popoverPositions.LookupOrInsert(popover, index++);
   }
-  popoverPositions.LookupOrInsert(newPopover, index);
+
+  if (isPopover) {
+    popoverPositions.LookupOrInsert(newPopover, index);
+  }
 
   Element* topmostPopoverAncestor = nullptr;
 
@@ -5161,6 +5184,16 @@ EditorBase* Element::GetEditorWithoutCreation() const {
 
 void Element::SetHTMLUnsafe(const nsAString& aHTML) {
   nsContentUtils::SetHTMLUnsafe(this, this, aHTML);
+}
+
+bool Element::BlockingContainsRender() const {
+  const nsAttrValue* attrValue = GetParsedAttr(nsGkAtoms::blocking);
+  if (!attrValue || !StaticPrefs::dom_element_blocking_enabled()) {
+    return false;
+  }
+  MOZ_ASSERT(attrValue->Type() == nsAttrValue::eAtomArray,
+             "Checking blocking attribute on element that doesn't parse it?");
+  return attrValue->Contains(nsGkAtoms::render, eIgnoreCase);
 }
 
 }  // namespace mozilla::dom

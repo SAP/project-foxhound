@@ -375,6 +375,15 @@ struct IntrinsicSize {
     return width && height ? Some(nsSize(*width, *height)) : Nothing();
   }
 
+  void Zoom(const StyleZoom& aZoom) {
+    if (width) {
+      *width = aZoom.ZoomCoord(*width);
+    }
+    if (height) {
+      *height = aZoom.ZoomCoord(*height);
+    }
+  }
+
   bool operator==(const IntrinsicSize& rhs) const {
     return width == rhs.width && height == rhs.height;
   }
@@ -553,6 +562,8 @@ enum class LayoutFrameClassFlags : uint16_t {
   SupportsContainLayoutAndPaint = 1 << 13,
   // Whether this frame class supports the `aspect-ratio` property.
   SupportsAspectRatio = 1 << 14,
+  // Whether this frame class is always a BFC.
+  BlockFormattingContext = 1 << 15,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(LayoutFrameClassFlags)
@@ -1345,14 +1356,16 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(PageValuesProperty, PageValues)
 
   const nsAtom* GetStartPageValue() const {
-    if (const PageValues* const values = GetProperty(PageValuesProperty())) {
+    if (const PageValues* const values =
+            FirstInFlow()->GetProperty(PageValuesProperty())) {
       return values->mStartPageValue;
     }
     return nullptr;
   }
 
   const nsAtom* GetEndPageValue() const {
-    if (const PageValues* const values = GetProperty(PageValuesProperty())) {
+    if (const PageValues* const values =
+            FirstInFlow()->GetProperty(PageValuesProperty())) {
       return values->mEndPageValue;
     }
     return nullptr;
@@ -1368,6 +1381,8 @@ class nsIFrame : public nsQueryFrame {
     MOZ_ASSERT(pageName.IsAuto(), "Impossible page name");
     return nullptr;
   }
+
+  bool HasUnreflowedContainerQueryAncestor() const;
 
  private:
   // The value that the CSS page-name "auto" keyword resolves to for children
@@ -1632,7 +1647,13 @@ class nsIFrame : public nsQueryFrame {
   // This is intended to be used either on the root frame to find the first
   // page's page-name, or on a newly created continuation to find what the new
   // page's page-name will be.
-  const nsAtom* ComputePageValue() const MOZ_NONNULL_RETURN;
+  //
+  // The auto page value can be set by the caller. This is useful when trying
+  // to compute a page value in the middle of a frame tree. In that case the
+  // auto value can be found from the AutoPageValue frame property of the
+  // parent frame. A null auto value is interpreted as the empty-string atom.
+  const nsAtom* ComputePageValue(const nsAtom* aAutoValue = nullptr) const
+      MOZ_NONNULL_RETURN;
 
   ///////////////////////////////////////////////////////////////////////////////
   // The public visibility API.
@@ -2327,7 +2348,7 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Get the cursor for a given frame.
    */
-  virtual Maybe<Cursor> GetCursor(const nsPoint&);
+  virtual Cursor GetCursor(const nsPoint&);
 
   /**
    * Get a point (in the frame's coordinate space) given an offset into
@@ -3016,6 +3037,9 @@ class nsIFrame : public nsQueryFrame {
   nsSize OverflowClipMargin(PhysicalAxes aClipAxes) const;
   // Returns the axes on which this frame should apply overflow clipping.
   PhysicalAxes ShouldApplyOverflowClipping(const nsStyleDisplay* aDisp) const;
+  // Returns whether this frame is a block that was supposed to be a
+  // scrollframe, but that was suppressed for print.
+  bool IsSuppressedScrollableBlockForPrint() const;
 
   /**
    * Helper method used by block reflow to identify runs of text so
@@ -3290,13 +3314,6 @@ class nsIFrame : public nsQueryFrame {
    * ancestor due to `content-visibility`.
    */
   bool IsHiddenByContentVisibilityOfInFlowParentForLayout() const;
-
-  /**
-   * Whether or not this frame's content is a descendant of a top layer element
-   * used to determine if this frame is relevant content for
-   * `content-visibility: auto`.
-   */
-  bool IsDescendantOfTopLayerElement() const;
 
   /**
    * Returns true if this frame has a SelectionType::eNormal type selection in
@@ -4082,6 +4099,16 @@ class nsIFrame : public nsQueryFrame {
 
   mozilla::ContainSizeAxes GetContainSizeAxes() const {
     return StyleDisplay()->GetContainSizeAxes(*this);
+  }
+
+  // Common steps to all replaced elements given an unconstrained intrinsic
+  // size.
+  mozilla::IntrinsicSize FinishIntrinsicSize(
+      const mozilla::ContainSizeAxes& aAxes,
+      const mozilla::IntrinsicSize& aUncontainedSize) const {
+    auto result = aAxes.ContainIntrinsicSize(aUncontainedSize, *this);
+    result.Zoom(Style()->EffectiveZoom());
+    return result;
   }
 
   Maybe<nscoord> ContainIntrinsicBSize(nscoord aNoneValue = 0) const {

@@ -173,6 +173,7 @@ if CONFIG["MOZ_ENABLE_DBUS"]:
     ]
     UNIFIED_SOURCES += [
         "AsyncDBus.cpp",
+        "DBusMenu.cpp",
     ]
     CXXFLAGS += CONFIG["MOZ_DBUS_CFLAGS"]
 

@@ -4,66 +4,79 @@
 
 "use strict";
 
-loader.lazyGetter(this, "TARGET_TYPES", function () {
-  return require("resource://devtools/shared/commands/target/target-command.js")
-    .TYPES;
-});
-
 class TracerCommand {
   constructor({ commands }) {
-    this.#targetCommand = commands.targetCommand;
+    this.#targetConfigurationCommand = commands.targetConfigurationCommand;
+    this.#resourceCommand = commands.resourceCommand;
   }
-  #targetCommand;
+
+  #resourceCommand;
+  #targetConfigurationCommand;
   #isTracing = false;
+
+  async initialize() {
+    return this.#resourceCommand.watchResources(
+      [this.#resourceCommand.TYPES.JSTRACER_STATE],
+      { onAvailable: this.onResourcesAvailable }
+    );
+  }
+  destroy() {
+    this.#resourceCommand.unwatchResources(
+      [this.#resourceCommand.TYPES.JSTRACER_STATE],
+      { onAvailable: this.onResourcesAvailable }
+    );
+  }
+
+  onResourcesAvailable = resources => {
+    for (const resource of resources) {
+      if (resource.resourceType != this.#resourceCommand.TYPES.JSTRACER_STATE) {
+        continue;
+      }
+      this.#isTracing = resource.enabled;
+    }
+  };
+
+  /**
+   * Get the dictionary passed to the server codebase as a SessionData.
+   * This contains all settings to fine tune the tracer actual behavior.
+   *
+   * @return {JSON}
+   *         Configuration object.
+   */
+  #getTracingOptions() {
+    return {
+      logMethod: Services.prefs.getStringPref(
+        "devtools.debugger.javascript-tracing-log-method",
+        ""
+      ),
+      traceValues: Services.prefs.getBoolPref(
+        "devtools.debugger.javascript-tracing-values",
+        false
+      ),
+      traceOnNextInteraction: Services.prefs.getBoolPref(
+        "devtools.debugger.javascript-tracing-on-next-interaction",
+        false
+      ),
+      traceOnNextLoad: Services.prefs.getBoolPref(
+        "devtools.debugger.javascript-tracing-on-next-load",
+        false
+      ),
+      traceFunctionReturn: Services.prefs.getBoolPref(
+        "devtools.debugger.javascript-tracing-function-return",
+        false
+      ),
+    };
+  }
 
   /**
    * Toggle JavaScript tracing for all targets.
-   *
-   * @param {String} logMethod (optional)
-   *        Where to log the traces. Can be console or stdout.
    */
-  async toggle(logMethod) {
+  async toggle() {
     this.#isTracing = !this.#isTracing;
 
-    // If no explicit log method is passed, default to the preference value.
-    if (!logMethod && this.#isTracing) {
-      logMethod = Services.prefs.getStringPref(
-        "devtools.debugger.javascript-tracing-log-method",
-        ""
-      );
-    }
-
-    const traceValues = Services.prefs.getBoolPref(
-      "devtools.debugger.javascript-tracing-values",
-      false
-    );
-
-    const traceOnNextInteraction = Services.prefs.getBoolPref(
-      "devtools.debugger.javascript-tracing-on-next-interaction",
-      false
-    );
-
-    const targets = this.#targetCommand.getAllTargets(
-      this.#targetCommand.ALL_TYPES
-    );
-    await Promise.all(
-      targets.map(async targetFront => {
-        const tracerFront = await targetFront.getFront("tracer");
-
-        // Bug 1848136: For now the tracer doesn't work for worker targets.
-        if (tracerFront.targetType == TARGET_TYPES.WORKER) {
-          return null;
-        }
-
-        if (this.#isTracing) {
-          return tracerFront.startTracing(logMethod, {
-            traceValues,
-            traceOnNextInteraction,
-          });
-        }
-        return tracerFront.stopTracing();
-      })
-    );
+    await this.#targetConfigurationCommand.updateConfiguration({
+      tracerOptions: this.#isTracing ? this.#getTracingOptions() : undefined,
+    });
   }
 }
 

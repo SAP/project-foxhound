@@ -12,8 +12,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.sys.mjs",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
-  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
-  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 const TELEMETRY_1ST_RESULT = "PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS";
@@ -154,10 +152,6 @@ export class UrlbarController {
    * can't be cancelled.
    */
   cancelQuery() {
-    // We must clear the pause impression timer in any case, even if the query
-    // already finished.
-    this.engagementEvent.clearPauseImpressionTimer();
-
     // If the query finished already, don't handle cancel.
     if (!this._lastQueryContextWrapper || this._lastQueryContextWrapper.done) {
       return;
@@ -185,11 +179,6 @@ export class UrlbarController {
     if (queryContext.lastResultCount < 6 && queryContext.results.length >= 6) {
       TelemetryStopwatch.finish(TELEMETRY_6_FIRST_RESULTS, queryContext);
     }
-
-    this.engagementEvent.startPauseImpressionTimer(
-      queryContext,
-      this.input.getSearchSource()
-    );
 
     if (queryContext.firstResultChanged) {
       // Notify the input so it can make adjustments based on the first result.
@@ -719,7 +708,6 @@ class TelemetryEvent {
   constructor(controller, category) {
     this._controller = controller;
     this._category = category;
-    this.#exposureResultTypes = new Set();
     this.#beginObservingPingPrefs();
   }
 
@@ -833,8 +821,6 @@ class TelemetryEvent {
    * @param {DOMElement} [details.element] The picked view element.
    */
   record(event, details) {
-    this.clearPauseImpressionTimer();
-
     // This should never throw, or it may break the urlbar.
     try {
       this._internalRecord(event, details);
@@ -851,52 +837,6 @@ class TelemetryEvent {
         this._discarded = false;
       }
     }
-  }
-
-  /**
-   * Clear the pause impression timer started by startPauseImpressionTimer().
-   */
-  clearPauseImpressionTimer() {
-    lazy.clearTimeout(this._pauseImpressionTimer);
-  }
-
-  /**
-   * Start a timer that records the pause impression telemetry for given context.
-   * The telemetry will be recorded after
-   * "browser.urlbar.searchEngagementTelemetry.pauseImpressionIntervalMs" ms.
-   * If want to clear this timer, please use clearPauseImpressionTimer().
-   *
-   * @param {UrlbarQueryContext} queryContext
-   *        The query details that will be recorded as pause impression telemetry.
-   * @param {string} searchSource
-   *        The seach source that will be recorded as pause impression telemetry.
-   */
-  startPauseImpressionTimer(queryContext, searchSource) {
-    if (this._impressionStartEventInfo === this._startEventInfo) {
-      // Already took an impression telemetry for this session.
-      return;
-    }
-
-    this.clearPauseImpressionTimer();
-    this._pauseImpressionTimer = lazy.setTimeout(() => {
-      let { numChars, numWords, searchWords } = this._parseSearchString(
-        queryContext.searchString
-      );
-      this._recordSearchEngagementTelemetry(
-        queryContext,
-        "impression",
-        this._startEventInfo,
-        {
-          reason: "pause",
-          numChars,
-          numWords,
-          searchWords,
-          searchSource,
-        }
-      );
-
-      this._impressionStartEventInfo = this._startEventInfo;
-    }, lazy.UrlbarPrefs.get("searchEngagementTelemetry.pauseImpressionIntervalMs"));
   }
 
   _internalRecord(event, details) {
@@ -933,6 +873,8 @@ class TelemetryEvent {
         startEventInfo.interactionType == "dropped" ? "drop_go" : "paste_go";
     } else if (event.type == "blur") {
       action = "blur";
+    } else if (event.type == "tabswitch") {
+      action = "tab_switch";
     } else if (
       details.element?.dataset.command &&
       // The "help" selType is recognized by legacy telemetry, and `action`
@@ -951,7 +893,8 @@ class TelemetryEvent {
       action = "enter";
     }
 
-    let method = action == "blur" ? "abandonment" : "engagement";
+    let method =
+      action == "blur" || action == "tab_switch" ? "abandonment" : "engagement";
 
     if (method == "engagement") {
       // Not all engagements end the search session. The session remains ongoing
@@ -1119,6 +1062,7 @@ class TelemetryEvent {
       };
     } else if (method === "abandonment") {
       eventInfo = {
+        abandonment_type: action,
         sap,
         interaction,
         search_mode,
@@ -1148,18 +1092,20 @@ class TelemetryEvent {
     }
 
     // First check to see if we can record an exposure event
-    if (
-      (method === "abandonment" || method === "engagement") &&
-      this.#exposureResultTypes.size
-    ) {
-      const exposureResults = Array.from(this.#exposureResultTypes).join(",");
-      this._controller.logger.debug(
-        `exposure event: ${JSON.stringify({ results: exposureResults })}`
-      );
-      Glean.urlbar.exposure.record({ results: exposureResults });
+    if (method === "abandonment" || method === "engagement") {
+      if (this.#exposureResultTypes.size) {
+        let exposure = {
+          results: [...this.#exposureResultTypes].sort().join(","),
+        };
+        this._controller.logger.debug(
+          `exposure event: ${JSON.stringify(exposure)}`
+        );
+        Glean.urlbar.exposure.record(exposure);
+      }
 
       // reset the provider list on the controller
       this.#exposureResultTypes.clear();
+      this.#tentativeExposureResultTypes.clear();
     }
 
     this._controller.logger.info(
@@ -1170,14 +1116,52 @@ class TelemetryEvent {
   }
 
   /**
-   * Add result type to engagementEvent instance exposureResultTypes Set.
+   * Registers an exposure for a result in the current urlbar session. All
+   * exposures that are added during a session are recorded in an exposure event
+   * at the end of the session. Exposures are cleared at the end of each session
+   * and do not carry over to the next session.
    *
-   * @param {UrlbarResult} result UrlbarResult to have exposure recorded.
+   * @param {UrlbarResult} result An exposure will be added for this result if
+   *        exposures are enabled for its result type.
    */
   addExposure(result) {
     if (result.exposureResultType) {
       this.#exposureResultTypes.add(result.exposureResultType);
     }
+  }
+
+  /**
+   * Registers a tentative exposure for a result in the current urlbar session.
+   * Exposures that remain tentative at the end of the session are discarded and
+   * are not recorded in the exposure event.
+   *
+   * @param {UrlbarResult} result A tentative exposure will be added for this
+   *        result if exposures are enabled for its result type.
+   */
+  addTentativeExposure(result) {
+    if (result.exposureResultType) {
+      this.#tentativeExposureResultTypes.add(result.exposureResultType);
+    }
+  }
+
+  /**
+   * Converts all tentative exposures that were added and not yet discarded
+   * during the current urlbar session into actual exposures that will be
+   * recorded at the end of the session.
+   */
+  acceptTentativeExposures() {
+    for (let type of this.#tentativeExposureResultTypes) {
+      this.#exposureResultTypes.add(type);
+    }
+    this.#tentativeExposureResultTypes.clear();
+  }
+
+  /**
+   * Discards all tentative exposures that were added and not yet accepted
+   * during the current urlbar session.
+   */
+  discardTentativeExposures() {
+    this.#tentativeExposureResultTypes.clear();
   }
 
   #getInteractionType(
@@ -1306,7 +1290,6 @@ class TelemetryEvent {
    * no-op.
    */
   discard() {
-    this.clearPauseImpressionTimer();
     if (this._startEventInfo) {
       this._startEventInfo = null;
       this._discarded = true;
@@ -1369,5 +1352,6 @@ class TelemetryEvent {
 
   #previousSearchWordsSet = null;
 
-  #exposureResultTypes;
+  #exposureResultTypes = new Set();
+  #tentativeExposureResultTypes = new Set();
 }

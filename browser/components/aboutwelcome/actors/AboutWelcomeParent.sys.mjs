@@ -2,12 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AboutWelcomeDefaults:
+    "resource:///modules/aboutwelcome/AboutWelcomeDefaults.sys.mjs",
+  AboutWelcomeTelemetry:
+    "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
+  AWScreenUtils: "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
@@ -15,14 +18,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ShellService: "resource:///modules/ShellService.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  AboutWelcomeTelemetry:
-    "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.jsm",
-  AboutWelcomeDefaults:
-    "resource:///modules/aboutwelcome/AboutWelcomeDefaults.jsm",
-  AWScreenUtils: "resource:///modules/aboutwelcome/AWScreenUtils.jsm",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -90,6 +85,8 @@ class AboutWelcomeObserver {
 
   stop() {
     lazy.log.debug(`Terminate reason is ${this.terminateReason}`);
+    // Clear the entrypoint pref
+    Services.prefs.clearUserPref("browser.aboutwelcome.entrypoint");
     Services.obs.removeObserver(this, "quit-application");
     if (!this.win) {
       return;
@@ -137,7 +134,7 @@ export class AboutWelcomeParent extends JSWindowActorParent {
   }
 
   /**
-   * Handle messages from AboutWelcomeChild.jsm
+   * Handle messages from AboutWelcomeChild.sys.mjs
    *
    * @param {string} type
    * @param {any=} data
@@ -165,6 +162,26 @@ export class AboutWelcomeParent extends JSWindowActorParent {
         let attributionData =
           await lazy.AboutWelcomeDefaults.getAttributionContent();
         return attributionData;
+      case "AWPage:ENSURE_ADDON_INSTALLED":
+        return new Promise(resolve => {
+          let listener = {
+            onInstallEnded(install, addon) {
+              if (addon.id === data) {
+                lazy.AddonManager.removeInstallListener(listener);
+                resolve("complete");
+              }
+            },
+            onInstallCancelled() {
+              lazy.AddonManager.removeInstallListener(listener);
+              resolve("install cancelled");
+            },
+            onInstallFailed() {
+              lazy.AddonManager.removeInstallListener(listener);
+              resolve("install failed");
+            },
+          };
+          lazy.AddonManager.addInstallListener(listener);
+        });
       case "AWPage:GET_ADDON_DETAILS":
         let addonDetails =
           await lazy.AboutWelcomeDefaults.getAddonFromRepository(data);
@@ -258,7 +275,7 @@ export class AboutWelcomeParent extends JSWindowActorParent {
 
 export class AboutWelcomeShoppingParent extends AboutWelcomeParent {
   /**
-   * Handle messages from AboutWelcomeChild.jsm
+   * Handle messages from AboutWelcomeChild.sys.mjs
    *
    * @param {string} type
    * @param {any=} data

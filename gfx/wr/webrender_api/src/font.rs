@@ -5,7 +5,7 @@
 use peek_poke::PeekPoke;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use std::path::PathBuf;
 use std::sync::Arc;
 // local imports
@@ -52,14 +52,14 @@ impl FontSize {
     pub fn to_f64_px(&self) -> f64 { self.0 as f64 }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 #[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NativeFontHandle {
     pub path: PathBuf,
     pub index: u32,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 #[derive(Clone, Debug, Hash, Eq, PartialEq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct NativeFontHandle {
     pub name: String,
@@ -182,7 +182,7 @@ impl Default for GlyphOptions {
 }
 
 #[repr(C)]
-#[derive(Debug, Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash, Deserialize, MallocSizeOf, Serialize, PeekPoke)]
+#[derive(Copy, PartialEq, Eq, Clone, PartialOrd, Ord, Hash, Deserialize, MallocSizeOf, Serialize, PeekPoke)]
 pub struct FontInstanceFlags(u32);
 
 bitflags! {
@@ -220,19 +220,29 @@ bitflags! {
     }
 }
 
+impl core::fmt::Debug for FontInstanceFlags {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        if self.is_empty() {
+            write!(f, "{:#x}", Self::empty().bits())
+        } else {
+            bitflags::parser::to_writer(self, f)
+        }
+    }
+}
+
 impl Default for FontInstanceFlags {
     #[cfg(target_os = "windows")]
     fn default() -> FontInstanceFlags {
         FontInstanceFlags::SUBPIXEL_POSITION
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     fn default() -> FontInstanceFlags {
         FontInstanceFlags::SUBPIXEL_POSITION |
         FontInstanceFlags::FONT_SMOOTHING
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
     fn default() -> FontInstanceFlags {
         FontInstanceFlags::SUBPIXEL_POSITION
     }
@@ -322,14 +332,14 @@ impl Default for FontInstancePlatformOptions {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, MallocSizeOf, PartialEq, PartialOrd, Ord, Serialize)]
 pub struct FontInstancePlatformOptions {
     pub unused: u32,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 impl Default for FontInstancePlatformOptions {
     fn default() -> FontInstancePlatformOptions {
         FontInstancePlatformOptions {
@@ -338,7 +348,7 @@ impl Default for FontInstancePlatformOptions {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, PartialOrd, Ord, Serialize)]
 pub enum FontLCDFilter {
@@ -348,7 +358,7 @@ pub enum FontLCDFilter {
     Legacy,
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, PartialOrd, Ord, Serialize)]
 pub enum FontHinting {
@@ -359,7 +369,7 @@ pub enum FontHinting {
     LCD,
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Deserialize, Hash, Eq, MallocSizeOf, PartialEq, PartialOrd, Ord, Serialize)]
 pub struct FontInstancePlatformOptions {
@@ -367,7 +377,7 @@ pub struct FontInstancePlatformOptions {
     pub hinting: FontHinting,
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "windows")))]
 impl Default for FontInstancePlatformOptions {
     fn default() -> FontInstancePlatformOptions {
         FontInstancePlatformOptions {

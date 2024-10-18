@@ -11,6 +11,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
+  OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
 });
 
 const BinaryInputStream = Components.Constructor(
@@ -59,6 +60,10 @@ var OS_UNSUPPORTED_PARAMS = [
   [OS_PARAM_START_INDEX, OS_PARAM_START_INDEX_DEF],
   [OS_PARAM_START_PAGE, OS_PARAM_START_PAGE_DEF],
 ];
+
+// An array of attributes that are saved in the engines `_metaData` object.
+// Attributes not in this array are considered as system attributes.
+const USER_ATTRIBUTES = ["alias", "order", "hideOneOffButton"];
 
 /**
  * Truncates big blobs of (data-)URIs to console-friendly sizes
@@ -562,9 +567,6 @@ export class SearchEngine {
   _loadPath = null;
   // The engine's description
   _description = "";
-  // Used to store the engine to replace, if we're an update to an existing
-  // engine.
-  _engineToUpdate = null;
   // Set to true if the engine has a preferred icon (an icon that should not be
   // overridden by a non-preferred icon).
   _hasPreferredIcon = null;
@@ -800,10 +802,7 @@ export class SearchEngine {
         let listener = new lazy.SearchUtils.LoadListener(
           chan,
           /^image\//,
-          // If we're currently acting as an "update engine", then the callback
-          // should set the icon on the engine we're updating and not us, since
-          // |this| might be gone by the time the callback runs.
-          iconLoadCallback.bind(this._engineToUpdate || this)
+          iconLoadCallback.bind(this)
         );
         chan.notificationCallbacks = listener;
         chan.asyncOpen(listener);
@@ -927,7 +926,7 @@ export class SearchEngine {
   /**
    * This sets the urls for the search engine based on the supplied parameters.
    * If you add anything here, please consider if it needs to be handled in the
-   * overrideWithExtension / removeExtensionOverride functions as well.
+   * overrideWithEngine / removeExtensionOverride functions as well.
    *
    * @param {object} details
    *   The details of the engine.
@@ -1044,26 +1043,43 @@ export class SearchEngine {
   }
 
   /**
-   * Overrides the urls/parameters with those of the provided extension.
-   * The parameters are not saved to the search settings - the code handling
+   * Overrides the urls/parameters with those of the provided engine or extension.
+   * The url parameters are not saved to the search settings - the code handling
    * the extension should set these on every restart, this avoids potential
    * third party modifications and means that we can verify the WebExtension is
    * still in the allow list.
    *
-   * @param {string} extensionID
-   *   The WebExtension ID. For Policy engines, this is currently "set-via-policy".
-   * @param {object} manifest
-   *   An object representing the WebExtensions' manifest.
+   * @param {string} options
+   *   The options for this function.
+   * @param {AddonSearchEngine|OpenSearchEngine} [options.engine]
+   *   The search engine to override with this engine. If not specified, `manifest`
+   *   must be provided.
+   * @param {object} [options.extension]
+   *   An object representing the WebExtensions. If not specified,
+   *   `engine` must be provided
    */
-  overrideWithExtension(extensionID, manifest) {
+  overrideWithEngine({ engine, extension }) {
     this._overriddenData = {
       urls: this._urls,
       queryCharset: this._queryCharset,
       searchForm: this.#cachedSearchForm,
     };
-    this._urls = [];
-    this.setAttr("overriddenBy", extensionID);
-    this._setUrls(manifest.chrome_settings_overrides.search_provider);
+    if (engine) {
+      // Copy any saved user data (alias, order etc).
+      this.copyUserSettingsFrom(engine);
+
+      this._urls = engine._urls;
+      this.setAttr("overriddenBy", engine._extensionID ?? engine.id);
+      if (engine instanceof lazy.OpenSearchEngine) {
+        this.setAttr("overriddenByOpenSearch", engine.toJSON());
+      }
+    } else {
+      this._urls = [];
+      this.setAttr("overriddenBy", extension.id);
+      this._setUrls(
+        extension.manifest.chrome_settings_overrides.search_provider
+      );
+    }
     lazy.SearchUtils.notifyAction(this, lazy.SearchUtils.MODIFIED_TYPE.CHANGED);
   }
 
@@ -1089,6 +1105,22 @@ export class SearchEngine {
         this,
         lazy.SearchUtils.MODIFIED_TYPE.CHANGED
       );
+    }
+  }
+
+  /**
+   * Copies settings from the supplied search engine. Typically used for
+   * restoring settings when removing an override.
+   *
+   * @param {SearchEngine|object} engine
+   *   The engine to copy the settings from, or the engine settings from
+   *   the user's saved settings.
+   */
+  copyUserSettingsFrom(engine) {
+    for (let attribute of USER_ATTRIBUTES) {
+      if (attribute in engine._metaData) {
+        this._metaData[attribute] = engine._metaData[attribute];
+      }
     }
   }
 
@@ -1182,6 +1214,29 @@ export class SearchEngine {
 
   clearAttr(name) {
     delete this._metaData[name];
+  }
+
+  /**
+   * Loads engine settings (_metaData) from the list of settings, finding
+   * the appropriate details for this engine.
+   *
+   * @param {object} [settings]
+   *   The saved settings for the user.
+   */
+  _loadSettings(settings) {
+    if (!settings) {
+      return;
+    }
+
+    let engineSettings;
+    if (settings.version <= 6) {
+      engineSettings = settings.engines?.find(e => e._name == this.name);
+    } else {
+      engineSettings = settings.engines?.find(e => e.id == this.id);
+    }
+    if (engineSettings?._metaData) {
+      this._metaData = structuredClone(engineSettings._metaData);
+    }
   }
 
   /**
@@ -1630,9 +1685,9 @@ export class SearchEngine {
    * @param {number} preferredWidth
    *   Width of the requested icon. If not specified, it is assumed that
    *   16x16 is desired.
-   * @returns {string|undefined}
+   * @returns {Promise<string|undefined>}
    */
-  getIconURL(preferredWidth) {
+  async getIconURL(preferredWidth) {
     // XPCOM interfaces pass optional number parameters as 0 and can't be
     // handled in the same way.
     if (!preferredWidth) {

@@ -258,6 +258,10 @@ void MacroAssembler::add32(Imm32 imm, Register dest) {
   Add(ARMRegister(dest, 32), ARMRegister(dest, 32), Operand(imm.value));
 }
 
+void MacroAssembler::add32(Imm32 imm, Register src, Register dest) {
+  Add(ARMRegister(dest, 32), ARMRegister(src, 32), Operand(imm.value));
+}
+
 void MacroAssembler::add32(Imm32 imm, const Address& dest) {
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch32 = temps.AcquireW();
@@ -2071,6 +2075,25 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
 void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
                                  const Address& src, Register dest) {
   MOZ_CRASH("NYI");
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Imm32 rhs,
+                                 const Address& src, Register dest) {
+  // ARM64 does not support conditional loads, so we use a branch with a CSel
+  // (to prevent Spectre attacks).
+  vixl::UseScratchRegisterScope temps(this);
+  const ARMRegister scratch32 = temps.AcquireW();
+
+  // Can't use branch32() here, because it may select Cbz/Cbnz which don't
+  // affect condition flags.
+  Label done;
+  cmp32(lhs, rhs);
+  B(&done, Assembler::InvertCondition(cond));
+
+  load32(src, scratch32.asUnsized());
+  Csel(ARMRegister(dest, 32), scratch32, ARMRegister(dest, 32), cond);
+
+  bind(&done);
 }
 
 void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,

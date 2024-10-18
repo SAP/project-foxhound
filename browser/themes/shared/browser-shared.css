@@ -428,6 +428,11 @@ menupopup::part(drop-indicator) {
       transition: opacity 200ms ease-out, visibility 200ms;
     }
   }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-bool-pref: "browser.tabs.hideStatusPanel") {
+    visibility: hidden;
+  }
 }
 
 #statuspanel-label {
@@ -716,7 +721,6 @@ menupopup::part(drop-indicator) {
 
   &[data-notification-category="addon_recommendation"] {
     .popup-notification-description > b {
-      font-weight: 300;
       padding-inline-start: 5px;
     }
 
@@ -927,20 +931,6 @@ popupnotificationcontent {
 
 .popup-notification-body :is(description, label:not(.learnMore), checkbox, input) {
   margin-inline: 0;
-}
-
-.popup-notification-body :is(input, textarea) {
-  padding: 8px;
-  border-radius: 4px;
-  border: 0;
-  outline: 1px solid var(--input-border-color, ThreeDShadow);
-  outline-offset: -1px;
-  background-color: var(--input-bgcolor, Field);
-  color: var(--input-color, FieldText);
-}
-
-.popup-notification-body input:focus-visible {
-  outline: 2px solid var(--focus-outline-color);
 }
 
 .popup-notification-description {

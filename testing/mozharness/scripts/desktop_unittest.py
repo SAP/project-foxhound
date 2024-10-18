@@ -546,9 +546,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
             )
 
         for requirements_file in requirements_files:
-            self.register_virtualenv_module(
-                requirements=[requirements_file], two_pass=True
-            )
+            self.register_virtualenv_module(requirements=[requirements_file])
 
         _python_interp = self.query_exe("python")
         if "win" in self.platform_name() and os.path.exists(_python_interp):
@@ -666,6 +664,9 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 base_cmd.append("--use-http3-server")
             elif c["useHttp2Server"]:
                 base_cmd.append("--use-http2-server")
+
+            if c["restartAfterFailure"]:
+                base_cmd.append("--restart-after-failure")
 
             # Ignore chunking if we have user specified test paths
             if not (self.verify_enabled or self.per_test_coverage):

@@ -1,17 +1,7 @@
 /**
- * Copyright 2020 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2020 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import {describe, it} from 'node:test';
@@ -138,6 +128,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:8907/redirect/1.html',
         status: 302,
         statusText: 'Found',
+        charset: 'utf-8',
         headers: {
           location: '/redirect/2.html',
           Date: 'Fri, 19 Nov 2021 09:53:58 GMT',
@@ -227,6 +218,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:8907/redirect/2.html',
         status: 302,
         statusText: 'Found',
+        charset: 'utf-8',
         headers: {
           location: '/redirect/3.html',
           Date: 'Fri, 19 Nov 2021 09:53:58 GMT',
@@ -331,6 +323,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:8907/redirect/3.html',
         status: 302,
         statusText: 'Found',
+        charset: 'utf-8',
         headers: {
           location: 'http://localhost:8907/empty.html',
           Date: 'Fri, 19 Nov 2021 09:53:58 GMT',
@@ -443,6 +436,7 @@ describe('NetworkManager', () => {
           'Keep-Alive': 'timeout=5',
           'Content-Length': '0',
         },
+        charset: 'utf-8',
         mimeType: 'text/html',
         connectionReused: true,
         connectionId: 322,
@@ -623,6 +617,7 @@ describe('NetworkManager', () => {
           connection: 'keep-alive',
           'content-length': '85862',
         },
+        charset: 'utf-8',
         mimeType: 'text/plain',
         connectionReused: false,
         connectionId: 119,
@@ -735,6 +730,7 @@ describe('NetworkManager', () => {
         url: 'http://10.1.0.39:42915/empty.html',
         status: 200,
         statusText: 'OK',
+        charset: 'utf-8',
         headers: {
           'Cache-Control': 'no-cache, no-store',
           Connection: 'keep-alive',
@@ -942,6 +938,7 @@ describe('NetworkManager', () => {
         url: 'http://127.0.0.1:54590/empty.html',
         status: 200,
         statusText: 'OK',
+        charset: 'utf-8',
         headers: {
           'Cache-Control': 'no-cache, no-store',
           Connection: 'keep-alive',
@@ -1046,6 +1043,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:56295/empty.html',
         status: 200,
         statusText: 'OK',
+        charset: 'utf-8',
         headers: {
           'Cache-Control': 'no-cache, no-store',
           Connection: 'keep-alive',
@@ -1231,6 +1229,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:3000/',
         status: 200,
         statusText: 'OK',
+        charset: 'utf-8',
         headers: {
           'Cache-Control': 'max-age=5',
           Connection: 'keep-alive',
@@ -1404,6 +1403,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:3000/redirect',
         status: 302,
         statusText: 'Found',
+        charset: 'utf-8',
         headers: {
           Connection: 'keep-alive',
           Date: 'Wed, 05 Apr 2023 12:39:13 GMT',
@@ -1467,6 +1467,7 @@ describe('NetworkManager', () => {
         url: 'http://localhost:3000/',
         status: 200,
         statusText: 'OK',
+        charset: 'utf-8',
         headers: {
           'Cache-Control': 'max-age=5',
           'Content-Type': 'text/html; charset=utf-8',

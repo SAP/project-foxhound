@@ -21,6 +21,7 @@
 #include "nsINode.h"        // nsIURI
 #include "nsThreadUtils.h"  // GetMainThreadSerialEventTarget
 #include "nsURIHashKey.h"
+#include "mozilla/Attributes.h"  // MOZ_RAII
 #include "mozilla/CORSMode.h"
 #include "mozilla/dom/JSExecutionContext.h"
 #include "mozilla/MaybeOneOf.h"
@@ -185,28 +186,34 @@ class ModuleLoaderBase : public nsISupports {
 
   nsCOMPtr<nsIGlobalObject> mGlobalObject;
 
+  // If non-null, this module loader is overridden by the module loader pointed
+  // by mOverriddenBy.
+  // See ModuleLoaderBase::GetCurrentModuleLoader for more details.
+  RefPtr<ModuleLoaderBase> mOverriddenBy;
+
   // https://html.spec.whatwg.org/multipage/webappapis.html#import-maps-allowed
   //
   // Each Window has an import maps allowed boolean, initially true.
   bool mImportMapsAllowed = true;
 
  protected:
-  // Event handler used to dispatch runnables, used internally to wait for
-  // fetches to finish and for imports to become avilable.
-  nsCOMPtr<nsISerialEventTarget> mEventTarget;
   RefPtr<ScriptLoaderInterface> mLoader;
 
   mozilla::UniquePtr<ImportMap> mImportMap;
 
   virtual ~ModuleLoaderBase();
 
+#ifdef DEBUG
+  const ScriptLoadRequestList& DynamicImportRequests() const {
+    return mDynamicImportRequests;
+  }
+#endif
+
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(ModuleLoaderBase)
   explicit ModuleLoaderBase(ScriptLoaderInterface* aLoader,
-                            nsIGlobalObject* aGlobalObject,
-                            nsISerialEventTarget* aEventTarget =
-                                mozilla::GetMainThreadSerialEventTarget());
+                            nsIGlobalObject* aGlobalObject);
 
   // Called to break cycles during shutdown to prevent memory leaks.
   void Shutdown();
@@ -233,6 +240,9 @@ class ModuleLoaderBase : public nsISupports {
   virtual already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
       JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
       JS::Handle<JSString*> aSpecifier, JS::Handle<JSObject*> aPromise) = 0;
+
+  // Called when dynamic import started successfully.
+  virtual void OnDynamicImportStarted(ModuleLoadRequest* aRequest) {}
 
   // Check whether we can load a module. May return false with |aRvOut| set to
   // NS_OK to abort load without returning an error.
@@ -272,6 +282,8 @@ class ModuleLoaderBase : public nsISupports {
 
   nsIGlobalObject* GetGlobalObject() const { return mGlobalObject; }
 
+  bool HasFetchingModules() const;
+
   bool HasPendingDynamicImports() const;
   void CancelDynamicImport(ModuleLoadRequest* aRequest, nsresult aResult);
 #ifdef DEBUG
@@ -298,7 +310,7 @@ class ModuleLoaderBase : public nsISupports {
   nsresult EvaluateModuleInContext(JSContext* aCx, ModuleLoadRequest* aRequest,
                                    JS::ModuleErrorBehaviour errorBehaviour);
 
-  void StartDynamicImport(ModuleLoadRequest* aRequest);
+  nsresult StartDynamicImport(ModuleLoadRequest* aRequest);
   void ProcessDynamicImport(ModuleLoadRequest* aRequest);
   void CancelAndClearDynamicImports();
 
@@ -324,6 +336,37 @@ class ModuleLoaderBase : public nsISupports {
   // Removed a fetched module from the module map. Asserts that the module is
   // unlinked. Extreme care should be taken when calling this method.
   bool RemoveFetchedModule(nsIURI* aURL);
+
+  // Override the module loader with given loader until ResetOverride is called.
+  // While overridden, ModuleLoaderBase::GetCurrentModuleLoader returns aLoader.
+  //
+  // This is used by mozJSModuleLoader to temporarily override the global's
+  // module loader with SyncModuleLoader while importing a module graph
+  // synchronously.
+  void SetOverride(ModuleLoaderBase* aLoader);
+
+  // Returns true if SetOverride was called.
+  bool IsOverridden();
+
+  // Returns true if SetOverride was called with aLoader.
+  bool IsOverriddenBy(ModuleLoaderBase* aLoader);
+
+  void ResetOverride();
+
+  // Copy fetched modules to `aDest`.
+  // `this` shouldn't have any fetching.
+  // `aDest` shouldn't have any fetching or fetched modules.
+  //
+  // This is used when starting sync module load, to replicate the module cache
+  // in the sync module loader pointed by `aDest`.
+  void CopyModulesTo(ModuleLoaderBase* aDest);
+
+  // Move all fetched modules to `aDest`.
+  // Both `this` and `aDest` shouldn't have any fetching.
+  //
+  // This is used when finishing sync module load, to reflect the loaded modules
+  // to the async module loader pointed by `aDest`.
+  void MoveModulesTo(ModuleLoaderBase* aDest);
 
   // Internal methods.
 
@@ -440,6 +483,18 @@ class ModuleLoaderBase : public nsISupports {
  public:
   static mozilla::LazyLogModule gCspPRLog;
   static mozilla::LazyLogModule gModuleLoaderBaseLog;
+};
+
+// Override the target module loader with given module loader while this
+// instance is on the stack.
+class MOZ_RAII AutoOverrideModuleLoader {
+ public:
+  AutoOverrideModuleLoader(ModuleLoaderBase* aTarget,
+                           ModuleLoaderBase* aLoader);
+  ~AutoOverrideModuleLoader();
+
+ private:
+  RefPtr<ModuleLoaderBase> mTarget;
 };
 
 }  // namespace loader

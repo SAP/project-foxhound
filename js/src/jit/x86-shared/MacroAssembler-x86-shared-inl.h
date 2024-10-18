@@ -163,6 +163,10 @@ void MacroAssembler::add32(Register src, Register dest) { addl(src, dest); }
 
 void MacroAssembler::add32(Imm32 imm, Register dest) { addl(imm, dest); }
 
+void MacroAssembler::add32(Imm32 imm, Register src, Register dest) {
+  leal(Operand(src, imm.value), dest);
+}
+
 void MacroAssembler::add32(Imm32 imm, const Address& dest) {
   addl(imm, Operand(dest));
 }
@@ -1171,6 +1175,12 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
   cmovCCl(cond, Operand(src), dest);
 }
 
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Imm32 rhs,
+                                 const Address& src, Register dest) {
+  cmp32(lhs, rhs);
+  cmovCCl(cond, Operand(src), dest);
+}
+
 void MacroAssembler::spectreZeroRegister(Condition cond, Register scratch,
                                          Register dest) {
   // Note: use movl instead of move32/xorl to ensure flags are not clobbered.
@@ -1236,7 +1246,8 @@ template FaultingCodeOffset MacroAssembler::storeFloat32(FloatRegister src,
 
 void MacroAssembler::memoryBarrier(MemoryBarrierBits barrier) {
   if (barrier & MembarStoreLoad) {
-    storeLoadFence();
+    // This implementation follows Linux.
+    masm.mfence();
   }
 }
 

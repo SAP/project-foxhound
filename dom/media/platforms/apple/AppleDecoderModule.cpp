@@ -124,8 +124,7 @@ DecodeSupportSet AppleDecoderModule::Supports(
     case MediaCodec::VP8:
       [[fallthrough]];
     case MediaCodec::VP9:
-      if (StaticPrefs::media_ffvpx_enabled() &&
-          StaticPrefs::media_rdd_vpx_enabled() &&
+      if (StaticPrefs::media_rdd_vpx_enabled() &&
           StaticPrefs::media_utility_ffvpx_enabled()) {
         dss += DecodeSupport::SoftwareDecode;
       }
@@ -233,6 +232,7 @@ bool AppleDecoderModule::CanCreateHWDecoder(MediaCodec aCodec) {
 
 /* static */
 bool AppleDecoderModule::RegisterSupplementalVP9Decoder() {
+#ifdef XP_MACOSX
   static bool sRegisterIfAvailable = []() {
     if (__builtin_available(macos 11.0, *)) {
       VTRegisterSupplementalVideoDecoderIfAvailable(kCMVideoCodecType_VP9);
@@ -241,6 +241,9 @@ bool AppleDecoderModule::RegisterSupplementalVP9Decoder() {
     return false;
   }();
   return sRegisterIfAvailable;
+#else  // iOS
+  return false;
+#endif
 }
 
 /* static */

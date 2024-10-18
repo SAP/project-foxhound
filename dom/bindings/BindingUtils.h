@@ -24,6 +24,8 @@
 #include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/DeferredFinalize.h"
+#include "mozilla/EnumTypeTraits.h"
+#include "mozilla/EnumeratedRange.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -1343,26 +1345,27 @@ inline bool EnumValueNotFound<true>(BindingCallContext& cx,
                                                       deflated.get(), type);
 }
 
+namespace binding_detail {
+
 template <typename CharT>
 inline int FindEnumStringIndexImpl(const CharT* chars, size_t length,
-                                   const EnumEntry* values) {
-  int i = 0;
-  for (const EnumEntry* value = values; value->value; ++value, ++i) {
-    if (length != value->length) {
+                                   const Span<const nsLiteralCString>& values) {
+  for (size_t i = 0; i < values.Length(); ++i) {
+    const nsLiteralCString& value = values[i];
+    if (length != value.Length()) {
       continue;
     }
 
     bool equal = true;
-    const char* val = value->value;
     for (size_t j = 0; j != length; ++j) {
-      if (unsigned(val[j]) != unsigned(chars[j])) {
+      if (unsigned(value.CharAt(j)) != unsigned(chars[j])) {
         equal = false;
         break;
       }
     }
 
     if (equal) {
-      return i;
+      return (int)i;
     }
   }
 
@@ -1371,8 +1374,9 @@ inline int FindEnumStringIndexImpl(const CharT* chars, size_t length,
 
 template <bool InvalidValueFatal>
 inline bool FindEnumStringIndex(BindingCallContext& cx, JS::Handle<JS::Value> v,
-                                const EnumEntry* values, const char* type,
-                                const char* sourceDescription, int* index) {
+                                const Span<const nsLiteralCString>& values,
+                                const char* type, const char* sourceDescription,
+                                int* index) {
   // JS_StringEqualsAscii is slow as molasses, so don't use it here.
   JS::Rooted<JSString*> str(cx, JS::ToString(cx, v));
   if (!str) {
@@ -1403,6 +1407,31 @@ inline bool FindEnumStringIndex(BindingCallContext& cx, JS::Handle<JS::Value> v,
   }
 
   return EnumValueNotFound<InvalidValueFatal>(cx, str, type, sourceDescription);
+}
+
+}  // namespace binding_detail
+
+template <typename Enum, class StringT>
+inline Maybe<Enum> StringToEnum(const StringT& aString) {
+  int index = binding_detail::FindEnumStringIndexImpl(
+      aString.BeginReading(), aString.Length(),
+      binding_detail::EnumStrings<Enum>::Values);
+  return index >= 0 ? Some(static_cast<Enum>(index)) : Nothing();
+}
+
+template <typename Enum>
+inline const nsCString& GetEnumString(Enum stringId) {
+  MOZ_RELEASE_ASSERT(
+      static_cast<size_t>(stringId) <
+      mozilla::ArrayLength(binding_detail::EnumStrings<Enum>::Values));
+  return binding_detail::EnumStrings<Enum>::Values[static_cast<size_t>(
+      stringId)];
+}
+
+template <typename Enum>
+constexpr mozilla::detail::EnumeratedRange<Enum> MakeWebIDLEnumeratedRange() {
+  return MakeInclusiveEnumeratedRange(ContiguousEnumValues<Enum>::min,
+                                      ContiguousEnumValues<Enum>::max);
 }
 
 inline nsWrapperCache* GetWrapperCache(const ParentObject& aParentObject) {
@@ -2911,7 +2940,7 @@ uint64_t GetWindowID(DedicatedWorkerGlobalScope* aGlobal);
 template <class T, ProtoHandleGetter GetProto>
 bool CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
                   const JSClass* aClass, JS::RealmOptions& aOptions,
-                  JSPrincipals* aPrincipal, bool aInitStandardClasses,
+                  JSPrincipals* aPrincipal,
                   JS::MutableHandle<JSObject*> aGlobal) {
   aOptions.creationOptions()
       .setTrace(CreateGlobalOptions<T>::TraceGlobal)
@@ -2948,11 +2977,6 @@ bool CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
           js::GetNonCCWObjectRealm(aGlobal),
           RTPCallerTypeToToken(aNative->GetRTPCallerType()));
     }
-  }
-
-  if (aInitStandardClasses && !JS::InitRealmStandardClasses(aCx)) {
-    NS_WARNING("Failed to init standard classes");
-    return false;
   }
 
   JS::Handle<JSObject*> proto = GetProto(aCx);
@@ -3260,6 +3284,7 @@ already_AddRefed<Promise> CreateRejectedPromiseFromThrownException(
 }  // namespace binding_detail
 
 }  // namespace dom
+
 }  // namespace mozilla
 
 #endif /* mozilla_dom_BindingUtils_h__ */

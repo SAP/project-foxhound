@@ -17,6 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
   OriginType:
     "chrome://remote/content/webdriver-bidi/modules/root/browsingContext.sys.mjs",
+  PollPromise: "chrome://remote/content/shared/Sync.sys.mjs",
 });
 
 const DOCUMENT_FRAGMENT_NODE = 11;
@@ -356,6 +357,29 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
     });
   }
 
+  /**
+   * Waits until the visibility state of the document has the expected value.
+   *
+   * @param {object} options
+   * @param {number} options.value
+   *     Expected value of the visibility state.
+   *
+   * @returns {Promise}
+   *     Promise that resolves when the visibility state has the expected value.
+   */
+  async _awaitVisibilityState(options) {
+    const { value } = options;
+    const win = this.messageHandler.window;
+
+    await lazy.PollPromise((resolve, reject) => {
+      if (win.document.visibilityState === value) {
+        resolve();
+      } else {
+        reject();
+      }
+    });
+  }
+
   _getBaseURL() {
     return this.messageHandler.window.document.baseURI;
   }
@@ -380,7 +404,7 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
 
         case lazy.ClipRectangleType.Element: {
           const realm = this.messageHandler.getRealm();
-          const element = this.deserialize(realm, clip.element);
+          const element = this.deserialize(clip.element, realm);
           const viewportRect = this.#getOriginRectangle(
             lazy.OriginType.viewport
           );
@@ -417,7 +441,7 @@ class BrowsingContextModule extends WindowGlobalBiDiModule {
       contextNodes.push(this.messageHandler.window.document.documentElement);
     } else {
       for (const serializedStartNode of startNodes) {
-        const startNode = this.deserialize(realm, serializedStartNode);
+        const startNode = this.deserialize(serializedStartNode, realm);
         lazy.assert.that(
           startNode =>
             Node.isInstance(startNode) &&

@@ -347,7 +347,8 @@ LayersIPCActor* WebRenderBridgeChild::GetLayersIPCActor() {
   return static_cast<LayersIPCActor*>(GetCompositorBridgeChild());
 }
 
-void WebRenderBridgeChild::SyncWithCompositor() {
+void WebRenderBridgeChild::SyncWithCompositor(
+    const Maybe<uint64_t>& aWindowID) {
   if (!IPCOpen()) {
     return;
   }
@@ -442,22 +443,14 @@ void WebRenderBridgeChild::UseTextures(
                                                   OpUseTexture(textures)));
 }
 
-void WebRenderBridgeChild::UseRemoteTexture(CompositableClient* aCompositable,
-                                            const RemoteTextureId aTextureId,
-                                            const RemoteTextureOwnerId aOwnerId,
-                                            const gfx::IntSize aSize,
-                                            const TextureFlags aFlags) {
+void WebRenderBridgeChild::UseRemoteTexture(
+    CompositableClient* aCompositable, const RemoteTextureId aTextureId,
+    const RemoteTextureOwnerId aOwnerId, const gfx::IntSize aSize,
+    const TextureFlags aFlags, const RefPtr<FwdTransactionTracker>& aTracker) {
   AddWebRenderParentCommand(CompositableOperation(
       aCompositable->GetIPCHandle(),
       OpUseRemoteTexture(aTextureId, aOwnerId, aSize, aFlags)));
-}
-
-void WebRenderBridgeChild::EnableRemoteTexturePushCallback(
-    CompositableClient* aCompositable, const RemoteTextureOwnerId aOwnerId,
-    const gfx::IntSize aSize, const TextureFlags aFlags) {
-  AddWebRenderParentCommand(CompositableOperation(
-      aCompositable->GetIPCHandle(),
-      OpEnableRemoteTexturePushCallback(aOwnerId, aSize, aFlags)));
+  TrackFwdTransaction(aTracker);
 }
 
 FwdTransactionCounter& WebRenderBridgeChild::GetFwdTransactionCounter() {

@@ -19,14 +19,14 @@ const SHOPPING_AUTO_OPEN_SIDEBAR_PREF =
 
 class ShoppingMessageBar extends MozLitElement {
   #MESSAGE_TYPES_RENDER_TEMPLATE_MAPPING = new Map([
-    ["stale", () => this.getStaleWarningTemplate()],
-    ["generic-error", () => this.getGenericErrorTemplate()],
-    ["not-enough-reviews", () => this.getNotEnoughReviewsTemplate()],
-    ["product-not-available", () => this.getProductNotAvailableTemplate()],
-    ["thanks-for-reporting", () => this.getThanksForReportingTemplate()],
+    ["stale", () => this.staleWarningTemplate()],
+    ["generic-error", () => this.genericErrorTemplate()],
+    ["not-enough-reviews", () => this.notEnoughReviewsTemplate()],
+    ["product-not-available", () => this.productNotAvailableTemplate()],
+    ["thanks-for-reporting", () => this.thanksForReportingTemplate()],
     [
       "product-not-available-reported",
-      () => this.getProductNotAvailableReportedTemplate(),
+      () => this.productNotAvailableReportedTemplate(),
     ],
     ["analysis-in-progress", () => this.analysisInProgressTemplate()],
     ["reanalysis-in-progress", () => this.reanalysisInProgressTemplate()],
@@ -94,7 +94,7 @@ class ShoppingMessageBar extends MozLitElement {
     Glean.shopping.surfaceYesKeepClosedButtonClicked.record();
   }
 
-  getStaleWarningTemplate() {
+  staleWarningTemplate() {
     return html`<message-bar>
       <article id="message-bar-container" aria-labelledby="header">
         <span
@@ -110,7 +110,7 @@ class ShoppingMessageBar extends MozLitElement {
     </message-bar>`;
   }
 
-  getGenericErrorTemplate() {
+  genericErrorTemplate() {
     return html`<moz-message-bar
       data-l10n-attrs="heading, message"
       type="warning"
@@ -119,7 +119,7 @@ class ShoppingMessageBar extends MozLitElement {
     </moz-message-bar>`;
   }
 
-  getNotEnoughReviewsTemplate() {
+  notEnoughReviewsTemplate() {
     return html`<moz-message-bar
       data-l10n-attrs="heading, message"
       type="warning"
@@ -128,7 +128,7 @@ class ShoppingMessageBar extends MozLitElement {
     </moz-message-bar>`;
   }
 
-  getProductNotAvailableTemplate() {
+  productNotAvailableTemplate() {
     return html`<moz-message-bar
       data-l10n-attrs="heading, message"
       type="warning"
@@ -144,7 +144,7 @@ class ShoppingMessageBar extends MozLitElement {
     </moz-message-bar>`;
   }
 
-  getThanksForReportingTemplate() {
+  thanksForReportingTemplate() {
     return html`<moz-message-bar
       data-l10n-attrs="heading, message"
       type="info"
@@ -153,7 +153,7 @@ class ShoppingMessageBar extends MozLitElement {
     </moz-message-bar>`;
   }
 
-  getProductNotAvailableReportedTemplate() {
+  productNotAvailableReportedTemplate() {
     return html`<moz-message-bar
       data-l10n-attrs="heading, message"
       type="warning"
@@ -237,13 +237,13 @@ class ShoppingMessageBar extends MozLitElement {
       <moz-button-group slot="actions">
         <button
           id="no-thanks-button"
-          class="small-button"
+          class="small-button shopping-button"
           data-l10n-id="shopping-message-bar-keep-closed-dismiss-button"
           @click=${this.handleNoThanksClick}
         ></button>
         <button
           id="yes-keep-closed-button"
-          class="primary small-button"
+          class="primary small-button shopping-button"
           data-l10n-id="shopping-message-bar-keep-closed-accept-button"
           @click=${this.handleKeepClosedClick}
         ></button>

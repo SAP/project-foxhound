@@ -134,6 +134,7 @@ MACH_COMMANDS = {
     "mach-debug-commands": MachCommandReference(
         "python/mach/mach/commands/commandinfo.py"
     ),
+    "macos-sign": MachCommandReference("tools/signing/macos/mach_commands.py"),
     "manifest": MachCommandReference("testing/mach_commands.py"),
     "marionette-test": MachCommandReference("testing/marionette/mach_commands.py"),
     "mochitest": MachCommandReference("testing/mochitest/mach_commands.py", ["test"]),
@@ -203,6 +204,7 @@ MACH_COMMANDS = {
     ),
     "tps-build": MachCommandReference("testing/tps/mach_commands.py"),
     "try": MachCommandReference("tools/tryselect/mach_commands.py"),
+    "ts": MachCommandReference("tools/ts/mach_commands.py"),
     "uniffi": MachCommandReference(
         "toolkit/components/uniffi-bindgen-gecko-js/mach_commands.py"
     ),

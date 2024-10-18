@@ -51,8 +51,7 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
   // Set our size up front, since some parts of reflow depend on it
   // being already set.  Note that the computed height may be
   // unconstrained; that's ok.  Consumers should watch out for that.
-  const nsSize maxSize(aReflowInput.ComputedWidth(),
-                       aReflowInput.ComputedHeight());
+  const nsSize maxSize = aReflowInput.ComputedPhysicalSize();
   SetSize(maxSize);
 
   // Writing mode for the page content frame.
@@ -419,21 +418,6 @@ void nsPageContentFrame::EnsurePageName() {
       PresShell()->StyleSet()->ResolvePageContentStyle(
           mPageName, StylePagePseudoClassFlags::FIRST);
   SetComputedStyleWithoutNotification(pageContentPseudoStyle);
-}
-
-nsIFrame* nsPageContentFrame::FirstContinuation() const {
-  const nsContainerFrame* const parent = GetParent();
-  MOZ_ASSERT(parent && parent->IsPageFrame(),
-             "Parent of nsPageContentFrame should be nsPageFrame");
-  // static cast so the compiler has a chance to devirtualize the call.
-  const auto* const pageFrameParent = static_cast<const nsPageFrame*>(parent);
-  nsPageContentFrame* const pageContentFrame =
-      static_cast<const nsPageFrame*>(pageFrameParent->FirstContinuation())
-          ->PageContentFrame();
-  MOZ_ASSERT(pageContentFrame && !pageContentFrame->GetPrevContinuation(),
-             "First descendent of nsPageSequenceFrame should not have a "
-             "previous continuation");
-  return pageContentFrame;
 }
 
 #ifdef DEBUG_FRAME_DUMP

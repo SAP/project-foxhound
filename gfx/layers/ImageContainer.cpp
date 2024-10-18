@@ -34,7 +34,7 @@
 #include "nsProxyRelease.h"
 #include "nsISupportsUtils.h"  // for NS_IF_ADDREF
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 #  include "MacIOSurfaceImage.h"
 #endif
 
@@ -319,6 +319,9 @@ void ImageContainer::SetCurrentImageInternal(
     if (aImages[0].mProducerID != mCurrentProducerID) {
       mCurrentProducerID = aImages[0].mProducerID;
     }
+    for (auto& img : mCurrentImages) {
+      img.mImage->OnAbandonForwardToHost();
+    }
   }
 
   nsTArray<OwningImage> newImages;
@@ -347,6 +350,7 @@ void ImageContainer::SetCurrentImageInternal(
         break;
       }
     }
+    img->mImage->OnPrepareForwardToHost();
   }
 
   mCurrentImages = std::move(newImages);
@@ -559,7 +563,7 @@ ImageContainer::GetD3D11YCbCrRecycleAllocator(
 }
 #endif
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 already_AddRefed<MacIOSurfaceRecycleAllocator>
 ImageContainer::GetMacIOSurfaceRecycleAllocator() {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
@@ -794,7 +798,7 @@ static void CopyPlane(uint8_t* aDst, const uint8_t* aSrc,
   }
 }
 
-bool RecyclingPlanarYCbCrImage::CopyData(const Data& aData) {
+nsresult RecyclingPlanarYCbCrImage::CopyData(const Data& aData) {
   // update buffer size
   // Use uint32_t throughout to match AllocateBuffer's param and mBufferSize
   auto ySize = aData.YDataSize();
@@ -804,13 +808,13 @@ bool RecyclingPlanarYCbCrImage::CopyData(const Data& aData) {
       CheckedInt<uint32_t>(aData.mYStride) * ySize.height *
           (aData.mAlpha ? 2 : 1);
 
-  if (!checkedSize.isValid()) return false;
+  if (!checkedSize.isValid()) return NS_ERROR_INVALID_ARG;
 
   const auto size = checkedSize.value();
 
   // get new buffer
   mBuffer = AllocateBuffer(size);
-  if (!mBuffer) return false;
+  if (!mBuffer) return NS_ERROR_OUT_OF_MEMORY;
 
   // update buffer size
   mBufferSize = size;
@@ -828,13 +832,16 @@ bool RecyclingPlanarYCbCrImage::CopyData(const Data& aData) {
   CopyPlane(mData.mCrChannel, aData.mCrChannel, cbcrSize, aData.mCbCrStride,
             aData.mCrSkip);
   if (aData.mAlpha) {
+    MOZ_ASSERT(mData.mAlpha);
+    mData.mAlpha->mChannel =
+        mData.mCrChannel + mData.mCbCrStride * cbcrSize.height;
     CopyPlane(mData.mAlpha->mChannel, aData.mAlpha->mChannel, ySize,
               aData.mYStride, aData.mYSkip);
   }
 
   mSize = aData.mPictureRect.Size();
   mOrigin = aData.mPictureRect.TopLeft();
-  return true;
+  return NS_OK;
 }
 
 gfxImageFormat PlanarYCbCrImage::GetOffscreenFormat() const {
@@ -842,11 +849,11 @@ gfxImageFormat PlanarYCbCrImage::GetOffscreenFormat() const {
                                                     : mOffscreenFormat;
 }
 
-bool PlanarYCbCrImage::AdoptData(const Data& aData) {
+nsresult PlanarYCbCrImage::AdoptData(const Data& aData) {
   mData = aData;
   mSize = aData.mPictureRect.Size();
   mOrigin = aData.mPictureRect.TopLeft();
-  return true;
+  return NS_OK;
 }
 
 already_AddRefed<gfx::SourceSurface> PlanarYCbCrImage::GetAsSourceSurface() {

@@ -57,7 +57,7 @@ pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/Sys
 pref("extensions.systemAddon.update.enabled", true);
 
 // Disable add-ons that are not installed by the user in all scopes by default.
-// See the SCOPE constants in AddonManager.jsm for values to use here.
+// See the SCOPE constants in AddonManager.sys.mjs for values to use here.
 pref("extensions.autoDisableScopes", 15);
 // Scopes to scan for changes at startup.
 pref("extensions.startupScanScopes", 0);
@@ -295,12 +295,6 @@ pref("browser.shell.checkDefaultPDF", true);
 // Will be set to `true` if the user indicates that they don't want to be asked
 // again about Firefox being their default PDF handler any more.
 pref("browser.shell.checkDefaultPDF.silencedByUser", false);
-// URL to navigate to when launching Firefox after accepting the Windows Default
-// Browser Agent "Set Firefox as default" call to action.
-pref("browser.shell.defaultBrowserAgent.thanksURL", "https://www.mozilla.org/%LOCALE%/firefox/set-as-default/thanks/");
-// Whether or not we want to run through the early startup idle task
-// which registers the firefox and firefox-private registry keys.
-pref("browser.shell.customProtocolsRegistered", false);
 #endif
 
 
@@ -439,12 +433,8 @@ pref("browser.search.param.search_rich_suggestions", "fen");
 // Feature gate pref for weather suggestions in the urlbar.
 pref("browser.urlbar.weather.featureGate", false);
 
-// Enable clipboard suggestions in Nightly.
-#ifdef NIGHTLY_BUILD
+// Enable clipboard suggestions feature, the pref should be removed once stable.
 pref("browser.urlbar.clipboard.featureGate", true);
-#else
-pref("browser.urlbar.clipboard.featureGate", false);
-#endif
 
 // When false, the weather suggestion will not be fetched when a VPN is
 // detected. When true, it will be fetched anyway.
@@ -498,7 +488,7 @@ pref("browser.urlbar.quicksuggest.enabled", false);
 
 // Whether Firefox Suggest will use the new Rust backend instead of the original
 // JS backend.
-pref("browser.urlbar.quicksuggest.rustEnabled", false);
+pref("browser.urlbar.quicksuggest.rustEnabled", true);
 
 // Whether to show the QuickSuggest onboarding dialog.
 pref("browser.urlbar.quicksuggest.shouldShowOnboardingDialog", true);
@@ -556,7 +546,7 @@ pref("browser.urlbar.switchTabs.adoptIntoActiveWindow", false);
 
 // Controls whether searching for open tabs returns tabs from any container
 // or only from the current container.
-pref("browser.urlbar.switchTabs.searchAllContainers", false);
+pref("browser.urlbar.switchTabs.searchAllContainers", true);
 
 // Whether addresses and search results typed into the address bar
 // should be opened in new tabs by default.
@@ -641,6 +631,20 @@ pref("browser.urlbar.suggest.addons", true);
 // mdn suggestions are turned on.
 pref("browser.urlbar.suggest.mdn", true);
 
+// Feature gate pref for Yelp suggestions in the urlbar.
+pref("browser.urlbar.yelp.featureGate", false);
+
+// The minimum prefix length of yelp query the user must type to trigger
+// the suggestion.
+pref("browser.urlbar.yelp.minKeywordLength", 5);
+
+// Whether Yelp suggestions should be shown as top picks.
+pref("browser.urlbar.yelp.priority", false);
+
+// The group-relative suggestedIndex of Yelp suggestions within the Firefox
+// Suggest section. Ignored when Yelp suggestions are shown as top picks.
+pref("browser.urlbar.yelp.suggestedIndex", 0);
+
 // If `browser.urlbar.yelp.featureGate` is true, this controls whether
 // Yelp suggestions are turned on.
 pref("browser.urlbar.suggest.yelp", true);
@@ -714,6 +718,13 @@ pref("browser.download.clearHistoryOnDelete", 0);
 pref("browser.helperApps.showOpenOptionForPdfJS", true);
 pref("browser.helperApps.showOpenOptionForViewableInternally", true);
 
+// Whether search-config-v2 is enabled.
+#ifdef NIGHTLY_BUILD
+pref("browser.search.newSearchConfig.enabled", true);
+#else
+pref("browser.search.newSearchConfig.enabled", false);
+#endif
+
 // search engines URL
 pref("browser.search.searchEnginesURL",      "https://addons.mozilla.org/%LOCALE%/firefox/search-engines/");
 
@@ -737,6 +748,10 @@ pref("browser.search.serpEventTelemetry.enabled", true);
 
 // Enables search SERP telemetry page categorization.
 pref("browser.search.serpEventTelemetryCategorization.enabled", false);
+
+// Search Bar removal from the toolbar for users who haven’t used it in 120
+// days
+pref("browser.search.widget.removeAfterDaysUnused", 120);
 
 // Enable new experimental shopping features. This is solely intended as a
 // rollout/"emergency stop" button - it will go away once the feature has
@@ -927,7 +942,6 @@ pref("browser.tabs.tooltipsShowPidAndActiveness", false);
 #endif
 
 pref("browser.tabs.cardPreview.enabled", false);
-pref("browser.tabs.cardPreview.delayMs", 1000);
 pref("browser.tabs.cardPreview.showThumbnails", true);
 
 pref("browser.tabs.firefox-view", true);
@@ -1057,6 +1071,17 @@ pref("privacy.cpd.offlineApps",             false);
 pref("privacy.cpd.siteSettings",            false);
 pref("privacy.cpd.openWindows",             false);
 
+// clearHistory and clearSiteData pref branches are used to
+// remember user pref options based on the two different entry points
+pref("privacy.clearHistory.historyFormDataAndDownloads", true);
+pref("privacy.clearHistory.cookiesAndStorage", true);
+pref("privacy.clearHistory.cache", true);
+pref("privacy.clearHistory.siteSettings", false);
+pref("privacy.clearSiteData.historyFormDataAndDownloads", false);
+pref("privacy.clearSiteData.cookiesAndStorage", true);
+pref("privacy.clearSiteData.cache", true);
+pref("privacy.clearSiteData.siteSettings", false);
+
 pref("privacy.history.custom",              false);
 
 // What default should we use for the time span in the sanitizer:
@@ -1069,7 +1094,16 @@ pref("privacy.history.custom",              false);
 // 6 - Last 24 hours
 pref("privacy.sanitize.timeSpan", 1);
 
+#if defined(NIGHTLY_BUILD)
+pref("privacy.sanitize.useOldClearHistoryDialog", false);
+#else
 pref("privacy.sanitize.useOldClearHistoryDialog", true);
+#endif
+
+pref("privacy.sanitize.clearOnShutdown.hasMigratedToNewPrefs", false);
+// flag to track migration of clear history dialog prefs, where cpd stands for
+// clear private data
+pref("privacy.sanitize.cpd.hasMigratedToNewPrefs", false);
 
 pref("privacy.panicButton.enabled",         true);
 
@@ -1189,12 +1223,6 @@ pref("accessibility.typeaheadfind.timeout", 5000);
 pref("accessibility.typeaheadfind.linksonly", false);
 pref("accessibility.typeaheadfind.flashBar", 1);
 
-#if defined(_ARM64_) && defined(XP_WIN)
-  pref("plugin.default.state", 0);
-#else
-  pref("plugin.default.state", 1);
-#endif
-
 // Toggling Search bar on and off in about:preferences
 pref("browser.preferences.search", true);
 #if defined(NIGHTLY_BUILD)
@@ -1279,8 +1307,6 @@ pref("browser.sessionstore.upgradeBackup.maxUpgradeBackups", 3);
 pref("browser.sessionstore.debug", false);
 // Forget closed windows/tabs after two weeks
 pref("browser.sessionstore.cleanup.forget_closed_after", 1209600000);
-// Platform collects session storage data for session store
-pref("browser.sessionstore.collect_session_storage", true);
 
 // temporary pref that will be removed in a future release, see bug 1836952
 pref("browser.sessionstore.persist_closed_tabs_between_sessions", true);
@@ -1471,15 +1497,8 @@ pref("browser.bookmarks.editDialog.maxRecentFolders", 7);
   pref("browser.taskbar.previews.enable", false);
   pref("browser.taskbar.previews.max", 20);
   pref("browser.taskbar.previews.cachetime", 5);
-  pref("browser.taskbar.lists.legacyBackend", true);
 
-  // We'll only enable the new off-main-thread jumplist backend on Nightly for
-  // now while we test it.
-#ifdef NIGHTLY_BUILD
   pref("browser.taskbar.lists.legacyBackend", false);
-#else
-  pref("browser.taskbar.lists.legacyBackend", true);
-#endif
 
   pref("browser.taskbar.lists.enabled", true);
   pref("browser.taskbar.lists.frequent.enabled", true);
@@ -1742,6 +1761,9 @@ pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesAdTypes", "
 pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesZoneIds", "");
 pref("browser.newtabpage.activity-stream.discoverystream.spocTopsitesPlacement.enabled", true);
 pref("browser.newtabpage.activity-stream.discoverystream.spocSiteId", "");
+pref("browser.newtabpage.activity-stream.discoverystream.ctaButtonSponsors", "");
+pref("browser.newtabpage.activity-stream.discoverystream.ctaButtonVariant", "");
+pref("browser.newtabpage.activity-stream.discoverystream.spocMessageVariant", "");
 
 pref("browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled", true);
 
@@ -1832,6 +1854,8 @@ pref("pdfjs.previousHandler.alwaysAskBeforeHandling", false);
 
 // Try to convert PDFs sent as octet-stream
 pref("pdfjs.handleOctetStream", true);
+
+pref("sidebar.companion", false);
 
 // Is the sidebar positioned ahead of the content browser
 pref("sidebar.position_start", true);
@@ -2081,8 +2105,6 @@ pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior5,co
 // lists enabled.
 pref("browser.contentblocking.customBlockList.preferences.ui.enabled", false);
 
-pref("browser.contentblocking.reportBreakage.url", "https://tracking-protection-issues.herokuapp.com/new");
-
 // Enable Protections report's Lockwise card by default.
 pref("browser.contentblocking.report.lockwise.enabled", true);
 
@@ -2193,6 +2215,12 @@ pref("privacy.webrtc.sharedTabWarning", false);
 // before navigating to the actual meeting room page. Doesn't survive tab close.
 pref("privacy.webrtc.deviceGracePeriodTimeoutMs", 3600000);
 
+// Bug 1857254 - MacOS 14 displays two (microphone/camera/screen share) icons in the menu bar
+// This pref can be used to hide the firefox camera icon on macos 14 and above to avoid
+// duplicating the macos camera icon. We show the icon by default, users can choose to flip
+// the pref to hide the icons
+pref("privacy.webrtc.showIndicatorsOnMacos14AndAbove", true);
+
 // Enable Fingerprinting Protection in private windows..
 pref("privacy.fingerprintingProtection.pbmode", true);
 
@@ -2201,9 +2229,6 @@ pref("privacy.fingerprintingProtection.pbmode", true);
 // leaks.
 pref("privacy.exposeContentTitleInWindow", true);
 pref("privacy.exposeContentTitleInWindow.pbm", true);
-
-// Start the browser in e10s mode
-pref("browser.tabs.remote.autostart", true);
 
 // Run media transport in a separate process?
 pref("media.peerconnection.mtransport_process", true);
@@ -2300,8 +2325,6 @@ pref("browser.migrate.interactions.passwords", false);
 
 pref("browser.migrate.preferences-entrypoint.enabled", true);
 
-pref("browser.device-migration.help-menu.hidden", false);
-
 pref("extensions.pocket.api", "api.getpocket.com");
 pref("extensions.pocket.bffApi", "firefox-api-proxy.cdn.mozilla.net");
 pref("extensions.pocket.bffRecentSaves", true);
@@ -2382,8 +2405,12 @@ pref("browser.suppress_first_window_animation", true);
 // Preference that allows individual users to disable Screenshots.
 pref("extensions.screenshots.disabled", false);
 
-// Preference that determines whether Screenshots is opened as a dedicated browser component
-pref("screenshots.browser.component.enabled", false);
+// Preference that determines whether Screenshots uses the dedicated browser component
+#ifdef NIGHTLY_BUILD
+  pref("screenshots.browser.component.enabled", true);
+#else
+  pref("screenshots.browser.component.enabled", false);
+#endif
 
 // Preference that determines what button to focus
 pref("screenshots.browser.component.last-saved-method", "download");
@@ -2467,8 +2494,6 @@ pref("browser.toolbars.bookmarks.showOtherBookmarks", true);
 
 // Felt Privacy pref to control simplified private browsing UI
 pref("browser.privatebrowsing.felt-privacy-v1", false);
-// Visiblity of the bookmarks toolbar in PBM (currently only applies if felt-privacy-v1 is true)
-pref("browser.toolbars.bookmarks.showInPrivateBrowsing", false);
 
 // Prefs to control the Firefox Account toolbar menu.
 // This pref will surface existing Firefox Account information
@@ -2477,7 +2502,13 @@ pref("browser.toolbars.bookmarks.showInPrivateBrowsing", false);
 pref("identity.fxaccounts.toolbar.enabled", true);
 pref("identity.fxaccounts.toolbar.accessed", false);
 pref("identity.fxaccounts.toolbar.defaultVisible", true);
+
+// Prefs to control Firefox Account panels that shows call to actions
+// for other supported Mozilla products
 pref("identity.fxaccounts.toolbar.pxiToolbarEnabled", false);
+pref("identity.fxaccounts.toolbar.pxiToolbarEnabled.monitorEnabled", true);
+pref("identity.fxaccounts.toolbar.pxiToolbarEnabled.relayEnabled", true);
+pref("identity.fxaccounts.toolbar.pxiToolbarEnabled.vpnEnabled", true);
 
 // Check bundled omni JARs for corruption.
 pref("corroborator.enabled", true);
@@ -2892,6 +2923,13 @@ pref("svg.context-properties.content.allowed-domains", "profile.accounts.firefox
   pref("extensions.translations.disabled", true);
 #endif
 
+#if defined(XP_MACOSX) || defined(XP_WIN)
+pref("browser.firefoxbridge.enabled", false);
+pref("browser.firefoxbridge.extensionOrigins",
+    "chrome-extension://gkcbmfjnnjoambnfmihmnkneakghogca/"
+);
+#endif
+
 // Turn on interaction measurements
 pref("browser.places.interactions.enabled", true);
 
@@ -2986,9 +3024,16 @@ pref("ui.new-webcompat-reporter.reason-dropdown.randomized", true);
 pref("browser.privatebrowsing.resetPBM.showConfirmationDialog", true);
 
 // the preferences related to the Nimbus experiment, to activate and deactivate
-// the the entire rollout or deactivate only the OS prompt (see: bug 1864216)
+// the the entire rollout (see: bug 1864216 - two prompts, 1877500 - set two in one prompt)
 pref("browser.mailto.dualPrompt", false);
-pref("browser.mailto.dualPrompt.os", false);
 // When visiting a site which uses registerProtocolHandler: Ask the user to set Firefox as
 // default mailto handler.
 pref("browser.mailto.prompt.os", true);
+
+pref("browser.backup.enabled", false);
+
+// Pref to enable the new profiles
+pref("browser.profiles.enabled", false);
+
+pref("startup.homepage_override_url_nimbus", "");
+pref("startup.homepage_override_nimbus_maxVersion", "");

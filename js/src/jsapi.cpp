@@ -63,6 +63,7 @@
 #include "js/LocaleSensitive.h"
 #include "js/MemoryCallbacks.h"
 #include "js/MemoryFunctions.h"
+#include "js/Prefs.h"
 #include "js/PropertySpec.h"
 #include "js/Proxy.h"
 #include "js/ScriptPrivate.h"
@@ -1293,7 +1294,7 @@ JS_PUBLIC_API void JS_RemoveExtraGCRootsTracer(JSContext* cx,
 }
 
 JS_PUBLIC_API JS::GCReason JS::WantEagerMinorGC(JSRuntime* rt) {
-  if (rt->gc.nursery().shouldCollect()) {
+  if (rt->gc.nursery().wantEagerCollection()) {
     return JS::GCReason::EAGER_NURSERY_COLLECTION;
   }
   return JS::GCReason::NO_REASON;
@@ -1306,7 +1307,7 @@ JS_PUBLIC_API JS::GCReason JS::WantEagerMajorGC(JSRuntime* rt) {
 JS_PUBLIC_API void JS::MaybeRunNurseryCollection(JSRuntime* rt,
                                                  JS::GCReason reason) {
   gc::GCRuntime& gc = rt->gc;
-  if (gc.nursery().shouldCollect()) {
+  if (gc.nursery().wantEagerCollection()) {
     gc.minorGC(reason);
   }
 }
@@ -4467,6 +4468,7 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
+
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:
       jit::JitOptions.fullDebugChecks = !!value;
@@ -5196,7 +5198,25 @@ JS_PUBLIC_API bool JS::CopyAsyncStack(JSContext* cx,
   return true;
 }
 
-JS_PUBLIC_API Zone* JS::GetObjectZone(JSObject* obj) { return obj->zone(); }
+JS_PUBLIC_API Zone* JS::GetObjectZone(JSObject* obj) {
+  Zone* zone = obj->zone();
+
+  // Check zone pointer is valid and not a poison value. See bug 1878421.
+  MOZ_RELEASE_ASSERT(zone->runtimeFromMainThread());
+
+  return zone;
+}
+
+JS_PUBLIC_API Zone* JS::GetTenuredGCThingZone(GCCellPtr thing) {
+  js::gc::Cell* cell = thing.asCell();
+  MOZ_ASSERT(!js::gc::IsInsideNursery(cell));
+  Zone* zone = js::gc::detail::GetTenuredGCThingZone(cell);
+
+  // Check zone pointer is valid and not a poison value. See bug 1878421.
+  MOZ_RELEASE_ASSERT(zone->runtimeFromMainThread());
+
+  return zone;
+}
 
 JS_PUBLIC_API Zone* JS::GetNurseryCellZone(gc::Cell* cell) {
   return cell->nurseryZone();

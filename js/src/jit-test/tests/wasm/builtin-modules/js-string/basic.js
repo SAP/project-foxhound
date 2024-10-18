@@ -1,110 +1,126 @@
 // |jit-test| skip-if: !wasmJSStringBuiltinsEnabled();
 
-let testModule = wasmTextToBinary(`(module
-  (func
-    (import "wasm:js-string" "fromWTF16Array")
-    (param anyref i32 i32)
-    (result externref)
-  )
-  (export "fromWTF16Array" (func 0))
+let testModule = `(module
+  (type $arrayMutI16 (array (mut i16)))
 
   (func
-    (import "wasm:js-string" "toWTF16Array")
-    (param externref anyref i32)
+    (import "wasm:js-string" "test")
+    (param externref)
     (result i32)
   )
-  (export "toWTF16Array" (func 1))
+  (export "test" (func 0))
+
+  (func
+    (import "wasm:js-string" "cast")
+    (param externref)
+    (result (ref extern))
+  )
+  (export "cast" (func 1))
+
+  (func
+    (import "wasm:js-string" "fromCharCodeArray")
+    (param (ref null $arrayMutI16) i32 i32)
+    (result (ref extern))
+  )
+  (export "fromCharCodeArray" (func 2))
+
+  (func
+    (import "wasm:js-string" "intoCharCodeArray")
+    (param externref (ref null $arrayMutI16) i32)
+    (result i32)
+  )
+  (export "intoCharCodeArray" (func 3))
 
   (func
     (import "wasm:js-string" "fromCharCode")
     (param i32)
     (result externref)
   )
-  (export "fromCharCode" (func 2))
+  (export "fromCharCode" (func 4))
 
   (func
     (import "wasm:js-string" "fromCodePoint")
     (param i32)
     (result externref)
   )
-  (export "fromCodePoint" (func 3))
+  (export "fromCodePoint" (func 5))
 
   (func
     (import "wasm:js-string" "charCodeAt")
     (param externref i32)
     (result i32)
   )
-  (export "charCodeAt" (func 4))
+  (export "charCodeAt" (func 6))
 
   (func
     (import "wasm:js-string" "codePointAt")
     (param externref i32)
     (result i32)
   )
-  (export "codePointAt" (func 5))
+  (export "codePointAt" (func 7))
 
   (func
     (import "wasm:js-string" "length")
     (param externref)
     (result i32)
   )
-  (export "length" (func 6))
+  (export "length" (func 8))
 
   (func
-    (import "wasm:js-string" "concatenate")
+    (import "wasm:js-string" "concat")
     (param externref externref)
     (result externref)
   )
-  (export "concatenate" (func 7))
+  (export "concat" (func 9))
 
   (func
     (import "wasm:js-string" "substring")
     (param externref i32 i32)
     (result externref)
   )
-  (export "substring" (func 8))
+  (export "substring" (func 10))
 
   (func
     (import "wasm:js-string" "equals")
     (param externref externref)
     (result i32)
   )
-  (export "equals" (func 9))
+  (export "equals" (func 11))
 
   (func
     (import "wasm:js-string" "compare")
     (param externref externref)
     (result i32)
   )
-  (export "compare" (func 10))
-)`);
+  (export "compare" (func 12))
+)`;
 
 let {
-  createArray,
+  createArrayMutI16,
   arrayLength,
   arraySet,
   arrayGet
 } = wasmEvalText(`(module
-  (type $i16Array (array (mut i16)))
-  (func (export "createArray") (param i32) (result anyref)
+  (type $arrayMutI16 (array (mut i16)))
+  (func (export "createArrayMutI16") (param i32) (result anyref)
     i32.const 0
     local.get 0
-    array.new $i16Array
+    array.new $arrayMutI16
   )
   (func (export "arrayLength") (param arrayref) (result i32)
     local.get 0
     array.len
   )
-  (func (export "arraySet") (param (ref $i16Array) i32 i32)
+  (func (export "arraySet") (param (ref $arrayMutI16) i32 i32)
     local.get 0
     local.get 1
     local.get 2
-    array.set $i16Array
+    array.set $arrayMutI16
   )
-  (func (export "arrayGet") (param (ref $i16Array) i32) (result i32)
+  (func (export "arrayGet") (param (ref $arrayMutI16) i32) (result i32)
     local.get 0
     local.get 1
-    array.get_u $i16Array
+    array.get_u $arrayMutI16
   )
 )`).exports;
 
@@ -114,9 +130,23 @@ function throwIfNotString(a) {
   }
 }
 let polyFillImports = {
-  fromWTF16Array: (array, arrayStart, arrayCount) => {
-    arrayStart |= 0;
-    arrayCount |= 0;
+  test: (string) => {
+    if (string === null ||
+        typeof string !== "string") {
+      return 0;
+    }
+    return 1;
+  },
+  cast: (string) => {
+    if (string === null ||
+        typeof string !== "string") {
+      throw new WebAssembly.RuntimeError();
+    }
+    return string;
+  },
+  fromCharCodeArray: (array, arrayStart, arrayCount) => {
+    arrayStart >>>= 0;
+    arrayCount >>>= 0;
     let length = arrayLength(array);
     if (BigInt(arrayStart) + BigInt(arrayCount) > BigInt(length)) {
       throw new WebAssembly.RuntimeError();
@@ -127,8 +157,8 @@ let polyFillImports = {
     }
     return result;
   },
-  toWTF16Array: (string, arr, arrayStart) => {
-    arrayStart |= 0;
+  intoCharCodeArray: (string, arr, arrayStart) => {
+    arrayStart >>>= 0;
     throwIfNotString(string);
     let arrLength = arrayLength(arr);
     let stringLength = string.length;
@@ -141,22 +171,22 @@ let polyFillImports = {
     return stringLength;
   },
   fromCharCode: (charCode) => {
-    charCode |= 0;
+    charCode >>>= 0;
     return String.fromCharCode(charCode);
   },
   fromCodePoint: (codePoint) => {
-    codePoint |= 0;
+    codePoint >>>= 0;
     return String.fromCodePoint(codePoint);
   },
   charCodeAt: (string, stringIndex) => {
-    stringIndex |= 0;
+    stringIndex >>>= 0;
     throwIfNotString(string);
     if (stringIndex >= string.length)
       throw new WebAssembly.RuntimeError();
     return string.charCodeAt(stringIndex);
   },
   codePointAt: (string, stringIndex) => {
-    stringIndex |= 0;
+    stringIndex >>>= 0;
     throwIfNotString(string);
     if (stringIndex >= string.length)
       throw new WebAssembly.RuntimeError();
@@ -166,14 +196,14 @@ let polyFillImports = {
     throwIfNotString(string);
     return string.length;
   },
-  concatenate: (stringA, stringB) => {
+  concat: (stringA, stringB) => {
     throwIfNotString(stringA);
     throwIfNotString(stringB);
     return stringA + stringB;
   },
   substring: (string, startIndex, endIndex) => {
-    startIndex |= 0;
-    endIndex |= 0;
+    startIndex >>>= 0;
+    endIndex >>>= 0;
     throwIfNotString(string);
     if (startIndex > string.length,
         endIndex > string.length,
@@ -217,7 +247,6 @@ function assertSameBehavior(funcA, funcB, ...params) {
   if (errA || errB) {
     assertEq(errA === null, errB === null, errA ? errA.message : errB.message);
     assertEq(Object.getPrototypeOf(errA), Object.getPrototypeOf(errB));
-    assertEq(errA.message, errB.message);
   }
   assertEq(resultA, resultB);
 
@@ -227,12 +256,29 @@ function assertSameBehavior(funcA, funcB, ...params) {
   return resultA;
 }
 
-let builtinExports = new WebAssembly.Instance(new WebAssembly.Module(testModule, {builtins: ["js-string"]}), {}).exports;
-let polyfillExports = new WebAssembly.Instance(new WebAssembly.Module(testModule), { 'wasm:js-string': polyFillImports }).exports;
+let builtinExports = wasmEvalText(testModule, {}, {builtins: ["js-string"]}).exports;
+let polyfillExports = wasmEvalText(testModule, { 'wasm:js-string': polyFillImports }).exports;
 
 let testStrings = ["", "a", "1", "ab", "hello, world", "\n", "☺", "☺smiley", String.fromCodePoint(0x10000, 0x10001)];
 let testCharCodes = [1, 2, 3, 10, 0x7f, 0xff, 0xfffe, 0xffff];
 let testCodePoints = [1, 2, 3, 10, 0x7f, 0xff, 0xfffe, 0xffff, 0x10000, 0x10001];
+
+for (let a of WasmExternrefValues) {
+  assertSameBehavior(
+    builtinExports['test'],
+    polyfillExports['test'],
+    a
+  );
+  try {
+    assertSameBehavior(
+      builtinExports['cast'],
+      polyfillExports['cast'],
+      a
+    );
+  } catch (err) {
+    assertEq(err instanceof WebAssembly.RuntimeError, true);
+  }
+}
 
 for (let a of testCharCodes) {
   assertSameBehavior(
@@ -272,16 +318,16 @@ for (let a of testStrings) {
     );
   }
 
-  let array = createArray(length);
+  let arrayMutI16 = createArrayMutI16(length);
   assertSameBehavior(
-    builtinExports['toWTF16Array'],
-    polyfillExports['toWTF16Array'],
-    a, array, 0
+    builtinExports['intoCharCodeArray'],
+    polyfillExports['intoCharCodeArray'],
+    a, arrayMutI16, 0
   );
   assertSameBehavior(
-    builtinExports['fromWTF16Array'],
-    polyfillExports['fromWTF16Array'],
-    array, 0, length
+    builtinExports['fromCharCodeArray'],
+    polyfillExports['fromCharCodeArray'],
+    arrayMutI16, 0, length
   );
 
   for (let i = 0; i < length; i++) {
@@ -298,8 +344,8 @@ for (let a of testStrings) {
 for (let a of testStrings) {
   for (let b of testStrings) {
     assertSameBehavior(
-      builtinExports['concatenate'],
-      polyfillExports['concatenate'],
+      builtinExports['concat'],
+      polyfillExports['concat'],
       a, b
     );
     assertSameBehavior(
@@ -313,4 +359,14 @@ for (let a of testStrings) {
       a, b
     );
   }
+}
+
+// fromCharCodeArray length is an unsigned integer
+{
+  let arrayMutI16 = createArrayMutI16(1);
+  assertErrorMessage(() => assertSameBehavior(
+    builtinExports['fromCharCodeArray'],
+    polyfillExports['fromCharCodeArray'],
+    arrayMutI16, 1, -1
+  ), WebAssembly.RuntimeError, /./);
 }

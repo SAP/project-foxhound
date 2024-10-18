@@ -12,6 +12,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
+  loadAndParseOpenSearchEngine:
+    "resource://gre/modules/OpenSearchLoader.sys.mjs",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
   UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
@@ -133,12 +135,17 @@ class ProviderContextualSearch extends UrlbarProvider {
       engine = (
         await lazy.UrlbarSearchUtils.enginesForDomainPrefix(host, {
           matchAllDomainLevels: true,
-          onlyEnabled: false,
         })
       )[0];
     }
 
     if (engine) {
+      let instance = this.queryInstance;
+      let icon = await engine.getIconURL();
+      if (instance != this.queryInstance) {
+        return;
+      }
+
       this.engines.set(hostname, engine);
       // Check to see if the engine that was found is the default engine.
       // The default engine will often be used to populate the heuristic result,
@@ -154,7 +161,7 @@ class ProviderContextualSearch extends UrlbarProvider {
       let result = this.makeResult({
         url,
         engine: engine.name,
-        icon: engine.getIconURL(),
+        icon,
         input: queryContext.searchString,
         shouldNavigate: true,
       });
@@ -213,12 +220,9 @@ class ProviderContextualSearch extends UrlbarProvider {
    * See the base UrlbarProvider class for more.
    *
    * @param {UrlbarResult} result The result whose view will be updated.
-   * @param {Map} idsByName
-   *   A Map from an element's name, as defined by the provider; to its ID in
-   *   the DOM, as defined by the browser.
    * @returns {object} An object describing the view update.
    */
-  getViewUpdate(result, idsByName) {
+  getViewUpdate(result) {
     return {
       icon: {
         attributes: {
@@ -255,9 +259,11 @@ class ProviderContextualSearch extends UrlbarProvider {
     // In cases where we don't have to create a new engine, navigation is
     // handled automatically by providing `shouldNavigate: true` in the result.
     if (result.payload.shouldAddEngine) {
-      let newEngine = new lazy.OpenSearchEngine({ shouldPersist: false });
+      let engineData = await lazy.loadAndParseOpenSearchEngine(
+        Services.io.newURI(result.payload.url)
+      );
+      let newEngine = new lazy.OpenSearchEngine({ engineData });
       newEngine._setIcon(result.payload.icon, false);
-      await newEngine.install(Services.io.newURI(result.payload.url));
       this.engines.set(result.payload.hostname, newEngine);
       const [url] = UrlbarUtils.getSearchQueryUrl(
         newEngine,

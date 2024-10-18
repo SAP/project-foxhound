@@ -21,6 +21,10 @@ namespace mozilla {
 
 using EventType = gfx::RecordedEvent::EventType;
 
+namespace dom {
+class ThreadSafeWorkerRef;
+}
+
 namespace layers {
 
 typedef mozilla::ipc::SharedMemoryBasic::Handle Handle;
@@ -31,7 +35,8 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(CanvasDrawEventRecorder, final)
 
-  CanvasDrawEventRecorder();
+  explicit CanvasDrawEventRecorder(dom::ThreadSafeWorkerRef* aWorkerRef);
+  ~CanvasDrawEventRecorder() override;
 
   enum class State : uint32_t {
     Processing,
@@ -67,11 +72,14 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
    public:
     virtual ~Helpers() = default;
 
-    virtual bool InitTranslator(
-        TextureType aTextureType, gfx::BackendType aBackendType,
-        Handle&& aReadHandle, nsTArray<Handle>&& aBufferHandles,
-        uint64_t aBufferSize, CrossProcessSemaphoreHandle&& aReaderSem,
-        CrossProcessSemaphoreHandle&& aWriterSem, bool aUseIPDLThread) = 0;
+    virtual bool InitTranslator(TextureType aTextureType,
+                                TextureType aWebglTextureType,
+                                gfx::BackendType aBackendType,
+                                Handle&& aReadHandle,
+                                nsTArray<Handle>&& aBufferHandles,
+                                uint64_t aBufferSize,
+                                CrossProcessSemaphoreHandle&& aReaderSem,
+                                CrossProcessSemaphoreHandle&& aWriterSem) = 0;
 
     virtual bool AddBuffer(Handle&& aBufferHandle, uint64_t aBufferSize) = 0;
 
@@ -87,14 +95,18 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
     virtual bool RestartReader() = 0;
   };
 
-  bool Init(TextureType aTextureType, gfx::BackendType aBackendType,
-            UniquePtr<Helpers> aHelpers);
+  bool Init(TextureType aTextureType, TextureType aWebglTextureType,
+            gfx::BackendType aBackendType, UniquePtr<Helpers> aHelpers);
 
   /**
    * Record an event for processing by the CanvasParent's CanvasTranslator.
    * @param aEvent the event to record
    */
   void RecordEvent(const gfx::RecordedEvent& aEvent) final;
+
+  void DetachResources() final;
+
+  void AddPendingDeletion(std::function<void()>&& aPendingDeletion) override;
 
   void StoreSourceSurfaceRecording(gfx::SourceSurface* aSurface,
                                    const char* aReason) final;
@@ -131,6 +143,11 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
   void WriteInternalEvent(EventType aEventType);
 
   void CheckAndSignalReader();
+
+  void QueueProcessPendingDeletions(
+      RefPtr<CanvasDrawEventRecorder>&& aRecorder);
+  void QueueProcessPendingDeletionsLocked(
+      RefPtr<CanvasDrawEventRecorder>&& aRecorder);
 
   size_t mDefaultBufferSize;
   size_t mMaxDefaultBuffers;
@@ -171,6 +188,9 @@ class CanvasDrawEventRecorder final : public gfx::DrawEventRecorderPrivate,
 
   UniquePtr<CrossProcessSemaphore> mWriterSemaphore;
   UniquePtr<CrossProcessSemaphore> mReaderSemaphore;
+
+  RefPtr<dom::ThreadSafeWorkerRef> mWorkerRef;
+  bool mIsOnWorker = false;
 };
 
 }  // namespace layers

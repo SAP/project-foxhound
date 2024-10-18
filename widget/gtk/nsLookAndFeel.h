@@ -42,6 +42,9 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
   bool GetDefaultDrawInTitlebar() override;
 
+  nsXPLookAndFeel::TitlebarAction GetTitlebarAction(
+      TitlebarEvent aEvent) override;
+
   void GetThemeInfo(nsACString&) override;
 
   static const nscolor kBlack = NS_RGB(0, 0, 0);
@@ -134,6 +137,7 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
 
     float mCaretRatio = 0.0f;
     int32_t mTitlebarRadius = 0;
+    int32_t mTitlebarButtonSpacing = 0;
     char16_t mInvisibleCharacter = 0;
     bool mMenuSupportsDrag = false;
 
@@ -179,6 +183,8 @@ class nsLookAndFeel final : public nsXPLookAndFeel {
   int32_t mCSDMaximizeButtonPosition = 0;
   int32_t mCSDMinimizeButtonPosition = 0;
   int32_t mCSDCloseButtonPosition = 0;
+  TitlebarAction mDoubleClickAction = TitlebarAction::None;
+  TitlebarAction mMiddleClickAction = TitlebarAction::None;
 
   RefPtr<GtkCssProvider> mRoundedCornerProvider;
   void UpdateRoundedBottomCornerStyles();

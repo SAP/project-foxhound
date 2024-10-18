@@ -157,6 +157,10 @@ void MediaControlService::NotifyMediaControlHasEverBeenUsed() {
   Telemetry::ScalarSet(Telemetry::ScalarID::MEDIA_CONTROL_PLATFORM_USAGE,
                        u"Android"_ns, usedOnMediaControl);
 #endif
+#ifdef MOZ_WIDGET_UIKIT
+  Telemetry::ScalarSet(Telemetry::ScalarID::MEDIA_CONTROL_PLATFORM_USAGE,
+                       u"iOS"_ns, usedOnMediaControl);
+#endif
 }
 
 void MediaControlService::NotifyMediaControlHasEverBeenEnabled() {
@@ -181,6 +185,10 @@ void MediaControlService::NotifyMediaControlHasEverBeenEnabled() {
 #ifdef MOZ_WIDGET_ANDROID
   Telemetry::ScalarSet(Telemetry::ScalarID::MEDIA_CONTROL_PLATFORM_USAGE,
                        u"Android"_ns, enableOnMediaControl);
+#endif
+#ifdef MOZ_WIDGET_UIKIT
+  Telemetry::ScalarSet(Telemetry::ScalarID::MEDIA_CONTROL_PLATFORM_USAGE,
+                       u"iOS"_ns, enableOnMediaControl);
 #endif
 }
 
@@ -510,7 +518,7 @@ void MediaControlService::ControllerManager::ConnectMainControllerEvents() {
             mSource->SetEnablePictureInPictureMode(aIsEnabled);
           });
   mPositionChangedListener = mMainController->PositionChangedEvent().Connect(
-      AbstractThread::MainThread(), [this](const PositionState& aState) {
+      AbstractThread::MainThread(), [this](const Maybe<PositionState>& aState) {
         mSource->SetPositionState(aState);
       });
 }

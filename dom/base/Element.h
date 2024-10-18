@@ -38,6 +38,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/DOMString.h"
+#include "mozilla/dom/DOMTokenListSupportedTokens.h"
 #include "mozilla/dom/DirectionalityUtils.h"
 #include "mozilla/dom/FragmentOrElement.h"
 #include "mozilla/dom/NameSpaceConstants.h"
@@ -92,7 +93,6 @@ class nsIDOMXULSelectControlElement;
 class nsIDOMXULSelectControlItemElement;
 class nsIFrame;
 class nsIHTMLCollection;
-class nsIMozBrowserFrame;
 class nsIPrincipal;
 class nsIScreen;
 class nsIScrollableFrame;
@@ -190,8 +190,15 @@ enum : uint32_t {
   // it's not going to be considered again.
   ELEMENT_PROCESSED_BY_LCP_FOR_TEXT = ELEMENT_FLAG_BIT(5),
 
+  // If this flag is set on an element, this means the HTML parser encountered
+  // a duplicate attribute error:
+  // https://html.spec.whatwg.org/multipage/parsing.html#parse-error-duplicate-attribute
+  // This flag is used for detecting dangling markup attacks in the CSP
+  // algorithm https://w3c.github.io/webappsec-csp/#is-element-nonceable.
+  ELEMENT_PARSER_HAD_DUPLICATE_ATTR_ERROR = ELEMENT_FLAG_BIT(6),
+
   // Remaining bits are for subclasses
-  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 6
+  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 7
 };
 
 #undef ELEMENT_FLAG_BIT
@@ -237,6 +244,15 @@ class Grid;
   }                                                              \
   void Set##method(const nsAString& aValue, ErrorResult& aRv) {  \
     SetOrRemoveNullableStringAttr(nsGkAtoms::attr, aValue, aRv); \
+  }
+
+#define REFLECT_NULLABLE_ELEMENT_ATTR(method, attr)      \
+  Element* Get##method() const {                         \
+    return GetAttrAssociatedElement(nsGkAtoms::attr);    \
+  }                                                      \
+                                                         \
+  void Set##method(Element* aElement) {                  \
+    ExplicitlySetAttrElement(nsGkAtoms::attr, aElement); \
   }
 
 class Element : public FragmentOrElement {
@@ -454,22 +470,13 @@ class Element : public FragmentOrElement {
   virtual bool IsInteractiveHTMLContent() const;
 
   /**
-   * Returns |this| as an nsIMozBrowserFrame* if the element is a frame or
-   * iframe element.
-   *
-   * We have this method, rather than using QI, so that we can use it during
-   * the servo traversal, where we can't QI DOM nodes because of non-thread-safe
-   * refcounts.
-   */
-  virtual nsIMozBrowserFrame* GetAsMozBrowserFrame() { return nullptr; }
-
-  /**
    * Is the attribute named aAttribute a mapped attribute?
    */
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* aAttribute) const;
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
+  using nsIContent::UnbindFromTree;
 
   virtual nsMapRuleToAttributesFunc GetAttributeMappingFunction() const;
   static void MapNoAttributesInto(mozilla::MappedDeclarationsBuilder&);
@@ -579,7 +586,8 @@ class Element : public FragmentOrElement {
   /**
    * https://html.spec.whatwg.org/multipage/popover.html#topmost-popover-ancestor
    */
-  Element* GetTopmostPopoverAncestor(const Element* aInvoker) const;
+  Element* GetTopmostPopoverAncestor(const Element* aInvoker,
+                                     bool isPopover) const;
 
   ElementAnimationData* GetAnimationData() const {
     if (!MayHaveAnimations()) {
@@ -652,8 +660,13 @@ class Element : public FragmentOrElement {
   REFLECT_NULLABLE_DOMSTRING_ATTR(Role, role)
 
   // AriaAttributes
+  REFLECT_NULLABLE_ELEMENT_ATTR(AriaActiveDescendantElement,
+                                aria_activedescendant)
   REFLECT_NULLABLE_DOMSTRING_ATTR(AriaAtomic, aria_atomic)
   REFLECT_NULLABLE_DOMSTRING_ATTR(AriaAutoComplete, aria_autocomplete)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaBrailleLabel, aria_braillelabel)
+  REFLECT_NULLABLE_DOMSTRING_ATTR(AriaBrailleRoleDescription,
+                                  aria_brailleroledescription)
   REFLECT_NULLABLE_DOMSTRING_ATTR(AriaBusy, aria_busy)
   REFLECT_NULLABLE_DOMSTRING_ATTR(AriaChecked, aria_checked)
   REFLECT_NULLABLE_DOMSTRING_ATTR(AriaColCount, aria_colcount)
@@ -700,7 +713,7 @@ class Element : public FragmentOrElement {
 
  public:
   MOZ_CAN_RUN_SCRIPT
-  nsIScrollableFrame* GetScrollFrame(nsIFrame** aStyledFrame = nullptr,
+  nsIScrollableFrame* GetScrollFrame(nsIFrame** aFrame = nullptr,
                                      FlushType aFlushType = FlushType::Layout);
 
  private:
@@ -1101,8 +1114,6 @@ class Element : public FragmentOrElement {
     return FindAttributeDependence(aAttribute, aMaps, N);
   }
 
-  static nsStaticAtom* const* HTMLSVGPropertiesToTraverseAndUnlink();
-
   MOZ_CAN_RUN_SCRIPT virtual void HandleInvokeInternal(nsAtom* aAction,
                                                        ErrorResult& aRv) {}
 
@@ -1253,6 +1264,18 @@ class Element : public FragmentOrElement {
    */
   void ExplicitlySetAttrElement(nsAtom* aAttr, Element* aElement);
 
+  void ClearExplicitlySetAttrElement(nsAtom*);
+
+  /**
+   * Gets the attribute element for the given attribute.
+   * https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#explicitly-set-attr-element
+   * Unlike GetAttrAssociatedElement, this returns the target even if it isn't
+   * a descendant of any of this element's shadow-including ancestors. It also
+   * doesn't attempt to retrieve an element using a string id set in the content
+   * attribute.
+   */
+  Element* GetExplicitlySetAttrElement(nsAtom* aAttr) const;
+
   PseudoStyleType GetPseudoElementType() const {
     nsresult rv = NS_OK;
     auto raw = GetProperty(nsGkAtoms::pseudoProperty, &rv);
@@ -1339,6 +1362,10 @@ class Element : public FragmentOrElement {
   Loading LoadingState() const;
   void GetLoading(nsAString& aValue) const;
   bool ParseLoadingAttribute(const nsAString& aValue, nsAttrValue& aResult);
+
+  // https://html.spec.whatwg.org/#potentially-render-blocking
+  virtual bool IsPotentiallyRenderBlocking() { return false; }
+  bool BlockingContainsRender() const;
 
   // Shadow DOM v1
   enum class ShadowRootDeclarative : bool { No, Yes };
@@ -1450,8 +1477,6 @@ class Element : public FragmentOrElement {
   // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be
   // called from JS. Use PresShell::ScrollContentIntoView instead.
   void ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject);
-  MOZ_CAN_RUN_SCRIPT void Scroll(double aXScroll, double aYScroll);
-  MOZ_CAN_RUN_SCRIPT void Scroll(const ScrollToOptions& aOptions);
   MOZ_CAN_RUN_SCRIPT void ScrollTo(double aXScroll, double aYScroll);
   MOZ_CAN_RUN_SCRIPT void ScrollTo(const ScrollToOptions& aOptions);
   MOZ_CAN_RUN_SCRIPT void ScrollBy(double aXScrollDif, double aYScrollDif);
@@ -1742,6 +1767,10 @@ class Element : public FragmentOrElement {
    */
   void TryReserveAttributeCount(uint32_t aAttributeCount);
 
+  void SetParserHadDuplicateAttributeError() {
+    SetFlags(ELEMENT_PARSER_HAD_DUPLICATE_ATTR_ERROR);
+  }
+
   /**
    * Set a content attribute via a reflecting nullable string IDL
    * attribute (e.g. a CORS attribute).  If DOMStringIsNull(aValue),
@@ -1829,6 +1858,9 @@ class Element : public FragmentOrElement {
   }
 
  protected:
+  // Supported rel values for <form> and anchors.
+  static const DOMTokenListSupportedToken sAnchorAndFormRelValues[];
+
   /*
    * Named-bools for use with SetAttrAndNotify to make call sites easier to
    * read.
@@ -1839,6 +1871,11 @@ class Element : public FragmentOrElement {
   static const bool kDontNotifyDocumentObservers = false;
   static const bool kCallAfterSetAttr = true;
   static const bool kDontCallAfterSetAttr = false;
+
+  /*
+   * The supported values of blocking attribute for use with nsDOMTokenList.
+   */
+  static const DOMTokenListSupportedToken sSupportedBlockingValues[];
 
   /**
    * Set attribute and (if needed) notify documentobservers and fire off
@@ -1890,18 +1927,6 @@ class Element : public FragmentOrElement {
                             bool aFireMutation, bool aNotify,
                             bool aCallAfterSetAttr, Document* aComposedDocument,
                             const mozAutoDocUpdate& aGuard);
-
-  /**
-   * Scroll to a new position using behavior evaluated from CSS and
-   * a CSSOM-View DOM method ScrollOptions dictionary.  The scrolling may
-   * be performed asynchronously or synchronously depending on the resolved
-   * scroll-behavior.
-   *
-   * @param aScroll       Destination of scroll, in CSS pixels
-   * @param aOptions      Dictionary of options to be evaluated
-   */
-  MOZ_CAN_RUN_SCRIPT
-  void Scroll(const CSSIntPoint& aScroll, const ScrollOptions& aOptions);
 
   /**
    * Convert an attribute string value to attribute type based on the type of
@@ -2179,6 +2204,13 @@ class Element : public FragmentOrElement {
    * @return the frame's client area
    */
   MOZ_CAN_RUN_SCRIPT nsRect GetClientAreaRect();
+
+  /** Gets the scroll size as for the scroll{Width,Height} APIs */
+  MOZ_CAN_RUN_SCRIPT nsSize GetScrollSize();
+  /** Gets the scroll position as for the scroll{Top,Left} APIs */
+  MOZ_CAN_RUN_SCRIPT nsPoint GetScrollOrigin();
+  /** Gets the scroll range as for the scroll{Top,Left}{Min,Max} APIs */
+  MOZ_CAN_RUN_SCRIPT nsRect GetScrollRange();
 
   /**
    * GetCustomInterface is somewhat like a GetInterface, but it is expected

@@ -22,6 +22,8 @@ skip-if = ["os == 'linux'"] # Bug 1116215
 ["test_menubar.xhtml"]
 skip-if = ["os == 'mac'"]
 
+["test_moz_button.html"]
+
 ["test_moz_button_group.html"]
 
 ["test_moz_card.html"]
@@ -31,6 +33,8 @@ skip-if = ["os == 'mac'"]
 ["test_moz_label.html"]
 
 ["test_moz_message_bar.html"]
+
+["test_moz_page_nav.html"]
 
 ["test_moz_support_link.html"]
 
@@ -47,7 +51,10 @@ skip-if = ["os == 'mac'"]
 ["test_panel_list_min_width_from_anchor.html"]
 
 ["test_popupanchor.xhtml"]
-skip-if = ["os == 'linux' || (verify && (os == 'win'))"] # Bug 1335894 perma-fail on linux 16.04
+skip-if = [
+  "os == 'linux' && os_version == '18.04'", # Bug 1335894 perma-fail on linux 16.04
+  "verify && os == 'win'",
+]
 
 ["test_popupreflows.xhtml"]
 
@@ -59,7 +66,8 @@ support-files = [
   "video.ogg",
 ]
 skip-if = [
-  "toolkit == 'android'",
+  "os == 'android'",
   "os == 'linux' && debug", # Bug 1765783
 ]
+
 ["test_videocontrols_onclickplay.html"]

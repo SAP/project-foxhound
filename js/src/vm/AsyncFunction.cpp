@@ -12,6 +12,8 @@
 
 #include "builtin/ModuleObject.h"
 #include "builtin/Promise.h"
+#include "js/Wrapper.h"
+#include "proxy/DeadObjectProxy.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GeneratorObject.h"
 #include "vm/GlobalObject.h"
@@ -206,16 +208,27 @@ static bool AsyncFunctionResume(JSContext* cx,
 
 JSObject* js::AsyncFunctionResolve(
     JSContext* cx, Handle<AsyncFunctionGeneratorObject*> generator,
-    HandleValue valueOrReason, AsyncFunctionResolveKind resolveKind) {
+    HandleValue value) {
   Rooted<PromiseObject*> promise(cx, generator->promise());
-  if (resolveKind == AsyncFunctionResolveKind::Fulfill) {
-    if (!AsyncFunctionReturned(cx, promise, valueOrReason)) {
-      return nullptr;
-    }
-  } else {
-    if (!AsyncFunctionThrown(cx, promise, valueOrReason)) {
-      return nullptr;
-    }
+  if (!AsyncFunctionReturned(cx, promise, value)) {
+    return nullptr;
+  }
+  return promise;
+}
+
+JSObject* js::AsyncFunctionReject(
+    JSContext* cx, Handle<AsyncFunctionGeneratorObject*> generator,
+    HandleValue reason, HandleValue stack) {
+  MOZ_ASSERT(stack.isObjectOrNull());
+  Rooted<PromiseObject*> promise(cx, generator->promise());
+  Rooted<SavedFrame*> unwrappedRejectionStack(cx);
+  if (stack.isObject()) {
+    MOZ_ASSERT(UncheckedUnwrap(&stack.toObject())->is<SavedFrame>() ||
+               IsDeadProxyObject(&stack.toObject()));
+    unwrappedRejectionStack = stack.toObject().maybeUnwrapIf<SavedFrame>();
+  }
+  if (!AsyncFunctionThrown(cx, promise, reason, unwrappedRejectionStack)) {
+    return nullptr;
   }
   return promise;
 }

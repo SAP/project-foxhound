@@ -306,8 +306,8 @@ void nsStandardURL::SanityCheck() {
         (uint32_t)mExtension.mPos, (int32_t)mExtension.mLen,
         (uint32_t)mQuery.mPos, (int32_t)mQuery.mLen, (uint32_t)mRef.mPos,
         (int32_t)mRef.mLen);
-    CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URLSegments,
-                                       msg);
+    CrashReporter::RecordAnnotationNSCString(
+        CrashReporter::Annotation::URLSegments, msg);
 
     MOZ_CRASH("nsStandardURL::SanityCheck failed");
   }
@@ -3081,6 +3081,22 @@ nsresult nsStandardURL::SetFilePath(const nsACString& input) {
     uint32_t dirPos, basePos, extPos;
     int32_t dirLen, baseLen, extLen;
     nsresult rv;
+
+    if (IsSpecialProtocol(mSpec)) {
+      // Bug 1873955: Replace all backslashes with slashes when parsing paths
+      // Stop when we reach the query or the hash.
+      auto* start = str.BeginWriting();
+      auto* end = str.EndWriting();
+      while (start != end) {
+        if (*start == '?' || *start == '#') {
+          break;
+        }
+        if (*start == '\\') {
+          *start = '/';
+        }
+        start++;
+      }
+    }
 
     rv = mParser->ParseFilePath(filepath, str.Length(), &dirPos, &dirLen,
                                 &basePos, &baseLen, &extPos, &extLen);

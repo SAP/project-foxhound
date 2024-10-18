@@ -18,6 +18,7 @@ XPIDL_SOURCES += [
     "nsIAuthPromptCallback.idl",
     "nsIAuthPromptProvider.idl",
     "nsIBackgroundFileSaver.idl",
+    "nsIBaseChannel.idl",
     "nsIBufferedStreams.idl",
     "nsIByteRangeRequest.idl",
     "nsICacheInfoChannel.idl",
@@ -157,6 +158,7 @@ EXPORTS.mozilla += [
 EXPORTS.mozilla.net += [
     "CacheInfoIPCTypes.h",
     "CaptivePortalService.h",
+    "ContentRange.h",
     "Dashboard.h",
     "DashboardTypes.h",
     "DefaultURI.h",
@@ -178,6 +180,7 @@ UNIFIED_SOURCES += [
     "ArrayBufferInputStream.cpp",
     "BackgroundFileSaver.cpp",
     "CaptivePortalService.cpp",
+    "ContentRange.cpp",
     "Dashboard.cpp",
     "DefaultURI.cpp",
     "EventTokenBucket.cpp",

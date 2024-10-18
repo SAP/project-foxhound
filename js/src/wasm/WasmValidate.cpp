@@ -89,12 +89,17 @@ bool wasm::EncodeLocalEntries(Encoder& e, const ValTypeVector& locals) {
   return true;
 }
 
-bool wasm::DecodeLocalEntries(Decoder& d, const TypeContext& types,
-                              const FeatureArgs& features,
-                              ValTypeVector* locals) {
+bool wasm::DecodeLocalEntriesWithParams(Decoder& d,
+                                        const ModuleEnvironment& env,
+                                        uint32_t funcIndex,
+                                        ValTypeVector* locals) {
   uint32_t numLocalEntries;
   if (!d.readVarU32(&numLocalEntries)) {
     return d.fail("failed to read number of local entries");
+  }
+
+  if (!locals->appendAll(env.funcs[funcIndex].type->args())) {
+    return false;
   }
 
   for (uint32_t i = 0; i < numLocalEntries; i++) {
@@ -108,7 +113,7 @@ bool wasm::DecodeLocalEntries(Decoder& d, const TypeContext& types,
     }
 
     ValType type;
-    if (!d.readValType(types, features, &type)) {
+    if (!d.readValType(*env.types, env.features, &type)) {
       return false;
     }
 
@@ -137,9 +142,9 @@ bool wasm::DecodeValidatedLocalEntries(const TypeContext& types, Decoder& d,
 }
 
 bool wasm::CheckIsSubtypeOf(Decoder& d, const ModuleEnvironment& env,
-                            size_t opcodeOffset, FieldType subType,
-                            FieldType superType) {
-  if (FieldType::isSubTypeOf(subType, superType)) {
+                            size_t opcodeOffset, StorageType subType,
+                            StorageType superType) {
+  if (StorageType::isSubTypeOf(subType, superType)) {
     return true;
   }
 
@@ -235,9 +240,9 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
                                           &unusedArgs));
       }
 #endif
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
       case uint16_t(Op::CallRef): {
-        if (!env.functionReferencesEnabled()) {
+        if (!env.gcEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         const FuncType* unusedType;
@@ -246,7 +251,7 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
       }
 #  ifdef ENABLE_WASM_TAIL_CALLS
       case uint16_t(Op::ReturnCallRef): {
-        if (!env.functionReferencesEnabled() || !env.tailCallsEnabled()) {
+        if (!env.gcEnabled() || !env.tailCallsEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         const FuncType* unusedType;
@@ -1240,15 +1245,15 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         }
         break;
       }
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+#ifdef ENABLE_WASM_GC
       case uint16_t(Op::RefAsNonNull): {
-        if (!env.functionReferencesEnabled()) {
+        if (!env.gcEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         CHECK(iter.readRefAsNonNull(&nothing));
       }
       case uint16_t(Op::BrOnNull): {
-        if (!env.functionReferencesEnabled()) {
+        if (!env.gcEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         uint32_t unusedDepth;
@@ -1256,7 +1261,7 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
             iter.readBrOnNull(&unusedDepth, &unusedType, &nothings, &nothing));
       }
       case uint16_t(Op::BrOnNonNull): {
-        if (!env.functionReferencesEnabled()) {
+        if (!env.gcEnabled()) {
           return iter.unrecognizedOpcode(&op);
         }
         uint32_t unusedDepth;
@@ -1285,31 +1290,19 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         CHECK(iter.readRefIsNull(&nothing));
       }
       case uint16_t(Op::Try):
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         CHECK(iter.readTry(&unusedType));
       case uint16_t(Op::Catch): {
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         LabelKind unusedKind;
         uint32_t unusedIndex;
         CHECK(iter.readCatch(&unusedKind, &unusedIndex, &unusedType,
                              &unusedType, &nothings));
       }
       case uint16_t(Op::CatchAll): {
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         LabelKind unusedKind;
         CHECK(iter.readCatchAll(&unusedKind, &unusedType, &unusedType,
                                 &nothings));
       }
       case uint16_t(Op::Delegate): {
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         uint32_t unusedDepth;
         if (!iter.readDelegate(&unusedDepth, &unusedType, &nothings)) {
           return false;
@@ -1318,16 +1311,10 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
         break;
       }
       case uint16_t(Op::Throw): {
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         uint32_t unusedIndex;
         CHECK(iter.readThrow(&unusedIndex, &nothings));
       }
       case uint16_t(Op::Rethrow): {
-        if (!env.exceptionsEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         uint32_t unusedDepth;
         CHECK(iter.readRethrow(&unusedDepth));
       }
@@ -1541,14 +1528,10 @@ static bool DecodeFunctionBodyExprs(const ModuleEnvironment& env,
 bool wasm::ValidateFunctionBody(const ModuleEnvironment& env,
                                 uint32_t funcIndex, uint32_t bodySize,
                                 Decoder& d) {
-  ValTypeVector locals;
-  if (!locals.appendAll(env.funcs[funcIndex].type->args())) {
-    return false;
-  }
-
   const uint8_t* bodyBegin = d.currentPosition();
 
-  if (!DecodeLocalEntries(d, *env.types, env.features, &locals)) {
+  ValTypeVector locals;
+  if (!DecodeLocalEntriesWithParams(d, env, funcIndex, &locals)) {
     return false;
   }
 
@@ -1624,7 +1607,7 @@ static bool DecodeFuncType(Decoder& d, ModuleEnvironment* env,
 static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
                              StructType* structType) {
   if (!env->gcEnabled()) {
-    return d.fail("Structure types not enabled");
+    return d.fail("gc not enabled");
   }
 
   uint32_t numFields;
@@ -1642,7 +1625,7 @@ static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
   }
 
   for (uint32_t i = 0; i < numFields; i++) {
-    if (!d.readFieldType(*env->types, env->features, &fields[i].type)) {
+    if (!d.readStorageType(*env->types, env->features, &fields[i].type)) {
       return false;
     }
 
@@ -1668,11 +1651,11 @@ static bool DecodeStructType(Decoder& d, ModuleEnvironment* env,
 static bool DecodeArrayType(Decoder& d, ModuleEnvironment* env,
                             ArrayType* arrayType) {
   if (!env->gcEnabled()) {
-    return d.fail("gc types not enabled");
+    return d.fail("gc not enabled");
   }
 
-  FieldType elementType;
-  if (!d.readFieldType(*env->types, env->features, &elementType)) {
+  StorageType elementType;
+  if (!d.readStorageType(*env->types, env->features, &elementType)) {
     return false;
   }
 
@@ -2247,13 +2230,6 @@ static bool CheckImportsAgainstBuiltinModules(Decoder& d,
     return true;
   }
 
-  // Allocate a type context for builtin types so we can canonicalize them
-  // and use them in type comparisons
-  RefPtr<TypeContext> builtinTypes = js_new<TypeContext>();
-  if (!builtinTypes) {
-    return false;
-  }
-
   uint32_t importFuncIndex = 0;
   for (auto& import : env->imports) {
     Maybe<BuiltinModuleId> builtinModule =
@@ -2278,21 +2254,9 @@ static bool CheckImportsAgainstBuiltinModules(Decoder& d,
           return d.fail("unrecognized builtin module field");
         }
 
-        // Get a canonicalized type definition for this builtin so we can
-        // accurately compare it against the import type.
-        FuncType builtinFuncType;
-        if (!(*builtinFunc)->funcType(&builtinFuncType)) {
-          return false;
-        }
-        if (!builtinTypes->addType(builtinFuncType)) {
-          return false;
-        }
-        const TypeDef& builtinTypeDef =
-            builtinTypes->type(builtinTypes->length() - 1);
-
         const TypeDef& importTypeDef = (*env->types)[func.typeIndex];
-        if (!TypeDef::isSubTypeOf(&builtinTypeDef, &importTypeDef)) {
-          return d.failf("type mismatch in %s", (*builtinFunc)->exportName);
+        if (!TypeDef::isSubTypeOf((*builtinFunc)->typeDef(), &importTypeDef)) {
+          return d.failf("type mismatch in %s", (*builtinFunc)->exportName());
         }
         break;
       }
@@ -2477,10 +2441,6 @@ static bool DecodeTagSection(Decoder& d, ModuleEnvironment* env) {
   }
   if (!range) {
     return true;
-  }
-
-  if (!env->exceptionsEnabled()) {
-    return d.fail("exceptions not enabled");
   }
 
   uint32_t numDefs;
@@ -2784,8 +2744,8 @@ static bool DecodeElemSegment(Decoder& d, ModuleEnvironment* env) {
   if (seg.active()) {
     RefType tblElemType = env->tables[seg.tableIndex].elemType;
     if (!CheckIsSubtypeOf(d, *env, d.currentOffset(),
-                          ValType(elemType).fieldType(),
-                          ValType(tblElemType).fieldType())) {
+                          ValType(elemType).storageType(),
+                          ValType(tblElemType).storageType())) {
       return false;
     }
   }

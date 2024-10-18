@@ -127,6 +127,8 @@ enum class AllocKind : uint8_t {
     LIMIT,
     LAST = LIMIT - 1,
 
+    INVALID = LIMIT,
+
     FIRST = 0,
     OBJECT_FIRST = FUNCTION // Hardcoded to first object kind.
   // clang-format on
@@ -195,13 +197,14 @@ constexpr auto SomeAllocKinds(AllocKind first = AllocKind::FIRST,
 // with each index corresponding to a particular alloc kind.
 template <typename ValueType>
 using AllAllocKindArray =
-    mozilla::EnumeratedArray<AllocKind, AllocKind::LIMIT, ValueType>;
+    mozilla::EnumeratedArray<AllocKind, ValueType, size_t(AllocKind::LIMIT)>;
 
 // ObjectAllocKindArray<ValueType> gives an enumerated array of ValueTypes,
 // with each index corresponding to a particular object alloc kind.
 template <typename ValueType>
 using ObjectAllocKindArray =
-    mozilla::EnumeratedArray<AllocKind, AllocKind::OBJECT_LIMIT, ValueType>;
+    mozilla::EnumeratedArray<AllocKind, ValueType,
+                             size_t(AllocKind::OBJECT_LIMIT)>;
 
 /*
  * Map from C++ type to alloc kind for non-object types. JSObject does not have

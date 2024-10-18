@@ -1,6 +1,6 @@
-import { AWScreenUtils } from "modules/AWScreenUtils.jsm";
+import { AWScreenUtils } from "modules/AWScreenUtils.sys.mjs";
 import { GlobalOverrider } from "newtab/test/unit/utils";
-import { ASRouter } from "newtab/lib/ASRouter.jsm";
+import { ASRouter } from "asrouter/modules/ASRouter.sys.mjs";
 
 describe("AWScreenUtils", () => {
   let sandbox;

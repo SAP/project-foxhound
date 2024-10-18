@@ -27,7 +27,7 @@ var logConsole;
 function log(msg) {
   if (!logConsole) {
     logConsole = console.createInstance({
-      prefix: "** Sanitizer.jsm",
+      prefix: "Sanitizer",
       maxLogLevelPref: "browser.sanitizer.loglevel",
     });
   }
@@ -396,9 +396,67 @@ export var Sanitizer = {
     });
   },
 
+  /**
+   * Migrate old sanitize prefs to the new prefs for the new
+   * clear history dialog. Does nothing if the migration was completed before
+   * based on the pref privacy.sanitize.cpd.hasMigratedToNewPrefs or
+   * privacy.sanitize.clearOnShutdown.hasMigratedToNewPrefs
+   *
+   * @param {string} context - one of "clearOnShutdown" or "cpd", which indicates which
+   *      pref branch to migrate prefs from based on the dialog context
+   */
+  maybeMigratePrefs(context) {
+    if (
+      Services.prefs.getBoolPref(
+        `privacy.sanitize.${context}.hasMigratedToNewPrefs`
+      )
+    ) {
+      return;
+    }
+
+    let cookies = Services.prefs.getBoolPref(`privacy.${context}.cookies`);
+    let history = Services.prefs.getBoolPref(`privacy.${context}.history`);
+    let cache = Services.prefs.getBoolPref(`privacy.${context}.cache`);
+    let siteSettings = Services.prefs.getBoolPref(
+      `privacy.${context}.siteSettings`
+    );
+
+    let newContext =
+      context == "clearOnShutdown" ? "clearOnShutdown_v2" : "clearHistory";
+
+    // We set cookiesAndStorage to true if cookies are enabled for clearing on shutdown
+    // regardless of what sessions and offlineApps are set to
+    // This is because cookie clearing behaviour takes precedence over sessions and offlineApps clearing.
+    Services.prefs.setBoolPref(
+      `privacy.${newContext}.cookiesAndStorage`,
+      cookies
+    );
+
+    // we set historyFormDataAndDownloads to true if history is enabled for clearing on
+    // shutdown, regardless of what form data is set to.
+    // This is because history clearing behavious takes precedence over formdata clearing.
+    Services.prefs.setBoolPref(
+      `privacy.${newContext}.historyFormDataAndDownloads`,
+      history
+    );
+
+    // cache and siteSettings follow the old dialog prefs
+    Services.prefs.setBoolPref(`privacy.${newContext}.cache`, cache);
+
+    Services.prefs.setBoolPref(
+      `privacy.${newContext}.siteSettings`,
+      siteSettings
+    );
+
+    Services.prefs.setBoolPref(
+      `privacy.sanitize.${context}.hasMigratedToNewPrefs`,
+      true
+    );
+  },
+
   // When making any changes to the sanitize implementations here,
   // please check whether the changes are applicable to Android
-  // (mobile/android/modules/geckoview/GeckoViewStorageController.jsm) as well.
+  // (mobile/android/modules/geckoview/GeckoViewStorageController.sys.mjs) as well.
 
   items: {
     cache: {
@@ -424,14 +482,18 @@ export var Sanitizer = {
             progress,
             principalsForShutdownClearing,
             Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
+              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
         } else {
           // Not on shutdown
           await clearData(
             range,
             Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
+              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
         }
         await clearData(range, Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES);
@@ -451,14 +513,16 @@ export var Sanitizer = {
             progress,
             principalsForShutdownClearing,
             Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
           );
         } else {
           // Not on shutdown
           await clearData(
             range,
             Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
           );
         }
       },
@@ -594,7 +658,8 @@ export var Sanitizer = {
             Ci.nsIClearDataService.CLEAR_CLIENT_AUTH_REMEMBER_SERVICE |
             Ci.nsIClearDataService.CLEAR_CERT_EXCEPTIONS |
             Ci.nsIClearDataService.CLEAR_CREDENTIAL_MANAGER_STATE |
-            Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION
+            Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION |
+            Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE
         );
         TelemetryStopwatch.finish("FX_SANITIZE_SITESETTINGS", refObj);
       },
@@ -862,7 +927,9 @@ export var Sanitizer = {
               Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
               Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
-              Ci.nsIClearDataService.CLEAR_AUTH_CACHE
+              Ci.nsIClearDataService.CLEAR_AUTH_CACHE |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
+              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
         } else {
           // Not on shutdown
@@ -872,7 +939,9 @@ export var Sanitizer = {
               Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
               Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
               Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
-              Ci.nsIClearDataService.CLEAR_AUTH_CACHE
+              Ci.nsIClearDataService.CLEAR_AUTH_CACHE |
+              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
+              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
           );
         }
         await clearData(range, Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES);
@@ -1024,6 +1093,10 @@ async function sanitizeOnShutdown(progress) {
       ),
     };
   } else {
+    // Perform a migration if this is the first time sanitizeOnShutdown is
+    // running for the user with the new dialog
+    Sanitizer.maybeMigratePrefs("clearOnShutdown");
+
     progress.sanitizationPrefs = {
       privacy_sanitize_sanitizeOnShutdown: Services.prefs.getBoolPref(
         "privacy.sanitize.sanitizeOnShutdown"
@@ -1115,7 +1188,8 @@ async function sanitizeOnShutdown(progress) {
       Ci.nsIClearDataService.CLEAR_ALL_CACHES |
         Ci.nsIClearDataService.CLEAR_COOKIES |
         Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-        Ci.nsIClearDataService.CLEAR_EME
+        Ci.nsIClearDataService.CLEAR_EME |
+        Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
     );
     progress.sanitizationPrefs.session_permission_exceptions = exceptions;
   }

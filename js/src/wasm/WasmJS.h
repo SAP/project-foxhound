@@ -167,6 +167,8 @@ class WasmGlobalObject : public NativeObject {
   static bool valueSetterImpl(JSContext* cx, const CallArgs& args);
   static bool valueSetter(JSContext* cx, unsigned argc, Value* vp);
 
+  wasm::GCPtrVal& mutableVal();
+
  public:
   static const unsigned RESERVED_SLOTS = 2;
   static const JSClass class_;
@@ -182,7 +184,9 @@ class WasmGlobalObject : public NativeObject {
 
   bool isMutable() const;
   wasm::ValType type() const;
-  wasm::GCPtrVal& val() const;
+  const wasm::GCPtrVal& val() const;
+  void setVal(wasm::HandleVal value);
+  void* addressOfCell() const;
 };
 
 // The class of WebAssembly.Instance. Each WasmInstanceObject owns a
@@ -440,10 +444,13 @@ class WasmExceptionObject : public NativeObject {
   static bool getStack_impl(JSContext* cx, const CallArgs& args);
 
   uint8_t* typedMem() const;
-  [[nodiscard]] bool loadValue(JSContext* cx, size_t offset, wasm::ValType type,
-                               MutableHandleValue vp);
-  [[nodiscard]] bool initValue(JSContext* cx, size_t offset, wasm::ValType type,
-                               HandleValue value);
+  [[nodiscard]] bool loadArg(JSContext* cx, size_t offset, wasm::ValType type,
+                             MutableHandleValue vp) const;
+  [[nodiscard]] bool initArg(JSContext* cx, size_t offset, wasm::ValType type,
+                             HandleValue value);
+
+  void initRefArg(size_t offset, wasm::AnyRef ref);
+  wasm::AnyRef loadRefArg(size_t offset) const;
 
  public:
   static const unsigned RESERVED_SLOTS = 4;
@@ -456,11 +463,15 @@ class WasmExceptionObject : public NativeObject {
 
   static WasmExceptionObject* create(JSContext* cx, Handle<WasmTagObject*> tag,
                                      HandleObject stack, HandleObject proto);
+  static WasmExceptionObject* wrapJSValue(JSContext* cx, HandleValue value);
   bool isNewborn() const;
 
   JSObject* stack() const;
   const wasm::TagType* tagType() const;
   WasmTagObject& tag() const;
+
+  bool isWrappedJSValue() const;
+  Value wrappedJSValue() const;
 
   static size_t offsetOfData() {
     return NativeObject::getFixedSlotOffset(DATA_SLOT);
@@ -472,6 +483,19 @@ class WasmExceptionObject : public NativeObject {
 class WasmNamespaceObject : public NativeObject {
  public:
   static const JSClass class_;
+  static const unsigned JS_VALUE_TAG_SLOT = 0;
+  static const unsigned RESERVED_SLOTS = 1;
+
+  WasmTagObject* wrappedJSValueTag() const {
+    return &getReservedSlot(JS_VALUE_TAG_SLOT)
+                .toObjectOrNull()
+                ->as<WasmTagObject>();
+  }
+  void setWrappedJSValueTag(WasmTagObject* tag) {
+    return setReservedSlot(JS_VALUE_TAG_SLOT, ObjectValue(*tag));
+  }
+
+  static WasmNamespaceObject* getOrCreate(JSContext* cx);
 
  private:
   static const ClassSpec classSpec_;

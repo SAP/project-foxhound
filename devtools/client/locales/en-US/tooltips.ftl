@@ -77,9 +77,12 @@ inactive-css-text-wrap-balance-fragmented = <strong>{ $property }</strong> has n
 
 ## In the Rule View when a CSS property cannot be successfully applied we display
 ## an icon. When this icon is hovered this message is displayed to explain how
-## the problem can be solved.
+## the problem can be solved. CSS properties and values in <strong> tags should
+## not be translated.
 
 inactive-css-not-grid-or-flex-container-fix = Try adding <strong>display:grid</strong> or <strong>display:flex</strong>. { learn-more }
+
+inactive-css-not-grid-or-flex-or-block-container-fix = Try adding <strong>display:grid</strong>, <strong>display:flex</strong> or <strong>display:block</strong>. { learn-more }
 
 inactive-css-not-grid-or-flex-container-or-multicol-container-fix = Try adding either <strong>display:grid</strong>, <strong>display:flex</strong>, or <strong>columns:2</strong>. { learn-more }
 

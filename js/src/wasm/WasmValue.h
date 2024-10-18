@@ -224,6 +224,11 @@ class LitVal {
   Cell& cell() { return cell_; }
   const Cell& cell() const { return cell_; }
 
+  // Updates the type of the LitVal. Does not check that the type is valid for the
+  // actual value, so make sure the type is definitely correct via validation or
+  // something.
+  void unsafeSetType(ValType type) { type_ = type; }
+
   uint32_t i32() const {
     MOZ_ASSERT(type_ == ValType::I32);
     return cell_.i32_;
@@ -308,11 +313,6 @@ class MOZ_NON_PARAM Val : public LitVal {
     MOZ_ASSERT(isAnyRef());
     return cell_.ref_;
   }
-
-  // Updates the type of the Val. Does not check that the type is valid for the
-  // actual value, so make sure the type is definitely correct via validation or
-  // something.
-  void unsafeSetType(ValType type) { type_ = type; }
 
   // Initialize from `loc` which is a rooted location and needs no barriers.
   void initFromRootedLocation(ValType type, const void* loc);
@@ -427,10 +427,6 @@ enum class CoercionLevel {
 //
 // [1] https://webassembly.github.io/spec/js-api/index.html#towebassemblyvalue
 template <typename Debug = NoDebug>
-extern bool ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
-                               void* loc, bool mustWrite64,
-                               CoercionLevel level = CoercionLevel::Spec);
-template <typename Debug = NoDebug>
 extern bool ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
                                void* loc, bool mustWrite64,
                                CoercionLevel level = CoercionLevel::Spec);
@@ -444,11 +440,11 @@ extern bool ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
 //
 // [1] https://webassembly.github.io/spec/js-api/index.html#tojsvalue
 template <typename Debug = NoDebug>
-extern bool ToJSValue(JSContext* cx, const void* src, FieldType type,
+extern bool ToJSValue(JSContext* cx, const void* src, StorageType type,
                       MutableHandleValue dst,
                       CoercionLevel level = CoercionLevel::Spec);
 template <typename Debug = NoDebug>
-extern bool ToJSValueMayGC(FieldType type);
+extern bool ToJSValueMayGC(StorageType type);
 template <typename Debug = NoDebug>
 extern bool ToJSValue(JSContext* cx, const void* src, ValType type,
                       MutableHandleValue dst,

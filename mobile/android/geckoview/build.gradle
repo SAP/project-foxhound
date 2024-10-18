@@ -149,6 +149,17 @@ android {
             }
         }
     }
+
+    buildFeatures {
+        buildConfig true
+        aidl = true
+    }
+
+    publishing {
+        singleVariant('withGeckoBinariesDebug')
+    }
+
+    namespace 'org.mozilla.geckoview'
 }
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile) {
@@ -222,7 +233,7 @@ dependencies {
     implementation "androidx.legacy:legacy-support-v4:1.0.0"
 
     implementation "com.google.android.gms:play-services-fido:20.0.1"
-    implementation "org.yaml:snakeyaml:2.0"
+    implementation "org.yaml:snakeyaml:2.2"
 
     implementation "androidx.lifecycle:lifecycle-common:2.6.1"
     implementation "androidx.lifecycle:lifecycle-process:2.6.1"
@@ -315,14 +326,14 @@ android.libraryVariants.all { variant ->
         source = variant.sourceSets.collect({ it.java.srcDirs })
         exclude '**/R.java', '**/BuildConfig.java'
         include 'org/mozilla/geckoview/**.java'
-        options.addPathOption('sourcepath', ':').setValue(
+        options.addPathOption('sourcepath').setValue(
              variant.sourceSets.collect({ it.java.srcDirs }).flatten() +
              variant.generateBuildConfigProvider.get().sourceOutputDir.asFile.get() +
              variant.aidlCompileProvider.get().sourceOutputDir.asFile.get()
         )
         options.addStringOption("Xmaxwarns", "1000")
 
-        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+        classpath += files(android.getBootClasspath())
         classpath += variant.javaCompileProvider.get().classpath
 
         options.memberLevel = JavadocMemberLevel.PROTECTED
@@ -352,7 +363,7 @@ android.libraryVariants.all { variant ->
     }
 
     def sourcesJar = task("sourcesJar${name.capitalize()}", type: Jar) {
-        classifier 'sources'
+        archiveClassifier = 'sources'
         description = "Generate Javadoc for build variant $name"
         destinationDirectory =
             file("${topobjdir}/mobile/android/geckoview/sources/${variant.baseName}")
@@ -507,7 +518,7 @@ android.libraryVariants.all configureVariantDebugLevel
 // be somewhere where the Android plugin is available so that we can fish the
 // path to "android.jar".
 task("generateSDKBindings", type: JavaExec) {
-    classpath project(':annotations').jar.archivePath
+    classpath project(':annotations').jar.archiveFile
     classpath project(':annotations').compileJava.classpath
     classpath project(':annotations').sourceSets.main.runtimeClasspath
 

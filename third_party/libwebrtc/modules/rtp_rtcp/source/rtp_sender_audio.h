@@ -61,6 +61,9 @@ class RTPSenderAudio {
     // header-extension-for-audio-level-indication.
     // Valid range is [0,127]. Actual value is negative.
     absl::optional<int> audio_level_dbov;
+
+    // Contributing sources list.
+    rtc::ArrayView<const uint32_t> csrcs;
   };
   bool SendAudio(const RtpAudioFrame& frame);
 
@@ -104,10 +107,11 @@ class RTPSenderAudio {
 
   OneTimeEvent first_packet_sent_;
 
-  absl::optional<uint32_t> encoder_rtp_timestamp_frequency_
+  absl::optional<int> encoder_rtp_timestamp_frequency_
       RTC_GUARDED_BY(send_audio_mutex_);
 
-  AbsoluteCaptureTimeSender absolute_capture_time_sender_;
+  AbsoluteCaptureTimeSender absolute_capture_time_sender_
+      RTC_GUARDED_BY(send_audio_mutex_);
 };
 
 }  // namespace webrtc

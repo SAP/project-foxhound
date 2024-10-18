@@ -1816,8 +1816,7 @@ static bool CheckResumptionValue(JSContext* cx, AbstractFramePtr frame,
       // 1.  `return <value>` fulfills and returns the async function's promise.
       Rooted<PromiseObject*> promise(cx, generator->promise());
       if (promise->state() == JS::PromiseState::Pending) {
-        if (!AsyncFunctionResolve(cx, generator, vp,
-                                  AsyncFunctionResolveKind::Fulfill)) {
+        if (!AsyncFunctionResolve(cx, generator, vp)) {
           return false;
         }
       }
@@ -3246,6 +3245,10 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
     Invalidate(cx, invalid);
   }
 
+  for (size_t i = 0; i < scripts.length(); i++) {
+    MOZ_ASSERT(!scripts[i]->jitScript()->icScript()->active());
+  }
+
   // Code below this point must be infallible to ensure the active bit of
   // BaselineScripts is in a consistent state.
   //
@@ -4632,13 +4635,14 @@ bool Debugger::CallData::addAllGlobalsAsDebuggees() {
       if (r->creationOptions().invisibleToDebugger()) {
         continue;
       }
+      if (!r->hasInitializedGlobal()) {
+        continue;
+      }
       r->compartment()->gcState.scheduledForDestruction = false;
-      GlobalObject* global = r->maybeGlobal();
-      if (global) {
-        Rooted<GlobalObject*> rg(cx, global);
-        if (!dbg->addDebuggeeGlobal(cx, rg)) {
-          return false;
-        }
+      Rooted<GlobalObject*> global(cx, r->maybeGlobal());
+      MOZ_ASSERT(global);
+      if (!dbg->addDebuggeeGlobal(cx, global)) {
+        return false;
       }
     }
   }

@@ -79,6 +79,17 @@ void RemoteTextureOwnerClient::UnregisterAllTextureOwners() {
   mSharedRecycleBin = nullptr;
 }
 
+bool RemoteTextureOwnerClient::WaitForTxn(const RemoteTextureOwnerId aOwnerId,
+                                          RemoteTextureTxnType aTxnType,
+                                          RemoteTextureTxnId aTxnId) {
+  auto it = mOwnerIds.find(aOwnerId);
+  if (it == mOwnerIds.end() || !aTxnType || !aTxnId) {
+    return false;
+  }
+  return RemoteTextureMap::Get()->WaitForTxn(aOwnerId, mForPid, aTxnType,
+                                             aTxnId);
+}
+
 void RemoteTextureOwnerClient::ClearRecycledTextures() {
   RemoteTextureMap::Get()->ClearRecycledTextures(mOwnerIds, mForPid,
                                                  mSharedRecycleBin);
@@ -354,24 +365,15 @@ void RemoteTextureMap::PushTexture(
       gfxCriticalNoteOnce << "Texture pushed during context lost";
     }
 
-    const auto key = std::pair(aForPid, aOwnerId);
-    auto it = mRemoteTexturePushListeners.find(key);
-    // Notify a new texture if callback is requested
-    if (it != mRemoteTexturePushListeners.end()) {
-      RefPtr<CompositableHost> compositableHost = it->second;
-      RefPtr<Runnable> runnable = NS_NewRunnableFunction(
-          "RemoteTextureMap::PushTexture::Runnable",
-          [compositableHost, aTextureId, aOwnerId, aForPid]() {
-            compositableHost->NotifyPushTexture(aTextureId, aOwnerId, aForPid);
-          });
-      CompositorThread()->Dispatch(runnable.forget());
-    }
-
     auto textureData = MakeUnique<TextureDataHolder>(
         aTextureId, aTextureHost, std::move(aTextureData),
         std::move(aResourceWrapper));
 
-    MOZ_ASSERT(owner->mLatestTextureId < aTextureId);
+    MOZ_ASSERT(owner->mLatestPushedTextureId < aTextureId);
+    if (owner->mLatestPushedTextureId < aTextureId) {
+      owner->mLatestPushedTextureId = aTextureId;
+    }
+    MOZ_ASSERT(owner->mLatestUsingTextureId < aTextureId);
 
     owner->mWaitingTextureDataHolders.push_back(std::move(textureData));
 
@@ -600,7 +602,7 @@ void RemoteTextureMap::KeepTextureDataAliveForTextureHostIfNecessary(
 
 UniquePtr<RemoteTextureMap::TextureOwner>
 RemoteTextureMap::UnregisterTextureOwner(
-    const MonitorAutoLock& aProofOfLock, const RemoteTextureOwnerId aOwnerId,
+    MonitorAutoLock& aProofOfLock, const RemoteTextureOwnerId aOwnerId,
     const base::ProcessId aForPid,
     std::vector<RefPtr<TextureHost>>& aReleasingTextures,
     std::vector<std::function<void(const RemoteTextureInfo&)>>&
@@ -617,6 +619,12 @@ RemoteTextureMap::UnregisterTextureOwner(
   // unregistering.
   if (owner->mWaitForTxn) {
     owner->mDeferUnregister = GetCurrentSerialEventTarget();
+    // If another thread is waiting on this owner to produce textures,
+    // it must be notified that owner is going away.
+    if (!owner->mLatestTextureHost &&
+        owner->mWaitingTextureDataHolders.empty()) {
+      aProofOfLock.Notify();
+    }
     return nullptr;
   }
 
@@ -894,9 +902,9 @@ void RemoteTextureMap::UpdateTexture(const MonitorAutoLock& aProofOfLock,
                                      const RemoteTextureId aTextureId) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   MOZ_ASSERT(aOwner);
-  MOZ_ASSERT(aTextureId >= aOwner->mLatestTextureId);
+  MOZ_ASSERT(aTextureId >= aOwner->mLatestUsingTextureId);
 
-  if (aTextureId == aOwner->mLatestTextureId) {
+  if (aTextureId == aOwner->mLatestUsingTextureId) {
     // No need to update texture.
     return;
   }
@@ -909,7 +917,7 @@ void RemoteTextureMap::UpdateTexture(const MonitorAutoLock& aProofOfLock,
     }
     MOZ_RELEASE_ASSERT(front->mTextureHost);
     aOwner->mLatestTextureHost = front->mTextureHost;
-    aOwner->mLatestTextureId = front->mTextureId;
+    aOwner->mLatestUsingTextureId = front->mTextureId;
 
     UniquePtr<TextureDataHolder> holder = std::move(front);
     aOwner->mWaitingTextureDataHolders.pop_front();
@@ -958,10 +966,42 @@ void RemoteTextureMap::GetAllRenderingReadyCallbacks(
   MOZ_ASSERT(aOwner->mRenderingReadyCallbackHolders.empty());
 }
 
+bool RemoteTextureMap::WaitForRemoteTextureOwner(
+    RemoteTextureHostWrapper* aTextureHostWrapper) {
+  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
+  MOZ_ASSERT(aTextureHostWrapper);
+
+  const auto& ownerId = aTextureHostWrapper->mOwnerId;
+  const auto& forPid = aTextureHostWrapper->mForPid;
+
+  MonitorAutoLock lock(mMonitor);
+
+  auto* owner = GetTextureOwner(lock, ownerId, forPid);
+  // If there is no texture owner yet, then we might need to wait for one to
+  // be created, if allowed. If so, we must also wait for an initial texture
+  // host to be created so we can use it.
+  if (!owner || (!owner->mLatestTextureHost &&
+                 owner->mWaitingTextureDataHolders.empty())) {
+    const TimeDuration timeout = TimeDuration::FromMilliseconds(10000);
+    while (!owner || (!owner->mLatestTextureHost &&
+                      owner->mWaitingTextureDataHolders.empty())) {
+      if (owner && (owner->mIsContextLost || owner->mDeferUnregister)) {
+        // If the context was lost, no further updates are expected.
+        return false;
+      }
+      CVStatus status = mMonitor.Wait(timeout);
+      if (status == CVStatus::Timeout) {
+        return false;
+      }
+      owner = GetTextureOwner(lock, ownerId, forPid);
+    }
+  }
+  return true;
+}
+
 bool RemoteTextureMap::GetRemoteTexture(
     RemoteTextureHostWrapper* aTextureHostWrapper,
-    std::function<void(const RemoteTextureInfo&)>&& aReadyCallback,
-    bool aWaitForRemoteTextureOwner) {
+    std::function<void(const RemoteTextureInfo&)>&& aReadyCallback) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   MOZ_ASSERT(aTextureHostWrapper);
 
@@ -979,27 +1019,8 @@ bool RemoteTextureMap::GetRemoteTexture(
     MonitorAutoLock lock(mMonitor);
 
     auto* owner = GetTextureOwner(lock, ownerId, forPid);
-    // If there is no texture owner yet, then we might need to wait for one to
-    // be created, if allowed. If so, we must also wait for an initial texture
-    // host to be created so we can use it.
-    if (!owner || (aWaitForRemoteTextureOwner && !owner->mLatestTextureHost &&
-                   owner->mWaitingTextureDataHolders.empty())) {
-      if (!aWaitForRemoteTextureOwner) {
-        return false;
-      }
-      const TimeDuration timeout = TimeDuration::FromMilliseconds(10000);
-      while (!owner || (!owner->mLatestTextureHost &&
-                        owner->mWaitingTextureDataHolders.empty())) {
-        if (owner && owner->mIsContextLost) {
-          // If the context was lost, no further updates are expected.
-          return false;
-        }
-        CVStatus status = mMonitor.Wait(timeout);
-        if (status == CVStatus::Timeout) {
-          return false;
-        }
-        owner = GetTextureOwner(lock, ownerId, forPid);
-      }
+    if (!owner) {
+      return false;
     }
 
     UpdateTexture(lock, owner, textureId);
@@ -1010,7 +1031,7 @@ bool RemoteTextureMap::GetRemoteTexture(
       return false;
     }
 
-    if (textureId == owner->mLatestTextureId) {
+    if (textureId == owner->mLatestUsingTextureId) {
       MOZ_ASSERT(owner->mLatestTextureHost);
       MOZ_ASSERT(owner->mLatestTextureHost->GetSize() == size);
       if (owner->mLatestTextureHost->GetSize() != size) {
@@ -1030,7 +1051,7 @@ bool RemoteTextureMap::GetRemoteTexture(
     }
 
     // Update mRemoteTextureHost
-    if (textureId == owner->mLatestTextureId) {
+    if (textureId == owner->mLatestUsingTextureId) {
       const auto key = std::pair(forPid, textureId);
       auto it = mRemoteTextureHostWrapperHolders.find(key);
       if (it != mRemoteTextureHostWrapperHolders.end() &&
@@ -1169,74 +1190,6 @@ void RemoteTextureMap::UnregisterRemoteTextureHostWrapper(
   }
 }
 
-void RemoteTextureMap::RegisterRemoteTexturePushListener(
-    const RemoteTextureOwnerId aOwnerId, const base::ProcessId aForPid,
-    CompositableHost* aListener) {
-  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-
-  RefPtr<CompositableHost>
-      releasingCompositableHost;  // Release outside the monitor
-  {
-    MonitorAutoLock lock(mMonitor);
-
-    const auto key = std::pair(aForPid, aOwnerId);
-    auto it = mRemoteTexturePushListeners.find(key);
-    // Remove obsoleted CompositableHost.
-    if (it != mRemoteTexturePushListeners.end()) {
-      releasingCompositableHost = std::move(it->second);
-      mRemoteTexturePushListeners.erase(it);
-    }
-    mRemoteTexturePushListeners.emplace(key, aListener);
-
-    auto* owner = GetTextureOwner(lock, aOwnerId, aForPid);
-    if (!owner) {
-      return;
-    }
-    if (owner->mWaitingTextureDataHolders.empty() &&
-        !owner->mLatestTextureHost) {
-      return;
-    }
-
-    // Get latest RemoteTextureId.
-    auto textureId = !owner->mWaitingTextureDataHolders.empty()
-                         ? owner->mWaitingTextureDataHolders.back()->mTextureId
-                         : owner->mLatestTextureId;
-
-    // Notify the RemoteTextureId to callback
-    RefPtr<CompositableHost> compositableHost = aListener;
-    RefPtr<Runnable> runnable = NS_NewRunnableFunction(
-        "RemoteTextureMap::RegisterRemoteTexturePushListener::Runnable",
-        [compositableHost, textureId, aOwnerId, aForPid]() {
-          compositableHost->NotifyPushTexture(textureId, aOwnerId, aForPid);
-        });
-    CompositorThread()->Dispatch(runnable.forget());
-  }
-}
-
-void RemoteTextureMap::UnregisterRemoteTexturePushListener(
-    const RemoteTextureOwnerId aOwnerId, const base::ProcessId aForPid,
-    CompositableHost* aListener) {
-  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-
-  RefPtr<CompositableHost>
-      releasingCompositableHost;  // Release outside the monitor
-  {
-    MonitorAutoLock lock(mMonitor);
-
-    const auto key = std::pair(aForPid, aOwnerId);
-    auto it = mRemoteTexturePushListeners.find(key);
-    if (it == mRemoteTexturePushListeners.end()) {
-      return;
-    }
-    if (aListener != it->second) {
-      // aListener was alredy obsoleted.
-      return;
-    }
-    releasingCompositableHost = std::move(it->second);
-    mRemoteTexturePushListeners.erase(it);
-  }
-}
-
 bool RemoteTextureMap::CheckRemoteTextureReady(
     const RemoteTextureInfo& aInfo,
     std::function<void(const RemoteTextureInfo&)>&& aCallback) {
@@ -1259,15 +1212,8 @@ bool RemoteTextureMap::CheckRemoteTextureReady(
     return true;
   }
 
-  if (it->second->mRemoteTextureHost) {
+  if (owner->mLatestPushedTextureId >= aInfo.mTextureId) {
     return true;
-  }
-  MOZ_ASSERT(!it->second->mRemoteTextureHost);
-
-  // Check if RemoteTextureId is as expected.
-  if (!owner->mRenderingReadyCallbackHolders.empty()) {
-    auto& front = owner->mRenderingReadyCallbackHolders.front();
-    MOZ_RELEASE_ASSERT(aInfo.mTextureId >= front->mTextureId);
   }
 
   auto callbackHolder = MakeUnique<RenderingReadyCallbackHolder>(
@@ -1298,9 +1244,8 @@ bool RemoteTextureMap::WaitRemoteTextureReady(const RemoteTextureInfo& aInfo) {
   }
 
   const TimeDuration timeout = TimeDuration::FromMilliseconds(1000);
-  TextureHost* remoteTexture = it->second->mRemoteTextureHost;
 
-  while (!remoteTexture) {
+  while (owner->mLatestPushedTextureId < aInfo.mTextureId) {
     CVStatus status = mMonitor.Wait(timeout);
     if (status == CVStatus::Timeout) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
@@ -1315,14 +1260,11 @@ bool RemoteTextureMap::WaitRemoteTextureReady(const RemoteTextureInfo& aInfo) {
       return false;
     }
 
-    remoteTexture = it->second->mRemoteTextureHost;
-    if (!remoteTexture) {
-      auto* owner = GetTextureOwner(lock, aInfo.mOwnerId, aInfo.mForPid);
-      // When owner is alreay unregistered, remote texture will not be pushed.
-      if (!owner || owner->mIsContextLost) {
-        // This could happen with IPC abnormal shutdown
-        return false;
-      }
+    auto* owner = GetTextureOwner(lock, aInfo.mOwnerId, aInfo.mForPid);
+    // When owner is alreay unregistered, remote texture will not be pushed.
+    if (!owner || owner->mIsContextLost) {
+      // This could happen with IPC abnormal shutdown
+      return false;
     }
   }
 

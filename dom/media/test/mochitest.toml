@@ -88,6 +88,10 @@ support-files = [
   "bipbop-clearkey-keyrotation-clear-lead-audio.mp4^headers^",
   "bipbop-clearkey-keyrotation-clear-lead-video.mp4",
   "bipbop-clearkey-keyrotation-clear-lead-video.mp4^headers^",
+  "bipbop-clearkey-video-av1.mp4",
+  "bipbop-clearkey-video-av1.mp4^headers^",
+  "bipbop-clearkey-video-av1.webm",
+  "bipbop-clearkey-video-av1.webm^headers^",
   "bipbop_225w_175kbps.mp4",
   "bipbop_225w_175kbps.mp4^headers^",
   "bipbop_225w_175kbps-cenc-audio-key1-1.m4s",
@@ -798,6 +802,7 @@ skip-if = [
   "os == 'mac'", # 1517199 (timeout-on-osx)
   "os == 'linux'", # 1713397, 1719881 (high intermittent failure on linux tsan), 1776937
   "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "mda_gpu", # Disabled because high intermittent failure
 ]
 
 ["test_chaining.html"]

@@ -7,16 +7,18 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
-// Ignore unused lazy property for PluginManager.
-// eslint-disable-next-line mozilla/valid-lazy
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutNewTab: "resource:///modules/AboutNewTab.sys.mjs",
-  ASRouterNewTabHook:
-    "resource://activity-stream/lib/ASRouterNewTabHook.sys.mjs",
+  AWToolbarButton: "resource:///modules/aboutwelcome/AWToolbarUtils.sys.mjs",
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  ASRouterDefaultConfig:
+    "resource:///modules/asrouter/ASRouterDefaultConfig.sys.mjs",
+  ASRouterNewTabHook: "resource:///modules/asrouter/ASRouterNewTabHook.sys.mjs",
   ActorManagerParent: "resource://gre/modules/ActorManagerParent.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   Blocklist: "resource://gre/modules/Blocklist.sys.mjs",
   BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.sys.mjs",
   BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.sys.mjs",
@@ -37,6 +39,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
   FeatureGate: "resource://featuregates/FeatureGate.sys.mjs",
+  FirefoxBridgeExtensionUtils:
+    "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   Integration: "resource://gre/modules/Integration.sys.mjs",
@@ -47,6 +51,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   Normandy: "resource://normandy/Normandy.sys.mjs",
+  OnboardingMessageProvider:
+    "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs",
   OsEnvironment: "resource://gre/modules/OsEnvironment.sys.mjs",
   PageActions: "resource:///modules/PageActions.sys.mjs",
   PageDataService: "resource:///modules/pagedata/PageDataService.sys.mjs",
@@ -57,6 +63,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesDBUtils: "resource://gre/modules/PlacesDBUtils.sys.mjs",
   PlacesUIUtils: "resource:///modules/PlacesUIUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+  // PluginManager is used by listeners object below.
+  // eslint-disable-next-line mozilla/valid-lazy
   PluginManager: "resource:///actors/PluginParent.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.sys.mjs",
@@ -94,14 +102,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   WindowsGPOParser: "resource://gre/modules/policies/WindowsGPOParser.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-});
-
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ASRouterDefaultConfig:
-    "resource://activity-stream/lib/ASRouterDefaultConfig.jsm",
-  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
-  OnboardingMessageProvider:
-    "resource://activity-stream/lib/OnboardingMessageProvider.jsm",
 });
 
 if (AppConstants.MOZ_UPDATER) {
@@ -675,6 +675,17 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
+  Profiles: {
+    parent: {
+      esModuleURI: "resource:///actors/ProfilesParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/ProfilesChild.sys.mjs",
+    },
+    matches: ["about:profilemanager"],
+    enablePreference: "browser.profiles.enabled",
+  },
+
   Prompt: {
     parent: {
       esModuleURI: "resource:///actors/PromptParent.sys.mjs",
@@ -702,15 +713,26 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource:///actors/ScreenshotsComponentChild.sys.mjs",
       events: {
-        "Screenshots:Close": { wantUntrusted: true },
-        "Screenshots:Copy": { wantUntrusted: true },
-        "Screenshots:Download": { wantUntrusted: true },
-        "Screenshots:HidePanel": { wantUntrusted: true },
-        "Screenshots:OverlaySelection": { wantUntrusted: true },
-        "Screenshots:RecordEvent": { wantUntrusted: true },
-        "Screenshots:ShowPanel": { wantUntrusted: true },
+        "Screenshots:Close": {},
+        "Screenshots:Copy": {},
+        "Screenshots:Download": {},
+        "Screenshots:HidePanel": {},
+        "Screenshots:OverlaySelection": {},
+        "Screenshots:RecordEvent": {},
+        "Screenshots:ShowPanel": {},
       },
     },
+    enablePreference: "screenshots.browser.component.enabled",
+  },
+
+  ScreenshotsHelper: {
+    parent: {
+      esModuleURI: "resource:///modules/ScreenshotsUtils.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///modules/ScreenshotsHelperChild.sys.mjs",
+    },
+    allFrames: true,
     enablePreference: "screenshots.browser.component.enabled",
   },
 
@@ -2089,6 +2111,7 @@ BrowserGlue.prototype = {
 
       () => lazy.BrowserUsageTelemetry.uninit(),
       () => lazy.SearchSERPTelemetry.uninit(),
+      () => lazy.SearchSERPDomainToCategoriesMap.uninit(),
       () => lazy.Interactions.uninit(),
       () => lazy.PageDataService.uninit(),
       () => lazy.PageThumbs.uninit(),
@@ -2133,26 +2156,31 @@ BrowserGlue.prototype = {
     const COMPONENT_PREF = "screenshots.browser.component.enabled";
     const ID = "screenshots@mozilla.org";
     const _checkScreenshotsPref = async () => {
-      let addon = await lazy.AddonManager.getAddonByID(ID);
-      if (!addon) {
-        return;
-      }
       let screenshotsDisabled = Services.prefs.getBoolPref(
         SCREENSHOTS_PREF,
         false
       );
-      let componentEnabled = Services.prefs.getBoolPref(COMPONENT_PREF, false);
+      let componentEnabled = Services.prefs.getBoolPref(COMPONENT_PREF, true);
+
+      let screenshotsAddon = await lazy.AddonManager.getAddonByID(ID);
+
       if (screenshotsDisabled) {
         if (componentEnabled) {
           lazy.ScreenshotsUtils.uninitialize();
-        } else {
-          await addon.disable({ allowSystemAddons: true });
+        } else if (screenshotsAddon?.isActive) {
+          await screenshotsAddon.disable({ allowSystemAddons: true });
         }
       } else if (componentEnabled) {
         lazy.ScreenshotsUtils.initialize();
-        await addon.disable({ allowSystemAddons: true });
+        if (screenshotsAddon?.isActive) {
+          await screenshotsAddon.disable({ allowSystemAddons: true });
+        }
       } else {
-        await addon.enable({ allowSystemAddons: true });
+        try {
+          await screenshotsAddon.enable({ allowSystemAddons: true });
+        } catch (ex) {
+          console.error(`Error trying to enable screenshots extension: ${ex}`);
+        }
         lazy.ScreenshotsUtils.uninitialize();
       }
     };
@@ -2423,7 +2451,6 @@ BrowserGlue.prototype = {
       LATE_TASKS_IDLE_TIME_SEC
     );
 
-    this._monitorScreenshotsPref();
     this._monitorWebcompatReporterPref();
     this._monitorHTTPSOnlyPref();
     this._monitorIonPref();
@@ -2538,6 +2565,10 @@ BrowserGlue.prototype = {
             "security.ui.certerror",
             enableCertErrorUITelemetry
           );
+          Services.telemetry.setEventRecordingEnabled(
+            "security.ui.tlserror",
+            enableCertErrorUITelemetry
+          );
         },
       },
 
@@ -2625,123 +2656,14 @@ BrowserGlue.prototype = {
       },
 
       {
-        name: "dualBrowserProtocolHandler",
+        name: "firefoxBridgeNativeMessaging",
         condition:
-          AppConstants.platform == "win" &&
-          !Services.prefs.getBoolPref(
-            "browser.shell.customProtocolsRegistered"
-          ),
+          (AppConstants.platform == "macosx" ||
+            AppConstants.platform == "win") &&
+          Services.prefs.getBoolPref("browser.firefoxbridge.enabled", false),
         task: async () => {
-          Services.prefs.setBoolPref(
-            "browser.shell.customProtocolsRegistered",
-            true
-          );
-          const FIREFOX_HANDLER_NAME = "firefox";
-          const FIREFOX_PRIVATE_HANDLER_NAME = "firefox-private";
-          const path = Services.dirsvc.get("XREExeF", Ci.nsIFile).path;
-          let wrk = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
-            Ci.nsIWindowsRegKey
-          );
-          try {
-            wrk.open(wrk.ROOT_KEY_CLASSES_ROOT, "", wrk.ACCESS_READ);
-            let FxSet = wrk.hasChild(FIREFOX_HANDLER_NAME);
-            let FxPrivateSet = wrk.hasChild(FIREFOX_PRIVATE_HANDLER_NAME);
-            wrk.close();
-            if (FxSet && FxPrivateSet) {
-              return;
-            }
-            wrk.open(
-              wrk.ROOT_KEY_CURRENT_USER,
-              "Software\\Classes",
-              wrk.ACCESS_ALL
-            );
-            const maybeUpdateRegistry = (
-              isSetAlready,
-              handler,
-              protocolName
-            ) => {
-              if (isSetAlready) {
-                return;
-              }
-              let FxKey = wrk.createChild(handler, wrk.ACCESS_ALL);
-              try {
-                // Write URL protocol key
-                FxKey.writeStringValue("", protocolName);
-                FxKey.writeStringValue("URL Protocol", "");
-                FxKey.close();
-                // Write defaultIcon key
-                FxKey.create(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\DefaultIcon",
-                  FxKey.ACCESS_ALL
-                );
-                FxKey.open(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\DefaultIcon",
-                  FxKey.ACCESS_ALL
-                );
-                FxKey.writeStringValue("", `\"${path}\",1`);
-                FxKey.close();
-                // Write shell\\open\\command key
-                FxKey.create(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\shell",
-                  FxKey.ACCESS_ALL
-                );
-                FxKey.create(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\shell\\open",
-                  FxKey.ACCESS_ALL
-                );
-                FxKey.create(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\shell\\open\\command",
-                  FxKey.ACCESS_ALL
-                );
-                FxKey.open(
-                  FxKey.ROOT_KEY_CURRENT_USER,
-                  "Software\\Classes\\" + handler + "\\shell\\open\\command",
-                  FxKey.ACCESS_ALL
-                );
-                if (handler == FIREFOX_PRIVATE_HANDLER_NAME) {
-                  FxKey.writeStringValue(
-                    "",
-                    `\"${path}\" -osint -private-window \"%1\"`
-                  );
-                } else {
-                  FxKey.writeStringValue("", `\"${path}\" -osint -url \"%1\"`);
-                }
-              } catch (ex) {
-                console.log(ex);
-              } finally {
-                FxKey.close();
-              }
-            };
-            try {
-              maybeUpdateRegistry(
-                FxSet,
-                FIREFOX_HANDLER_NAME,
-                "URL:Firefox Protocol"
-              );
-            } catch (ex) {
-              console.log(ex);
-            }
-            try {
-              maybeUpdateRegistry(
-                FxPrivateSet,
-                FIREFOX_PRIVATE_HANDLER_NAME,
-                "URL:Firefox Private Browsing Protocol"
-              );
-            } catch (ex) {
-              console.log(ex);
-            }
-          } catch (ex) {
-            console.log(ex);
-          } finally {
-            wrk.close();
-          }
+          await lazy.FirefoxBridgeExtensionUtils.ensureRegistered();
         },
-        timeout: 5000,
       },
 
       // Ensure a Private Browsing Shortcut exists. This is needed in case
@@ -2892,13 +2814,9 @@ BrowserGlue.prototype = {
       },
 
       {
-        name: "ScreenshotsUtils.initialize",
+        name: "BrowserGlue._monitorScreenshotsPref",
         task: () => {
-          if (
-            Services.prefs.getBoolPref("screenshots.browser.component.enabled")
-          ) {
-            lazy.ScreenshotsUtils.initialize();
-          }
+          this._monitorScreenshotsPref();
         },
       },
 
@@ -3034,6 +2952,22 @@ BrowserGlue.prototype = {
         },
       },
 
+      // Add the setup button if this is the first startup
+      {
+        name: "AWToolbarButton.SetupButton",
+        task: async () => {
+          if (
+            // Not in automation: the button changes CUI state,
+            // breaking tests. Check this first, so that the module
+            // doesn't load if it doesn't have to.
+            !Cu.isInAutomation &&
+            lazy.AWToolbarButton.hasToolbarButtonEnabled
+          ) {
+            await lazy.AWToolbarButton.maybeAddSetupButton();
+          }
+        },
+      },
+
       {
         name: "ASRouterNewTabHook.createInstance",
         task: () => {
@@ -3155,6 +3089,14 @@ BrowserGlue.prototype = {
       },
 
       {
+        name: "BackupService initialization",
+        condition: Services.prefs.getBoolPref("browser.backup.enabled", false),
+        task: () => {
+          lazy.BackupService.init();
+        },
+      },
+
+      {
         name: "browser-startup-idle-tasks-finished",
         task: () => {
           // Use idleDispatch a second time to run this after the per-window
@@ -3272,8 +3214,6 @@ BrowserGlue.prototype = {
       function reportInstallationTelemetry() {
         lazy.BrowserUsageTelemetry.reportInstallationTelemetry();
       },
-
-      RunOSKeyStoreSelfTest,
     ];
 
     for (let task of idleTasks) {
@@ -3800,13 +3740,20 @@ BrowserGlue.prototype = {
   _migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 142;
+    const UI_VERSION = 143;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     if (!Services.prefs.prefHasUserValue("browser.migration.version")) {
       // This is a new profile, nothing to migrate.
       Services.prefs.setIntPref("browser.migration.version", UI_VERSION);
       this._isNewProfile = true;
+
+      if (AppConstants.platform == "win") {
+        // Ensure that the Firefox Bridge protocols are registered for the new profile.
+        // No-op if they are registered for the user or the local machine already.
+        lazy.FirefoxBridgeExtensionUtils.maybeRegisterFirefoxBridgeProtocols();
+      }
+
       return;
     }
 
@@ -3885,8 +3832,8 @@ BrowserGlue.prototype = {
         );
 
         if (wasAddonActive) {
-          const { ProfilerMenuButton } = ChromeUtils.import(
-            "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
+          const { ProfilerMenuButton } = ChromeUtils.importESModule(
+            "resource://devtools/client/performance-new/popup/menu-button.sys.mjs"
           );
           if (!ProfilerMenuButton.isInNavbar()) {
             // The profiler menu button is not enabled. Turn it on now.
@@ -4403,6 +4350,27 @@ BrowserGlue.prototype = {
         }
       } catch (ex) {
         console.error(ex);
+      }
+    }
+
+    if (currentUIVersion < 143) {
+      if (AppConstants.platform == "win") {
+        // In Firefox 122, we enabled the firefox and firefox-private protocols.
+        // We switched over to using firefox-bridge and firefox-private-bridge,
+        // but we want to clean up the use of the other protocols.
+        lazy.FirefoxBridgeExtensionUtils.maybeDeleteBridgeProtocolRegistryEntries();
+
+        // Register the new firefox bridge related protocols now
+        lazy.FirefoxBridgeExtensionUtils.maybeRegisterFirefoxBridgeProtocols();
+
+        // Clean up the old user prefs from FX 122
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox"
+        );
+        Services.prefs.clearUserPref(
+          "network.protocol-handler.external.firefox-private"
+        );
+        Services.prefs.clearUserPref("browser.shell.customProtocolsRegistered");
       }
     }
 
@@ -6519,70 +6487,3 @@ export var AboutHomeStartupCache = {
     this._cacheEntryResolver(this._cacheEntry);
   },
 };
-
-async function RunOSKeyStoreSelfTest() {
-  // The linux implementation always causes an OS dialog, in contrast to
-  // Windows and macOS (the latter of which causes an OS dialog to appear on
-  // local developer builds), so only run on Windows and macOS and only if this
-  // has been built and signed by Mozilla's infrastructure. Similarly, don't
-  // run this code in automation.
-  if (
-    (AppConstants.platform != "win" && AppConstants.platform != "macosx") ||
-    !AppConstants.MOZILLA_OFFICIAL ||
-    Services.env.get("MOZ_AUTOMATION")
-  ) {
-    return;
-  }
-  let osKeyStore = Cc["@mozilla.org/security/oskeystore;1"].getService(
-    Ci.nsIOSKeyStore
-  );
-  let label = Services.prefs.getCharPref("security.oskeystore.test.label", "");
-  if (!label) {
-    label = Services.uuid.generateUUID().toString().slice(1, -1);
-    Services.prefs.setCharPref("security.oskeystore.test.label", label);
-    try {
-      await osKeyStore.asyncGenerateSecret(label);
-      Glean.oskeystore.selfTest.generate.set(true);
-    } catch (_) {
-      Glean.oskeystore.selfTest.generate.set(false);
-      return;
-    }
-  }
-  let secretAvailable = await osKeyStore.asyncSecretAvailable(label);
-  Glean.oskeystore.selfTest.available.set(secretAvailable);
-  if (!secretAvailable) {
-    return;
-  }
-  let encrypted = Services.prefs.getCharPref(
-    "security.oskeystore.test.encrypted",
-    ""
-  );
-  if (!encrypted) {
-    try {
-      encrypted = await osKeyStore.asyncEncryptBytes(label, [1, 1, 3, 8]);
-      Services.prefs.setCharPref(
-        "security.oskeystore.test.encrypted",
-        encrypted
-      );
-      Glean.oskeystore.selfTest.encrypt.set(true);
-    } catch (_) {
-      Glean.oskeystore.selfTest.encrypt.set(false);
-      return;
-    }
-  }
-  try {
-    let decrypted = await osKeyStore.asyncDecryptBytes(label, encrypted);
-    if (
-      decrypted.length != 4 ||
-      decrypted[0] != 1 ||
-      decrypted[1] != 1 ||
-      decrypted[2] != 3 ||
-      decrypted[3] != 8
-    ) {
-      throw new Error("decrypted value not as expected?");
-    }
-    Glean.oskeystore.selfTest.decrypt.set(true);
-  } catch (_) {
-    Glean.oskeystore.selfTest.decrypt.set(false);
-  }
-}

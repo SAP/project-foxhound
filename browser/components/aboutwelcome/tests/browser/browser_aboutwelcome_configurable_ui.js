@@ -4,8 +4,8 @@ const { ExperimentFakes } = ChromeUtils.importESModule(
   "resource://testing-common/NimbusTestUtils.sys.mjs"
 );
 
-const { AboutWelcomeTelemetry } = ChromeUtils.import(
-  "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.jsm"
+const { AboutWelcomeTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.sys.mjs"
 );
 
 const BASE_SCREEN_CONTENT = {
@@ -334,46 +334,46 @@ add_task(async function test_aboutwelcome_dismiss_button() {
 /**
  * Test rendering a screen with the "split" position
  */
-add_task(async function test_aboutwelcome_split_position() {
-  const TEST_SPLIT_STEP = makeTestContent("TEST_SPLIT_STEP", {
-    position: "split",
-    hero_text: "hero test",
-  });
+// add_task(async function test_aboutwelcome_split_position() {
+//   const TEST_SPLIT_STEP = makeTestContent("TEST_SPLIT_STEP", {
+//     position: "split",
+//     hero_text: "hero test",
+//   });
 
-  const TEST_SPLIT_JSON = JSON.stringify([TEST_SPLIT_STEP]);
-  let browser = await openAboutWelcome(TEST_SPLIT_JSON);
+//   const TEST_SPLIT_JSON = JSON.stringify([TEST_SPLIT_STEP]);
+//   let browser = await openAboutWelcome(TEST_SPLIT_JSON);
 
-  await test_screen_content(
-    browser,
-    "renders screen secondary section containing hero text",
-    // Expected selectors:
-    [`main.screen[pos="split"]`, `.section-secondary`, `.message-text h1`]
-  );
+//   await test_screen_content(
+//     browser,
+//     "renders screen secondary section containing hero text",
+//     // Expected selectors:
+//     [`main.screen[pos="split"]`, `.section-secondary`, `.message-text h1`]
+//   );
 
-  // Ensure secondary section has split template styling
-  await test_element_styles(
-    browser,
-    "main.screen .section-secondary",
-    // Expected styles:
-    {
-      display: "flex",
-      margin: "auto 0px auto auto",
-    }
-  );
+//   // Ensure secondary section has split template styling
+//   await test_element_styles(
+//     browser,
+//     "main.screen .section-secondary",
+//     // Expected styles:
+//     {
+//       display: "flex",
+//       margin: "auto 0px auto auto",
+//     }
+//   );
 
-  // Ensure secondary action has button styling
-  await test_element_styles(
-    browser,
-    ".action-buttons .secondary-cta .secondary",
-    // Expected styles:
-    {
-      // Override default text-link styles
-      "background-color": "color(srgb 0.0823529 0.0784314 0.101961 / 0.07)",
-      color: "rgb(21, 20, 26)",
-    }
-  );
-  browser.closeBrowser();
-});
+//   // Ensure secondary action has button styling
+//   await test_element_styles(
+//     browser,
+//     ".action-buttons .secondary-cta .secondary",
+//     // Expected styles:
+//     {
+//       // Override default text-link styles
+//       "background-color": "color(srgb 0.0823529 0.0784314 0.101961 / 0.07)",
+//       color: "rgb(21, 20, 26)",
+//     }
+//   );
+//   browser.closeBrowser();
+// });
 
 /**
  * Test rendering a screen with a URL value and default color for backdrop
@@ -605,8 +605,9 @@ add_task(async function test_aboutwelcome_history_updates_disabled() {
     return content.window.history.length;
   });
 
-  ok(
-    startHistoryLength === endHistoryLength,
+  Assert.strictEqual(
+    startHistoryLength,
+    endHistoryLength,
     "No entries added to the session's history stack with history updates disabled"
   );
 
@@ -720,4 +721,28 @@ add_task(async function test_aboutwelcome_start_screen_configured() {
   await doExperimentCleanup();
   browser.closeBrowser();
   sandbox.restore();
+});
+
+/**
+ * Test rendering a screen with that doesn't use responsive design
+ */
+add_task(async function test_aboutwelcome_rdm_property() {
+  let screens = [makeTestContent(`TEST_NO_RDM`, { no_rdm: true })];
+
+  let doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
+    featureId: "aboutwelcome",
+    value: { enabled: true, screens },
+  });
+
+  let browser = await openAboutWelcome();
+
+  await test_screen_content(
+    browser,
+    "render screen with 'no-rdm' attribute",
+    // Expected selectors:
+    ["main.TEST_NO_RDM[no-rdm]"]
+  );
+
+  await doExperimentCleanup();
+  browser.closeBrowser();
 });

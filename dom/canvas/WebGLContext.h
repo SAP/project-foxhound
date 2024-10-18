@@ -317,7 +317,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
                                      webgl::InitContextResult* out);
 
  private:
-  bool mIsRgb8Renderable = false;
+  webgl::OptionalRenderableFormatBits mOptionalRenderableFormatBits =
+      webgl::OptionalRenderableFormatBits{0};
   void FinishInit();
 
  protected:
@@ -667,7 +668,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   //////////////////////////
 
   void UniformData(uint32_t loc, bool transpose,
-                   const Range<const webgl::UniformDataVal>& data) const;
+                   const Span<const webgl::UniformDataVal>& data) const;
 
   ////////////////////////////////////
 
@@ -685,6 +686,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   void BufferData(GLenum target, uint64_t dataLen, const uint8_t* data,
                   GLenum usage) const;
+  void UninitializedBufferData_SizeOnly(GLenum target, uint64_t dataLen,
+                                        GLenum usage) const;
   // The unsynchronized flag may allow for better performance when
   // interleaving buffer updates with draw calls. However, care must
   // be taken. This has similar semantics to glMapBufferRange's
@@ -966,8 +969,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   // -------------------------------------------------------------------------
   // WebGL extensions (implemented in WebGLContextExtensions.cpp)
 
-  EnumeratedArray<WebGLExtensionID, WebGLExtensionID::Max,
-                  std::unique_ptr<WebGLExtensionBase>>
+  EnumeratedArray<WebGLExtensionID, std::unique_ptr<WebGLExtensionBase>,
+                  size_t(WebGLExtensionID::Max)>
       mExtensions;
 
  public:
@@ -1154,7 +1157,7 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   bool ValidateFramebufferTarget(GLenum target) const;
   bool ValidateInvalidateFramebuffer(GLenum target,
-                                     const Range<const GLenum>& attachments,
+                                     const Span<const GLenum>& attachments,
                                      std::vector<GLenum>* const scopedVector,
                                      GLsizei* const out_glNumAttachments,
                                      const GLenum** const out_glAttachments);
@@ -1266,8 +1269,17 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
       const webgl::SwapChainOptions& options,
       layers::RemoteTextureOwnerClient* ownerClient = nullptr);
 
+  void EnsureContextLostRemoteTextureOwner(
+      const webgl::SwapChainOptions& options);
+
+ public:
+  void WaitForTxn(layers::RemoteTextureOwnerId ownerId,
+                  layers::RemoteTextureTxnType txnType,
+                  layers::RemoteTextureTxnId txnId);
+
   // --
 
+ protected:
   bool EnsureDefaultFB();
   bool ValidateAndInitFB(
       const WebGLFramebuffer* fb,

@@ -158,7 +158,7 @@ class EmbedderPort {
       data: holder.deserialize({}),
     });
   }
-  onEvent(aEvent, aData, aCallback) {
+  onEvent(aEvent, aData) {
     debug`onEvent ${aEvent} ${aData}`;
 
     switch (aEvent) {
@@ -300,6 +300,7 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
     homepageURL,
     icons,
     id,
+    incognito,
     isActive,
     isBuiltin,
     isCorrectlySigned,
@@ -359,6 +360,23 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
     updateDate = null;
   }
 
+  const normalizePermissions = perms => {
+    if (perms?.permissions) {
+      perms = { ...perms };
+      perms.permissions = perms.permissions.filter(
+        perm => !perm.startsWith("internal:")
+      );
+    }
+    return perms;
+  };
+
+  const optionalPermissions = aAddon.optionalPermissions?.permissions ?? [];
+  const optionalOrigins = aAddon.optionalPermissions?.origins ?? [];
+  const grantedPermissions =
+    normalizePermissions(await lazy.ExtensionPermissions.get(id)) ?? [];
+  const grantedOptionalPermissions = grantedPermissions?.permissions ?? [];
+  const grantedOptionalOrigins = grantedPermissions?.origins ?? [];
+
   return {
     webExtensionId: id,
     locationURI: aSourceURI != null ? aSourceURI.spec : "",
@@ -378,6 +396,7 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
       fullDescription,
       homepageURL,
       icons,
+      incognito,
       isRecommended,
       name,
       openOptionsPageInTab,
@@ -391,6 +410,10 @@ async function exportExtension(aAddon, aPermissions, aSourceURI) {
       temporary: temporarilyInstalled,
       updateDate,
       version,
+      optionalPermissions,
+      optionalOrigins,
+      grantedOptionalPermissions,
+      grantedOptionalOrigins,
     },
   };
 }
@@ -424,8 +447,15 @@ class ExtensionInstallListener {
         try {
           this.install.cancel();
           cancelled = true;
-        } catch (_) {
+        } catch (ex) {
           // install may have already failed or been cancelled
+          debug`Unable to cancel the install installId ${installId}, Error: ${ex}`;
+          // When we attempt to cancel an install but the cancellation fails for
+          // some reasons (e.g., because it is too late), we need to revert this
+          // boolean property to allow another cancellation to be possible.
+          // Otherwise, events like `onDownloadCancelled` won't resolve and that
+          // will cause problems in the embedder.
+          this.cancelling = false;
         }
         aCallback.onSuccess({ cancelled });
         break;
@@ -519,7 +549,7 @@ class ExtensionPromptObserver {
     resolve(response.allow);
   }
 
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     debug`observe ${aTopic}`;
 
     switch (aTopic) {
@@ -563,7 +593,7 @@ class AddonInstallObserver {
     });
   }
 
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     debug`observe ${aTopic}`;
     switch (aTopic) {
       case "addon-install-failed": {
@@ -749,7 +779,7 @@ class ExtensionProcessListener {
     ]);
   }
 
-  async onEvent(aEvent, aData, aCallback) {
+  async onEvent(aEvent, aData) {
     debug`onEvent ${aEvent} ${aData}`;
 
     switch (aEvent) {
@@ -863,7 +893,7 @@ async function updatePromptHandler(aInfo) {
 }
 
 export var GeckoViewWebExtension = {
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     debug`observe ${aTopic}`;
 
     switch (aTopic) {

@@ -1,7 +1,8 @@
 use glow::HasContext;
+use once_cell::sync::Lazy;
 use parking_lot::{Mutex, MutexGuard, RwLock};
 
-use std::{ffi, os::raw, ptr, rc::Rc, sync::Arc, time::Duration};
+use std::{collections::HashMap, ffi, os::raw, ptr, rc::Rc, sync::Arc, time::Duration};
 
 /// The amount of time to wait while trying to obtain a lock to the adapter context
 const CONTEXT_LOCK_TIMEOUT_SECS: u64 = 1;
@@ -28,10 +29,10 @@ type WlDisplayConnectFun =
 
 type WlDisplayDisconnectFun = unsafe extern "system" fn(display: *const raw::c_void);
 
-#[cfg(not(target_os = "emscripten"))]
+#[cfg(not(Emscripten))]
 type EglInstance = khronos_egl::DynamicInstance<khronos_egl::EGL1_4>;
 
-#[cfg(target_os = "emscripten")]
+#[cfg(Emscripten)]
 type EglInstance = khronos_egl::Instance<khronos_egl::Static>;
 
 type WlEglWindowCreateFun = unsafe extern "system" fn(
@@ -49,16 +50,6 @@ type WlEglWindowResizeFun = unsafe extern "system" fn(
 );
 
 type WlEglWindowDestroyFun = unsafe extern "system" fn(window: *const raw::c_void);
-
-#[cfg(target_os = "android")]
-extern "C" {
-    pub fn ANativeWindow_setBuffersGeometry(
-        window: *mut raw::c_void,
-        width: i32,
-        height: i32,
-        format: i32,
-    ) -> i32;
-}
 
 type EglLabel = *const raw::c_void;
 
@@ -161,7 +152,7 @@ impl Drop for DisplayOwner {
 fn open_x_display() -> Option<DisplayOwner> {
     log::debug!("Loading X11 library to get the current display");
     unsafe {
-        let library = libloading::Library::new("libX11.so").ok()?;
+        let library = find_library(&["libX11.so.6", "libX11.so"])?;
         let func: libloading::Symbol<XOpenDisplayFun> = library.get(b"XOpenDisplay").unwrap();
         let result = func(ptr::null());
         ptr::NonNull::new(result).map(|ptr| DisplayOwner {
@@ -434,12 +425,51 @@ struct Inner {
     version: (i32, i32),
     supports_native_window: bool,
     config: khronos_egl::Config,
-    #[cfg_attr(target_os = "emscripten", allow(dead_code))]
+    #[cfg_attr(Emscripten, allow(dead_code))]
     wl_display: Option<*mut raw::c_void>,
-    #[cfg_attr(target_os = "emscripten", allow(dead_code))]
+    #[cfg_attr(Emscripten, allow(dead_code))]
     force_gles_minor_version: wgt::Gles3MinorVersion,
     /// Method by which the framebuffer should support srgb
     srgb_kind: SrgbFrameBufferKind,
+}
+
+// Different calls to `eglGetPlatformDisplay` may return the same `Display`, making it a global
+// state of all our `EglContext`s. This forces us to track the number of such context to prevent
+// terminating the display if it's currently used by another `EglContext`.
+static DISPLAYS_REFERENCE_COUNT: Lazy<Mutex<HashMap<usize, usize>>> = Lazy::new(Default::default);
+
+fn initialize_display(
+    egl: &EglInstance,
+    display: khronos_egl::Display,
+) -> Result<(i32, i32), khronos_egl::Error> {
+    let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
+    *guard.entry(display.as_ptr() as usize).or_default() += 1;
+
+    // We don't need to check the reference count here since according to the `eglInitialize`
+    // documentation, initializing an already initialized EGL display connection has no effect
+    // besides returning the version numbers.
+    egl.initialize(display)
+}
+
+fn terminate_display(
+    egl: &EglInstance,
+    display: khronos_egl::Display,
+) -> Result<(), khronos_egl::Error> {
+    let key = &(display.as_ptr() as usize);
+    let mut guard = DISPLAYS_REFERENCE_COUNT.lock();
+    let count_ref = guard
+        .get_mut(key)
+        .expect("Attempted to decref a display before incref was called");
+
+    if *count_ref > 1 {
+        *count_ref -= 1;
+
+        Ok(())
+    } else {
+        guard.remove(key);
+
+        egl.terminate(display)
+    }
 }
 
 impl Inner {
@@ -449,7 +479,7 @@ impl Inner {
         display: khronos_egl::Display,
         force_gles_minor_version: wgt::Gles3MinorVersion,
     ) -> Result<Self, crate::InstanceError> {
-        let version = egl.initialize(display).map_err(|e| {
+        let version = initialize_display(&egl, display).map_err(|e| {
             crate::InstanceError::with_source(
                 String::from("failed to initialize EGL display connection"),
                 e,
@@ -569,7 +599,7 @@ impl Inner {
         // and creating dummy pbuffer surface if not.
         let pbuffer = if version >= (1, 5)
             || display_extensions.contains("EGL_KHR_surfaceless_context")
-            || cfg!(target_os = "emscripten")
+            || cfg!(Emscripten)
         {
             log::debug!("\tEGL context: +surfaceless");
             None
@@ -618,7 +648,8 @@ impl Drop for Inner {
         {
             log::warn!("Error in destroy_context: {:?}", e);
         }
-        if let Err(e) = self.egl.instance.terminate(self.egl.display) {
+
+        if let Err(e) = terminate_display(&self.egl.instance, self.egl.display) {
             log::warn!("Error in terminate: {:?}", e);
         }
     }
@@ -675,11 +706,11 @@ unsafe impl Sync for Instance {}
 impl crate::Instance<super::Api> for Instance {
     unsafe fn init(desc: &crate::InstanceDescriptor) -> Result<Self, crate::InstanceError> {
         profiling::scope!("Init OpenGL (EGL) Backend");
-        #[cfg(target_os = "emscripten")]
+        #[cfg(Emscripten)]
         let egl_result: Result<EglInstance, khronos_egl::Error> =
             Ok(khronos_egl::Instance::new(khronos_egl::Static));
 
-        #[cfg(not(target_os = "emscripten"))]
+        #[cfg(not(Emscripten))]
         let egl_result = if cfg!(windows) {
             unsafe {
                 khronos_egl::DynamicInstance::<khronos_egl::EGL1_4>::load_required_from_filename(
@@ -732,10 +763,10 @@ impl crate::Instance<super::Api> for Instance {
             None
         };
 
-        #[cfg(not(target_os = "emscripten"))]
+        #[cfg(not(Emscripten))]
         let egl1_5 = egl.upcast::<khronos_egl::EGL1_5>();
 
-        #[cfg(target_os = "emscripten")]
+        #[cfg(Emscripten)]
         let egl1_5: Option<&Arc<EglInstance>> = Some(&egl);
 
         let (display, display_owner, wsi_kind) =
@@ -783,11 +814,12 @@ impl crate::Instance<super::Api> for Instance {
                 (display, Some(Rc::new(display_owner)), WindowKind::AngleX11)
             } else if client_ext_str.contains("EGL_MESA_platform_surfaceless") {
                 log::warn!("No windowing system present. Using surfaceless platform");
+                #[allow(clippy::unnecessary_literal_unwrap)] // This is only a literal on Emscripten
                 let egl = egl1_5.expect("Failed to get EGL 1.5 for surfaceless");
                 let display = unsafe {
                     egl.get_platform_display(
                         EGL_PLATFORM_SURFACELESS_MESA,
-                        std::ptr::null_mut(),
+                        khronos_egl::DEFAULT_DISPLAY,
                         &[khronos_egl::ATTRIB_NONE],
                     )
                 }
@@ -842,10 +874,7 @@ impl crate::Instance<super::Api> for Instance {
     ) -> Result<Surface, crate::InstanceError> {
         use raw_window_handle::RawWindowHandle as Rwh;
 
-        #[cfg_attr(
-            any(target_os = "android", target_os = "emscripten"),
-            allow(unused_mut)
-        )]
+        #[cfg_attr(any(target_os = "android", Emscripten), allow(unused_mut))]
         let mut inner = self.inner.lock();
 
         match (window_handle, display_handle) {
@@ -866,7 +895,12 @@ impl crate::Instance<super::Api> for Instance {
                     .unwrap();
 
                 let ret = unsafe {
-                    ANativeWindow_setBuffersGeometry(handle.a_native_window.as_ptr(), 0, 0, format)
+                    ndk_sys::ANativeWindow_setBuffersGeometry(
+                        handle.a_native_window.as_ptr() as *mut ndk_sys::ANativeWindow,
+                        0,
+                        0,
+                        format,
+                    )
                 };
 
                 if ret != 0 {
@@ -875,7 +909,7 @@ impl crate::Instance<super::Api> for Instance {
                     )));
                 }
             }
-            #[cfg(not(target_os = "emscripten"))]
+            #[cfg(not(Emscripten))]
             (Rwh::Wayland(_), raw_window_handle::RawDisplayHandle::Wayland(display_handle)) => {
                 if inner
                     .wl_display
@@ -920,7 +954,7 @@ impl crate::Instance<super::Api> for Instance {
                     drop(old_inner);
                 }
             }
-            #[cfg(target_os = "emscripten")]
+            #[cfg(Emscripten)]
             (Rwh::Web(_), _) => {}
             other => {
                 return Err(crate::InstanceError::new(format!(
@@ -1095,6 +1129,7 @@ impl Surface {
             .map_err(|e| {
                 log::error!("swap_buffers failed: {}", e);
                 crate::SurfaceError::Lost
+                // TODO: should we unset the current context here?
             })?;
         self.egl
             .instance
@@ -1172,7 +1207,7 @@ impl crate::Surface<super::Api> for Surface {
                         wl_window = Some(window);
                         window
                     }
-                    #[cfg(target_os = "emscripten")]
+                    #[cfg(Emscripten)]
                     (WindowKind::Unknown, Rwh::Web(handle)) => handle.id as *mut std::ffi::c_void,
                     (WindowKind::Unknown, Rwh::Win32(handle)) => {
                         handle.hwnd.get() as *mut std::ffi::c_void
@@ -1229,10 +1264,10 @@ impl crate::Surface<super::Api> for Surface {
                 }
                 attributes.push(khronos_egl::ATTRIB_NONE as i32);
 
-                #[cfg(not(target_os = "emscripten"))]
+                #[cfg(not(Emscripten))]
                 let egl1_5 = self.egl.instance.upcast::<khronos_egl::EGL1_5>();
 
-                #[cfg(target_os = "emscripten")]
+                #[cfg(Emscripten)]
                 let egl1_5: Option<&Arc<EglInstance>> = Some(&self.egl.instance);
 
                 // Careful, we can still be in 1.4 version even if `upcast` succeeds

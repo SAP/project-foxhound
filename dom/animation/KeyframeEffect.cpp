@@ -942,7 +942,6 @@ void KeyframeEffect::UpdateTarget(Element* aElement,
     nsAutoAnimationMutationBatch mb(mTarget.mElement->OwnerDoc());
     if (mAnimation) {
       MutationObservers::NotifyAnimationAdded(mAnimation);
-      mAnimation->ReschedulePendingTasks();
     }
   }
 
@@ -1342,7 +1341,8 @@ KeyframeEffect::OverflowRegionRefreshInterval() {
   return kOverflowRegionRefreshInterval;
 }
 
-static bool IsDefinitivelyInvisibleDueToOpacity(const nsIFrame& aFrame) {
+static bool CanOptimizeAwayDueToOpacity(const KeyframeEffect& aEffect,
+                                        const nsIFrame& aFrame) {
   if (!aFrame.Style()->IsInOpacityZeroSubtree()) {
     return false;
   }
@@ -1359,27 +1359,11 @@ static bool IsDefinitivelyInvisibleDueToOpacity(const nsIFrame& aFrame) {
 
   MOZ_ASSERT(root && root->Style()->IsInOpacityZeroSubtree());
 
-  // If aFrame is the root of the opacity: zero subtree, we can't prove we can
-  // optimize it away, because it may have an opacity animation itself.
-  if (root == &aFrame) {
-    return false;
-  }
-
   // Even if we're in an opacity: zero subtree, if the root of the subtree may
   // have an opacity animation, we can't optimize us away, as we may become
   // visible ourselves.
-  return !root->HasAnimationOfOpacity();
-}
-
-static bool CanOptimizeAwayDueToOpacity(const KeyframeEffect& aEffect,
-                                        const nsIFrame& aFrame) {
-  if (!aFrame.Style()->IsInOpacityZeroSubtree()) {
-    return false;
-  }
-  if (IsDefinitivelyInvisibleDueToOpacity(aFrame)) {
-    return true;
-  }
-  return !aEffect.HasOpacityChange() && !aFrame.HasAnimationOfOpacity();
+  return (root != &aFrame || !aEffect.HasOpacityChange()) &&
+         !root->HasAnimationOfOpacity();
 }
 
 bool KeyframeEffect::CanThrottleIfNotVisible(nsIFrame& aFrame) const {
@@ -1637,15 +1621,6 @@ bool KeyframeEffect::CanAnimateTransformOnCompositor(
   const nsIFrame* primaryFrame =
       nsLayoutUtils::GetPrimaryFrameFromStyleFrame(aFrame);
 
-  // Note that testing BackfaceIsHidden() is not a sufficient test for
-  // what we need for animating backface-visibility correctly if we
-  // remove the above test for Extend3DContext(); that would require
-  // looking at backface-visibility on descendants as well. See bug 1186204.
-  if (primaryFrame->BackfaceIsHidden()) {
-    aPerformanceWarning =
-        AnimationPerformanceWarning::Type::TransformBackfaceVisibilityHidden;
-    return false;
-  }
   // Async 'transform' animations of aFrames with SVG transforms is not
   // supported.  See bug 779599.
   if (primaryFrame->IsSVGTransformed()) {
@@ -1686,13 +1661,6 @@ bool KeyframeEffect::ShouldBlockAsyncTransformAnimations(
   }
 
   MOZ_ASSERT(mAnimation);
-  // Note: If the geometric animations are using scroll-timeline, we don't need
-  // to synchronize transform animations with them.
-  const bool enableMainthreadSynchronizationWithGeometricAnimations =
-      StaticPrefs::
-          dom_animations_mainthread_synchronization_with_geometric_animations() &&
-      !mAnimation->UsingScrollTimeline();
-
   for (const AnimationProperty& property : mProperties) {
     // If there is a property for animations level that is overridden by
     // !important rules, it should not block other animations from running
@@ -1707,13 +1675,6 @@ bool KeyframeEffect::ShouldBlockAsyncTransformAnimations(
         effectSet->PropertiesForAnimationsLevel().HasProperty(
             property.mProperty)) {
       continue;
-    }
-    // Check for geometric properties
-    if (enableMainthreadSynchronizationWithGeometricAnimations &&
-        IsGeometricProperty(property.mProperty.mID)) {
-      aPerformanceWarning =
-          AnimationPerformanceWarning::Type::TransformWithGeometricProperties;
-      return true;
     }
 
     // Check for unsupported transform animations
@@ -2030,7 +1991,7 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
     }
 
     // We don't yet support off-main-thread background-color animations on
-    // canvas frame or on <html> or <body> which genarate
+    // canvas frame or on <html> or <body> which generate
     // nsDisplayCanvasBackgroundColor or nsDisplaySolidColor display item.
     if (aFrame->IsCanvasFrame() ||
         (aFrame->GetContent() &&

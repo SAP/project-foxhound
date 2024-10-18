@@ -11,54 +11,70 @@
 //!
 //! <http://www.unicode.org/reports/tr9/#Explicit_Levels_and_Directions>
 
-use alloc::vec::Vec;
+#[cfg(feature = "smallvec")]
+use smallvec::{smallvec, SmallVec};
 
 use super::char_data::{
     is_rtl,
     BidiClass::{self, *},
 };
 use super::level::Level;
+use super::prepare::removed_by_x9;
+use super::LevelRunVec;
+use super::TextSource;
 
-/// Compute explicit embedding levels for one paragraph of text (X1-X8).
+/// Compute explicit embedding levels for one paragraph of text (X1-X8), and identify
+/// level runs (BD7) for use when determining Isolating Run Sequences (X10).
 ///
 /// `processing_classes[i]` must contain the `BidiClass` of the char at byte index `i`,
 /// for each char in `text`.
+///
+/// `runs` returns the list of level runs (BD7) of the text.
 #[cfg_attr(feature = "flame_it", flamer::flame)]
-pub fn compute(
-    text: &str,
+pub fn compute<'a, T: TextSource<'a> + ?Sized>(
+    text: &'a T,
     para_level: Level,
     original_classes: &[BidiClass],
     levels: &mut [Level],
     processing_classes: &mut [BidiClass],
+    runs: &mut LevelRunVec,
 ) {
     assert_eq!(text.len(), original_classes.len());
 
     // <http://www.unicode.org/reports/tr9/#X1>
-    let mut stack = DirectionalStatusStack::new();
-    stack.push(para_level, OverrideStatus::Neutral);
+    #[cfg(feature = "smallvec")]
+    let mut stack: SmallVec<[Status; 8]> = smallvec![Status {
+        level: para_level,
+        status: OverrideStatus::Neutral,
+    }];
+    #[cfg(not(feature = "smallvec"))]
+    let mut stack = vec![Status {
+        level: para_level,
+        status: OverrideStatus::Neutral,
+    }];
 
     let mut overflow_isolate_count = 0u32;
     let mut overflow_embedding_count = 0u32;
     let mut valid_isolate_count = 0u32;
 
-    for (i, c) in text.char_indices() {
+    let mut current_run_level = Level::ltr();
+    let mut current_run_start = 0;
+
+    for (i, len) in text.indices_lengths() {
+        let last = stack.last().unwrap();
+
         match original_classes[i] {
             // Rules X2-X5c
             RLE | LRE | RLO | LRO | RLI | LRI | FSI => {
-                let last_level = stack.last().level;
-
                 // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
-                levels[i] = last_level;
+                levels[i] = last.level;
 
                 // X5a-X5c: Isolate initiators get the level of the last entry on the stack.
-                let is_isolate = match original_classes[i] {
-                    RLI | LRI | FSI => true,
-                    _ => false,
-                };
+                let is_isolate = matches!(original_classes[i], RLI | LRI | FSI);
                 if is_isolate {
                     // Redundant due to "Retaining explicit formatting characters" step.
-                    // levels[i] = last_level;
-                    match stack.last().status {
+                    // levels[i] = last.level;
+                    match last.status {
                         OverrideStatus::RTL => processing_classes[i] = R,
                         OverrideStatus::LTR => processing_classes[i] = L,
                         _ => {}
@@ -66,22 +82,25 @@ pub fn compute(
                 }
 
                 let new_level = if is_rtl(original_classes[i]) {
-                    last_level.new_explicit_next_rtl()
+                    last.level.new_explicit_next_rtl()
                 } else {
-                    last_level.new_explicit_next_ltr()
+                    last.level.new_explicit_next_ltr()
                 };
+
                 if new_level.is_ok() && overflow_isolate_count == 0 && overflow_embedding_count == 0
                 {
                     let new_level = new_level.unwrap();
-                    stack.push(
-                        new_level,
-                        match original_classes[i] {
+
+                    stack.push(Status {
+                        level: new_level,
+                        status: match original_classes[i] {
                             RLO => OverrideStatus::RTL,
                             LRO => OverrideStatus::LTR,
                             RLI | LRI | FSI => OverrideStatus::Isolate,
                             _ => OverrideStatus::Neutral,
                         },
-                    );
+                    });
+
                     if is_isolate {
                         valid_isolate_count += 1;
                     } else {
@@ -109,21 +128,21 @@ pub fn compute(
                     overflow_isolate_count -= 1;
                 } else if valid_isolate_count > 0 {
                     overflow_embedding_count = 0;
-                    loop {
-                        // Pop everything up to and including the last Isolate status.
-                        match stack.vec.pop() {
-                            None
-                            | Some(Status {
-                                status: OverrideStatus::Isolate,
-                                ..
-                            }) => break,
-                            _ => continue,
-                        }
-                    }
+
+                    while !matches!(
+                        stack.pop(),
+                        None | Some(Status {
+                            status: OverrideStatus::Isolate,
+                            ..
+                        })
+                    ) {}
+
                     valid_isolate_count -= 1;
                 }
-                let last = stack.last();
+
+                let last = stack.last().unwrap();
                 levels[i] = last.level;
+
                 match last.status {
                     OverrideStatus::RTL => processing_classes[i] = R,
                     OverrideStatus::LTR => processing_classes[i] = L,
@@ -137,11 +156,12 @@ pub fn compute(
                     // do nothing
                 } else if overflow_embedding_count > 0 {
                     overflow_embedding_count -= 1;
-                } else if stack.last().status != OverrideStatus::Isolate && stack.vec.len() >= 2 {
-                    stack.vec.pop();
+                } else if last.status != OverrideStatus::Isolate && stack.len() >= 2 {
+                    stack.pop();
                 }
+
                 // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
-                levels[i] = stack.last().level;
+                levels[i] = stack.last().unwrap().level;
                 // X9 part of retaining explicit formatting characters.
                 processing_classes[i] = BN;
             }
@@ -152,8 +172,8 @@ pub fn compute(
 
             // <http://www.unicode.org/reports/tr9/#X6>
             _ => {
-                let last = stack.last();
                 levels[i] = last.level;
+
                 // This condition is not in the spec, but I am pretty sure that is a spec bug.
                 // https://www.unicode.org/L2/L2023/23014-amd-to-uax9.pdf
                 if original_classes[i] != BN {
@@ -167,10 +187,30 @@ pub fn compute(
         }
 
         // Handle multi-byte characters.
-        for j in 1..c.len_utf8() {
+        for j in 1..len {
             levels[i + j] = levels[i];
             processing_classes[i + j] = processing_classes[i];
         }
+
+        // Identify level runs to be passed to prepare::isolating_run_sequences().
+        if i == 0 {
+            // Initialize for the first (or only) run.
+            current_run_level = levels[i];
+        } else {
+            // Check if we need to start a new level run.
+            // <https://www.unicode.org/reports/tr9/#BD7>
+            if !removed_by_x9(original_classes[i]) && levels[i] != current_run_level {
+                // End the last run and start a new one.
+                runs.push(current_run_start..i);
+                current_run_level = levels[i];
+                current_run_start = i;
+            }
+        }
+    }
+
+    // Append the trailing level run, if non-empty.
+    if levels.len() > current_run_start {
+        runs.push(current_run_start..levels.len());
     }
 }
 
@@ -186,24 +226,4 @@ enum OverrideStatus {
     RTL,
     LTR,
     Isolate,
-}
-
-struct DirectionalStatusStack {
-    vec: Vec<Status>,
-}
-
-impl DirectionalStatusStack {
-    fn new() -> Self {
-        DirectionalStatusStack {
-            vec: Vec::with_capacity(Level::max_explicit_depth() as usize + 2),
-        }
-    }
-
-    fn push(&mut self, level: Level, status: OverrideStatus) {
-        self.vec.push(Status { level, status });
-    }
-
-    fn last(&self) -> &Status {
-        self.vec.last().unwrap()
-    }
 }

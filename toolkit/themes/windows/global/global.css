@@ -11,12 +11,6 @@
 @namespace xul url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 @namespace html url("http://www.w3.org/1999/xhtml");
 
-:root {
-  background-color: -moz-Dialog;
-  color: -moz-DialogText;
-  font: message-box;
-}
-
 @media (prefers-contrast) {
   :root {
     /* In high-contrast mode on Windows, ThreeDLightShadow provides more
@@ -93,12 +87,6 @@ xul|separator.groove[orient="vertical"] {
   border-right: 1px solid ThreeDHighlight;
   width: 0;
   margin-inline: 0.4em;
-}
-
-/* Input margins */
-
-html|input {
-  margin: 2px 4px;
 }
 
 /* Content select */

@@ -9,20 +9,23 @@
 
 //! 3.3.4 - 3.3.6. Resolve implicit levels and types.
 
+#[cfg(not(feature = "smallvec"))]
 use alloc::vec::Vec;
 use core::cmp::max;
+#[cfg(feature = "smallvec")]
+use smallvec::SmallVec;
 
 use super::char_data::BidiClass::{self, *};
 use super::level::Level;
-use super::prepare::{not_removed_by_x9, removed_by_x9, IsolatingRunSequence};
-use super::BidiDataSource;
+use super::prepare::{not_removed_by_x9, IsolatingRunSequence};
+use super::{BidiDataSource, TextSource};
 
 /// 3.3.4 Resolving Weak Types
 ///
 /// <http://www.unicode.org/reports/tr9/#Resolving_Weak_Types>
 #[cfg_attr(feature = "flame_it", flamer::flame)]
-pub fn resolve_weak(
-    text: &str,
+pub fn resolve_weak<'a, T: TextSource<'a> + ?Sized>(
+    text: &'a T,
     sequence: &IsolatingRunSequence,
     processing_classes: &mut [BidiClass],
 ) {
@@ -39,7 +42,13 @@ pub fn resolve_weak(
     // The previous class for the purposes of rule W1, not tracking changes from any other rules.
     let mut prev_class_before_w1 = sequence.sos;
     let mut last_strong_is_al = false;
+    #[cfg(feature = "smallvec")]
+    let mut et_run_indices = SmallVec::<[usize; 8]>::new(); // for W5
+    #[cfg(not(feature = "smallvec"))]
     let mut et_run_indices = Vec::new(); // for W5
+    #[cfg(feature = "smallvec")]
+    let mut bn_run_indices = SmallVec::<[usize; 8]>::new(); // for W5 +  <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
+    #[cfg(not(feature = "smallvec"))]
     let mut bn_run_indices = Vec::new(); // for W5 +  <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
 
     for (run_index, level_run) in sequence.runs.iter().enumerate() {
@@ -120,9 +129,9 @@ pub fn resolve_weak(
                     // See https://github.com/servo/unicode-bidi/issues/86 for improving this.
                     // We want to make sure we check the correct next character by skipping past the rest
                     // of this one.
-                    if let Some(ch) = text.get(i..).and_then(|s| s.chars().next()) {
+                    if let Some((_, char_len)) = text.char_at(i) {
                         let mut next_class = sequence
-                            .iter_forwards_from(i + ch.len_utf8(), run_index)
+                            .iter_forwards_from(i + char_len, run_index)
                             .map(|j| processing_classes[j])
                             // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
                             .find(not_removed_by_x9)
@@ -156,7 +165,7 @@ pub fn resolve_weak(
                                 }
                                 *class = ON;
                             }
-                            for idx in sequence.iter_forwards_from(i + ch.len_utf8(), run_index) {
+                            for idx in sequence.iter_forwards_from(i + char_len, run_index) {
                                 let class = &mut processing_classes[idx];
                                 if *class != BN {
                                     break;
@@ -177,7 +186,7 @@ pub fn resolve_weak(
                         _ => {
                             // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
                             // If there was a BN run before this, that's now a part of this ET run.
-                            et_run_indices.extend(&bn_run_indices);
+                            et_run_indices.extend(bn_run_indices.clone());
 
                             // In case this is followed by an EN.
                             et_run_indices.push(i);
@@ -224,32 +233,35 @@ pub fn resolve_weak(
 
     // W7. If the previous strong char was L, change EN to L.
     let mut last_strong_is_l = sequence.sos == L;
-    for run in &sequence.runs {
-        for i in run.clone() {
-            match processing_classes[i] {
-                EN if last_strong_is_l => {
-                    processing_classes[i] = L;
-                }
-                L => {
-                    last_strong_is_l = true;
-                }
-                R | AL => {
-                    last_strong_is_l = false;
-                }
-                // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
-                // Already scanning past BN here.
-                _ => {}
+    for i in sequence.runs.iter().cloned().flatten() {
+        match processing_classes[i] {
+            EN if last_strong_is_l => {
+                processing_classes[i] = L;
             }
+            L => {
+                last_strong_is_l = true;
+            }
+            R | AL => {
+                last_strong_is_l = false;
+            }
+            // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
+            // Already scanning past BN here.
+            _ => {}
         }
     }
 }
+
+#[cfg(feature = "smallvec")]
+type BracketPairVec = SmallVec<[BracketPair; 8]>;
+#[cfg(not(feature = "smallvec"))]
+type BracketPairVec = Vec<BracketPair>;
 
 /// 3.3.5 Resolving Neutral Types
 ///
 /// <http://www.unicode.org/reports/tr9/#Resolving_Neutral_Types>
 #[cfg_attr(feature = "flame_it", flamer::flame)]
-pub fn resolve_neutral<D: BidiDataSource>(
-    text: &str,
+pub fn resolve_neutral<'a, D: BidiDataSource, T: TextSource<'a> + ?Sized>(
+    text: &'a T,
     data_source: &D,
     sequence: &IsolatingRunSequence,
     levels: &[Level],
@@ -267,7 +279,14 @@ pub fn resolve_neutral<D: BidiDataSource>(
 
     // > Identify the bracket pairs in the current isolating run sequence according to BD16.
     // We use processing_classes, not original_classes, due to BD14/BD15
-    let bracket_pairs = identify_bracket_pairs(text, data_source, sequence, processing_classes);
+    let mut bracket_pairs = BracketPairVec::new();
+    identify_bracket_pairs(
+        text,
+        data_source,
+        sequence,
+        processing_classes,
+        &mut bracket_pairs,
+    );
 
     // > For each bracket-pair element in the list of pairs of text positions
     //
@@ -288,12 +307,13 @@ pub fn resolve_neutral<D: BidiDataSource>(
         let mut found_not_e = false;
         let mut class_to_set = None;
 
-        let start_len_utf8 = text[pair.start..].chars().next().unwrap().len_utf8();
+        let start_char_len =
+            T::char_len(text.subrange(pair.start..pair.end).chars().next().unwrap());
         // > Inspect the bidirectional types of the characters enclosed within the bracket pair.
         //
         // `pair` is [start, end) so we will end up processing the opening character but not the closing one.
         //
-        for enclosed_i in sequence.iter_forwards_from(pair.start + start_len_utf8, pair.start_run) {
+        for enclosed_i in sequence.iter_forwards_from(pair.start + start_char_len, pair.start_run) {
             if enclosed_i >= pair.end {
                 #[cfg(feature = "std")]
                 debug_assert!(
@@ -307,7 +327,7 @@ pub fn resolve_neutral<D: BidiDataSource>(
                 found_e = true;
             } else if class == not_e {
                 found_not_e = true;
-            } else if class == BidiClass::EN || class == BidiClass::AN {
+            } else if matches!(class, BidiClass::EN | BidiClass::AN) {
                 // > Within this scope, bidirectional types EN and AN are treated as R.
                 if e == BidiClass::L {
                     found_not_e = true;
@@ -336,15 +356,15 @@ pub fn resolve_neutral<D: BidiDataSource>(
                 .iter_backwards_from(pair.start, pair.start_run)
                 .map(|i| processing_classes[i])
                 .find(|class| {
-                    *class == BidiClass::L
-                        || *class == BidiClass::R
-                        || *class == BidiClass::EN
-                        || *class == BidiClass::AN
+                    matches!(
+                        class,
+                        BidiClass::L | BidiClass::R | BidiClass::EN | BidiClass::AN
+                    )
                 })
                 .unwrap_or(sequence.sos);
 
             // > Within this scope, bidirectional types EN and AN are treated as R.
-            if previous_strong == BidiClass::EN || previous_strong == BidiClass::AN {
+            if matches!(previous_strong, BidiClass::EN | BidiClass::AN) {
                 previous_strong = BidiClass::R;
             }
 
@@ -362,11 +382,12 @@ pub fn resolve_neutral<D: BidiDataSource>(
         if let Some(class_to_set) = class_to_set {
             // Update all processing classes corresponding to the start and end elements, as requested.
             // We should include all bytes of the character, not the first one.
-            let end_len_utf8 = text[pair.end..].chars().next().unwrap().len_utf8();
-            for class in &mut processing_classes[pair.start..pair.start + start_len_utf8] {
+            let end_char_len =
+                T::char_len(text.subrange(pair.end..text.len()).chars().next().unwrap());
+            for class in &mut processing_classes[pair.start..pair.start + start_char_len] {
                 *class = class_to_set;
             }
-            for class in &mut processing_classes[pair.end..pair.end + end_len_utf8] {
+            for class in &mut processing_classes[pair.end..pair.end + end_char_len] {
                 *class = class_to_set;
             }
             // <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
@@ -382,7 +403,7 @@ pub fn resolve_neutral<D: BidiDataSource>(
 
             // This rule deals with sequences of NSMs, so we can just update them all at once, we don't need to worry
             // about character boundaries. We do need to be careful to skip the full set of bytes for the parentheses characters.
-            let nsm_start = pair.start + start_len_utf8;
+            let nsm_start = pair.start + start_char_len;
             for idx in sequence.iter_forwards_from(nsm_start, pair.start_run) {
                 let class = original_classes[idx];
                 if class == BidiClass::NSM || processing_classes[idx] == BN {
@@ -391,7 +412,7 @@ pub fn resolve_neutral<D: BidiDataSource>(
                     break;
                 }
             }
-            let nsm_end = pair.end + end_len_utf8;
+            let nsm_end = pair.end + end_char_len;
             for idx in sequence.iter_forwards_from(nsm_end, pair.end_run) {
                 let class = original_classes[idx];
                 if class == BidiClass::NSM || processing_classes[idx] == BN {
@@ -411,6 +432,9 @@ pub fn resolve_neutral<D: BidiDataSource>(
     let mut prev_class = sequence.sos;
     while let Some(mut i) = indices.next() {
         // Process sequences of NI characters.
+        #[cfg(feature = "smallvec")]
+        let mut ni_run = SmallVec::<[usize; 8]>::new();
+        #[cfg(not(feature = "smallvec"))]
         let mut ni_run = Vec::new();
         // The BN is for <https://www.unicode.org/reports/tr9/#Retaining_Explicit_Formatting_Characters>
         if is_NI(processing_classes[i]) || processing_classes[i] == BN {
@@ -477,37 +501,27 @@ struct BracketPair {
 /// text source.
 ///
 /// <https://www.unicode.org/reports/tr9/#BD16>
-fn identify_bracket_pairs<D: BidiDataSource>(
-    text: &str,
+fn identify_bracket_pairs<'a, T: TextSource<'a> + ?Sized, D: BidiDataSource>(
+    text: &'a T,
     data_source: &D,
     run_sequence: &IsolatingRunSequence,
     original_classes: &[BidiClass],
-) -> Vec<BracketPair> {
-    let mut ret = vec![];
-    let mut stack = vec![];
+    bracket_pairs: &mut BracketPairVec,
+) {
+    #[cfg(feature = "smallvec")]
+    let mut stack = SmallVec::<[(char, usize, usize); 8]>::new();
+    #[cfg(not(feature = "smallvec"))]
+    let mut stack = Vec::new();
 
     for (run_index, level_run) in run_sequence.runs.iter().enumerate() {
-        let slice = if let Some(slice) = text.get(level_run.clone()) {
-            slice
-        } else {
-            #[cfg(feature = "std")]
-            std::debug_assert!(
-                false,
-                "Found broken indices in level run: found indices {}..{} for string of length {}",
-                level_run.start,
-                level_run.end,
-                text.len()
-            );
-            return ret;
-        };
-
-        for (i, ch) in slice.char_indices() {
+        for (i, ch) in text.subrange(level_run.clone()).char_indices() {
             let actual_index = level_run.start + i;
+
             // All paren characters are ON.
             // From BidiBrackets.txt:
             // > The Unicode property value stability policy guarantees that characters
             // > which have bpt=o or bpt=c also have bc=ON and Bidi_M=Y
-            if original_classes[level_run.start + i] != BidiClass::ON {
+            if original_classes[actual_index] != BidiClass::ON {
                 continue;
             }
 
@@ -543,7 +557,7 @@ fn identify_bracket_pairs<D: BidiDataSource>(
                                 start_run: element.2,
                                 end_run: run_index,
                             };
-                            ret.push(pair);
+                            bracket_pairs.push(pair);
 
                             // > Pop the stack through the current stack element inclusively.
                             stack.truncate(stack_index);
@@ -556,8 +570,7 @@ fn identify_bracket_pairs<D: BidiDataSource>(
     }
     // > Sort the list of pairs of text positions in ascending order based on
     // > the text position of the opening paired bracket.
-    ret.sort_by_key(|r| r.start);
-    ret
+    bracket_pairs.sort_by_key(|r| r.start);
 }
 
 /// 3.3.6 Resolving Implicit Levels
@@ -566,11 +579,11 @@ fn identify_bracket_pairs<D: BidiDataSource>(
 ///
 /// <http://www.unicode.org/reports/tr9/#Resolving_Implicit_Levels>
 #[cfg_attr(feature = "flame_it", flamer::flame)]
-pub fn resolve_levels(original_classes: &[BidiClass], levels: &mut [Level]) -> Level {
+pub fn resolve_levels(processing_classes: &[BidiClass], levels: &mut [Level]) -> Level {
     let mut max_level = Level::ltr();
-    assert_eq!(original_classes.len(), levels.len());
+    assert_eq!(processing_classes.len(), levels.len());
     for i in 0..levels.len() {
-        match (levels[i].is_rtl(), original_classes[i]) {
+        match (levels[i].is_rtl(), processing_classes[i]) {
             (false, AN) | (false, EN) => levels[i].raise(2).expect("Level number error"),
             (false, R) | (true, L) | (true, EN) | (true, AN) => {
                 levels[i].raise(1).expect("Level number error")
@@ -589,8 +602,5 @@ pub fn resolve_levels(original_classes: &[BidiClass], levels: &mut [Level]) -> L
 /// <http://www.unicode.org/reports/tr9/#NI>
 #[allow(non_snake_case)]
 fn is_NI(class: BidiClass) -> bool {
-    match class {
-        B | S | WS | ON | FSI | LRI | RLI | PDI => true,
-        _ => false,
-    }
+    matches!(class, B | S | WS | ON | FSI | LRI | RLI | PDI)
 }

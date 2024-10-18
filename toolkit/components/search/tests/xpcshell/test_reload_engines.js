@@ -238,6 +238,260 @@ const CONFIG = [
   },
 ];
 
+const CONFIG_V2 = [
+  {
+    recordType: "engine",
+    identifier: "engine",
+    base: {
+      name: "Test search engine",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          params: [
+            {
+              name: "channel",
+              searchAccessPoint: {
+                addressbar: "fflb",
+                contextmenu: "rcs",
+              },
+            },
+          ],
+          searchTermParamName: "q",
+        },
+        suggestions: {
+          base: "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox&hl={moz:locale}",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { allRegionsAndLocales: true },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-pref",
+    base: {
+      name: "engine-pref",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          params: [
+            {
+              name: "code",
+              experimentConfig: "code",
+            },
+            {
+              name: "test",
+              experimentConfig: "test",
+            },
+          ],
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { allRegionsAndLocales: true },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-chromeicon",
+    base: {
+      name: "engine-chromeicon",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { allRegionsAndLocales: true },
+      },
+      {
+        environment: { regions: ["FR"] },
+        urls: {
+          search: {
+            base: "https://www.google.com/search",
+            params: [
+              {
+                name: "c",
+                value: "my-test",
+              },
+            ],
+            searchTermParamName: "q1",
+          },
+        },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-rel-searchform-purpose",
+    base: {
+      name: "engine-rel-searchform-purpose",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { excludedRegions: ["FR"] },
+        urls: {
+          search: {
+            params: [
+              {
+                name: "channel",
+                searchAccessPoint: {
+                  addressbar: "fflb",
+                  contextmenu: "rcs",
+                  searchbar: "sb",
+                },
+              },
+            ],
+          },
+        },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-reordered",
+    base: {
+      name: "Test search engine (Reordered)",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          params: [
+            {
+              name: "channel",
+              searchAccessPoint: {
+                addressbar: "fflb",
+                contextmenu: "rcs",
+              },
+            },
+          ],
+          searchTermParamName: "q",
+        },
+        suggestions: {
+          base: "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox&hl={moz:locale}",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { regions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-resourceicon",
+    base: {
+      name: "engine-resourceicon",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { excludedRegions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-resourceicon-gd",
+    base: {
+      name: "engine-resourceicon-gd",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { regions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-same-name",
+    base: {
+      name: "engine-same-name",
+      urls: {
+        search: {
+          base: "https://www.google.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { excludedRegions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "engine",
+    identifier: "engine-same-name-gd",
+    base: {
+      name: "engine-same-name-gd",
+      urls: {
+        search: {
+          base: "https://www.example.com/search",
+          searchTermParamName: "q",
+        },
+      },
+    },
+    variants: [
+      {
+        environment: { regions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "defaultEngines",
+    specificDefaults: [
+      {
+        default: "engine",
+        defaultPrivate: "engine",
+        environment: { excludedRegions: ["FR"] },
+      },
+      {
+        default: "engine-pref",
+        defaultPrivate: "engine-pref",
+        environment: { regions: ["FR"] },
+      },
+    ],
+  },
+  {
+    recordType: "engineOrders",
+    orders: [
+      {
+        order: ["engine-resourceicon-gd"],
+        environment: { regions: ["FR"] },
+      },
+    ],
+  },
+];
+
 async function visibleEngines() {
   return (await Services.search.getVisibleEngines()).map(e => e.identifier);
 }
@@ -250,7 +504,11 @@ add_setup(async function () {
   );
 
   SearchTestUtils.useMockIdleService();
-  await SearchTestUtils.useTestEngines("data", null, CONFIG);
+  await SearchTestUtils.useTestEngines(
+    "data",
+    null,
+    SearchUtils.newSearchConfigEnabled ? CONFIG_V2 : CONFIG
+  );
   await AddonTestUtils.promiseStartupManager();
 });
 
@@ -325,23 +583,47 @@ add_task(async function test_config_updated_engine_changes() {
   await reloadObserved;
   Services.obs.removeObserver(enginesObs, SearchUtils.TOPIC_ENGINE_MODIFIED);
 
-  Assert.deepEqual(
-    enginesAdded,
-    ["engine-resourceicon-gd", "engine-reordered"],
-    "Should have added the correct engines"
-  );
+  if (SearchUtils.newSearchConfigEnabled) {
+    Assert.deepEqual(
+      enginesAdded,
+      ["engine-resourceicon-gd", "engine-reordered", "engine-same-name-gd"],
+      "Should have added the correct engines"
+    );
 
-  Assert.deepEqual(
-    enginesModified.sort(),
-    ["engine", "engine-chromeicon", "engine-pref", "engine-same-name-gd"],
-    "Should have modified the expected engines"
-  );
+    Assert.deepEqual(
+      enginesModified.sort(),
+      ["engine", "engine-chromeicon", "engine-pref"],
+      "Should have modified the expected engines"
+    );
 
-  Assert.deepEqual(
-    enginesRemoved,
-    ["engine-rel-searchform-purpose", "engine-resourceicon"],
-    "Should have removed the expected engine"
-  );
+    Assert.deepEqual(
+      enginesRemoved,
+      [
+        "engine-rel-searchform-purpose",
+        "engine-resourceicon",
+        "engine-same-name",
+      ],
+      "Should have removed the expected engine"
+    );
+  } else {
+    Assert.deepEqual(
+      enginesAdded,
+      ["engine-resourceicon-gd", "engine-reordered"],
+      "Should have added the correct engines"
+    );
+
+    Assert.deepEqual(
+      enginesModified.sort(),
+      ["engine", "engine-chromeicon", "engine-pref", "engine-same-name-gd"],
+      "Should have modified the expected engines"
+    );
+
+    Assert.deepEqual(
+      enginesRemoved,
+      ["engine-rel-searchform-purpose", "engine-resourceicon"],
+      "Should have removed the expected engine"
+    );
+  }
 
   const installedEngines = await Services.search.getAppProvidedEngines();
 
@@ -382,7 +664,9 @@ add_task(async function test_config_updated_engine_changes() {
   );
 
   const engineWithSameName = await Services.search.getEngineByName(
-    "engine-same-name"
+    SearchUtils.newSearchConfigEnabled
+      ? "engine-same-name-gd"
+      : "engine-same-name"
   );
   Assert.equal(
     engineWithSameName.getSubmission("test").uri.spec,

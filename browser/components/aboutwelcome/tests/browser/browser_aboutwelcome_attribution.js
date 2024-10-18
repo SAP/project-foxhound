@@ -1,7 +1,7 @@
 "use strict";
 
-const { ASRouter } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouter.jsm"
+const { ASRouter } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
 const { AttributionCode } = ChromeUtils.importESModule(
   "resource:///modules/AttributionCode.sys.mjs"
@@ -42,7 +42,6 @@ const TEST_PROTON_CONTENT = [
           navigate: true,
         },
       },
-      has_noodles: true,
     },
   },
   {
@@ -58,7 +57,6 @@ const TEST_PROTON_CONTENT = [
           data: {},
         },
       },
-      has_noodles: true,
     },
   },
 ];

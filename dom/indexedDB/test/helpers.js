@@ -3,6 +3,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
+/* eslint-disable mozilla/no-comparison-or-assignment-inside-ok */
+
 // testSteps is expected to be defined by the test using this file.
 /* global testSteps:false */
 
@@ -482,7 +484,7 @@ function workerScript() {
   self.executeSoon = function (_fun_) {
     var channel = new MessageChannel();
     channel.port1.postMessage("");
-    channel.port2.onmessage = function (event) {
+    channel.port2.onmessage = function () {
       _fun_();
     };
   };

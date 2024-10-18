@@ -165,6 +165,7 @@ class MigrationUtils {
         "about:welcome",
         "about:welcome?*",
         "about:preferences",
+        "about:settings",
         "chrome://browser/content/migration/migration-dialog-window.html",
         "chrome://browser/content/spotlight.html",
         "about:firefoxview",
@@ -411,7 +412,7 @@ class MigrationUtils {
       });
 
     Services.tm.spinEventLoopUntil(
-      "MigrationUtils.jsm:MU_spinResolve",
+      "MigrationUtils.sys.mjs:MU_spinResolve",
       () => done || gForceExitSpinResolve
     );
     if (!done) {

@@ -106,8 +106,8 @@ class LoadListener {
   }
 
   // nsIProgressEventSink
-  onProgress(request, progress, progressMax) {}
-  onStatus(request, status, statusArg) {}
+  onProgress() {}
+  onStatus() {}
 }
 
 export var SearchUtils = {
@@ -186,7 +186,6 @@ export var SearchUtils = {
   TOPIC_ENGINE_MODIFIED: "browser-search-engine-modified",
   MODIFIED_TYPE: {
     CHANGED: "engine-changed",
-    LOADED: "engine-loaded",
     REMOVED: "engine-removed",
     ADDED: "engine-added",
     DEFAULT: "engine-default",

@@ -21,7 +21,6 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
-#include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/FormData.h"
@@ -32,6 +31,7 @@
 #include "nsQueryObject.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/UnbindContext.h"
 #include "nsPIDOMWindow.h"
 #include "nsIFrameInlines.h"
 #include "nsIScrollableFrame.h"
@@ -96,10 +96,6 @@
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/ElementInternals.h"
-
-#ifdef ACCESSIBILITY
-#  include "nsAccessibilityService.h"
-#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -279,7 +275,7 @@ static bool IsOffsetParent(nsIFrame* aFrame) {
   LayoutFrameType frameType = aFrame->Type();
 
   if (frameType == LayoutFrameType::TableCell ||
-      frameType == LayoutFrameType::Table) {
+      frameType == LayoutFrameType::TableWrapper) {
     // Per the IDL for Element, only td, th, and table are acceptable
     // offsetParents apart from body or positioned elements; we need to check
     // the content type as well as the frame type so we ignore anonymous tables
@@ -532,7 +528,7 @@ nsresult nsGenericHTMLElement::BindToTree(BindContext& aContext,
   return rv;
 }
 
-void nsGenericHTMLElement::UnbindFromTree(bool aNullParent) {
+void nsGenericHTMLElement::UnbindFromTree(UnbindContext& aContext) {
   if (IsInComposedDoc()) {
     // https://html.spec.whatwg.org/#dom-trees:hide-popover-algorithm
     // If removedNode's popover attribute is not in the no popover state, then
@@ -552,7 +548,7 @@ void nsGenericHTMLElement::UnbindFromTree(bool aNullParent) {
     }
   }
 
-  nsStyledElement::UnbindFromTree(aNullParent);
+  nsStyledElement::UnbindFromTree(aContext);
 
   // Invalidate .labels list. It will be repopulated when used the next time.
   nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
@@ -749,11 +745,6 @@ void nsGenericHTMLElement::AfterSetPopoverAttr() {
     }
 
     if (newState == PopoverAttributeState::None) {
-      // HidePopoverInternal above could have removed the popover from the top
-      // layer.
-      if (GetPopoverData()) {
-        OwnerDoc()->RemovePopoverFromTopLayer(*this);
-      }
       ClearPopoverData();
       RemoveStates(ElementState::POPOVER_OPEN);
     } else {
@@ -761,6 +752,16 @@ void nsGenericHTMLElement::AfterSetPopoverAttr() {
       EnsurePopoverData().SetPopoverAttributeState(newState);
     }
   }
+}
+
+void nsGenericHTMLElement::OnAttrSetButNotChanged(
+    int32_t aNamespaceID, nsAtom* aName, const nsAttrValueOrString& aValue,
+    bool aNotify) {
+  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::popovertarget) {
+    ClearExplicitlySetAttrElement(aName);
+  }
+  return nsGenericHTMLElementBase::OnAttrSetButNotChanged(aNamespaceID, aName,
+                                                          aValue, aNotify);
 }
 
 void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -780,6 +781,8 @@ void nsGenericHTMLElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
       nsContentUtils::AddScriptRunner(
           NewRunnableMethod("nsGenericHTMLElement::AfterSetPopoverAttr", this,
                             &nsGenericHTMLElement::AfterSetPopoverAttr));
+    } else if (aName == nsGkAtoms::popovertarget) {
+      ClearExplicitlySetAttrElement(aName);
     } else if (aName == nsGkAtoms::dir) {
       auto dir = Directionality::Ltr;
       // A boolean tracking whether we need to recompute our directionality.
@@ -1275,25 +1278,24 @@ bool nsGenericHTMLElement::ParseImageAttribute(nsAtom* aAttribute,
 bool nsGenericHTMLElement::ParseReferrerAttribute(const nsAString& aString,
                                                   nsAttrValue& aResult) {
   using mozilla::dom::ReferrerInfo;
+  // This is a bit sketchy, we assume GetEnumString(…).get() points to a static
+  // buffer, relying on the fact that GetEnumString(…) returns a literal string.
   static const nsAttrValue::EnumTable kReferrerPolicyTable[] = {
-      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::No_referrer),
+      {GetEnumString(ReferrerPolicy::No_referrer).get(),
        static_cast<int16_t>(ReferrerPolicy::No_referrer)},
-      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Origin),
+      {GetEnumString(ReferrerPolicy::Origin).get(),
        static_cast<int16_t>(ReferrerPolicy::Origin)},
-      {ReferrerInfo::ReferrerPolicyToString(
-           ReferrerPolicy::Origin_when_cross_origin),
+      {GetEnumString(ReferrerPolicy::Origin_when_cross_origin).get(),
        static_cast<int16_t>(ReferrerPolicy::Origin_when_cross_origin)},
-      {ReferrerInfo::ReferrerPolicyToString(
-           ReferrerPolicy::No_referrer_when_downgrade),
+      {GetEnumString(ReferrerPolicy::No_referrer_when_downgrade).get(),
        static_cast<int16_t>(ReferrerPolicy::No_referrer_when_downgrade)},
-      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Unsafe_url),
+      {GetEnumString(ReferrerPolicy::Unsafe_url).get(),
        static_cast<int16_t>(ReferrerPolicy::Unsafe_url)},
-      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Strict_origin),
+      {GetEnumString(ReferrerPolicy::Strict_origin).get(),
        static_cast<int16_t>(ReferrerPolicy::Strict_origin)},
-      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Same_origin),
+      {GetEnumString(ReferrerPolicy::Same_origin).get(),
        static_cast<int16_t>(ReferrerPolicy::Same_origin)},
-      {ReferrerInfo::ReferrerPolicyToString(
-           ReferrerPolicy::Strict_origin_when_cross_origin),
+      {GetEnumString(ReferrerPolicy::Strict_origin_when_cross_origin).get(),
        static_cast<int16_t>(ReferrerPolicy::Strict_origin_when_cross_origin)},
       {nullptr, ReferrerPolicy::_empty}};
   return aResult.ParseEnumValue(aString, kReferrerPolicyTable, false);
@@ -1831,14 +1833,14 @@ nsresult nsGenericHTMLFormElement::BindToTree(BindContext& aContext,
   return NS_OK;
 }
 
-void nsGenericHTMLFormElement::UnbindFromTree(bool aNullParent) {
+void nsGenericHTMLFormElement::UnbindFromTree(UnbindContext& aContext) {
   // Save state before doing anything else.
   SaveState();
 
   if (IsFormAssociatedElement()) {
     if (HTMLFormElement* form = GetFormInternal()) {
       // Might need to unset form
-      if (aNullParent) {
+      if (aContext.IsUnbindRoot(this)) {
         // No more parent means no more form
         ClearForm(true, true);
       } else {
@@ -1859,7 +1861,7 @@ void nsGenericHTMLFormElement::UnbindFromTree(bool aNullParent) {
     }
   }
 
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 
   // The element might not have a fieldset anymore.
   UpdateFieldSet(false);
@@ -2883,18 +2885,6 @@ void nsGenericHTMLFormControlElementWithState::HandlePopoverTargetAction() {
   } else if (shouldShow) {
     target->ShowPopoverInternal(this, IgnoreErrors());
   }
-#ifdef ACCESSIBILITY
-  // Notify the accessibility service about the change.
-  if (shouldHide || shouldShow) {
-    if (RefPtr<Document> doc = GetComposedDoc()) {
-      if (PresShell* presShell = doc->GetPresShell()) {
-        if (nsAccessibilityService* accService = GetAccService()) {
-          accService->PopovertargetMaybeChanged(presShell, this);
-        }
-      }
-    }
-  }
-#endif
 }
 
 void nsGenericHTMLFormControlElementWithState::GetInvokeAction(
@@ -3444,7 +3434,7 @@ void nsGenericHTMLElement::ShowPopoverInternal(Element* aInvoker,
   nsWeakPtr originallyFocusedElement;
   if (IsAutoPopover()) {
     auto originalState = GetPopoverAttributeState();
-    RefPtr<nsINode> ancestor = GetTopmostPopoverAncestor(aInvoker);
+    RefPtr<nsINode> ancestor = GetTopmostPopoverAncestor(aInvoker, true);
     if (!ancestor) {
       ancestor = document;
     }

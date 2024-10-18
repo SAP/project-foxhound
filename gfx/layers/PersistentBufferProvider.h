@@ -29,6 +29,7 @@ class DrawTarget;
 namespace layers {
 
 class CompositableForwarder;
+class FwdTransactionTracker;
 class KnowsCompositor;
 struct RemoteTextureOwnerId;
 class TextureClient;
@@ -108,9 +109,10 @@ class PersistentBufferProvider : public RefCounted<PersistentBufferProvider>,
 
   virtual Maybe<SurfaceDescriptor> GetFrontBuffer() { return Nothing(); }
 
-  virtual void UseCompositableForwarder(CompositableForwarder* aForwarder) {}
-
-  virtual bool WaitForRemoteTextureOwner() const { return false; }
+  virtual already_AddRefed<FwdTransactionTracker> UseCompositableForwarder(
+      CompositableForwarder* aForwarder) {
+    return nullptr;
+  }
 };
 
 class PersistentBufferProviderBasic : public PersistentBufferProvider {
@@ -176,9 +178,8 @@ class PersistentBufferProviderAccelerated : public PersistentBufferProvider {
 
   bool RequiresRefresh() const override;
 
-  void UseCompositableForwarder(CompositableForwarder* aForwarder) override;
-
-  bool WaitForRemoteTextureOwner() const override { return true; }
+  already_AddRefed<FwdTransactionTracker> UseCompositableForwarder(
+      CompositableForwarder* aForwarder) override;
 
  protected:
   explicit PersistentBufferProviderAccelerated(
@@ -205,7 +206,8 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
 
   static already_AddRefed<PersistentBufferProviderShared> Create(
       gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
-      KnowsCompositor* aKnowsCompositor, bool aWillReadFrequently = false);
+      KnowsCompositor* aKnowsCompositor, bool aWillReadFrequently = false,
+      const Maybe<uint64_t>& aWindowID = Nothing());
 
   bool IsShared() const override { return true; }
 
@@ -236,7 +238,8 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
   PersistentBufferProviderShared(gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
                                  KnowsCompositor* aKnowsCompositor,
                                  RefPtr<TextureClient>& aTexture,
-                                 bool aWillReadFrequently);
+                                 bool aWillReadFrequently,
+                                 const Maybe<uint64_t>& aWindowID);
 
   ~PersistentBufferProviderShared();
 
@@ -261,6 +264,8 @@ class PersistentBufferProviderShared : public PersistentBufferProvider,
   Maybe<uint32_t> mFront;
   // Whether to avoid acceleration.
   bool mWillReadFrequently = false;
+  // Owning window ID of the buffer provider.
+  Maybe<uint64_t> mWindowID;
 
   RefPtr<gfx::DrawTarget> mDrawTarget;
   RefPtr<gfx::SourceSurface> mSnapshot;

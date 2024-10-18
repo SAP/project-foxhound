@@ -13,13 +13,14 @@ This is the nascent documentation of the Firefox front-end code.
    components/enterprisepolicies/docs/index
    extensions/formautofill/docs/index
    components/newtab/docs/index
+   components/aboutwelcome/docs/index
    installer/windows/installer/index
    components/attribution/docs/index
    /toolkit/mozapps/defaultagent/default-browser-agent/index
    components/migration/docs/index
    components/pagedata/docs/index
    places/index
-   components/newtab/content-src/asrouter/docs/index
+   components/asrouter/docs/index
    search/index
    base/tabbrowser/index
    touchbar/index
@@ -30,3 +31,4 @@ This is the nascent documentation of the Firefox front-end code.
    components/storybook/docs/README.other-widgets.stories
    components/storybook/docs/README.lit-guide.stories
    components/storybook/docs/README.xul-and-html.stories
+   components/backup/docs/index

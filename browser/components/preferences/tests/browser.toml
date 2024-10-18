@@ -11,6 +11,8 @@ support-files = [
   "addons/set_newtab.xpi",
 ]
 
+["browser_about_settings.js"]
+
 ["browser_advanced_update.js"]
 skip-if = ["!updater"]
 
@@ -26,6 +28,12 @@ skip-if = [
   "!debug && os == 'win'", # Bug 1518370
 ]
 
+["browser_bug410900.js"]
+
+["browser_bug731866.js"]
+
+["browser_bug795764_cachedisabled.js"]
+
 ["browser_bug1018066_resetScrollPosition.js"]
 
 ["browser_bug1020245_openPreferences_to_paneContent.js"]
@@ -40,27 +48,26 @@ support-files = ["browser_bug1184989_prevent_scrolling_when_preferences_flipped.
 
 ["browser_bug1579418.js"]
 
-["browser_bug410900.js"]
-
-["browser_bug731866.js"]
-
-["browser_bug795764_cachedisabled.js"]
-
 ["browser_cert_export.js"]
 
 ["browser_change_app_handler.js"]
-skip-if = ["os != 'win'"] # Windows-specific handler application selection dialog
+run-if = ["os == 'win'"] # Windows-specific handler application selection dialog
 
 ["browser_checkspelling.js"]
 
 ["browser_connection.js"]
 
+["browser_connection_bug388287.js"]
+
 ["browser_connection_bug1445991.js"]
 
 ["browser_connection_bug1505330.js"]
-skip-if = ["verify && debug && (os == 'linux' || os == 'mac')"]
+skip-if = [
+  "verify && debug && os == 'linux'",
+  "verify && debug && os == 'mac'",
+]
 
-["browser_connection_bug388287.js"]
+["browser_connection_valid_hostname.js"]
 
 ["browser_containers_name_input.js"]
 
@@ -76,6 +83,8 @@ skip-if = ["socketprocess_networking"]
 ["browser_cookies_exceptions.js"]
 
 ["browser_defaultbrowser_alwayscheck.js"]
+
+["browser_dns_over_https_exceptions_subdialog.js"]
 
 ["browser_engines.js"]
 fail-if = ["a11y_checks"] # Bug 1854636 clicked treechildren#engineChildren may not be focusable
@@ -99,7 +108,8 @@ skip-if = [
 ["browser_extension_controlled.js"]
 skip-if = [
   "tsan",
-  "ccov && (os == 'linux' || os == 'win')", # Linux: bug 1613530, Windows: bug 1437051
+  "ccov && os == 'linux'", # Linux: bug 1613530
+  "ccov && os == 'win'", # Windows: bug 1437051
 ]
 
 ["browser_filetype_dialog.js"]
@@ -238,7 +248,6 @@ skip-if = ["tsan"] # Bug 1678829
 ["browser_search_subdialogs_within_preferences_site_data.js"]
 
 ["browser_search_within_preferences_1.js"]
-skip-if = ["os == 'win' && processor == 'aarch64'"] # Bug 1536560
 
 ["browser_search_within_preferences_2.js"]
 

@@ -421,10 +421,13 @@ class AliasSet {
     // The generation counter associated with the global object
     GlobalGenerationCounter = 1 << 26,
 
-    Last = GlobalGenerationCounter,
+    // The SharedArrayRawBuffer::length field.
+    SharedArrayRawBufferLength = 1 << 27,
+
+    Last = SharedArrayRawBufferLength,
 
     Any = Last | (Last - 1),
-    NumCategories = 27,
+    NumCategories = 28,
 
     // Indicates load or store.
     Store_ = 1 << 31
@@ -446,6 +449,7 @@ class AliasSet {
   inline AliasSet operator&(const AliasSet& other) const {
     return AliasSet(flags_ & other.flags_);
   }
+  inline AliasSet operator~() const { return AliasSet(~flags_); }
   static AliasSet None() { return AliasSet(None_); }
   static AliasSet Load(uint32_t flags) {
     MOZ_ASSERT(flags && !(flags & Store_));
@@ -656,7 +660,13 @@ class MDefinition : public MNode {
   virtual HashNumber valueHash() const;
   virtual bool congruentTo(const MDefinition* ins) const { return false; }
   const MDefinition* skipObjectGuards() const;
+
+  // Note that, for a call `congruentIfOperandsEqual(ins)` inside some class
+  // MFoo, if `true` is returned then we are ensured that `ins` is also an
+  // MFoo, so it is safe to do `ins->toMFoo()` without first checking whether
+  // `ins->isMFoo()`.
   bool congruentIfOperandsEqual(const MDefinition* ins) const;
+
   virtual MDefinition* foldsTo(TempAllocator& alloc);
   virtual void analyzeEdgeCasesForward();
   virtual void analyzeEdgeCasesBackward();
@@ -1276,6 +1286,35 @@ class MVariadicT : public T {
 // initializes the operands_ array and must be checked for OOM.
 using MVariadicInstruction = MVariadicT<MInstruction>;
 
+// All barriered operations:
+// - MCompareExchangeTypedArrayElement
+// - MExchangeTypedArrayElement
+// - MAtomicTypedArrayElementBinop
+// - MGrowableSharedArrayBufferByteLength
+//
+// And operations which are optionally barriered:
+// - MLoadUnboxedScalar
+// - MStoreUnboxedScalar
+// - MResizableTypedArrayLength
+// - MResizableDataViewByteLength
+//
+// Must have the following attributes:
+//
+// - Not movable
+// - Not removable
+// - Not congruent with any other instruction
+// - Effectful (they alias every TypedArray store)
+//
+// The intended effect of those constraints is to prevent all loads and stores
+// preceding the barriered operation from being moved to after the barriered
+// operation, and vice versa, and to prevent the barriered operation from being
+// removed or hoisted.
+
+enum class MemoryBarrierRequirement : bool {
+  NotRequired,
+  Required,
+};
+
 MIR_OPCODE_CLASS_GENERATED
 
 // Truncation barrier. This is intended for protecting its input against
@@ -1721,6 +1760,10 @@ class MTableSwitch final : public MControlInstruction,
 
   MDefinition* foldsTo(TempAllocator& alloc) override;
 
+  // It does read memory in that it must read an entry from the jump table,
+  // but that's effectively data that is private to this MIR.  And it should
+  // certainly never be modified by any other MIR.  Hence it is effect-free
+  // from an alias-analysis standpoint.
   AliasSet getAliasSet() const override { return AliasSet::None(); }
 };
 
@@ -7035,44 +7078,22 @@ class MArrayPopShift : public MUnaryInstruction,
   ALLOW_CLONE(MArrayPopShift)
 };
 
-// All barriered operations - MCompareExchangeTypedArrayElement,
-// MExchangeTypedArrayElement, and MAtomicTypedArrayElementBinop, as
-// well as MLoadUnboxedScalar and MStoreUnboxedScalar when they are
-// marked as requiring a memory barrer - have the following
-// attributes:
-//
-// - Not movable
-// - Not removable
-// - Not congruent with any other instruction
-// - Effectful (they alias every TypedArray store)
-//
-// The intended effect of those constraints is to prevent all loads
-// and stores preceding the barriered operation from being moved to
-// after the barriered operation, and vice versa, and to prevent the
-// barriered operation from being removed or hoisted.
-
-enum MemoryBarrierRequirement {
-  DoesNotRequireMemoryBarrier,
-  DoesRequireMemoryBarrier
-};
-
-// Also see comments at MMemoryBarrierRequirement, above.
-
 // Load an unboxed scalar value from an array buffer view or other object.
 class MLoadUnboxedScalar : public MBinaryInstruction,
                            public NoTypePolicy::Data {
   int32_t offsetAdjustment_ = 0;
   Scalar::Type storageType_;
-  bool requiresBarrier_;
+  MemoryBarrierRequirement requiresBarrier_;
 
-  MLoadUnboxedScalar(
-      MDefinition* elements, MDefinition* index, Scalar::Type storageType,
-      MemoryBarrierRequirement requiresBarrier = DoesNotRequireMemoryBarrier)
+  MLoadUnboxedScalar(MDefinition* elements, MDefinition* index,
+                     Scalar::Type storageType,
+                     MemoryBarrierRequirement requiresBarrier =
+                         MemoryBarrierRequirement::NotRequired)
       : MBinaryInstruction(classOpcode, elements, index),
         storageType_(storageType),
-        requiresBarrier_(requiresBarrier == DoesRequireMemoryBarrier) {
+        requiresBarrier_(requiresBarrier) {
     setResultType(MIRType::Value);
-    if (requiresBarrier_) {
+    if (requiresBarrier_ == MemoryBarrierRequirement::Required) {
       setGuard();  // Not removable or movable
     } else {
       setMovable();
@@ -7092,7 +7113,7 @@ class MLoadUnboxedScalar : public MBinaryInstruction,
     // Bailout if the result does not fit in an int32.
     return storageType_ == Scalar::Uint32 && type() == MIRType::Int32;
   }
-  bool requiresMemoryBarrier() const { return requiresBarrier_; }
+  auto requiresMemoryBarrier() const { return requiresBarrier_; }
   int32_t offsetAdjustment() const { return offsetAdjustment_; }
   void setOffsetAdjustment(int32_t offsetAdjustment) {
     offsetAdjustment_ = offsetAdjustment;
@@ -7100,14 +7121,14 @@ class MLoadUnboxedScalar : public MBinaryInstruction,
   AliasSet getAliasSet() const override {
     // When a barrier is needed make the instruction effectful by
     // giving it a "store" effect.
-    if (requiresBarrier_) {
+    if (requiresBarrier_ == MemoryBarrierRequirement::Required) {
       return AliasSet::Store(AliasSet::UnboxedElement);
     }
     return AliasSet::Load(AliasSet::UnboxedElement);
   }
 
   bool congruentTo(const MDefinition* ins) const override {
-    if (requiresBarrier_) {
+    if (requiresBarrier_ == MemoryBarrierRequirement::Required) {
       return false;
     }
     if (!ins->isLoadUnboxedScalar()) {
@@ -7193,26 +7214,29 @@ class MLoadDataViewElement : public MTernaryInstruction,
 };
 
 // Load a value from a typed array. Out-of-bounds accesses are handled in-line.
-class MLoadTypedArrayElementHole : public MBinaryInstruction,
-                                   public SingleObjectPolicy::Data {
+class MLoadTypedArrayElementHole : public MTernaryInstruction,
+                                   public NoTypePolicy::Data {
   Scalar::Type arrayType_;
   bool forceDouble_;
 
-  MLoadTypedArrayElementHole(MDefinition* object, MDefinition* index,
-                             Scalar::Type arrayType, bool forceDouble)
-      : MBinaryInstruction(classOpcode, object, index),
+  MLoadTypedArrayElementHole(MDefinition* elements, MDefinition* index,
+                             MDefinition* length, Scalar::Type arrayType,
+                             bool forceDouble)
+      : MTernaryInstruction(classOpcode, elements, index, length),
         arrayType_(arrayType),
         forceDouble_(forceDouble) {
     setResultType(MIRType::Value);
     setMovable();
+    MOZ_ASSERT(elements->type() == MIRType::Elements);
     MOZ_ASSERT(index->type() == MIRType::IntPtr);
+    MOZ_ASSERT(length->type() == MIRType::IntPtr);
     MOZ_ASSERT(arrayType >= 0 && arrayType < Scalar::MaxTypedArrayViewType);
   }
 
  public:
   INSTRUCTION_HEADER(LoadTypedArrayElementHole)
   TRIVIAL_NEW_WRAPPERS
-  NAMED_OPERANDS((0, object), (1, index))
+  NAMED_OPERANDS((0, elements), (1, index), (2, length))
 
   Scalar::Type arrayType() const { return arrayType_; }
   bool forceDouble() const { return forceDouble_; }
@@ -7234,8 +7258,7 @@ class MLoadTypedArrayElementHole : public MBinaryInstruction,
     return congruentIfOperandsEqual(other);
   }
   AliasSet getAliasSet() const override {
-    return AliasSet::Load(AliasSet::UnboxedElement | AliasSet::ObjectFields |
-                          AliasSet::ArrayBufferViewLengthOrOffset);
+    return AliasSet::Load(AliasSet::UnboxedElement);
   }
   bool canProduceFloat32() const override {
     return arrayType_ == Scalar::Float32;
@@ -7275,16 +7298,16 @@ class StoreUnboxedScalarBase {
 class MStoreUnboxedScalar : public MTernaryInstruction,
                             public StoreUnboxedScalarBase,
                             public StoreUnboxedScalarPolicy::Data {
-  bool requiresBarrier_;
+  MemoryBarrierRequirement requiresBarrier_;
 
-  MStoreUnboxedScalar(
-      MDefinition* elements, MDefinition* index, MDefinition* value,
-      Scalar::Type storageType,
-      MemoryBarrierRequirement requiresBarrier = DoesNotRequireMemoryBarrier)
+  MStoreUnboxedScalar(MDefinition* elements, MDefinition* index,
+                      MDefinition* value, Scalar::Type storageType,
+                      MemoryBarrierRequirement requiresBarrier =
+                          MemoryBarrierRequirement::NotRequired)
       : MTernaryInstruction(classOpcode, elements, index, value),
         StoreUnboxedScalarBase(storageType),
-        requiresBarrier_(requiresBarrier == DoesRequireMemoryBarrier) {
-    if (requiresBarrier_) {
+        requiresBarrier_(requiresBarrier) {
+    if (requiresBarrier_ == MemoryBarrierRequirement::Required) {
       setGuard();  // Not removable or movable
     }
     MOZ_ASSERT(elements->type() == MIRType::Elements);
@@ -7300,7 +7323,7 @@ class MStoreUnboxedScalar : public MTernaryInstruction,
   AliasSet getAliasSet() const override {
     return AliasSet::Store(AliasSet::UnboxedElement);
   }
-  bool requiresMemoryBarrier() const { return requiresBarrier_; }
+  auto requiresMemoryBarrier() const { return requiresBarrier_; }
   TruncateKind operandTruncateKind(size_t index) const override;
 
   bool canConsumeFloat32(MUse* use) const override {
@@ -8992,6 +9015,55 @@ class MGuardToClass : public MUnaryInstruction,
   }
 };
 
+class MGuardToEitherClass : public MUnaryInstruction,
+                            public SingleObjectPolicy::Data {
+  const JSClass* class1_;
+  const JSClass* class2_;
+
+  MGuardToEitherClass(MDefinition* object, const JSClass* clasp1,
+                      const JSClass* clasp2)
+      : MUnaryInstruction(classOpcode, object),
+        class1_(clasp1),
+        class2_(clasp2) {
+    MOZ_ASSERT(object->type() == MIRType::Object);
+    MOZ_ASSERT(clasp1 != clasp2, "Use MGuardToClass instead");
+    MOZ_ASSERT(!clasp1->isJSFunction(), "Use MGuardToFunction instead");
+    MOZ_ASSERT(!clasp2->isJSFunction(), "Use MGuardToFunction instead");
+    setResultType(MIRType::Object);
+    setMovable();
+
+    // We will bail out if the class type is incorrect, so we need to ensure we
+    // don't eliminate this instruction
+    setGuard();
+  }
+
+ public:
+  INSTRUCTION_HEADER(GuardToEitherClass)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, object))
+
+  const JSClass* getClass1() const { return class1_; }
+  const JSClass* getClass2() const { return class2_; }
+
+  MDefinition* foldsTo(TempAllocator& alloc) override;
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  bool congruentTo(const MDefinition* ins) const override {
+    if (!ins->isGuardToEitherClass()) {
+      return false;
+    }
+    const auto* other = ins->toGuardToEitherClass();
+    if (getClass1() != other->getClass1() &&
+        getClass1() != other->getClass2()) {
+      return false;
+    }
+    if (getClass2() != other->getClass1() &&
+        getClass2() != other->getClass2()) {
+      return false;
+    }
+    return congruentIfOperandsEqual(ins);
+  }
+};
+
 class MGuardToFunction : public MUnaryInstruction,
                          public SingleObjectPolicy::Data {
   explicit MGuardToFunction(MDefinition* object)
@@ -9330,6 +9402,23 @@ class MObjectToIterator : public MUnaryInstruction,
 
   bool wantsIndices() const { return wantsIndices_; }
   void setWantsIndices(bool value) { wantsIndices_ = value; }
+};
+
+class MPostIntPtrConversion : public MUnaryInstruction,
+                              public NoTypePolicy::Data {
+  explicit MPostIntPtrConversion(MDefinition* input)
+      : MUnaryInstruction(classOpcode, input) {
+    // Passes through the input.
+    setResultType(input->type());
+
+    // Note: Must be non-movable so we can attach a resume point.
+  }
+
+ public:
+  INSTRUCTION_HEADER(PostIntPtrConversion)
+  TRIVIAL_NEW_WRAPPERS
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
 };
 
 // Flips the input's sign bit, independently of the rest of the number's
@@ -10021,6 +10110,16 @@ class MWasmLoadInstanceDataField : public MUnaryInstruction,
   }
 
   AliasType mightAlias(const MDefinition* def) const override;
+
+#ifdef JS_JITSPEW
+  void getExtras(ExtrasCollector* extras) override {
+    char buf[96];
+    SprintfLiteral(buf, "(offs=%lld, isConst=%s)",
+                   (long long int)instanceDataOffset_,
+                   isConstant_ ? "true" : "false");
+    extras->add(buf);
+  }
+#endif
 };
 
 class MWasmLoadGlobalCell : public MUnaryInstruction,
@@ -10253,27 +10352,57 @@ class MWasmStoreRef : public MAryInstruction<3>, public NoTypePolicy::Data {
 
 // Given a value being written to another object, update the generational store
 // buffer if the value is in the nursery and object is in the tenured heap.
-class MWasmPostWriteBarrier : public MQuaternaryInstruction,
-                              public NoTypePolicy::Data {
+class MWasmPostWriteBarrierImmediate : public MQuaternaryInstruction,
+                                       public NoTypePolicy::Data {
   uint32_t valueOffset_;
 
-  MWasmPostWriteBarrier(MDefinition* instance, MDefinition* object,
-                        MDefinition* valueBase, uint32_t valueOffset,
-                        MDefinition* value)
+  MWasmPostWriteBarrierImmediate(MDefinition* instance, MDefinition* object,
+                                 MDefinition* valueBase, uint32_t valueOffset,
+                                 MDefinition* value)
       : MQuaternaryInstruction(classOpcode, instance, object, valueBase, value),
         valueOffset_(valueOffset) {
     setGuard();
   }
 
  public:
-  INSTRUCTION_HEADER(WasmPostWriteBarrier)
+  INSTRUCTION_HEADER(WasmPostWriteBarrierImmediate)
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, instance), (1, object), (2, valueBase), (3, value))
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   uint32_t valueOffset() const { return valueOffset_; }
 
-  ALLOW_CLONE(MWasmPostWriteBarrier)
+  ALLOW_CLONE(MWasmPostWriteBarrierImmediate)
+};
+
+// Given a value being written to another object, update the generational store
+// buffer if the value is in the nursery and object is in the tenured heap.
+class MWasmPostWriteBarrierIndex : public MAryInstruction<5>,
+                                   public NoTypePolicy::Data {
+  uint32_t elemSize_;
+
+  MWasmPostWriteBarrierIndex(MDefinition* instance, MDefinition* object,
+                             MDefinition* valueBase, MDefinition* index,
+                             uint32_t scale, MDefinition* value)
+      : MAryInstruction<5>(classOpcode), elemSize_(scale) {
+    initOperand(0, instance);
+    initOperand(1, object);
+    initOperand(2, valueBase);
+    initOperand(3, index);
+    initOperand(4, value);
+    setGuard();
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmPostWriteBarrierIndex)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, instance), (1, object), (2, valueBase), (3, index),
+                 (4, value))
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  uint32_t elemSize() const { return elemSize_; }
+
+  ALLOW_CLONE(MWasmPostWriteBarrierIndex)
 };
 
 class MWasmParameter : public MNullaryInstruction {
@@ -10581,6 +10710,15 @@ class MWasmCallBase {
 
   bool inTry() const { return inTry_; }
   size_t tryNoteIndex() const { return tryNoteIndex_; }
+
+  static AliasSet wasmCallAliasSet() {
+    // This is ok because:
+    // - numElements is immutable
+    // - the GC will rewrite any array data pointers on move
+    AliasSet exclude = AliasSet(AliasSet::WasmArrayNumElements) |
+                       AliasSet(AliasSet::WasmArrayDataPointer);
+    return AliasSet::Store(AliasSet::Any) & ~exclude;
+  }
 };
 
 // A wasm call that is catchable. This instruction is a control instruction,
@@ -10609,7 +10747,14 @@ class MWasmCallCatchable final : public MVariadicControlInstruction<2>,
                                  const MWasmCallTryDesc& tryDesc,
                                  MDefinition* tableIndexOrRef = nullptr);
 
+  static MWasmCallCatchable* NewBuiltinInstanceMethodCall(
+      TempAllocator& alloc, const wasm::CallSiteDesc& desc,
+      const wasm::SymbolicAddress builtin, wasm::FailureMode failureMode,
+      const ABIArg& instanceArg, const Args& args,
+      uint32_t stackArgAreaSizeUnaligned, const MWasmCallTryDesc& tryDesc);
+
   bool possiblyCalls() const override { return true; }
+  AliasSet getAliasSet() const override { return wasmCallAliasSet(); }
 
   static const size_t FallthroughBranchIndex = 0;
   static const size_t PrePadBranchIndex = 1;
@@ -10643,6 +10788,7 @@ class MWasmCallUncatchable final : public MVariadicInstruction,
       uint32_t stackArgAreaSizeUnaligned);
 
   bool possiblyCalls() const override { return true; }
+  AliasSet getAliasSet() const override { return wasmCallAliasSet(); }
 };
 
 class MWasmReturnCall final : public MVariadicControlInstruction<0>,
@@ -10662,12 +10808,6 @@ class MWasmReturnCall final : public MVariadicControlInstruction<0>,
                               const wasm::CalleeDesc& callee, const Args& args,
                               uint32_t stackArgAreaSizeUnaligned,
                               MDefinition* tableIndexOrRef = nullptr);
-
-  static MWasmReturnCall* NewBuiltinInstanceMethodCall(
-      TempAllocator& alloc, const wasm::CallSiteDesc& desc,
-      const wasm::SymbolicAddress builtin, wasm::FailureMode failureMode,
-      const ABIArg& instanceArg, const Args& args,
-      uint32_t stackArgAreaSizeUnaligned);
 
   bool possiblyCalls() const override { return true; }
 };
@@ -10752,6 +10892,8 @@ class MWasmReinterpret : public MUnaryInstruction, public NoTypePolicy::Data {
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
+    // No need to check type() here, because congruentIfOperandsEqual will
+    // check it.
     return congruentIfOperandsEqual(ins);
   }
 
@@ -10811,7 +10953,8 @@ class MWasmTernarySimd128 : public MTernaryInstruction,
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return congruentIfOperandsEqual(ins);
+    return congruentIfOperandsEqual(ins) &&
+           simdOp() == ins->toWasmTernarySimd128()->simdOp();
   }
 #ifdef ENABLE_WASM_SIMD
   MDefinition* foldsTo(TempAllocator& alloc) override;
@@ -10852,8 +10995,8 @@ class MWasmBinarySimd128 : public MBinaryInstruction,
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return ins->toWasmBinarySimd128()->simdOp() == simdOp_ &&
-           congruentIfOperandsEqual(ins);
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmBinarySimd128()->simdOp() == simdOp_;
   }
 #ifdef ENABLE_WASM_SIMD
   MDefinition* foldsTo(TempAllocator& alloc) override;
@@ -10889,8 +11032,8 @@ class MWasmBinarySimd128WithConstant : public MUnaryInstruction,
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return ins->toWasmBinarySimd128WithConstant()->simdOp() == simdOp_ &&
-           congruentIfOperandsEqual(ins) &&
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmBinarySimd128WithConstant()->simdOp() == simdOp_ &&
            rhs_.bitwiseEqual(ins->toWasmBinarySimd128WithConstant()->rhs());
   }
 
@@ -10922,9 +11065,9 @@ class MWasmReplaceLaneSimd128 : public MBinaryInstruction,
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return ins->toWasmReplaceLaneSimd128()->simdOp() == simdOp_ &&
-           ins->toWasmReplaceLaneSimd128()->laneIndex() == laneIndex_ &&
-           congruentIfOperandsEqual(ins);
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmReplaceLaneSimd128()->simdOp() == simdOp_ &&
+           ins->toWasmReplaceLaneSimd128()->laneIndex() == laneIndex_;
   }
 
   uint32_t laneIndex() const { return laneIndex_; }
@@ -10950,8 +11093,8 @@ class MWasmScalarToSimd128 : public MUnaryInstruction,
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return ins->toWasmScalarToSimd128()->simdOp() == simdOp_ &&
-           congruentIfOperandsEqual(ins);
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmScalarToSimd128()->simdOp() == simdOp_;
   }
 #ifdef ENABLE_WASM_SIMD
   MDefinition* foldsTo(TempAllocator& alloc) override;
@@ -10980,9 +11123,9 @@ class MWasmReduceSimd128 : public MUnaryInstruction, public NoTypePolicy::Data {
 
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
-    return ins->toWasmReduceSimd128()->simdOp() == simdOp_ &&
-           ins->toWasmReduceSimd128()->imm() == imm_ &&
-           congruentIfOperandsEqual(ins);
+    return congruentIfOperandsEqual(ins) &&
+           ins->toWasmReduceSimd128()->simdOp() == simdOp_ &&
+           ins->toWasmReduceSimd128()->imm() == imm_;
   }
 #ifdef ENABLE_WASM_SIMD
   MDefinition* foldsTo(TempAllocator& alloc) override;
@@ -11280,9 +11423,7 @@ class MWasmLoadField : public MUnaryInstruction, public NoTypePolicy::Data {
     const MWasmLoadField* other = ins->toWasmLoadField();
     return ins->isWasmLoadField() && congruentIfOperandsEqual(ins) &&
            offset() == other->offset() && wideningOp() == other->wideningOp() &&
-           getAliasSet().flags() == other->getAliasSet().flags() &&
-           getAliasSet().flags() ==
-               AliasSet::Load(AliasSet::WasmStructOutlineDataPointer).flags();
+           getAliasSet().flags() == other->getAliasSet().flags();
   }
 
 #ifdef JS_JITSPEW
@@ -11351,6 +11492,62 @@ class MWasmLoadFieldKA : public MBinaryInstruction, public NoTypePolicy::Data {
     char buf[96];
     SprintfLiteral(buf, "(offs=%lld, wideningOp=%s)", (long long int)offset_,
                    StringFromMWideningOp(wideningOp_));
+    extras->add(buf);
+  }
+#endif
+};
+
+// Loads a value from base pointer, given an index and element size. This field
+// may be any value type, including references. No barriers are performed.
+//
+// The element size is implicitly defined by MIRType and MWideningOp. For
+// example, MIRType::Float32 indicates an element size of 32 bits, and
+// MIRType::Int32 and MWideningOp::FromU16 together indicate an element size of
+// 16 bits.
+//
+// This instruction takes a second object `ka` that must be kept alive, as
+// described for MWasmLoadFieldKA above.
+class MWasmLoadElementKA : public MTernaryInstruction,
+                           public NoTypePolicy::Data {
+  MWideningOp wideningOp_;
+  Scale scale_;
+  AliasSet aliases_;
+  MaybeTrapSiteInfo maybeTrap_;
+
+  MWasmLoadElementKA(MDefinition* ka, MDefinition* base, MDefinition* index,
+                     MIRType type, MWideningOp wideningOp, Scale scale,
+                     AliasSet aliases,
+                     MaybeTrapSiteInfo maybeTrap = mozilla::Nothing())
+      : MTernaryInstruction(classOpcode, ka, base, index),
+        wideningOp_(wideningOp),
+        scale_(scale),
+        aliases_(aliases),
+        maybeTrap_(maybeTrap) {
+    MOZ_ASSERT(base->type() == MIRType::WasmArrayData);
+    MOZ_ASSERT(aliases.flags() ==
+                   AliasSet::Load(AliasSet::WasmArrayDataArea).flags() ||
+               aliases.flags() == AliasSet::Load(AliasSet::Any).flags());
+    setResultType(type);
+    if (maybeTrap_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmLoadElementKA)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, ka), (1, base), (2, index))
+
+  MWideningOp wideningOp() const { return wideningOp_; }
+  Scale scale() const { return scale_; }
+  AliasSet getAliasSet() const override { return aliases_; }
+  MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
+
+#ifdef JS_JITSPEW
+  void getExtras(ExtrasCollector* extras) override {
+    char buf[96];
+    SprintfLiteral(buf, "(wideningOp=%s, scale=%s)",
+                   StringFromMWideningOp(wideningOp_), StringFromScale(scale_));
     extras->add(buf);
   }
 #endif
@@ -11444,7 +11641,8 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
         preBarrierKind_(preBarrierKind) {
     MOZ_ASSERT(obj->type() == TargetWordMIRType() ||
                obj->type() == MIRType::Pointer ||
-               obj->type() == MIRType::WasmAnyRef);
+               obj->type() == MIRType::WasmAnyRef ||
+               obj->type() == MIRType::WasmArrayData);
     MOZ_ASSERT(offset <= INT32_MAX);
     MOZ_ASSERT(value->type() == MIRType::WasmAnyRef);
     MOZ_ASSERT(
@@ -11481,6 +11679,117 @@ class MWasmStoreFieldRefKA : public MAryInstruction<4>,
     extras->add(buf);
   }
 #endif
+};
+
+// Stores a non-reference value to a base pointer, given an index and element
+// size. This field may be any value type, excluding references. References MUST
+// use the 'Ref' variant of this instruction.
+//
+// The element size is implicitly defined by MIRType and MNarrowingOp. For
+// example, MIRType::Float32 indicates an element size of 32 bits, and
+// MIRType::Int32 and MNarrowingOp::To16 together indicate an element size of 16
+// bits.
+//
+// This instruction takes a second object `ka` that must be kept alive, as
+// described for MWasmLoadFieldKA above.
+class MWasmStoreElementKA : public MQuaternaryInstruction,
+                            public NoTypePolicy::Data {
+  MNarrowingOp narrowingOp_;
+  Scale scale_;
+  AliasSet aliases_;
+  MaybeTrapSiteInfo maybeTrap_;
+
+  MWasmStoreElementKA(MDefinition* ka, MDefinition* base, MDefinition* index,
+                      MDefinition* value, MNarrowingOp narrowingOp, Scale scale,
+                      AliasSet aliases,
+                      MaybeTrapSiteInfo maybeTrap = mozilla::Nothing())
+      : MQuaternaryInstruction(classOpcode, ka, base, index, value),
+        narrowingOp_(narrowingOp),
+        scale_(scale),
+        aliases_(aliases),
+        maybeTrap_(maybeTrap) {
+    MOZ_ASSERT(base->type() == MIRType::WasmArrayData);
+    MOZ_ASSERT(value->type() != MIRType::WasmAnyRef);
+    // "if you want to narrow the value when it is stored, the source type
+    // must be Int32".
+    MOZ_ASSERT_IF(narrowingOp != MNarrowingOp::None,
+                  value->type() == MIRType::Int32);
+    MOZ_ASSERT(aliases.flags() ==
+                   AliasSet::Store(AliasSet::WasmArrayDataArea).flags() ||
+               aliases.flags() == AliasSet::Store(AliasSet::Any).flags());
+    if (maybeTrap_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmStoreElementKA)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, ka), (1, base), (2, index), (3, value))
+
+  MNarrowingOp narrowingOp() const { return narrowingOp_; }
+  Scale scale() const { return scale_; }
+  AliasSet getAliasSet() const override { return aliases_; }
+  MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
+
+#ifdef JS_JITSPEW
+  void getExtras(ExtrasCollector* extras) override {
+    char buf[96];
+    SprintfLiteral(buf, "(narrowingOp=%s, scale=%s)",
+                   StringFromMNarrowingOp(narrowingOp_),
+                   StringFromScale(scale_));
+    extras->add(buf);
+  }
+#endif
+};
+
+// Stores a reference value to a base pointer, given an index and element size.
+// This instruction emits a pre-barrier. A post barrier MUST be performed
+// separately.
+//
+// The element size is implicitly defined by MIRType and MNarrowingOp, as
+// described for MWasmStoreElementKA above.
+//
+// This instruction takes a second object `ka` that must be kept alive, as
+// described for MWasmLoadFieldKA above.
+class MWasmStoreElementRefKA : public MAryInstruction<5>,
+                               public NoTypePolicy::Data {
+  AliasSet aliases_;
+  MaybeTrapSiteInfo maybeTrap_;
+  WasmPreBarrierKind preBarrierKind_;
+
+  MWasmStoreElementRefKA(MDefinition* instance, MDefinition* ka,
+                         MDefinition* base, MDefinition* index,
+                         MDefinition* value, AliasSet aliases,
+                         MaybeTrapSiteInfo maybeTrap,
+                         WasmPreBarrierKind preBarrierKind)
+      : MAryInstruction<5>(classOpcode),
+        aliases_(aliases),
+        maybeTrap_(maybeTrap),
+        preBarrierKind_(preBarrierKind) {
+    MOZ_ASSERT(base->type() == MIRType::WasmArrayData);
+    MOZ_ASSERT(value->type() == MIRType::WasmAnyRef);
+    MOZ_ASSERT(aliases.flags() ==
+                   AliasSet::Store(AliasSet::WasmArrayDataArea).flags() ||
+               aliases.flags() == AliasSet::Store(AliasSet::Any).flags());
+    initOperand(0, instance);
+    initOperand(1, ka);
+    initOperand(2, base);
+    initOperand(3, index);
+    initOperand(4, value);
+    if (maybeTrap_) {
+      setGuard();
+    }
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmStoreElementRefKA)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, instance), (1, ka), (2, base), (3, index), (4, value))
+
+  AliasSet getAliasSet() const override { return aliases_; }
+  MaybeTrapSiteInfo maybeTrap() const { return maybeTrap_; }
+  WasmPreBarrierKind preBarrierKind() const { return preBarrierKind_; }
 };
 
 class MWasmRefIsSubtypeOfAbstract : public MUnaryInstruction,
@@ -11585,9 +11894,38 @@ class MWasmNewStructObject : public MBinaryInstruction,
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, instance), (1, typeDefData))
 
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool isOutline() const { return isOutline_; }
   bool zeroFields() const { return zeroFields_; }
   gc::AllocKind allocKind() const { return allocKind_; }
+};
+
+class MWasmNewArrayObject : public MTernaryInstruction,
+                            public NoTypePolicy::Data {
+ private:
+  uint32_t elemSize_;
+  bool zeroFields_;
+  wasm::BytecodeOffset bytecodeOffset_;
+
+  MWasmNewArrayObject(MDefinition* instance, MDefinition* numElements,
+                      MDefinition* typeDefData, uint32_t elemSize,
+                      bool zeroFields, wasm::BytecodeOffset bytecodeOffset)
+      : MTernaryInstruction(classOpcode, instance, numElements, typeDefData),
+        elemSize_(elemSize),
+        zeroFields_(zeroFields),
+        bytecodeOffset_(bytecodeOffset) {
+    setResultType(MIRType::WasmAnyRef);
+  }
+
+ public:
+  INSTRUCTION_HEADER(WasmNewArrayObject)
+  TRIVIAL_NEW_WRAPPERS
+  NAMED_OPERANDS((0, instance), (1, numElements), (2, typeDefData))
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  uint32_t elemSize() const { return elemSize_; }
+  bool zeroFields() const { return zeroFields_; }
+  wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
 };
 
 #ifdef FUZZING_JS_FUZZILLI

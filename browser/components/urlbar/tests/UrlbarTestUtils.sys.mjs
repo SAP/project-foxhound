@@ -127,6 +127,13 @@ export var UrlbarTestUtils = {
    *        userTypedValued, triggers engagement event telemetry, etc.)
    * @param {number} [options.selectionStart] The input's selectionStart
    * @param {number} [options.selectionEnd] The input's selectionEnd
+   * @param {boolean} [options.reopenOnBlur] Whether this method should repoen
+   *        the view if the input is blurred before the query finishes. This is
+   *        necessary to work around spurious blurs in CI, which close the view
+   *        and cancel the query, defeating the typical use of this method where
+   *        your test waits for the query to finish. However, this behavior
+   *        isn't always desired, for example if your test intentionally blurs
+   *        the input before the query finishes. In that case, pass false.
    */
   async promiseAutocompleteResultPopup({
     window,
@@ -135,6 +142,7 @@ export var UrlbarTestUtils = {
     fireInputEvent = true,
     selectionStart = -1,
     selectionEnd = -1,
+    reopenOnBlur = true,
   } = {}) {
     if (this.SimpleTest) {
       await this.SimpleTest.promiseFocus(window);
@@ -176,14 +184,13 @@ export var UrlbarTestUtils = {
     // until showing popup, timeout failure happens since the expected poup
     // never be shown. To avoid this, if losing the focus, retry setup to open
     // popup.
-    const blurListener = () => {
-      setup();
-    };
-    window.gURLBar.inputField.addEventListener("blur", blurListener, {
-      once: true,
-    });
+    if (reopenOnBlur) {
+      window.gURLBar.inputField.addEventListener("blur", setup, { once: true });
+    }
     const result = await this.promiseSearchComplete(window);
-    window.gURLBar.inputField.removeEventListener("blur", blurListener);
+    if (reopenOnBlur) {
+      window.gURLBar.inputField.removeEventListener("blur", setup);
+    }
     return result;
   },
 
@@ -538,6 +545,7 @@ export var UrlbarTestUtils = {
     details.title = result.title;
     details.tags = "tags" in result.payload ? result.payload.tags : [];
     details.isSponsored = result.payload.isSponsored;
+    details.userContextId = result.payload.userContextId;
     let actions = element.getElementsByClassName("urlbarView-action");
     let urls = element.getElementsByClassName("urlbarView-url");
     let typeIcon = element.querySelector(".urlbarView-type-icon");
@@ -1504,69 +1512,70 @@ class TestProvider extends UrlbarProvider {
       );
     }
     super();
-    this._results = results;
+    this.results = results;
+    this.priority = priority;
+    this.addTimeout = addTimeout;
+    this.delayResultsPromise = delayResultsPromise;
     this._name = name;
     this._type = type;
-    this._priority = priority;
-    this._addTimeout = addTimeout;
     this._onCancel = onCancel;
     this._onSelection = onSelection;
     this._onEngagement = onEngagement;
-    this._delayResultsPromise = delayResultsPromise;
+
     // As this has been a common source of mistakes, auto-upgrade the provider
     // type to heuristic if any result is heuristic.
-    if (!type && this._results?.some(r => r.heuristic)) {
-      this._type = UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    if (!type && this.results?.some(r => r.heuristic)) {
+      this.type = UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
     }
   }
+
   get name() {
     return this._name;
   }
+
   get type() {
     return this._type;
   }
-  getPriority(context) {
-    return this._priority;
+
+  getPriority(_context) {
+    return this.priority;
   }
-  isActive(context) {
+
+  isActive(_context) {
     return true;
   }
+
   async startQuery(context, addCallback) {
-    if (!this._results.length && this._addTimeout) {
-      await new Promise(resolve => lazy.setTimeout(resolve, this._addTimeout));
+    if (!this.results.length && this.addTimeout) {
+      await new Promise(resolve => lazy.setTimeout(resolve, this.addTimeout));
     }
-    if (this._delayResultsPromise) {
-      await this._delayResultsPromise;
+    if (this.delayResultsPromise) {
+      await this.delayResultsPromise;
     }
-    for (let result of this._results) {
-      if (!this._addTimeout) {
+    for (let result of this.results) {
+      if (!this.addTimeout) {
         addCallback(this, result);
       } else {
         await new Promise(resolve => {
           lazy.setTimeout(() => {
             addCallback(this, result);
             resolve();
-          }, this._addTimeout);
+          }, this.addTimeout);
         });
       }
     }
   }
-  cancelQuery(context) {
-    if (this._onCancel) {
-      this._onCancel();
-    }
+
+  cancelQuery(_context) {
+    this._onCancel?.();
   }
 
   onSelection(result, element) {
-    if (this._onSelection) {
-      this._onSelection(result, element);
-    }
+    this._onSelection?.(result, element);
   }
 
   onEngagement(state, queryContext, details, controller) {
-    if (this._onEngagement) {
-      this._onEngagement(state, queryContext, details, controller);
-    }
+    this._onEngagement?.(state, queryContext, details, controller);
   }
 }
 

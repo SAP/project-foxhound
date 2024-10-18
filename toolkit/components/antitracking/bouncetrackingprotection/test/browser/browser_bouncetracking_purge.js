@@ -22,16 +22,17 @@ add_setup(async function () {
  */
 
 function initBounceTrackerState() {
-  bounceTrackingProtection.reset();
+  bounceTrackingProtection.clearAll();
 
-  // Bounce time of 0 is out of the grace period which means we should purge.
-  bounceTrackingProtection.testAddBounceTrackerCandidate("example.com", 0);
-  bounceTrackingProtection.testAddBounceTrackerCandidate("example.net", 0);
+  // Bounce time of 1 is out of the grace period which means we should purge.
+  bounceTrackingProtection.testAddBounceTrackerCandidate({}, "example.com", 1);
+  bounceTrackingProtection.testAddBounceTrackerCandidate({}, "example.net", 1);
 
   // Should not purge because within grace period.
   let timestampWithinGracePeriod =
     Date.now() - (BOUNCE_TRACKING_GRACE_PERIOD_SEC * 1000) / 2;
   bounceTrackingProtection.testAddBounceTrackerCandidate(
+    {},
     "example.org",
     timestampWithinGracePeriod * 1000
   );
@@ -61,7 +62,7 @@ add_task(async function test_purging_skip_open_foreground_tab() {
     "example.com should have been purged now that it no longer has an open tab."
   );
 
-  bounceTrackingProtection.reset();
+  bounceTrackingProtection.clearAll();
 });
 
 add_task(async function test_purging_skip_open_background_tab() {
@@ -86,7 +87,7 @@ add_task(async function test_purging_skip_open_background_tab() {
     "example.com should have been purged now that it no longer has an open tab."
   );
 
-  bounceTrackingProtection.reset();
+  bounceTrackingProtection.clearAll();
 });
 
 add_task(async function test_purging_skip_open_tab_extra_window() {
@@ -116,5 +117,71 @@ add_task(async function test_purging_skip_open_tab_extra_window() {
     "example.com should have been purged now that it no longer has an open tab."
   );
 
-  bounceTrackingProtection.reset();
+  bounceTrackingProtection.clearAll();
 });
+
+add_task(async function test_purging_skip_content_blocking_allow_list() {
+  initBounceTrackerState();
+
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
+    window.ContentBlockingAllowList.add(browser);
+  });
+
+  Assert.deepEqual(
+    await bounceTrackingProtection.testRunPurgeBounceTrackers(),
+    ["example.net"],
+    "Should only purge example.net. example.org is within the grace period, example.com is allow-listed."
+  );
+
+  info(
+    "Remove  the allow-list entry for example.com and test that it gets purged now."
+  );
+
+  await BrowserTestUtils.withNewTab("https://example.com", async browser => {
+    window.ContentBlockingAllowList.remove(browser);
+  });
+  Assert.deepEqual(
+    await bounceTrackingProtection.testRunPurgeBounceTrackers(),
+    ["example.com"],
+    "example.com should have been purged now that it is no longer allow-listed."
+  );
+
+  bounceTrackingProtection.clearAll();
+});
+
+add_task(
+  async function test_purging_skip_content_blocking_allow_list_subdomain() {
+    initBounceTrackerState();
+
+    await BrowserTestUtils.withNewTab(
+      "https://test1.example.com",
+      async browser => {
+        window.ContentBlockingAllowList.add(browser);
+      }
+    );
+
+    Assert.deepEqual(
+      await bounceTrackingProtection.testRunPurgeBounceTrackers(),
+      ["example.net"],
+      "Should only purge example.net. example.org is within the grace period, example.com is allow-listed via test1.example.com."
+    );
+
+    info(
+      "Remove  the allow-list entry for test1.example.com and test that it gets purged now."
+    );
+
+    await BrowserTestUtils.withNewTab(
+      "https://test1.example.com",
+      async browser => {
+        window.ContentBlockingAllowList.remove(browser);
+      }
+    );
+    Assert.deepEqual(
+      await bounceTrackingProtection.testRunPurgeBounceTrackers(),
+      ["example.com"],
+      "example.com should have been purged now that test1.example.com it is no longer allow-listed."
+    );
+
+    bounceTrackingProtection.clearAll();
+  }
+);

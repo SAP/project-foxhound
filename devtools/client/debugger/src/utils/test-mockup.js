@@ -20,6 +20,8 @@ function makeMockSource(url = "url", id = "source", thread = "FakeThread") {
   return {
     id,
     url,
+    shortName: getDisplayURL(url).filename,
+    longName: getDisplayURL(url).filename + getDisplayURL(url).search,
     displayURL: getDisplayURL(url),
     thread,
     isPrettyPrinted: false,

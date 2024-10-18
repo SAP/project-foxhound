@@ -18,12 +18,12 @@
 
 #include "CrashAnnotations.h"
 
-#include <stddef.h>
-#include <stdint.h>
 #include "nsError.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
 #include "prio.h"
+#include <stddef.h>
+#include <stdint.h>
 
 #if defined(XP_WIN)
 #  ifdef WIN32_LEAN_AND_MEAN
@@ -95,30 +95,42 @@ nsresult SetMinidumpPath(const nsAString& aPath);
 // child processes. Annotations added in the main process will be included in
 // child process crashes too unless the child process sets its own annotations.
 // If it does the child-provided annotation overrides the one set in the parent.
-nsresult AnnotateCrashReport(Annotation key, bool data);
-nsresult AnnotateCrashReport(Annotation key, int data);
-nsresult AnnotateCrashReport(Annotation key, unsigned int data);
-nsresult AnnotateCrashReport(Annotation key, const nsACString& data);
-nsresult AppendToCrashReportAnnotation(Annotation key, const nsACString& data);
-nsresult RemoveCrashReportAnnotation(Annotation key);
+const bool* RegisterAnnotationBool(Annotation aKey, const bool* aData);
+const uint32_t* RegisterAnnotationU32(Annotation aKey, const uint32_t* aData);
+const uint64_t* RegisterAnnotationU64(Annotation aKey, const uint64_t* aData);
+const size_t* RegisterAnnotationUSize(Annotation aKey, const size_t* aData);
+const char* RegisterAnnotationCString(Annotation aKey, const char* aData);
+const nsCString* RegisterAnnotationNSCString(Annotation aKey,
+                                             const nsCString* aData);
+
+nsresult RecordAnnotationBool(Annotation aKey, bool aData);
+nsresult RecordAnnotationU32(Annotation aKey, uint32_t aData);
+nsresult RecordAnnotationU64(Annotation aKey, uint64_t aData);
+nsresult RecordAnnotationUSize(Annotation aKey, size_t aData);
+nsresult RecordAnnotationCString(Annotation aKey, const char* aData);
+nsresult RecordAnnotationNSCString(Annotation aKey, const nsACString& aData);
+nsresult RecordAnnotationNSString(Annotation aKey, const nsAString& aData);
+nsresult UnrecordAnnotation(Annotation aKey);
+
 nsresult AppendAppNotesToCrashReport(const nsACString& data);
 
 // RAII class for setting a crash annotation during a limited scope of time.
 // Will reset the named annotation to its previous value when destroyed.
 //
-// This type's behavior is identical to that of AnnotateCrashReport().
-class MOZ_RAII AutoAnnotateCrashReport final {
+// This type's behavior is identical to that of RecordAnnotation().
+class MOZ_RAII AutoRecordAnnotation final {
  public:
-  AutoAnnotateCrashReport(Annotation key, bool data);
-  AutoAnnotateCrashReport(Annotation key, int data);
-  AutoAnnotateCrashReport(Annotation key, unsigned int data);
-  AutoAnnotateCrashReport(Annotation key, const nsACString& data);
-  ~AutoAnnotateCrashReport();
+  AutoRecordAnnotation(Annotation key, bool data);
+  AutoRecordAnnotation(Annotation key, int data);
+  AutoRecordAnnotation(Annotation key, unsigned int data);
+  AutoRecordAnnotation(Annotation key, const nsACString& data);
+  ~AutoRecordAnnotation();
 
 #ifdef MOZ_CRASHREPORTER
  private:
   Annotation mKey;
-  nsCString mPrevious;
+  const nsCString mCurrent;
+  const nsCString* mPrevious;
 #endif
 };
 
@@ -143,7 +155,8 @@ void GetAnnotation(uint32_t childPid, Annotation annotation,
                    nsACString& outStr);
 
 // Functions for working with minidumps and .extras
-typedef mozilla::EnumeratedArray<Annotation, Annotation::Count, nsCString>
+typedef mozilla::EnumeratedArray<Annotation, nsCString,
+                                 size_t(Annotation::Count)>
     AnnotationTable;
 void DeleteMinidumpFilesForID(
     const nsAString& aId,
@@ -173,23 +186,19 @@ nsresult AppendObjCExceptionInfoToAppNotes(void* inException);
 nsresult GetSubmitReports(bool* aSubmitReport);
 nsresult SetSubmitReports(bool aSubmitReport);
 
-// Out-of-process crash reporter API.
-
 #ifdef XP_WIN
 // This data is stored in the parent process, there is one copy for each child
 // process. The mChildPid and mMinidumpFile fields are filled by the WER runtime
 // exception module when the associated child process crashes.
 struct WindowsErrorReportingData {
-  // Points to the WerNotifyProc function.
-  LPTHREAD_START_ROUTINE mWerNotifyProc;
   // PID of the child process that crashed.
   DWORD mChildPid;
   // Filename of the generated minidump; this is not a 0-terminated string
   char mMinidumpFile[40];
-  // OOM allocation size for the crash (ignore if zero)
-  size_t mOOMAllocationSize;
 };
 #endif  // XP_WIN
+
+// Out-of-process crash reporter API.
 
 // Initializes out-of-process crash reporting. This method must be called
 // before the platform-specific notification pipe APIs are called. If called
@@ -311,11 +320,6 @@ void UnregisterInjectorCallback(DWORD processID);
 bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd);
 
 #endif  // XP_WIN
-
-// Windows Error Reporting helper
-#if defined(XP_WIN)
-DWORD WINAPI WerNotifyProc(LPVOID aParameter);
-#endif
 
 // Child-side API
 bool SetRemoteExceptionHandler(const char* aCrashPipe = nullptr);

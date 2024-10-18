@@ -35,11 +35,11 @@ class HTMLEmbedElement final : public nsGenericHTMLElement,
     return IsRewrittenYoutubeEmbed() && GetBoolAttr(nsGkAtoms::allowfullscreen);
   }
 
-  // EventTarget
-  void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+  // nsObjectLoadingContent
+  const Element* AsElement() const final { return this; }
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
@@ -106,8 +106,6 @@ class HTMLEmbedElement final : public nsGenericHTMLElement,
   void StartObjectLoad(bool aNotify, bool aForceLoad);
 
  protected:
-  // Override for nsImageLoadingContent.
-  nsIContent* AsContent() override { return this; }
 
   nsresult CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAString& aValue) override;

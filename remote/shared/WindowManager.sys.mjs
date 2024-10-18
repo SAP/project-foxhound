@@ -5,12 +5,16 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
+
   AppInfo: "chrome://remote/content/shared/AppInfo.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   TimedPromise: "chrome://remote/content/marionette/sync.sys.mjs",
+  UserContextManager:
+    "chrome://remote/content/shared/UserContextManager.sys.mjs",
   waitForObserverTopic: "chrome://remote/content/marionette/sync.sys.mjs",
 });
 
@@ -178,11 +182,19 @@ class WindowManager {
    * @param {ChromeWindow=} options.openerWindow
    *     Use this window as the opener of the new window. Defaults to the
    *     topmost window.
+   * @param {string=} options.userContextId
+   *     The id of the user context which should own the initial tab of the new
+   *     window.
    * @returns {Promise}
    *     A promise resolving to the newly created chrome window.
    */
   async openBrowserWindow(options = {}) {
-    let { focus = false, isPrivate = false, openerWindow = null } = options;
+    let {
+      focus = false,
+      isPrivate = false,
+      openerWindow = null,
+      userContextId = null,
+    } = options;
 
     switch (lazy.AppInfo.name) {
       case "Firefox":
@@ -200,27 +212,26 @@ class WindowManager {
         // Open new browser window, and wait until it is fully loaded.
         // Also wait for the window to be focused and activated to prevent a
         // race condition when promptly focusing to the original window again.
-        const win = openerWindow.OpenBrowserWindow({ private: isPrivate });
-
-        const activated = new lazy.EventPromise(win, "activate");
-        const focused = new lazy.EventPromise(win, "focus", { capture: true });
-        const startup = lazy.waitForObserverTopic(
-          "browser-delayed-startup-finished",
-          {
-            checkFn: subject => subject == win,
-          }
+        const browser = await new Promise(resolveOnContentBrowserCreated =>
+          lazy.URILoadingHelper.openTrustedLinkIn(
+            openerWindow,
+            "about:blank",
+            "window",
+            {
+              private: isPrivate,
+              resolveOnContentBrowserCreated,
+              userContextId:
+                lazy.UserContextManager.getInternalIdById(userContextId),
+            }
+          )
         );
 
         // TODO: Both for WebDriver BiDi and classic, opening a new window
         // should not run the focus steps. When focus is false we should avoid
         // focusing the new window completely. See Bug 1766329
-        win.focus();
-
-        await Promise.all([activated, focused, startup]);
 
         if (focus) {
           // Focus the currently selected tab.
-          const browser = lazy.TabManager.getTabBrowser(win).selectedBrowser;
           browser.focus();
         } else {
           // If the new window shouldn't get focused, set the
@@ -228,7 +239,7 @@ class WindowManager {
           await this.focusWindow(openerWindow);
         }
 
-        return win;
+        return browser.ownerGlobal;
 
       default:
         throw new lazy.error.UnsupportedOperationError(

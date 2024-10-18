@@ -72,16 +72,33 @@ module.exports = function (config) {
       // This will make karma fail if coverage reporting is less than the minimums here
       thresholds: !isTDD && {
         each: {
-          statements: 100,
-          lines: 100,
-          functions: 100,
-          branches: 66,
+          statements: 80,
+          lines: 80,
+          functions: 80,
+          branches: 80,
           overrides: {
-            "content-src/components/ASRouterAdmin/*.jsx": {
+            "content-src/components/ASRouterAdmin/SimpleHashRouter.jsx": {
               statements: 0,
-              lines: 0,
               functions: 0,
+              lines: 0,
+            },
+            "content-src/components/ASRouterAdmin/CopyButton.jsx": {
+              statements: 7.14,
+              lines: 7.69,
               branches: 0,
+              functions: 0,
+            },
+            "content-src/components/ASRouterAdmin/ImpressionsSection.jsx": {
+              statements: 7.14,
+              lines: 7.5,
+              branches: 0,
+              functions: 0,
+            },
+            "content-src/components/ASRouterAdmin/ASRouterAdmin.jsx": {
+              statements: 39.19,
+              lines: 39.19,
+              branches: 47.15,
+              functions: 32.08,
             },
           },
         },
@@ -92,34 +109,32 @@ module.exports = function (config) {
     webpack: {
       mode: "none",
       devtool: "inline-source-map",
-      // This loader allows us to override required files in tests
-      resolveLoader: {
-        alias: {
-          inject: path.join(__dirname, "../newtab/loaders/inject-loader"),
-        },
-      },
-      // This resolve config allows us to import with paths relative to the root directory, e.g. "lib/ActivityStream.jsm"
+      // This resolve config allows us to import with paths relative to the root directory
       resolve: {
-        extensions: [".js", ".jsx"],
+        extensions: [".mjs", ".js", ".jsx"],
         modules: [
           PATHS.moduleResolveDirectory,
           "node_modules",
           PATHS.newtabResolveDirectory,
         ],
-        fallback: {
-          stream: require.resolve("stream-browserify"),
-          buffer: require.resolve("buffer"),
-        },
         alias: {
           newtab: path.join(__dirname, "../newtab"),
         },
       },
       plugins: [
         // The ResourceUriPlugin handles translating resource URIs in import
-        // statements in .mjs files, in a similar way to what
-        // babel-jsm-to-commonjs does for jsm files.
+        // statements in .mjs files to paths on the filesystem.
         new ResourceUriPlugin({
-          resourcePathRegEx: PATHS.resourcePathRegEx,
+          resourcePathRegExes: [
+            [
+              new RegExp("^resource://activity-stream/"),
+              path.join(__dirname, "../newtab/"),
+            ],
+            [
+              new RegExp("^resource:///modules/asrouter/"),
+              path.join(__dirname, "./modules/"),
+            ],
+          ],
         }),
         new webpack.DefinePlugin({
           "process.env.NODE_ENV": JSON.stringify("development"),
@@ -134,29 +149,6 @@ module.exports = function (config) {
       },
       module: {
         rules: [
-          // This rule rewrites importing/exporting in .jsm files to be compatible with esmodules
-          {
-            test: /\.jsm$/,
-            exclude: [/node_modules/],
-            use: [
-              {
-                loader: "babel-loader", // require("babel-core")
-                options: {
-                  plugins: [
-                    // Converts .jsm files into common-js modules
-                    [
-                      "../newtab/tools/babel-jsm-to-commonjs.js",
-                      {
-                        basePath: PATHS.resourcePathRegEx,
-                        removeOtherImports: true,
-                        replace: true,
-                      },
-                    ],
-                  ],
-                },
-              },
-            ],
-          },
           {
             test: /\.js$/,
             exclude: [/node_modules\/(?!@fluent\/).*/, /tests/],
@@ -176,11 +168,19 @@ module.exports = function (config) {
           },
           {
             enforce: "post",
-            test: /\.js[mx]?$/,
+            test: /\.js[x]?$/,
             loader: "@jsdevtools/coverage-istanbul-loader",
             options: { esModules: true },
             include: [path.resolve("content-src"), path.resolve("modules")],
-            exclude: [path.resolve("tests"), path.resolve("../newtab")],
+            exclude: [
+              path.resolve("tests"),
+              path.resolve("../newtab"),
+              path.resolve("modules/ASRouterTargeting.sys.mjs"),
+              path.resolve("modules/ASRouterTriggerListeners.sys.mjs"),
+              path.resolve("modules/CFRMessageProvider.sys.mjs"),
+              path.resolve("modules/CFRPageActions.sys.mjs"),
+              path.resolve("modules/OnboardingMessageProvider.sys.mjs"),
+            ],
           },
         ],
       },

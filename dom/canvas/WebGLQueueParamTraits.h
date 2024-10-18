@@ -67,8 +67,6 @@ inline constexpr bool IsEnumCase(const dom::WebGLPowerPreference raw) {
     case dom::WebGLPowerPreference::Low_power:
     case dom::WebGLPowerPreference::High_performance:
       return true;
-    case dom::WebGLPowerPreference::EndGuard_:
-      break;
   }
   return false;
 }
@@ -78,8 +76,6 @@ inline constexpr bool IsEnumCase(const dom::PredefinedColorSpace raw) {
     case dom::PredefinedColorSpace::Srgb:
     case dom::PredefinedColorSpace::Display_p3:
       return true;
-    case dom::PredefinedColorSpace::EndGuard_:
-      break;
   }
   return false;
 }
@@ -114,23 +110,21 @@ USE_IS_ENUM_CASE(webgl::ProvokingVertex)
 // Custom QueueParamTraits
 
 template <typename T>
-struct QueueParamTraits<RawBuffer<T>> {
-  using ParamType = RawBuffer<T>;
-
+struct QueueParamTraits<Span<T>> {
   template <typename U>
-  static bool Write(ProducerView<U>& view, const ParamType& in) {
+  static bool Write(ProducerView<U>& view, const Span<T>& in) {
     const auto& elemCount = in.size();
     auto status = view.WriteParam(elemCount);
     if (!status) return status;
 
     if (!elemCount) return status;
-    status = view.WriteFromRange(in.Data());
+    status = view.WriteFromRange(Range<const T>{in});
 
     return status;
   }
 
   template <typename U>
-  static bool Read(ConsumerView<U>& view, ParamType* const out) {
+  static bool Read(ConsumerView<U>& view, Span<const T>* const out) {
     size_t elemCount = 0;
     auto status = view.ReadParam(&elemCount);
     if (!status) return status;
@@ -140,9 +134,9 @@ struct QueueParamTraits<RawBuffer<T>> {
       return true;
     }
 
-    auto data = view.template ReadRange<T>(elemCount);
+    auto data = view.template ReadRange<const T>(elemCount);
     if (!data) return false;
-    *out = std::move(RawBuffer<T>{*data});
+    *out = Span{*data};
     return true;
   }
 };

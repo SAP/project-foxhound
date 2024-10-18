@@ -41,10 +41,10 @@
   var URL = global.URL;
 
   var document = global.document;
-  var documentAll = global.document.all;
   var documentDocumentElement = global.document.documentElement;
   var DocumentCreateElement = global.document.createElement;
 
+  var DocumentPrototypeAllGetter = ObjectGetOwnPropertyDescriptor(global.Document.prototype, "all").get;
   var EventTargetPrototypeAddEventListener = global.EventTarget.prototype.addEventListener;
   var HTMLElementPrototypeStyleSetter =
     ObjectGetOwnPropertyDescriptor(global.HTMLElement.prototype, "style").set;
@@ -210,7 +210,7 @@
   var createIsHTMLDDA = global.createIsHTMLDDA;
   if (typeof createIsHTMLDDA !== "function") {
     createIsHTMLDDA = function() {
-      return documentAll;
+      return ReflectApply(DocumentPrototypeAllGetter, document, []);
     };
 
     global.createIsHTMLDDA = createIsHTMLDDA;
@@ -459,6 +459,10 @@
         properties[propertycaptures[1]] = decodeURIComponent(propertycaptures[2]);
       }
     }
+
+    // The test path may contain \ separators for the path.
+    // Bug 1877606: use / consistently
+    properties.test = properties.test.replace(/\\/g, "/");
 
     global.gTestPath = properties.test;
 

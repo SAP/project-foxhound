@@ -64,6 +64,13 @@ GECKO_PROFILER_APPS = (FIREFOX, GECKOVIEW, REFBROW, FENIX)
 
 TRACE_APPS = (CHROME, CHROMIUM, CHROMIUM_RELEASE)
 
+APP_BINARIES = {
+    "fenix": "org.mozilla.fenix",
+    "focus": "org.mozilla.focus",
+    "geckoview": "org.mozilla.geckoview_example",
+    "refbrow": "org.mozilla.reference.browser",
+}
+
 
 def print_all_activities():
     all_activities = []
@@ -244,7 +251,7 @@ def create_parser(mach_interface=False):
         "--post-startup-delay",
         dest="post_startup_delay",
         type=int,
-        default=30000,
+        default=None,
         help="How long to wait (ms) after browser start-up before starting the tests",
     )
     add_arg(
@@ -520,6 +527,13 @@ def create_parser(mach_interface=False):
         type=str,
         help="Repository branch that should be used for a particular benchmark test.",
     )
+    add_arg(
+        "--screenshot-on-failure",
+        action="store_true",
+        dest="screenshot_on_failure",
+        default=False,
+        help="Take a screenshot when the test fails.",
+    )
 
     add_logging_group(parser)
     return parser
@@ -528,7 +542,11 @@ def create_parser(mach_interface=False):
 def verify_options(parser, args):
     ctx = vars(args)
     if args.binary is None and args.app != "chrome-m":
-        parser.error("--binary is required!")
+        args.binary = APP_BINARIES.get(args.app, None)
+        if args.binary is None:
+            parser.error("--binary is required!")
+        else:
+            print(f"Using {args.binary} as default binary argument for {args.app} app")
 
     # Debug-mode is disabled in CI (check for attribute in case of mach_interface issues)
     if hasattr(args, "run_local") and (not args.run_local and args.debug_mode):
@@ -603,6 +621,10 @@ def verify_options(parser, args):
             parser.error(
                 "When a benchmark repository is provided, a revision is also required."
             )
+
+    if args.post_startup_delay:
+        if args.post_startup_delay < 0:
+            parser.error("--post-startup-delay must be a positive integer (in ms).")
 
 
 def parse_args(argv=None):

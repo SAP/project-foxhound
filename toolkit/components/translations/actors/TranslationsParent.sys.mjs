@@ -58,7 +58,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   TranslationsTelemetry:
     "chrome://global/content/translations/TranslationsTelemetry.sys.mjs",
-  HiddenFrame: "resource://gre/modules/HiddenFrame.sys.mjs",
+  EngineProcess: "chrome://global/content/ml/EngineProcess.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
@@ -142,11 +142,11 @@ const VERIFY_SIGNATURES_FROM_FS = false;
  */
 
 /**
- * @typedef {Object} TranslationPair
- * @prop {string} fromLanguage
- * @prop {string} toLanguage
- * @prop {string} [fromDisplayLanguage]
- * @prop {string} [toDisplayLanguage]
+ * @typedef {object} TranslationPair
+ * @property {string} fromLanguage
+ * @property {string} toLanguage
+ * @property {string} [fromDisplayLanguage]
+ * @property {string} [toDisplayLanguage]
  */
 
 /**
@@ -332,6 +332,7 @@ export class TranslationsParent extends JSWindowActorParent {
 
   /**
    * Telemetry functions for Translations
+   *
    * @returns {TranslationsTelemetry}
    */
   static telemetry() {
@@ -349,108 +350,9 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
-   * @type {Promise<{ hiddenFrame: HiddenFrame, actor: TranslationsEngineParent }> | null}
-   */
-  static #engine = null;
-
-  static async getEngineProcess() {
-    if (!TranslationsParent.#engine) {
-      TranslationsParent.#engine = TranslationsParent.#getEngineProcessImpl();
-    }
-    const enginePromise = TranslationsParent.#engine;
-
-    // Determine if the actor was destroyed, or if there was an error. In this case
-    // attempt to rebuild the process.
-    let needsRebuilding = true;
-    try {
-      const { actor } = await enginePromise;
-      needsRebuilding = actor.isDestroyed;
-    } catch {}
-
-    if (
-      TranslationsParent.#engine &&
-      enginePromise !== TranslationsParent.#engine
-    ) {
-      // This call lost the race, something else updated the engine promise, return that.
-      return TranslationsParent.#engine;
-    }
-
-    if (needsRebuilding) {
-      // The engine was destroyed, attempt to re-create the engine process.
-      const rebuild = TranslationsParent.destroyEngineProcess().then(() =>
-        TranslationsParent.#getEngineProcessImpl()
-      );
-      TranslationsParent.#engine = rebuild;
-      return rebuild;
-    }
-
-    return enginePromise;
-  }
-
-  static destroyEngineProcess() {
-    const enginePromise = this.#engine;
-    this.#engine = null;
-    if (enginePromise) {
-      ChromeUtils.addProfilerMarker(
-        "TranslationsParent",
-        {},
-        "Destroying the translations engine process"
-      );
-      return enginePromise.then(({ actor, hiddenFrame }) =>
-        actor
-          .forceShutdown()
-          .catch(error => {
-            lazy.console.error(
-              "There was an error shutting down the engine.",
-              error
-            );
-          })
-          .then(() => {
-            hiddenFrame.destroy();
-          })
-      );
-    }
-    return Promise.resolve();
-  }
-
-  /**
-   * @type {Promise<{ hiddenFrame: HiddenFrame, actor: TranslationsEngineParent }> | null}
-   */
-  static async #getEngineProcessImpl() {
-    ChromeUtils.addProfilerMarker(
-      "TranslationsParent",
-      {},
-      "Creating the translations engine process"
-    );
-
-    // Manages the hidden ChromeWindow.
-    const hiddenFrame = new lazy.HiddenFrame();
-    const chromeWindow = await hiddenFrame.get();
-    const doc = chromeWindow.document;
-
-    const actorPromise = new Promise(resolve => {
-      this.resolveEngine = resolve;
-    });
-
-    const browser = doc.createXULElement("browser");
-    browser.setAttribute("remote", "true");
-    browser.setAttribute("remoteType", "web");
-    browser.setAttribute("disableglobalhistory", "true");
-    browser.setAttribute("type", "content");
-    browser.setAttribute(
-      "src",
-      "chrome://global/content/translations/translations-engine.html"
-    );
-    doc.documentElement.appendChild(browser);
-
-    const actor = await actorPromise;
-    this.resolveEngine = null;
-    return { hiddenFrame, browser, actor };
-  }
-
-  /**
    * Offer translations (for instance by automatically opening the popup panel) whenever
    * languages are detected, but only do it once per host per session.
+   *
    * @param {LangTags} detectedLanguages
    */
   maybeOfferTranslations(detectedLanguages) {
@@ -460,7 +362,7 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!lazy.automaticallyPopupPref) {
       return;
     }
-    if (lazy.BrowserHandler.kiosk) {
+    if (lazy.BrowserHandler?.kiosk) {
       // Pop-ups should not be shown in kiosk mode.
       return;
     }
@@ -559,10 +461,6 @@ export class TranslationsParent extends JSWindowActorParent {
         detectedLanguages
       );
 
-      TranslationsParent.getEngineProcess().catch(error =>
-        console.error(error)
-      );
-
       browser.dispatchEvent(
         new CustomEvent("TranslationsParent:OfferTranslation", {
           bubbles: true,
@@ -616,7 +514,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * about:* pages will not be translated. Keep this logic up to date with the "matches"
    * array in the `toolkit/modules/ActorManagerParent.sys.mjs` definition.
    *
-   * @param {string} scheme - The URI spec
+   * @param {object} gBrowser
    * @returns {boolean}
    */
   static isRestrictedPage(gBrowser) {
@@ -657,6 +555,7 @@ export class TranslationsParent extends JSWindowActorParent {
 
   /**
    * Provide a way for tests to override the system locales.
+   *
    * @type {null | string[]}
    */
   static mockedSystemLocales = null;
@@ -814,9 +713,9 @@ export class TranslationsParent extends JSWindowActorParent {
           return undefined;
         }
 
-        let engineProcess;
+        let actor;
         try {
-          engineProcess = await TranslationsParent.getEngineProcess();
+          actor = await lazy.EngineProcess.getTranslationsEngineParent();
         } catch (error) {
           console.error("Failed to get the translation engine process", error);
           return undefined;
@@ -836,7 +735,7 @@ export class TranslationsParent extends JSWindowActorParent {
         // The MessageChannel will be used for communicating directly between the content
         // process and the engine's process.
         const { port1, port2 } = new MessageChannel();
-        engineProcess.actor.startTranslation(
+        actor.startTranslation(
           requestedTranslationPair.fromLanguage,
           requestedTranslationPair.toLanguage,
           port1,
@@ -952,6 +851,7 @@ export class TranslationsParent extends JSWindowActorParent {
 
   /**
    * The cached language pairs.
+   *
    * @type {Promise<Array<LanguagePair>> | null}
    */
   static #languagePairs = null;
@@ -1041,8 +941,8 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Create a unique list of languages, sorted by the display name.
    *
-   * @param {Object} supportedLanguages
-   * @returns {Array<{ langTag: string, displayName: string}}
+   * @param {object} supportedLanguages
+   * @returns {Array<{ langTag: string, displayName: string}>}
    */
   static getLanguageList(supportedLanguages) {
     const displayNames = new Map();
@@ -1070,8 +970,8 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
-   * @param {Object} event
-   * @param {Object} event.data
+   * @param {object} event
+   * @param {object} event.data
    * @param {TranslationModelRecord[]} event.data.created
    * @param {TranslationModelRecord[]} event.data.updated
    * @param {TranslationModelRecord[]} event.data.deleted
@@ -1147,12 +1047,13 @@ export class TranslationsParent extends JSWindowActorParent {
    * then only the 1.1-version record will be returned in the resulting collection.
    *
    * @param {RemoteSettingsClient} remoteSettingsClient
-   * @param {Object} [options]
-   *   @param {Object} [options.filters={}]
+   * @param {object} [options]
+   *   @param {object} [options.filters={}]
    *     The filters to apply when retrieving the records from RemoteSettings.
    *     Filters should correspond to properties on the RemoteSettings records themselves.
    *     For example, A filter to retrieve only records with a `fromLang` value of "en" and a `toLang` value of "es":
    *     { filters: { fromLang: "en", toLang: "es" } }
+   *   @param {number} options.majorVersion
    *   @param {Function} [options.lookupKey=(record => record.name)]
    *     The function to use to extract a lookup key from each record.
    *     This function should take a record as input and return a string that represents the lookup key for the record.
@@ -1537,7 +1438,7 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Deletes language files that match a language.
    *
-   * @param {string} requestedLanguage The BCP 47 language tag.
+   * @param {string} language The BCP 47 language tag.
    */
   static async deleteLanguageFiles(language) {
     const client = TranslationsParent.#getTranslationModelsRemoteClient();
@@ -1558,7 +1459,7 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Download language files that match a language.
    *
-   * @param {string} requestedLanguage The BCP 47 language tag.
+   * @param {string} language The BCP 47 language tag.
    */
   static async downloadLanguageFiles(language) {
     const client = TranslationsParent.#getTranslationModelsRemoteClient();
@@ -1607,6 +1508,7 @@ export class TranslationsParent extends JSWindowActorParent {
 
   /**
    * Delete all language model files.
+   *
    * @returns {Promise<string[]>} A list of record IDs.
    */
   static async deleteAllLanguageFiles() {
@@ -1867,8 +1769,10 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {string} fromLanguage
    * @param {string} toLanguage
    * @param {boolean} withQualityEstimation
-   * @returns {Promise<{downloadSize: long, modelFound: boolean}> Download size is the size in bytes of the estimated download for display purposes. Model found indicates a model was found.
-   * e.g., a result of {size: 0, modelFound: false} indicates no bytes to download, because a model wasn't located.
+   * @returns {Promise<{downloadSize: long, modelFound: boolean}>} Download size is the
+   *   size in bytes of the estimated download for display purposes. Model found indicates
+   *   a model was found. e.g., a result of {size: 0, modelFound: false} indicates no
+   *   bytes to download, because a model wasn't located.
    */
   static async #getModelDownloadSize(
     fromLanguage,
@@ -1964,6 +1868,7 @@ export class TranslationsParent extends JSWindowActorParent {
   /**
    * Report an error. Having this as a method allows tests to check that an error
    * was properly reported.
+   *
    * @param {Error} error - Providing an Error object makes sure the stack is properly
    *                        reported.
    * @param {any[]} args - Any args to pass on to console.error.
@@ -2001,9 +1906,9 @@ export class TranslationsParent extends JSWindowActorParent {
     } else {
       const { docLangTag } = this.languageState.detectedLanguages;
 
-      let engineProcess;
+      let actor;
       try {
-        engineProcess = await TranslationsParent.getEngineProcess();
+        actor = await lazy.EngineProcess.getTranslationsEngineParent();
       } catch (error) {
         console.error("Failed to get the translation engine process", error);
         return;
@@ -2018,7 +1923,7 @@ export class TranslationsParent extends JSWindowActorParent {
       // The MessageChannel will be used for communicating directly between the content
       // process and the engine's process.
       const { port1, port2 } = new MessageChannel();
-      engineProcess.actor.startTranslation(
+      actor.startTranslation(
         fromLanguage,
         toLanguage,
         port1,
@@ -2149,6 +2054,46 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     return false;
+  }
+
+  /**
+   * Checks if a given language tag is supported for translation
+   * when translating from this language into other languages.
+   *
+   * @param {string} langTag - A BCP-47 language tag.
+   * @returns {Promise<boolean>}
+   */
+  static async isSupportedAsFromLang(langTag) {
+    if (!langTag) {
+      return false;
+    }
+    let languagePairs = await TranslationsParent.getLanguagePairs();
+    return Boolean(languagePairs.find(({ fromLang }) => fromLang === langTag));
+  }
+
+  /**
+   * Checks if a given language tag is supported for translation
+   * when translating from other languages into this language.
+   *
+   * @param {string} langTag - A BCP-47 language tag.
+   * @returns {Promise<boolean>}
+   */
+  static async isSupportedAsToLang(langTag) {
+    if (!langTag) {
+      return false;
+    }
+    let languagePairs = await TranslationsParent.getLanguagePairs();
+    return Boolean(languagePairs.find(({ fromLang }) => fromLang === langTag));
+  }
+
+  /**
+   * Retrieves the top preferred user language for which translation
+   * is supported when translating to that language.
+   */
+  static async getTopPreferredSupportedToLang() {
+    return TranslationsParent.getPreferredLanguages().find(
+      async langTag => await TranslationsParent.isSupportedAsToLang(langTag)
+    );
   }
 
   /**
@@ -2584,15 +2529,15 @@ export class TranslationsParent extends JSWindowActorParent {
    * are misbehaving.
    */
   #ensureTranslationsDiscarded() {
-    if (!TranslationsParent.#engine) {
+    if (!lazy.EngineProcess.translationsEngineParent) {
       return;
     }
-    TranslationsParent.#engine
+    lazy.EngineProcess.translationsEngineParent
       // If the engine fails to load, ignore it since we are ending translations.
       .catch(() => null)
-      .then(engineProcess => {
-        if (engineProcess && this.languageState.requestedTranslationPair) {
-          engineProcess.actor.discardTranslations(this.innerWindowId);
+      .then(actor => {
+        if (actor && this.languageState.requestedTranslationPair) {
+          actor.discardTranslations(this.innerWindowId);
         }
       })
       // This error will be one from the endTranslation code, which we need to
@@ -2804,11 +2749,11 @@ class TranslationsLanguageState {
 }
 
 /**
- * @typedef {Object} QueueItem
- * @prop {Function} download
- * @prop {Function} [onSuccess]
- * @prop {Function} [onFailure]
- * @prop {number} [retriesLeft]
+ * @typedef {object} QueueItem
+ * @property {Function} download
+ * @property {Function} [onSuccess]
+ * @property {Function} [onFailure]
+ * @property {number} [retriesLeft]
  */
 
 /**

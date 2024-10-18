@@ -31,6 +31,7 @@ class ChooserParser(BaseTryParser):
         "chemspill-prio",
         "disable-pgo",
         "env",
+        "existing-tasks",
         "gecko-profile",
         "path",
         "pernosco",
@@ -42,7 +43,7 @@ class ChooserParser(BaseTryParser):
 def run(
     update=False,
     query=None,
-    try_config=None,
+    try_config_params=None,
     full=False,
     parameters=None,
     save=False,
@@ -101,7 +102,9 @@ def run(
     return push_to_try(
         "chooser",
         message.format(msg=msg),
-        try_task_config=generate_try_task_config("chooser", selected, try_config),
+        try_task_config=generate_try_task_config(
+            "chooser", selected, params=try_config_params
+        ),
         stage_changes=stage_changes,
         dry_run=dry_run,
         closed_tree=closed_tree,

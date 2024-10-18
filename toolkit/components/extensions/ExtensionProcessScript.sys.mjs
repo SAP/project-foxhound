@@ -58,7 +58,7 @@ var ExtensionManager;
 
 ExtensionManager = {
   // WeakMap<WebExtensionPolicy, Map<number, WebExtensionContentScript>>
-  registeredContentScripts: new DefaultWeakMap(policy => new Map()),
+  registeredContentScripts: new DefaultWeakMap(() => new Map()),
 
   init() {
     Services.cpmm.addMessageListener("Extension:Startup", this);
@@ -325,7 +325,7 @@ ExtensionManager = {
           if (!policy) {
             break;
           }
-          // In the parent process, Extension.jsm updates the policy.
+          // In the parent process, Extension.sys.mjs updates the policy.
           if (lazy.isContentProcess) {
             lazy.ExtensionCommon.updateAllowedOrigins(
               policy,

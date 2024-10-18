@@ -41,7 +41,7 @@ const API = class extends ExtensionAPI {
 
     const FIRE_TOPIC = `fire-${namespace}.${event}`;
 
-    async function listener(subject, topic, data) {
+    async function listener(subject) {
       try {
         if (subject.wrappedJSObject.waitForBackground) {
           await fire.wakeup();
@@ -257,7 +257,7 @@ const global = this;
 async function promiseObservable(topic, count, fn = null) {
   let _countResolve;
   let results = [];
-  function listener(subject, _topic, data) {
+  function listener(subject, _topic) {
     const eventDetails = subject.wrappedJSObject;
     results.push(eventDetails);
     if (results.length > count) {
@@ -1452,9 +1452,9 @@ add_task(async function test_migrate_startupData_to_new_format() {
   };
 
   function getXPIStatesFilePath() {
-    let { path } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm"
-    ).XPIInternal.XPIStates._jsonFile;
+    let { path } = ChromeUtils.importESModule(
+      "resource://gre/modules/addons/XPIExports.sys.mjs"
+    ).XPIExports.XPIInternal.XPIStates._jsonFile;
     ok(
       typeof path === "string" && !!path.length,
       `Found XPIStates file path: ${path}`
@@ -1477,11 +1477,11 @@ add_task(async function test_migrate_startupData_to_new_format() {
     // format we expect from older Firefox versions).
     testExtensionWrapper.extension.saveStartupData();
     await AddonTestUtils.loadAddonsList(/* flush */ true);
-    const { XPIInternal } = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm"
+    const { XPIExports } = ChromeUtils.importESModule(
+      "resource://gre/modules/addons/XPIExports.sys.mjs"
     );
-    XPIInternal.XPIStates.save();
-    await XPIInternal.XPIStates._jsonFile._save();
+    XPIExports.XPIInternal.XPIStates.save();
+    await XPIExports.XPIInternal.XPIStates._jsonFile._save();
     return getXPIStatesFilePath();
   }
 

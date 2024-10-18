@@ -7,12 +7,11 @@
 #include "nsDOMNavigationTiming.h"
 
 #include "GeckoProfiler.h"
-#include "ipc/IPCMessageUtilsSpecializations.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/PerformanceNavigation.h"
 #include "mozilla/ipc/IPDLParamTraits.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "nsCOMPtr.h"
@@ -141,8 +140,8 @@ void nsDOMNavigationTiming::NotifyLoadEventStart() {
   if (IsTopLevelContentDocumentInContentProcess()) {
     TimeStamp now = TimeStamp::Now();
 
-    Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_LOAD_EVENT_START_MS,
-                                   mNavigationStart, now);
+    glean::performance_time::load_event_start.AccumulateRawDuration(
+        now - mNavigationStart);
 
     if (mDocShellHasBeenActiveSinceNavigationStart) {
       if (net::nsHttp::IsBeforeLastActiveTabLoadOptimization(
@@ -186,8 +185,8 @@ void nsDOMNavigationTiming::NotifyLoadEventEnd() {
                         MarkerInnerWindowIdFromDocShell(mDocShell)),
           marker);
     }
-    Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_LOAD_EVENT_END_MS,
-                                   mNavigationStart);
+    glean::performance_time::load_event_end.AccumulateRawDuration(
+        TimeStamp::Now() - mNavigationStart);
   }
 }
 
@@ -249,8 +248,8 @@ void nsDOMNavigationTiming::NotifyDOMContentLoadedStart(nsIURI* aURI) {
   if (IsTopLevelContentDocumentInContentProcess()) {
     TimeStamp now = TimeStamp::Now();
 
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::TIME_TO_DOM_CONTENT_LOADED_START_MS, mNavigationStart, now);
+    glean::performance_time::dom_content_loaded_start.AccumulateRawDuration(
+        now - mNavigationStart);
 
     if (mDocShellHasBeenActiveSinceNavigationStart) {
       if (net::nsHttp::IsBeforeLastActiveTabLoadOptimization(
@@ -281,8 +280,8 @@ void nsDOMNavigationTiming::NotifyDOMContentLoadedEnd(nsIURI* aURI) {
                   Tracing, "Navigation");
 
   if (IsTopLevelContentDocumentInContentProcess()) {
-    Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_DOM_CONTENT_LOADED_END_MS,
-                                   mNavigationStart);
+    glean::performance_time::dom_content_loaded_end.AccumulateRawDuration(
+        TimeStamp::Now() - mNavigationStart);
   }
 }
 
@@ -426,8 +425,8 @@ void nsDOMNavigationTiming::NotifyNonBlankPaintForRootContentDocument() {
           mNonBlankPaint);
     }
 
-    Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_NON_BLANK_PAINT_MS,
-                                   mNavigationStart, mNonBlankPaint);
+    glean::performance_page::non_blank_paint.AccumulateRawDuration(
+        mNonBlankPaint - mNavigationStart);
   }
 }
 

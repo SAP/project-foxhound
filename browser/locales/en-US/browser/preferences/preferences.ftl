@@ -287,7 +287,8 @@ preferences-web-appearance-choice-input-dark =
 
 # This can appear when using windows HCM or "Override colors: always" without
 # system colors.
-preferences-web-appearance-override-warning = Your color selections are overriding website appearance. <a data-l10n-name="colors-link">Manage colors</a>
+preferences-web-appearance-override-warning2 =
+    .message = Your color selections are overriding website appearance.
 
 # This message contains one link. It can be moved within the sentence as needed
 # to adapt to your language, but should not be changed.
@@ -326,6 +327,9 @@ preferences-default-zoom-value =
 preferences-zoom-text-only =
     .label = Zoom text only
     .accesskey = t
+
+preferences-text-zoom-override-warning =
+    .message = Warning: If you select “Zoom text only” and your default zoom is not set to 100%, it may cause some sites or content to break.
 
 language-header = Language
 
@@ -704,29 +708,26 @@ home-prefs-shortcuts-description = Sites you save or visit
 home-prefs-shortcuts-by-option-sponsored =
     .label = Sponsored shortcuts
 
-## Variables:
-##  $provider (string) - Name of the corresponding content provider, e.g "Pocket".
-
-home-prefs-recommended-by-header =
-    .label = Recommended by { $provider }
-home-prefs-recommended-by-description-new = Exceptional content curated by { $provider }, part of the { -brand-product-name } family
+home-prefs-recommended-by-header-generic =
+    .label = Recommended stories
+home-prefs-recommended-by-description-generic = Exceptional content curated by the { -brand-product-name } family
 
 ##
 
 home-prefs-recommended-by-learn-more = How it works
 home-prefs-recommended-by-option-sponsored-stories =
-    .label = Sponsored Stories
+    .label = Sponsored stories
 home-prefs-recommended-by-option-recent-saves =
     .label = Show Recent Saves
 
 home-prefs-highlights-option-visited-pages =
-    .label = Visited Pages
+    .label = Visited pages
 home-prefs-highlights-options-bookmarks =
     .label = Bookmarks
 home-prefs-highlights-option-most-recent-download =
-    .label = Most Recent Download
+    .label = Most recent download
 home-prefs-highlights-option-saved-to-pocket =
-    .label = Pages Saved to { -pocket-brand-name }
+    .label = Pages saved to { -pocket-brand-name }
 
 home-prefs-recent-activity-header =
     .label = Recent activity
@@ -1150,7 +1151,7 @@ sitedata-delete-on-close =
     .label = Delete cookies and site data when { -brand-short-name } is closed
     .accesskey = c
 
-sitedata-delete-on-close-private-browsing = In permanent private browsing mode, cookies and site data will always be cleared when { -brand-short-name } is closed.
+sitedata-delete-on-close-private-browsing2 = Based on your history settings, { -brand-short-name } deletes cookies and site data from your session when you close the browser.
 
 sitedata-allow-cookies-option =
     .label = Accept cookies and site data
@@ -1441,7 +1442,7 @@ addon-recommendations-link = Learn more
 # or builds with no Telemetry support available.
 collection-health-report-disabled = Data reporting is disabled for this build configuration
 
-collection-backlogged-crash-reports-with-link = Allow { -brand-short-name } to send backlogged crash reports on your behalf <a data-l10n-name="crash-reports-link">Learn more</a>
+collection-backlogged-crash-reports = Allow { -brand-short-name } to send backlogged crash reports on your behalf
     .accesskey = c
 
 privacy-segmentation-section-header = New features that enhance your browsing

@@ -142,7 +142,17 @@ function getWebConsoleUiMock(hud) {
   return {
     emit: () => {},
     emitForTests: () => {},
-    hud,
+    hud: {
+      commands: {
+        client: {
+          mainRoot: {},
+        },
+        objectCommand: {
+          releaseObjects: async () => {},
+        },
+      },
+      ...hud,
+    },
     clearNetworkRequests: () => {},
     clearMessagesCache: () => {},
     inspectObjectActor: () => {},

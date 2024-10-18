@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ImageBitmap.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
@@ -81,7 +82,7 @@ class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
  */
 class ImageBitmapShutdownObserver final : public nsIObserver {
  public:
-  explicit ImageBitmapShutdownObserver() {
+  void Init() {
     sShutdownMutex.AssertCurrentThreadOwns();
     if (NS_IsMainThread()) {
       RegisterObserver();
@@ -362,6 +363,7 @@ static DataSourceSurface* FlipYDataSourceSurface(DataSourceSurface* aSurface) {
     return nullptr;
   }
 
+  const int bpp = BytesPerPixel(aSurface->GetFormat());
   const IntSize srcSize = aSurface->GetSize();
   uint8_t* srcBufferPtr = srcMap.GetData();
   const uint32_t stride = srcMap.GetStride();
@@ -372,7 +374,8 @@ static DataSourceSurface* FlipYDataSourceSurface(DataSourceSurface* aSurface) {
   }
 
   for (int i = 0; i < srcSize.height / 2; ++i) {
-    std::swap_ranges(srcBufferPtr + stride * i, srcBufferPtr + stride * (i + 1),
+    std::swap_ranges(srcBufferPtr + stride * i,
+                     srcBufferPtr + stride * i + srcSize.width * bpp,
                      srcBufferPtr + stride * (srcSize.height - 1 - i));
   }
 
@@ -649,6 +652,7 @@ ImageBitmap::ImageBitmap(nsIGlobalObject* aGlobal, layers::Image* aData,
   if (!sShutdownObserver &&
       !AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdown)) {
     sShutdownObserver = new ImageBitmapShutdownObserver();
+    sShutdownObserver->Init();
   }
   if (sShutdownObserver) {
     mShutdownRunnable = sShutdownObserver->Track(this);
@@ -1017,7 +1021,6 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
   // handle alpha premultiplication if surface not of correct type
 
   gfxAlphaType alphaType = aAlphaType;
-  bool mustCopy = aMustCopy;
   bool requiresPremultiply = false;
   bool requiresUnpremultiply = false;
 
@@ -1026,29 +1029,26 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateImageBitmapInternal(
         aOptions.mPremultiplyAlpha == PremultiplyAlpha::None) {
       requiresUnpremultiply = true;
       alphaType = gfxAlphaType::NonPremult;
-      if (!aAllocatedImageData) {
-        mustCopy = true;
-      }
     } else if (aAlphaType == gfxAlphaType::NonPremult &&
                aOptions.mPremultiplyAlpha == PremultiplyAlpha::Premultiply) {
       requiresPremultiply = true;
       alphaType = gfxAlphaType::Premult;
-      if (!aAllocatedImageData) {
-        mustCopy = true;
-      }
     }
   }
 
   /*
-   * if we don't own the data and need to create a new buffer to flip Y.
+   * if we don't own the data and need to modify the buffer.
    * or
    * we need to crop and flip, where crop must come first.
    * or
-   * Or the caller demands a copy (WebGL contexts).
+   * the caller demands a copy (WebGL contexts).
    */
-  if ((aOptions.mImageOrientation == ImageOrientation::FlipY &&
-       (!aAllocatedImageData || aCropRect.isSome())) ||
-      mustCopy) {
+  bool willModify = aOptions.mImageOrientation == ImageOrientation::FlipY ||
+                    requiresPremultiply || requiresUnpremultiply;
+  if ((willModify && !aAllocatedImageData) ||
+      (aOptions.mImageOrientation == ImageOrientation::FlipY &&
+       aCropRect.isSome()) ||
+      aMustCopy) {
     dataSurface = surface->GetDataSurface();
 
     dataSurface = CropAndCopyDataSourceSurface(dataSurface, cropRect);
@@ -1429,7 +1429,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
     return nullptr;
   }
 
-  bool needToReportMemoryAllocation = true;
+  bool needToReportMemoryAllocation = false;
 
   return CreateImageBitmapInternal(aGlobal, surface, aCropRect, aOptions,
                                    writeOnly, needToReportMemoryAllocation,
@@ -1578,7 +1578,8 @@ class FulfillImageBitmapPromiseWorkerTask final
  public:
   FulfillImageBitmapPromiseWorkerTask(Promise* aPromise,
                                       ImageBitmap* aImageBitmap)
-      : WorkerSameThreadRunnable(GetCurrentThreadWorkerPrivate()),
+      : WorkerSameThreadRunnable(GetCurrentThreadWorkerPrivate(),
+                                 "FulfillImageBitmapPromiseWorkerTask"),
         FulfillImageBitmapPromise(aPromise, aImageBitmap) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
@@ -1699,13 +1700,13 @@ class CreateImageBitmapFromBlob final : public DiscardableRunnable,
 NS_IMPL_ISUPPORTS_INHERITED(CreateImageBitmapFromBlob, DiscardableRunnable,
                             imgIContainerCallback, nsIInputStreamCallback)
 
-class CreateImageBitmapFromBlobRunnable : public WorkerRunnable {
+class CreateImageBitmapFromBlobRunnable final : public WorkerRunnable {
  public:
   explicit CreateImageBitmapFromBlobRunnable(WorkerPrivate* aWorkerPrivate,
                                              CreateImageBitmapFromBlob* aTask,
                                              layers::Image* aImage,
                                              nsresult aStatus)
-      : WorkerRunnable(aWorkerPrivate),
+      : WorkerRunnable(aWorkerPrivate, "CreateImageBitmapFromBlobRunnable"),
         mTask(aTask),
         mImage(aImage),
         mStatus(aStatus) {}

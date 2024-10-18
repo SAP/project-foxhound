@@ -141,7 +141,8 @@ class JitZone {
     Count
   };
 
-  mozilla::EnumeratedArray<StubIndex, StubIndex::Count, WeakHeapPtr<JitCode*>>
+  mozilla::EnumeratedArray<StubIndex, WeakHeapPtr<JitCode*>,
+                           size_t(StubIndex::Count)>
       stubs_;
 
   mozilla::Maybe<IonCompilationId> currentCompilationId_;

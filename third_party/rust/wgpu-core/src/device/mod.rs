@@ -2,8 +2,7 @@ use crate::{
     binding_model,
     hal_api::HalApi,
     hub::Hub,
-    id::{self},
-    identity::{GlobalIdentityHandlerFactory, Input},
+    id::{BindGroupLayoutId, PipelineLayoutId},
     resource::{Buffer, BufferAccessResult},
     resource::{BufferAccessError, BufferMapOperation},
     resource_log, Label, DOWNLEVEL_ERROR_MESSAGE,
@@ -42,15 +41,14 @@ pub type DeviceDescriptor<'a> = wgt::DeviceDescriptor<Label<'a>>;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[cfg_attr(feature = "trace", derive(serde::Serialize))]
-#[cfg_attr(feature = "replay", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum HostMap {
     Read,
     Write,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq)]
-#[cfg_attr(feature = "serial-pass", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub(crate) struct AttachmentData<T> {
     pub colors: ArrayVec<Option<T>, { hal::MAX_COLOR_ATTACHMENTS }>,
     pub resolves: ArrayVec<T, { hal::MAX_COLOR_ATTACHMENTS }>,
@@ -74,7 +72,7 @@ pub enum RenderPassCompatibilityCheckType {
 }
 
 #[derive(Clone, Debug, Hash, PartialEq)]
-#[cfg_attr(feature = "serial-pass", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub(crate) struct RenderPassContext {
     pub attachments: AttachmentData<TextureFormat>,
     pub sample_count: u32,
@@ -205,32 +203,20 @@ impl UserClosures {
     }
 }
 
-#[cfg(any(
-    not(target_arch = "wasm32"),
-    all(
-        feature = "fragile-send-sync-non-atomic-wasm",
-        not(target_feature = "atomics")
-    )
-))]
+#[cfg(send_sync)]
 pub type DeviceLostCallback = Box<dyn Fn(DeviceLostReason, String) + Send + 'static>;
-#[cfg(not(any(
-    not(target_arch = "wasm32"),
-    all(
-        feature = "fragile-send-sync-non-atomic-wasm",
-        not(target_feature = "atomics")
-    )
-)))]
+#[cfg(not(send_sync))]
 pub type DeviceLostCallback = Box<dyn Fn(DeviceLostReason, String) + 'static>;
 
 pub struct DeviceLostClosureRust {
     pub callback: DeviceLostCallback,
-    called: bool,
+    consumed: bool,
 }
 
 impl Drop for DeviceLostClosureRust {
     fn drop(&mut self) {
-        if !self.called {
-            panic!("DeviceLostClosureRust must be called before it is dropped.");
+        if !self.consumed {
+            panic!("DeviceLostClosureRust must be consumed before it is dropped.");
         }
     }
 }
@@ -239,22 +225,16 @@ impl Drop for DeviceLostClosureRust {
 pub struct DeviceLostClosureC {
     pub callback: unsafe extern "C" fn(user_data: *mut u8, reason: u8, message: *const c_char),
     pub user_data: *mut u8,
-    called: bool,
+    consumed: bool,
 }
 
-#[cfg(any(
-    not(target_arch = "wasm32"),
-    all(
-        feature = "fragile-send-sync-non-atomic-wasm",
-        not(target_feature = "atomics")
-    )
-))]
+#[cfg(send_sync)]
 unsafe impl Send for DeviceLostClosureC {}
 
 impl Drop for DeviceLostClosureC {
     fn drop(&mut self) {
-        if !self.called {
-            panic!("DeviceLostClosureC must be called before it is dropped.");
+        if !self.consumed {
+            panic!("DeviceLostClosureC must be consumed before it is dropped.");
         }
     }
 }
@@ -280,7 +260,7 @@ impl DeviceLostClosure {
     pub fn from_rust(callback: DeviceLostCallback) -> Self {
         let inner = DeviceLostClosureRust {
             callback,
-            called: false,
+            consumed: false,
         };
         Self {
             inner: DeviceLostClosureInner::Rust { inner },
@@ -294,14 +274,18 @@ impl DeviceLostClosure {
     ///
     /// - Both pointers must point to `'static` data, as the callback may happen at
     ///   an unspecified time.
-    pub unsafe fn from_c(closure: DeviceLostClosureC) -> Self {
+    pub unsafe fn from_c(mut closure: DeviceLostClosureC) -> Self {
         // Build an inner with the values from closure, ensuring that
-        // inner.called is false.
+        // inner.consumed is false.
         let inner = DeviceLostClosureC {
             callback: closure.callback,
             user_data: closure.user_data,
-            called: false,
+            consumed: false,
         };
+
+        // Mark the original closure as consumed, so we can safely drop it.
+        closure.consumed = true;
+
         Self {
             inner: DeviceLostClosureInner::C { inner },
         }
@@ -310,19 +294,13 @@ impl DeviceLostClosure {
     pub(crate) fn call(self, reason: DeviceLostReason, message: String) {
         match self.inner {
             DeviceLostClosureInner::Rust { mut inner } => {
-                if inner.called {
-                    panic!("DeviceLostClosureRust must only be called once.");
-                }
-                inner.called = true;
+                inner.consumed = true;
 
                 (inner.callback)(reason, message)
             }
             // SAFETY: the contract of the call to from_c says that this unsafe is sound.
             DeviceLostClosureInner::C { mut inner } => unsafe {
-                if inner.called {
-                    panic!("DeviceLostClosureC must only be called once.");
-                }
-                inner.called = true;
+                inner.consumed = true;
 
                 // Ensure message is structured as a null-terminated C string. It only
                 // needs to live as long as the callback invocation.
@@ -477,26 +455,25 @@ pub struct MissingFeatures(pub wgt::Features);
 pub struct MissingDownlevelFlags(pub wgt::DownlevelFlags);
 
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "trace", derive(serde::Serialize))]
-#[cfg_attr(feature = "replay", derive(serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ImplicitPipelineContext {
-    pub root_id: id::PipelineLayoutId,
-    pub group_ids: ArrayVec<id::BindGroupLayoutId, { hal::MAX_BIND_GROUPS }>,
+    pub root_id: PipelineLayoutId,
+    pub group_ids: ArrayVec<BindGroupLayoutId, { hal::MAX_BIND_GROUPS }>,
 }
 
-pub struct ImplicitPipelineIds<'a, G: GlobalIdentityHandlerFactory> {
-    pub root_id: Input<G, id::PipelineLayoutId>,
-    pub group_ids: &'a [Input<G, id::BindGroupLayoutId>],
+pub struct ImplicitPipelineIds<'a> {
+    pub root_id: Option<PipelineLayoutId>,
+    pub group_ids: &'a [Option<BindGroupLayoutId>],
 }
 
-impl<G: GlobalIdentityHandlerFactory> ImplicitPipelineIds<'_, G> {
+impl ImplicitPipelineIds<'_> {
     fn prepare<A: HalApi>(self, hub: &Hub<A>) -> ImplicitPipelineContext {
         ImplicitPipelineContext {
-            root_id: hub.pipeline_layouts.prepare::<G>(self.root_id).into_id(),
+            root_id: hub.pipeline_layouts.prepare(self.root_id).into_id(),
             group_ids: self
                 .group_ids
                 .iter()
-                .map(|id_in| hub.bind_group_layouts.prepare::<G>(*id_in).into_id())
+                .map(|id_in| hub.bind_group_layouts.prepare(*id_in).into_id())
                 .collect(),
         }
     }

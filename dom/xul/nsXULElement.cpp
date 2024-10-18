@@ -172,7 +172,6 @@ nsXULElement* nsXULElement::Construct(
   }
 
   if (nodeInfo->Equals(nsGkAtoms::menupopup) ||
-      nodeInfo->Equals(nsGkAtoms::popup) ||
       nodeInfo->Equals(nsGkAtoms::panel)) {
     return NS_NewXULPopupElement(nodeInfo.forget());
   }
@@ -655,7 +654,7 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return rv;
 }
 
-void nsXULElement::UnbindFromTree(bool aNullParent) {
+void nsXULElement::UnbindFromTree(UnbindContext& aContext) {
   if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
     XULKeySetGlobalKeyListener::DetachKeyHandler(this);
   }
@@ -690,7 +689,7 @@ void nsXULElement::UnbindFromTree(bool aNullParent) {
     slots->mControllers = nullptr;
   }
 
-  nsStyledElement::UnbindFromTree(aNullParent);
+  nsStyledElement::UnbindFromTree(aContext);
 }
 
 void nsXULElement::DoneAddingChildren(bool aHaveNotified) {
@@ -1284,6 +1283,12 @@ nsresult nsXULPrototypeElement::Deserialize(
     return NS_ERROR_UNEXPECTED;
   }
 
+  if (mNodeInfo->Equals(nsGkAtoms::parsererror) &&
+      mNodeInfo->NamespaceEquals(
+          nsDependentAtomString(nsGkAtoms::nsuri_parsererror))) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
   // Read Attributes
   rv = aStream->Read32(&number);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
@@ -1418,6 +1423,10 @@ nsresult nsXULPrototypeElement::SetAttrAt(uint32_t aPos,
     // Store id as atom.
     // id="" means that the element has no id. Not that it has
     // emptystring as id.
+    mAttributes[aPos].mValue.ParseAtom(aValue);
+
+    return NS_OK;
+  } else if (mAttributes[aPos].mName.Equals(nsGkAtoms::aria_activedescendant)) {
     mAttributes[aPos].mValue.ParseAtom(aValue);
 
     return NS_OK;
@@ -1834,9 +1843,8 @@ class ScriptCompileTask final : public Task {
       return;
     }
 
-    JS::CompilationStorage compileStorage;
-    mStencil = JS::CompileGlobalScriptToStencil(mFrontendContext, mOptions,
-                                                srcBuf, compileStorage);
+    mStencil =
+        JS::CompileGlobalScriptToStencil(mFrontendContext, mOptions, srcBuf);
 #ifdef DEBUG
     // Chrome-privileged code shouldn't have any compilation error.
     CheckErrorsAndWarnings(mFrontendContext, mOptions);

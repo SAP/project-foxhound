@@ -158,15 +158,11 @@
 <groupbox id="webAppearanceGroup" data-category="paneGeneral" hidden="true">
   <html:h2 data-l10n-id="preferences-web-appearance-header"/>
   <html:div id="webAppearanceSettings">
-    <description data-l10n-id="preferences-web-appearance-description"/>
-    <html:div id="web-appearance-override-warning" class="info-box-container">
-      <html:div class="info-icon-container">
-        <html:img class="info-icon"/>
-      </html:div>
-      <description data-l10n-id="preferences-web-appearance-override-warning">
-        <html:a class="text-link" data-l10n-name="colors-link" id="web-appearance-manage-colors-link" href="#"/>
-      </description>
-    </html:div>
+    <description class="description-deemphasized" data-l10n-id="preferences-web-appearance-description"/>
+    <html:moz-message-bar id="web-appearance-override-warning" data-l10n-id="preferences-web-appearance-override-warning2"
+        data-l10n-attrs="message">
+        <button slot="actions" class="accessory-button" data-l10n-id="preferences-colors-manage-button" id="web-appearance-manage-colors-button"/>
+    </html:moz-message-bar>
     <form xmlns="http://www.w3.org/1999/xhtml" id="web-appearance-chooser" autocomplete="off">
       <label class="web-appearance-choice" data-l10n-id="preferences-web-appearance-choice-tooltip-auto">
         <div class="web-appearance-choice-image-container"><img role="presentation" alt="" width="54" height="42" /></div>
@@ -315,14 +311,14 @@
 <!-- Zoom -->
 <groupbox id="zoomGroup" data-category="paneGeneral" hidden="true">
   <label><html:h2 data-l10n-id="preferences-zoom-header"/></label>
-
   <hbox id="zoomBox" align="center" hidden="true">
     <label control="defaultZoom" data-l10n-id="preferences-default-zoom"/>
     <menulist id="defaultZoom">
       <menupopup/>
     </menulist>
   </hbox>
-
+  <html:moz-message-bar id="text-zoom-override-warning" data-l10n-id="preferences-text-zoom-override-warning"
+    data-l10n-attrs="message" />
   <checkbox id="zoomText"
     data-l10n-id="preferences-zoom-text-only"/>
 
@@ -442,7 +438,7 @@
 
 <groupbox id="applicationsGroup" data-category="paneGeneral" hidden="true">
   <label><html:h2 data-l10n-id="applications-header"/></label>
-  <description data-l10n-id="applications-description"/>
+  <description class="description-deemphasized" data-l10n-id="applications-description"/>
   <search-textbox id="filter" flex="1"
                   data-l10n-id="applications-filter"
                   data-l10n-attrs="placeholder"
@@ -458,8 +454,8 @@
   </listheader>
   <richlistbox id="handlersView"
                preference="pref.downloads.disable_button.edit_actions"/>
-  <description id="handleNewFileTypesDesc"
-               data-l10n-id="applications-handle-new-file-types-description"/>
+  <label id="handleNewFileTypesDesc"
+         data-l10n-id="applications-handle-new-file-types-description"/>
   <radiogroup id="handleNewFileTypes"
               preference="browser.download.always_ask_before_handling_new_types">
     <radio id="saveForNewTypes"
@@ -496,12 +492,12 @@
 <groupbox id="updateApp" data-category="paneGeneral" hidden="true">
   <label class="search-header" hidden="true"><html:h2 data-l10n-id="update-application-title"/></label>
 
-  <label data-l10n-id="update-application-description"/>
+  <description class="description-deemphasized" data-l10n-id="update-application-description"/>
   <hbox align="center">
     <vbox flex="1">
-      <description id="updateAppInfo">
+      <html:span id="updateAppInfo">
         <html:a id="releasenotes" target="_blank" data-l10n-name="learn-more" class="learnMore text-link" hidden="true"/>
-      </description>
+      </html:span>
       <description id="distribution" class="text-blurb" hidden="true"/>
       <description id="distributionId" class="text-blurb" hidden="true"/>
     </vbox>
@@ -562,7 +558,7 @@
                 is="highlightable-button"/>
       </hbox>
       <hbox id="policyDisabled" align="start">
-        <label data-l10n-id="update-adminDisabled"/>
+        <label data-l10n-id="update-policy-disabled"/>
         <button data-l10n-id="update-checkForUpdatesButton"
                 is="highlightable-button"
                 disabled="true"/>
@@ -621,7 +617,7 @@
 #endif
 
 #ifdef MOZ_UPDATER
-  <description id="updateAllowDescription" data-l10n-id="update-application-allow-description"></description>
+  <label id="updateAllowDescription" data-l10n-id="update-application-allow-description"></label>
   <vbox id="updateSettingsContainer" class="info-box-container">
     <radiogroup id="updateRadioGroup">
       <radio id="autoDesktop"
@@ -817,6 +813,7 @@
               connection-proxy-option-no.label,
               connection-proxy-option-auto.label,
               connection-proxy-option-system.label,
+              connection-proxy-option-wpad.label,
               connection-proxy-option-manual.label,
               connection-proxy-http,
               connection-proxy-https,

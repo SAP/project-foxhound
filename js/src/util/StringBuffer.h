@@ -255,12 +255,19 @@ class StringBuffer : public TaintableString {
     }
     return twoByteChars().append(c);
   }
+  [[nodiscard]] bool append(const char16_t c, const TaintFlow& taintFlow) {
+    // TaintFox: append taint information.
+    taint_.concat(taintFlow, length());  
+    return append(c);
+  }
   [[nodiscard]] bool append(Latin1Char c) {
     return isLatin1() ? latin1Chars().append(c) : twoByteChars().append(c);
   }
   [[nodiscard]] bool append(char c) { return append(Latin1Char(c)); }
 
   [[nodiscard]] inline bool append(const char16_t* begin, const char16_t* end);
+
+  [[nodiscard]] inline bool append(const char16_t* begin, const char16_t* end, const StringTaint& taint);
 
   [[nodiscard]] bool append(const char16_t* chars, size_t len) {
     return append(chars, chars + len);
@@ -270,6 +277,14 @@ class StringBuffer : public TaintableString {
     return isLatin1() ? latin1Chars().append(begin, end)
                       : twoByteChars().append(begin, end);
   }
+
+  [[nodiscard]] bool append(const Latin1Char* begin, const Latin1Char* end, const StringTaint& taint) {
+    // TaintFox: append taint information.
+    appendTaintAt(length(), taint);
+    return isLatin1() ? latin1Chars().append(begin, end)
+                      : twoByteChars().append(begin, end);
+  }
+
   [[nodiscard]] bool append(const Latin1Char* chars, size_t len) {
     return append(chars, chars + len);
   }
@@ -419,6 +434,11 @@ inline bool StringBuffer::append(const char16_t* begin, const char16_t* end) {
     }
   }
   return twoByteChars().append(begin, end);
+}
+
+inline bool StringBuffer::append(const char16_t* begin, const char16_t* end, const StringTaint& taint) {
+  appendTaintAt(length(), taint);
+  return append(begin, end);
 }
 
 inline bool StringBuffer::append(JSLinearString* str) {

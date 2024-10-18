@@ -1,17 +1,7 @@
 /**
- * Copyright 2018 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2018 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import type {ServerResponse} from 'http';
@@ -189,6 +179,29 @@ describe('Target', function () {
       })
     ).toBe('[object ServiceWorkerGlobalScope]');
   });
+
+  it('should close a service worker', async () => {
+    const {page, server, context} = await getTestState();
+
+    await page.goto(server.PREFIX + '/serviceworkers/empty/sw.html');
+
+    const target = await context.waitForTarget(
+      target => {
+        return target.type() === 'service_worker';
+      },
+      {timeout: 3000}
+    );
+    const worker = (await target.worker())!;
+
+    const onceDestroyed = new Promise(resolve => {
+      context.once('targetdestroyed', event => {
+        resolve(event);
+      });
+    });
+    await worker.close();
+    expect(await onceDestroyed).toBe(target);
+  });
+
   it('should create a worker from a shared worker', async () => {
     const {page, server, context} = await getTestState();
 
@@ -209,6 +222,31 @@ describe('Target', function () {
       })
     ).toBe('[object SharedWorkerGlobalScope]');
   });
+
+  it('should close a shared worker', async () => {
+    const {page, server, context} = await getTestState();
+
+    await page.goto(server.EMPTY_PAGE);
+    await page.evaluate(() => {
+      new SharedWorker('data:text/javascript,console.log("hi2")');
+    });
+    const target = await context.waitForTarget(
+      target => {
+        return target.type() === 'shared_worker';
+      },
+      {timeout: 3000}
+    );
+    const worker = (await target.worker())!;
+
+    const onceDestroyed = new Promise(resolve => {
+      context.once('targetdestroyed', event => {
+        resolve(event);
+      });
+    });
+    await worker.close();
+    expect(await onceDestroyed).toBe(target);
+  });
+
   it('should report when a target url changes', async () => {
     const {page, server, context} = await getTestState();
 
@@ -295,7 +333,7 @@ describe('Target', function () {
 
   describe('Browser.waitForTarget', () => {
     it('should wait for a target', async () => {
-      const {browser, server} = await getTestState();
+      const {browser, server, context} = await getTestState();
 
       let resolved = false;
       const targetPromise = browser.waitForTarget(
@@ -316,7 +354,7 @@ describe('Target', function () {
             throw error;
           }
         });
-      const page = await browser.newPage();
+      const page = await context.newPage();
       expect(resolved).toBe(false);
       await page.goto(server.EMPTY_PAGE);
       try {

@@ -47,7 +47,7 @@ PERFHERDER_BASE_URL = (
     "https://treeherder.mozilla.org/perfherder/"
     "compare?originalProject=try&originalRevision=%s&newProject=try&newRevision=%s"
 )
-PERFCOMPARE_BASE_URL = "https://beta--mozilla-perfcompare.netlify.app/#/compare-results?revs=%s,%s&repos=try,try"
+PERFCOMPARE_BASE_URL = "https://beta--mozilla-perfcompare.netlify.app/compare-results?baseRev=%s&newRev=%s&baseRepo=try&newRepo=try"
 TREEHERDER_TRY_BASE_URL = "https://treeherder.mozilla.org/jobs?repo=try&revision=%s"
 TREEHERDER_ALERT_TASKS_URL = (
     "https://treeherder.mozilla.org/api/performance/alertsummary-tasks/?id=%s"
@@ -334,6 +334,15 @@ class PerfParser(CompareParser):
                 "action": "store_true",
                 "default": False,
                 "help": "Use PerfCompare Beta instead of CompareView.",
+            },
+        ],
+        [
+            ["--non-pgo"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Use opt/non-pgo builds instead of shippable/pgo builds. "
+                "Setting this flag will result in faster try runs.",
             },
         ],
     ]
@@ -715,7 +724,7 @@ class PerfParser(CompareParser):
                         PerfParser.variants[variant.value]["query"]
                     )
 
-    def _build_categories(category, category_info, category_matrix):
+    def _build_categories(category, category_info, category_matrix, **kwargs):
         """Builds the categories to display."""
         categories = {}
 
@@ -744,6 +753,16 @@ class PerfParser(CompareParser):
                     )
                     for suite in category_info["suites"]
                 }
+
+                if kwargs.get("non_pgo"):
+                    for key, query_list in platform_queries.items():
+                        updated_query_list = []
+                        for query in query_list:
+                            updated_query = query.replace(
+                                "'shippable", "!shippable !nightlyasrelease"
+                            )
+                            updated_query_list.append(updated_query)
+                        platform_queries[key] = updated_query_list
 
                 platform_category_name = f"{category} {platform.value}"
                 platform_category_info = {
@@ -931,7 +950,7 @@ class PerfParser(CompareParser):
         for category, category_matrix in category_decision_matrix.items():
             categories.update(
                 PerfParser._build_categories(
-                    category, PerfParser.categories[category], category_matrix
+                    category, PerfParser.categories[category], category_matrix, **kwargs
                 )
             )
 
@@ -1055,29 +1074,30 @@ class PerfParser(CompareParser):
         return any("android" in task for task in selected_tasks)
 
     def setup_try_config(
-        try_config, extra_args, selected_tasks, base_revision_treeherder=None
+        try_config_params, extra_args, selected_tasks, base_revision_treeherder=None
     ):
         """
         Setup the try config for a push.
 
-        :param try_config dict: The current try config to be modified.
+        :param try_config_params dict: The current try config to be modified.
         :param extra_args list: A list of extra options to add to the tasks being run.
         :param selected_tasks list: List of tasks selected. Used for determining if android
             tasks are selected to disable artifact mode.
         :param base_revision_treeherder str: The base revision of treeherder to save
         :return: None
         """
-        if try_config is None:
-            try_config = {}
+        if try_config_params is None:
+            try_config_params = {}
+
+        try_config = try_config_params.setdefault("try_task_config", {})
+        env = try_config.setdefault("env", {})
         if extra_args:
             args = " ".join(extra_args)
-            try_config.setdefault("env", {})["PERF_FLAGS"] = args
+            env["PERF_FLAGS"] = args
         if base_revision_treeherder:
             # Reset updated since we no longer need to worry
             # about failing while we're on a base commit
-            try_config.setdefault("env", {})[
-                "PERF_BASE_REVISION"
-            ] = base_revision_treeherder
+            env["PERF_BASE_REVISION"] = base_revision_treeherder
         if PerfParser.found_android_tasks(selected_tasks) and try_config.get(
             "use-artifact-builds", False
         ):
@@ -1089,7 +1109,7 @@ class PerfParser(CompareParser):
         selected_tasks,
         selected_categories,
         queries,
-        try_config,
+        try_config_params,
         dry_run,
         single_run,
         extra_args,
@@ -1153,10 +1173,10 @@ class PerfParser(CompareParser):
                 # Setup the base revision, and try config. This lets us change the options
                 # we run the tests with through the PERF_FLAGS environment variable.
                 base_extra_args = list(extra_args)
-                base_try_config = copy.deepcopy(try_config)
+                base_try_config_params = copy.deepcopy(try_config_params)
                 comparator_obj.setup_base_revision(base_extra_args)
                 PerfParser.setup_try_config(
-                    base_try_config, base_extra_args, selected_tasks
+                    base_try_config_params, base_extra_args, selected_tasks
                 )
 
                 with redirect_stdout(log_processor):
@@ -1167,7 +1187,7 @@ class PerfParser(CompareParser):
                         "perf-again",
                         "{msg}".format(msg=msg),
                         try_task_config=generate_try_task_config(
-                            "fuzzy", selected_tasks, base_try_config
+                            "fuzzy", selected_tasks, params=base_try_config_params
                         ),
                         stage_changes=False,
                         dry_run=dry_run,
@@ -1186,7 +1206,7 @@ class PerfParser(CompareParser):
             new_extra_args = list(extra_args)
             comparator_obj.setup_new_revision(new_extra_args)
             PerfParser.setup_try_config(
-                try_config,
+                try_config_params,
                 new_extra_args,
                 selected_tasks,
                 base_revision_treeherder=base_revision_treeherder,
@@ -1198,7 +1218,7 @@ class PerfParser(CompareParser):
                     "{msg}".format(msg=msg),
                     # XXX Figure out if changing `fuzzy` to `perf` will break something
                     try_task_config=generate_try_task_config(
-                        "fuzzy", selected_tasks, try_config
+                        "fuzzy", selected_tasks, params=try_config_params
                     ),
                     stage_changes=False,
                     dry_run=dry_run,
@@ -1218,7 +1238,7 @@ class PerfParser(CompareParser):
         update=False,
         show_all=False,
         parameters=None,
-        try_config=None,
+        try_config_params=None,
         dry_run=False,
         single_run=False,
         query=None,
@@ -1311,7 +1331,7 @@ class PerfParser(CompareParser):
             selected_tasks,
             selected_categories,
             queries,
-            try_config,
+            try_config_params,
             dry_run,
             single_run,
             kwargs.get("extra_args", []),
@@ -1471,8 +1491,12 @@ def run(**kwargs):
     PerfParser.check_cached_revision([])
 
     revisions = PerfParser.run(
-        profile=kwargs.get("try_config", {}).get("gecko-profile", False),
-        rebuild=kwargs.get("try_config", {}).get("rebuild", 1),
+        profile=kwargs.get("try_config_params", {})
+        .get("try_task_config", {})
+        .get("gecko-profile", False),
+        rebuild=kwargs.get("try_config_params", {})
+        .get("try_task_config", {})
+        .get("rebuild", 1),
         **kwargs,
     )
 

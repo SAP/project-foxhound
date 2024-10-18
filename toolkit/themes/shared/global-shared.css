@@ -48,6 +48,11 @@
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
 
+  &:-moz-lwtheme {
+    --toolbar-bgcolor: rgba(255,255,255,.4);
+    --toolbar-color: var(--lwt-text-color, inherit);
+  }
+
   /* This color scheme should match --toolbar-color. However, note that
    * individual toolbars might override this (see ToolbarIconColor and the
    * brighttext attribute). */
@@ -58,25 +63,26 @@
   &[lwt-toolbar="dark"] {
     --toolbar-color-scheme: dark;
   }
-}
 
-:root:-moz-lwtheme {
-  --toolbar-bgcolor: rgba(255,255,255,.4);
-  --toolbar-color: var(--lwt-text-color, inherit);
-}
-
-@media (prefers-contrast) {
-  :root {
+  @media (prefers-contrast) {
     /* Reduce the opacity of disabled toolbar buttons in order to increase
        contrast with the enabled state. */
     --toolbarbutton-disabled-opacity: 0.3;
 
     --panel-separator-color: currentColor;
     --toolbar-field-focus-border-color: var(--focus-outline-color);
+
+    &:not(:-moz-lwtheme) {
+      --panel-disabled-color: GrayText;
+    }
   }
 
-  :root:not(:-moz-lwtheme) {
-    --panel-disabled-color: GrayText;
+  background-color: -moz-Dialog;
+  color: -moz-DialogText;
+  font: message-box;
+
+  &[dialogroot] {
+    font: menu;
   }
 }
 
@@ -123,10 +129,72 @@ html|input {
   min-width: 0;
 }
 
+html|input {
+  margin: 2px 4px;
+}
+
 html|button,
 html|input,
+html|select,
 html|textarea {
   font: inherit;
+}
+
+html|input:where(:not([type=radio i], [type=checkbox i], [type=range i])),
+html|textarea {
+  appearance: none;
+  padding: var(--space-small);
+  border: 1px solid var(--input-border-color, ThreeDShadow);
+  border-radius: var(--border-radius-small);
+  margin: 0;
+  background-color: var(--input-bgcolor, Field);
+  color: var(--input-color, FieldText);
+
+  &:where(:user-invalid) {
+    border-color: var(--color-error-outline);
+  }
+
+  &:where(:focus-visible) {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+}
+
+/* adapted from toolkit/themes/shared/menulist-shared.css */
+html|select:where(:not([size], [multiple])) {
+  appearance: none;
+  padding: 6px 16px;
+  padding-inline-end: 32px; /* 2 * 10px padding + image's 12px width */
+  margin: 5px 2px 3px;
+  border: none;
+  border-radius: var(--border-radius-small);
+
+  font-weight: var(--font-weight-bold);
+
+  color: var(--button-color, ButtonText);
+  background-color: var(--button-bgcolor, ButtonFace);
+  background-image: url(chrome://global/skin/icons/arrow-down-12.svg);
+  background-position: right 10px center;
+  background-repeat: no-repeat;
+  -moz-context-properties: fill;
+  fill: currentColor;
+
+  &:-moz-locale-dir(rtl) {
+    background-position-x: left 10px;
+  }
+
+  &:hover {
+    background-color: var(--button-hover-bgcolor, color-mix(in srgb, currentColor 10%, ButtonFace));
+  }
+
+  &:hover:active {
+    background-color: var(--button-active-bgcolor, color-mix(in srgb, currentColor 20%, ButtonFace));
+  }
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-offset);
+  }
 }
 
 .header {
@@ -221,7 +289,7 @@ button.text-link .button-text {
 .footer-button {
   appearance: none;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--border-radius-small);
   color: var(--button-color, inherit);
   background-color: var(--button-bgcolor, color-mix(in srgb, currentColor 13%, transparent));
   padding: .45em 1em;
@@ -292,7 +360,7 @@ button.text-link .button-text {
   --panel-padding: 0;
   --panel-background: rgba(249,249,250,.8) no-repeat center var(--autoscroll-background-image);
   --panel-shadow-margin: 4px;
-  /* Set pointer-events: none; so that mousemove events can be handled by AutoScrollChild.jsm. */
+  /* Set pointer-events: none; so that mousemove events can be handled by AutoScrollChild.sys.mjs. */
   pointer-events: none;
 }
 

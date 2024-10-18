@@ -6,7 +6,7 @@ use super::error_reporter::ErrorReporter;
 use super::stylesheet_loader::{AsyncStylesheetParser, StylesheetLoader};
 use bincode::{deserialize, serialize};
 use cssparser::ToCss as ParserToCss;
-use cssparser::{Parser, ParserInput, SourceLocation, UnicodeRange};
+use cssparser::{BasicParseError, ParseError as CssParseError, Parser, ParserInput, SourceLocation, UnicodeRange, Token};
 use dom::{DocumentState, ElementState};
 use malloc_size_of::MallocSizeOfOps;
 use nsstring::{nsCString, nsString};
@@ -14,7 +14,6 @@ use selectors::matching::{ElementSelectorFlags, MatchingForInvalidation, Selecto
 use selectors::{Element, OpaqueElement};
 use servo_arc::{Arc, ArcBorrow};
 use smallvec::SmallVec;
-use style::custom_properties::DeferFontRelativeCustomPropertyResolution;
 use std::collections::BTreeSet;
 use std::fmt::Write;
 use std::iter;
@@ -26,6 +25,7 @@ use style::computed_value_flags::ComputedValueFlags;
 use style::context::ThreadLocalStyleContext;
 use style::context::{CascadeInputs, QuirksMode, SharedStyleContext, StyleContext};
 use style::counter_style;
+use style::custom_properties::DeferFontRelativeCustomPropertyResolution;
 use style::data::{self, ElementStyles};
 use style::dom::{ShowSubtreeData, TDocument, TElement, TNode};
 use style::driver;
@@ -119,7 +119,7 @@ use style::properties::{
     PropertyDeclarationBlock, PropertyDeclarationId, PropertyDeclarationIdSet, PropertyId,
     ShorthandId, SourcePropertyDeclaration, StyleBuilder,
 };
-use style::properties_and_values::registry::PropertyRegistration;
+use style::properties_and_values::registry::{PropertyRegistration, PropertyRegistrationData};
 use style::properties_and_values::rule::Inherits as PropertyInherits;
 use style::rule_cache::RuleCacheConditions;
 use style::rule_tree::StrongRuleNode;
@@ -203,6 +203,9 @@ pub unsafe extern "C" fn Servo_Initialize(
 
     // Pretend that we're a Servo Layout thread, to make some assertions happy.
     thread_state::initialize(thread_state::ThreadState::LAYOUT);
+
+    debug_assert!(is_main_thread());
+    lazy_static::initialize(&STYLE_THREAD_POOL);
 
     // Perform some debug-only runtime assertions.
     origin_flags::assert_flags_match();
@@ -1203,11 +1206,25 @@ pub struct ShouldTransitionResult {
     old_transition_value_matches: bool,
 }
 
+#[inline]
+fn is_transitionable(prop: PropertyDeclarationId, behavior: computed::TransitionBehavior) -> bool {
+    if !prop.is_animatable() {
+        return false;
+    }
+
+    match behavior {
+        computed::TransitionBehavior::Normal => !prop.is_discrete_animatable(),
+        // If transition-behavior is allow-discrete, transitionable is the same as animatable.
+        computed::TransitionBehavior::AllowDiscrete => true,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     old: &ComputedValues,
     new: &ComputedValues,
     prop: &structs::AnimatedPropertyID,
+    behavior: computed::TransitionBehavior,
     old_transition_value: Option<&AnimationValue>,
     start: &mut structs::RefPtr<AnimationValue>,
     end: &mut structs::RefPtr<AnimationValue>,
@@ -1216,9 +1233,7 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
         return Default::default();
     };
     let prop = prop.as_borrowed();
-    if prop.is_discrete_animatable() &&
-        prop != PropertyDeclarationId::Longhand(LonghandId::Visibility)
-    {
+    if !is_transitionable(prop, behavior) {
         return Default::default();
     }
 
@@ -1238,7 +1253,10 @@ pub extern "C" fn Servo_ComputedValues_ShouldTransition(
     let Some(old_value) = AnimationValue::from_computed_values(prop, old) else {
         return Default::default();
     };
-    if old_value == new_value || !old_value.interpolable_with(&new_value) {
+    if old_value == new_value
+        || (matches!(behavior, computed::TransitionBehavior::Normal)
+            && !old_value.interpolable_with(&new_value))
+    {
         return Default::default();
     }
 
@@ -1260,10 +1278,9 @@ pub extern "C" fn Servo_ComputedValues_TransitionValueMatches(
     let Some(prop) = OwnedPropertyDeclarationId::from_gecko_animated_property_id(prop) else {
         return false;
     };
+    // Note: the running transitions should be transitionable, so it is always allow-discrete.
     let prop = prop.as_borrowed();
-    if prop.is_discrete_animatable() &&
-        prop != PropertyDeclarationId::Longhand(LonghandId::Visibility)
-    {
+    if !is_transitionable(prop, computed::TransitionBehavior::AllowDiscrete) {
         return false;
     }
     let Some(value) = AnimationValue::from_computed_values(prop, style) else {
@@ -1364,14 +1381,10 @@ pub unsafe extern "C" fn Servo_Property_IsInherited(
     };
     let longhand_id = match prop_id {
         PropertyId::Custom(property_name) => {
-            // let's check if the custom property is registered so we can check the
-            // property definition `inherits` value.
             let stylist = &per_doc_data.borrow().stylist;
-            if let Some(registration) = stylist.get_custom_property_registration(&property_name) {
-                return registration.inherits();
-            }
-            // unregistered custom properties always inherits
-            return true;
+            return stylist
+                .get_custom_property_registration(&property_name)
+                .inherits();
         },
         PropertyId::NonCustom(id) => match id.longhand_or_shorthand() {
             Ok(lh) => lh,
@@ -1421,11 +1434,6 @@ pub unsafe extern "C" fn Servo_Property_GetCSSValuesForProperty(
 #[no_mangle]
 pub extern "C" fn Servo_Property_IsAnimatable(prop: &structs::AnimatedPropertyID) -> bool {
     PropertyId::from_gecko_animated_property_id(prop).map_or(false, |p| p.is_animatable())
-}
-
-#[no_mangle]
-pub extern "C" fn Servo_Property_IsTransitionable(prop: &structs::AnimatedPropertyID) -> bool {
-    PropertyId::from_gecko_animated_property_id(prop).map_or(false, |p| p.is_transitionable())
 }
 
 #[no_mangle]
@@ -2972,7 +2980,7 @@ pub extern "C" fn Servo_PropertyRule_GetName(rule: &PropertyRule, result: &mut n
 
 #[no_mangle]
 pub extern "C" fn Servo_PropertyRule_GetSyntax(rule: &PropertyRule, result: &mut nsACString) {
-    if let Some(syntax) = rule.syntax.specified_string() {
+    if let Some(syntax) = rule.data.syntax.specified_string() {
         result.assign(syntax);
     } else {
         debug_assert!(false, "Rule without specified syntax?");
@@ -2989,10 +2997,11 @@ pub extern "C" fn Servo_PropertyRule_GetInitialValue(
     rule: &PropertyRule,
     result: &mut nsACString,
 ) -> bool {
-    rule.initial_value
+    rule.data
+        .initial_value
         .to_css(&mut CssWriter::new(result))
         .unwrap();
-    rule.initial_value.is_some()
+    rule.data.initial_value.is_some()
 }
 
 #[no_mangle]
@@ -5315,7 +5324,8 @@ pub extern "C" fn Servo_DeclarationBlock_SetKeywordValue(
         ListStyleType => Box::new(longhands::list_style_type::SpecifiedValue::from_gecko_keyword(value)),
         MathStyle => longhands::math_style::SpecifiedValue::from_gecko_keyword(value),
         MozMathVariant => longhands::_moz_math_variant::SpecifiedValue::from_gecko_keyword(value),
-        WhiteSpace => longhands::white_space::SpecifiedValue::from_gecko_keyword(value),
+        WhiteSpaceCollapse => get_from_computed::<longhands::white_space_collapse::SpecifiedValue>(value),
+        TextWrapMode => get_from_computed::<longhands::text_wrap_mode::SpecifiedValue>(value),
         CaptionSide => get_from_computed::<CaptionSide>(value),
         BorderTopStyle => get_from_computed::<BorderStyle>(value),
         BorderRightStyle => get_from_computed::<BorderStyle>(value),
@@ -6164,9 +6174,9 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
     raw_data: &PerDocumentStyleData,
     computed_keyframes: &mut nsTArray<structs::ComputedKeyframeValues>,
 ) {
-    use style::properties::PropertyDeclaration;
-    use style::custom_properties::CustomPropertiesBuilder;
     use style::applicable_declarations::CascadePriority;
+    use style::custom_properties::CustomPropertiesBuilder;
+    use style::properties::PropertyDeclaration;
     let data = raw_data.borrow();
     let element = GeckoElement(element);
     let pseudo = PseudoElement::from_pseudo_type(pseudo_type, None);
@@ -6205,8 +6215,8 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
         let mut seen = PropertyDeclarationIdSet::default();
         let mut iter = PrioritizedPropertyIter::new(&keyframe.mPropertyValues);
 
-        // FIXME: This is pretty much a hack. Instead, the AnimatedValue should be better
-        // integrated in the cascade. This would allow us to fix revert() too.
+        // FIXME (bug 1883255): This is pretty much a hack. Instead, the AnimatedValue should be
+        // better integrated in the cascade.
         {
             let mut builder = CustomPropertiesBuilder::new_with_properties(
                 &data.stylist,
@@ -6215,10 +6225,11 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
             );
             let priority = CascadePriority::same_tree_author_normal_at_root_layer();
             for property in &mut iter {
-                let is_custom = match PropertyId::from_gecko_animated_property_id(&property.mProperty) {
-                    Some(PropertyId::Custom(..)) => true,
-                    _ => false,
-                };
+                let is_custom =
+                    match PropertyId::from_gecko_animated_property_id(&property.mProperty) {
+                        Some(PropertyId::Custom(..)) => true,
+                        _ => false,
+                    };
                 if !is_custom {
                     break; // Custom props are guaranteed to sort earlier.
                 }
@@ -6234,7 +6245,7 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
                 }
             }
             iter.reset();
-            let _deferred= builder.build(DeferFontRelativeCustomPropertyResolution::No);
+            let _deferred = builder.build(DeferFontRelativeCustomPropertyResolution::No);
             debug_assert!(
                 _deferred.is_none(),
                 "Custom property processing deferred despite specifying otherwise?"
@@ -6273,7 +6284,8 @@ pub extern "C" fn Servo_GetComputedKeyframeValues(
                         ptr::write(
                             &mut animation_values[property_index],
                             structs::PropertyStyleAnimationValuePair {
-                                mProperty: property.to_gecko_animated_property_id(/* owned = */ true),
+                                mProperty: property
+                                    .to_gecko_animated_property_id(/* owned = */ true),
                                 mValue: structs::AnimationValue {
                                     mServo: value.map_or(structs::RefPtr::null(), |v| {
                                         structs::RefPtr::from_arc(Arc::new(v))
@@ -6339,10 +6351,7 @@ pub extern "C" fn Servo_GetAnimationValues(
     let guard = global_style_data.shared_lock.read();
 
     let guard = declarations.read_with(&guard);
-    let iter = guard.to_animation_value_iter(
-        &mut context,
-        &default_values,
-    );
+    let iter = guard.to_animation_value_iter(&mut context, &default_values);
     animation_values.extend(iter.map(|v| structs::RefPtr::from_arc(Arc::new(v))));
 }
 
@@ -6393,11 +6402,7 @@ pub extern "C" fn Servo_AnimationValue_Compute(
         .next()
     {
         Some((decl, imp)) if imp == Importance::Normal => {
-            let animation = AnimationValue::from_declaration(
-                decl,
-                &mut context,
-                default_values,
-            );
+            let animation = AnimationValue::from_declaration(decl, &mut context, default_values);
             animation.map_or(Strong::null(), |value| Arc::new(value).into())
         },
         _ => Strong::null(),
@@ -7275,8 +7280,10 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForInsertion(
     let data = raw_data.borrow();
     let quirks_mode: QuirksMode = data.stylist.quirks_mode();
 
-    let inherited =
-        inherit_relative_selector_search_direction(element.parent_element(), element.prev_sibling_element());
+    let inherited = inherit_relative_selector_search_direction(
+        element.parent_element(),
+        element.prev_sibling_element(),
+    );
     // Technically, we're not handling breakouts, where the anchor is a (later-sibling) descendant.
     // For descendant case, we're ok since it's a descendant of an element yet to be styled.
     // For later-sibling descendant, `HAS_SLOW_SELECTOR_LATER_SIBLINGS` is set anyway.
@@ -7400,9 +7407,11 @@ fn get_siblings_of_element<'e>(
 ) -> (Option<GeckoElement<'e>>, Option<GeckoElement<'e>>) {
     let node = match following_node {
         Some(n) => n,
-        None => return match element.as_node().parent_node() {
-            Some(p) => (p.last_child_element(), None),
-            None => (None, None),
+        None => {
+            return match element.as_node().parent_node() {
+                Some(p) => (p.last_child_element(), None),
+                None => (None, None),
+            }
         },
     };
 
@@ -7424,12 +7433,12 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(
         return;
     }
     let following_node = following_node.map(GeckoNode);
-    let (prev_sibling, next_sibling) =
-        get_siblings_of_element(element, &following_node);
+    let (prev_sibling, next_sibling) = get_siblings_of_element(element, &following_node);
     let data = raw_data.borrow();
     let quirks_mode: QuirksMode = data.stylist.quirks_mode();
 
-    let inherited = inherit_relative_selector_search_direction(element.parent_element(), prev_sibling);
+    let inherited =
+        inherit_relative_selector_search_direction(element.parent_element(), prev_sibling);
     if inherited.is_empty() {
         return;
     }
@@ -7581,9 +7590,8 @@ pub unsafe extern "C" fn Servo_GetCustomPropertyValue(
 ) -> bool {
     let doc_data = raw_style_set.borrow();
     let name = Atom::from(name.as_str_unchecked());
-    let stylist = &doc_data.stylist;
-    let custom_registration = stylist.get_custom_property_registration(&name);
-    let computed_value = if custom_registration.map_or(true, |r| r.inherits()) {
+    let custom_registration = doc_data.stylist.get_custom_property_registration(&name);
+    let computed_value = if custom_registration.inherits() {
         computed_values.custom_properties.inherited.get(&name)
     } else {
         computed_values.custom_properties.non_inherited.get(&name)
@@ -7957,6 +7965,74 @@ pub unsafe extern "C" fn Servo_ComputeColor(
 
     let rgba = computed.resolve_to_absolute(&current_color);
     *result_color = style::gecko::values::convert_absolute_color_to_nscolor(&rgba);
+    true
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Servo_ColorTo(
+    from_color: &nsACString,
+    to_color_space: &nsACString,
+    result_color: &mut nsACString,
+    result_components: &mut nsTArray<f32>,
+    result_adjusted: &mut bool,
+    loader: *mut Loader,
+) -> bool {
+    // Figure out the color space.
+    let mut input = ParserInput::new(to_color_space.as_str_unchecked());
+    let mut input = Parser::new(&mut input);
+    let to_color_space = match ColorSpace::parse(&mut input) {
+        Ok(color_space) => color_space,
+        Err(_) => {
+            // Can't parse the color space? Fail the conversion.
+            return false;
+        },
+    };
+
+    let mut input = ParserInput::new(from_color.as_str_unchecked());
+    let mut input = Parser::new(&mut input);
+
+    let reporter = loader.as_mut().and_then(|loader| {
+        // Make an ErrorReporter that will report errors as being "from DOM".
+        ErrorReporter::new(ptr::null_mut(), loader, ptr::null_mut())
+    });
+
+    let context = ParserContext::new(
+        Origin::Author,
+        dummy_url_data(),
+        Some(CssRuleType::Style),
+        ParsingMode::DEFAULT,
+        QuirksMode::NoQuirks,
+        /* namespaces = */ Default::default(),
+        reporter.as_ref().map(|e| e as &dyn ParseErrorReporter),
+        None,
+    );
+
+    let specified = match specified::Color::parse(&context, &mut input) {
+        Ok(color) => color,
+        Err(_) => return false,
+    };
+
+    let color = match specified {
+        specified::Color::Absolute(ref absolute) => &absolute.color,
+        _ => {
+            // Can't do anything with a non-absolute color from here, so we
+            // fail the conversion.
+            return false;
+        },
+    };
+
+    let color = color.to_color_space(to_color_space);
+    let mut s = String::new();
+    color
+        .write_author_preferred_value(&mut CssWriter::new(&mut s))
+        .unwrap();
+    result_color.assign(&s);
+
+    result_components.assign_from_iter_pod(color.raw_components().iter().copied());
+
+    // For now we don't do gamut mapping, so always false.
+    *result_adjusted = false;
+
     true
 }
 
@@ -8814,13 +8890,15 @@ pub extern "C" fn Servo_RegisterCustomProperty(
         .custom_property_script_registry_mut()
         .register(PropertyRegistration {
             name: PropertyRuleName(name),
-            syntax,
-            inherits: if inherits {
-                PropertyInherits::True
-            } else {
-                PropertyInherits::False
+            data: PropertyRegistrationData {
+                syntax,
+                inherits: if inherits {
+                    PropertyInherits::True
+                } else {
+                    PropertyInherits::False
+                },
+                initial_value,
             },
-            initial_value,
             url_data: url_data.clone(),
             source_location: SourceLocation { line: 0, column: 0 },
         });
@@ -8850,23 +8928,23 @@ impl PropDef {
     /// Creates a PropDef from a name and a PropertyRegistration.
     pub fn new(name: Atom, property_registration: &PropertyRegistration, from_js: bool) -> Self {
         let mut syntax = nsCString::new();
-        if let Some(spec) = property_registration.syntax.specified_string() {
+        if let Some(spec) = property_registration.data.syntax.specified_string() {
             syntax.assign(spec);
         } else {
             // FIXME: Descriptor::to_css should behave consistently (probably this shouldn't use
             // the ToCss trait).
             property_registration
+                .data
                 .syntax
                 .to_css(&mut CssWriter::new(&mut syntax))
                 .unwrap();
         };
-        let initial_value = property_registration.initial_value.to_css_nscstring();
-
+        let initial_value = property_registration.data.initial_value.to_css_nscstring();
         PropDef {
             name,
             syntax,
-            inherits: property_registration.inherits(),
-            has_initial_value: property_registration.initial_value.is_some(),
+            inherits: property_registration.data.inherits(),
+            has_initial_value: property_registration.data.initial_value.is_some(),
             initial_value,
             from_js,
         }
@@ -8925,4 +9003,59 @@ pub extern "C" fn Servo_GetSelectorWarnings(
             }
         }
     });
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_GetRuleBodyTextOffsets(
+    initial_text: &nsACString,
+    result_start_offset: &mut u32,
+    result_end_offset: &mut u32,
+) -> bool {
+    let css_text = unsafe { initial_text.as_str_unchecked() };
+    let mut input = ParserInput::new(&css_text);
+    let mut input = Parser::new(&mut input);
+
+    let mut start_offset = 0;
+    let mut found_start = false;
+
+    // Search forward for the opening brace.
+    while let Ok(token) = input.next() {
+        match *token {
+            Token::CurlyBracketBlock => {
+                start_offset = input.position().byte_index();
+                found_start = true;
+                break;
+            },
+            _ => {}
+        }
+
+        if token.is_parse_error() {
+            return false;
+        }
+    }
+
+
+    if !found_start {
+        return false;
+    }
+
+    let token_start = input.position();
+    // Parse the nested block to move the parser to the end of the block
+    let _ = input.parse_nested_block(
+        |_i| -> Result<(), CssParseError<'_, BasicParseError>> {
+            Ok(())
+        }
+    );
+    let mut end_offset = input.position().byte_index();
+    // We're not guaranteed to have a closing bracket, but when we do, we need to move
+    // the end offset before it.
+    let token_slice = input.slice_from(token_start);
+    if token_slice.ends_with("}") {
+        end_offset = end_offset - 1;
+    }
+
+    *result_start_offset = start_offset as u32;
+    *result_end_offset = end_offset as u32;
+
+    return true;
 }

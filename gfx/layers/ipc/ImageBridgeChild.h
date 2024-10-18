@@ -166,6 +166,9 @@ class ImageBridgeChild final : public PImageBridgeChild,
 
   base::ProcessId GetParentPid() const override { return OtherPid(); }
 
+  void SyncWithCompositor(
+      const Maybe<uint64_t>& aWindowID = Nothing()) override;
+
   PTextureChild* AllocPTextureChild(
       const SurfaceDescriptor& aSharedData, ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
@@ -200,7 +203,8 @@ class ImageBridgeChild final : public PImageBridgeChild,
   void UpdateCompositable(const RefPtr<ImageContainer> aContainer,
                           const RemoteTextureId aTextureId,
                           const RemoteTextureOwnerId aOwnerId,
-                          const gfx::IntSize aSize, const TextureFlags aFlags);
+                          const gfx::IntSize aSize, const TextureFlags aFlags,
+                          const RefPtr<FwdTransactionTracker> aTracker);
 
   /**
    * Flush all Images sent to CompositableHost.
@@ -251,13 +255,8 @@ class ImageBridgeChild final : public PImageBridgeChild,
   void UseRemoteTexture(CompositableClient* aCompositable,
                         const RemoteTextureId aTextureId,
                         const RemoteTextureOwnerId aOwnerId,
-                        const gfx::IntSize aSize,
-                        const TextureFlags aFlags) override;
-
-  void EnableRemoteTexturePushCallback(CompositableClient* aCompositable,
-                                       const RemoteTextureOwnerId aOwnerId,
-                                       const gfx::IntSize aSize,
-                                       const TextureFlags aFlags) override;
+                        const gfx::IntSize aSize, const TextureFlags aFlags,
+                        const RefPtr<FwdTransactionTracker>& aTracker) override;
 
   void ReleaseCompositable(const CompositableHandle& aHandle) override;
 

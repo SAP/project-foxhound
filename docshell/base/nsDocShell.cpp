@@ -1779,20 +1779,6 @@ nsDocShell::GetHasTrackingContentBlocked(Promise** aPromise) {
 }
 
 NS_IMETHODIMP
-nsDocShell::GetAllowPlugins(bool* aAllowPlugins) {
-  NS_ENSURE_ARG_POINTER(aAllowPlugins);
-
-  *aAllowPlugins = mBrowsingContext->GetAllowPlugins();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetAllowPlugins(bool aAllowPlugins) {
-  // XXX should enable or disable a plugin host
-  return mBrowsingContext->SetAllowPlugins(aAllowPlugins);
-}
-
-NS_IMETHODIMP
 nsDocShell::GetCssErrorReportingEnabled(bool* aEnabled) {
   MOZ_ASSERT(aEnabled);
   *aEnabled = mCSSErrorReportingEnabled;
@@ -5680,7 +5666,7 @@ nsDocShell::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
     mBusyFlags = (BusyFlags)(BUSY_FLAGS_BUSY | BUSY_FLAGS_BEFORE_PAGE_LOAD);
 
     if ((aStateFlags & STATE_RESTORING) == 0) {
-      if (StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
+      if (SessionStorePlatformCollection()) {
         if (IsForceReloadType(mLoadType)) {
           if (WindowContext* windowContext =
                   mBrowsingContext->GetCurrentWindowContext()) {
@@ -6280,8 +6266,8 @@ nsresult nsDocShell::EndPageLoad(nsIWebProgress* aProgress,
     TimeStamp channelCreationTime;
     rv = timingChannel->GetChannelCreation(&channelCreationTime);
     if (NS_SUCCEEDED(rv) && !channelCreationTime.IsNull()) {
-      Telemetry::AccumulateTimeDelta(Telemetry::TOTAL_CONTENT_PAGE_LOAD_TIME,
-                                     channelCreationTime);
+      glean::performance_page::total_content_page_load.AccumulateRawDuration(
+          TimeStamp::Now() - channelCreationTime);
     }
   }
 
@@ -6407,7 +6393,7 @@ nsresult nsDocShell::EndPageLoad(nsIWebProgress* aProgress,
     // incorrectly overrides session store data from the following load.
     return NS_OK;
   }
-  if (StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
+  if (SessionStorePlatformCollection()) {
     if (WindowContext* windowContext =
             mBrowsingContext->GetCurrentWindowContext()) {
       using Change = SessionStoreChangeListener::Change;
@@ -6488,6 +6474,9 @@ nsresult nsDocShell::CreateAboutBlankDocumentViewer(
   RefPtr<Document> blankDoc;
   nsCOMPtr<nsIDocumentViewer> viewer;
   nsresult rv = NS_ERROR_FAILURE;
+
+  PROFILER_MARKER_UNTYPED("CreateAboutBlankDocumentViewer", DOM,
+                          MarkerStack::Capture());
 
   MOZ_ASSERT_IF(aActor, aActor->DocumentPrincipal() == aPrincipal);
 
@@ -8814,6 +8803,7 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       newURIPartitionedPrincipalToInherit, newCsp, true, true);
 
   nsCOMPtr<nsIInputStream> postData;
+  nsCOMPtr<nsIReferrerInfo> referrerInfo;
   uint32_t cacheKey = 0;
 
   bool scrollRestorationIsManual = false;
@@ -8822,15 +8812,15 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       /* save current position of scroller(s) (bug 59774) */
       mOSHE->SetScrollPosition(scrollPos.x, scrollPos.y);
       scrollRestorationIsManual = mOSHE->GetScrollRestorationIsManual();
-      // Get the postdata and page ident from the current page, if
-      // the new load is being done via normal means.  Note that
-      // "normal means" can be checked for just by checking for
-      // LOAD_CMD_NORMAL, given the loadType and allowScroll check
-      // above -- it filters out some LOAD_CMD_NORMAL cases that we
-      // wouldn't want here.
+      // Get the postdata, page ident and referrer info from the current page,
+      // if the new load is being done via normal means.  Note that "normal
+      // means" can be checked for just by checking for LOAD_CMD_NORMAL, given
+      // the loadType and allowScroll check above -- it filters out some
+      // LOAD_CMD_NORMAL cases that we wouldn't want here.
       if (aLoadState->LoadType() & LOAD_CMD_NORMAL) {
         postData = mOSHE->GetPostData();
         cacheKey = mOSHE->GetCacheKey();
+        referrerInfo = mOSHE->GetReferrerInfo();
       }
 
       // Link our new SHEntry to the old SHEntry's back/forward
@@ -8908,6 +8898,12 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       if (cacheKey != 0) {
         mOSHE->SetCacheKey(cacheKey);
       }
+
+      // As the document has not changed, the referrer info hasn't changed too,
+      // so we can just copy it over.
+      if (referrerInfo) {
+        mOSHE->SetReferrerInfo(referrerInfo);
+      }
     }
 
     /* Set the title for the SH entry for this target url so that
@@ -8965,14 +8961,15 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
         scrollRestorationIsManual.emplace(
             mActiveEntry->GetScrollRestorationIsManual());
 
-        // Get the postdata and page ident from the current page, if the new
-        // load is being done via normal means.  Note that "normal means" can be
-        // checked for just by checking for LOAD_CMD_NORMAL, given the loadType
-        // and allowScroll check above -- it filters out some LOAD_CMD_NORMAL
-        // cases that we wouldn't want here.
+        // Get the postdata, page ident and referrer info from the current page,
+        // if the new load is being done via normal means.  Note that "normal
+        // means" can be checked for just by checking for LOAD_CMD_NORMAL, given
+        // the loadType and allowScroll check above -- it filters out some
+        // LOAD_CMD_NORMAL cases that we wouldn't want here.
         if (aLoadState->LoadType() & LOAD_CMD_NORMAL) {
           postData = mActiveEntry->GetPostData();
           cacheKey = mActiveEntry->GetCacheKey();
+          referrerInfo = mActiveEntry->GetReferrerInfo();
         }
       }
 
@@ -8998,6 +8995,12 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       // cache first
       if (cacheKey != 0) {
         mActiveEntry->SetCacheKey(cacheKey);
+      }
+
+      // As the document has not changed, the referrer info hasn't changed too,
+      // so we can just copy it over.
+      if (referrerInfo) {
+        mActiveEntry->SetReferrerInfo(referrerInfo);
       }
 
       // Set the title for the SH entry for this target url so that
@@ -10590,7 +10593,8 @@ static nsresult AppendSegmentToString(nsIInputStream* aIn, void* aClosure,
 }
 
 /* static */ uint32_t nsDocShell::ComputeURILoaderFlags(
-    BrowsingContext* aBrowsingContext, uint32_t aLoadType) {
+    BrowsingContext* aBrowsingContext, uint32_t aLoadType,
+    bool aIsDocumentLoad) {
   MOZ_ASSERT(aBrowsingContext);
 
   uint32_t openFlags = 0;
@@ -10598,6 +10602,13 @@ static nsresult AppendSegmentToString(nsIInputStream* aIn, void* aClosure,
     openFlags |= nsIURILoader::IS_CONTENT_PREFERRED;
   }
   if (!aBrowsingContext->GetAllowContentRetargeting()) {
+    openFlags |= nsIURILoader::DONT_RETARGET;
+  }
+
+  // Unless the pref is set, object/embed loads always specify DONT_RETARGET.
+  // See bug 1868001 for details.
+  if (!aIsDocumentLoad &&
+      !StaticPrefs::dom_navigation_object_embed_allow_retargeting()) {
     openFlags |= nsIURILoader::DONT_RETARGET;
   }
 
@@ -10684,7 +10695,6 @@ nsresult nsDocShell::OpenRedirectedChannel(nsDocShellLoadState* aLoadState) {
              ExtContentPolicy::TYPE_SUBDOCUMENT) {
     li->UpdateFrameBrowsingContextID(mBrowsingContext->Id());
   }
-  // TODO: more attributes need to be updated on the LoadInfo (bug 1561706)
 
   // If we did a process switch, then we should have an existing allocated
   // ClientInfo, so we just need to allocate a corresponding ClientSource.
@@ -11377,11 +11387,14 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
     if (mozilla::SessionHistoryInParent()) {
       MOZ_LOG(gSHLog, LogLevel::Debug,
               ("nsDocShell %p UpdateActiveEntry (not replacing)", this));
+
       nsString title(mActiveEntry->GetTitle());
+      nsCOMPtr<nsIReferrerInfo> referrerInfo = mActiveEntry->GetReferrerInfo();
+
       UpdateActiveEntry(false,
                         /* aPreviousScrollPos = */ Some(scrollPos), aNewURI,
                         /* aOriginalURI = */ nullptr,
-                        /* aReferrerInfo = */ nullptr,
+                        /* aReferrerInfo = */ referrerInfo,
                         /* aTriggeringPrincipal = */ aDocument->NodePrincipal(),
                         csp, title, scrollRestorationIsManual, aData,
                         uriWasModified);
@@ -11400,11 +11413,13 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
       // mode from the current entry.
       newSHEntry->SetScrollRestorationIsManual(scrollRestorationIsManual);
 
+      // Set the new SHEntry's title (bug 655273).
       nsString title;
       mOSHE->GetTitle(title);
-
-      // Set the new SHEntry's title (bug 655273).
       newSHEntry->SetTitle(title);
+
+      nsCOMPtr<nsIReferrerInfo> referrerInfo = mOSHE->GetReferrerInfo();
+      newSHEntry->SetReferrerInfo(referrerInfo);
 
       // Link the new SHEntry to the old SHEntry's BFCache entry, since the
       // two entries correspond to the same document.
@@ -11454,6 +11469,8 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
       mOSHE = newSHEntry;
     }
 
+    nsCOMPtr<nsIReferrerInfo> referrerInfo = mOSHE->GetReferrerInfo();
+
     newSHEntry->SetURI(aNewURI);
     newSHEntry->SetOriginalURI(aNewURI);
     // We replaced the URI of the entry, clear the unstripped URI as it
@@ -11464,6 +11481,7 @@ nsresult nsDocShell::UpdateURLAndHistory(Document* aDocument, nsIURI* aNewURI,
     // in our case.  We could also set it to aNewURI, with the same result.
     newSHEntry->SetResultPrincipalURI(nullptr);
     newSHEntry->SetLoadReplace(false);
+    newSHEntry->SetReferrerInfo(referrerInfo);
   }
 
   if (!mozilla::SessionHistoryInParent()) {
@@ -13100,19 +13118,6 @@ bool nsDocShell::ShouldBlockLoadingForBackButton() {
   bool canGoForward = false;
   GetCanGoForward(&canGoForward);
   return canGoForward;
-}
-
-bool nsDocShell::PluginsAllowedInCurrentDoc() {
-  if (!mDocumentViewer) {
-    return false;
-  }
-
-  Document* doc = mDocumentViewer->GetDocument();
-  if (!doc) {
-    return false;
-  }
-
-  return doc->GetAllowPlugins();
 }
 
 //----------------------------------------------------------------------

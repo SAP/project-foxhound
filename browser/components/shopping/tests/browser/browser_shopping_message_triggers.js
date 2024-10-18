@@ -7,12 +7,12 @@ ChromeUtils.defineESModuleGetters(this, {
   ShoppingUtils: "resource:///modules/ShoppingUtils.sys.mjs",
 });
 
-const { ASRouter } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouter.jsm"
+const { ASRouter } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
 
 const { FeatureCalloutMessages } = ChromeUtils.importESModule(
-  "resource://activity-stream/lib/FeatureCalloutMessages.sys.mjs"
+  "resource:///modules/asrouter/FeatureCalloutMessages.sys.mjs"
 );
 
 const OPTED_IN_PREF = "browser.shopping.experience2023.optedIn";

@@ -479,7 +479,8 @@ CoderResult CodeValType(Coder<mode>& coder, CoderArg<mode, ValType> item) {
 }
 
 template <CoderMode mode>
-CoderResult CodeFieldType(Coder<mode>& coder, CoderArg<mode, FieldType> item) {
+CoderResult CodeStorageType(Coder<mode>& coder,
+                            CoderArg<mode, StorageType> item) {
   return CodePackedTypeCode(coder, item->addressOfPacked());
 }
 
@@ -532,7 +533,7 @@ CoderResult CodeFuncType(Coder<mode>& coder, CoderArg<mode, FuncType> item) {
 template <CoderMode mode>
 CoderResult CodeStructField(Coder<mode>& coder,
                             CoderArg<mode, StructField> item) {
-  MOZ_TRY(CodeFieldType(coder, &item->type));
+  MOZ_TRY(CodeStorageType(coder, &item->type));
   MOZ_TRY(CodePod(coder, &item->offset));
   MOZ_TRY(CodePod(coder, &item->isMutable));
   return Ok();
@@ -555,7 +556,7 @@ CoderResult CodeStructType(Coder<mode>& coder,
 template <CoderMode mode>
 CoderResult CodeArrayType(Coder<mode>& coder, CoderArg<mode, ArrayType> item) {
   WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::ArrayType, 16);
-  MOZ_TRY(CodeFieldType(coder, &item->elementType_));
+  MOZ_TRY(CodeStorageType(coder, &item->elementType_));
   MOZ_TRY(CodePod(coder, &item->isMutable_));
   return Ok();
 }
@@ -956,7 +957,7 @@ CoderResult CodeSymbolicLinkArray(
 template <CoderMode mode>
 CoderResult CodeLinkData(Coder<mode>& coder,
                          CoderArg<mode, wasm::LinkData> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 8760);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::LinkData, 8976);
   if constexpr (mode == MODE_ENCODE) {
     MOZ_ASSERT(item->tier == Tier::Serialized);
   }
@@ -1048,7 +1049,7 @@ CoderResult CodeMetadataTier(Coder<mode>& coder,
 template <CoderMode mode>
 CoderResult CodeMetadata(Coder<mode>& coder,
                          CoderArg<mode, wasm::Metadata> item) {
-  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Metadata, 440);
+  WASM_VERIFY_SERIALIZATION_FOR_SIZE(wasm::Metadata, 448);
   if constexpr (mode == MODE_ENCODE) {
     // Serialization doesn't handle asm.js or debug enabled modules
     MOZ_ASSERT(!item->debugEnabled && item->debugFuncTypeIndices.empty());

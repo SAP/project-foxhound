@@ -13,11 +13,10 @@ XPCOMUtils.defineLazyServiceGetters(lazy, {
   WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
 });
 
-XPCOMUtils.defineLazyModuleGetters(lazy, {
-  ASRouter: "resource://activity-stream/lib/ASRouter.jsm",
-});
-
 ChromeUtils.defineESModuleGetters(lazy, {
+  ASRouter:
+    // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+    "resource:///modules/asrouter/ASRouter.sys.mjs",
   PageActions: "resource:///modules/PageActions.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });

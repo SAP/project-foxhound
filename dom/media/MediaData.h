@@ -9,12 +9,14 @@
 #  include "AudioConfig.h"
 #  include "AudioSampleFormat.h"
 #  include "ImageTypes.h"
+#  include "MediaResult.h"
 #  include "SharedBuffer.h"
 #  include "TimeUnits.h"
 #  include "mozilla/CheckedInt.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/PodOperations.h"
 #  include "mozilla/RefPtr.h"
+#  include "mozilla/Result.h"
 #  include "mozilla/Span.h"
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/UniquePtrExtensions.h"
@@ -95,8 +97,16 @@ class AlignedBuffer {
   }
 
   AlignedBuffer& operator=(AlignedBuffer&& aOther) noexcept {
-    this->~AlignedBuffer();
-    new (this) AlignedBuffer(std::move(aOther));
+    if (&aOther == this) {
+      return *this;
+    }
+    mData = aOther.mData;
+    mLength = aOther.mLength;
+    mBuffer = std::move(aOther.mBuffer);
+    mCapacity = aOther.mCapacity;
+    aOther.mData = nullptr;
+    aOther.mLength = 0;
+    aOther.mCapacity = 0;
     return *this;
   }
 
@@ -266,7 +276,7 @@ class InflatableShortBuffer {
     // capacity, and the loop goes backward.
     float* output = reinterpret_cast<float*>(mBuffer.mData);
     for (size_t i = Length(); i--;) {
-      output[i] = AudioSampleToFloat(mBuffer.mData[i]);
+      output[i] = ConvertAudioSample<float>(mBuffer.mData[i]);
     }
     AlignedFloatBuffer rv;
     rv.mBuffer = std::move(mBuffer.mBuffer);
@@ -497,7 +507,7 @@ class VideoData : public MediaData {
 
   // Creates a new VideoData containing a deep copy of aBuffer. May use
   // aContainer to allocate an Image to hold the copied data.
-  static already_AddRefed<VideoData> CreateAndCopyData(
+  static Result<already_AddRefed<VideoData>, MediaResult> CreateAndCopyData(
       const VideoInfo& aInfo, ImageContainer* aContainer, int64_t aOffset,
       const media::TimeUnit& aTime, const media::TimeUnit& aDuration,
       const YCbCrBuffer& aBuffer, bool aKeyframe,
@@ -518,10 +528,11 @@ class VideoData : public MediaData {
 
   // Initialize PlanarYCbCrImage. Only When aCopyData is true,
   // video data is copied to PlanarYCbCrImage.
-  static bool SetVideoDataToImage(PlanarYCbCrImage* aVideoImage,
-                                  const VideoInfo& aInfo,
-                                  const YCbCrBuffer& aBuffer,
-                                  const IntRect& aPicture, bool aCopyData);
+  static MediaResult SetVideoDataToImage(PlanarYCbCrImage* aVideoImage,
+                                         const VideoInfo& aInfo,
+                                         const YCbCrBuffer& aBuffer,
+                                         const IntRect& aPicture,
+                                         bool aCopyData);
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 

@@ -21,8 +21,8 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/GraphicsMessages.h"
-#include "mozilla/gfx/CanvasManagerChild.h"
 #include "mozilla/gfx/CanvasRenderThread.h"
+#include "mozilla/gfx/CanvasShutdownManager.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EnumTypeTraits.h"
@@ -37,6 +37,7 @@
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -78,7 +79,7 @@
 #if defined(XP_WIN)
 #  include "gfxWindowsPlatform.h"
 #  include "mozilla/widget/WinWindowOcclusionTracker.h"
-#elif defined(XP_MACOSX)
+#elif defined(XP_DARWIN)
 #  include "gfxPlatformMac.h"
 #  include "gfxQuartzSurface.h"
 #elif defined(MOZ_WIDGET_GTK)
@@ -288,9 +289,8 @@ void CrashStatsLogForwarder::UpdateCrashReport() {
             << " (t=" << std::get<2>(it) << ") ";
   }
 
-  nsCString reportString(message.str().c_str());
-  nsresult annotated =
-      CrashReporter::AnnotateCrashReport(mCrashCriticalKey, reportString);
+  nsresult annotated = CrashReporter::RecordAnnotationCString(
+      mCrashCriticalKey, message.str().c_str());
 
   if (annotated != NS_OK) {
     printf("Crash Annotation %s: %s",
@@ -408,7 +408,7 @@ void CrashStatsLogForwarder::CrashAction(LogReason aReason) {
 #define GFX_PREF_WORD_CACHE_MAXENTRIES "gfx.font_rendering.wordcache.maxentries"
 
 #define GFX_PREF_GRAPHITE_SHAPING "gfx.font_rendering.graphite.enabled"
-#if defined(XP_MACOSX)
+#if defined(XP_DARWIN)
 #  define GFX_PREF_CORETEXT_SHAPING "gfx.font_rendering.coretext.enabled"
 #endif
 
@@ -785,7 +785,7 @@ bool gfxPlatform::HasVariationFontSupport() {
     // as any thread will set it to the same value.
 #if defined(XP_WIN)
     sHasVariationFontSupport = gfxWindowsPlatform::CheckVariationFontSupport();
-#elif defined(XP_MACOSX)
+#elif defined(XP_DARWIN)
     sHasVariationFontSupport = gfxPlatformMac::CheckVariationFontSupport();
 #elif defined(MOZ_WIDGET_GTK)
     sHasVariationFontSupport = gfxPlatformGtk::CheckVariationFontSupport();
@@ -903,7 +903,7 @@ void gfxPlatform::Init() {
 
 #if defined(XP_WIN)
   gPlatform = new gfxWindowsPlatform;
-#elif defined(XP_MACOSX)
+#elif defined(XP_DARWIN)
   gPlatform = new gfxPlatformMac;
 #elif defined(MOZ_WIDGET_GTK)
   gPlatform = new gfxPlatformGtk;
@@ -1061,58 +1061,65 @@ void gfxPlatform::ReportTelemetry() {
     RefPtr<widget::Screen> primaryScreen = screenManager.GetPrimaryScreen();
     const LayoutDeviceIntRect rect = primaryScreen->GetRect();
 
-    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_COUNT, screenCount);
-    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_HEIGHT,
-                         uint32_t(rect.Height()));
-    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_DISPLAY_PRIMARY_WIDTH,
-                         uint32_t(rect.Width()));
+    mozilla::glean::gfx_display::count.Set(screenCount);
+    mozilla::glean::gfx_display::primary_height.Set(rect.Height());
+    mozilla::glean::gfx_display::primary_width.Set(rect.Width());
   }
 
   nsString adapterDesc;
   gfxInfo->GetAdapterDescription(adapterDesc);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DESCRIPTION,
-                       adapterDesc);
+
+// Android description is constructed in a way that makes it possible to exceed
+// the metric's length limit.
+#if defined(ANDROID)
+  if (!adapterDesc.IsEmpty()) {
+    adapterDesc.Truncate(99);
+  }
+#endif
+
+  mozilla::glean::gfx_adapter_primary::description.Set(
+      NS_ConvertUTF16toUTF8(adapterDesc));
 
   nsString adapterVendorId;
   gfxInfo->GetAdapterVendorID(adapterVendorId);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_VENDOR_ID,
-                       adapterVendorId);
+  mozilla::glean::gfx_adapter_primary::vendor_id.Set(
+      NS_ConvertUTF16toUTF8(adapterVendorId));
 
   nsString adapterDeviceId;
   gfxInfo->GetAdapterDeviceID(adapterDeviceId);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DEVICE_ID,
-                       adapterDeviceId);
+  mozilla::glean::gfx_adapter_primary::device_id.Set(
+      NS_ConvertUTF16toUTF8(adapterDeviceId));
 
   nsString adapterSubsystemId;
   gfxInfo->GetAdapterSubsysID(adapterSubsystemId);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_SUBSYSTEM_ID,
-                       adapterSubsystemId);
+  mozilla::glean::gfx_adapter_primary::subsystem_id.Set(
+      NS_ConvertUTF16toUTF8(adapterSubsystemId));
 
   uint32_t adapterRam = 0;
   gfxInfo->GetAdapterRAM(&adapterRam);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_RAM, adapterRam);
+  mozilla::glean::gfx_adapter_primary::ram.Set(adapterRam);
 
   nsString adapterDriver;
   gfxInfo->GetAdapterDriver(adapterDriver);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DRIVER_FILES,
-                       adapterDriver);
+  mozilla::glean::gfx_adapter_primary::driver_files.Set(
+      NS_ConvertUTF16toUTF8(adapterDriver));
 
   nsString adapterDriverVendor;
   gfxInfo->GetAdapterDriverVendor(adapterDriverVendor);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DRIVER_VENDOR,
-                       adapterDriverVendor);
+  mozilla::glean::gfx_adapter_primary::driver_vendor.Set(
+      NS_ConvertUTF16toUTF8(adapterDriverVendor));
 
   nsString adapterDriverVersion;
   gfxInfo->GetAdapterDriverVersion(adapterDriverVersion);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DRIVER_VERSION,
-                       adapterDriverVersion);
+  mozilla::glean::gfx_adapter_primary::driver_version.Set(
+      NS_ConvertUTF16toUTF8(adapterDriverVersion));
 
   nsString adapterDriverDate;
   gfxInfo->GetAdapterDriverDate(adapterDriverDate);
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_ADAPTER_DRIVER_DATE,
-                       adapterDriverDate);
+  mozilla::glean::gfx_adapter_primary::driver_date.Set(
+      NS_ConvertUTF16toUTF8(adapterDriverDate));
 
-  Telemetry::ScalarSet(Telemetry::ScalarID::GFX_HEADLESS, IsHeadless());
+  mozilla::glean::gfx_status::headless.Set(IsHeadless());
 
   MOZ_ASSERT(gPlatform, "Need gPlatform to generate some telemetry.");
   Telemetry::ScalarSet(Telemetry::ScalarID::GFX_SUPPORTS_HDR,
@@ -1336,7 +1343,7 @@ void gfxPlatform::ShutdownLayersIPC() {
 
   if (XRE_IsContentProcess()) {
     gfx::VRManagerChild::ShutDown();
-    gfx::CanvasManagerChild::Shutdown();
+    gfx::CanvasShutdownManager::Shutdown();
     // cf bug 1215265.
     if (StaticPrefs::layers_child_process_shutdown()) {
       layers::CompositorManagerChild::Shutdown();
@@ -1347,7 +1354,7 @@ void gfxPlatform::ShutdownLayersIPC() {
     VideoBridgeParent::Shutdown();
     RDDProcessManager::RDDProcessShutdown();
     gfx::VRManagerChild::ShutDown();
-    gfx::CanvasManagerChild::Shutdown();
+    gfx::CanvasShutdownManager::Shutdown();
     layers::CompositorManagerChild::Shutdown();
     layers::ImageBridgeChild::ShutDown();
     // This could be running on either the Compositor thread, the Renderer
@@ -2274,7 +2281,7 @@ void gfxPlatform::FontsPrefsChanged(const char* aPref) {
              !strcmp(GFX_PREF_GRAPHITE_SHAPING, aPref)) {
     FlushFontAndWordCaches();
   } else if (
-#if defined(XP_MACOSX)
+#if defined(XP_DARWIN)
       !strcmp(GFX_PREF_CORETEXT_SHAPING, aPref) ||
 #endif
       !strcmp("gfx.font_rendering.ahem_antialias_none", aPref)) {
@@ -2694,7 +2701,7 @@ void gfxPlatform::InitWebRenderConfig() {
           StaticPrefs::GetPrefName_gfx_webrender_batched_upload_threshold()));
 
   if (WebRenderResourcePathOverride()) {
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationBool(
         CrashReporter::Annotation::IsWebRenderResourcePathOverridden, true);
   }
 
@@ -2741,7 +2748,7 @@ void gfxPlatform::InitWebRenderConfig() {
                                  "FEATURE_FAILURE_WR_NO_GFX_INFO"_ns);
         useVideoHwOverlay = false;
       } else {
-        if (status != nsIGfxInfo::FEATURE_ALLOW_ALWAYS) {
+        if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
           FeatureState& feature =
               gfxConfig::GetFeature(Feature::VIDEO_HARDWARE_OVERLAY);
           feature.DisableByDefault(FeatureStatus::Blocked,
@@ -2897,6 +2904,49 @@ void gfxPlatform::InitWebRenderConfig() {
     }
   }
 #endif
+
+  bool allowOverlayVpAutoHDR = false;
+  if (StaticPrefs::gfx_webrender_overlay_vp_auto_hdr_AtStartup()) {
+    allowOverlayVpAutoHDR = true;
+
+    nsCString failureId;
+    int32_t status;
+    const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+    if (NS_FAILED(gfxInfo->GetFeatureStatus(
+            nsIGfxInfo::FEATURE_OVERLAY_VP_AUTO_HDR, failureId, &status))) {
+      allowOverlayVpAutoHDR = false;
+    } else {
+      if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+        allowOverlayVpAutoHDR = false;
+      }
+    }
+  }
+
+  if (allowOverlayVpAutoHDR) {
+    gfxVars::SetWebRenderOverlayVpAutoHDR(true);
+  }
+
+  bool allowOverlayVpSuperResolution = false;
+  if (StaticPrefs::gfx_webrender_overlay_vp_super_resolution_AtStartup()) {
+    allowOverlayVpSuperResolution = true;
+
+    nsCString failureId;
+    int32_t status;
+    const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+    if (NS_FAILED(gfxInfo->GetFeatureStatus(
+            nsIGfxInfo::FEATURE_OVERLAY_VP_SUPER_RESOLUTION, failureId,
+            &status))) {
+      allowOverlayVpSuperResolution = false;
+    } else {
+      if (status != nsIGfxInfo::FEATURE_STATUS_OK) {
+        allowOverlayVpSuperResolution = false;
+      }
+    }
+  }
+
+  if (allowOverlayVpSuperResolution) {
+    gfxVars::SetWebRenderOverlayVpSuperResolution(true);
+  }
 
   if (gfxConfig::IsEnabled(Feature::WEBRENDER_COMPOSITOR)) {
     gfxVars::SetUseWebRenderCompositor(true);
@@ -3704,22 +3754,19 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
   mCompositorBackend = aBackend;
 
   if (XRE_IsParentProcess()) {
-    Telemetry::ScalarSet(
-        Telemetry::ScalarID::GFX_COMPOSITOR,
-        NS_ConvertUTF8toUTF16(GetLayersBackendName(mCompositorBackend)));
+    nsDependentCString compositor(GetLayersBackendName(mCompositorBackend));
+    mozilla::glean::gfx_status::compositor.Set(compositor);
 
     nsCString geckoVersion;
     nsCOMPtr<nsIXULAppInfo> app = do_GetService("@mozilla.org/xre/app-info;1");
     if (app) {
       app->GetVersion(geckoVersion);
     }
-    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_LAST_COMPOSITOR_GECKO_VERSION,
-                         NS_ConvertASCIItoUTF16(geckoVersion));
+    mozilla::glean::gfx_status::last_compositor_gecko_version.Set(geckoVersion);
 
-    Telemetry::ScalarSet(
-        Telemetry::ScalarID::GFX_FEATURE_WEBRENDER,
-        NS_ConvertUTF8toUTF16(gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
-                                  .GetStatusAndFailureIdString()));
+    mozilla::glean::gfx_feature::webrender.Set(
+        gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
+            .GetStatusAndFailureIdString());
   }
 
   // Notify that we created a compositor, so telemetry can update.

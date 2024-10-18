@@ -54,6 +54,13 @@ enum class OCSPFetchStatus : uint16_t {
   Fetched = 1,
 };
 
+// Helper struct to associate the DER bytes of a potential issuer certificate
+// with its source (i.e. where it came from).
+struct IssuerCandidateWithSource {
+  mozilla::pkix::Input mDER;  // non-owning
+  IssuerSource mIssuerSource;
+};
+
 SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
                         PKCS11DBConfig pkcs11DbConfig);
 
@@ -245,6 +252,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   bool GetIsErrorDueToDistrustedCAPolicy() const;
 
   OCSPFetchStatus GetOCSPFetchStatus() { return mOCSPFetchStatus; }
+  IssuerSources GetIssuerSources() { return mIssuerSources; }
 
  private:
   Result CheckCRLiteStash(
@@ -264,8 +272,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   Result VerifyAndMaybeCacheEncodedOCSPResponse(
       const mozilla::pkix::CertID& certID, mozilla::pkix::Time time,
       uint16_t maxLifetimeInDays, mozilla::pkix::Input encodedResponse,
-      EncodedResponseSource responseSource, /*out*/ bool& expired,
-      /*out*/ uint32_t& ageInHours);
+      EncodedResponseSource responseSource, /*out*/ bool& expired);
   TimeDuration GetOCSPTimeout() const;
 
   Result CheckRevocationByCRLite(const mozilla::pkix::CertID& certID,
@@ -289,6 +296,12 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
                            const Result stapledOCSPResponseResult,
                            const Result error,
                            /*out*/ bool& softFailure);
+
+  bool ShouldSkipSelfSignedNonTrustAnchor(mozilla::pkix::Input certDER);
+  Result CheckCandidates(IssuerChecker& checker,
+                         nsTArray<IssuerCandidateWithSource>& candidates,
+                         mozilla::pkix::Input* nameConstraintsInputPtr,
+                         bool& keepGoing);
 
   const SECTrustType mCertDBTrustType;
   const OCSPFetching mOCSPFetching;
@@ -321,6 +334,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   UniqueSECMODModule mBuiltInRootsModule;
 
   OCSPFetchStatus mOCSPFetchStatus;
+  IssuerSources mIssuerSources;
 };
 
 }  // namespace psm

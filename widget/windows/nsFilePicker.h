@@ -10,6 +10,10 @@
 #include <windows.h>
 
 #include "mozilla/MozPromise.h"
+#include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/GetFilesHelper.h"
+#include "nsIContentAnalysis.h"
 #include "nsIFile.h"
 #include "nsISimpleEnumerator.h"
 #include "nsCOMArray.h"
@@ -62,8 +66,8 @@ class nsFilePicker final : public nsBaseWinFilePicker {
  public:
   nsFilePicker();
 
-  NS_IMETHOD Init(mozIDOMWindowProxy* aParent, const nsAString& aTitle,
-                  nsIFilePicker::Mode aMode) override;
+  NS_IMETHOD Init(mozilla::dom::BrowsingContext* aBrowsingContext,
+                  const nsAString& aTitle, nsIFilePicker::Mode aMode) override;
 
   NS_DECL_ISUPPORTS
 
@@ -102,13 +106,16 @@ class nsFilePicker final : public nsBaseWinFilePicker {
   static FPPromise<nsString> ShowFolderPickerLocal(
       HWND aParent, nsTArray<Command> const& commands);
 
+  void ClearFiles();
+  using ContentAnalysisResponse = mozilla::MozPromise<bool, nsresult, true>;
+  RefPtr<ContentAnalysisResponse> CheckContentAnalysisService();
+
  protected:
   void RememberLastUsedDirectory();
   bool IsPrivacyModeEnabled();
   bool IsDefaultPathLink();
   bool IsDefaultPathHtml();
 
-  nsCOMPtr<nsILoadContext> mLoadContext;
   nsCOMPtr<nsIWidget> mParentWidget;
   nsString mTitle;
   nsCString mFile;

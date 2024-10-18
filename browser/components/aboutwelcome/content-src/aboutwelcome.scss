@@ -2,9 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 @use 'sass:math';
-@import 'chrome://global/skin/design-system/tokens-brand.css';
-@import '../../newtab/content-src/styles/feature-callout';
-@import '../../newtab/content-src/styles/shopping';
+
+// Don't import any styles that are not scoped to .onboardingContainer. This
+// stylesheet is loaded by FeatureCallout.sys.mjs into the browser chrome. To
+// add other stylesheets to about:welcome or spotlight, add them to
+// aboutwelcome.html or spotlight.html. Ideally, there should be no `@import`
+// statements in the built aboutwelcome.css file.
+@import '../../asrouter/content-src/styles/feature-callout';
+@import '../../asrouter/content-src/styles/shopping';
 
 /* stylelint-disable max-nesting-depth */
 
@@ -452,10 +457,41 @@ html {
             font-weight: 400;
           }
 
+          .install-button-wrapper {
+            display: flex;
+          }
+
           button {
             align-self: center;
-            margin-inline: auto 12px;
+            width: 124px;
           }
+        }
+
+        .loader {
+          width: 1em;
+          height: 1em;
+          border: 3px solid var(--in-content-primary-button-text-color);
+          border-bottom-color: transparent;
+          border-radius: 50%;
+          box-sizing: border-box;
+          animation: rotation 1s linear infinite;
+          justify-self: center;
+        }
+
+        @keyframes rotation {
+          0% {
+            transform: rotate(0deg);
+          }
+
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+
+        .loaderContainer {
+          display: flex;
+          padding: 1.5px 37.5px;
+          margin: auto;
         }
       }
     }
@@ -534,10 +570,12 @@ html {
       .section-main {
         flex-direction: row;
         display: block;
-        margin: auto auto auto 0;
+        margin: auto;
+        margin-inline-start: 0;
 
         &:dir(rtl) {
-          margin: auto 0 auto auto;
+          margin: auto;
+          margin-inline-start: 0;
         }
 
         &.embedded-migration {
@@ -559,6 +597,21 @@ html {
 
           &:dir(rtl) {
             border-radius: 8px 0 0 8px;
+          }
+
+          .legal-paragraph {
+            text-align: start;
+            font-size: 11px;
+            line-height: 16.5px;
+            color: #5B5B66;
+
+            @media only screen and (width <= 800px) {
+              padding-inline: 30px;
+            }
+
+            @media (prefers-color-scheme: dark) {
+              color: #CFCFD8;
+            }
           }
 
           .main-content-inner {
@@ -728,7 +781,8 @@ html {
 
         &:dir(rtl) {
           border-radius: 0 8px 8px 0;
-          margin: auto auto auto 0;
+          margin: auto;
+          margin-inline-end: 0;
         }
 
         h1 {
@@ -807,168 +861,285 @@ html {
         .tiles-theme-section {
           margin-inline-start: -10px;
         }
+
+        &[reverse-split] {
+          flex-direction: row-reverse;
+
+          .section-main {
+            .main-content {
+              border-radius: inherit;
+            }
+
+            margin: auto;
+            margin-inline-end: 0;
+            border-radius: 8px 0 0 8px;
+
+            &:dir(rtl) {
+              border-radius: 0 8px 8px 0;
+              margin: auto;
+              margin-inline-end: 0;
+            }
+          }
+
+          .section-secondary {
+            margin: auto;
+            margin-inline-start: 0;
+            border-radius: 0 8px 8px 0;
+
+            &:dir(rtl) {
+              border-radius: 8px 0 0 8px;
+              margin: auto;
+              margin-inline-start: 0;
+            }
+          }
+        }
+      }
+
+      // duplicate the above styles for no-rdm. unfortunately SASS won't allow
+      // us to combine these selectors.
+      &:where([no-rdm='true']) {
+        .tiles-theme-section {
+          margin-inline-start: -10px;
+        }
+
+        &[reverse-split] {
+          flex-direction: row-reverse;
+
+          .section-main {
+            .main-content {
+              border-radius: inherit;
+            }
+
+            margin: auto;
+            margin-inline-end: 0;
+            border-radius: 8px 0 0 8px;
+
+            &:dir(rtl) {
+              border-radius: 0 8px 8px 0;
+              margin: auto;
+              margin-inline-end: 0;
+            }
+          }
+
+          .section-secondary {
+            margin: auto;
+            margin-inline-start: 0;
+            border-radius: 0 8px 8px 0;
+
+            &:dir(rtl) {
+              border-radius: 8px 0 0 8px;
+              margin: auto;
+              margin-inline-start: 0;
+            }
+          }
+        }
       }
 
       @media only screen and (width <= 800px) {
-        flex-direction: column;
-        min-height: $small-main-section-height + $small-secondary-section-height;
+        &:where(:not([no-rdm])) {
+          flex-direction: column;
+          min-height: $small-main-section-height + $small-secondary-section-height;
 
-        &::before {
-          width: $split-section-width;
-        }
-
-        .section-secondary,
-        .section-main {
-          width: $split-section-width;
-        }
-
-        .section-secondary {
-          --mr-secondary-background-position-y: top;
-          --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
-
-          border-radius: 8px 8px 0 0;
-          margin: auto auto 0;
-          height: $small-secondary-section-height;
-
-          .hero-image img {
-            margin: 6px 0;
+          &::before {
+            width: $split-section-width;
           }
 
-          .message-text {
-            margin-inline: auto;
-          }
-
-          h1 {
-            font-size: 35px;
-            text-align: center;
-            white-space: normal;
-            margin-inline: auto;
-            margin-block: 14px 6px;
-          }
-
-          &:dir(rtl) {
-            margin: auto auto 0;
-            border-radius: 8px 8px 0 0;
-          }
-
-          &.with-secondary-section-hidden {
-            display: none;
-          }
-        }
-
-        migration-wizard {
-          &::part(deck){
-            min-width: 330px;
-            margin-inline: 36px;
-          }
-        }
-
-        .section-main {
-          margin: 0 auto auto;
-          height: $small-main-section-height;
-
-          migration-wizard::part(buttons) {
+          &[reverse-split] {
             flex-direction: column;
-            margin-inline: 46px;
+
+            .section-secondary {
+              border-radius: 8px 8px 0 0;
+              margin: auto;
+              margin-bottom: 0;
+
+              &:dir(rtl) {
+                margin: auto;
+                margin-bottom: 0;
+                border-radius: 8px 8px 0 0;
+              }
+            }
+
+            .section-main {
+              margin: auto;
+              margin-top: 0;
+              border-radius: 0 0 8px 8px;
+
+              &:dir(rtl) {
+                margin: auto;
+                margin-top: 0;
+                border-radius: 0 0 8px 8px;
+              }
+            }
           }
 
-          &[hide-secondary-section='responsive'] {
-            height: $split-screen-height;
+          .section-secondary,
+          .section-main {
+            width: $split-section-width;
+          }
+
+          .section-secondary {
+            --mr-secondary-background-position-y: top;
+            --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
+
+            border-radius: 8px 8px 0 0;
             margin: auto;
+            margin-bottom: 0;
+            height: $small-secondary-section-height;
 
-            .main-content {
-              padding: 50px 0 0;
-              border-radius: 8px;
+            .hero-image img {
+              margin: 6px 0;
+            }
+
+            .message-text {
+              margin-inline: auto;
+            }
+
+            h1 {
+              font-size: 35px;
+              text-align: center;
+              white-space: normal;
+              margin-inline: auto;
+              margin-block: 14px 6px;
+            }
+
+            &:dir(rtl) {
+              margin: auto;
+              margin-bottom: 0;
+              border-radius: 8px 8px 0 0;
+            }
+
+            &.with-secondary-section-hidden {
+              display: none;
             }
           }
 
-          .main-content {
-            border-radius: 0 0 8px 8px;
-            padding: 30px 0 0;
+          migration-wizard {
+            &::part(deck){
+              min-width: 330px;
+              margin-inline: 36px;
+            }
+          }
 
-            .main-content-inner {
-              align-items: center;
+          .section-main {
+            margin: auto;
+            margin-top: 0;
+            height: $small-main-section-height;
+
+            migration-wizard::part(buttons) {
+              flex-direction: column;
+              margin-inline: 46px;
             }
 
-            .logo-container {
-              text-align: center;
+            &[hide-secondary-section='responsive'] {
+              height: $split-screen-height;
+              margin: auto;
 
-              .brand-logo {
-                min-height: 25px;
+              &:dir(rtl) {
+                margin: auto;
+              }
 
-                &,
+              .main-content {
+                padding: 50px 0 0;
+                border-radius: 8px;
+
                 &:dir(rtl) {
-                  background-position: center;
+                  border-radius: 8px;
                 }
               }
-
-              .logo-alt {
-                width: inherit;
-                height: inherit;
-              }
             }
-
-            .welcome-text {
-              align-items: center;
-              text-align: center;
-              margin-inline: 0;
-              padding-inline: 30px;
-
-              .spacer-bottom,
-              .spacer-top {
-                display: none;
-              }
-            }
-
-            .action-buttons {
-              text-align: center;
-
-              .checkbox-container {
-                display: none;
-              }
-
-              .secondary-cta {
-                position: relative;
-                margin-block: 10px 0;
-                bottom: 0;
-              }
-            }
-
-            .primary,
-            .secondary {
-              min-width: 240px;
-              margin-inline: 0;
-            }
-
-            .steps {
-              padding-block: 0;
-              margin: 0;
-
-              &.progress-bar {
-                margin-inline: 0;
-              }
-            }
-          }
-
-          .additional-cta {
-            &.cta-link {
-              align-self: center;
-            }
-          }
-
-          .dismiss-button {
-            top: -$small-secondary-section-height;
-          }
-
-          &:dir(rtl) {
-            margin: 0 auto auto;
 
             .main-content {
               border-radius: 0 0 8px 8px;
+              padding: 30px 0 0;
+
+              .main-content-inner {
+                align-items: center;
+              }
+
+              .logo-container {
+                text-align: center;
+
+                .brand-logo {
+                  min-height: 25px;
+
+                  &,
+                  &:dir(rtl) {
+                    background-position: center;
+                  }
+                }
+
+                .logo-alt {
+                  width: inherit;
+                  height: inherit;
+                }
+              }
+
+              .welcome-text {
+                align-items: center;
+                text-align: center;
+                margin-inline: 0;
+                padding-inline: 30px;
+
+                .spacer-bottom,
+                .spacer-top {
+                  display: none;
+                }
+              }
+
+              .action-buttons {
+                text-align: center;
+
+                .checkbox-container {
+                  display: none;
+                }
+
+                .secondary-cta {
+                  position: relative;
+                  margin-block: 10px 0;
+                  bottom: 0;
+                }
+              }
+
+              .primary,
+              .secondary {
+                min-width: 240px;
+                margin-inline: 0;
+              }
+
+              .steps {
+                padding-block: 0;
+                margin: 0;
+
+                &.progress-bar {
+                  margin-inline: 0;
+                }
+              }
+            }
+
+            .additional-cta {
+              &.cta-link {
+                align-self: center;
+              }
+            }
+
+            .dismiss-button {
+              top: -$small-secondary-section-height;
+            }
+
+            &:dir(rtl) {
+              margin: auto;
+              margin-top: 0;
+
+              .main-content {
+                border-radius: 0 0 8px 8px;
+              }
             }
           }
         }
 
+        &[no-rdm] {
+          width: 800px;
+        }
       }
 
       @media only screen and (height <= 650px) {
@@ -1301,12 +1472,43 @@ html {
     align-items: flex-start;
     gap: 16px;
     margin-block: -1em 2em;
+    margin-inline: 1em;
     color: #5B5B66;
     font-weight: 400;
     font-size: 14px;
     text-align: initial;
     transition: var(--transition);
     z-index: 1;
+
+    #multi-stage-multi-select-label {
+      // These styles are based on .welcome-text>h2 (subtitle).
+      color: var(--in-content-page-color);
+      line-height: 1.5;
+      font-size: 16px;
+      font-weight: normal;
+      letter-spacing: -0.01em;
+      // Try to get the label positioned the same way it would be if it was a
+      // subtitle. -0.5em for the welcome-text margin, 1em for the
+      // multi-select-container margin, and 10px for the desired margin between
+      // the label and the title.
+      margin: calc(-0.5em + 1em + 10px) 6px 0;
+      max-width: 750px;
+    }
+
+    @at-root .onboardingContainer .screen[pos='split'] .multi-select-container #multi-stage-multi-select-label {
+      margin: calc(-35px + 1em + 10px) 0 0;
+      min-height: 1em;
+      font-size: 15px;
+      line-height: 1.5;
+
+      @media (prefers-contrast: no-preference) {
+        color: #5B5B66;
+      }
+
+      @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+        color: #CFCFD8;
+      }
+    }
 
     .checkbox-container {
       display: flex;
@@ -1371,7 +1573,7 @@ html {
 
   .dismiss-button {
     position: absolute;
-    z-index: 1;
+    z-index: 2;
     top: 0;
     left: auto;
     right: 0;
@@ -1543,6 +1745,10 @@ html {
     }
   }
 
+  .legal-paragraph {
+    transition: var(--transition)
+  }
+
   .primary,
   .secondary,
   .additional-cta,
@@ -1696,7 +1902,8 @@ html {
     .secondary,
     .secondary-cta,
     .steps,
-    .cta-link {
+    .cta-link,
+    .legal-paragraph {
       transition-delay: 1s;
     }
   }
@@ -1705,14 +1912,15 @@ html {
   .screen:not(.dialog-initial) {
     .tiles-theme-section,
     .multi-select-container
-    {
+     {
       transition-delay: 0.2s;
     }
 
     .primary,
     .secondary,
     .secondary-cta,
-    .cta-link {
+    .cta-link,
+    .legal-paragraph {
       transition-delay: 0.4s;
     }
   }
@@ -1785,6 +1993,7 @@ html {
       .secondary,
       .secondary-cta:not(.top),
       .cta-link,
+      .legal-paragraph,
       migration-wizard {
         opacity: 0;
         translate: 0 calc(-1 * var(--translate));
@@ -1831,7 +2040,8 @@ html {
       .checkbox-container:not(.multi-select-item),
       .secondary,
       .secondary-cta:not(.top),
-      .cta-link {
+      .cta-link,
+      .legal-paragraph {
         opacity: 0;
         translate: 0 var(--translate);
         transition-delay: 0.3s;

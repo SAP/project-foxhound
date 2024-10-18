@@ -16,6 +16,7 @@
   --fxview-text-color-hover: var(--newtab-text-primary-color);
   --fxview-primary-action-background: var(--newtab-primary-action-background, #0061e0);
   --fxview-border: var(--fc-border-light, #CFCFD8);
+  --fxview-indicator-stroke-color-hover: #DEDDDE;
 
   /* ensure utility button hover states match those of the rest of the page */
   --in-content-button-background-hover: var(--fxview-element-background-hover);
@@ -37,6 +38,7 @@
     --fxview-element-background-hover: color-mix(in srgb, var(--fxview-background-color) 80%, white);
     --fxview-element-background-active: color-mix(in srgb, var(--fxview-background-color) 60%, white);
     --fxview-border: #8F8F9D;
+    --fxview-indicator-stroke-color-hover:#5D5C66;
 
     /* copy over newtab colors from activity-stream-[os].css files */
     --newtab-background-color: #2B2A33;
@@ -69,6 +71,10 @@ body {
   grid-template-columns: var(--fxview-sidebar-width) 1fr;
   background-color: var(--fxview-background-color);
   color: var(--fxview-text-primary-color);
+
+  @media (max-width: 52rem) {
+    display: flex;
+  }
 }
 
 .main-container {
@@ -86,34 +92,6 @@ body {
 
 .page-header {
   margin: 0;
-}
-
-fxview-category-button:focus-visible {
-  outline-offset: var(--in-content-focus-outline-inset);
-}
-
-fxview-category-button[name="recentbrowsing"]::part(icon) {
-  background-image: url("chrome://browser/content/firefoxview/category-recentbrowsing.svg");
-}
-fxview-category-button[name="opentabs"]::part(icon) {
-  background-image: url("chrome://browser/content/firefoxview/category-opentabs.svg");
-}
-fxview-category-button[name="recentlyclosed"]::part(icon) {
-  background-image: url("chrome://browser/content/firefoxview/category-recentlyclosed.svg");
-}
-fxview-category-button[name="syncedtabs"]::part(icon) {
-  background-image: url("chrome://browser/content/firefoxview/category-syncedtabs.svg");
-}
-fxview-category-button[name="history"]::part(icon) {
-  background-image: url("chrome://browser/content/firefoxview/category-history.svg");
-}
-
-fxview-tab-list.with-dismiss-button::part(secondary-button) {
-  background-image: url("chrome://global/skin/icons/close.svg");
-}
-
-fxview-tab-list.with-context-menu::part(secondary-button) {
-  background-image: url("chrome://global/skin/icons/more.svg");
 }
 
 .sticky-container {
@@ -168,20 +146,6 @@ panel-item::part(button):hover {
 
 panel-item::part(button):hover:active {
   background-color: var(--fxview-element-background-active);
-}
-
-panel-list {
-  overflow-y: visible;
-}
-
-fxview-category-navigation {
-  overflow-y: auto;
-}
-
-fxview-category-navigation h1 {
-  font-size: 1.6em;
-  font-weight: 700;
-  margin-block: 0;
 }
 
 fxview-empty-state:not([isSelectedTab]) button[slot="primary-action"] {

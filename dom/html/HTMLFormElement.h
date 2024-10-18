@@ -10,18 +10,13 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/AnchorAreaFormRelValues.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/RadioGroupContainer.h"
-#include "nsCOMPtr.h"
 #include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIWeakReferenceUtils.h"
 #include "nsThreadUtils.h"
 #include "nsInterfaceHashtable.h"
-#include "nsRefPtrHashtable.h"
-#include "nsTHashMap.h"
 #include "js/friend/DOMProxy.h"  // JS::ExpandoAndGeneration
 
 class nsIMutableArray;
@@ -37,8 +32,7 @@ class HTMLFormSubmission;
 class HTMLImageElement;
 class FormData;
 
-class HTMLFormElement final : public nsGenericHTMLElement,
-                              public AnchorAreaFormRelValues {
+class HTMLFormElement final : public nsGenericHTMLElement {
   friend class HTMLFormControlsCollection;
 
  public:
@@ -76,7 +70,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
   void BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                      const nsAttrValue* aValue, bool aNotify) override;
 
@@ -218,11 +212,11 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    *
    * @return Whether the form is valid.
    *
-   * @note Do not call this method if novalidate/formnovalidate is used.
    * @note This method might disappear with bug 592124, hopefuly.
    * @see
    * https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#interactively-validate-the-constraints
    */
+  MOZ_CAN_RUN_SCRIPT
   bool CheckValidFormSubmission();
 
   /**
@@ -336,6 +330,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   bool CheckValidity() { return CheckFormValidity(nullptr); }
 
+  MOZ_CAN_RUN_SCRIPT
   bool ReportValidity() { return CheckValidFormSubmission(); }
 
   Element* IndexedGetter(uint32_t aIndex, bool& aFound);
@@ -529,7 +524,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   // This is needed to properly clean up the bi-directional references
   // (both weak and strong) between the form and its HTMLImageElements.
 
-  nsTArray<HTMLImageElement*> mImageElements;  // Holds WEAK references
+  // Holds WEAK references
+  TreeOrderedArray<HTMLImageElement*> mImageElements;
 
   // A map from an ID or NAME attribute to the HTMLImageElement(s), this
   // hash holds strong references either to the named HTMLImageElement, or
@@ -592,7 +588,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   void MaybeFireFormRemoved();
 
   MOZ_CAN_RUN_SCRIPT
-  void ReportInvalidUnfocusableElements();
+  void ReportInvalidUnfocusableElements(
+      const nsTArray<RefPtr<Element>>&& aInvalidElements);
 
   ~HTMLFormElement();
 };

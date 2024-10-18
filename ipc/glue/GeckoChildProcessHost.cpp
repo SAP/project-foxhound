@@ -13,6 +13,7 @@
 #include "base/task.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/process_watcher.h"
+#include "mozilla/ProcessType.h"
 #ifdef MOZ_WIDGET_COCOA
 #  include <bsm/libbsm.h>
 #  include <mach/mach_traps.h>
@@ -66,6 +67,7 @@
 #ifdef XP_WIN
 #  include <stdlib.h>
 
+#  include "mozilla/WindowsVersion.h"
 #  include "nsIWinTaskbar.h"
 #  define NS_TASKBAR_CONTRACTID "@mozilla.org/windows-taskbar;1"
 
@@ -249,24 +251,27 @@ class BaseProcessLauncher {
 };
 
 #ifdef XP_WIN
-class WindowsProcessLauncher : public BaseProcessLauncher {
+class WindowsProcessLauncher final : public BaseProcessLauncher {
  public:
   WindowsProcessLauncher(GeckoChildProcessHost* aHost,
                          std::vector<std::string>&& aExtraOpts)
       : BaseProcessLauncher(aHost, std::move(aExtraOpts)),
-        mCachedNtdllThunk(GetCachedNtDllThunk()),
-        mWerDataPointer(&(aHost->mWerData)) {}
+        mCachedNtdllThunk(GetCachedNtDllThunk()) {}
 
  protected:
   virtual Result<Ok, LaunchError> DoSetup() override;
   virtual RefPtr<ProcessHandlePromise> DoLaunch() override;
   virtual Result<Ok, LaunchError> DoFinishLaunch() override;
 
+ private:
+  void AddApplicationPrefetchArgument();
+
   mozilla::Maybe<CommandLine> mCmdLine;
+#  ifdef MOZ_SANDBOX
   bool mUseSandbox = false;
+#  endif
 
   const Buffer<IMAGE_THUNK_DATA>* mCachedNtdllThunk;
-  CrashReporter::WindowsErrorReportingData const* mWerDataPointer;
 };
 typedef WindowsProcessLauncher ProcessLauncher;
 #endif  // XP_WIN
@@ -345,7 +350,20 @@ class LinuxProcessLauncher : public PosixProcessLauncher {
   virtual Result<Ok, LaunchError> DoSetup() override;
 };
 typedef LinuxProcessLauncher ProcessLauncher;
-#  elif
+#  elif defined(MOZ_WIDGET_UIKIT)
+class IosProcessLauncher : public PosixProcessLauncher {
+ public:
+  IosProcessLauncher(GeckoChildProcessHost* aHost,
+                     std::vector<std::string>&& aExtraOpts)
+      : PosixProcessLauncher(aHost, std::move(aExtraOpts)) {}
+
+ protected:
+  virtual RefPtr<ProcessHandlePromise> DoLaunch() override {
+    MOZ_CRASH("IosProcessLauncher::DoLaunch not implemented");
+  }
+};
+typedef IosProcessLauncher ProcessLauncher;
+#  else
 #    error "Unknown platform"
 #  endif
 #endif  // XP_UNIX
@@ -369,9 +387,6 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
       mProcessState(CREATING_CHANNEL),
 #ifdef XP_WIN
       mGroupId(u"-"),
-      mWerData{.mWerNotifyProc = CrashReporter::WerNotifyProc,
-               .mChildPid = 0,
-               .mMinidumpFile = {}},
 #endif
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
       mEnableSandboxLogging(false),
@@ -1194,7 +1209,7 @@ Result<Ok, LaunchError> PosixProcessLauncher::DoSetup() {
     }
     mLaunchOptions->env_map["LD_LIBRARY_PATH"] = new_ld_lib_path.get();
 
-#  elif XP_DARWIN
+#  elif XP_MACOSX
     // With signed production Mac builds, the dynamic linker (dyld) will
     // ignore dyld environment variables preventing the use of variables
     // such as DYLD_LIBRARY_PATH and DYLD_INSERT_LIBRARIES.
@@ -1217,7 +1232,7 @@ Result<Ok, LaunchError> PosixProcessLauncher::DoSetup() {
     // Prevent connection attempts to diagnosticd(8) to save cycles. Log
     // messages can trigger these connection attempts, but access to
     // diagnosticd is blocked in sandboxed child processes.
-#    ifdef MOZ_SANDBOX
+#    if defined(MOZ_SANDBOX) && defined(XP_MACOSX)
     if (mDisableOSActivityMode) {
       mLaunchOptions->env_map["OS_ACTIVITY_MODE"] = "disable";
     }
@@ -1393,6 +1408,97 @@ Result<Ok, LaunchError> MacProcessLauncher::DoFinishLaunch() {
 #endif  // XP_MACOSX
 
 #ifdef XP_WIN
+void WindowsProcessLauncher::AddApplicationPrefetchArgument() {
+  // The Application Launch Prefetcher (ALPF) is an ill-documented Windows
+  // subsystem that's intended to speed up process launching, apparently mostly
+  // by assuming that a binary is going to want to load the same DLLs as it did
+  // the last time it launched, and getting those prepped for loading as well.
+  //
+  // For most applications, that's a good bet. For Firefox, it's less so, since
+  // we use the same binary with different arguments to do completely different
+  // things. Windows does allow applications to take up multiple slots in this
+  // cache, but the "which bucket does this invocation go in?" mechanism is
+  // highly unusual: the OS scans the command line and looks for a command-line
+  // switch of a particular form.
+  //
+  // (There is allegedly a way to do this without involving the command line,
+  // OVERRIDE_PREFETCH_PARAMETER, but it's even more poorly documented.)
+
+  // Applications' different prefetch-cache buckets are named with numbers from
+  // "1" to some OS-version-determined limit, with an additional implicit "0"
+  // cache bucket which is used when no valid prefetch cache slot is named.
+  //
+  // (The "0" bucket's existence and behavior is not documented, but has been
+  // confirmed by observing the creation and enumeration of cache files in the
+  // C:\Windows\Prefetch folder.)
+  static size_t const kMaxSlotNo = IsWin1122H2OrLater() ? 16 : 8;
+
+  // Determine the prefetch-slot number to be used for the process we're about
+  // to launch.
+  //
+  // This may be changed freely between Firefox versions, as a Firefox update
+  // will completely invalidate the prefetch cache anyway.
+  size_t const prefetchSlot = [&]() -> size_t {
+    switch (mProcessType) {
+      // This code path is not used when starting the main process...
+      case GeckoProcessType_Default:
+      // ...ForkServer is not used on Windows...
+      case GeckoProcessType_ForkServer:
+      // ..."End" isn't a process-type, just a limit...
+      case GeckoProcessType_End:
+      // ...and any new process-types should be considered explicitly here.
+      default:
+        MOZ_ASSERT_UNREACHABLE("Invalid process type");
+        return 0;
+
+      // We reserve 1 for the main process as started by the launcher process.
+      // (See LauncherProcessWin.cpp.) Otherwise, we mostly match the process-
+      // type enumeration.
+      case GeckoProcessType_Content:
+        return 2;
+      case GeckoProcessType_Socket:
+        return 3;  // usurps IPDLUnitTest
+      case GeckoProcessType_GMPlugin:
+        return 4;
+      case GeckoProcessType_GPU:
+        return 5;
+      case GeckoProcessType_RemoteSandboxBroker:
+        return 6;  // usurps VR
+      case GeckoProcessType_RDD:
+        return 7;
+
+      case GeckoProcessType_Utility: {
+        // Continue the enumeration, using the SandboxingKind as a
+        // probably-passably-precise proxy for the process's purpose.
+        //
+        // (On Win10 and earlier, or when sandboxing is not used, this will lump
+        // all utility processes into slot 8.)
+#  ifndef MOZ_SANDBOX
+        size_t const val = 0;
+#  else
+        size_t const val = static_cast<size_t>(mSandbox);
+#  endif
+        return std::min(kMaxSlotNo, 8 + val);
+      }
+
+      // These process types are started so rarely that we're not concerned
+      // about their interaction with the prefetch cache. Lump them together at
+      // the end (possibly alongside other process types).
+      case GeckoProcessType_IPDLUnitTest:
+      case GeckoProcessType_VR:
+        return kMaxSlotNo;
+    }
+  }();
+  MOZ_ASSERT(prefetchSlot <= kMaxSlotNo);
+
+  if (prefetchSlot == 0) {
+    // default; no explicit argument needed
+    return;
+  }
+
+  mCmdLine->AppendLooseValue(StringPrintf(L"/prefetch:%zu", prefetchSlot));
+}
+
 Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
   Result<Ok, LaunchError> aError = BaseProcessLauncher::DoSetup();
   if (aError.isErr()) {
@@ -1570,14 +1676,11 @@ Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
   mCmdLine->AppendLooseValue(
       UTF8ToWide(CrashReporter::GetChildNotificationPipe()));
 
-  if (!CrashReporter::IsDummy()) {
-    char werDataAddress[17] = {};
-    SprintfLiteral(werDataAddress, "%p", mWerDataPointer);
-    mCmdLine->AppendLooseValue(UTF8ToWide(werDataAddress));
-  }
-
   // Process type
   mCmdLine->AppendLooseValue(UTF8ToWide(ChildProcessType()));
+
+  // Prefetch cache hint
+  AddApplicationPrefetchArgument();
 
 #  ifdef MOZ_SANDBOX
   if (mUseSandbox) {
@@ -1626,25 +1729,6 @@ Result<Ok, LaunchError> WindowsProcessLauncher::DoFinishLaunch() {
   if (err.isErr()) {
     return err;
   }
-
-#  ifdef MOZ_SANDBOX
-  if (!mUseSandbox) {
-    // We need to be able to duplicate handles to some types of non-sandboxed
-    // child processes.
-    switch (mProcessType) {
-      case GeckoProcessType_Default:
-        MOZ_CRASH("shouldn't be launching a parent process");
-      case GeckoProcessType_IPDLUnitTest:
-        // No handle duplication necessary.
-        break;
-      default:
-        if (!SandboxBroker::AddTargetPeer(mResults.mHandle)) {
-          NS_WARNING("Failed to add child process as target peer.");
-        }
-        break;
-    }
-  }
-#  endif  // MOZ_SANDBOX
 
   return Ok();
 }

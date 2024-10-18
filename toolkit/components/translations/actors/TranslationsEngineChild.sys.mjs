@@ -19,6 +19,7 @@ export class TranslationsEngineChild extends JSWindowActorChild {
   /**
    * The resolve function for the Promise returned by the
    * "TranslationsEngine:ForceShutdown" message.
+   *
    * @type {null | () => {}}
    */
   #resolveForceShutdown = null;
@@ -130,9 +131,10 @@ export class TranslationsEngineChild extends JSWindowActorChild {
   }
 
   /**
-   * @param {Object} options
+   * @param {object} options
    * @param {number?} options.startTime
    * @param {string} options.message
+   * @param {number} options.innerWindowId
    */
   TE_addProfilerMarker({ startTime, message, innerWindowId }) {
     ChromeUtils.addProfilerMarker(
@@ -199,7 +201,7 @@ export class TranslationsEngineChild extends JSWindowActorChild {
   }
 
   /**
-   * No engines are still alive, destroy the process.
+   * No engines are still alive, signal that the process can be destroyed.
    */
   TE_destroyEngineProcess() {
     this.sendAsyncMessage("TranslationsEngine:DestroyEngineProcess");

@@ -177,7 +177,6 @@ struct EmbedderColorSchemes {
    * We use it exclusively to block navigation for both of these cases. */    \
   FIELD(IsPrinting, bool)                                                     \
   FIELD(AncestorLoading, bool)                                                \
-  FIELD(AllowPlugins, bool)                                                   \
   FIELD(AllowContentRetargeting, bool)                                        \
   FIELD(AllowContentRetargetingOnChildren, bool)                              \
   FIELD(ForceEnableTrackingProtection, bool)                                  \
@@ -607,12 +606,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   }
 
   bool IsActive() const;
-  void SetIsActive(bool aIsActive, mozilla::ErrorResult& aRv) {
-    SetExplicitActive(aIsActive ? ExplicitActiveStatus::Active
-                                : ExplicitActiveStatus::Inactive,
-                      aRv);
-  }
-
   bool ForceOffline() const { return GetForceOffline(); }
 
   bool ForceDesktopViewport() const { return GetForceDesktopViewport(); }
@@ -1116,6 +1109,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_DisplayMode>, enum DisplayMode aOldValue);
 
+  bool CanSet(FieldIndex<IDX_ExplicitActive>, const ExplicitActiveStatus&,
+              ContentParent* aSource);
   void DidSet(FieldIndex<IDX_ExplicitActive>, ExplicitActiveStatus aOldValue);
 
   bool CanSet(FieldIndex<IDX_IsActiveBrowserWindowInternal>, const bool& aValue,
@@ -1187,8 +1182,6 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
                       ContentParent* aSource);
   CanSetResult CanSet(FieldIndex<IDX_AllowContentRetargetingOnChildren>,
                       const bool& aAllowContentRetargetingOnChildren,
-                      ContentParent* aSource);
-  CanSetResult CanSet(FieldIndex<IDX_AllowPlugins>, const bool& aAllowPlugins,
                       ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_FullscreenAllowedByOwner>, const bool&,
               ContentParent*);

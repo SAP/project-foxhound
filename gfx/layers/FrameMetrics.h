@@ -243,11 +243,9 @@ struct FrameMetrics {
   }
 
   /*
-   * Returns true if the layout scroll offset or visual scroll offset changed
-   * and returns the visual scroll offset change delta.
+   * Returns true if the layout scroll offset or visual scroll offset changed.
    */
-  std::pair<bool, CSSPoint> ApplyAbsoluteScrollUpdateFrom(
-      const ScrollPositionUpdate& aUpdate);
+  bool ApplyScrollUpdateFrom(const ScrollPositionUpdate& aUpdate);
 
   /**
    * Applies the relative scroll offset update contained in aOther to the
@@ -891,6 +889,12 @@ struct ScrollMetadata {
     mDidContentGetPainted = false;
     mScrollUpdates.Clear();
     mScrollUpdates.AppendElements(std::move(aUpdates));
+  }
+
+  void PrependUpdates(const nsTArray<ScrollPositionUpdate>& aUpdates) {
+    MOZ_ASSERT(!aUpdates.IsEmpty());
+
+    mScrollUpdates.InsertElementsAt(0, aUpdates);
   }
 
  private:

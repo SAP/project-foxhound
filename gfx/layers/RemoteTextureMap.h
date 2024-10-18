@@ -204,6 +204,8 @@ class RemoteTextureOwnerClient final {
                             bool aSharedRecycling = false);
   void UnregisterTextureOwner(const RemoteTextureOwnerId aOwnerId);
   void UnregisterAllTextureOwners();
+  bool WaitForTxn(const RemoteTextureOwnerId aOwnerId,
+                  RemoteTextureTxnType aTxnType, RemoteTextureTxnId aTxnId);
   void ClearRecycledTextures();
   void NotifyContextLost(const RemoteTextureOwnerIdSet* aOwnerIds = nullptr);
   void NotifyContextRestored(
@@ -302,13 +304,14 @@ class RemoteTextureMap {
   void NotifyContextRestored(const RemoteTextureOwnerIdSet& aOwnerIds,
                              const base::ProcessId aForPid);
 
+  bool WaitForRemoteTextureOwner(RemoteTextureHostWrapper* aTextureHostWrapper);
+
   // Get remote texture's TextureHost for RemoteTextureHostWrapper.
   //
   // return true when aReadyCallback will be called.
   bool GetRemoteTexture(
       RemoteTextureHostWrapper* aTextureHostWrapper,
-      std::function<void(const RemoteTextureInfo&)>&& aReadyCallback,
-      bool aWaitForRemoteTextureOwner = false);
+      std::function<void(const RemoteTextureInfo&)>&& aReadyCallback);
 
   bool WaitForTxn(const RemoteTextureOwnerId aOwnerId,
                   const base::ProcessId aForPid, RemoteTextureTxnType aTxnType,
@@ -324,14 +327,6 @@ class RemoteTextureMap {
   void UnregisterRemoteTextureHostWrapper(const RemoteTextureId aTextureId,
                                           const RemoteTextureOwnerId aOwnerId,
                                           const base::ProcessId aForPid);
-
-  void RegisterRemoteTexturePushListener(const RemoteTextureOwnerId aOwnerId,
-                                         const base::ProcessId aForPid,
-                                         CompositableHost* aListener);
-
-  void UnregisterRemoteTexturePushListener(const RemoteTextureOwnerId aOwnerId,
-                                           const base::ProcessId aForPid,
-                                           CompositableHost* aListener);
 
   bool CheckRemoteTextureReady(
       const RemoteTextureInfo& aInfo,
@@ -409,7 +404,8 @@ class RemoteTextureMap {
     std::deque<UniquePtr<RenderingReadyCallbackHolder>>
         mRenderingReadyCallbackHolders;
 
-    RemoteTextureId mLatestTextureId = {0};
+    RemoteTextureId mLatestPushedTextureId = {0};
+    RemoteTextureId mLatestUsingTextureId = {0};
     CompositableTextureHostRef mLatestTextureHost;
     CompositableTextureHostRef mLatestRenderedTextureHost;
     // Holds compositable refs to TextureHosts of RenderTextureHosts that are
@@ -434,7 +430,7 @@ class RemoteTextureMap {
                      const RemoteTextureId aTextureId);
 
   UniquePtr<TextureOwner> UnregisterTextureOwner(
-      const MonitorAutoLock& aProofOfLock, const RemoteTextureOwnerId aOwnerId,
+      MonitorAutoLock& aProofOfLock, const RemoteTextureOwnerId aOwnerId,
       const base::ProcessId aForPid,
       std::vector<RefPtr<TextureHost>>& aReleasingTextures,
       std::vector<std::function<void(const RemoteTextureInfo&)>>&
@@ -478,10 +474,6 @@ class RemoteTextureMap {
   std::map<std::pair<base::ProcessId, RemoteTextureId>,
            UniquePtr<RemoteTextureHostWrapperHolder>>
       mRemoteTextureHostWrapperHolders;
-
-  std::map<std::pair<base::ProcessId, RemoteTextureOwnerId>,
-           RefPtr<CompositableHost>>
-      mRemoteTexturePushListeners;
 
   std::map<std::pair<base::ProcessId, RemoteTextureTxnType>,
            RemoteTextureTxnScheduler*>

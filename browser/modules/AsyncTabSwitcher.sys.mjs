@@ -32,6 +32,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "gTabCacheSize",
   "browser.tabs.remote.tabCacheSize"
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gTabUnloadDelay",
+  "browser.tabs.remote.unloadDelayMs",
+  300
+);
 
 /**
  * The tab switcher is responsible for asynchronously switching
@@ -82,7 +88,7 @@ export class AsyncTabSwitcher {
 
     // When the user hasn't switched tabs for this long, we unload
     // layers for all tabs that aren't in use.
-    this.UNLOAD_DELAY = 300; // ms
+    this.UNLOAD_DELAY = lazy.gTabUnloadDelay; // ms
 
     // The next three tabs form the principal state variables.
     // See the assertions in postActions for their invariants.
@@ -1375,27 +1381,19 @@ export class AsyncTabSwitcher {
     // It's hard to know which composite the layers will first be available in (and
     // the parent process might not even get MozAfterPaint delivered for it), so just
     // give up measuring this for now. :(
-    TelemetryStopwatch.cancel("FX_TAB_SWITCH_COMPOSITE_E10S_MS", this.window);
+    Glean.performanceInteraction.tabSwitchComposite.cancel(
+      this._tabswitchTimerId
+    );
+    this._tabswitchTimerId = null;
   }
 
   notePaint(event) {
     if (this.switchPaintId != -1 && event.transactionId >= this.switchPaintId) {
-      if (
-        TelemetryStopwatch.running(
-          "FX_TAB_SWITCH_COMPOSITE_E10S_MS",
-          this.window
-        )
-      ) {
-        let time = TelemetryStopwatch.timeElapsed(
-          "FX_TAB_SWITCH_COMPOSITE_E10S_MS",
-          this.window
+      if (this._tabswitchTimerId) {
+        Glean.performanceInteraction.tabSwitchComposite.stopAndAccumulate(
+          this._tabswitchTimerId
         );
-        if (time != -1) {
-          TelemetryStopwatch.finish(
-            "FX_TAB_SWITCH_COMPOSITE_E10S_MS",
-            this.window
-          );
-        }
+        this._tabswitchTimerId = null;
       }
       let { innerWindowId } = this.window.windowGlobalChild;
       ChromeUtils.addProfilerMarker("AsyncTabSwitch:Composited", {
@@ -1437,12 +1435,13 @@ export class AsyncTabSwitcher {
     TelemetryStopwatch.cancel("FX_TAB_SWITCH_TOTAL_E10S_MS", this.window);
     TelemetryStopwatch.start("FX_TAB_SWITCH_TOTAL_E10S_MS", this.window);
 
-    if (
-      TelemetryStopwatch.running("FX_TAB_SWITCH_COMPOSITE_E10S_MS", this.window)
-    ) {
-      TelemetryStopwatch.cancel("FX_TAB_SWITCH_COMPOSITE_E10S_MS", this.window);
+    if (this._tabswitchTimerId) {
+      Glean.performanceInteraction.tabSwitchComposite.cancel(
+        this._tabswitchTimerId
+      );
     }
-    TelemetryStopwatch.start("FX_TAB_SWITCH_COMPOSITE_E10S_MS", this.window);
+    this._tabswitchTimerId =
+      Glean.performanceInteraction.tabSwitchComposite.start();
     let { innerWindowId } = this.window.windowGlobalChild;
     ChromeUtils.addProfilerMarker("AsyncTabSwitch:Start", { innerWindowId });
   }

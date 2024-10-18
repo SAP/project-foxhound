@@ -55,7 +55,6 @@
 #endif
 #include "pc/webrtc_sdp.h"
 
-using cricket::AudioCodec;
 using cricket::AudioContentDescription;
 using cricket::Candidate;
 using cricket::ContentGroup;
@@ -77,7 +76,6 @@ using cricket::StreamParams;
 using cricket::STUN_PORT_TYPE;
 using cricket::TransportDescription;
 using cricket::TransportInfo;
-using cricket::VideoCodec;
 using cricket::VideoContentDescription;
 using ::testing::ElementsAre;
 using ::testing::Field;
@@ -90,9 +88,6 @@ using webrtc::RtpTransceiverDirection;
 using webrtc::SdpParseError;
 using webrtc::SdpType;
 using webrtc::SessionDescriptionInterface;
-
-typedef std::vector<AudioCodec> AudioCodecs;
-typedef std::vector<Candidate> Candidates;
 
 static const uint32_t kDefaultSctpPort = 5000;
 static const uint16_t kUnusualSctpPort = 9556;
@@ -1321,8 +1316,9 @@ class WebRtcSdpTest : public ::testing::Test {
     return video;
   }
 
-  template <class MCD>
-  void CompareMediaContentDescription(const MCD* cd1, const MCD* cd2) {
+  void CompareMediaContentDescription(
+      const cricket::MediaContentDescription* cd1,
+      const cricket::MediaContentDescription* cd2) {
     // type
     EXPECT_EQ(cd1->type(), cd2->type());
 
@@ -1432,20 +1428,14 @@ class WebRtcSdpTest : public ::testing::Test {
 
       ASSERT_EQ(IsAudioContent(&c1), IsAudioContent(&c2));
       if (IsAudioContent(&c1)) {
-        const AudioContentDescription* acd1 =
-            c1.media_description()->as_audio();
-        const AudioContentDescription* acd2 =
-            c2.media_description()->as_audio();
-        CompareMediaContentDescription<AudioContentDescription>(acd1, acd2);
+        CompareMediaContentDescription(c1.media_description(),
+                                       c2.media_description());
       }
 
       ASSERT_EQ(IsVideoContent(&c1), IsVideoContent(&c2));
       if (IsVideoContent(&c1)) {
-        const VideoContentDescription* vcd1 =
-            c1.media_description()->as_video();
-        const VideoContentDescription* vcd2 =
-            c2.media_description()->as_video();
-        CompareMediaContentDescription<VideoContentDescription>(vcd1, vcd2);
+        CompareMediaContentDescription(c1.media_description(),
+                                       c2.media_description());
       }
 
       ASSERT_EQ(IsDataContent(&c1), IsDataContent(&c2));
@@ -1885,7 +1875,7 @@ class WebRtcSdpTest : public ::testing::Test {
         GetFirstAudioContentDescription(jdesc_output->description());
     ASSERT_TRUE(acd);
     ASSERT_FALSE(acd->codecs().empty());
-    cricket::AudioCodec opus = acd->codecs()[0];
+    cricket::Codec opus = acd->codecs()[0];
     EXPECT_EQ("opus", opus.name);
     EXPECT_EQ(111, opus.id);
     VerifyCodecParameter(opus.params, "minptime", params.min_ptime);
@@ -1894,13 +1884,12 @@ class WebRtcSdpTest : public ::testing::Test {
     VerifyCodecParameter(opus.params, "useinbandfec", params.useinband);
     VerifyCodecParameter(opus.params, "maxaveragebitrate",
                          params.maxaveragebitrate);
-    for (size_t i = 0; i < acd->codecs().size(); ++i) {
-      cricket::AudioCodec codec = acd->codecs()[i];
+    for (const auto& codec : acd->codecs()) {
       VerifyCodecParameter(codec.params, "ptime", params.ptime);
       VerifyCodecParameter(codec.params, "maxptime", params.max_ptime);
     }
 
-    cricket::AudioCodec dtmf = acd->codecs()[3];
+    cricket::Codec dtmf = acd->codecs()[3];
     EXPECT_EQ("telephone-event", dtmf.name);
     EXPECT_EQ(105, dtmf.id);
     EXPECT_EQ(3u,
@@ -1958,7 +1947,7 @@ class WebRtcSdpTest : public ::testing::Test {
         GetFirstAudioContentDescription(jdesc_output->description());
     ASSERT_TRUE(acd);
     ASSERT_FALSE(acd->codecs().empty());
-    cricket::AudioCodec opus = acd->codecs()[0];
+    cricket::Codec opus = acd->codecs()[0];
     EXPECT_EQ(111, opus.id);
     EXPECT_TRUE(opus.HasFeedbackParam(cricket::FeedbackParam(
         cricket::kRtcpFbParamNack, cricket::kParamValueEmpty)));
@@ -2013,7 +2002,7 @@ class WebRtcSdpTest : public ::testing::Test {
   AudioContentDescription* audio_desc_;
   VideoContentDescription* video_desc_;
   SctpDataContentDescription* sctp_desc_;
-  Candidates candidates_;
+  std::vector<Candidate> candidates_;
   std::unique_ptr<IceCandidateInterface> jcandidate_;
   JsepSessionDescription jdesc_;
 };
@@ -2432,7 +2421,7 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutRtpmap) {
   EXPECT_TRUE(SdpDeserialize(kSdpNoRtpmapString, &jdesc));
   cricket::AudioContentDescription* audio =
       cricket::GetFirstAudioContentDescription(jdesc.description());
-  AudioCodecs ref_codecs;
+  cricket::AudioCodecs ref_codecs;
   // The codecs in the AudioContentDescription should be in the same order as
   // the payload types (<fmt>s) on the m= line.
   ref_codecs.push_back(cricket::CreateAudioCodec(0, "PCMU", 8000, 1));
@@ -2456,7 +2445,7 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutRtpmapButWithFmtp) {
   cricket::AudioContentDescription* audio =
       cricket::GetFirstAudioContentDescription(jdesc.description());
 
-  cricket::AudioCodec g729 = audio->codecs()[0];
+  cricket::Codec g729 = audio->codecs()[0];
   EXPECT_EQ("G729", g729.name);
   EXPECT_EQ(8000, g729.clockrate);
   EXPECT_EQ(18, g729.id);
@@ -2464,7 +2453,7 @@ TEST_F(WebRtcSdpTest, DeserializeSessionDescriptionWithoutRtpmapButWithFmtp) {
   ASSERT_TRUE(found != g729.params.end());
   EXPECT_EQ(found->second, "yes");
 
-  cricket::AudioCodec isac = audio->codecs()[1];
+  cricket::Codec isac = audio->codecs()[1];
   EXPECT_EQ("ISAC", isac.name);
   EXPECT_EQ(103, isac.id);
   EXPECT_EQ(16000, isac.clockrate);
@@ -3405,7 +3394,7 @@ TEST_F(WebRtcSdpTest, DeserializePacketizationAttributeWithIllegalValue) {
       GetFirstAudioContentDescription(jdesc_output.description());
   ASSERT_TRUE(acd);
   ASSERT_THAT(acd->codecs(), testing::SizeIs(1));
-  cricket::AudioCodec opus = acd->codecs()[0];
+  cricket::Codec opus = acd->codecs()[0];
   EXPECT_EQ(opus.name, "opus");
   EXPECT_EQ(opus.id, 111);
 
@@ -3483,7 +3472,7 @@ TEST_F(WebRtcSdpTest, SerializeAudioFmtpWithTelephoneEvent) {
   AudioContentDescription* acd = GetFirstAudioContentDescription(&desc_);
 
   cricket::AudioCodecs codecs = acd->codecs();
-  cricket::AudioCodec dtmf =
+  cricket::Codec dtmf =
       cricket::CreateAudioCodec(105, "telephone-event", 8000, 1);
   dtmf.params[""] = "0-15";
   codecs.push_back(dtmf);
@@ -5021,7 +5010,7 @@ TEST_F(WebRtcSdpTest, ParseSessionLevelExtmapAttributes) {
   EXPECT_TRUE(SdpDeserialize(sdp, &jdesc));
   ASSERT_EQ(1u, jdesc.description()->contents().size());
   const auto content = jdesc.description()->contents()[0];
-  const auto* audio_description = content.media_description()->as_audio();
+  const auto* audio_description = content.media_description();
   ASSERT_NE(audio_description, nullptr);
   const auto& extensions = audio_description->rtp_header_extensions();
   ASSERT_EQ(1u, extensions.size());
@@ -5082,4 +5071,28 @@ TEST_F(WebRtcSdpTest, RejectDuplicateSsrcInSsrcGroup) {
       "a=ssrc:1234 cname:test\r\n";
   JsepSessionDescription jdesc(kDummyType);
   EXPECT_FALSE(SdpDeserialize(sdp, &jdesc));
+}
+
+TEST_F(WebRtcSdpTest, ExpectsTLineBeforeAttributeLine) {
+  // https://www.rfc-editor.org/rfc/rfc4566#page-9
+  // says a= attributes must come last.
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 0 3 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "a=thisisnottherightplace\r\n"
+      "t=0 0\r\n";
+  JsepSessionDescription jdesc(kDummyType);
+  EXPECT_FALSE(SdpDeserialize(sdp, &jdesc));
+}
+
+TEST_F(WebRtcSdpTest, IgnoresUnknownAttributeLines) {
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 0 3 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=somethingthatisnotunderstood\r\n";
+  JsepSessionDescription jdesc(kDummyType);
+  EXPECT_TRUE(SdpDeserialize(sdp, &jdesc));
 }

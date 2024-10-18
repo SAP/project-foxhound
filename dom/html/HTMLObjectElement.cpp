@@ -34,25 +34,17 @@ HTMLObjectElement::HTMLObjectElement(
     : nsGenericHTMLFormControlElement(std::move(aNodeInfo),
                                       FormControlType::Object),
       mIsDoneAddingChildren(!aFromParser) {
-  RegisterActivityObserver();
   SetIsNetworkCreated(aFromParser == FROM_PARSER_NETWORK);
 
   // <object> is always barred from constraint validation.
   SetBarredFromConstraintValidation(true);
 }
 
-HTMLObjectElement::~HTMLObjectElement() {
-  UnregisterActivityObserver();
-  nsImageLoadingContent::Destroy();
-}
+HTMLObjectElement::~HTMLObjectElement() = default;
 
 bool HTMLObjectElement::IsInteractiveHTMLContent() const {
   return HasAttr(nsGkAtoms::usemap) ||
          nsGenericHTMLFormControlElement::IsInteractiveHTMLContent();
-}
-
-void HTMLObjectElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
-  nsImageLoadingContent::AsyncEventRunning(aEvent);
 }
 
 void HTMLObjectElement::DoneAddingChildren(bool aHaveNotified) {
@@ -80,9 +72,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLObjectElement,
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(
-    HTMLObjectElement, nsGenericHTMLFormControlElement,
-    imgINotificationObserver, nsIRequestObserver, nsIStreamListener,
-    nsFrameLoaderOwner, nsIObjectLoadingContent, nsIImageLoadingContent,
+    HTMLObjectElement, nsGenericHTMLFormControlElement, nsIRequestObserver,
+    nsIStreamListener, nsFrameLoaderOwner, nsIObjectLoadingContent,
     nsIChannelEventSink, nsIConstraintValidation)
 
 NS_IMPL_ELEMENT_CLONE(HTMLObjectElement)
@@ -90,9 +81,6 @@ NS_IMPL_ELEMENT_CLONE(HTMLObjectElement)
 nsresult HTMLObjectElement::BindToTree(BindContext& aContext,
                                        nsINode& aParent) {
   nsresult rv = nsGenericHTMLFormControlElement::BindToTree(aContext, aParent);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = nsObjectLoadingContent::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // If we already have all the children, start the load.
@@ -105,9 +93,9 @@ nsresult HTMLObjectElement::BindToTree(BindContext& aContext,
   return NS_OK;
 }
 
-void HTMLObjectElement::UnbindFromTree(bool aNullParent) {
-  nsObjectLoadingContent::UnbindFromTree(aNullParent);
-  nsGenericHTMLFormControlElement::UnbindFromTree(aNullParent);
+void HTMLObjectElement::UnbindFromTree(UnbindContext& aContext) {
+  nsObjectLoadingContent::UnbindFromTree();
+  nsGenericHTMLFormControlElement::UnbindFromTree(aContext);
 }
 
 nsresult HTMLObjectElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -174,23 +162,12 @@ bool HTMLObjectElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
     return false;
   }
 
-  // Plugins that show the empty fallback should not accept focus.
-  if (Type() == eType_Fallback) {
-    if (aTabIndex) {
-      *aTabIndex = -1;
-    }
-
-    *aIsFocusable = false;
-    return false;
-  }
-
   const nsAttrValue* attrVal = mAttrs.GetAttr(nsGkAtoms::tabindex);
   bool isFocusable = attrVal && attrVal->Type() == nsAttrValue::eInteger;
 
   // This method doesn't call nsGenericHTMLFormControlElement intentionally.
   // TODO: It should probably be changed when bug 597242 will be fixed.
-  if (IsEditingHost() || Type() == eType_Document ||
-      Type() == eType_FakePlugin) {
+  if (IsEditingHost() || Type() == ObjectType::Document) {
     if (aTabIndex) {
       *aTabIndex = isFocusable ? attrVal->GetIntegerValue() : 0;
     }

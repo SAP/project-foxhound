@@ -154,11 +154,11 @@ struct PhaseInfo {
 };
 
 // A table of PhaseInfo indexed by Phase.
-using PhaseTable = EnumeratedArray<Phase, Phase::LIMIT, PhaseInfo>;
+using PhaseTable = EnumeratedArray<Phase, PhaseInfo, size_t(Phase::LIMIT)>;
 
 // A table of PhaseKindInfo indexed by PhaseKind.
 using PhaseKindTable =
-    EnumeratedArray<PhaseKind, PhaseKind::LIMIT, PhaseKindInfo>;
+    EnumeratedArray<PhaseKind, PhaseKindInfo, size_t(PhaseKind::LIMIT)>;
 
 #include "gc/StatsPhasesGenerated.inc"
 
@@ -595,7 +595,7 @@ UniqueChars Statistics::formatDetailedTotals() const {
 void Statistics::formatJsonSlice(size_t sliceNum, JSONPrinter& json) const {
   /*
    * We number each of the slice properties to keep the code in
-   * GCTelemetry.jsm in sync.  See MAX_SLICE_KEYS.
+   * GCTelemetry.sys.mjs in sync.  See MAX_SLICE_KEYS.
    */
   json.beginObject();
   formatJsonSliceDescription(sliceNum, slices_[sliceNum], json);  // # 1-11
@@ -1134,7 +1134,6 @@ void Statistics::sendGCTelemetry() {
       uint32_t threadCount = gc->markers.length();
       double speedup = parallelMarkTime / wallTime;
       double utilization = parallelRunTime / (wallTime * threadCount);
-      MOZ_ASSERT(utilization <= 1.0);
       runtime->metrics().GC_PARALLEL_MARK_SPEEDUP(uint32_t(speedup * 100.0));
       runtime->metrics().GC_PARALLEL_MARK_UTILIZATION(
           std::clamp(utilization * 100.0, 0.0, 100.0));

@@ -35,13 +35,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CustomizableWidgets: "resource:///modules/CustomizableWidgets.sys.mjs",
   PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  ProfilerMenuButton:
+    "resource://devtools/client/performance-new/popup/menu-button.sys.mjs",
   WebChannel: "resource://gre/modules/WebChannel.sys.mjs",
 });
-ChromeUtils.defineModuleGetter(
-  lazy,
-  "ProfilerMenuButton",
-  "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
-);
 
 // We don't want to spend time initializing the full loader here so we create
 // our own lazy require.
@@ -240,6 +237,20 @@ function getProfilerKeyShortcuts() {
       shortcut: getLocalizedKeyShortcut("devtools-commandkey-profiler-capture"),
       modifiers: "control,shift",
     },
+    // Because it's not uncommon for content or extension to bind this
+    // shortcut, allow using alt as well for starting and stopping the profiler
+    {
+      id: "profilerStartStopAlternate",
+      shortcut: getLocalizedKeyShortcut(
+        "devtools-commandkey-profiler-start-stop"
+      ),
+      modifiers: "control,shift,alt",
+    },
+    {
+      id: "profilerCaptureAlternate",
+      shortcut: getLocalizedKeyShortcut("devtools-commandkey-profiler-capture"),
+      modifiers: "control,shift,alt",
+    },
   ];
 }
 
@@ -290,8 +301,8 @@ export function validateProfilerWebChannelUrl(targetUrl) {
 }
 
 ChromeUtils.defineLazyGetter(lazy, "ProfilerPopupBackground", function () {
-  return ChromeUtils.import(
-    "resource://devtools/client/performance-new/shared/background.jsm.js"
+  return ChromeUtils.importESModule(
+    "resource://devtools/client/performance-new/shared/background.sys.mjs"
   );
 });
 
@@ -862,11 +873,13 @@ DevToolsStartup.prototype = {
       // The profiler doesn't care if DevTools is loaded, so provide a quick check
       // first to bail out of checking if DevTools is available.
       switch (key.id) {
-        case "profilerStartStop": {
+        case "profilerStartStop":
+        case "profilerStartStopAlternate": {
           lazy.ProfilerPopupBackground.toggleProfiler("aboutprofiling");
           return;
         }
-        case "profilerCapture": {
+        case "profilerCapture":
+        case "profilerCaptureAlternate": {
           lazy.ProfilerPopupBackground.captureProfile("aboutprofiling");
           return;
         }
@@ -997,7 +1010,7 @@ DevToolsStartup.prototype = {
     let devtoolsThreadResumed = false;
     const pauseOnStartup = cmdLine.handleFlag("wait-for-jsdebugger", false);
     if (pauseOnStartup) {
-      const observe = function (subject, topic, data) {
+      const observe = function () {
         devtoolsThreadResumed = true;
         Services.obs.removeObserver(observe, "devtools-thread-ready");
       };
@@ -1386,7 +1399,7 @@ const JsonView = {
             Services.scriptSecurityManager.getSystemPrincipal()
           );
         },
-        onError(status) {
+        onError() {
           throw new Error("JSON Viewer's onSave failed in startPersistence");
         },
       });

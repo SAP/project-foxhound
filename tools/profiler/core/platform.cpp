@@ -114,7 +114,7 @@
 #  include "mozilla/jni/Refs.h"
 #endif
 
-#if defined(GP_OS_darwin)
+#if defined(XP_MACOSX)
 #  include "nsCocoaFeatures.h"
 #endif
 
@@ -275,7 +275,7 @@ class GeckoJavaSampler
                                             featureStringArray.length());
 
     // 128 * 1024 * 1024 is the entries preset that is given in
-    // devtools/client/performance-new/shared/background.jsm.js
+    // devtools/client/performance-new/shared/background.sys.mjs
     profiler_start(PowerOfTwo32(128 * 1024 * 1024), 5.0, features,
                    filtersTemp.begin(), filtersTemp.length(), 0, Nothing());
   }
@@ -2055,8 +2055,10 @@ static void MergeStacks(
       // the buffer, nsRefreshDriver would now be holding on to a backtrace
       // with stale JIT code return addresses.
       if (aIsSynchronous ||
-          jsFrame.kind == JS::ProfilingFrameIterator::Frame_Wasm) {
-        aCollector.CollectWasmFrame(jsFrame.label);
+          jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmIon ||
+          jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmBaseline ||
+          jsFrame.kind == JS::ProfilingFrameIterator::Frame_WasmOther) {
+        aCollector.CollectWasmFrame(jsFrame.profilingCategory(), jsFrame.label);
       } else if (jsFrame.kind ==
                  JS::ProfilingFrameIterator::Frame_BaselineInterpreter) {
         // Materialize a ProfilingStackFrame similar to the C++ Interpreter. We
@@ -2803,7 +2805,7 @@ static PreRecordedMetaInformation PreRecordMetaInformation(
       !NS_FAILED(res) && http) {
     Unused << http->GetPlatform(info.mHttpPlatform);
 
-#if defined(GP_OS_darwin)
+#if defined(XP_MACOSX)
     // On Mac, the http "oscpu" is capped at 10.15, so we need to get the real
     // OS version directly.
     int major = 0;

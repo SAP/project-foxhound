@@ -89,25 +89,38 @@ def check_working_directory(push=True):
         sys.exit(1)
 
 
-def generate_try_task_config(method, labels, try_config=None, routes=None):
-    try_task_config = try_config or {}
-    try_task_config.setdefault("env", {})["TRY_SELECTOR"] = method
-    try_task_config.update(
-        {
-            "version": 1,
-            "tasks": sorted(labels),
-        }
-    )
-    if routes:
-        try_task_config["routes"] = routes
+def generate_try_task_config(method, labels, params=None, routes=None):
+    params = params or {}
 
+    # The user has explicitly requested a set of jobs, so run them all
+    # regardless of optimization (unless the selector explicitly sets this to
+    # True). Their dependencies can be optimized though.
+    params.setdefault("optimize_target_tasks", False)
+
+    # Remove selected labels from 'existing_tasks' parameter if present
+    if "existing_tasks" in params:
+        params["existing_tasks"] = {
+            label: tid
+            for label, tid in params["existing_tasks"].items()
+            if label not in labels
+        }
+
+    try_config = params.setdefault("try_task_config", {})
+    try_config.setdefault("env", {})["TRY_SELECTOR"] = method
+
+    try_config["tasks"] = sorted(labels)
+
+    if routes:
+        try_config["routes"] = routes
+
+    try_task_config = {"version": 2, "parameters": params}
     return try_task_config
 
 
 def task_labels_from_try_config(try_task_config):
     if try_task_config["version"] == 2:
         parameters = try_task_config.get("parameters", {})
-        if parameters.get("try_mode") == "try_task_config":
+        if "try_task_config" in parameters:
             return parameters["try_task_config"]["tasks"]
         else:
             return None
@@ -157,11 +170,11 @@ def display_push_estimates(try_task_config):
         )
     )
     if "percentile" in durations:
-        print(
-            "estimates: In the top {}% of durations".format(
-                100 - durations["percentile"]
-            )
-        )
+        percentile = durations["percentile"]
+        if percentile > 50:
+            print("estimates: In the longest {}% of durations".format(100 - percentile))
+        else:
+            print("estimates: In the shortest {}% of durations".format(percentile))
     print(
         "estimates: Should take about {} (Finished around {})".format(
             durations["wall_duration_seconds"],

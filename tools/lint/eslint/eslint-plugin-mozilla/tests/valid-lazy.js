@@ -10,7 +10,9 @@
 var rule = require("../lib/rules/valid-lazy");
 var RuleTester = require("eslint").RuleTester;
 
-const ruleTester = new RuleTester({ parserOptions: { ecmaVersion: "latest" } });
+const ruleTester = new RuleTester({
+  parserOptions: { ecmaVersion: "latest", sourceType: "module" },
+});
 
 // ------------------------------------------------------------------------------
 // Tests
@@ -95,6 +97,20 @@ ruleTester.run("valid-lazy", rule, {
        var { x = lazy.foo.bar() } = {};
        var [ y = lazy.foo.bar() ] = [];
      `,
+    `
+       const lazy = {};
+       ChromeUtils.defineLazyGetter(lazy, "foo", () => {});
+       export { lazy as Foo };
+     `,
+    `
+       const lazy = {};
+       if (cond) {
+         ChromeUtils.defineLazyGetter(lazy, "foo", () => { return 1; });
+       } else {
+         ChromeUtils.defineLazyGetter(lazy, "foo", () => { return 2; });
+       }
+       if (x) { lazy.foo; }
+    `,
   ],
   invalid: [
     invalidCode("if (x) { lazy.bar; }", "bar", "unknownProperty"),

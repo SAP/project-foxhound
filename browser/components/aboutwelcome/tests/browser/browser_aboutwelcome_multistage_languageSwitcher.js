@@ -4,8 +4,8 @@ const { getAddonAndLocalAPIsMocker } = ChromeUtils.importESModule(
   "resource://testing-common/LangPackMatcherTestUtils.sys.mjs"
 );
 
-const { AWScreenUtils } = ChromeUtils.import(
-  "resource:///modules/aboutwelcome/AWScreenUtils.jsm"
+const { AWScreenUtils } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs"
 );
 
 const sandbox = sinon.createSandbox();
@@ -171,7 +171,7 @@ function eventsMatch(
       dump(`Expected: ${expectedEvent}`);
       dump("\n");
     }
-    ok(actualEvent === expectedEvent, message);
+    Assert.strictEqual(actualEvent, expectedEvent, message);
   }
 }
 

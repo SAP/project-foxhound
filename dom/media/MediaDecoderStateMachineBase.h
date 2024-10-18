@@ -169,6 +169,8 @@ class MediaDecoderStateMachineBase {
 
   virtual bool IsCDMProxySupported(CDMProxy* aProxy) = 0;
 
+  virtual bool IsExternalEngineStateMachine() const { return false; }
+
  protected:
   virtual ~MediaDecoderStateMachineBase() = default;
 
@@ -195,7 +197,7 @@ class MediaDecoderStateMachineBase {
 
   virtual RefPtr<MediaDecoder::SeekPromise> Seek(const SeekTarget& aTarget) = 0;
 
-  void DecodeError(const MediaResult& aError);
+  virtual void DecodeError(const MediaResult& aError);
 
   // Functions used by assertions to ensure we're calling things
   // on the appropriate threads.

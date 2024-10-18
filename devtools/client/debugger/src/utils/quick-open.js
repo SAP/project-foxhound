@@ -3,12 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 import { endTruncateStr } from "./utils";
-import {
-  getFilename,
-  getSourceClassnames,
-  getSourceQueryString,
-  getRelativeUrl,
-} from "./source";
+import { getSourceClassnames, getRelativeUrl } from "./source";
 
 export const MODIFIERS = {
   "@": "functions",
@@ -62,16 +57,15 @@ export function formatSourceForList(
   isBlackBoxed,
   projectDirectoryRoot
 ) {
-  const title = getFilename(source);
   const relativeUrlWithQuery = `${getRelativeUrl(
     source,
     projectDirectoryRoot
-  )}${getSourceQueryString(source) || ""}`;
+  )}${source.displayURL.search || ""}`;
   const subtitle = endTruncateStr(relativeUrlWithQuery, 100);
   const value = relativeUrlWithQuery;
   return {
     value,
-    title,
+    title: source.shortName,
     subtitle,
     icon: hasTabOpened
       ? "tab result-item-icon"

@@ -3,14 +3,14 @@
 
 "use strict";
 
-const { Store } = ChromeUtils.import(
-  "resource://activity-stream/lib/Store.jsm"
+const { Store } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/Store.sys.mjs"
 );
-const { ActivityStreamMessageChannel } = ChromeUtils.import(
-  "resource://activity-stream/lib/ActivityStreamMessageChannel.jsm"
+const { ActivityStreamMessageChannel } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/ActivityStreamMessageChannel.sys.mjs"
 );
-const { ActivityStreamStorage } = ChromeUtils.import(
-  "resource://activity-stream/lib/ActivityStreamStorage.jsm"
+const { ActivityStreamStorage } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/ActivityStreamStorage.sys.mjs"
 );
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
@@ -41,7 +41,7 @@ add_task(async function test_messagechannel() {
   let sandbox = sinon.createSandbox();
   sandbox
     .stub(ActivityStreamMessageChannel.prototype, "middleware")
-    .returns(s => next => action => next(action));
+    .returns(() => next => action => next(action));
   let store = new Store();
 
   info(

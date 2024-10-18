@@ -34,10 +34,10 @@ export let FormAutofillPrompter = {
   },
 
   async promptToSaveAddress(
-    browser,
-    storage,
-    flowId,
-    { oldRecord, newRecord }
+    _browser,
+    _storage,
+    _flowId,
+    { _oldRecord, _newRecord }
   ) {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },

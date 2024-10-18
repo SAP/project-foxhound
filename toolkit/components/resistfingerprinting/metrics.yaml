@@ -25,3 +25,387 @@ fingerprinting.protection:
       - tschuster@mozilla.com
     expires: never
     telemetry_mirror: FINGERPRINTING_PROTECTION_CANVAS_NOISE_CALCULATE_TIME_MS
+
+
+characteristics:
+  client_identifier:
+    type: uuid
+    description: >
+      A unique identifier for a user, not the same as the normal Telemetry
+      client_id, but needed so we can deduplicate reports and only take the most
+      recent one per user.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+      - deletion-request
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879154
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879154#c8
+    expires: never
+    data_sensitivity:
+      - technical
+
+  submission_schema:
+    type: quantity
+    unit: versions
+    description: >
+      An incrementing constant that represents the current schema/source of the
+      data present in a ping. By referring to this value in a ping, one can know
+      for certain the provenance of other data present in the ping, and what
+      data may or may not be present.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879154
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879154#c8
+    expires: never
+
+  max_touch_points:
+    type: quantity
+    unit: Fingers
+    description: >
+      The number of touch points we will report to the web. On Android, this is
+      based on Android's FEATURE_TOUCHSCREEN* constants - Mozilla caps this at 5
+      as Android stops distinguishing between numbers greater than 5.  On
+      Windows this comes from the SM_MAXIMUMTOUCHES System Metric.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879156
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879156#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  video_dynamic_range:
+    type: boolean
+    description: >
+      What LookAndFeel(VideoDynamicRange) reports. Note that CSSVideoDynamicRange
+      has an additional dependency on Color Depth.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  prefers_reduced_transparency:
+    type: boolean
+    description: >
+      What LookAndFeel(PrefersReducedTransparency) reports.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  prefers_reduced_motion:
+    type: boolean
+    description: >
+      What LookAndFeel(PrefersReducedMotion) reports.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  prefers_contrast:
+    type: quantity
+    unit: enum StylePrefersContrast value
+    description: >
+      What Gecko_MediaFeatures_PrefersContrast reports for a ContentDocument
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  inverted_colors:
+    type: boolean
+    description: >
+      What LookAndFeel(InvertedColors) reports.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  color_scheme:
+    type: quantity
+    unit: enum mozilla::ColorScheme value
+    description: >
+      The Color Scheme used for Content, from ContentPrefs() Preference Sheet.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  color_gamut:
+    type: quantity
+    unit: enum dom::ScreenColorGamut value
+    description: >
+      The Color Gamut reported by CSS
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  color_depth:
+    type: quantity
+    unit: bits
+    description: >
+      The Color Depth reported by CSS
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879624#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  missing_fonts:
+    type: text
+    description: >
+      If a Font List is available for the user's platform, this
+      string_list contains the fonts that are missing from the user's
+      computer.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1880561
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1880561#c6
+    expires: never
+    data_sensitivity:
+      # Text metrics are _required_ to be web_activity or highly_sensitive, so even though this
+      # is more like 'technical' (per the Data Review), I'm marking highly sensitive.
+      - highly_sensitive
+
+  screen_width:
+    type: quantity
+    unit: pixels
+    description: >
+      Width of the primary screen in pixels.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881749
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881749#c5
+    expires: never
+    data_sensitivity:
+      - technical
+
+  screen_height:
+    type: quantity
+    unit: pixels
+    description: >
+      Height of the primary screen in pixels.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881749
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881749#c5
+    expires: never
+    data_sensitivity:
+      - technical
+
+  processor_count:
+    type: quantity
+    unit: int
+    description: >
+      Number of processors.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881759
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881759#c4
+    expires: never
+    data_sensitivity:
+      - technical
+
+  timezone:
+    type: string
+    description: >
+      The the current timezone of the system
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881773
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1881773#c4
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  target_frame_rate:
+    type: quantity
+    unit: int
+    description: >
+      The target frame rate in frames-per-second.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882054
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882054#c3
+    expires: never
+    data_sensitivity:
+      - technical
+
+  prefs_intl_accept_languages:
+    type: string
+    description: >
+      Value of the intl.accept_languages pref.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482#c6
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  prefs_media_eme_enabled:
+    type: boolean
+    description: >
+      Value of the media.eme.enabled pref.
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482#c6
+    expires: never
+    data_sensitivity:
+      - interaction
+
+  prefs_zoom_text_only:
+    type: boolean
+    description: >
+      Text-only zoom enabled (vs. full-zoom)
+    lifetime: application
+    send_in_pings:
+      - user-characteristics
+    notification_emails:
+      - tom@mozilla.com
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879151
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1882482#c6
+    expires: never
+    data_sensitivity:
+      - interaction

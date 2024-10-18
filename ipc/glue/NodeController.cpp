@@ -10,6 +10,7 @@
 #include "chrome/common/ipc_message.h"
 #include "mojo/core/ports/name.h"
 #include "mojo/core/ports/node.h"
+#include "mojo/core/ports/port_locker.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/StaticPtr.h"
@@ -309,7 +310,7 @@ void NodeController::DropPeer(NodeName aNodeName) {
 void NodeController::ForwardEvent(const NodeName& aNode,
                                   UniquePtr<Event> aEvent) {
   if (aNode == mName) {
-    (void)mNode->AcceptEvent(std::move(aEvent));
+    (void)mNode->AcceptEvent(mName, std::move(aEvent));
   } else {
     // On Windows and macOS, messages holding HANDLEs or mach ports must be
     // relayed via the broker process so it can transfer ownership.
@@ -543,7 +544,7 @@ void NodeController::OnEventMessage(const NodeName& aFromNode,
     }
   }
 
-  (void)mNode->AcceptEvent(std::move(event));
+  (void)mNode->AcceptEvent(fromNode, std::move(event));
 }
 
 void NodeController::OnBroadcast(const NodeName& aFromNode,
@@ -575,9 +576,9 @@ void NodeController::OnBroadcast(const NodeName& aFromNode,
     // NOTE: This `clone` operation is only supported for a limited number of
     // message types by the ports API, which provides some extra security by
     // only allowing those specific types of messages to be broadcasted.
-    // Messages which don't support `Clone` cannot be broadcast, and the ports
-    // library will not attempt to broadcast them.
-    auto clone = event->Clone();
+    // Messages which don't support `CloneForBroadcast` cannot be broadcast, and
+    // the ports library will not attempt to broadcast them.
+    auto clone = event->CloneForBroadcast();
     if (!clone) {
       NODECONTROLLER_WARNING("Attempt to broadcast unsupported message");
       break;
@@ -796,6 +797,15 @@ ScopedPort NodeController::InitChildProcess(UniquePtr<IPC::Channel> aChannel,
 
   auto ports = gNodeController->CreatePortPair();
   PortRef toMerge = ports.second.Release();
+
+  // Mark the port as expecting a pending merge. This is a duplicate of the
+  // information tracked by `mPendingMerges`, and was added by upstream
+  // chromium.
+  // See https://chromium-review.googlesource.com/c/chromium/src/+/3289065
+  {
+    mojo::core::ports::SinglePortLocker locker(&toMerge);
+    locker.port()->pending_merge_peer = true;
+  }
 
   auto nodeChannel = MakeRefPtr<NodeChannel>(
       kBrokerNodeName, std::move(aChannel), gNodeController, aParentPid);

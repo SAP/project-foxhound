@@ -8,6 +8,8 @@
 using mozilla::layers::RGBDescriptor from "mozilla/layers/LayersSurfaces.h";
 using mozilla::layers::RemoteTextureId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::RemoteTextureOwnerId from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::RemoteTextureTxnType from "mozilla/layers/LayersTypes.h";
+using mozilla::layers::RemoteTextureTxnId from "mozilla/layers/LayersTypes.h";
 using mozilla::webgpu::RawId from "mozilla/webgpu/WebGPUTypes.h";
 using mozilla::dom::GPUErrorFilter from "mozilla/dom/WebGPUBinding.h";
 using mozilla::dom::GPURequestAdapterOptions from "mozilla/dom/WebGPUBinding.h";
@@ -42,6 +44,8 @@ parent:
   async DeviceActionWithAck(RawId selfId, ByteBuf buf) returns (bool dummy);
   async TextureAction(RawId selfId, RawId aDeviceId, ByteBuf buf);
   async CommandEncoderAction(RawId selfId, RawId aDeviceId, ByteBuf buf);
+  async RenderPass(RawId selfId, RawId aDeviceId, ByteBuf buf);
+  async ComputePass(RawId selfId, RawId aDeviceId, ByteBuf buf);
   async BumpImplicitBindGroupLayout(RawId pipelineId, bool isCompute, uint32_t index, RawId assignId);
 
   async DeviceCreateBuffer(RawId deviceId, RawId bufferId, GPUBufferDescriptor desc, UnsafeSharedMemoryHandle shm);
@@ -51,7 +55,7 @@ parent:
   async AdapterDrop(RawId selfId);
   // TODO: We want to return an array of compilation messages.
   async DeviceCreateShaderModule(RawId selfId, RawId bufferId, nsString label, nsCString code) returns (WebGPUCompilationMessage[] messages);
-  async BufferMap(RawId selfId, uint32_t aMode, uint64_t offset, uint64_t size) returns (BufferMapResult result);
+  async BufferMap(RawId deviceId, RawId bufferId, uint32_t aMode, uint64_t offset, uint64_t size) returns (BufferMapResult result);
   async BufferUnmap(RawId deviceId, RawId bufferId, bool flush);
   async BufferDestroy(RawId selfId);
   async BufferDrop(RawId selfId);
@@ -65,7 +69,7 @@ parent:
   async CommandEncoderFinish(RawId selfId, RawId deviceId, GPUCommandBufferDescriptor desc);
   async CommandEncoderDrop(RawId selfId);
   async RenderBundleDrop(RawId selfId);
-  async QueueSubmit(RawId selfId, RawId aDeviceId, RawId[] commandBuffers);
+  async QueueSubmit(RawId selfId, RawId aDeviceId, RawId[] commandBuffers, RawId[] textureIds);
   async QueueOnSubmittedWorkDone(RawId selfId) returns (void_t ok);
   async QueueWriteAction(RawId selfId, RawId aDeviceId, ByteBuf buf, UnsafeSharedMemoryHandle shmem);
 
@@ -78,7 +82,7 @@ parent:
   async ImplicitLayoutDrop(RawId implicitPlId, RawId[] implicitBglIds);
   async DeviceCreateSwapChain(RawId selfId, RawId queueId, RGBDescriptor desc, RawId[] bufferIds, RemoteTextureOwnerId ownerId, bool useExternalTextureInSwapChain);
   async SwapChainPresent(RawId textureId, RawId commandEncoderId, RemoteTextureId remoteTextureId, RemoteTextureOwnerId remoteTextureOwnerId);
-  async SwapChainDrop(RemoteTextureOwnerId ownerId);
+  async SwapChainDrop(RemoteTextureOwnerId ownerId, RemoteTextureTxnType txnType, RemoteTextureTxnId txnId);
 
   async DevicePushErrorScope(RawId selfId, GPUErrorFilter aFilter);
   async DevicePopErrorScope(RawId selfId) returns (PopErrorScopeResult result);

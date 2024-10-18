@@ -851,7 +851,8 @@ EventSourceImpl::OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) {
       aStatusCode != NS_ERROR_NET_PARTIAL_TRANSFER &&
       aStatusCode != NS_ERROR_NET_TIMEOUT_EXTERNAL &&
       aStatusCode != NS_ERROR_PROXY_CONNECTION_REFUSED &&
-      aStatusCode != NS_ERROR_DNS_LOOKUP_QUEUE_FULL) {
+      aStatusCode != NS_ERROR_DNS_LOOKUP_QUEUE_FULL &&
+      aStatusCode != NS_ERROR_INVALID_CONTENT_ENCODING) {
     DispatchFailConnection();
     return NS_ERROR_ABORT;
   }
@@ -1827,7 +1828,7 @@ class WorkerRunnableDispatcher final : public WorkerRunnable {
   WorkerRunnableDispatcher(RefPtr<EventSourceImpl>&& aImpl,
                            WorkerPrivate* aWorkerPrivate,
                            already_AddRefed<nsIRunnable> aEvent)
-      : WorkerRunnable(aWorkerPrivate, WorkerThread),
+      : WorkerRunnable(aWorkerPrivate, "WorkerRunnableDispatcher"),
         mEventSourceImpl(std::move(aImpl)),
         mEvent(std::move(aEvent)) {}
 

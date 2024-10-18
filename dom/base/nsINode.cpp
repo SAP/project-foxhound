@@ -19,6 +19,7 @@
 #include "js/JSON.h"           // JS_ParseJSON
 #include "mozAutoDocUpdate.h"
 #include "mozilla/AsyncEventDispatcher.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
@@ -308,7 +309,7 @@ class IsItemInRangeComparator {
   // @param aStartOffset has to be less or equal to aEndOffset.
   IsItemInRangeComparator(const nsINode& aNode, const uint32_t aStartOffset,
                           const uint32_t aEndOffset,
-                          nsContentUtils::ComparePointsCache* aCache)
+                          nsContentUtils::NodeIndexCache* aCache)
       : mNode(aNode),
         mStartOffset(aStartOffset),
         mEndOffset(aEndOffset),
@@ -336,7 +337,7 @@ class IsItemInRangeComparator {
   const nsINode& mNode;
   const uint32_t mStartOffset;
   const uint32_t mEndOffset;
-  nsContentUtils::ComparePointsCache* mCache;
+  nsContentUtils::NodeIndexCache* mCache;
 };
 
 bool nsINode::IsSelected(const uint32_t aStartOffset,
@@ -363,13 +364,15 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
       // Looks like that IsInSelection() assert fails sometimes...
       if (range->IsInAnySelection()) {
         for (const WeakPtr<Selection>& selection : range->GetSelections()) {
-          ancestorSelections.Insert(selection);
+          if (selection) {
+            ancestorSelections.Insert(selection);
+          }
         }
       }
     }
   }
 
-  nsContentUtils::ComparePointsCache cache;
+  nsContentUtils::NodeIndexCache cache;
   IsItemInRangeComparator comparator{*this, aStartOffset, aEndOffset, &cache};
   for (Selection* selection : ancestorSelections) {
     // Binary search the sorted ranges in this selection.
@@ -1815,6 +1818,10 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
     return Nothing();
   }
 
+  if (aPossibleChild == GetFirstChild()) {
+    return Some(0);
+  }
+
   if (aPossibleChild == GetLastChild()) {
     MOZ_ASSERT(GetChildCount());
     return Some(GetChildCount() - 1);
@@ -1888,6 +1895,45 @@ Maybe<uint32_t> nsINode::ComputeIndexInParentContent() const {
     return Nothing();
   }
   return parent->ComputeIndexOf(this);
+}
+
+static Maybe<uint32_t> DoComputeFlatTreeIndexOf(FlattenedChildIterator& aIter,
+                                                const nsINode* aPossibleChild) {
+  if (aPossibleChild->GetFlattenedTreeParentNode() != aIter.Parent()) {
+    return Nothing();
+  }
+
+  uint32_t index = 0u;
+  for (nsIContent* child = aIter.GetNextChild(); child;
+       child = aIter.GetNextChild()) {
+    if (child == aPossibleChild) {
+      return Some(index);
+    }
+
+    ++index;
+  }
+
+  return Nothing();
+}
+
+Maybe<uint32_t> nsINode::ComputeFlatTreeIndexOf(
+    const nsINode* aPossibleChild) const {
+  if (!aPossibleChild) {
+    return Nothing();
+  }
+
+  if (!IsContent()) {
+    return ComputeIndexOf(aPossibleChild);
+  }
+
+  FlattenedChildIterator iter(AsContent());
+  if (!iter.ShadowDOMInvolved()) {
+    auto index = ComputeIndexOf(aPossibleChild);
+    MOZ_ASSERT(DoComputeFlatTreeIndexOf(iter, aPossibleChild) == index);
+    return index;
+  }
+
+  return DoComputeFlatTreeIndexOf(iter, aPossibleChild);
 }
 
 static already_AddRefed<nsINode> GetNodeFromNodeOrString(
@@ -3167,8 +3213,8 @@ inline static Element* FindMatchingElementWithId(
 
 Element* nsINode::QuerySelector(const nsACString& aSelector,
                                 ErrorResult& aResult) {
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("nsINode::QuerySelector",
-                                        LAYOUT_SelectorQuery, aSelector);
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
+      "querySelector", LAYOUT_SelectorQuery, aSelector);
 
   const StyleSelectorList* list = ParseSelectorList(aSelector, aResult);
   if (!list) {
@@ -3186,8 +3232,8 @@ Element* nsINode::QuerySelector(const nsACString& aSelector,
 
 already_AddRefed<nsINodeList> nsINode::QuerySelectorAll(
     const nsACString& aSelector, ErrorResult& aResult) {
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("nsINode::QuerySelectorAll",
-                                        LAYOUT_SelectorQuery, aSelector);
+  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_RELEVANT_FOR_JS(
+      "querySelectorAll", LAYOUT_SelectorQuery, aSelector);
 
   RefPtr<nsSimpleContentList> contentList = new nsSimpleContentList(this);
   const StyleSelectorList* list = ParseSelectorList(aSelector, aResult);
@@ -3547,22 +3593,14 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
       if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
         mediaElem->NotifyOwnerDocumentActivityChanged();
       }
-      nsCOMPtr<nsIObjectLoadingContent> objectLoadingContent(
-          do_QueryInterface(aNode));
-      if (objectLoadingContent) {
-        nsObjectLoadingContent* olc =
-            static_cast<nsObjectLoadingContent*>(objectLoadingContent.get());
-        olc->NotifyOwnerDocumentActivityChanged();
-      } else {
-        // HTMLImageElement::FromNode is insufficient since we need this for
-        // <svg:image> as well.
-        nsCOMPtr<nsIImageLoadingContent> imageLoadingContent(
-            do_QueryInterface(aNode));
-        if (imageLoadingContent) {
-          auto ilc =
-              static_cast<nsImageLoadingContent*>(imageLoadingContent.get());
-          ilc->NotifyOwnerDocumentActivityChanged();
-        }
+      // HTMLImageElement::FromNode is insufficient since we need this for
+      // <svg:image> as well.
+      nsCOMPtr<nsIImageLoadingContent> imageLoadingContent =
+          do_QueryInterface(aNode);
+      if (imageLoadingContent) {
+        auto* ilc =
+            static_cast<nsImageLoadingContent*>(imageLoadingContent.get());
+        ilc->NotifyOwnerDocumentActivityChanged();
       }
     }
 
@@ -3697,15 +3735,13 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
       }
       newShadowRoot->SetIsDeclarative(originalShadowRoot->IsDeclarative());
 
-      if (aDeep) {
-        for (nsIContent* origChild = originalShadowRoot->GetFirstChild();
-             origChild; origChild = origChild->GetNextSibling()) {
-          nsCOMPtr<nsINode> child =
-              CloneAndAdopt(origChild, aClone, aDeep, nodeInfoManager,
-                            aReparentScope, newShadowRoot, aError);
-          if (NS_WARN_IF(aError.Failed())) {
-            return nullptr;
-          }
+      for (nsIContent* origChild = originalShadowRoot->GetFirstChild();
+           origChild; origChild = origChild->GetNextSibling()) {
+        nsCOMPtr<nsINode> child =
+            CloneAndAdopt(origChild, aClone, true, nodeInfoManager,
+                          aReparentScope, newShadowRoot, aError);
+        if (NS_WARN_IF(aError.Failed())) {
+          return nullptr;
         }
       }
     }

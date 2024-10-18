@@ -274,12 +274,10 @@ ChannelEventSink.prototype = {
 /**
  * A helper class to construct origin attributes.
  */
-function OriginAttributes(inIsolatedMozBrowser, privateId) {
-  this.inIsolatedMozBrowser = inIsolatedMozBrowser;
+function OriginAttributes(privateId) {
   this.privateBrowsingId = privateId;
 }
 OriginAttributes.prototype = {
-  inIsolatedMozBrowser: false,
   privateBrowsingId: 0,
 };
 
@@ -524,4 +522,28 @@ function makeHTTPChannel(url, with_proxy) {
     uri: url,
     loadUsingSystemPrincipal: true,
   }).QueryInterface(Ci.nsIHttpChannel);
+}
+
+// Like ChannelListener but does not throw an exception if something
+// goes wrong. Callback is supposed to do all the work.
+class SimpleChannelListener {
+  constructor(callback) {
+    this._onStopCallback = callback;
+    this._buffer = "";
+  }
+  get QueryInterface() {
+    return ChromeUtils.generateQI(["nsIStreamListener", "nsIRequestObserver"]);
+  }
+
+  onStartRequest() {}
+
+  onDataAvailable(request, stream, offset, count) {
+    this._buffer = this._buffer.concat(read_stream(stream, count));
+  }
+
+  onStopRequest(request) {
+    if (this._onStopCallback) {
+      this._onStopCallback(request, this._buffer);
+    }
+  }
 }

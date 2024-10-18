@@ -20,6 +20,7 @@
 #define wasm_compile_args_h
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/TypedEnumBits.h"
 
 #include "js/Utility.h"
 #include "js/WasmFeatures.h"
@@ -102,6 +103,15 @@ struct FeatureArgs {
   FeatureArgs(FeatureArgs&&) = default;
 
   static FeatureArgs build(JSContext* cx, const FeatureOptions& options);
+  static FeatureArgs allEnabled() {
+    FeatureArgs args;
+#define WASM_FEATURE(NAME, LOWER_NAME, ...) args.LOWER_NAME = true;
+    JS_FOR_WASM_FEATURES(WASM_FEATURE)
+#undef WASM_FEATURE
+    args.sharedMemory = Shareable::True;
+    args.simd = true;
+    return args;
+  }
 
 #define WASM_FEATURE(NAME, LOWER_NAME, ...) bool LOWER_NAME;
   JS_FOR_WASM_FEATURES(WASM_FEATURE)
@@ -115,6 +125,18 @@ struct FeatureArgs {
   // The set of builtin modules that are imported by this module.
   BuiltinModuleIds builtinModules;
 };
+
+// Observed feature usage for a compiled module. Intended to be used for use
+// counters.
+enum class FeatureUsage : uint8_t {
+  None = 0x0,
+  LegacyExceptions = 0x1,
+};
+
+void SetUseCountersForFeatureUsage(JSContext* cx, JSObject* object,
+                                   FeatureUsage usage);
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(FeatureUsage);
 
 // Describes the JS scripted caller of a request to compile a wasm module.
 

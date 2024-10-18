@@ -413,7 +413,7 @@ index 54132bcdbb..cf8b3ad3dc 100644
  
  bool RtpExtension::IsSupportedForVideo(absl::string_view uri) {
 diff --git a/call/BUILD.gn b/call/BUILD.gn
-index 39cbc0a9c1..2e8a997fc4 100644
+index 9a7be88892..66c8b2011a 100644
 --- a/call/BUILD.gn
 +++ b/call/BUILD.gn
 @@ -20,6 +20,7 @@ rtc_library("call_interfaces") {
@@ -1233,7 +1233,7 @@ index fb95a6020d..95432a509d 100644
  }  // namespace videocapturemodule
  }  // namespace webrtc
 diff --git a/modules/video_capture/video_capture.h b/modules/video_capture/video_capture.h
-index eddc31414a..e207598d68 100644
+index 48920b27c0..f31b239c71 100644
 --- a/modules/video_capture/video_capture.h
 +++ b/modules/video_capture/video_capture.h
 @@ -15,15 +15,44 @@
@@ -1256,7 +1256,7 @@ index eddc31414a..e207598d68 100644
 +    virtual ~VideoInputFeedBack(){}
 +};
 +
- class VideoCaptureModule : public rtc::RefCountInterface {
+ class VideoCaptureModule : public RefCountInterface {
   public:
    // Interface for receiving information about available camera devices.
    class DeviceInfo {
@@ -1281,7 +1281,7 @@ index eddc31414a..e207598d68 100644
  
      // Returns the available capture devices.
      // deviceNumber   - Index of capture device.
-@@ -38,7 +67,8 @@ class VideoCaptureModule : public rtc::RefCountInterface {
+@@ -38,7 +67,8 @@ class VideoCaptureModule : public RefCountInterface {
                                    char* deviceUniqueIdUTF8,
                                    uint32_t deviceUniqueIdUTF8Length,
                                    char* productUniqueIdUTF8 = 0,
@@ -1291,7 +1291,7 @@ index eddc31414a..e207598d68 100644
  
      // Returns the number of capabilities this device.
      virtual int32_t NumberOfCapabilities(const char* deviceUniqueIdUTF8) = 0;
-@@ -70,6 +100,8 @@ class VideoCaptureModule : public rtc::RefCountInterface {
+@@ -70,6 +100,8 @@ class VideoCaptureModule : public RefCountInterface {
          uint32_t positionY) = 0;
  
      virtual ~DeviceInfo() {}
@@ -1300,7 +1300,7 @@ index eddc31414a..e207598d68 100644
    };
  
    //   Register capture data callback
-@@ -79,11 +111,16 @@ class VideoCaptureModule : public rtc::RefCountInterface {
+@@ -79,11 +111,16 @@ class VideoCaptureModule : public RefCountInterface {
        RawVideoSinkInterface* dataCallback) = 0;
  
    //  Remove capture data callback
@@ -1454,10 +1454,10 @@ index 5ec1fd4a83..e46e050609 100644
  
    int64_t _lastProcessFrameTimeNanos RTC_GUARDED_BY(capture_checker_);
 diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-index 4850c2602d..a1443051a4 100644
+index e26169fd3d..5330eb7e8c 100644
 --- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
 +++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-@@ -252,6 +252,7 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(const cricket::VideoCodec& codec,
+@@ -256,6 +256,7 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(const cricket::VideoCodec& codec,
        first_frame_in_picture_(true),
        ss_info_needed_(false),
        force_all_active_layers_(false),
@@ -1465,7 +1465,7 @@ index 4850c2602d..a1443051a4 100644
        is_flexible_mode_(false),
        variable_framerate_experiment_(ParseVariableFramerateConfig(trials)),
        variable_framerate_controller_(
-@@ -575,6 +576,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
+@@ -579,6 +580,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
  
    force_key_frame_ = true;
    pics_since_key_ = 0;
@@ -1473,7 +1473,7 @@ index 4850c2602d..a1443051a4 100644
  
    scalability_mode_ = inst->GetScalabilityMode();
    if (scalability_mode_.has_value()) {
-@@ -1148,6 +1150,14 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
+@@ -1151,6 +1153,14 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
      config_changed_ = false;
    }
  
@@ -1488,7 +1488,7 @@ index 4850c2602d..a1443051a4 100644
    RTC_DCHECK_EQ(input_image.width(), raw_->d_w);
    RTC_DCHECK_EQ(input_image.height(), raw_->d_h);
  
-@@ -1270,6 +1280,48 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
+@@ -1273,6 +1283,48 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
    return WEBRTC_VIDEO_CODEC_OK;
  }
  
@@ -1560,10 +1560,10 @@ index 0474e7bc17..1953923f81 100644
    std::unique_ptr<ScalableVideoController> svc_controller_;
    absl::optional<ScalabilityMode> scalability_mode_;
 diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
-index fdc2adf639..71d5b37847 100644
+index 3011d6a797..9f5f0aad56 100644
 --- a/rtc_base/BUILD.gn
 +++ b/rtc_base/BUILD.gn
-@@ -458,6 +458,12 @@ rtc_library("logging") {
+@@ -463,6 +463,12 @@ rtc_library("logging") {
      "//third_party/abseil-cpp/absl/types:optional",
    ]
  
@@ -1679,7 +1679,7 @@ index 0a9226ef6f..620c1c02f3 100644
    vcm_ = nullptr;
  }
 diff --git a/webrtc.gni b/webrtc.gni
-index 5a1c43c888..f0729175f0 100644
+index 447aae4096..277c12c054 100644
 --- a/webrtc.gni
 +++ b/webrtc.gni
 @@ -126,7 +126,7 @@ declare_args() {

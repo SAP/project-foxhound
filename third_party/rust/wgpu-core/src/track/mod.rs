@@ -102,16 +102,11 @@ mod stateless;
 mod texture;
 
 use crate::{
-    binding_model, command, conv,
-    hal_api::HalApi,
-    id::{self, TypedId},
-    pipeline, resource,
-    snatch::SnatchGuard,
-    storage::Storage,
+    binding_model, command, conv, hal_api::HalApi, id, pipeline, resource, snatch::SnatchGuard,
 };
 
-use parking_lot::RwLock;
-use std::{fmt, ops};
+use parking_lot::{Mutex, RwLock};
+use std::{fmt, ops, sync::Arc};
 use thiserror::Error;
 
 pub(crate) use buffer::{BufferBindGroupState, BufferTracker, BufferUsageScope};
@@ -121,6 +116,130 @@ pub(crate) use texture::{
     TextureBindGroupState, TextureSelector, TextureTracker, TextureUsageScope,
 };
 use wgt::strict_assert_ne;
+
+#[repr(transparent)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) struct TrackerIndex(u32);
+
+impl TrackerIndex {
+    /// A dummy value to place in ResourceInfo for resources that are never tracked.
+    pub const INVALID: Self = TrackerIndex(u32::MAX);
+
+    pub fn as_usize(self) -> usize {
+        debug_assert!(self != Self::INVALID);
+        self.0 as usize
+    }
+}
+
+/// wgpu-core internally use some array-like storage for tracking resources.
+/// To that end, there needs to be a uniquely assigned index for each live resource
+/// of a certain type. This index is separate from the resource ID for various reasons:
+/// - There can be multiple resource IDs pointing the the same resource.
+/// - IDs of dead handles can be recycled while resources are internally held alive (and tracked).
+/// - The plan is to remove IDs in the long run (https://github.com/gfx-rs/wgpu/issues/5121).
+/// In order to produce these tracker indices, there is a shared TrackerIndexAllocator
+/// per resource type. Indices have the same lifetime as the internal resource they
+/// are associated to (alloc happens when creating the resource and free is called when
+/// the resource is dropped).
+struct TrackerIndexAllocator {
+    unused: Vec<TrackerIndex>,
+    next_index: TrackerIndex,
+}
+
+impl TrackerIndexAllocator {
+    pub fn new() -> Self {
+        TrackerIndexAllocator {
+            unused: Vec::new(),
+            next_index: TrackerIndex(0),
+        }
+    }
+
+    pub fn alloc(&mut self) -> TrackerIndex {
+        if let Some(index) = self.unused.pop() {
+            return index;
+        }
+
+        let index = self.next_index;
+        self.next_index.0 += 1;
+
+        index
+    }
+
+    pub fn free(&mut self, index: TrackerIndex) {
+        self.unused.push(index);
+    }
+
+    // This is used to pre-allocate the tracker storage.
+    pub fn size(&self) -> usize {
+        self.next_index.0 as usize
+    }
+}
+
+impl std::fmt::Debug for TrackerIndexAllocator {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        Ok(())
+    }
+}
+
+/// See TrackerIndexAllocator.
+#[derive(Debug)]
+pub(crate) struct SharedTrackerIndexAllocator {
+    inner: Mutex<TrackerIndexAllocator>,
+}
+
+impl SharedTrackerIndexAllocator {
+    pub fn new() -> Self {
+        SharedTrackerIndexAllocator {
+            inner: Mutex::new(TrackerIndexAllocator::new()),
+        }
+    }
+
+    pub fn alloc(&self) -> TrackerIndex {
+        self.inner.lock().alloc()
+    }
+
+    pub fn free(&self, index: TrackerIndex) {
+        self.inner.lock().free(index);
+    }
+
+    pub fn size(&self) -> usize {
+        self.inner.lock().size()
+    }
+}
+
+pub(crate) struct TrackerIndexAllocators {
+    pub buffers: Arc<SharedTrackerIndexAllocator>,
+    pub staging_buffers: Arc<SharedTrackerIndexAllocator>,
+    pub textures: Arc<SharedTrackerIndexAllocator>,
+    pub texture_views: Arc<SharedTrackerIndexAllocator>,
+    pub samplers: Arc<SharedTrackerIndexAllocator>,
+    pub bind_groups: Arc<SharedTrackerIndexAllocator>,
+    pub bind_group_layouts: Arc<SharedTrackerIndexAllocator>,
+    pub compute_pipelines: Arc<SharedTrackerIndexAllocator>,
+    pub render_pipelines: Arc<SharedTrackerIndexAllocator>,
+    pub pipeline_layouts: Arc<SharedTrackerIndexAllocator>,
+    pub bundles: Arc<SharedTrackerIndexAllocator>,
+    pub query_sets: Arc<SharedTrackerIndexAllocator>,
+}
+
+impl TrackerIndexAllocators {
+    pub fn new() -> Self {
+        TrackerIndexAllocators {
+            buffers: Arc::new(SharedTrackerIndexAllocator::new()),
+            staging_buffers: Arc::new(SharedTrackerIndexAllocator::new()),
+            textures: Arc::new(SharedTrackerIndexAllocator::new()),
+            texture_views: Arc::new(SharedTrackerIndexAllocator::new()),
+            samplers: Arc::new(SharedTrackerIndexAllocator::new()),
+            bind_groups: Arc::new(SharedTrackerIndexAllocator::new()),
+            bind_group_layouts: Arc::new(SharedTrackerIndexAllocator::new()),
+            compute_pipelines: Arc::new(SharedTrackerIndexAllocator::new()),
+            render_pipelines: Arc::new(SharedTrackerIndexAllocator::new()),
+            pipeline_layouts: Arc::new(SharedTrackerIndexAllocator::new()),
+            bundles: Arc::new(SharedTrackerIndexAllocator::new()),
+            query_sets: Arc::new(SharedTrackerIndexAllocator::new()),
+        }
+    }
+}
 
 /// A structure containing all the information about a particular resource
 /// transition. User code should be able to generate a pipeline barrier
@@ -182,8 +301,6 @@ pub(crate) trait ResourceUses:
     /// All flags that are exclusive.
     const EXCLUSIVE: Self;
 
-    /// The relevant resource ID type.
-    type Id: Copy + fmt::Debug + TypedId;
     /// The selector used by this resource.
     type Selector: fmt::Debug;
 
@@ -207,7 +324,7 @@ fn invalid_resource_state<T: ResourceUses>(state: T) -> bool {
 /// a barrier.
 fn skip_barrier<T: ResourceUses>(old_state: T, new_state: T) -> bool {
     // If the state didn't change and all the usages are ordered, the hardware
-    // will guarentee the order of accesses, so we do not need to issue a barrier at all
+    // will guarantee the order of accesses, so we do not need to issue a barrier at all
     old_state == new_state && old_state.all_ordered()
 }
 
@@ -315,13 +432,13 @@ impl<T: ResourceUses> fmt::Display for InvalidUse<T> {
 /// and may include conflicting uses. This is fully compliant by the WebGPU spec.
 ///
 /// All bind group states are sorted by their ID so that when adding to a tracker,
-/// they are added in the most efficient order possible (assending order).
+/// they are added in the most efficient order possible (ascending order).
 #[derive(Debug)]
 pub(crate) struct BindGroupStates<A: HalApi> {
     pub buffers: BufferBindGroupState<A>,
     pub textures: TextureBindGroupState<A>,
-    pub views: StatelessBindGroupSate<id::TextureViewId, resource::TextureView<A>>,
-    pub samplers: StatelessBindGroupSate<id::SamplerId, resource::Sampler<A>>,
+    pub views: StatelessBindGroupSate<resource::TextureView<A>>,
+    pub samplers: StatelessBindGroupSate<resource::Sampler<A>>,
 }
 
 impl<A: HalApi> BindGroupStates<A> {
@@ -337,7 +454,7 @@ impl<A: HalApi> BindGroupStates<A> {
     /// Optimize the bind group states by sorting them by ID.
     ///
     /// When this list of states is merged into a tracker, the memory
-    /// accesses will be in a constant assending order.
+    /// accesses will be in a constant ascending order.
     pub fn optimize(&mut self) {
         self.buffers.optimize();
         self.textures.optimize();
@@ -354,39 +471,21 @@ pub(crate) struct RenderBundleScope<A: HalApi> {
     pub buffers: RwLock<BufferUsageScope<A>>,
     pub textures: RwLock<TextureUsageScope<A>>,
     // Don't need to track views and samplers, they are never used directly, only by bind groups.
-    pub bind_groups: RwLock<StatelessTracker<A, id::BindGroupId, binding_model::BindGroup<A>>>,
-    pub render_pipelines:
-        RwLock<StatelessTracker<A, id::RenderPipelineId, pipeline::RenderPipeline<A>>>,
-    pub query_sets: RwLock<StatelessTracker<A, id::QuerySetId, resource::QuerySet<A>>>,
+    pub bind_groups: RwLock<StatelessTracker<binding_model::BindGroup<A>>>,
+    pub render_pipelines: RwLock<StatelessTracker<pipeline::RenderPipeline<A>>>,
+    pub query_sets: RwLock<StatelessTracker<resource::QuerySet<A>>>,
 }
 
 impl<A: HalApi> RenderBundleScope<A> {
     /// Create the render bundle scope and pull the maximum IDs from the hubs.
-    pub fn new(
-        buffers: &Storage<resource::Buffer<A>, id::BufferId>,
-        textures: &Storage<resource::Texture<A>, id::TextureId>,
-        bind_groups: &Storage<binding_model::BindGroup<A>, id::BindGroupId>,
-        render_pipelines: &Storage<pipeline::RenderPipeline<A>, id::RenderPipelineId>,
-        query_sets: &Storage<resource::QuerySet<A>, id::QuerySetId>,
-    ) -> Self {
-        let value = Self {
+    pub fn new() -> Self {
+        Self {
             buffers: RwLock::new(BufferUsageScope::new()),
             textures: RwLock::new(TextureUsageScope::new()),
             bind_groups: RwLock::new(StatelessTracker::new()),
             render_pipelines: RwLock::new(StatelessTracker::new()),
             query_sets: RwLock::new(StatelessTracker::new()),
-        };
-
-        value.buffers.write().set_size(buffers.len());
-        value.textures.write().set_size(textures.len());
-        value.bind_groups.write().set_size(bind_groups.len());
-        value
-            .render_pipelines
-            .write()
-            .set_size(render_pipelines.len());
-        value.query_sets.write().set_size(query_sets.len());
-
-        value
+        }
     }
 
     /// Merge the inner contents of a bind group into the render bundle tracker.
@@ -423,17 +522,14 @@ pub(crate) struct UsageScope<A: HalApi> {
 
 impl<A: HalApi> UsageScope<A> {
     /// Create the render bundle scope and pull the maximum IDs from the hubs.
-    pub fn new(
-        buffers: &Storage<resource::Buffer<A>, id::BufferId>,
-        textures: &Storage<resource::Texture<A>, id::TextureId>,
-    ) -> Self {
+    pub fn new(tracker_indices: &TrackerIndexAllocators) -> Self {
         let mut value = Self {
             buffers: BufferUsageScope::new(),
             textures: TextureUsageScope::new(),
         };
 
-        value.buffers.set_size(buffers.len());
-        value.textures.set_size(textures.len());
+        value.buffers.set_size(tracker_indices.buffers.size());
+        value.textures.set_size(tracker_indices.textures.size());
 
         value
     }
@@ -481,25 +577,21 @@ impl<A: HalApi> UsageScope<A> {
     }
 }
 
-pub(crate) trait ResourceTracker<Id, R>
-where
-    Id: TypedId,
-    R: resource::Resource<Id>,
-{
-    fn remove_abandoned(&mut self, id: Id) -> bool;
+pub(crate) trait ResourceTracker {
+    fn remove_abandoned(&mut self, index: TrackerIndex) -> bool;
 }
 
 /// A full double sided tracker used by CommandBuffers and the Device.
 pub(crate) struct Tracker<A: HalApi> {
     pub buffers: BufferTracker<A>,
     pub textures: TextureTracker<A>,
-    pub views: StatelessTracker<A, id::TextureViewId, resource::TextureView<A>>,
-    pub samplers: StatelessTracker<A, id::SamplerId, resource::Sampler<A>>,
-    pub bind_groups: StatelessTracker<A, id::BindGroupId, binding_model::BindGroup<A>>,
-    pub compute_pipelines: StatelessTracker<A, id::ComputePipelineId, pipeline::ComputePipeline<A>>,
-    pub render_pipelines: StatelessTracker<A, id::RenderPipelineId, pipeline::RenderPipeline<A>>,
-    pub bundles: StatelessTracker<A, id::RenderBundleId, command::RenderBundle<A>>,
-    pub query_sets: StatelessTracker<A, id::QuerySetId, resource::QuerySet<A>>,
+    pub views: StatelessTracker<resource::TextureView<A>>,
+    pub samplers: StatelessTracker<resource::Sampler<A>>,
+    pub bind_groups: StatelessTracker<binding_model::BindGroup<A>>,
+    pub compute_pipelines: StatelessTracker<pipeline::ComputePipeline<A>>,
+    pub render_pipelines: StatelessTracker<pipeline::RenderPipeline<A>>,
+    pub bundles: StatelessTracker<command::RenderBundle<A>>,
+    pub query_sets: StatelessTracker<resource::QuerySet<A>>,
 }
 
 impl<A: HalApi> Tracker<A> {
@@ -515,48 +607,6 @@ impl<A: HalApi> Tracker<A> {
             bundles: StatelessTracker::new(),
             query_sets: StatelessTracker::new(),
         }
-    }
-
-    /// Pull the maximum IDs from the hubs.
-    pub fn set_size(
-        &mut self,
-        buffers: Option<&Storage<resource::Buffer<A>, id::BufferId>>,
-        textures: Option<&Storage<resource::Texture<A>, id::TextureId>>,
-        views: Option<&Storage<resource::TextureView<A>, id::TextureViewId>>,
-        samplers: Option<&Storage<resource::Sampler<A>, id::SamplerId>>,
-        bind_groups: Option<&Storage<binding_model::BindGroup<A>, id::BindGroupId>>,
-        compute_pipelines: Option<&Storage<pipeline::ComputePipeline<A>, id::ComputePipelineId>>,
-        render_pipelines: Option<&Storage<pipeline::RenderPipeline<A>, id::RenderPipelineId>>,
-        bundles: Option<&Storage<command::RenderBundle<A>, id::RenderBundleId>>,
-        query_sets: Option<&Storage<resource::QuerySet<A>, id::QuerySetId>>,
-    ) {
-        if let Some(buffers) = buffers {
-            self.buffers.set_size(buffers.len());
-        };
-        if let Some(textures) = textures {
-            self.textures.set_size(textures.len());
-        };
-        if let Some(views) = views {
-            self.views.set_size(views.len());
-        };
-        if let Some(samplers) = samplers {
-            self.samplers.set_size(samplers.len());
-        };
-        if let Some(bind_groups) = bind_groups {
-            self.bind_groups.set_size(bind_groups.len());
-        };
-        if let Some(compute_pipelines) = compute_pipelines {
-            self.compute_pipelines.set_size(compute_pipelines.len());
-        }
-        if let Some(render_pipelines) = render_pipelines {
-            self.render_pipelines.set_size(render_pipelines.len());
-        };
-        if let Some(bundles) = bundles {
-            self.bundles.set_size(bundles.len());
-        };
-        if let Some(query_sets) = query_sets {
-            self.query_sets.set_size(query_sets.len());
-        };
     }
 
     /// Iterates through all resources in the given bind group and adopts
@@ -589,7 +639,7 @@ impl<A: HalApi> Tracker<A> {
         unsafe {
             self.buffers.set_and_remove_from_usage_scope_sparse(
                 &mut scope.buffers,
-                bind_group.buffers.used_ids(),
+                bind_group.buffers.used_tracker_indices(),
             )
         };
         unsafe {

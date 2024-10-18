@@ -6,6 +6,8 @@
 
 #include "mozilla/Components.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/net/DNS.h"
@@ -42,6 +44,11 @@ bool nsHTTPSOnlyUtils::IsHttpsOnlyModeEnabled(bool aFromPrivateWindow) {
 
 /* static */
 bool nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(bool aFromPrivateWindow) {
+  // HTTPS-Only takes priority over HTTPS-First
+  if (IsHttpsOnlyModeEnabled(aFromPrivateWindow)) {
+    return false;
+  }
+
   // if the general pref is set to true, then we always return
   if (mozilla::StaticPrefs::dom_security_https_first()) {
     return true;
@@ -122,8 +129,7 @@ void nsHTTPSOnlyUtils::PotentiallyFireHttpRequestToShortenTimout(
   // early if attempting to send a background request to a non standard port.
   if ((IsHttpsFirstModeEnabled(isPrivateWin) ||
        (loadInfo->GetWasSchemelessInput() &&
-        mozilla::StaticPrefs::dom_security_https_first_schemeless())) &&
-      !IsHttpsOnlyModeEnabled(isPrivateWin)) {
+        mozilla::StaticPrefs::dom_security_https_first_schemeless()))) {
     int32_t port = 0;
     nsresult rv = channelURI->GetPort(&port);
     int defaultPortforScheme = NS_GetDefaultPort("http");
@@ -434,7 +440,7 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(nsIURI* aURI,
   // We can upgrade the request - let's log to the console and set the status
   // so we know that we upgraded the request.
   if (aLoadInfo->GetWasSchemelessInput() &&
-      mozilla::StaticPrefs::dom_security_https_first_schemeless()) {
+      !IsHttpsFirstModeEnabled(isPrivateWin)) {
     nsAutoCString urlCString;
     aURI->GetSpec(urlCString);
     NS_ConvertUTF8toUTF16 urlString(urlCString);
@@ -443,6 +449,8 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(nsIURI* aURI,
     nsHTTPSOnlyUtils::LogLocalizedString("HTTPSFirstSchemeless", params,
                                          nsIScriptError::warningFlag, aLoadInfo,
                                          aURI, true);
+
+    mozilla::glean::httpsfirst::upgraded_schemeless.Add();
   } else {
     nsAutoCString scheme;
 
@@ -457,7 +465,12 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(nsIURI* aURI,
         isSpeculative ? "HTTPSOnlyUpgradeSpeculativeConnection"
                       : "HTTPSOnlyUpgradeRequest",
         params, nsIScriptError::warningFlag, aLoadInfo, aURI, true);
+
+    if (!isSpeculative) {
+      mozilla::glean::httpsfirst::upgraded.Add();
+    }
   }
+
   // Set flag so we know that we upgraded the request
   httpsOnlyStatus |= nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST;
   aLoadInfo->SetHttpsOnlyStatus(httpsOnlyStatus);
@@ -466,9 +479,11 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(nsIURI* aURI,
 
 /* static */
 already_AddRefed<nsIURI>
-nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(nsIChannel* aChannel,
-                                                        nsresult aStatus) {
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(
+    mozilla::net::DocumentLoadListener* aDocumentLoadListener,
+    nsresult aStatus) {
+  nsCOMPtr<nsIChannel> channel = aDocumentLoadListener->GetChannel();
+  nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
   uint32_t httpsOnlyStatus = loadInfo->GetHttpsOnlyStatus();
   // Only downgrade if we this request was upgraded using HTTPS-First Mode
   if (!(httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST)) {
@@ -484,7 +499,7 @@ nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(nsIChannel* aChannel,
   // to check each NS_OK for those errors.
   // Only downgrade an NS_OK status if it is an 4xx or 5xx error.
   if (NS_SUCCEEDED(aStatus)) {
-    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
     // If no httpChannel exists we have nothing to do here.
     if (!httpChannel) {
       return nullptr;
@@ -528,7 +543,7 @@ nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(nsIChannel* aChannel,
   }
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  nsresult rv = channel->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, nullptr);
 
   nsAutoCString spec;
@@ -579,6 +594,33 @@ nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(nsIChannel* aChannel,
   nsHTTPSOnlyUtils::LogLocalizedString("HTTPSOnlyFailedDowngradeAgain", params,
                                        nsIScriptError::warningFlag, loadInfo,
                                        uri, true);
+
+  // Record telemety
+  nsDOMNavigationTiming* timing = aDocumentLoadListener->GetTiming();
+  if (timing) {
+    mozilla::TimeStamp navigationStart = timing->GetNavigationStartTimeStamp();
+    if (navigationStart) {
+      mozilla::TimeDuration duration =
+          mozilla::TimeStamp::Now() - navigationStart;
+      bool isPrivateWin =
+          loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+
+      if (loadInfo->GetWasSchemelessInput() &&
+          !IsHttpsFirstModeEnabled(isPrivateWin)) {
+        mozilla::glean::httpsfirst::downgraded_schemeless.Add();
+        if (timing) {
+          mozilla::glean::httpsfirst::downgrade_time_schemeless
+              .AccumulateRawDuration(duration);
+        }
+      } else {
+        mozilla::glean::httpsfirst::downgraded.Add();
+        if (timing) {
+          mozilla::glean::httpsfirst::downgrade_time.AccumulateRawDuration(
+              duration);
+        }
+      }
+    }
+  }
 
   return newURI.forget();
 }
@@ -950,6 +992,19 @@ TestHTTPAnswerRunnable::OnStartRequest(nsIRequest* aRequest) {
       nsresult httpsOnlyChannelStatus;
       httpsOnlyChannel->GetStatus(&httpsOnlyChannelStatus);
       if (httpsOnlyChannelStatus == NS_OK) {
+        bool isPrivateWin =
+            loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
+        if (!nsHTTPSOnlyUtils::IsHttpsOnlyModeEnabled(isPrivateWin)) {
+          // Record HTTPS-First Telemetry
+          if (loadInfo->GetWasSchemelessInput() &&
+              !nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
+            mozilla::glean::httpsfirst::downgraded_on_timer_schemeless
+                .AddToNumerator();
+          } else {
+            mozilla::glean::httpsfirst::downgraded_on_timer.AddToNumerator();
+          }
+        }
+
         httpsOnlyChannel->Cancel(NS_ERROR_NET_TIMEOUT_EXTERNAL);
       }
     }

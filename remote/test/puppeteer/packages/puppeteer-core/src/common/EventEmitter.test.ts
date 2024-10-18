@@ -1,17 +1,7 @@
 /**
- * Copyright 2023 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2023 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import {describe, it, beforeEach} from 'node:test';
@@ -29,7 +19,7 @@ describe('EventEmitter', () => {
   });
 
   describe('on', () => {
-    const onTests = (methodName: 'on' | 'addListener'): void => {
+    const onTests = (methodName: 'on'): void => {
       it(`${methodName}: adds an event listener that is fired when the event is emitted`, () => {
         const listener = sinon.spy();
         emitter[methodName]('foo', listener);
@@ -53,12 +43,10 @@ describe('EventEmitter', () => {
       });
     };
     onTests('on');
-    // we support addListener for legacy reasons
-    onTests('addListener');
   });
 
   describe('off', () => {
-    const offTests = (methodName: 'off' | 'removeListener'): void => {
+    const offTests = (methodName: 'off'): void => {
       it(`${methodName}: removes the listener so it is no longer called`, () => {
         const listener = sinon.spy();
         emitter.on('foo', listener);
@@ -77,8 +65,6 @@ describe('EventEmitter', () => {
       });
     };
     offTests('off');
-    // we support removeListener for legacy reasons
-    offTests('removeListener');
   });
 
   describe('once', () => {
@@ -168,6 +154,28 @@ describe('EventEmitter', () => {
       emitter.removeAllListeners('bar');
       expect(emitter.emit('foo', undefined)).toBe(true);
       expect(emitter.emit('bar', undefined)).toBe(false);
+    });
+  });
+
+  describe('dispose', () => {
+    it('should dispose higher order emitters properly', () => {
+      let values = '';
+      emitter.on('foo', () => {
+        values += '1';
+      });
+      const higherOrderEmitter = new EventEmitter(emitter);
+
+      higherOrderEmitter.on('foo', () => {
+        values += '2';
+      });
+      higherOrderEmitter.emit('foo', undefined);
+
+      expect(values).toMatch('12');
+
+      higherOrderEmitter.off('foo');
+      higherOrderEmitter.emit('foo', undefined);
+
+      expect(values).toMatch('121');
     });
   });
 });

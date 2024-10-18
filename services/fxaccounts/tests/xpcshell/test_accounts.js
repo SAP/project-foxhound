@@ -6,7 +6,7 @@
 const { CryptoUtils } = ChromeUtils.importESModule(
   "resource://services-crypto/utils.sys.mjs"
 );
-const { FxAccounts } = ChromeUtils.importESModule(
+const { FxAccounts, ERROR_INVALID_ACCOUNT_STATE } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccounts.sys.mjs"
 );
 const { FxAccountsClient } = ChromeUtils.importESModule(
@@ -45,9 +45,9 @@ var log = Log.repository.getLogger("Services.FxAccounts.test");
 log.level = Log.Level.Debug;
 
 // See verbose logging from FxAccounts.jsm and jwcrypto.jsm.
-Services.prefs.setCharPref("identity.fxaccounts.loglevel", "Trace");
+Services.prefs.setStringPref("identity.fxaccounts.loglevel", "Trace");
 Log.repository.getLogger("FirefoxAccounts").level = Log.Level.Trace;
-Services.prefs.setCharPref("services.crypto.jwcrypto.log.level", "Debug");
+Services.prefs.setStringPref("services.crypto.jwcrypto.log.level", "Debug");
 
 /*
  * The FxAccountsClient communicates with the remote Firefox
@@ -120,7 +120,7 @@ function MockFxAccountsClient() {
 
   // mock calls up to the auth server to determine whether the
   // user account has been verified
-  this.recoveryEmailStatus = async function (sessionToken) {
+  this.recoveryEmailStatus = async function () {
     // simulate a call to /recovery_email/status
     return {
       email: this._email,
@@ -139,7 +139,7 @@ function MockFxAccountsClient() {
     return !this._deletedOnServer;
   };
 
-  this.accountKeys = function (keyFetchToken) {
+  this.accountKeys = function () {
     return new Promise(resolve => {
       do_timeout(50, () => {
         resolve({
@@ -188,7 +188,7 @@ Object.setPrototypeOf(
  * mock the now() method, so that we can simulate the passing of
  * time and verify that signatures expire correctly.
  */
-function MockFxAccounts(credentials = null) {
+function MockFxAccounts() {
   let result = new FxAccounts({
     VERIFICATION_POLL_TIMEOUT_INITIAL: 100, // 100ms
 
@@ -453,10 +453,10 @@ add_test(function test_polling_timeout() {
 
   fxa.setSignedInUser(test_user).then(() => {
     p.then(
-      success => {
+      () => {
         do_throw("this should not succeed");
       },
-      fail => {
+      () => {
         removeObserver();
         fxa.signOut().then(run_next_test);
       }
@@ -471,7 +471,7 @@ add_task(async function test_onverified_once() {
 
   let numNotifications = 0;
 
-  function observe(aSubject, aTopic, aData) {
+  function observe() {
     numNotifications += 1;
   }
   Services.obs.addObserver(observe, ONVERIFIED_NOTIFICATION);
@@ -777,11 +777,10 @@ add_task(async function test_getKeyForScope_nonexistent_account() {
     });
   });
 
-  // XXX - the exception message here isn't ideal, but doesn't really matter...
-  await Assert.rejects(
-    fxa.keys.getKeyForScope(SCOPE_OLD_SYNC),
-    /A different user signed in/
-  );
+  await Assert.rejects(fxa.keys.getKeyForScope(SCOPE_OLD_SYNC), err => {
+    Assert.equal(err.message, ERROR_INVALID_ACCOUNT_STATE);
+    return true; // expected error
+  });
 
   await promiseLogout;
 
@@ -972,17 +971,17 @@ add_test(function test_fetchAndUnwrapAndDeriveKeys_no_token() {
 
   makeObserver(ONLOGOUT_NOTIFICATION, function () {
     log.debug("test_fetchAndUnwrapKeys_no_token observed logout");
-    fxa._internal.getUserAccountData().then(user2 => {
+    fxa._internal.getUserAccountData().then(() => {
       fxa._internal.abortExistingFlow().then(run_next_test);
     });
   });
 
   fxa
     .setSignedInUser(user)
-    .then(user2 => {
+    .then(() => {
       return fxa.keys._fetchAndUnwrapAndDeriveKeys();
     })
-    .catch(error => {
+    .catch(() => {
       log.info("setSignedInUser correctly rejected");
     });
 });
@@ -1143,7 +1142,7 @@ add_test(function test_resend_email() {
   });
 });
 
-Services.prefs.setCharPref(
+Services.prefs.setStringPref(
   "identity.fxaccounts.remote.oauth.uri",
   "https://example.com/v1"
 );
@@ -1273,11 +1272,7 @@ add_task(async function test_getOAuthTokenCachedScopeNormalization() {
   let numOAuthTokenCalls = 0;
 
   let client = fxa._internal.fxAccountsClient;
-  client.accessTokenWithSessionToken = async (
-    _sessionTokenHex,
-    _clientId,
-    scopeString
-  ) => {
+  client.accessTokenWithSessionToken = async (_sessionTokenHex, _clientId) => {
     numOAuthTokenCalls++;
     return MOCK_TOKEN_RESPONSE;
   };
@@ -1346,7 +1341,7 @@ add_test(function test_getOAuthToken_invalid_scope_array() {
 add_test(function test_getOAuthToken_misconfigure_oauth_uri() {
   let fxa = new MockFxAccounts();
 
-  const prevServerURL = Services.prefs.getCharPref(
+  const prevServerURL = Services.prefs.getStringPref(
     "identity.fxaccounts.remote.oauth.uri"
   );
   Services.prefs.deleteBranch("identity.fxaccounts.remote.oauth.uri");
@@ -1354,7 +1349,7 @@ add_test(function test_getOAuthToken_misconfigure_oauth_uri() {
   fxa.getOAuthToken().catch(err => {
     Assert.equal(err.message, "INVALID_PARAMETER");
     // revert the pref
-    Services.prefs.setCharPref(
+    Services.prefs.setStringPref(
       "identity.fxaccounts.remote.oauth.uri",
       prevServerURL
     );
@@ -1403,6 +1398,31 @@ add_test(function test_getOAuthToken_error() {
       run_next_test();
     });
   });
+});
+
+add_test(async function test_getOAuthTokenAndKey_errors_if_user_change() {
+  const fxa = new MockFxAccounts();
+  const alice = getTestUser("alice");
+  const bob = getTestUser("bob");
+  alice.verified = true;
+  bob.verified = true;
+
+  fxa.getOAuthToken = async () => {
+    // We mock what would happen if the user got changed
+    // after we got the access token
+    await fxa.setSignedInUser(bob);
+    return "access token";
+  };
+  fxa.keys.getKeyForScope = () => Promise.resolve("key!");
+  await fxa.setSignedInUser(alice);
+  await Assert.rejects(
+    fxa.getOAuthTokenAndKey({ scope: "foo", ttl: 10 }),
+    err => {
+      Assert.equal(err.message, ERROR_INVALID_ACCOUNT_STATE);
+      return true; // expected error
+    }
+  );
+  run_next_test();
 });
 
 add_task(async function test_listAttachedOAuthClients() {

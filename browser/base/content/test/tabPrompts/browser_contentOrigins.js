@@ -129,11 +129,7 @@ async function checkDialog(
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["prompts.contentPromptSubDialog", true],
-      ["prompts.modalType.httpAuth", Ci.nsIPrompt.MODAL_TYPE_TAB],
-      ["prompts.tabChromePromptSubDialog", true],
-    ],
+    set: [["prompts.modalType.httpAuth", Ci.nsIPrompt.MODAL_TYPE_TAB]],
   });
 });
 

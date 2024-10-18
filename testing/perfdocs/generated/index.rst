@@ -14,6 +14,7 @@ Performance Testing
   mach-try-perf
   mozperftest
   perf-sheriffing
+  performance-infrastructure
   raptor
   talos
 
@@ -30,6 +31,7 @@ For more detailed information about each test suite and project, see their docum
   * :doc:`mach-try-perf`
   * :doc:`mozperftest`
   * :doc:`perf-sheriffing`
+  * :doc:`performance-infrastructure`
   * :doc:`raptor`
   * :doc:`talos`
 
@@ -71,7 +73,7 @@ Here are the active PerfTest components/modules and their respective owners:
         - Co-owner: Kash
         - Description: An http proxy used to run tests against third-party websites in a reliable and reproducible way
     * PerfCompare
-        - Owner: Kimberly
+        - Owner: Carla S.
         - Co-owner: Beatrice A.
         - Description: Performance comparison tool used to compare performance of different commits within a repository
     * PerfDocs

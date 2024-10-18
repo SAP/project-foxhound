@@ -369,6 +369,14 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       PREF("gc_min_empty_chunk_count", JSGC_MIN_EMPTY_CHUNK_COUNT),
       PREF("gc_max_empty_chunk_count", JSGC_MAX_EMPTY_CHUNK_COUNT),
       PREF("gc_compacting", JSGC_COMPACTING_ENABLED),
+      PREF("gc_parallel_marking", JSGC_PARALLEL_MARKING_ENABLED),
+      PREF("gc_parallel_marking_threshold_mb",
+           JSGC_PARALLEL_MARKING_THRESHOLD_MB),
+      // Note: Workers do not currently trigger eager minor GC, but if that is
+      // desired the following parameters should be added:
+      // javascript.options.mem.nursery_eager_collection_threshold_kb
+      // javascript.options.mem.nursery_eager_collection_threshold_percent
+      // javascript.options.mem.nursery_eager_collection_timeout_ms
   };
 #undef PREF
 
@@ -439,6 +447,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       case JSGC_MIN_EMPTY_CHUNK_COUNT:
       case JSGC_MAX_EMPTY_CHUNK_COUNT:
       case JSGC_HEAP_GROWTH_FACTOR:
+      case JSGC_PARALLEL_MARKING_THRESHOLD_MB:
         UpdateCommonJSGCMemoryOption(rts, pref->fullName, pref->key);
         break;
       default:
@@ -602,7 +611,8 @@ class JSDispatchableRunnable final : public WorkerRunnable {
  public:
   JSDispatchableRunnable(WorkerPrivate* aWorkerPrivate,
                          JS::Dispatchable* aDispatchable)
-      : WorkerRunnable(aWorkerPrivate, WorkerRunnable::WorkerThread),
+      : WorkerRunnable(aWorkerPrivate, "JSDispatchableRunnable",
+                       WorkerRunnable::WorkerThread),
         mDispatchable(aDispatchable) {
     MOZ_ASSERT(mDispatchable);
   }
@@ -1022,7 +1032,7 @@ void PlatformOverrideChanged(const char* /* aPrefName */,
 } /* anonymous namespace */
 
 // This is only touched on the main thread. Initialized in Init() below.
-UniquePtr<JSSettings> RuntimeService::sDefaultJSSettings;
+StaticAutoPtr<JSSettings> RuntimeService::sDefaultJSSettings;
 
 RuntimeService::RuntimeService()
     : mMutex("RuntimeService::mMutex"),
@@ -1338,7 +1348,7 @@ nsresult RuntimeService::Init() {
   nsLayoutStatics::AddRef();
 
   // Initialize JSSettings.
-  sDefaultJSSettings = MakeUnique<JSSettings>();
+  sDefaultJSSettings = new JSSettings();
   SetDefaultJSGCSettings(JSGC_MAX_BYTES, Some(WORKER_DEFAULT_RUNTIME_HEAPSIZE));
   SetDefaultJSGCSettings(JSGC_ALLOCATION_THRESHOLD,
                          Some(WORKER_DEFAULT_ALLOCATION_THRESHOLD));
@@ -1409,8 +1419,14 @@ nsresult RuntimeService::Init() {
       Preferences::GetInt(PREF_WORKERS_MAX_PER_DOMAIN, MAX_WORKERS_PER_DOMAIN);
   gMaxWorkersPerDomain = std::max(0, maxPerDomain);
 
-  if (NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate())) {
+  IndexedDatabaseManager* idm = IndexedDatabaseManager::GetOrCreate();
+  if (NS_WARN_IF(!idm)) {
     return NS_ERROR_UNEXPECTED;
+  }
+
+  rv = idm->EnsureLocale();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   // PerformanceService must be initialized on the main-thread.
@@ -1457,10 +1473,11 @@ void RuntimeService::Shutdown() {
 
 namespace {
 
-class DumpCrashInfoRunnable : public WorkerControlRunnable {
+class DumpCrashInfoRunnable final : public WorkerControlRunnable {
  public:
   explicit DumpCrashInfoRunnable(WorkerPrivate* aWorkerPrivate)
-      : WorkerControlRunnable(aWorkerPrivate, WorkerThread),
+      : WorkerControlRunnable(aWorkerPrivate, "DumpCrashInfoRunnable",
+                              WorkerThread),
         mMonitor("DumpCrashInfoRunnable::mMonitor") {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {

@@ -53,6 +53,7 @@ class MediaSessionInfo {
   Maybe<MediaMetadataBase> mMetadata;
   MediaSessionPlaybackState mDeclaredPlaybackState =
       MediaSessionPlaybackState::None;
+  Maybe<PositionState> mPositionState;
   // Use bitwise to store the supported actions.
   uint32_t mSupportedActions = 0;
 };
@@ -118,7 +119,7 @@ class IMediaInfoUpdater {
 
   // Use this method when media session update its position state.
   virtual void UpdatePositionState(uint64_t aBrowsingContextId,
-                                   const PositionState& aState) = 0;
+                                   const Maybe<PositionState>& aState) = 0;
 };
 
 /**
@@ -163,7 +164,7 @@ class MediaStatusManager : public IMediaInfoUpdater {
   void DisableAction(uint64_t aBrowsingContextId,
                      MediaSessionAction aAction) override;
   void UpdatePositionState(uint64_t aBrowsingContextId,
-                           const PositionState& aState) override;
+                           const Maybe<PositionState>& aState) override;
 
   // Return active media session's metadata if active media session exists and
   // it has already set its metadata. Otherwise, return default media metadata
@@ -180,7 +181,7 @@ class MediaStatusManager : public IMediaInfoUpdater {
     return mMetadataChangedEvent;
   }
 
-  MediaEventSource<PositionState>& PositionChangedEvent() {
+  MediaEventSource<Maybe<PositionState>>& PositionChangedEvent() {
     return mPositionStateChangedEvent;
   }
 
@@ -246,6 +247,10 @@ class MediaStatusManager : public IMediaInfoUpdater {
   // media session doesn't exist, return  'None' instead.
   MediaSessionPlaybackState GetCurrentDeclaredPlaybackState() const;
 
+  // Return the active media session's position state. If the active media
+  // session doesn't exist or doesn't have any state, Nothing is returned.
+  Maybe<PositionState> GetCurrentPositionState() const;
+
   // This state can match to the `guessed playback state` in the spec [1], it
   // indicates if we have any media element playing within the tab which this
   // controller belongs to. But currently we only take media elements into
@@ -266,7 +271,7 @@ class MediaStatusManager : public IMediaInfoUpdater {
   MediaEventProducer<MediaMetadataBase> mMetadataChangedEvent;
   MediaEventProducer<nsTArray<MediaSessionAction>>
       mSupportedActionsChangedEvent;
-  MediaEventProducer<PositionState> mPositionStateChangedEvent;
+  MediaEventProducer<Maybe<PositionState>> mPositionStateChangedEvent;
   MediaEventProducer<MediaSessionPlaybackState> mPlaybackStateChangedEvent;
   MediaPlaybackStatus mPlaybackStatusDelegate;
 };

@@ -14,10 +14,13 @@ import {
   getCurrentThread,
   isTopFrameSelected,
   getIsCurrentThreadPaused,
+  getIsJavascriptTracingEnabled,
   getIsThreadCurrentlyTracing,
   getJavascriptTracingLogMethod,
   getJavascriptTracingValues,
   getJavascriptTracingOnNextInteraction,
+  getJavascriptTracingOnNextLoad,
+  getJavascriptTracingFunctionReturn,
 } from "../../selectors/index";
 import { formatKeyShortcut } from "../../utils/text";
 import actions from "../../actions/index";
@@ -203,13 +206,24 @@ class CommandBar extends Component {
     if (!features.javascriptTracing) {
       return null;
     }
+
+    // The button is highlighted in blue as soon as the user requested to start the trace
+    const isActive = this.props.isTracingEnabled;
+    // But it will only be active once the tracer actually started.
+    // This may come later when using "on next user interaction" feature.
+    const isPending = isActive && !this.props.isTracingActive;
+
+    let className = "";
+    if (isPending) {
+      className = "pending";
+    } else if (isActive) {
+      className = "active";
+    }
     // Display a button which:
     // - on left click, would toggle on/off javascript tracing
-    // - on right click, would display a context menu allowing to choose the logging output (console or stdout)
+    // - on right click, would display a context menu to configure the tracer settings
     return button({
-      className: `devtools-button command-bar-button debugger-trace-menu-button ${
-        this.props.isTracingEnabled ? "active" : ""
-      }`,
+      className: `devtools-button command-bar-button debugger-trace-menu-button ${className}`,
       title: this.props.isTracingEnabled
         ? L10N.getFormatStr("stopTraceButtonTooltip2", formatKey("trace"))
         : L10N.getFormatStr(
@@ -217,8 +231,8 @@ class CommandBar extends Component {
             formatKey("trace"),
             this.props.logMethod
           ),
-      onClick: event => {
-        this.props.toggleTracing(this.props.logMethod);
+      onClick: () => {
+        this.props.toggleTracing();
       },
       onContextMenu: event => {
         event.preventDefault();
@@ -249,6 +263,25 @@ class CommandBar extends Component {
           },
           { type: "separator" },
           {
+            id: "debugger-trace-menu-item-next-interaction",
+            label: L10N.getStr("traceOnNextInteraction"),
+            type: "checkbox",
+            checked: this.props.traceOnNextInteraction,
+            click: () => {
+              this.props.toggleJavascriptTracingOnNextInteraction();
+            },
+          },
+          {
+            id: "debugger-trace-menu-item-next-load",
+            label: L10N.getStr("traceOnNextLoad"),
+            type: "checkbox",
+            checked: this.props.traceOnNextLoad,
+            click: () => {
+              this.props.toggleJavascriptTracingOnNextLoad();
+            },
+          },
+          { type: "separator" },
+          {
             id: "debugger-trace-menu-item-log-values",
             label: L10N.getStr("traceValues"),
             type: "checkbox",
@@ -258,12 +291,12 @@ class CommandBar extends Component {
             },
           },
           {
-            id: "debugger-trace-menu-item-next-interaction",
-            label: L10N.getStr("traceOnNextInteraction"),
+            id: "debugger-trace-menu-item-function-return",
+            label: L10N.getStr("traceFunctionReturn"),
             type: "checkbox",
-            checked: this.props.traceOnNextInteraction,
+            checked: this.props.traceFunctionReturn,
             click: () => {
-              this.props.toggleJavascriptTracingOnNextInteraction();
+              this.props.toggleJavascriptTracingFunctionReturn();
             },
           },
         ];
@@ -329,7 +362,7 @@ class CommandBar extends Component {
       MenuButton,
       {
         menuId: "debugger-settings-menu-button",
-        toolboxDoc: toolboxDoc,
+        toolboxDoc,
         className:
           "devtools-button command-bar-button debugger-settings-menu-button",
         title: L10N.getStr("settings.button.label"),
@@ -432,10 +465,16 @@ const mapStateToProps = state => ({
   topFrameSelected: isTopFrameSelected(state, getCurrentThread(state)),
   javascriptEnabled: state.ui.javascriptEnabled,
   isPaused: getIsCurrentThreadPaused(state),
-  isTracingEnabled: getIsThreadCurrentlyTracing(state, getCurrentThread(state)),
+  isTracingEnabled: getIsJavascriptTracingEnabled(
+    state,
+    getCurrentThread(state)
+  ),
+  isTracingActive: getIsThreadCurrentlyTracing(state, getCurrentThread(state)),
   logMethod: getJavascriptTracingLogMethod(state),
   logValues: getJavascriptTracingValues(state),
   traceOnNextInteraction: getJavascriptTracingOnNextInteraction(state),
+  traceOnNextLoad: getJavascriptTracingOnNextLoad(state),
+  traceFunctionReturn: getJavascriptTracingFunctionReturn(state),
 });
 
 export default connect(mapStateToProps, {
@@ -444,6 +483,9 @@ export default connect(mapStateToProps, {
   toggleJavascriptTracingValues: actions.toggleJavascriptTracingValues,
   toggleJavascriptTracingOnNextInteraction:
     actions.toggleJavascriptTracingOnNextInteraction,
+  toggleJavascriptTracingOnNextLoad: actions.toggleJavascriptTracingOnNextLoad,
+  toggleJavascriptTracingFunctionReturn:
+    actions.toggleJavascriptTracingFunctionReturn,
   resume: actions.resume,
   stepIn: actions.stepIn,
   stepOut: actions.stepOut,

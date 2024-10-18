@@ -463,7 +463,7 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
 
   mIPCOpen = true;
 
-  if (StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
+  if (SessionStorePlatformCollection()) {
     mSessionStoreChild = SessionStoreChild::GetOrCreate(mBrowsingContext);
   }
 
@@ -814,7 +814,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadURL(
   }
   docShell->LoadURI(aLoadState, true);
 
-  CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL, spec);
+  CrashReporter::RecordAnnotationNSCString(CrashReporter::Annotation::URL,
+                                           spec);
   return IPC_OK();
 }
 
@@ -2529,6 +2530,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvNavigateByKey(
         aForward
             ? (aForDocumentNavigation
                    ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FIRSTDOC)
+               : StaticPrefs::dom_disable_tab_focus_to_root_element()
+                   ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_FIRST)
                    : static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_ROOT))
             : (aForDocumentNavigation
                    ? static_cast<uint32_t>(nsIFocusManager::MOVEFOCUS_LASTDOC)
@@ -3481,8 +3484,8 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
         annotationURI = aLocation;
       }
 
-      CrashReporter::AnnotateCrashReport(CrashReporter::Annotation::URL,
-                                         annotationURI->GetSpecOrDefault());
+      CrashReporter::RecordAnnotationNSCString(
+          CrashReporter::Annotation::URL, annotationURI->GetSpecOrDefault());
     }
 #endif
   }

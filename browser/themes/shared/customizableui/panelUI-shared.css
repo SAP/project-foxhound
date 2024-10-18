@@ -1788,13 +1788,6 @@ panelview {
     grid-column-start: 2;
   }
 
-  .whatsNew-message-title-large {
-    font-size: 2.1em;
-    margin: 2px 0;
-    font-weight: 300;
-    grid-column-start: 1;
-  }
-
   .whatsNew-message-subtitle {
     margin: 2px 0;
     font-size: .8em;
@@ -2092,29 +2085,6 @@ panelview {
     resize: vertical;
   }
 
-  input,
-  textarea {
-    appearance: none;
-    background-color: var(--panel-background);
-    padding: 0.25em;
-    border: 1px solid var(--panel-separator-color);
-    border-radius: 4px;
-
-    &:focus-visible {
-      border-color: transparent;
-      outline: var(--focus-outline);
-      outline-offset: -1px;
-    }
-  }
-
-  /* The menulist:has hack here should go away in bug 1869823 */
-  input:invalid:not(:focus-visible),
-  menulist:has(+ input:invalid):not(:focus-visible) {
-    border-color: transparent;
-    outline: 2px solid var(--color-error-outline);
-    outline-offset: -1px;
-  }
-
   > .panel-subview-body > label {
     margin-block: 1.5em 0.5em;
 
@@ -2131,8 +2101,11 @@ panelview {
         background-position-x: right;
       }
 
-      input:valid + & {
-        display: none;
+      display: none;
+
+      input:user-invalid + &,
+      select:user-invalid + & {
+        display: block;
       }
     }
   }
@@ -2178,10 +2151,32 @@ panelview {
   padding: 8px 16px 16px;
 }
 
-/* <menulist> does not support :invalid, so we use setCustomValidity
- * on a "helper" input. We must hide it with CSS, as using the HTML
- * "hidden" attribute will also keep it from working with :invalid.
- */
-#report-broken-site-popup-missing-reason-validation-helper {
-  display: none;
+/* ----- Profiles panels ----- */
+
+#profiles-edit-this-delete-button {
+  list-style-image: url("chrome://global/skin/icons/edit.svg");
+}
+
+#profiles-delete-this-profile-button {
+  list-style-image: url("chrome://global/skin/icons/delete.svg");
+}
+
+#profile-icon-image {
+  width: 75px;
+  height: 75px;
+}
+
+#profile-name {
+  font-size: 1.667rem;
+  padding-block-start: var(--space-medium);
+}
+
+#this-profile-buttons {
+  justify-content: center;
+}
+
+#current-profile {
+  align-items: center;
+  padding: var(--space-xxlarge) 0 var(--space-medium);
+  gap: var(--space-small);
 }

@@ -211,10 +211,29 @@ loader.lazyRequireGetter(
   true
 );
 loader.lazyGetter(this, "ProfilerBackground", () => {
-  return ChromeUtils.import(
-    "resource://devtools/client/performance-new/shared/background.jsm.js"
+  return ChromeUtils.importESModule(
+    "resource://devtools/client/performance-new/shared/background.sys.mjs"
   );
 });
+
+const BOOLEAN_CONFIGURATION_PREFS = {
+  "devtools.cache.disabled": {
+    name: "cacheDisabled",
+  },
+  "devtools.custom-formatters.enabled": {
+    name: "customFormatters",
+  },
+  "devtools.serviceWorkers.testing.enabled": {
+    name: "serviceWorkersTestingEnabled",
+  },
+  "devtools.inspector.simple-highlighters-reduced-motion": {
+    name: "useSimpleHighlightersForReducedMotion",
+  },
+  "devtools.debugger.features.overlay": {
+    name: "pauseOverlay",
+    thread: true,
+  },
+};
 
 /**
  * A "Toolbox" is the component that holds all the tools for one specific
@@ -284,13 +303,6 @@ function Toolbox(commands, selectedTool, hostType, contentWindow, frameId) {
   this._splitConsoleOnKeypress = this._splitConsoleOnKeypress.bind(this);
   this.closeToolbox = this.closeToolbox.bind(this);
   this.destroy = this.destroy.bind(this);
-  this._applyCacheSettings = this._applyCacheSettings.bind(this);
-  this._applyCustomFormatterSetting =
-    this._applyCustomFormatterSetting.bind(this);
-  this._applyServiceWorkersTestingSettings =
-    this._applyServiceWorkersTestingSettings.bind(this);
-  this._applySimpleHighlightersSettings =
-    this._applySimpleHighlightersSettings.bind(this);
   this._saveSplitConsoleHeight = this._saveSplitConsoleHeight.bind(this);
   this._onFocus = this._onFocus.bind(this);
   this._onBlur = this._onBlur.bind(this);
@@ -887,17 +899,9 @@ Toolbox.prototype = {
       // the iframe being ready (makes startup faster)
       await this.commands.targetCommand.startListening();
 
-      // Lets get the current thread settings from the prefs and
-      // update the threadConfigurationActor which should manage
-      // updating the current threads.
-      const options = await getThreadOptions();
-      await this.commands.threadConfigurationCommand.updateConfiguration(
-        options
-      );
-
-      // This needs to be done before watching for resources so console messages can be
-      // custom formatted right away.
-      await this._applyCustomFormatterSetting();
+      // Transfer settings early, before watching resources as it may impact them.
+      // (this is the case for custom formatter pref and console messages)
+      await this._listenAndApplyConfigurationPref();
 
       // The targetCommand is created right before this code.
       // It means that this call to watchTargets is the first,
@@ -920,6 +924,7 @@ Toolbox.prototype = {
         this.resourceCommand.TYPES.THREAD_STATE,
       ];
 
+      let tracerInitialization;
       if (
         Services.prefs.getBoolPref(
           "devtools.debugger.features.javascript-tracing",
@@ -927,6 +932,7 @@ Toolbox.prototype = {
         )
       ) {
         watchedResources.push(this.resourceCommand.TYPES.JSTRACER_STATE);
+        tracerInitialization = this.commands.tracerCommand.initialize();
       }
 
       if (!this.isBrowserToolbox) {
@@ -958,22 +964,6 @@ Toolbox.prototype = {
       const framesPromise = this._listFrames();
 
       Services.prefs.addObserver(
-        "devtools.cache.disabled",
-        this._applyCacheSettings
-      );
-      Services.prefs.addObserver(
-        "devtools.custom-formatters.enabled",
-        this._applyCustomFormatterSetting
-      );
-      Services.prefs.addObserver(
-        "devtools.serviceWorkers.testing.enabled",
-        this._applyServiceWorkersTestingSettings
-      );
-      Services.prefs.addObserver(
-        "devtools.inspector.simple-highlighters-reduced-motion",
-        this._applySimpleHighlightersSettings
-      );
-      Services.prefs.addObserver(
         BROWSERTOOLBOX_SCOPE_PREF,
         this._refreshHostTitle
       );
@@ -989,11 +979,6 @@ Toolbox.prototype = {
       this._buildDockOptions();
       this._buildInitialPanelDefinitions();
       this._setDebugTargetData();
-
-      // Forward configuration flags to the DevTools server.
-      this._applyCacheSettings();
-      this._applyServiceWorkersTestingSettings();
-      this._applySimpleHighlightersSettings();
 
       this._addWindowListeners();
       this._addChromeEventHandlerEvents();
@@ -1078,6 +1063,7 @@ Toolbox.prototype = {
         splitConsolePromise,
         framesPromise,
         onResourcesWatched,
+        tracerInitialization,
       ]);
 
       // We do not expect the focus to be restored when using about:debugging toolboxes
@@ -2030,7 +2016,7 @@ Toolbox.prototype = {
     this.errorCountButton = this._createButtonState({
       id: "command-button-errorcount",
       isInStartContainer: false,
-      isToolSupported: toolbox => true,
+      isToolSupported: () => true,
       description: L10N.getStr("toolbox.errorCountButton.description"),
     });
     // Use updateErrorCountButton to set some properties so we don't have to repeat
@@ -2203,68 +2189,70 @@ Toolbox.prototype = {
       : L10N.getFormatStr(label, shortcut);
   },
 
-  /**
-   * Apply the current cache setting from devtools.cache.disabled to this
-   * toolbox's tab.
-   */
-  async _applyCacheSettings() {
-    const pref = "devtools.cache.disabled";
-    const cacheDisabled = Services.prefs.getBoolPref(pref);
+  async _listenAndApplyConfigurationPref() {
+    this._onBooleanConfigurationPrefChange =
+      this._onBooleanConfigurationPrefChange.bind(this);
 
-    await this.commands.targetConfigurationCommand.updateConfiguration({
-      cacheDisabled,
-    });
+    // We have two configurations:
+    //  * target specific configurations, which are set on all target actors, themself easily accessible from any actor.
+    //    Most configurations should be set this way.
+    //  * thread specific configurations, which are set on directly on the thread actor.
+    //    Only configuration used by the thread actor should be set this way.
+    const targetConfiguration = {};
 
-    // This event is only emitted for tests in order to know when to reload
-    if (flags.testing) {
-      this.emit("cache-reconfigured");
+    // Get the current thread settings from the prefs as well as debugger internal storage for breakpoints.
+    const threadConfiguration = await getThreadOptions();
+
+    for (const prefName in BOOLEAN_CONFIGURATION_PREFS) {
+      const { name, thread } = BOOLEAN_CONFIGURATION_PREFS[prefName];
+      const value = Services.prefs.getBoolPref(prefName, false);
+
+      // Based on the pref name, this will be stored in either target or thread specific configuration
+      if (thread) {
+        threadConfiguration[name] = value;
+      } else {
+        targetConfiguration[name] = value;
+      }
+
+      // Also listen for any future change
+      Services.prefs.addObserver(
+        prefName,
+        this._onBooleanConfigurationPrefChange
+      );
     }
-  },
 
-  /**
-   * Apply the custom formatter setting (from `devtools.custom-formatters.enabled`) to this
-   * toolbox's tab.
-   */
-  async _applyCustomFormatterSetting() {
-    if (!this.commands) {
-      return;
-    }
-
-    const customFormatters = Services.prefs.getBoolPref(
-      "devtools.custom-formatters.enabled",
-      false
+    // Now communicate the configurations to the server
+    await this.commands.targetConfigurationCommand.updateConfiguration(
+      targetConfiguration
     );
-
-    await this.commands.targetConfigurationCommand.updateConfiguration({
-      customFormatters,
-    });
-
-    this.emitForTests("custom-formatters-reconfigured");
-  },
-
-  /**
-   * Apply the current service workers testing setting from
-   * devtools.serviceWorkers.testing.enabled to this toolbox's tab.
-   */
-  _applyServiceWorkersTestingSettings() {
-    const pref = "devtools.serviceWorkers.testing.enabled";
-    const serviceWorkersTestingEnabled = Services.prefs.getBoolPref(pref);
-    this.commands.targetConfigurationCommand.updateConfiguration({
-      serviceWorkersTestingEnabled,
-    });
-  },
-
-  /**
-   * Apply the current simple highlighters setting to this toolbox's tab.
-   */
-  _applySimpleHighlightersSettings() {
-    const useSimpleHighlightersForReducedMotion = Services.prefs.getBoolPref(
-      "devtools.inspector.simple-highlighters-reduced-motion",
-      false
+    await this.commands.threadConfigurationCommand.updateConfiguration(
+      threadConfiguration
     );
-    this.commands.targetConfigurationCommand.updateConfiguration({
-      useSimpleHighlightersForReducedMotion,
+  },
+
+  /**
+   * Called whenever a preference registered in BOOLEAN_CONFIGURATION_PREFS
+   * changes.
+   * This is used to communicate the new setting's value to the server.
+   *
+   * @param {String} subject
+   * @param {String} topic
+   * @param {String} prefName
+   *        The preference name which changed
+   */
+  async _onBooleanConfigurationPrefChange(subject, topic, prefName) {
+    const { name, thread } = BOOLEAN_CONFIGURATION_PREFS[prefName];
+    const value = Services.prefs.getBoolPref(prefName, false);
+
+    const configurationCommand = thread
+      ? this.commands.threadConfigurationCommand
+      : this.commands.targetConfigurationCommand;
+    await configurationCommand.updateConfiguration({
+      [name]: value,
     });
+
+    // This event is only emitted for tests in order to know when the setting has been applied by the backend.
+    this.emitForTests("new-configuration-applied", prefName);
   },
 
   /**
@@ -3375,7 +3363,7 @@ Toolbox.prototype = {
     return prefFront.getBoolPref(DISABLE_AUTOHIDE_PREF);
   },
 
-  async _listFrames(event) {
+  async _listFrames() {
     if (
       !this.target.getTrait("frames") ||
       this.target.targetForm.ignoreSubFrames
@@ -4050,22 +4038,12 @@ Toolbox.prototype = {
     gDevTools.off("tool-registered", this._toolRegistered);
     gDevTools.off("tool-unregistered", this._toolUnregistered);
 
-    Services.prefs.removeObserver(
-      "devtools.cache.disabled",
-      this._applyCacheSettings
-    );
-    Services.prefs.removeObserver(
-      "devtools.custom-formatters.enabled",
-      this._applyCustomFormatterSetting
-    );
-    Services.prefs.removeObserver(
-      "devtools.serviceWorkers.testing.enabled",
-      this._applyServiceWorkersTestingSettings
-    );
-    Services.prefs.removeObserver(
-      "devtools.inspector.simple-highlighters-reduced-motion",
-      this._applySimpleHighlightersSettings
-    );
+    for (const prefName in BOOLEAN_CONFIGURATION_PREFS) {
+      Services.prefs.removeObserver(
+        prefName,
+        this._onBooleanConfigurationPrefChange
+      );
+    }
     Services.prefs.removeObserver(
       BROWSERTOOLBOX_SCOPE_PREF,
       this._refreshHostTitle
@@ -4475,8 +4453,8 @@ Toolbox.prototype = {
    * Opens source in plain "view-source:".
    * @see devtools/client/shared/source-utils.js
    */
-  viewSource(sourceURL, sourceLine) {
-    return viewSource.viewSource(this, sourceURL, sourceLine);
+  viewSource(sourceURL, sourceLine, sourceColumn) {
+    return viewSource.viewSource(this, sourceURL, sourceLine, sourceColumn);
   },
 
   // Support for WebExtensions API (`devtools.network.*`)

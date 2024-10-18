@@ -5,11 +5,11 @@
 
 const TEST_ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
-  "http://example.com"
+  "https://example.com"
 );
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/content/tests/browser/common/mockTransfer.js",
@@ -31,7 +31,7 @@ add_setup(async function () {
   let destDir = gTestTargetFile.parent;
 
   MockFilePicker.displayDirectory = destDir;
-  MockFilePicker.showCallback = function (fp) {
+  MockFilePicker.showCallback = function () {
     MockFilePicker.setFiles([gTestTargetFile]);
     return MockFilePicker.returnOK;
   };

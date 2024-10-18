@@ -9,6 +9,7 @@
 
 #include "domstubs.h"
 #include "mozilla/dom/ConsoleBinding.h"
+#include "mozilla/dom/ConsoleInstanceBinding.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTHashMap.h"
@@ -425,8 +426,7 @@ class Console final : public nsIObserver, public nsSupportsWeakReference {
   bool mDumpToStdout;
   nsString mPrefix;
   bool mChromeInstance;
-  ConsoleLogLevel mMaxLogLevel;
-  nsString mMaxLogLevelPref;
+  uint32_t mCurrentLogLevel;
 
   enum { eUnknown, eInitialized, eShuttingDown } mStatus;
 

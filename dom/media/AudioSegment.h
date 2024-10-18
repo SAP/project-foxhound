@@ -79,7 +79,8 @@ static void InterleaveAndConvertBuffer(const SrcT* const* aSourceChannels,
   DestT* output = aOutput;
   for (size_t i = 0; i < aLength; ++i) {
     for (size_t channel = 0; channel < aChannels; ++channel) {
-      float v = AudioSampleToFloat(aSourceChannels[channel][i]) * aVolume;
+      float v =
+          ConvertAudioSample<float>(aSourceChannels[channel][i]) * aVolume;
       *output = FloatToAudioSample<DestT>(v);
       ++output;
     }
@@ -93,7 +94,8 @@ static void DeinterleaveAndConvertBuffer(const SrcT* aSourceBuffer,
   for (size_t i = 0; i < aChannels; i++) {
     size_t interleavedIndex = i;
     for (size_t j = 0; j < aFrames; j++) {
-      ConvertAudioSample(aSourceBuffer[interleavedIndex], aOutput[i][j]);
+      aOutput[i][j] =
+          ConvertAudioSample<DestT>(aSourceBuffer[interleavedIndex]);
       interleavedIndex += aChannels;
     }
   }
@@ -148,7 +150,7 @@ void DownmixAndInterleave(Span<const SrcT* const> aChannelData,
  * separate pointers to each channel's buffer.
  */
 struct AudioChunk {
-  typedef mozilla::AudioSampleFormat SampleFormat;
+  using SampleFormat = mozilla::AudioSampleFormat;
 
   AudioChunk() = default;
 
@@ -318,7 +320,7 @@ struct AudioChunk {
  * A list of audio samples consisting of a sequence of slices of SharedBuffers.
  * The audio rate is determined by the track, not stored in this class.
  */
-class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
+class AudioSegment final : public MediaSegmentBase<AudioSegment, AudioChunk> {
   // The channel count that MaxChannelCount() returned last time it was called.
   uint32_t mMemoizedMaxChannelCount = 0;
 

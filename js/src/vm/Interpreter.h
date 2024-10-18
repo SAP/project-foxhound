@@ -141,6 +141,17 @@ inline bool Call(JSContext* cx, HandleValue fval, JSObject* thisObj,
   return Call(cx, fval, thisv, args, rval);
 }
 
+inline bool Call(JSContext* cx, HandleValue fval, JSObject* thisObj,
+                 HandleValue arg0, HandleValue arg1, HandleValue arg2,
+                 MutableHandleValue rval) {
+  RootedValue thisv(cx, ObjectOrNullValue(thisObj));
+  FixedInvokeArgs<3> args(cx);
+  args[0].set(arg0);
+  args[1].set(arg1);
+  args[2].set(arg2);
+  return Call(cx, fval, thisv, args, rval);
+}
+
 // Perform the above Call() operation using the given arguments.  Similar to
 // ConstructFromStack() below, this handles |!IsCallable(args.calleev())|.
 //
@@ -512,6 +523,10 @@ bool HandleClosingGeneratorReturn(JSContext* cx, AbstractFramePtr frame,
 
 bool ThrowOperation(JSContext* cx, HandleValue v);
 
+bool ThrowWithStackOperation(JSContext* cx, HandleValue v, HandleValue stack);
+
+bool GetPendingExceptionStack(JSContext* cx, MutableHandleValue vp);
+
 bool GetProperty(JSContext* cx, HandleValue value, Handle<PropertyName*> name,
                  MutableHandleValue vp);
 
@@ -573,8 +588,6 @@ bool GreaterThan(JSContext* cx, MutableHandleValue lhs, MutableHandleValue rhs,
 
 bool GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
                         MutableHandleValue rhs, bool* res);
-
-bool AtomicIsLockFree(JSContext* cx, HandleValue in, int* out);
 
 template <bool strict>
 bool DelPropOperation(JSContext* cx, HandleValue val,

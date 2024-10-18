@@ -45,6 +45,8 @@ const ADDRESS_FORM_WITH_PAGE_NAVIGATION_BUTTONS =
   "https://example.org" +
   HTTP_TEST_PATH +
   "address/capture_address_on_page_navigation.html";
+const FORM_IFRAME_SANDBOXED_URL =
+  "https://example.org" + HTTP_TEST_PATH + "autocomplete_iframe_sandboxed.html";
 const CREDITCARD_FORM_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
@@ -253,7 +255,7 @@ async function ensureNoAutocompletePopup(browser) {
   ok(!items.length, "Should not find autocomplete items");
 }
 
-async function ensureNoDoorhanger(browser) {
+async function ensureNoDoorhanger() {
   await new Promise(resolve =>
     setTimeout(resolve, TIMEOUT_ENSURE_DOORHANGER_NOT_SHOWN)
   );
@@ -316,7 +318,7 @@ async function waitForAutofill(target, selector, value) {
  * @returns {Promise} resolves when the sub dialog is loaded
  */
 function waitForSubDialogLoad(win, dialogUrl) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     win.gSubDialog._dialogStack.addEventListener(
       "dialogopen",
       async function dialogopen(evt) {
@@ -395,6 +397,14 @@ async function focusUpdateSubmitForm(target, args, submit = true) {
       element = form.querySelector(selector);
       if (content.HTMLInputElement.isInstance(element)) {
         element.setUserInput(value);
+      } else if (
+        content.HTMLSelectElement.isInstance(element) &&
+        Array.isArray(value)
+      ) {
+        element.multiple = true;
+        [...element.options].forEach(option => {
+          option.selected = value.includes(option.value);
+        });
       } else {
         element.value = value;
       }
@@ -1199,7 +1209,7 @@ function normalizeAddressFields(record) {
 async function verifyConfirmationHint(
   browser,
   forceClose,
-  anchorID = "identity-icon"
+  anchorID = "identity-icon-box"
 ) {
   let hintElem = browser.ownerGlobal.ConfirmationHint._panel;
   await BrowserTestUtils.waitForPopupEvent(hintElem, "shown");

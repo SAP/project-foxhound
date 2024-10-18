@@ -36,7 +36,4 @@ Other useful tools, articles, and projects that use Puppeteer.
 - [puppeteer-loadtest](https://github.com/svenkatreddy/puppeteer-loadtest) - commandline interface for performing load test on puppeteer scripts.
 - [cucumber-puppeteer-example](https://github.com/mlampedx/cucumber-puppeteer-example) - Example repository demonstrating how to use Puppeeteer and Cucumber for integration testing.
 
-## Services
-
-- [Checkly](https://checklyhq.com) - Monitoring SaaS that uses Puppeteer to check availability and correctness of web pages and apps.
-- [Doppio](https://doppio.sh) - SaaS API to create screenshots or PDFs from HTML/CSS/JS
+Also, see the [community list of Puppeteer resources](https://github.com/transitive-bullshit/awesome-puppeteer) for more examples.

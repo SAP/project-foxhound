@@ -116,8 +116,7 @@ static void DecreasePrivateCount() {
   }
 }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 extern mozilla::LazyLogModule gUserInteractionPRLog;
 
@@ -469,26 +468,23 @@ CanonicalBrowsingContext::GetEmbedderWindowGlobal() const {
   return WindowGlobalParent::GetByInnerWindowId(windowId);
 }
 
-already_AddRefed<CanonicalBrowsingContext>
+CanonicalBrowsingContext*
 CanonicalBrowsingContext::GetParentCrossChromeBoundary() {
   if (GetParent()) {
-    return do_AddRef(Cast(GetParent()));
+    return Cast(GetParent());
   }
-  if (GetEmbedderElement()) {
-    return do_AddRef(
-        Cast(GetEmbedderElement()->OwnerDoc()->GetBrowsingContext()));
+  if (auto* embedder = GetEmbedderElement()) {
+    return Cast(embedder->OwnerDoc()->GetBrowsingContext());
   }
   return nullptr;
 }
 
-already_AddRefed<CanonicalBrowsingContext>
-CanonicalBrowsingContext::TopCrossChromeBoundary() {
-  RefPtr<CanonicalBrowsingContext> bc(this);
-  while (RefPtr<CanonicalBrowsingContext> parent =
-             bc->GetParentCrossChromeBoundary()) {
-    bc = parent.forget();
+CanonicalBrowsingContext* CanonicalBrowsingContext::TopCrossChromeBoundary() {
+  CanonicalBrowsingContext* bc = this;
+  while (auto* parent = bc->GetParentCrossChromeBoundary()) {
+    bc = parent;
   }
-  return bc.forget();
+  return bc;
 }
 
 Nullable<WindowProxyHolder> CanonicalBrowsingContext::GetTopChromeWindow() {
@@ -821,14 +817,21 @@ RefPtr<PrintPromise> CanonicalBrowsingContext::Print(
 }
 
 void CanonicalBrowsingContext::CallOnAllTopDescendants(
-    const std::function<mozilla::CallState(CanonicalBrowsingContext*)>&
-        aCallback) {
-#ifdef DEBUG
-  RefPtr<CanonicalBrowsingContext> parent = GetParentCrossChromeBoundary();
-  MOZ_ASSERT(!parent, "Should only call on top chrome BC");
-#endif
+    const FunctionRef<CallState(CanonicalBrowsingContext*)>& aCallback,
+    bool aIncludeNestedBrowsers) {
+  MOZ_ASSERT(IsTop(), "Should only call on top BC");
+  MOZ_ASSERT(
+      !aIncludeNestedBrowsers ||
+          (IsChrome() && !GetParentCrossChromeBoundary()),
+      "If aIncludeNestedBrowsers is set, should only call on top chrome BC");
 
-  nsTArray<RefPtr<BrowsingContextGroup>> groups;
+  if (!IsInProcess()) {
+    // We rely on top levels having to be embedded in the parent process, so
+    // we can only have top level descendants if embedded here..
+    return;
+  }
+
+  AutoTArray<RefPtr<BrowsingContextGroup>, 32> groups;
   BrowsingContextGroup::GetAllGroups(groups);
   for (auto& browsingContextGroup : groups) {
     for (auto& bc : browsingContextGroup->Toplevels()) {
@@ -837,12 +840,19 @@ void CanonicalBrowsingContext::CallOnAllTopDescendants(
         continue;
       }
 
-      RefPtr<CanonicalBrowsingContext> top =
-          bc->Canonical()->TopCrossChromeBoundary();
-      if (top == this) {
-        if (aCallback(bc->Canonical()) == CallState::Stop) {
-          return;
+      if (aIncludeNestedBrowsers) {
+        if (this != bc->Canonical()->TopCrossChromeBoundary()) {
+          continue;
         }
+      } else {
+        auto* parent = bc->Canonical()->GetParentCrossChromeBoundary();
+        if (!parent || this != parent->Top()) {
+          continue;
+        }
+      }
+
+      if (aCallback(bc->Canonical()) == CallState::Stop) {
+        return;
       }
     }
   }
@@ -1210,7 +1220,8 @@ Maybe<int32_t> CanonicalBrowsingContext::HistoryGo(
     // Check for user interaction if desired, except for the first and last
     // history entries. We compare with >= to account for the case where
     // aOffset >= length.
-    if (!aRequireUserInteraction || index.value() >= shistory->Length() - 1 ||
+    if (!StaticPrefs::browser_navigation_requireUserInteraction() ||
+        !aRequireUserInteraction || index.value() >= shistory->Length() - 1 ||
         index.value() <= 0) {
       break;
     }
@@ -1362,7 +1373,7 @@ void CanonicalBrowsingContext::RecomputeAppWindowVisibility() {
     return;
   }
 
-  SetIsActive(isNowActive, IgnoreErrors());
+  SetIsActiveInternal(isNowActive, IgnoreErrors());
   if (widget) {
     // Pause if we are not active, resume if we are active.
     widget->PauseOrResumeCompositor(!isNowActive);
@@ -1972,7 +1983,16 @@ void CanonicalBrowsingContext::SetCurrentBrowserParent(
       GetParentWindowContext() &&
           GetParentWindowContext()->Manager() == aBrowserParent);
 
+  if (aBrowserParent && IsTopContent() && !ManuallyManagesActiveness()) {
+    aBrowserParent->SetRenderLayers(IsActive());
+  }
+
   mCurrentBrowserParent = aBrowserParent;
+}
+
+bool CanonicalBrowsingContext::ManuallyManagesActiveness() const {
+  auto* el = GetEmbedderElement();
+  return el && el->IsXULElement() && el->HasAttr(nsGkAtoms::manualactiveness);
 }
 
 RefPtr<CanonicalBrowsingContext::RemotenessPromise>
@@ -2560,11 +2580,6 @@ nsresult CanonicalBrowsingContext::WriteSessionStorageToSessionStore(
 
 void CanonicalBrowsingContext::UpdateSessionStoreSessionStorage(
     const std::function<void()>& aDone) {
-  if (!StaticPrefs::browser_sessionstore_collect_session_storage_AtStartup()) {
-    aDone();
-    return;
-  }
-
   using DataPromise = BackgroundSessionStorageManager::DataPromise;
   BackgroundSessionStorageManager::GetData(
       this, StaticPrefs::browser_sessionstore_dom_storage_limit(),
@@ -2593,7 +2608,7 @@ void CanonicalBrowsingContext::UpdateSessionStoreForStorage(
 }
 
 void CanonicalBrowsingContext::MaybeScheduleSessionStoreUpdate() {
-  if (!StaticPrefs::browser_sessionstore_platform_collection_AtStartup()) {
+  if (!SessionStorePlatformCollection()) {
     return;
   }
 
@@ -3082,5 +3097,4 @@ NS_IMPL_RELEASE_INHERITED(CanonicalBrowsingContext, BrowsingContext)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(CanonicalBrowsingContext)
 NS_INTERFACE_MAP_END_INHERITING(BrowsingContext)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
