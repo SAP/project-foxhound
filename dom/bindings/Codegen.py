@@ -11,7 +11,6 @@ import re
 import string
 import textwrap
 
-import six
 from Configuration import (
     Descriptor,
     MemberIsLegacyUnforgeable,
@@ -51,7 +50,6 @@ LEGACYCALLER_HOOK_NAME = "_legacycaller"
 RESOLVE_HOOK_NAME = "_resolve"
 MAY_RESOLVE_HOOK_NAME = "_mayResolve"
 NEW_ENUMERATE_HOOK_NAME = "_newEnumerate"
-ENUM_ENTRY_VARIABLE_NAME = "strings"
 INSTANCE_RESERVED_SLOTS = 1
 
 # This size is arbitrary. It is a power of 2 to make using it as a modulo
@@ -247,12 +245,6 @@ def wantsGetWrapperCache(desc):
     )
 
 
-# We'll want to insert the indent at the beginnings of lines, but we
-# don't want to indent empty lines.  So only indent lines that have a
-# non-newline character on them.
-lineStartDetector = re.compile("^(?=[^\n#])", re.MULTILINE)
-
-
 def indent(s, indentLevel=2):
     """
     Indent C++ code.
@@ -260,9 +252,16 @@ def indent(s, indentLevel=2):
     Weird secret feature: this doesn't indent lines that start with # (such as
     #include lines or #ifdef/#endif).
     """
-    if s == "":
-        return s
-    return re.sub(lineStartDetector, indentLevel * " ", s)
+
+    # We'll want to insert the indent at the beginnings of lines, but we
+    # don't want to indent empty lines.
+    padding = indentLevel * " "
+    return "\n".join(
+        [
+            (padding + line) if line and line[0] != "#" else line
+            for line in s.split("\n")
+        ]
+    )
 
 
 # dedent() and fill() are often called on the same string multiple
@@ -1600,7 +1599,7 @@ class CGHeaders(CGWrapper):
     def getDeclarationFilename(decl):
         # Use our local version of the header, not the exported one, so that
         # test bindings, which don't export, will work correctly.
-        basename = os.path.basename(decl.filename())
+        basename = os.path.basename(decl.filename)
         return basename.replace(".webidl", "Binding.h")
 
     @staticmethod
@@ -4788,7 +4787,6 @@ class CGWrapGlobalMethod(CGAbstractMethod):
             Argument("nsWrapperCache*", "aCache"),
             Argument("JS::RealmOptions&", "aOptions"),
             Argument("JSPrincipals*", "aPrincipal"),
-            Argument("bool", "aInitStandardClasses"),
             Argument("JS::MutableHandle<JSObject*>", "aReflector"),
         ]
         CGAbstractMethod.__init__(self, descriptor, "Wrap", "bool", args)
@@ -4836,7 +4834,6 @@ class CGWrapGlobalMethod(CGAbstractMethod):
                                              sClass.ToJSClass(),
                                              aOptions,
                                              aPrincipal,
-                                             aInitStandardClasses,
                                              aReflector)) {
               $*{failureCode}
             }
@@ -5718,6 +5715,12 @@ def getJSToNativeConversionInfo(
     def onFailureIsLarge():
         return CGGeneric(
             'cx.ThrowErrorMessage<MSG_TYPEDARRAY_IS_LARGE>("%s");\n'
+            "%s" % (firstCap(sourceDescription), exceptionCode)
+        )
+
+    def onFailureIsResizable():
+        return CGGeneric(
+            'cx.ThrowErrorMessage<MSG_TYPEDARRAY_IS_RESIZABLE>("%s");\n'
             "%s" % (firstCap(sourceDescription), exceptionCode)
         )
 
@@ -6757,10 +6760,12 @@ def getJSToNativeConversionInfo(
             if type.isArrayBuffer():
                 isSharedMethod = "JS::IsSharedArrayBufferObject"
                 isLargeMethod = "JS::IsLargeArrayBufferMaybeShared"
+                isResizableMethod = "JS::IsResizableArrayBufferMaybeShared"
             else:
                 assert type.isArrayBufferView() or type.isTypedArray()
                 isSharedMethod = "JS::IsArrayBufferViewShared"
                 isLargeMethod = "JS::IsLargeArrayBufferView"
+                isResizableMethod = "JS::IsResizableArrayBufferView"
             if not isAllowShared:
                 template += fill(
                     """
@@ -6784,6 +6789,19 @@ def getJSToNativeConversionInfo(
                 isLargeMethod=isLargeMethod,
                 objRef=objRef,
                 badType=onFailureIsLarge().define(),
+            )
+            # For now reject resizable ArrayBuffers and growable
+            # SharedArrayBuffers. Supporting this will require changing
+            # dom::TypedArray and consumers.
+            template += fill(
+                """
+                if (${isResizableMethod}(${objRef}.Obj())) {
+                  $*{badType}
+                }
+                """,
+                isResizableMethod=isResizableMethod,
+                objRef=objRef,
+                badType=onFailureIsResizable().define(),
             )
         template = wrapObjectTemplate(
             template, type, "${declName}.SetNull();\n", failureCode
@@ -7027,7 +7045,10 @@ def getJSToNativeConversionInfo(
             """
             {
               int index;
-              if (!FindEnumStringIndex<${invalidEnumValueFatal}>(cx, $${val}, ${values}, "${enumtype}", "${sourceDescription}", &index)) {
+              if (!binding_detail::FindEnumStringIndex<${invalidEnumValueFatal}>(cx, $${val},
+                                                                                 binding_detail::EnumStrings<${enumtype}>::Values,
+                                                                                 "${enumtype}", "${sourceDescription}",
+                                                                                 &index)) {
                 $*{exceptionCode}
               }
               $*{handleInvalidEnumValueCode}
@@ -7035,7 +7056,6 @@ def getJSToNativeConversionInfo(
             }
             """,
             enumtype=enumName,
-            values=enumName + "Values::" + ENUM_ENTRY_VARIABLE_NAME,
             invalidEnumValueFatal=toStringBool(invalidEnumValueFatal),
             handleInvalidEnumValueCode=handleInvalidEnumValueCode,
             exceptionCode=exceptionCode,
@@ -12311,20 +12331,13 @@ def getEnumValueName(value):
         raise SyntaxError('"_empty" is not an IDL enum value we support yet')
     if value == "":
         return "_empty"
-    nativeName = MakeNativeName(value)
-    if nativeName == "EndGuard_":
-        raise SyntaxError(
-            'Enum value "' + value + '" cannot be used because it'
-            " collides with our internal EndGuard_ value.  Please"
-            " rename our internal EndGuard_ to something else"
-        )
-    return nativeName
+    return MakeNativeName(value)
 
 
 class CGEnumToJSValue(CGAbstractMethod):
     def __init__(self, enum):
         enumType = enum.identifier.name
-        self.stringsArray = enumType + "Values::" + ENUM_ENTRY_VARIABLE_NAME
+        self.stringsArray = "binding_detail::EnumStrings<" + enumType + ">::Values"
         CGAbstractMethod.__init__(
             self,
             None,
@@ -12342,8 +12355,8 @@ class CGEnumToJSValue(CGAbstractMethod):
             """
             MOZ_ASSERT(uint32_t(aArgument) < ArrayLength(${strings}));
             JSString* resultStr =
-              JS_NewStringCopyN(aCx, ${strings}[uint32_t(aArgument)].value,
-                                ${strings}[uint32_t(aArgument)].length);
+              JS_NewStringCopyN(aCx, ${strings}[uint32_t(aArgument)].BeginReading(),
+                                ${strings}[uint32_t(aArgument)].Length());
             if (!resultStr) {
               return false;
             }
@@ -12358,80 +12371,54 @@ class CGEnum(CGThing):
     def __init__(self, enum):
         CGThing.__init__(self)
         self.enum = enum
-        entryDecl = fill(
-            """
-            extern const EnumEntry ${entry_array}[${entry_count}];
-
-            static constexpr size_t Count = ${real_entry_count};
-
-            // Our "${entry_array}" contains an extra entry with a null string.
-            static_assert(mozilla::ArrayLength(${entry_array}) - 1 == Count,
-                          "Mismatch between enum strings and enum count");
-
-            static_assert(static_cast<size_t>(${name}::EndGuard_) == Count,
-                          "Mismatch between enum value and enum count");
-
-            inline auto GetString(${name} stringId) {
-              MOZ_ASSERT(static_cast<${type}>(stringId) < Count);
-              const EnumEntry& entry = ${entry_array}[static_cast<${type}>(stringId)];
-              return Span<const char>{entry.value, entry.length};
-            }
-            """,
-            entry_array=ENUM_ENTRY_VARIABLE_NAME,
-            entry_count=self.nEnumStrings(),
-            # -1 because nEnumStrings() includes a string for EndGuard_
-            real_entry_count=self.nEnumStrings() - 1,
-            name=self.enum.identifier.name,
-            type=self.underlyingType(),
-        )
         strings = CGNamespace(
-            self.stringsNamespace(),
+            "binding_detail",
             CGGeneric(
-                declare=entryDecl,
+                declare=fill(
+                    """
+                    template <> struct EnumStrings<${name}> {
+                      static const nsLiteralCString Values[${count}];
+                    };
+                    """,
+                    name=self.enum.identifier.name,
+                    count=self.nEnumStrings(),
+                ),
                 define=fill(
                     """
-                          extern const EnumEntry ${name}[${count}] = {
-                            $*{entries}
-                            { nullptr, 0 }
-                          };
-                          """,
-                    name=ENUM_ENTRY_VARIABLE_NAME,
+                    const nsLiteralCString EnumStrings<${name}>::Values[${count}] = {
+                      $*{entries}
+                    };
+                    """,
+                    name=self.enum.identifier.name,
                     count=self.nEnumStrings(),
-                    entries="".join(
-                        '{"%s", %d},\n' % (val, len(val)) for val in self.enum.values()
-                    ),
+                    entries="".join('"%s"_ns,\n' % val for val in self.enum.values()),
                 ),
             ),
         )
         toJSValue = CGEnumToJSValue(enum)
         self.cgThings = CGList([strings, toJSValue], "\n")
 
-    def stringsNamespace(self):
-        return self.enum.identifier.name + "Values"
-
     def nEnumStrings(self):
-        return len(self.enum.values()) + 1
+        return len(self.enum.values())
 
-    def underlyingType(self):
-        count = self.nEnumStrings()
+    @staticmethod
+    def underlyingType(enum):
+        count = len(enum.values())
         if count <= 256:
             return "uint8_t"
         if count <= 65536:
             return "uint16_t"
-        raise ValueError(
-            "Enum " + self.enum.identifier.name + " has more than 65536 values"
-        )
+        raise ValueError("Enum " + enum.identifier.name + " has more than 65536 values")
 
     def declare(self):
         decl = fill(
             """
             enum class ${name} : ${ty} {
               $*{enums}
-              EndGuard_
             };
             """,
             name=self.enum.identifier.name,
-            ty=self.underlyingType(),
+            ty=CGEnum.underlyingType(self.enum),
             enums=",\n".join(map(getEnumValueName, self.enum.values())) + ",\n",
         )
 
@@ -12439,6 +12426,39 @@ class CGEnum(CGThing):
 
     def define(self):
         return self.cgThings.define()
+
+    def deps(self):
+        return self.enum.getDeps()
+
+
+class CGMaxContiguousEnumValue(CGThing):
+    def __init__(self, enum):
+        CGThing.__init__(self)
+        self.enum = enum
+
+    def declare(self):
+        enumValues = self.enum.values()
+        return fill(
+            """
+            template <>
+            struct MaxContiguousEnumValue<dom::${name}>
+            {
+              static constexpr dom::${name} value = dom::${name}::${maxValue};
+
+              static_assert(static_cast<${ty}>(dom::${name}::${minValue}) == 0,
+                            "We rely on this in ContiguousEnumValues");
+              static_assert(mozilla::ArrayLength(dom::binding_detail::EnumStrings<dom::${name}>::Values) - 1 == UnderlyingValue(value),
+                            "Mismatch between enum strings and enum count");
+            };
+            """,
+            name=self.enum.identifier.name,
+            ty=CGEnum.underlyingType(self.enum),
+            maxValue=getEnumValueName(enumValues[-1]),
+            minValue=getEnumValueName(enumValues[0]),
+        )
+
+    def define(self):
+        return ""
 
     def deps(self):
         return self.enum.getDeps()
@@ -14848,7 +14868,7 @@ class CGCountMaybeMissingProperty(CGAbstractMethod):
            generate nested switches) or strings to use for case bodies.
         """
         cases = []
-        for label, body in sorted(six.iteritems(switchDecriptor["cases"])):
+        for label, body in sorted(switchDecriptor["cases"].items()):
             if isinstance(body, dict):
                 body = self.gen_switch(body)
             cases.append(
@@ -18393,7 +18413,7 @@ class CGGlobalNames(CGGeneric):
                 ),
             )
 
-            entries.append((name, nativeEntry))
+            entries.append((name.encode(), nativeEntry))
 
         # Unfortunately, when running tests, we may have no entries.
         # PerfectHash will assert if we give it an empty set of entries, so we
@@ -18550,7 +18570,7 @@ class ForwardDeclarationBuilder:
                     ]
                 )
             )
-        for namespace, child in sorted(six.iteritems(self.children)):
+        for namespace, child in sorted(self.children.items()):
             decls.append(CGNamespace(namespace, child._build(atTopLevel=False)))
 
         cg = CGList(decls, "\n")
@@ -19054,9 +19074,11 @@ class CGBindingRoot(CGThing):
         # Do codegen for all the enums
         enums = config.getEnums(webIDLFile)
         cgthings.extend(CGEnum(e) for e in enums)
+        maxEnumValues = CGList([CGMaxContiguousEnumValue(e) for e in enums], "\n")
 
         bindingDeclareHeaders["mozilla/Span.h"] = enums
         bindingDeclareHeaders["mozilla/ArrayUtils.h"] = enums
+        bindingDeclareHeaders["mozilla/EnumTypeTraits.h"] = enums
 
         hasCode = descriptors or callbackDescriptors or dictionaries or callbacks
         bindingHeaders["mozilla/dom/BindingUtils.h"] = hasCode
@@ -19156,7 +19178,13 @@ class CGBindingRoot(CGThing):
         curr = CGWrapper(CGList(cgthings, "\n\n"), post="\n\n")
 
         # Wrap all of that in our namespaces.
-        curr = CGNamespace.build(["mozilla", "dom"], CGWrapper(curr, pre="\n"))
+
+        if len(maxEnumValues) > 0:
+            curr = CGNamespace("dom", CGWrapper(curr, pre="\n"))
+            curr = CGWrapper(CGList([curr, maxEnumValues], "\n\n"), post="\n\n")
+            curr = CGNamespace("mozilla", CGWrapper(curr, pre="\n"))
+        else:
+            curr = CGNamespace.build(["mozilla", "dom"], CGWrapper(curr, pre="\n"))
 
         curr = CGList(
             [
@@ -19175,12 +19203,10 @@ class CGBindingRoot(CGThing):
 
         # Add header includes.
         bindingHeaders = [
-            header for header, include in six.iteritems(bindingHeaders) if include
+            header for header, include in bindingHeaders.items() if include
         ]
         bindingDeclareHeaders = [
-            header
-            for header, include in six.iteritems(bindingDeclareHeaders)
-            if include
+            header for header, include in bindingDeclareHeaders.items() if include
         ]
 
         curr = CGHeaders(
@@ -24662,7 +24688,7 @@ class CGEventRoot(CGThing):
             self.root,
             pre=(
                 AUTOGENERATED_WITH_SOURCE_WARNING_COMMENT
-                % os.path.basename(descriptor.interface.filename())
+                % os.path.basename(descriptor.interface.filename)
             ),
         )
 

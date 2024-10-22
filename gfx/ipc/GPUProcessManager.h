@@ -14,6 +14,7 @@
 #include "mozilla/gfx/GPUProcessHost.h"
 #include "mozilla/gfx/PGPUChild.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/Hal.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/TaskFactory.h"
 #include "mozilla/layers/LayersTypes.h"
@@ -214,6 +215,7 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   // Called from our xpcom-shutdown observer.
   void OnXPCOMShutdown();
   void OnPreferenceChange(const char16_t* aData);
+  void ScreenInformationChanged();
 
   bool CreateContentCompositorManager(
       base::ProcessId aOtherProcess, dom::ContentParentId aChildId,
@@ -309,6 +311,8 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
 
   DISALLOW_COPY_AND_ASSIGN(GPUProcessManager);
 
+  void NotifyBatteryInfo(const hal::BatteryInformation& aBatteryInfo);
+
   class Observer final : public nsIObserver {
    public:
     NS_DECL_ISUPPORTS
@@ -322,10 +326,25 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   };
   friend class Observer;
 
+  class BatteryObserver final : public hal::BatteryObserver {
+   public:
+    NS_INLINE_DECL_REFCOUNTING(BatteryObserver)
+    explicit BatteryObserver(GPUProcessManager* aManager);
+
+    void Notify(const hal::BatteryInformation& aBatteryInfo) override;
+    void ShutDown();
+
+   protected:
+    virtual ~BatteryObserver();
+
+    GPUProcessManager* mManager;
+  };
+
  private:
   bool mDecodeVideoOnGpuProcess = true;
 
   RefPtr<Observer> mObserver;
+  RefPtr<BatteryObserver> mBatteryObserver;
   mozilla::ipc::TaskFactory<GPUProcessManager> mTaskFactory;
   RefPtr<VsyncIOThreadHolder> mVsyncIOThread;
   uint32_t mNextNamespace;

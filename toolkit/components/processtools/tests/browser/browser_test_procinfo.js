@@ -15,13 +15,20 @@ const NS_PER_MS = 1000000;
 
 function checkProcessCpuTime(proc) {
   Assert.greater(proc.cpuTime, 0, "Got some cpu time");
+  Assert.greater(proc.threads.length, 0, "Got some threads");
+  Assert.ok(
+    proc.threads.some(thread => thread.cpuTime > 0),
+    "Got some cpu time in the threads"
+  );
 
   let cpuThreads = 0;
   for (let thread of proc.threads) {
     cpuThreads += Math.floor(thread.cpuTime / NS_PER_MS);
   }
-  Assert.greater(cpuThreads, 0, "Got some cpu time in the threads");
-  let processCpuTime = Math.ceil(proc.cpuTime / NS_PER_MS);
+  // Add 1ms to the process CPU time because ProcInfo captures the CPU time for
+  // the whole process first and then for each of the threads, so the process
+  // CPU time might have increased slightly in the meantime.
+  let processCpuTime = Math.floor(proc.cpuTime / NS_PER_MS) + 1;
   if (AppConstants.platform == "win" && processCpuTime < cpuThreads) {
     // On Windows, our test jobs likely run in VMs without constant TSC,
     // so we might have low precision CPU time measurements.

@@ -598,6 +598,15 @@ TEST_F(MediaPipelineFilterTest, TestSSRCFilter) {
   EXPECT_FALSE(Filter(filter, 556, 110));
 }
 
+TEST_F(MediaPipelineFilterTest, TestSSRCFilterOverridesPayloadTypeFilter) {
+  MediaPipelineFilter filter;
+  filter.AddRemoteSSRC(555);
+  filter.AddUniqueReceivePT(110);
+  // We have a configured ssrc; do not allow payload type matching.
+  EXPECT_FALSE(Filter(filter, 556, 110));
+  EXPECT_TRUE(Filter(filter, 555, 110));
+}
+
 #define SSRC(ssrc)                                                    \
   ((ssrc >> 24) & 0xFF), ((ssrc >> 16) & 0xFF), ((ssrc >> 8) & 0xFF), \
       (ssrc & 0xFF)
@@ -627,9 +636,14 @@ TEST_F(MediaPipelineFilterTest, TestMidFilter) {
 
 TEST_F(MediaPipelineFilterTest, TestPayloadTypeFilter) {
   MediaPipelineFilter filter;
-  filter.AddUniquePT(110);
+  filter.AddUniqueReceivePT(110);
   EXPECT_TRUE(Filter(filter, 555, 110));
   EXPECT_FALSE(Filter(filter, 556, 111));
+  // Matching based on unique payload type causes us to learn the ssrc.
+  EXPECT_TRUE(Filter(filter, 555, 98));
+  // Once we have learned an SSRC, do _not_ learn new ones based on payload
+  // type.
+  EXPECT_FALSE(Filter(filter, 557, 110));
 }
 
 TEST_F(MediaPipelineFilterTest, TestSSRCMovedWithMid) {
@@ -651,7 +665,7 @@ TEST_F(MediaPipelineFilterTest, TestRemoteSDPNoSSRCs) {
   MediaPipelineFilter filter;
   const auto mid = Some(std::string("mid0"));
   filter.SetRemoteMediaStreamId(mid);
-  filter.AddUniquePT(111);
+  filter.AddUniqueReceivePT(111);
   EXPECT_TRUE(Filter(filter, 555, 110, mid));
   EXPECT_TRUE(Filter(filter, 555, 110));
 

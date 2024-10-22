@@ -28,6 +28,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/psm/IPCClientCertsChild.h"
@@ -42,7 +43,6 @@
 #include "nsClientAuthRemember.h"
 #include "nsContentUtils.h"
 #include "nsISocketProvider.h"
-#include "nsISocketTransport.h"
 #include "nsIWebProgressListener.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"
@@ -442,6 +442,18 @@ bool retryDueToTLSIntolerance(PRErrorCode err, NSSSocketControl* socketInfo) {
   if (StaticPrefs::security_tls_ech_disable_grease_on_fallback() &&
       socketInfo->GetEchExtensionStatus() == EchExtensionStatus::kGREASE) {
     // Don't record any intolerances if we used ECH GREASE but force a retry.
+    return true;
+  }
+
+  if (!socketInfo->IsPreliminaryHandshakeDone() &&
+      !socketInfo->HasTls13HandshakeSecrets() && socketInfo->SentXyberShare()) {
+    nsAutoCString errorName;
+    const char* prErrorName = PR_ErrorToName(err);
+    if (prErrorName) {
+      errorName.AppendASCII(prErrorName);
+    }
+    mozilla::glean::tls::xyber_intolerance_reason.Get(errorName).Add(1);
+    // Don't record version intolerance if we sent Xyber, just force a retry.
     return true;
   }
 
@@ -1267,6 +1279,9 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
       SECSuccess) {
     return nullptr;
   }
+  if (SSL_SecretCallback(sslSock, SecretCallback, infoObject) != SECSuccess) {
+    return nullptr;
+  }
   if (SSL_SetCanFalseStartCallback(sslSock, CanFalseStartCallback,
                                    infoObject) != SECSuccess) {
     return nullptr;
@@ -1409,7 +1424,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   // Enable ECH GREASE if suitable. Has no impact if 'real' ECH is being used.
   if (range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
       !(infoObject->GetProviderFlags() & (nsISocketProvider::BE_CONSERVATIVE |
-                                          nsISocketTransport::DONT_TRY_ECH)) &&
+                                          nsISocketProvider::DONT_TRY_ECH)) &&
       StaticPrefs::security_tls_ech_grease_probability()) {
     if ((RandomUint64().valueOr(0) % 100) >=
         100 - StaticPrefs::security_tls_ech_grease_probability()) {
@@ -1435,7 +1450,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   if (StaticPrefs::security_tls_enable_kyber() &&
       range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
       !(infoObject->GetProviderFlags() &
-        (nsISocketProvider::BE_CONSERVATIVE | nsISocketTransport::IS_RETRY))) {
+        (nsISocketProvider::BE_CONSERVATIVE | nsISocketProvider::IS_RETRY))) {
     const SSLNamedGroup namedGroups[] = {
         ssl_grp_kem_xyber768d00, ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1,
         ssl_grp_ec_secp384r1,    ssl_grp_ec_secp521r1,  ssl_grp_ffdhe_2048,
@@ -1449,6 +1464,7 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     if (SECSuccess != SSL_SendAdditionalKeyShares(fd, 2)) {
       return NS_ERROR_FAILURE;
     }
+    infoObject->WillSendXyberShare();
   } else {
     const SSLNamedGroup namedGroups[] = {
         ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1, ssl_grp_ec_secp384r1,

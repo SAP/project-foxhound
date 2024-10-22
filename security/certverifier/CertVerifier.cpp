@@ -452,7 +452,8 @@ Result CertVerifier::VerifyCert(
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
     /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
-    /*optional out*/ bool* madeOCSPRequests) {
+    /*optional out*/ bool* madeOCSPRequests,
+    /*optional out*/ IssuerSources* issuerSources) {
   MOZ_LOG(gCertVerifierLog, LogLevel::Debug, ("Top of VerifyCert\n"));
 
   MOZ_ASSERT(usage == certificateUsageSSLServer || !(flags & FLAG_MUST_BE_EV));
@@ -492,6 +493,10 @@ Result CertVerifier::VerifyCert(
 
   if (madeOCSPRequests) {
     *madeOCSPRequests = false;
+  }
+
+  if (issuerSources) {
+    issuerSources->clear();
   }
 
   Input certDER;
@@ -584,6 +589,9 @@ Result CertVerifier::VerifyCert(
           *madeOCSPRequests |=
               trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
         }
+        if (issuerSources) {
+          *issuerSources = trustDomain.GetIssuerSources();
+        }
         if (rv == Success) {
           rv = VerifyCertificateTransparencyPolicy(
               trustDomain, builtChain, sctsFromTLSInput, time, ctInfo);
@@ -642,6 +650,9 @@ Result CertVerifier::VerifyCert(
         if (madeOCSPRequests) {
           *madeOCSPRequests |=
               trustDomain.GetOCSPFetchStatus() == OCSPFetchStatus::Fetched;
+        }
+        if (issuerSources) {
+          *issuerSources = trustDomain.GetIssuerSources();
         }
         if (rv != Success && !IsFatalError(rv) &&
             rv != Result::ERROR_REVOKED_CERTIFICATE &&
@@ -773,8 +784,31 @@ static bool CertIsSelfSigned(const BackCert& backCert, void* pinarg) {
   return rv == Success;
 }
 
+class SkipInvalidSANsForNonBuiltInRootsPolicy : public NameMatchingPolicy {
+ public:
+  explicit SkipInvalidSANsForNonBuiltInRootsPolicy(bool rootIsBuiltIn)
+      : mRootIsBuiltIn(rootIsBuiltIn) {}
+
+  virtual Result FallBackToCommonName(
+      Time,
+      /*out*/ FallBackToSearchWithinSubject& fallBackToCommonName) override {
+    fallBackToCommonName = FallBackToSearchWithinSubject::No;
+    return Success;
+  }
+
+  virtual HandleInvalidSubjectAlternativeNamesBy
+  HandleInvalidSubjectAlternativeNames() override {
+    return mRootIsBuiltIn ? HandleInvalidSubjectAlternativeNamesBy::Halting
+                          : HandleInvalidSubjectAlternativeNamesBy::Skipping;
+  }
+
+ private:
+  bool mRootIsBuiltIn;
+};
+
 static Result CheckCertHostnameHelper(Input peerCertInput,
-                                      const nsACString& hostname) {
+                                      const nsACString& hostname,
+                                      bool rootIsBuiltIn) {
   Input hostnameInput;
   Result rv = hostnameInput.Init(
       BitwiseCast<const uint8_t*, const char*>(hostname.BeginReading()),
@@ -783,7 +817,8 @@ static Result CheckCertHostnameHelper(Input peerCertInput,
     return Result::FATAL_ERROR_INVALID_ARGS;
   }
 
-  rv = CheckCertHostname(peerCertInput, hostnameInput);
+  SkipInvalidSANsForNonBuiltInRootsPolicy nameMatchingPolicy(rootIsBuiltIn);
+  rv = CheckCertHostname(peerCertInput, hostnameInput, nameMatchingPolicy);
   // Treat malformed name information as a domain mismatch.
   if (rv == Result::ERROR_BAD_DER) {
     return Result::ERROR_BAD_CERT_DOMAIN;
@@ -807,7 +842,8 @@ Result CertVerifier::VerifySSLServerCert(
     /*optional out*/ PinningTelemetryInfo* pinningTelemetryInfo,
     /*optional out*/ CertificateTransparencyInfo* ctInfo,
     /*optional out*/ bool* isBuiltChainRootBuiltInRoot,
-    /*optional out*/ bool* madeOCSPRequests) {
+    /*optional out*/ bool* madeOCSPRequests,
+    /*optional out*/ IssuerSources* issuerSources) {
   // XXX: MOZ_ASSERT(pinarg);
   MOZ_ASSERT(!hostname.IsEmpty());
 
@@ -832,12 +868,12 @@ Result CertVerifier::VerifySSLServerCert(
     return rv;
   }
   bool isBuiltChainRootBuiltInRootLocal;
-  rv = VerifyCert(peerCertBytes, certificateUsageSSLServer, time, pinarg,
-                  PromiseFlatCString(hostname).get(), builtChain, flags,
-                  extraCertificates, stapledOCSPResponse, sctsFromTLS,
-                  originAttributes, evStatus, ocspStaplingStatus, keySizeStatus,
-                  pinningTelemetryInfo, ctInfo,
-                  &isBuiltChainRootBuiltInRootLocal, madeOCSPRequests);
+  rv = VerifyCert(
+      peerCertBytes, certificateUsageSSLServer, time, pinarg,
+      PromiseFlatCString(hostname).get(), builtChain, flags, extraCertificates,
+      stapledOCSPResponse, sctsFromTLS, originAttributes, evStatus,
+      ocspStaplingStatus, keySizeStatus, pinningTelemetryInfo, ctInfo,
+      &isBuiltChainRootBuiltInRootLocal, madeOCSPRequests, issuerSources);
   if (rv != Success) {
     // we don't use the certificate for path building, so this parameter doesn't
     // matter
@@ -885,7 +921,8 @@ Result CertVerifier::VerifySSLServerCert(
     if (rv == Result::ERROR_EXPIRED_CERTIFICATE ||
         rv == Result::ERROR_NOT_YET_VALID_CERTIFICATE ||
         rv == Result::ERROR_INVALID_DER_TIME) {
-      Result hostnameResult = CheckCertHostnameHelper(peerCertInput, hostname);
+      Result hostnameResult =
+          CheckCertHostnameHelper(peerCertInput, hostname, false);
       if (hostnameResult != Success) {
         return hostnameResult;
       }
@@ -919,7 +956,8 @@ Result CertVerifier::VerifySSLServerCert(
     }
   }
 
-  rv = CheckCertHostnameHelper(peerCertInput, hostname);
+  rv = CheckCertHostnameHelper(peerCertInput, hostname,
+                               isBuiltChainRootBuiltInRootLocal);
   if (rv != Success) {
     return rv;
   }

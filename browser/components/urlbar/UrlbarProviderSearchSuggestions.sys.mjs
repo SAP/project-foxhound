@@ -317,10 +317,8 @@ class ProviderSearchSuggestions extends UrlbarProvider {
 
   /**
    * Cancels a running query.
-   *
-   * @param {object} queryContext The query context object
    */
-  cancelQuery(queryContext) {
+  cancelQuery() {
     if (this._suggestionsController) {
       this._suggestionsController.stop();
       this._suggestionsController = null;
@@ -508,7 +506,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
           trending: entry.trending,
           description: entry.description || undefined,
           query: [searchString.trim(), UrlbarUtils.HIGHLIGHT.NONE],
-          icon: !entry.value ? engine.getIconURL() : entry.icon,
+          icon: !entry.value ? await engine.getIconURL() : entry.icon,
         };
 
         if (entry.trending) {

@@ -1,7 +1,7 @@
 "use strict";
 
-const { OnboardingMessageProvider } = ChromeUtils.import(
-  "resource://activity-stream/lib/OnboardingMessageProvider.jsm"
+const { OnboardingMessageProvider } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs"
 );
 const { SpecialMessageActions } = ChromeUtils.importESModule(
   "resource://messaging-system/lib/SpecialMessageActions.sys.mjs"

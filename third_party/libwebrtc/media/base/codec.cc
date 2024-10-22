@@ -158,8 +158,7 @@ bool Codec::operator==(const Codec& c) const {
               : (packetization == c.packetization));
 }
 
-bool Codec::Matches(const Codec& codec,
-                    const webrtc::FieldTrialsView* field_trials) const {
+bool Codec::Matches(const Codec& codec) const {
   // Match the codec id/name based on the typical static/dynamic name rules.
   // Matching is case-insensitive.
 
@@ -360,6 +359,14 @@ Codec CreateVideoRtxCodec(int rtx_payload_type, int associated_payload_type) {
   Codec rtx_codec = CreateVideoCodec(rtx_payload_type, kRtxCodecName);
   rtx_codec.SetParam(kCodecParamAssociatedPayloadType, associated_payload_type);
   return rtx_codec;
+}
+
+const Codec* FindCodecById(const std::vector<Codec>& codecs, int payload_type) {
+  for (const auto& codec : codecs) {
+    if (codec.id == payload_type)
+      return &codec;
+  }
+  return nullptr;
 }
 
 bool HasLntf(const Codec& codec) {

@@ -6,9 +6,12 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
+use error_support::handle_error;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use remote_settings::{
     self, GetItemsOptions, RemoteSettingsConfig, RemoteSettingsRecord, SortOrder,
 };
@@ -19,9 +22,12 @@ use rusqlite::{
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::{
+    config::{SuggestGlobalConfig, SuggestProviderConfig},
     db::{
         ConnectionType, SuggestDao, SuggestDb, LAST_INGEST_META_KEY, UNPARSABLE_RECORDS_META_KEY,
     },
+    error::Error,
+    provider::SuggestionProvider,
     rs::{
         SuggestAttachment, SuggestRecord, SuggestRecordId, SuggestRemoteSettingsClient,
         REMOTE_SETTINGS_COLLECTION, SUGGESTIONS_PER_ATTACHMENT,
@@ -32,6 +38,70 @@ use crate::{
 
 /// The chunk size used to request unparsable records.
 pub const UNPARSABLE_IDS_PER_REQUEST: usize = 150;
+
+/// Builder for [SuggestStore]
+///
+/// Using a builder is preferred to calling the constructor directly since it's harder to confuse
+/// the data_path and cache_path strings.
+pub struct SuggestStoreBuilder(Mutex<SuggestStoreBuilderInner>);
+
+#[derive(Default)]
+struct SuggestStoreBuilderInner {
+    data_path: Option<String>,
+    cache_path: Option<String>,
+    remote_settings_config: Option<RemoteSettingsConfig>,
+}
+
+impl Default for SuggestStoreBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SuggestStoreBuilder {
+    pub fn new() -> SuggestStoreBuilder {
+        Self(Mutex::new(SuggestStoreBuilderInner::default()))
+    }
+
+    pub fn data_path(self: Arc<Self>, path: String) -> Arc<Self> {
+        self.0.lock().data_path = Some(path);
+        self
+    }
+
+    pub fn cache_path(self: Arc<Self>, path: String) -> Arc<Self> {
+        self.0.lock().cache_path = Some(path);
+        self
+    }
+
+    pub fn remote_settings_config(self: Arc<Self>, config: RemoteSettingsConfig) -> Arc<Self> {
+        self.0.lock().remote_settings_config = Some(config);
+        self
+    }
+
+    #[handle_error(Error)]
+    pub fn build(&self) -> SuggestApiResult<Arc<SuggestStore>> {
+        let inner = self.0.lock();
+        let data_path = inner
+            .data_path
+            .clone()
+            .ok_or_else(|| Error::SuggestStoreBuilder("data_path not specified".to_owned()))?;
+        let cache_path = inner
+            .cache_path
+            .clone()
+            .ok_or_else(|| Error::SuggestStoreBuilder("cache_path not specified".to_owned()))?;
+        let settings_client =
+            remote_settings::Client::new(inner.remote_settings_config.clone().unwrap_or_else(
+                || RemoteSettingsConfig {
+                    server_url: None,
+                    bucket_name: None,
+                    collection_name: REMOTE_SETTINGS_COLLECTION.into(),
+                },
+            ))?;
+        Ok(Arc::new(SuggestStore {
+            inner: SuggestStoreInner::new(data_path, cache_path, settings_client),
+        }))
+    }
+}
 
 /// The store is the entry point to the Suggest component. It incrementally
 /// downloads suggestions from the Remote Settings service, stores them in a
@@ -97,6 +167,7 @@ pub(crate) struct UnparsableRecord {
 
 impl SuggestStore {
     /// Creates a Suggest store.
+    #[handle_error(Error)]
     pub fn new(
         path: &str,
         settings_config: Option<RemoteSettingsConfig>,
@@ -111,13 +182,14 @@ impl SuggestStore {
             )?)
         }()?;
         Ok(Self {
-            inner: SuggestStoreInner::new(path, settings_client),
+            inner: SuggestStoreInner::new("".to_owned(), path.to_owned(), settings_client),
         })
     }
 
     /// Queries the database for suggestions.
+    #[handle_error(Error)]
     pub fn query(&self, query: SuggestionQuery) -> SuggestApiResult<Vec<Suggestion>> {
-        Ok(self.inner.query(query)?)
+        self.inner.query(query)
     }
 
     /// Interrupts any ongoing queries.
@@ -130,13 +202,30 @@ impl SuggestStore {
     }
 
     /// Ingests new suggestions from Remote Settings.
+    #[handle_error(Error)]
     pub fn ingest(&self, constraints: SuggestIngestionConstraints) -> SuggestApiResult<()> {
-        Ok(self.inner.ingest(constraints)?)
+        self.inner.ingest(constraints)
     }
 
     /// Removes all content from the database.
+    #[handle_error(Error)]
     pub fn clear(&self) -> SuggestApiResult<()> {
-        Ok(self.inner.clear()?)
+        self.inner.clear()
+    }
+
+    // Returns global Suggest configuration data.
+    #[handle_error(Error)]
+    pub fn fetch_global_config(&self) -> SuggestApiResult<SuggestGlobalConfig> {
+        self.inner.fetch_global_config()
+    }
+
+    // Returns per-provider Suggest configuration data.
+    #[handle_error(Error)]
+    pub fn fetch_provider_config(
+        &self,
+        provider: SuggestionProvider,
+    ) -> SuggestApiResult<Option<SuggestProviderConfig>> {
+        self.inner.fetch_provider_config(provider)
     }
 }
 
@@ -155,15 +244,29 @@ pub struct SuggestIngestionConstraints {
 /// client, and is split out from the concrete [`SuggestStore`] for testing
 /// with a mock client.
 pub(crate) struct SuggestStoreInner<S> {
-    path: PathBuf,
+    /// Path to the persistent SQL database.
+    ///
+    /// This stores things that should persist when the user clears their cache.
+    /// It's not currently used because not all consumers pass this in yet.
+    #[allow(unused)]
+    data_path: PathBuf,
+    /// Path to the temporary SQL database.
+    ///
+    /// This stores things that should be deleted when the user clears their cache.
+    cache_path: PathBuf,
     dbs: OnceCell<SuggestStoreDbs>,
     settings_client: S,
 }
 
 impl<S> SuggestStoreInner<S> {
-    fn new(path: impl AsRef<Path>, settings_client: S) -> Self {
+    fn new(
+        data_path: impl Into<PathBuf>,
+        cache_path: impl Into<PathBuf>,
+        settings_client: S,
+    ) -> Self {
         Self {
-            path: path.as_ref().into(),
+            data_path: data_path.into(),
+            cache_path: cache_path.into(),
             dbs: OnceCell::new(),
             settings_client,
         }
@@ -173,7 +276,7 @@ impl<S> SuggestStoreInner<S> {
     /// they're not already open.
     fn dbs(&self) -> Result<&SuggestStoreDbs> {
         self.dbs
-            .get_or_try_init(|| SuggestStoreDbs::open(&self.path))
+            .get_or_try_init(|| SuggestStoreDbs::open(&self.cache_path))
     }
 
     fn query(&self, query: SuggestionQuery) -> Result<Vec<Suggestion>> {
@@ -192,6 +295,19 @@ impl<S> SuggestStoreInner<S> {
 
     fn clear(&self) -> Result<()> {
         self.dbs()?.writer.write(|dao| dao.clear())
+    }
+
+    pub fn fetch_global_config(&self) -> Result<SuggestGlobalConfig> {
+        self.dbs()?.reader.read(|dao| dao.get_global_config())
+    }
+
+    pub fn fetch_provider_config(
+        &self,
+        provider: SuggestionProvider,
+    ) -> Result<Option<SuggestProviderConfig>> {
+        self.dbs()?
+            .reader
+            .read(|dao| dao.get_provider_config(provider))
     }
 }
 
@@ -258,16 +374,7 @@ where
             if record.deleted {
                 // If the entire record was deleted, drop all its suggestions
                 // and advance the last ingest time.
-                writer.write(|dao| {
-                    match record_id.as_icon_id() {
-                        Some(icon_id) => dao.drop_icon(icon_id)?,
-                        None => dao.drop_suggestions(&record_id)?,
-                    };
-                    dao.drop_unparsable_record_id(&record_id)?;
-                    dao.put_last_ingest_if_newer(record.last_modified)?;
-
-                    Ok(())
-                })?;
+                writer.write(|dao| dao.handle_deleted_record(record))?;
                 continue;
             }
             let Ok(fields) =
@@ -275,23 +382,20 @@ where
             else {
                 // We don't recognize this record's type, so we don't know how
                 // to ingest its suggestions. Record this in the meta table.
-                writer.write(|dao| {
-                    dao.put_unparsable_record_id(&record_id)?;
-                    dao.put_last_ingest_if_newer(record.last_modified)?;
-                    Ok(())
-                })?;
+                writer.write(|dao| dao.handle_unparsable_record(record))?;
                 continue;
             };
 
             match fields {
                 SuggestRecord::AmpWikipedia => {
-                    self.ingest_suggestions_from_record(
-                        writer,
-                        record,
-                        |dao, record_id, suggestions| {
-                            dao.insert_amp_wikipedia_suggestions(record_id, suggestions)
-                        },
-                    )?;
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        dao.insert_amp_wikipedia_suggestions(record_id, suggestions)
+                    })?;
+                }
+                SuggestRecord::AmpMobile => {
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        dao.insert_amp_mobile_suggestions(record_id, suggestions)
+                    })?;
                 }
                 SuggestRecord::Icon => {
                     let (Some(icon_id), Some(attachment)) =
@@ -306,48 +410,70 @@ where
                     let data = self.settings_client.get_attachment(&attachment.location)?;
                     writer.write(|dao| {
                         dao.put_icon(icon_id, &data)?;
-                        dao.put_last_ingest_if_newer(record.last_modified)?;
-                        // Remove this record's ID from the list of unparsable
-                        // records, since we understand it now.
-                        dao.drop_unparsable_record_id(&record_id)?;
-
-                        Ok(())
+                        dao.handle_ingested_record(record)
                     })?;
                 }
                 SuggestRecord::Amo => {
-                    self.ingest_suggestions_from_record(
-                        writer,
-                        record,
-                        |dao, record_id, suggestions| {
-                            dao.insert_amo_suggestions(record_id, suggestions)
-                        },
-                    )?;
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        dao.insert_amo_suggestions(record_id, suggestions)
+                    })?;
                 }
                 SuggestRecord::Pocket => {
-                    self.ingest_suggestions_from_record(
-                        writer,
-                        record,
-                        |dao, record_id, suggestions| {
-                            dao.insert_pocket_suggestions(record_id, suggestions)
-                        },
-                    )?;
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        dao.insert_pocket_suggestions(record_id, suggestions)
+                    })?;
                 }
                 SuggestRecord::Yelp => {
-                    self.ingest_suggestions_from_record(
-                        writer,
-                        record,
-                        |dao, record_id, suggestions| match suggestions.first() {
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        match suggestions.first() {
                             Some(suggestion) => dao.insert_yelp_suggestions(record_id, suggestion),
                             None => Ok(()),
-                        },
-                    )?;
+                        }
+                    })?;
+                }
+                SuggestRecord::Mdn => {
+                    self.ingest_attachment(writer, record, |dao, record_id, suggestions| {
+                        dao.insert_mdn_suggestions(record_id, suggestions)
+                    })?;
+                }
+                SuggestRecord::Weather(data) => {
+                    self.ingest_record(writer, record, |dao, record_id| {
+                        dao.insert_weather_data(record_id, &data)
+                    })?;
+                }
+                SuggestRecord::GlobalConfig(config) => {
+                    self.ingest_record(writer, record, |dao, _| {
+                        dao.put_global_config(&SuggestGlobalConfig::from(&config))
+                    })?;
                 }
             }
         }
         Ok(())
     }
 
-    fn ingest_suggestions_from_record<T>(
+    fn ingest_record(
+        &self,
+        writer: &SuggestDb,
+        record: &RemoteSettingsRecord,
+        ingestion_handler: impl FnOnce(&mut SuggestDao<'_>, &SuggestRecordId) -> Result<()>,
+    ) -> Result<()> {
+        let record_id = SuggestRecordId::from(&record.id);
+
+        writer.write(|dao| {
+            // Drop any data that we previously ingested from this record.
+            // Suggestions in particular don't have a stable identifier, and
+            // determining which suggestions in the record actually changed is
+            // more complicated than dropping and re-ingesting all of them.
+            dao.drop_suggestions(&record_id)?;
+
+            // Ingest (or re-ingest) all data in the record.
+            ingestion_handler(dao, &record_id)?;
+
+            dao.handle_ingested_record(record)
+        })
+    }
+
+    fn ingest_attachment<T>(
         &self,
         writer: &SuggestDb,
         record: &RemoteSettingsRecord,
@@ -356,41 +482,21 @@ where
     where
         T: DeserializeOwned,
     {
-        let record_id = SuggestRecordId::from(&record.id);
-
         let Some(attachment) = record.attachment.as_ref() else {
-            // A record should always have an
-            // attachment with suggestions. If it doesn't, it's
-            // malformed, so skip to the next record.
+            // This method should be called only when a record is expected to
+            // have an attachment. If it doesn't have one, it's malformed, so
+            // skip to the next record.
             writer.write(|dao| dao.put_last_ingest_if_newer(record.last_modified))?;
             return Ok(());
         };
 
-        let attachment: SuggestAttachment<T> =
-            serde_json::from_slice(&self.settings_client.get_attachment(&attachment.location)?)?;
-
-        writer.write(|dao| {
-            // Drop any suggestions that we previously ingested from
-            // this record's attachment. Suggestions don't have a
-            // stable identifier, and determining which suggestions in
-            // the attachment actually changed is more complicated than
-            // dropping and re-ingesting all of them.
-            dao.drop_suggestions(&record_id)?;
-
-            // Ingest (or re-ingest) all suggestions in the
-            // attachment.
-            ingestion_handler(dao, &record_id, attachment.suggestions())?;
-
-            // Remove this record's ID from the list of unparsable
-            // records, since we understand it now.
-            dao.drop_unparsable_record_id(&record_id)?;
-
-            // Advance the last fetch time, so that we can resume
-            // fetching after this record if we're interrupted.
-            dao.put_last_ingest_if_newer(record.last_modified)?;
-
-            Ok(())
-        })
+        let attachment_data = self.settings_client.get_attachment(&attachment.location)?;
+        match serde_json::from_slice::<SuggestAttachment<T>>(&attachment_data) {
+            Ok(attachment) => self.ingest_record(writer, record, |dao, record_id| {
+                ingestion_handler(dao, record_id, attachment.suggestions())
+            }),
+            Err(_) => writer.write(|dao| dao.handle_unparsable_record(record)),
+        }
     }
 }
 
@@ -440,7 +546,11 @@ mod tests {
         // it in shared-cache mode so that both connections can access it.
         SuggestStoreInner::new(
             format!(
-                "file:test_store_{}?mode=memory&cache=shared",
+                "file:test_store_data_{}?mode=memory&cache=shared",
+                hex::encode(unique_suffix),
+            ),
+            format!(
+                "file:test_store_cache_{}?mode=memory&cache=shared",
                 hex::encode(unique_suffix),
             ),
             settings_client,
@@ -602,6 +712,7 @@ mod tests {
                 "icon": "5678",
                 "impression_url": "https://example.com/impression_url",
                 "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?;
 
@@ -625,6 +736,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -689,7 +801,8 @@ mod tests {
                 "url": "https://penne.biz",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?
         .with_icon("icon-2.png", "i-am-an-icon".as_bytes().into());
@@ -728,6 +841,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.2,
                     },
                 ]
             "#]]
@@ -765,6 +879,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -809,7 +924,8 @@ mod tests {
                  "url": "https://www.lasagna.restaurant",
                  "icon": "2",
                  "impression_url": "https://example.com/impression_url",
-                 "click_url": "https://example.com/click_url"
+                 "click_url": "https://example.com/click_url",
+                 "score": 0.3
             }),
         )?;
 
@@ -832,6 +948,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -876,7 +993,8 @@ mod tests {
                 "url": "https://www.lasagna.restaurant",
                 "icon": "1",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }, {
                 "id": 0,
                 "advertiser": "Los Pollos Hermanos",
@@ -886,7 +1004,8 @@ mod tests {
                 "url": "https://www.lph-nm.biz",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?;
 
@@ -910,6 +1029,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -946,7 +1066,8 @@ mod tests {
                 "url": "https://www.lph-nm.biz",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }, {
                 "id": 0,
                 "advertiser": "Good Place Eats",
@@ -956,7 +1077,8 @@ mod tests {
                 "url": "https://penne.biz",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?;
 
@@ -985,6 +1107,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -1007,6 +1130,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -1072,7 +1196,8 @@ mod tests {
                 "url": "https://www.lasagna.restaurant",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }, {
                 "id": 0,
                 "advertiser": "Los Pollos Hermanos",
@@ -1082,7 +1207,8 @@ mod tests {
                 "url": "https://www.lph-nm.biz",
                 "icon": "3",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?
         .with_icon("icon-2.png", "lasagna-icon".as_bytes().into())
@@ -1167,6 +1293,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -1207,6 +1334,7 @@ mod tests {
                         impression_url: "https://example.com/impression_url",
                         click_url: "https://example.com/click_url",
                         raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
                     },
                 ]
             "#]]
@@ -1509,7 +1637,8 @@ mod tests {
                 "url": "https://www.lasagna.restaurant",
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
-                "click_url": "https://example.com/click_url"
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?
         .with_icon("icon-2.png", "i-am-an-icon".as_bytes().into());
@@ -1634,6 +1763,7 @@ mod tests {
                 "icon": "2",
                 "impression_url": "https://example.com",
                 "click_url": "https://example.com",
+                "score": 0.3
             }]),
         )?;
 
@@ -1727,6 +1857,17 @@ mod tests {
                 "size": 0,
             },
         }, {
+            "id": "data-5",
+            "type": "mdn-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-5.json",
+                "mimetype": "application/json",
+                "location": "data-5.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
             "id": "icon-2",
             "type": "icon",
             "last_modified": 20,
@@ -1748,6 +1889,17 @@ mod tests {
                 "hash": "",
                 "size": 0,
             },
+        }, {
+            "id": "icon-yelp-favicon",
+            "type": "icon",
+            "last_modified": 25,
+            "attachment": {
+                "filename": "yelp-favicon.svg",
+                "mimetype": "image/svg+xml",
+                "location": "yelp-favicon.svg",
+                "hash": "",
+                "size": 0,
+            },
         }]))?
         .with_data(
             "data-1.json",
@@ -1761,6 +1913,7 @@ mod tests {
                 "icon": "2",
                 "impression_url": "https://example.com/impression_url",
                 "click_url": "https://example.com/click_url",
+                "score": 0.3
             }, {
                 "id": 0,
                 "advertiser": "Wikipedia",
@@ -1831,14 +1984,14 @@ mod tests {
                     "lowConfidenceKeywords": [],
                     "highConfidenceKeywords": ["multimatch"],
                     "title": "Multimatching",
-                    "score": 0.25
+                    "score": 0.88
                 },
             ]),
         )?
         .with_data(
             "data-4.json",
             json!({
-                "subjects": ["ramen", "spicy ramen", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789Z"],
+                "subjects": ["ramen", "spicy ramen", "spicy random ramen", "rats", "raven", "raccoon", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789Z"],
                 "preModifiers": ["best", "super best", "same_modifier"],
                 "postModifiers": ["delivery", "super delivery", "same_modifier"],
                 "locationSigns": [
@@ -1846,11 +1999,27 @@ mod tests {
                     { "keyword": "near", "needLocation": true },
                     { "keyword": "near by", "needLocation": false },
                     { "keyword": "near me", "needLocation": false },
-                ]
+                ],
+                "yelpModifiers": ["yelp", "yelp keyword"],
+                "icon": "yelp-favicon",
+                "score": 0.5
             }),
         )?
+        .with_data(
+            "data-5.json",
+            json!([
+                {
+                    "description": "Javascript Array",
+                    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                    "keywords": ["array javascript", "javascript array", "wildcard"],
+                    "title": "Array",
+                    "score": 0.24
+                },
+            ]),
+        )?
         .with_icon("icon-2.png", "i-am-an-icon".as_bytes().into())
-        .with_icon("icon-3.png", "also-an-icon".as_bytes().into());
+        .with_icon("icon-3.png", "also-an-icon".as_bytes().into())
+        .with_icon("yelp-favicon.svg", "yelp-icon".as_bytes().into());
 
         let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
 
@@ -1867,6 +2036,7 @@ mod tests {
                         SuggestionProvider::Amo,
                         SuggestionProvider::Pocket,
                         SuggestionProvider::Yelp,
+                        SuggestionProvider::Weather,
                     ],
                     limit: None,
                 },
@@ -1884,6 +2054,7 @@ mod tests {
                         SuggestionProvider::Amo,
                         SuggestionProvider::Pocket,
                         SuggestionProvider::Yelp,
+                        SuggestionProvider::Weather,
                     ],
                     limit: None,
                 },
@@ -1916,6 +2087,7 @@ mod tests {
                             impression_url: "https://example.com/impression_url",
                             click_url: "https://example.com/click_url",
                             raw_click_url: "https://example.com/click_url",
+                            score: 0.3,
                         },
                     ]
                 "#]],
@@ -1934,6 +2106,24 @@ mod tests {
                 },
                 expect![[r#"
                     [
+                        Pocket {
+                            title: "Multimatching",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.88,
+                            is_top_pick: true,
+                        },
+                        Amo {
+                            title: "Firefox Multimatch",
+                            url: "https://addons.mozilla.org/en-US/firefox/addon/multimatch",
+                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
+                            description: "amo suggestion multi-match",
+                            rating: Some(
+                                "4.9",
+                            ),
+                            number_of_ratings: 888,
+                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                            score: 0.25,
+                        },
                         Wikipedia {
                             title: "Multimatch",
                             url: "https://wikipedia.org/Multimatch",
@@ -1954,24 +2144,6 @@ mod tests {
                                 ],
                             ),
                             full_keyword: "multimatch",
-                        },
-                        Amo {
-                            title: "Firefox Multimatch",
-                            url: "https://addons.mozilla.org/en-US/firefox/addon/multimatch",
-                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
-                            description: "amo suggestion multi-match",
-                            rating: Some(
-                                "4.9",
-                            ),
-                            number_of_ratings: 888,
-                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
-                            score: 0.25,
-                        },
-                        Pocket {
-                            title: "Multimatching",
-                            url: "https://getpocket.com/collections/multimatch",
-                            score: 0.25,
-                            is_top_pick: true,
                         },
                     ]
                 "#]],
@@ -1990,6 +2162,24 @@ mod tests {
                 },
                 expect![[r#"
                     [
+                        Pocket {
+                            title: "Multimatching",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.88,
+                            is_top_pick: true,
+                        },
+                        Amo {
+                            title: "Firefox Multimatch",
+                            url: "https://addons.mozilla.org/en-US/firefox/addon/multimatch",
+                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
+                            description: "amo suggestion multi-match",
+                            rating: Some(
+                                "4.9",
+                            ),
+                            number_of_ratings: 888,
+                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                            score: 0.25,
+                        },
                         Wikipedia {
                             title: "Multimatch",
                             url: "https://wikipedia.org/Multimatch",
@@ -2010,24 +2200,6 @@ mod tests {
                                 ],
                             ),
                             full_keyword: "multimatch",
-                        },
-                        Amo {
-                            title: "Firefox Multimatch",
-                            url: "https://addons.mozilla.org/en-US/firefox/addon/multimatch",
-                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
-                            description: "amo suggestion multi-match",
-                            rating: Some(
-                                "4.9",
-                            ),
-                            number_of_ratings: 888,
-                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
-                            score: 0.25,
-                        },
-                        Pocket {
-                            title: "Multimatching",
-                            url: "https://getpocket.com/collections/multimatch",
-                            score: 0.25,
-                            is_top_pick: true,
                         },
                     ]
                 "#]],
@@ -2046,26 +2218,11 @@ mod tests {
                 },
                 expect![[r#"
                     [
-                        Wikipedia {
-                            title: "Multimatch",
-                            url: "https://wikipedia.org/Multimatch",
-                            icon: Some(
-                                [
-                                    97,
-                                    108,
-                                    115,
-                                    111,
-                                    45,
-                                    97,
-                                    110,
-                                    45,
-                                    105,
-                                    99,
-                                    111,
-                                    110,
-                                ],
-                            ),
-                            full_keyword: "multimatch",
+                        Pocket {
+                            title: "Multimatching",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.88,
+                            is_top_pick: true,
                         },
                         Amo {
                             title: "Firefox Multimatch",
@@ -2118,6 +2275,7 @@ mod tests {
                             impression_url: "https://example.com/impression_url",
                             click_url: "https://example.com/click_url",
                             raw_click_url: "https://example.com/click_url",
+                            score: 0.3,
                         },
                     ]
                 "#]],
@@ -2439,12 +2597,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=best+spicy+ramen+delivery&find_loc=tokyo",
-                        title: "best spicy ramen delivery in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=best+spicy+ramen+delivery&find_loc=tokyo",
+                            title: "best spicy ramen delivery in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2455,12 +2630,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=BeSt+SpIcY+rAmEn+DeLiVeRy&find_loc=ToKyO",
-                        title: "BeSt SpIcY rAmEn DeLiVeRy In ToKyO",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=BeSt+SpIcY+rAmEn+DeLiVeRy&find_loc=ToKyO",
+                            title: "BeSt SpIcY rAmEn DeLiVeRy In ToKyO",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2471,12 +2663,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=best+ramen+delivery&find_loc=tokyo",
-                        title: "best ramen delivery in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=best+ramen+delivery&find_loc=tokyo",
+                            title: "best ramen delivery in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2509,12 +2718,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=super+best+ramen+delivery&find_loc=tokyo",
-                        title: "super best ramen delivery in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=super+best+ramen+delivery&find_loc=tokyo",
+                            title: "super best ramen delivery in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2536,12 +2762,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen+delivery&find_loc=tokyo",
-                        title: "ramen delivery in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen+delivery&find_loc=tokyo",
+                            title: "ramen delivery in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2552,12 +2795,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen+super+delivery&find_loc=tokyo",
-                        title: "ramen super delivery in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen+super+delivery&find_loc=tokyo",
+                            title: "ramen super delivery in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2579,12 +2839,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
-                        title: "ramen in tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                            title: "ramen in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2595,12 +2872,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
-                        title: "ramen near tokyo",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                            title: "ramen near tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2622,12 +2916,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=San+Francisco",
-                        title: "ramen in San Francisco",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen&find_loc=San+Francisco",
+                            title: "ramen in San Francisco",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2638,12 +2949,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen",
-                        title: "ramen in",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen",
+                            title: "ramen in",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2654,12 +2982,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen+near+by",
-                        title: "ramen near by",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen+near+by",
+                            title: "ramen near by",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2670,12 +3015,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen+near+me",
-                        title: "ramen near me",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen+near+me",
+                            title: "ramen near me",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2697,12 +3059,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=ramen",
-                        title: "ramen",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen",
+                            title: "ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2713,12 +3092,29 @@ mod tests {
                     limit: None,
                 },
                 expect![[r#"
-                [
-                    Yelp {
-                        url: "https://www.yelp.com/search?find_desc=012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                        title: "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
-                    },
-                ]
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                            title: "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
                 "#]],
             ),
             (
@@ -2763,6 +3159,1161 @@ mod tests {
                 },
                 expect![[r#"
                 []
+                "#]],
+            ),
+            (
+                "keyword = `yelp ramen`; Yelp only",
+                SuggestionQuery {
+                    keyword: "yelp ramen".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen",
+                            title: "ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `yelp keyword ramen`; Yelp only",
+                SuggestionQuery {
+                    keyword: "yelp keyword ramen".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen",
+                            title: "ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen in tokyo yelp`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen in tokyo yelp".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                            title: "ramen in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen in tokyo yelp keyword`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen in tokyo yelp keyword".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                            title: "ramen in tokyo",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: true,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `yelp ramen yelp`; Yelp only",
+                SuggestionQuery {
+                    keyword: "yelp ramen yelp".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=ramen",
+                            title: "ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `best yelp ramen`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best yelp ramen".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `Spicy R`; Yelp only",
+                SuggestionQuery {
+                    keyword: "Spicy R".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=Spicy+Ramen",
+                            title: "Spicy Ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: false,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `BeSt             Ramen`; Yelp only",
+                SuggestionQuery {
+                    keyword: "BeSt             Ramen".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=BeSt+Ramen",
+                            title: "BeSt Ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: true,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `BeSt             Spicy R`; Yelp only",
+                SuggestionQuery {
+                    keyword: "BeSt             Spicy R".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Yelp {
+                            url: "https://www.yelp.com/search?find_desc=BeSt+Spicy+Ramen",
+                            title: "BeSt Spicy Ramen",
+                            icon: Some(
+                                [
+                                    121,
+                                    101,
+                                    108,
+                                    112,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            score: 0.5,
+                            has_location_sign: false,
+                            subject_exact_match: false,
+                            location_param: "find_loc",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `BeSt             R`; Yelp only",
+                SuggestionQuery {
+                    keyword: "BeSt             R".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `r`; Yelp only",
+                SuggestionQuery {
+                    keyword: "r".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `ra`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ra".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=rats",
+                        title: "rats",
+                        icon: Some(
+                            [
+                                121,
+                                101,
+                                108,
+                                112,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        score: 0.5,
+                        has_location_sign: false,
+                        subject_exact_match: false,
+                        location_param: "find_loc",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ram`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ram".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen",
+                        title: "ramen",
+                        icon: Some(
+                            [
+                                121,
+                                101,
+                                108,
+                                112,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        score: 0.5,
+                        has_location_sign: false,
+                        subject_exact_match: false,
+                        location_param: "find_loc",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `rac`; Yelp only",
+                SuggestionQuery {
+                    keyword: "rac".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=raccoon",
+                        title: "raccoon",
+                        icon: Some(
+                            [
+                                121,
+                                101,
+                                108,
+                                112,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        score: 0.5,
+                        has_location_sign: false,
+                        subject_exact_match: false,
+                        location_param: "find_loc",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `best r`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best r".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `best ra`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best ra".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=best+rats",
+                        title: "best rats",
+                        icon: Some(
+                            [
+                                121,
+                                101,
+                                108,
+                                112,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        score: 0.5,
+                        has_location_sign: false,
+                        subject_exact_match: false,
+                        location_param: "find_loc",
+                    },
+                ]
+                "#]],
+            ),
+        ];
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        Ok(())
+    }
+
+    // Tests querying amp wikipedia
+    #[test]
+    fn query_with_multiple_providers_and_diff_scores() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "data",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "data-2",
+            "type": "pocket-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-2.json",
+                "mimetype": "application/json",
+                "location": "data-2.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "icon-3",
+            "type": "icon",
+            "last_modified": 25,
+            "attachment": {
+                "filename": "icon-3.png",
+                "mimetype": "image/png",
+                "location": "icon-3.png",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([{
+                "id": 0,
+                "advertiser": "Good Place Eats",
+                "iab_category": "8 - Food & Drink",
+                "keywords": ["la", "las", "lasa", "lasagna", "lasagna come out tomorrow", "amp wiki match"],
+                "title": "Lasagna Come Out Tomorrow",
+                "url": "https://www.lasagna.restaurant",
+                "icon": "2",
+                "impression_url": "https://example.com/impression_url",
+                "click_url": "https://example.com/click_url",
+                "score": 0.3
+            }, {
+                "id": 0,
+                "advertiser": "Good Place Eats",
+                "iab_category": "8 - Food & Drink",
+                "keywords": ["pe", "pen", "penne", "penne for your thoughts", "amp wiki match"],
+                "title": "Penne for Your Thoughts",
+                "url": "https://penne.biz",
+                "icon": "2",
+                "impression_url": "https://example.com/impression_url",
+                "click_url": "https://example.com/click_url",
+                "score": 0.1
+            }, {
+                "id": 0,
+                "advertiser": "Wikipedia",
+                "iab_category": "5 - Education",
+                "keywords": ["amp wiki match", "pocket wiki match"],
+                "title": "Multimatch",
+                "url": "https://wikipedia.org/Multimatch",
+                "icon": "3"
+            }]),
+        )?
+        .with_data(
+            "data-2.json",
+            json!([
+                {
+                    "description": "pocket suggestion",
+                    "url": "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                    "lowConfidenceKeywords": ["soft life", "workaholism", "toxic work culture", "work-life balance", "pocket wiki match"],
+                    "highConfidenceKeywords": ["burnout women", "grind culture", "women burnout"],
+                    "title": "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                    "score": 0.05
+                },
+                {
+                    "description": "pocket suggestion multi-match",
+                    "url": "https://getpocket.com/collections/multimatch",
+                    "lowConfidenceKeywords": [],
+                    "highConfidenceKeywords": ["pocket wiki match"],
+                    "title": "Pocket wiki match",
+                    "score": 0.88
+                },
+            ]),
+        )?
+        .with_icon("icon-3.png", "also-an-icon".as_bytes().into());
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [
+            (
+                "keyword = `amp wiki match`; all providers",
+                SuggestionQuery {
+                    keyword: "amp wiki match".into(),
+                    providers: vec![
+                        SuggestionProvider::Amp,
+                        SuggestionProvider::Wikipedia,
+                        SuggestionProvider::Amo,
+                        SuggestionProvider::Pocket,
+                        SuggestionProvider::Yelp,
+                    ],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Amp {
+                            title: "Lasagna Come Out Tomorrow",
+                            url: "https://www.lasagna.restaurant",
+                            raw_url: "https://www.lasagna.restaurant",
+                            icon: None,
+                            full_keyword: "amp wiki match",
+                            block_id: 0,
+                            advertiser: "Good Place Eats",
+                            iab_category: "8 - Food & Drink",
+                            impression_url: "https://example.com/impression_url",
+                            click_url: "https://example.com/click_url",
+                            raw_click_url: "https://example.com/click_url",
+                            score: 0.3,
+                        },
+                        Wikipedia {
+                            title: "Multimatch",
+                            url: "https://wikipedia.org/Multimatch",
+                            icon: Some(
+                                [
+                                    97,
+                                    108,
+                                    115,
+                                    111,
+                                    45,
+                                    97,
+                                    110,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            full_keyword: "amp wiki match",
+                        },
+                        Amp {
+                            title: "Penne for Your Thoughts",
+                            url: "https://penne.biz",
+                            raw_url: "https://penne.biz",
+                            icon: None,
+                            full_keyword: "amp wiki match",
+                            block_id: 0,
+                            advertiser: "Good Place Eats",
+                            iab_category: "8 - Food & Drink",
+                            impression_url: "https://example.com/impression_url",
+                            click_url: "https://example.com/click_url",
+                            raw_click_url: "https://example.com/click_url",
+                            score: 0.1,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `amp wiki match`; all providers, limit 2",
+                SuggestionQuery {
+                    keyword: "amp wiki match".into(),
+                    providers: vec![
+                        SuggestionProvider::Amp,
+                        SuggestionProvider::Wikipedia,
+                        SuggestionProvider::Amo,
+                        SuggestionProvider::Pocket,
+                        SuggestionProvider::Yelp,
+                    ],
+                    limit: Some(2),
+                },
+                expect![[r#"
+                    [
+                        Amp {
+                            title: "Lasagna Come Out Tomorrow",
+                            url: "https://www.lasagna.restaurant",
+                            raw_url: "https://www.lasagna.restaurant",
+                            icon: None,
+                            full_keyword: "amp wiki match",
+                            block_id: 0,
+                            advertiser: "Good Place Eats",
+                            iab_category: "8 - Food & Drink",
+                            impression_url: "https://example.com/impression_url",
+                            click_url: "https://example.com/click_url",
+                            raw_click_url: "https://example.com/click_url",
+                            score: 0.3,
+                        },
+                        Wikipedia {
+                            title: "Multimatch",
+                            url: "https://wikipedia.org/Multimatch",
+                            icon: Some(
+                                [
+                                    97,
+                                    108,
+                                    115,
+                                    111,
+                                    45,
+                                    97,
+                                    110,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            full_keyword: "amp wiki match",
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "pocket wiki match; all providers",
+                SuggestionQuery {
+                    keyword: "pocket wiki match".into(),
+                    providers: vec![
+                        SuggestionProvider::Amp,
+                        SuggestionProvider::Wikipedia,
+                        SuggestionProvider::Amo,
+                        SuggestionProvider::Pocket,
+                    ],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Pocket {
+                            title: "Pocket wiki match",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.88,
+                            is_top_pick: true,
+                        },
+                        Wikipedia {
+                            title: "Multimatch",
+                            url: "https://wikipedia.org/Multimatch",
+                            icon: Some(
+                                [
+                                    97,
+                                    108,
+                                    115,
+                                    111,
+                                    45,
+                                    97,
+                                    110,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            full_keyword: "pocket wiki match",
+                        },
+                        Pocket {
+                            title: "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                            url: "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                            score: 0.05,
+                            is_top_pick: false,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "pocket wiki match; all providers limit 1",
+                SuggestionQuery {
+                    keyword: "pocket wiki match".into(),
+                    providers: vec![
+                        SuggestionProvider::Amp,
+                        SuggestionProvider::Wikipedia,
+                        SuggestionProvider::Amo,
+                        SuggestionProvider::Pocket,
+                    ],
+                    limit: Some(1),
+                },
+                expect![[r#"
+                    [
+                        Pocket {
+                            title: "Pocket wiki match",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.88,
+                            is_top_pick: true,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "work-life balance; duplicate providers",
+                SuggestionQuery {
+                    keyword: "work-life balance".into(),
+                    providers: vec![SuggestionProvider::Pocket, SuggestionProvider::Pocket],
+                    limit: Some(-1),
+                },
+                expect![[r#"
+                    [
+                        Pocket {
+                            title: "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                            url: "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                            score: 0.05,
+                            is_top_pick: false,
+                        },
+                    ]
+                "#]],
+            ),
+        ];
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        Ok(())
+    }
+
+    // Tests querying multiple suggestions with multiple keywords with same prefix keyword
+    #[test]
+    fn query_with_multiple_suggestions_with_same_prefix() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+             "id": "data-1",
+             "type": "amo-suggestions",
+             "last_modified": 15,
+             "attachment": {
+                 "filename": "data-1.json",
+                 "mimetype": "application/json",
+                 "location": "data-1.json",
+                 "hash": "",
+                 "size": 0,
+             },
+         }, {
+             "id": "data-2",
+             "type": "pocket-suggestions",
+             "last_modified": 15,
+             "attachment": {
+                 "filename": "data-2.json",
+                 "mimetype": "application/json",
+                 "location": "data-2.json",
+                 "hash": "",
+                 "size": 0,
+             },
+         }, {
+             "id": "icon-3",
+             "type": "icon",
+             "last_modified": 25,
+             "attachment": {
+                 "filename": "icon-3.png",
+                 "mimetype": "image/png",
+                 "location": "icon-3.png",
+                 "hash": "",
+                 "size": 0,
+             },
+         }]))?
+         .with_data(
+             "data-1.json",
+             json!([
+                    {
+                    "description": "amo suggestion",
+                    "url": "https://addons.mozilla.org/en-US/firefox/addon/example",
+                    "guid": "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                    "keywords": ["relay", "spam", "masking email", "masking emails", "masking accounts", "alias" ],
+                    "title": "Firefox Relay",
+                    "icon": "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
+                    "rating": "4.9",
+                    "number_of_ratings": 888,
+                    "score": 0.25
+                }
+            ]),
+         )?
+         .with_data(
+             "data-2.json",
+             json!([
+                 {
+                     "description": "pocket suggestion",
+                     "url": "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                     "lowConfidenceKeywords": ["soft life", "soft living", "soft work", "workaholism", "toxic work culture"],
+                     "highConfidenceKeywords": ["burnout women", "grind culture", "women burnout", "soft lives"],
+                     "title": "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                     "score": 0.05
+                 }
+             ]),
+         )?
+         .with_icon("icon-3.png", "also-an-icon".as_bytes().into());
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [
+            (
+                "keyword = `soft li`; pocket",
+                SuggestionQuery {
+                    keyword: "soft li".into(),
+                    providers: vec![SuggestionProvider::Pocket],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Pocket {
+                            title: "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                            url: "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                            score: 0.05,
+                            is_top_pick: false,
+                        },
+                    ]
+                 "#]],
+            ),
+            (
+                "keyword = `soft lives`; pocket",
+                SuggestionQuery {
+                    keyword: "soft lives".into(),
+                    providers: vec![SuggestionProvider::Pocket],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Pocket {
+                            title: "‘It’s Not Just Burnout:’ How Grind Culture Fails Women",
+                            url: "https://getpocket.com/collections/its-not-just-burnout-how-grind-culture-failed-women",
+                            score: 0.05,
+                            is_top_pick: true,
+                        },
+                    ]
+                 "#]],
+            ),
+            (
+                "keyword = `masking `; amo provider",
+                SuggestionQuery {
+                    keyword: "masking ".into(),
+                    providers: vec![SuggestionProvider::Amo],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Amo {
+                            title: "Firefox Relay",
+                            url: "https://addons.mozilla.org/en-US/firefox/addon/example",
+                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
+                            description: "amo suggestion",
+                            rating: Some(
+                                "4.9",
+                            ),
+                            number_of_ratings: 888,
+                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                            score: 0.25,
+                        },
+                    ]
+                 "#]],
+            ),
+        ];
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        Ok(())
+    }
+
+    // Tests querying multiple suggestions with multiple keywords with same prefix keyword
+    #[test]
+    fn query_with_amp_mobile_provider() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "amp-mobile-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "data-2",
+            "type": "data",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-2.json",
+                "mimetype": "application/json",
+                "location": "data-2.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "icon-3",
+            "type": "icon",
+            "last_modified": 25,
+            "attachment": {
+                "filename": "icon-3.png",
+                "mimetype": "image/png",
+                "location": "icon-3.png",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([
+               {
+                   "id": 0,
+                   "advertiser": "Good Place Eats",
+                   "iab_category": "8 - Food & Drink",
+                   "keywords": ["la", "las", "lasa", "lasagna", "lasagna come out tomorrow"],
+                   "title": "Mobile - Lasagna Come Out Tomorrow",
+                   "url": "https://www.lasagna.restaurant",
+                   "icon": "3",
+                   "impression_url": "https://example.com/impression_url",
+                   "click_url": "https://example.com/click_url",
+                   "score": 0.3
+               }
+            ]),
+        )?
+        .with_data(
+            "data-2.json",
+            json!([
+              {
+                  "id": 0,
+                  "advertiser": "Good Place Eats",
+                  "iab_category": "8 - Food & Drink",
+                  "keywords": ["la", "las", "lasa", "lasagna", "lasagna come out tomorrow"],
+                  "title": "Desktop - Lasagna Come Out Tomorrow",
+                  "url": "https://www.lasagna.restaurant",
+                  "icon": "3",
+                  "impression_url": "https://example.com/impression_url",
+                  "click_url": "https://example.com/click_url",
+                  "score": 0.2
+              }
+            ]),
+        )?
+        .with_icon("icon-3.png", "also-an-icon".as_bytes().into());
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [
+            (
+                "keyword = `las`; Amp Mobile",
+                SuggestionQuery {
+                    keyword: "las".into(),
+                    providers: vec![SuggestionProvider::AmpMobile],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Amp {
+                        title: "Mobile - Lasagna Come Out Tomorrow",
+                        url: "https://www.lasagna.restaurant",
+                        raw_url: "https://www.lasagna.restaurant",
+                        icon: Some(
+                            [
+                                97,
+                                108,
+                                115,
+                                111,
+                                45,
+                                97,
+                                110,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        full_keyword: "lasagna",
+                        block_id: 0,
+                        advertiser: "Good Place Eats",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `las`; Amp",
+                SuggestionQuery {
+                    keyword: "las".into(),
+                    providers: vec![SuggestionProvider::Amp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Amp {
+                        title: "Desktop - Lasagna Come Out Tomorrow",
+                        url: "https://www.lasagna.restaurant",
+                        raw_url: "https://www.lasagna.restaurant",
+                        icon: Some(
+                            [
+                                97,
+                                108,
+                                115,
+                                111,
+                                45,
+                                97,
+                                110,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        full_keyword: "lasagna",
+                        block_id: 0,
+                        advertiser: "Good Place Eats",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.2,
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `las `; amp and amp mobile",
+                SuggestionQuery {
+                    keyword: "las".into(),
+                    providers: vec![SuggestionProvider::Amp, SuggestionProvider::AmpMobile],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Amp {
+                        title: "Mobile - Lasagna Come Out Tomorrow",
+                        url: "https://www.lasagna.restaurant",
+                        raw_url: "https://www.lasagna.restaurant",
+                        icon: Some(
+                            [
+                                97,
+                                108,
+                                115,
+                                111,
+                                45,
+                                97,
+                                110,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        full_keyword: "lasagna",
+                        block_id: 0,
+                        advertiser: "Good Place Eats",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
+                    },
+                    Amp {
+                        title: "Desktop - Lasagna Come Out Tomorrow",
+                        url: "https://www.lasagna.restaurant",
+                        raw_url: "https://www.lasagna.restaurant",
+                        icon: Some(
+                            [
+                                97,
+                                108,
+                                115,
+                                111,
+                                45,
+                                97,
+                                110,
+                                45,
+                                105,
+                                99,
+                                111,
+                                110,
+                            ],
+                        ),
+                        full_keyword: "lasagna",
+                        block_id: 0,
+                        advertiser: "Good Place Eats",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.2,
+                    },
+                ]
                 "#]],
             ),
         ];
@@ -2855,10 +4406,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                         },
                     ),
@@ -2909,6 +4460,7 @@ mod tests {
                 "icon": "5678",
                 "impression_url": "https://example.com/impression_url",
                 "click_url": "https://example.com/click_url",
+                "score": 0.3,
             }]),
         )?;
 
@@ -2923,10 +4475,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                         },
                     ),
@@ -3004,6 +4556,7 @@ mod tests {
                 "icon": "5678",
                 "impression_url": "https://example.com/impression_url",
                 "click_url": "https://example.com/click_url",
+                "score": 0.3
             }]),
         )?;
 
@@ -3029,10 +4582,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 10,
+                                schema_version: 14,
                             },
                         },
                     ),
@@ -3045,10 +4598,719 @@ mod tests {
         Ok(())
     }
 
+    /// Tests that records with invalid attachments are ignored and marked as unparsable.
+    #[test]
+    fn skip_over_invalid_records() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([
+            {
+                "id": "invalid-attachment",
+                "type": "data",
+                "last_modified": 15,
+                "attachment": {
+                    "filename": "data-2.json",
+                    "mimetype": "application/json",
+                    "location": "data-2.json",
+                    "hash": "",
+                    "size": 0,
+                },
+            },
+            {
+                "id": "valid-record",
+                "type": "data",
+                "last_modified": 15,
+                "attachment": {
+                    "filename": "data-1.json",
+                    "mimetype": "application/json",
+                    "location": "data-1.json",
+                    "hash": "",
+                    "size": 0,
+                },
+            },
+        ]))?
+        .with_data(
+            "data-1.json",
+            json!([{
+                    "id": 0,
+                    "advertiser": "Los Pollos Hermanos",
+                    "iab_category": "8 - Food & Drink",
+                    "keywords": ["lo", "los", "los p", "los pollos", "los pollos h", "los pollos hermanos"],
+                    "title": "Los Pollos Hermanos - Albuquerque",
+                    "url": "https://www.lph-nm.biz",
+                    "icon": "5678",
+                    "impression_url": "https://example.com/impression_url",
+                    "click_url": "https://example.com/click_url",
+                    "score": 0.3
+            }]),
+        )?
+        // This attachment is missing the `keywords` field and is invalid
+        .with_data(
+            "data-2.json",
+            json!([{
+                    "id": 1,
+                    "advertiser": "Los Pollos Hermanos",
+                    "iab_category": "8 - Food & Drink",
+                    "title": "Los Pollos Hermanos - Albuquerque",
+                    "url": "https://www.lph-nm.biz",
+                    "icon": "5678",
+                    "impression_url": "https://example.com/impression_url",
+                    "click_url": "https://example.com/click_url",
+                    "score": 0.3
+            }]),
+        )?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        // Test that the invalid record marked as unparsable
+        store.dbs()?.reader.read(|dao| {
+            expect![[r#"
+                Some(
+                    UnparsableRecords(
+                        {
+                            "invalid-attachment": UnparsableRecord {
+                                schema_version: 14,
+                            },
+                        },
+                    ),
+                )
+            "#]]
+            .assert_debug_eq(&dao.get_meta::<UnparsableRecords>(UNPARSABLE_RECORDS_META_KEY)?);
+            Ok(())
+        })?;
+
+        // Test that the valid record was read
+        store.dbs()?.reader.read(|dao| {
+            assert_eq!(dao.get_meta::<u64>(LAST_INGEST_META_KEY)?, Some(15));
+            expect![[r#"
+                [
+                    Amp {
+                        title: "Los Pollos Hermanos - Albuquerque",
+                        url: "https://www.lph-nm.biz",
+                        raw_url: "https://www.lph-nm.biz",
+                        icon: None,
+                        full_keyword: "los",
+                        block_id: 0,
+                        advertiser: "Los Pollos Hermanos",
+                        iab_category: "8 - Food & Drink",
+                        impression_url: "https://example.com/impression_url",
+                        click_url: "https://example.com/click_url",
+                        raw_click_url: "https://example.com/click_url",
+                        score: 0.3,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "lo".into(),
+                providers: vec![SuggestionProvider::Amp],
+                limit: None,
+            })?);
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
     #[test]
     fn unparsable_record_serialized_correctly() -> anyhow::Result<()> {
         let unparseable_record = UnparsableRecord { schema_version: 1 };
         assert_eq!(serde_json::to_value(unparseable_record)?, json!({ "v": 1 }),);
+        Ok(())
+    }
+
+    #[test]
+    fn query_mdn() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "mdn-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([
+                {
+                    "description": "Javascript Array",
+                    "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                    "keywords": ["array javascript", "javascript array", "wildcard"],
+                    "title": "Array",
+                    "score": 0.24
+                },
+            ]),
+        )?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [
+            (
+                "keyword = prefix; MDN only",
+                SuggestionQuery {
+                    keyword: "array".into(),
+                    providers: vec![SuggestionProvider::Mdn],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Mdn {
+                            title: "Array",
+                            url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                            description: "Javascript Array",
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = prefix + partial suffix; MDN only",
+                SuggestionQuery {
+                    keyword: "array java".into(),
+                    providers: vec![SuggestionProvider::Mdn],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Mdn {
+                            title: "Array",
+                            url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                            description: "Javascript Array",
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = prefix + entire suffix; MDN only",
+                SuggestionQuery {
+                    keyword: "javascript array".into(),
+                    providers: vec![SuggestionProvider::Mdn],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Mdn {
+                            title: "Array",
+                            url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                            description: "Javascript Array",
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = `partial prefix word`; MDN only",
+                SuggestionQuery {
+                    keyword: "wild".into(),
+                    providers: vec![SuggestionProvider::Mdn],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = single word; MDN only",
+                SuggestionQuery {
+                    keyword: "wildcard".into(),
+                    providers: vec![SuggestionProvider::Mdn],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Mdn {
+                            title: "Array",
+                            url: "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array",
+                            description: "Javascript Array",
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+        ];
+
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn query_no_yelp_icon_data() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "yelp-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!([
+                {
+                    "subjects": ["ramen"],
+                    "preModifiers": [],
+                    "postModifiers": [],
+                    "locationSigns": [],
+                    "yelpModifiers": [],
+                    "icon": "yelp-favicon",
+                    "score": 0.5
+                },
+            ]),
+        )?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [(
+            "keyword = ramen; Yelp only",
+            SuggestionQuery {
+                keyword: "ramen".into(),
+                providers: vec![SuggestionProvider::Yelp],
+                limit: None,
+            },
+            expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen",
+                        title: "ramen",
+                        icon: None,
+                        score: 0.5,
+                        has_location_sign: false,
+                        subject_exact_match: true,
+                        location_param: "find_loc",
+                    },
+                ]
+            "#]],
+        )];
+
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn weather() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "weather",
+            "last_modified": 15,
+            "weather": {
+                "min_keyword_length": 3,
+                "keywords": ["ab", "xyz", "weather"],
+                "score": "0.24"
+            }
+        }]))?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        let table = [
+            (
+                "keyword = 'ab'; Weather only, no match since query is too short",
+                SuggestionQuery {
+                    keyword: "ab".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xab'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "xab".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'abx'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "abx".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xy'; Weather only, no match since query is too short",
+                SuggestionQuery {
+                    keyword: "xy".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xyz'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "xyz".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'xxyz'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "xxyz".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xyzx'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "xyzx".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'we'; Weather only, no match since query is too short",
+                SuggestionQuery {
+                    keyword: "we".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'wea'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "wea".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'weat'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "weat".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'weath'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "weath".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'weathe'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "weathe".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'weather'; Weather only, match",
+                SuggestionQuery {
+                    keyword: "weather".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'weatherx'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "weatherx".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xweather'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "xweather".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = 'xwea'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "xwea".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = '   weather  '; Weather only, match",
+                SuggestionQuery {
+                    keyword: "   weather  ".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Weather {
+                            score: 0.24,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "keyword = 'x   weather  '; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "x   weather  ".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+            (
+                "keyword = '   weather  x'; Weather only, no matching keyword",
+                SuggestionQuery {
+                    keyword: "   weather  x".into(),
+                    providers: vec![SuggestionProvider::Weather],
+                    limit: None,
+                },
+                expect![[r#"
+                    []
+                "#]],
+            ),
+        ];
+
+        for (what, query, expect) in table {
+            expect.assert_debug_eq(
+                &store
+                    .query(query)
+                    .with_context(|| format!("Couldn't query store for {}", what))?,
+            );
+        }
+
+        expect![[r#"
+            Some(
+                Weather {
+                    min_keyword_length: 3,
+                },
+            )
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_provider_config(SuggestionProvider::Weather)
+                .with_context(|| "Couldn't fetch provider config")?,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn fetch_global_config() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "configuration",
+            "last_modified": 15,
+            "configuration": {
+                "show_less_frequently_cap": 3,
+            }
+        }]))?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        expect![[r#"
+            SuggestGlobalConfig {
+                show_less_frequently_cap: 3,
+            }
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_global_config()
+                .with_context(|| "fetch_global_config failed")?,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn fetch_global_config_default() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([]))?;
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        expect![[r#"
+            SuggestGlobalConfig {
+                show_less_frequently_cap: 0,
+            }
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_global_config()
+                .with_context(|| "fetch_global_config failed")?,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn fetch_provider_config_none() -> anyhow::Result<()> {
+        before_each();
+
+        let snapshot = Snapshot::with_records(json!([]))?;
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        expect![[r#"
+            None
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_provider_config(SuggestionProvider::Amp)
+                .with_context(|| "fetch_provider_config failed for Amp")?,
+        );
+
+        expect![[r#"
+            None
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_provider_config(SuggestionProvider::Weather)
+                .with_context(|| "fetch_provider_config failed for Weather")?,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn fetch_provider_config_other() -> anyhow::Result<()> {
+        before_each();
+
+        // Add some weather config.
+        let snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "weather",
+            "last_modified": 15,
+            "weather": {
+                "min_keyword_length": 3,
+                "keywords": ["weather"],
+                "score": "0.24"
+            }
+        }]))?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(snapshot));
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        // Getting the config for a different provider should return None.
+        expect![[r#"
+            None
+        "#]]
+        .assert_debug_eq(
+            &store
+                .fetch_provider_config(SuggestionProvider::Amp)
+                .with_context(|| "fetch_provider_config failed for Amp")?,
+        );
+
         Ok(())
     }
 }

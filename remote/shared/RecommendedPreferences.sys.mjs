@@ -145,8 +145,8 @@ const COMMON_PREFERENCES = new Map([
   // Do not redirect user when a milstone upgrade of Firefox is detected
   ["browser.startup.homepage_override.mstone", "ignore"],
 
-  // Do not close the window when the last tab gets closed
-  ["browser.tabs.closeWindowWithLastTab", false],
+  // Unload the previously selected tab immediately
+  ["browser.tabs.remote.unloadDelayMs", 0],
 
   // Don't unload tabs when available memory is running low
   ["browser.tabs.unloadOnLowMemory", false],
@@ -313,6 +313,9 @@ const COMMON_PREFERENCES = new Map([
   // Privacy and Tracking Protection
   ["privacy.trackingprotection.enabled", false],
 
+  // Used to check if recommended preferences are applied
+  ["remote.prefs.recommended.applied", true],
+
   // Don't do network connections for mitm priming
   ["security.certerrors.mitm.priming.enabled", false],
 
@@ -359,12 +362,13 @@ export const RecommendedPreferences = {
 
   /**
    * Apply the provided map of preferences.
-   * They will be automatically reset on application shutdown.
    *
-   * @param {Map} preferences
-   *     Map of preference key to preference value.
+   * Note, that they will be automatically reset on application shutdown.
+   *
+   * @param {Map<string, object>=} preferences
+   *     Map of preference name to preference value.
    */
-  applyPreferences(preferences) {
+  applyPreferences(preferences = new Map()) {
     if (!lazy.useRecommendedPrefs) {
       // If remote.prefs.recommended is set to false, do not set any preference
       // here. Needed for our Firefox CI.
@@ -374,8 +378,10 @@ export const RecommendedPreferences = {
     // Only apply common recommended preferences on first call to
     // applyPreferences.
     if (!this.isInitialized) {
-      // Merge common preferences and provided preferences in a single map.
+      // Merge common preferences and optionally provided preferences in a
+      // single map. Hereby the extra preferences have higher priority.
       preferences = new Map([...COMMON_PREFERENCES, ...preferences]);
+
       Services.obs.addObserver(this, "quit-application");
       this.isInitialized = true;
     }

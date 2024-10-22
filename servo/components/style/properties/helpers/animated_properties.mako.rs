@@ -10,14 +10,13 @@
 %>
 
 #[cfg(feature = "gecko")] use crate::gecko_bindings::structs::nsCSSPropertyID;
-use crate::custom_properties::SpecifiedValue as SpecifiedCustomPropertyValue;
 use crate::properties::{
     longhands::{
         self, content_visibility::computed_value::T as ContentVisibility,
         visibility::computed_value::T as Visibility,
     },
-    CSSWideKeyword, CustomDeclaration, CustomDeclarationValue, NonCustomPropertyId, LonghandId,
-    NonCustomPropertyIterator, PropertyDeclaration, PropertyDeclarationId,
+    CSSWideKeyword, NonCustomPropertyId, LonghandId, NonCustomPropertyIterator,
+    PropertyDeclaration, PropertyDeclarationId,
 };
 use std::ptr;
 use std::mem;
@@ -32,6 +31,7 @@ use crate::values::computed::ToComputedValue;
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::effects::Filter;
 use void::{self, Void};
+use crate::properties_and_values::value::CustomAnimatedValue;
 
 /// Convert nsCSSPropertyID to TransitionProperty
 #[cfg(feature = "gecko")]
@@ -47,14 +47,6 @@ impl From<nsCSSPropertyID> for TransitionProperty {
 /// composed for each TransitionProperty.
 pub type AnimationValueMap = FxHashMap<OwnedPropertyDeclarationId, AnimationValue>;
 
-/// An animated value for custom property.
-#[derive(Clone, Debug, MallocSizeOf, PartialEq)]
-pub struct CustomAnimatedValue {
-    /// The name of the custom property.
-    name: crate::custom_properties::Name,
-    /// The specified value of the custom property.
-    value: SpecifiedCustomPropertyValue,
-}
 /// An enum to represent a single computed value belonging to an animated
 /// property in order to be interpolated with another one. When interpolating,
 /// both values need to belong to the same property.
@@ -90,15 +82,6 @@ pub enum AnimationValue {
 struct AnimationValueVariantRepr<T> {
     tag: u16,
     value: T
-}
-
-impl CustomAnimatedValue {
-    fn as_custom_declaration(&self) -> CustomDeclaration {
-        CustomDeclaration {
-            name: self.name.clone(),
-            value: CustomDeclarationValue::Value(self.value.clone().into()),
-        }
-    }
 }
 
 impl Clone for AnimationValue {
@@ -257,7 +240,7 @@ impl AnimationValue {
             ${" |\n".join("{}(void)".format(prop.camel_case) for prop in unanimated)} => {
                 void::unreachable(void)
             },
-            Custom(ref animated_value) => PropertyDeclaration::Custom(animated_value.as_custom_declaration()),
+            Custom(ref animated_value) => animated_value.to_declaration(),
         }
     }
 
@@ -395,17 +378,18 @@ impl AnimationValue {
                 )
             },
             PropertyDeclaration::Custom(ref declaration) => {
-              match &declaration.value {
-                CustomDeclarationValue::Value(value) => AnimationValue::Custom(CustomAnimatedValue { name: declaration.name.clone(), value: (**value).clone() }),
-                _ => return None,
-              }
+                AnimationValue::Custom(CustomAnimatedValue::from_declaration(
+                    declaration,
+                    context,
+                    initial,
+                )?)
             },
             _ => return None // non animatable properties will get included because of shorthands. ignore.
         };
         Some(animatable)
     }
 
-    /// Get an AnimationValue for an AnimatableLonghand from a given computed values.
+    /// Get an AnimationValue for an declaration id from a given computed values.
     pub fn from_computed_values(
         property: PropertyDeclarationId,
         style: &ComputedValues,
@@ -417,9 +401,8 @@ impl AnimationValue {
                 // corresponds to an inherited custom property and then choose the
                 // inherited/non_inherited map accordingly.
                 let p = &style.custom_properties();
-                return p.inherited.get(*name)
-                    .or_else(|| p.non_inherited.get(*name))
-                    .map(|value| AnimationValue::Custom(CustomAnimatedValue { name: (*name).clone(), value: (**value).clone() }));
+                let value = p.inherited.get(*name).or_else(|| p.non_inherited.get(*name))?;
+                return Some(AnimationValue::Custom(CustomAnimatedValue::from_computed(name, value)))
             }
         };
 
@@ -484,11 +467,6 @@ fn animate_discrete<T: Clone>(this: &T, other: &T, procedure: Procedure) -> Resu
 
 impl Animate for AnimationValue {
     fn animate(&self, other: &Self, procedure: Procedure) -> Result<Self, ()> {
-        if let AnimationValue::Custom(..) = self {
-            // TODO(bug 1869185): Non-universal registered property may animate in a non-discrete way.
-            return Ok(animate_discrete(self, other, procedure)?)
-        }
-
         Ok(unsafe {
             use self::AnimationValue::*;
 
@@ -519,12 +497,15 @@ impl Animate for AnimationValue {
                         },
                     );
                     out.assume_init()
-                }
+                },
                 % endfor
                 ${" |\n".join("{}(void)".format(prop.camel_case) for prop in unanimated)} => {
                     void::unreachable(void)
                 },
-                Custom(..) => { debug_unreachable!() },
+                Custom(ref self_value) => {
+                    let Custom(ref other_value) = *other else { unreachable!() };
+                    Custom(self_value.animate(other_value, procedure)?)
+                },
             }
         })
     }

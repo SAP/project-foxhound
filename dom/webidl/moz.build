@@ -13,10 +13,7 @@ with Files("APZTestData.webidl"):
 with Files("AccessibleNode.webidl"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
-with Files("AccessibilityRole.webidl"):
-    BUG_COMPONENT = ("Core", "Disability Access APIs")
-
-with Files("AriaAttributes.webidl"):
+with Files("ARIAMixin.webidl"):
     BUG_COMPONENT = ("Core", "Disability Access APIs")
 
 with Files("Addon*"):
@@ -402,7 +399,6 @@ WEBIDL_FILES = [
     "AbortSignal.webidl",
     "AbstractRange.webidl",
     "AbstractWorker.webidl",
-    "AccessibilityRole.webidl",
     "AddonManager.webidl",
     "AnalyserNode.webidl",
     "Animatable.webidl",
@@ -415,11 +411,13 @@ WEBIDL_FILES = [
     "AppInfo.webidl",
     "AppNotificationServiceOptions.webidl",
     "APZTestData.webidl",
-    "AriaAttributes.webidl",
+    "ARIAMixin.webidl",
     "Attr.webidl",
     "AudioBuffer.webidl",
     "AudioBufferSourceNode.webidl",
     "AudioContext.webidl",
+    "AudioData.webidl",
+    "AudioDecoder.webidl",
     "AudioDestinationNode.webidl",
     "AudioListener.webidl",
     "AudioNode.webidl",
@@ -523,7 +521,6 @@ WEBIDL_FILES = [
     "DOMQuad.webidl",
     "DOMRect.webidl",
     "DOMRectList.webidl",
-    "DOMRequest.webidl",
     "DOMStringList.webidl",
     "DOMStringMap.webidl",
     "DOMTokenList.webidl",
@@ -531,6 +528,7 @@ WEBIDL_FILES = [
     "DynamicsCompressorNode.webidl",
     "Element.webidl",
     "ElementInternals.webidl",
+    "EncodedAudioChunk.webidl",
     "EncodedVideoChunk.webidl",
     "Event.webidl",
     "EventHandler.webidl",
@@ -978,6 +976,7 @@ WEBIDL_FILES = [
     "TransformStreamDefaultController.webidl",
     "TransitionEvent.webidl",
     "TreeWalker.webidl",
+    "TrustedTypes.webidl",
     "UDPMessageEvent.webidl",
     "UDPSocket.webidl",
     "UIEvent.webidl",
@@ -1052,6 +1051,7 @@ if CONFIG["MOZ_WEBRTC"]:
         "RTCEncodedAudioFrame.webidl",
         "RTCEncodedVideoFrame.webidl",
         "RTCIceCandidate.webidl",
+        "RTCIceTransport.webidl",
         "RTCIdentityAssertion.webidl",
         "RTCIdentityProvider.webidl",
         "RTCPeerConnection.webidl",

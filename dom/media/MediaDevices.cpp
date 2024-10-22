@@ -315,8 +315,6 @@ RefPtr<MediaDeviceSetRefCnt> MediaDevices::FilterExposedDevices(
         }
         haveDefaultOutput = true;
         break;
-      case MediaDeviceKind::EndGuard_:
-        continue;
         // Avoid `default:` so that `-Wswitch` catches missing
         // enumerators at compile time.
     }
@@ -334,8 +332,6 @@ bool MediaDevices::CanExposeInfo(MediaDeviceKind aKind) const {
     case MediaDeviceKind::Audiooutput:
       // Assumes caller has used FilterExposedDevices()
       return true;
-    case MediaDeviceKind::EndGuard_:
-      break;
       // Avoid `default:` so that `-Wswitch` catches missing enumerators at
       // compile time.
   }
@@ -550,7 +546,7 @@ already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
   // for us.
   vc.mMediaSource.Reset();
   vc.mMediaSource.Construct().AssignASCII(
-      dom::MediaSourceEnumValues::GetString(MediaSourceEnum::Screen));
+      dom::GetEnumString(MediaSourceEnum::Screen));
 
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()

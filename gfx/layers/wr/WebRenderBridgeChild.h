@@ -93,7 +93,8 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   // KnowsCompositor
   TextureForwarder* GetTextureForwarder() override;
   LayersIPCActor* GetLayersIPCActor() override;
-  void SyncWithCompositor() override;
+  void SyncWithCompositor(
+      const Maybe<uint64_t>& aWindowID = Nothing()) override;
 
   void AddPipelineIdForCompositable(const wr::PipelineId& aPipelineId,
                                     const CompositableHandle& aHandle,
@@ -200,12 +201,8 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
   void UseRemoteTexture(CompositableClient* aCompositable,
                         const RemoteTextureId aTextureId,
                         const RemoteTextureOwnerId aOwnerId,
-                        const gfx::IntSize aSize,
-                        const TextureFlags aFlags) override;
-  void EnableRemoteTexturePushCallback(CompositableClient* aCompositable,
-                                       const RemoteTextureOwnerId aOwnerId,
-                                       const gfx::IntSize aSize,
-                                       const TextureFlags aFlags) override;
+                        const gfx::IntSize aSize, const TextureFlags aFlags,
+                        const RefPtr<FwdTransactionTracker>& aTracker) override;
   FwdTransactionCounter& GetFwdTransactionCounter() override;
 
   bool InForwarderThread() override;

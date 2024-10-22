@@ -54,9 +54,13 @@ const nsIID kWorkerRunnableIID = {
 }  // namespace
 
 #ifdef DEBUG
-WorkerRunnable::WorkerRunnable(WorkerPrivate* aWorkerPrivate, Target aTarget)
+WorkerRunnable::WorkerRunnable(WorkerPrivate* aWorkerPrivate, const char* aName,
+                               Target aTarget)
     : mWorkerPrivate(aWorkerPrivate),
       mTarget(aTarget),
+#  ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+      mName(aName),
+#  endif
       mCallingCancelWithinRun(false) {
   LOG(("WorkerRunnable::WorkerRunnable [%p]", this));
   MOZ_ASSERT(aWorkerPrivate);
@@ -192,8 +196,23 @@ WorkerRunnable* WorkerRunnable::FromRunnable(nsIRunnable* aRunnable) {
 NS_IMPL_ADDREF(WorkerRunnable)
 NS_IMPL_RELEASE(WorkerRunnable)
 
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+NS_IMETHODIMP
+WorkerRunnable::GetName(nsACString& aName) {
+  if (mName) {
+    aName.AssignASCII(mName);
+  } else {
+    aName.Truncate();
+  }
+  return NS_OK;
+}
+#endif
+
 NS_INTERFACE_MAP_BEGIN(WorkerRunnable)
   NS_INTERFACE_MAP_ENTRY(nsIRunnable)
+#ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
+  NS_INTERFACE_MAP_ENTRY(nsINamed)
+#endif
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRunnable)
   // kWorkerRunnableIID is special in that it does not AddRef its result.
   if (aIID.Equals(kWorkerRunnableIID)) {
@@ -212,24 +231,13 @@ WorkerRunnable::Run() {
     // underlying WorkerThreadPrimaryRunnable active, which means we should
     // find a CycleCollectedJSContext.
     if (!CycleCollectedJSContext::Get()) {
-#if (defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY) && defined(DEBUG))
-      // Temporarily set the LogLevel high enough to be certain the messages
-      // are visible.
-      LogModule* module = sWorkerRunnableLog;
-      LogLevel prevLevel = module->Level();
-      if (prevLevel < LogLevel::Error) {
-        module->SetLevel(LogLevel::Error);
-      }
-      MOZ_LOG(sWorkerRunnableLog, LogLevel::Error,
-              ("Runnable '%s' was executed after WorkerThreadPrimaryRunnable "
-               "ended.",
-               "WorkerRunnable"));
-      module->SetLevel(prevLevel);
+#if (defined(MOZ_COLLECTING_RUNNABLE_TELEMETRY) && defined(NIGHTLY_BUILD))
+      // We will only leak the static name string of the WorkerRunnable type
+      // we are trying to execute.
+      MOZ_CRASH_UNSAFE_PRINTF(
+          "Runnable '%s' executed after WorkerThreadPrimaryRunnable ended.",
+          this->mName);
 #endif
-      MOZ_DIAGNOSTIC_ASSERT(false,
-                            "A WorkerRunnable was executed after "
-                            "WorkerThreadPrimaryRunnable ended.");
-
       return NS_OK;
     }
   }
@@ -406,8 +414,9 @@ void WorkerDebuggerRunnable::PostDispatch(WorkerPrivate* aWorkerPrivate,
                                           bool aDispatchResult) {}
 
 WorkerSyncRunnable::WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
-                                       nsIEventTarget* aSyncLoopTarget)
-    : WorkerRunnable(aWorkerPrivate, WorkerThread),
+                                       nsIEventTarget* aSyncLoopTarget,
+                                       const char* aName)
+    : WorkerRunnable(aWorkerPrivate, aName, WorkerThread),
       mSyncLoopTarget(aSyncLoopTarget) {
 #ifdef DEBUG
   if (mSyncLoopTarget) {
@@ -417,8 +426,9 @@ WorkerSyncRunnable::WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
 }
 
 WorkerSyncRunnable::WorkerSyncRunnable(
-    WorkerPrivate* aWorkerPrivate, nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget)
-    : WorkerRunnable(aWorkerPrivate, WorkerThread),
+    WorkerPrivate* aWorkerPrivate, nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget,
+    const char* aName)
+    : WorkerRunnable(aWorkerPrivate, aName, WorkerThread),
       mSyncLoopTarget(std::move(aSyncLoopTarget)) {
 #ifdef DEBUG
   if (mSyncLoopTarget) {
@@ -489,8 +499,8 @@ void MainThreadStopSyncLoopRunnable::PostDispatch(WorkerPrivate* aWorkerPrivate,
 
 #ifdef DEBUG
 WorkerControlRunnable::WorkerControlRunnable(WorkerPrivate* aWorkerPrivate,
-                                             Target aTarget)
-    : WorkerRunnable(aWorkerPrivate, aTarget) {
+                                             const char* aName, Target aTarget)
+    : WorkerRunnable(aWorkerPrivate, aName, aTarget) {
   MOZ_ASSERT(aWorkerPrivate);
 }
 #endif

@@ -2,7 +2,7 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 
 const SAVE_PER_SITE_PREF = "browser.download.lastDir.savePerSite";
 const ALWAYS_DOWNLOAD_DIR_PREF = "browser.download.useDownloadDir";
@@ -36,7 +36,7 @@ function triggerSave(aWindow, aCallback) {
   var fileName;
   let testBrowser = aWindow.gBrowser.selectedBrowser;
   let testURI =
-    "http://mochi.test:8888/browser/browser/base/content/test/general/navigating_window_with_download.html";
+    "https://example.com/browser/browser/base/content/test/general/navigating_window_with_download.html";
 
   // Only observe the UTC dialog if it's enabled by pref
   if (Services.prefs.getBoolPref(ALWAYS_ASK_PREF)) {

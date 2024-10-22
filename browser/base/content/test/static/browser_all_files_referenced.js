@@ -67,11 +67,17 @@ var gExceptionPaths = [
   // Nimbus schemas are referenced programmatically.
   "resource://nimbus/schemas/",
 
-  // Activity stream schemas are referenced programmatically.
-  "resource://activity-stream/schemas",
+  // Normandy schemas are referenced programmatically.
+  "resource://normandy/schemas/",
+
+  // ASRouter schemas are referenced programmatically.
+  "chrome://browser/content/asrouter/schemas/",
 
   // Localization file added programatically in FeatureCallout.sys.mjs
   "resource://app/localization/en-US/browser/featureCallout.ftl",
+
+  // Localization file added programatically in ContentAnalysis.sys.mjs
+  "resource://gre/localization/en-US/toolkit/contentanalysis/",
 
   // CSS files are referenced inside JS in an html template
   "chrome://browser/content/aboutlogins/components/",
@@ -273,6 +279,9 @@ var allowlist = [
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
   { file: "chrome://browser/content/screenshots/copied-notification.svg" },
+
+  // Bug 1875361
+  { file: "chrome://global/content/ml/SummarizerModel.sys.mjs" },
 
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
@@ -868,9 +877,6 @@ add_task(async function checkAllTheFiles() {
   // Wait for all manifest to be parsed
   await PerfTestHelpers.throttledMapPromises(manifestURIs, parseManifest);
 
-  for (let jsm of Components.manager.getComponentJSMs()) {
-    gReferencesFromCode.set(jsm, null);
-  }
   for (let esModule of Components.manager.getComponentESModules()) {
     gReferencesFromCode.set(esModule, null);
   }

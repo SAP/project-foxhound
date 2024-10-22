@@ -1,4 +1,5 @@
 import { MockRegistrar } from "resource://testing-common/MockRegistrar.sys.mjs";
+import { NON_SPLIT_ENGINE_IDS } from "resource://gre/modules/SearchService.sys.mjs";
 
 const lazy = {};
 
@@ -45,6 +46,8 @@ export var SearchTestUtils = {
    *   Whether or not to set the engine as default automatically for private mode.
    *   If this is true, the engine will be set as default, and the previous default
    *   engine will be restored when the test exits.
+   * @param {boolean} [options.skipReset]
+   *   Skips resetting the default engine at the end of the test.
    * @returns {Promise} Returns a promise that is resolved with the new engine
    *                    or rejected if it fails.
    */
@@ -52,6 +55,7 @@ export var SearchTestUtils = {
     url,
     setAsDefault = false,
     setAsDefaultPrivate = false,
+    skipReset = false,
   }) {
     // OpenSearch engines can only be added via http protocols.
     url = url.replace("chrome://mochitests/content", "https://example.com");
@@ -71,13 +75,13 @@ export var SearchTestUtils = {
       );
     }
     gTestScope.registerCleanupFunction(async () => {
-      if (setAsDefault) {
+      if (setAsDefault && !skipReset) {
         await Services.search.setDefault(
           previousEngine,
           Ci.nsISearchService.CHANGE_REASON_UNKNOWN
         );
       }
-      if (setAsDefaultPrivate) {
+      if (setAsDefaultPrivate && !skipReset) {
         await Services.search.setDefaultPrivate(
           previousPrivateEngine,
           Ci.nsISearchService.CHANGE_REASON_UNKNOWN
@@ -193,6 +197,35 @@ export var SearchTestUtils = {
   },
 
   /**
+   * Utility function for mochitests to configure a custom search engine
+   * directory and search configuration.
+   *
+   * @param {string} testDir
+   *   The test directory to use.
+   * @param {Array} searchConfig
+   *   The test search configuration to use.
+   */
+  async setupTestEngines(testDir, searchConfig) {
+    let searchExtensions = gTestScope.getChromeDir(
+      gTestScope.getResolvedURI(gTestScope.gTestPath)
+    );
+    searchExtensions.append(testDir);
+    await this.useMochitestEngines(searchExtensions);
+
+    this.useMockIdleService();
+
+    await this.updateRemoteSettingsConfig(searchConfig);
+
+    gTestScope.registerCleanupFunction(async () => {
+      let settingsWritten = SearchTestUtils.promiseSearchNotification(
+        "write-settings-to-disk-complete"
+      );
+      await SearchTestUtils.updateRemoteSettingsConfig();
+      await settingsWritten;
+    });
+  },
+
+  /**
    * Convert a list of engine configurations into engine objects.
    *
    * @param {Array} engineConfigurations
@@ -200,6 +233,29 @@ export var SearchTestUtils = {
    */
   async searchConfigToEngines(engineConfigurations) {
     let engines = [];
+
+    for (let e of engineConfigurations) {
+      if (!e.webExtension) {
+        e.webExtension = {};
+      }
+      e.webExtension.locale =
+        e.webExtension.locale ?? lazy.SearchUtils.DEFAULT_TAG;
+
+      // TODO Bug 1875912 - Remove the webextension.id and webextension.locale when
+      // we're ready to remove old search-config and use search-config-v2 for all
+      // clients. The id in appProvidedSearchEngine should be changed to
+      // engine.identifier.
+      if (lazy.SearchUtils.newSearchConfigEnabled) {
+        let identifierComponents = NON_SPLIT_ENGINE_IDS.includes(e.identifier)
+          ? [e.identifier]
+          : e.identifier.split("-");
+
+        e.webExtension.locale =
+          identifierComponents.slice(1).join("-") || "default";
+        e.webExtension.id = identifierComponents[0] + "@search.mozilla.org";
+      }
+    }
+
     for (let config of engineConfigurations) {
       let engine = await Services.search.wrappedJSObject._makeEngineFromConfig(
         config
@@ -373,6 +429,8 @@ export var SearchTestUtils = {
    *
    * @param {object} [options]
    *   The options for the manifest.
+   * @param {object} [options.icons]
+   *   The icons to use for the WebExtension.
    * @param {string} [options.id]
    *   The id to use for the WebExtension.
    * @param {string} [options.name]
@@ -421,6 +479,10 @@ export var SearchTestUtils = {
         },
       },
     };
+
+    if (options.icons) {
+      manifest.icons = options.icons;
+    }
 
     if (options.default_locale) {
       manifest.default_locale = options.default_locale;
@@ -485,11 +547,11 @@ export var SearchTestUtils = {
     QueryInterface: ChromeUtils.generateQI(["nsIUserIdleService"]),
     idleTime: 19999,
 
-    addIdleObserver(observer, time) {
+    addIdleObserver(observer) {
       this._observers.add(observer);
     },
 
-    removeIdleObserver(observer, time) {
+    removeIdleObserver(observer) {
       this._observers.delete(observer);
     },
   },

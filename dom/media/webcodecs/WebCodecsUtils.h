@@ -8,6 +8,7 @@
 #define MOZILLA_DOM_WEBCODECS_WEBCODECSUTILS_H
 
 #include "ErrorList.h"
+#include "MediaData.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
@@ -86,7 +87,11 @@ Nullable<T> MaybeToNullable(const Maybe<T>& aOptional) {
 Result<Ok, nsresult> CloneBuffer(
     JSContext* aCx,
     OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aDest,
-    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aSrc);
+    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aSrc,
+    ErrorResult& aRv);
+
+Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
+    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer);
 
 /*
  * The following are utilities to convert between VideoColorSpace values to
@@ -231,6 +236,8 @@ VideoColorSpaceInit FallbackColorSpaceForWebContent();
 Maybe<CodecType> CodecStringToCodecType(const nsAString& aCodecString);
 
 nsString ConfigToString(const VideoDecoderConfig& aConfig);
+
+bool IsSupportedVideoCodec(const nsAString& aCodec);
 
 }  // namespace dom
 

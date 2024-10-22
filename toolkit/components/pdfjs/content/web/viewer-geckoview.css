@@ -18,12 +18,16 @@
   text-align:initial;
   inset:0;
   overflow:hidden;
-  opacity:0.25;
+  opacity:1;
   line-height:1;
   text-size-adjust:none;
   forced-color-adjust:none;
   transform-origin:0 0;
-  z-index:2;
+  caret-color:CanvasText;
+
+  &.highlighting{
+    touch-action:none;
+  }
 
   :is(span, br){
     color:transparent;
@@ -34,17 +38,24 @@
   }
 
   .highlight{
-    --highlight-bg-color:rgb(180 0 170);
-    --highlight-selected-bg-color:rgb(0 100 0);
+    --highlight-bg-color:rgb(180 0 170 / 0.25);
+    --highlight-selected-bg-color:rgb(0 100 0 / 0.25);
+    --highlight-backdrop-filter:none;
+    --highlight-selected-backdrop-filter:none;
 
     @media screen and (forced-colors: active){
-      --highlight-bg-color:Highlight;
-      --highlight-selected-bg-color:ButtonText;
+      --highlight-bg-color:transparent;
+      --highlight-selected-bg-color:transparent;
+      --highlight-backdrop-filter:var(--hcm-highlight-filter);
+      --highlight-selected-backdrop-filter:var(
+        --hcm-highlight-selected-filter
+      );
     }
 
     margin:-1px;
     padding:1px;
     background-color:var(--highlight-bg-color);
+    backdrop-filter:var(--highlight-backdrop-filter);
     border-radius:4px;
 
     &.appended{
@@ -65,11 +76,12 @@
 
     &.selected{
       background-color:var(--highlight-selected-bg-color);
+      backdrop-filter:var(--highlight-selected-backdrop-filter);
     }
   }
 
   ::selection{
-    background:AccentColor;
+    background:color-mix(in srgb, AccentColor, transparent 75%);
   }
 
   .endOfContent{
@@ -101,7 +113,6 @@
     --input-disabled-border-color:GrayText;
     --input-hover-border-color:Highlight;
     --link-outline:1.5px solid LinkText;
-    --hcm-highlight-filter:invert(100%);
 
     .textWidgetAnnotation :is(input, textarea):required,
     .choiceWidgetAnnotation select:required,
@@ -150,7 +161,6 @@
   left:0;
   pointer-events:none;
   transform-origin:0 0;
-  z-index:3;
 
   &[data-main-rotation="90"] .norotate{
     transform:rotate(270deg) translateX(-100%);
@@ -160,6 +170,13 @@
   }
   &[data-main-rotation="270"] .norotate{
     transform:rotate(90deg) translateY(-100%);
+  }
+
+  &.disabled{
+    section,
+    .popup{
+      pointer-events:none;
+    }
   }
 
   canvas{
@@ -785,13 +802,19 @@
   --scale-factor:1;
 
   padding-bottom:var(--pdfViewer-padding-bottom);
+
+  --hcm-highlight-filter:none;
+  --hcm-highlight-selected-filter:none;
+
+  @media screen and (forced-colors: active){
+    --hcm-highlight-filter:invert(100%);
+  }
 }
 
 .pdfViewer .canvasWrapper{
   overflow:hidden;
   width:100%;
   height:100%;
-  z-index:1;
 }
 
 .pdfViewer .page{
@@ -921,7 +944,6 @@
   --toolbar-fg-color:#15141a;
 
   --toolbarButton-download-icon:url(images/gv-toolbarButton-download.svg);
-  --toolbarButton-openinapp-icon:url(images/gv-toolbarButton-openinapp.svg);
 }
 
 :root:dir(rtl){
@@ -1112,10 +1134,6 @@ body{
 
 #download::before{
   mask-image:var(--toolbarButton-download-icon);
-}
-
-#openInApp::before{
-  mask-image:var(--toolbarButton-openinapp-icon);
 }
 
 .dialogButton{

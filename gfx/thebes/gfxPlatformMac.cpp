@@ -9,7 +9,6 @@
 #include "mozilla/DataMutex.h"
 #include "mozilla/gfx/2D.h"
 
-#include "gfxMacPlatformFontList.h"
 #include "gfxMacFont.h"
 #include "gfxCoreTextShaper.h"
 #include "gfxTextRun.h"
@@ -20,7 +19,9 @@
 #include "nsTArray.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/VsyncDispatcher.h"
-#include "nsCocoaFeatures.h"
+#ifdef MOZ_WIDGET_COCOA
+#  include "nsCocoaFeatures.h"
+#endif
 #include "nsComponentManagerUtils.h"
 #include "nsIFile.h"
 #include "nsUnicodeProperties.h"
@@ -48,6 +49,14 @@ using namespace mozilla::unicode;
 
 using mozilla::dom::SystemFontList;
 
+#ifdef MOZ_WIDGET_COCOA
+#  include "gfxMacPlatformFontList.h"
+using PlatformFontListClass = gfxMacPlatformFontList;
+#else
+#  include "IOSPlatformFontList.h"
+using PlatformFontListClass = IOSPlatformFontList;
+#endif
+
 // A bunch of fonts for "additional language support" are shipped in a
 // "Language Support" directory, and don't show up in the standard font
 // list returned by CTFontManagerCopyAvailableFontFamilyNames unless
@@ -62,7 +71,7 @@ void gfxPlatformMac::FontRegistrationCallback(void* aUnused) {
   PR_SetCurrentThreadName("RegisterFonts");
 
   for (const auto& dir : kLangFontsDirs) {
-    gfxMacPlatformFontList::ActivateFontsFromDir(dir);
+    PlatformFontListClass::ActivateFontsFromDir(dir);
   }
 }
 
@@ -111,11 +120,11 @@ BackendPrefsData gfxPlatformMac::GetBackendPrefs() const {
 }
 
 bool gfxPlatformMac::CreatePlatformFontList() {
-  return gfxPlatformFontList::Initialize(new gfxMacPlatformFontList);
+  return gfxPlatformFontList::Initialize(new PlatformFontListClass);
 }
 
 void gfxPlatformMac::ReadSystemFontList(SystemFontList* aFontList) {
-  gfxMacPlatformFontList::PlatformFontList()->ReadSystemFontList(aFontList);
+  PlatformFontListClass::PlatformFontList()->ReadSystemFontList(aFontList);
 }
 
 already_AddRefed<gfxASurface> gfxPlatformMac::CreateOffscreenSurface(
@@ -668,8 +677,8 @@ void gfxPlatformMac::GetCommonFallbackFonts(uint32_t aCh, Script aRunScript,
 void gfxPlatformMac::LookupSystemFont(
     mozilla::LookAndFeel::FontID aSystemFontID, nsACString& aSystemFontName,
     gfxFontStyle& aFontStyle) {
-  return gfxMacPlatformFontList::LookupSystemFont(aSystemFontID,
-                                                  aSystemFontName, aFontStyle);
+  return PlatformFontListClass::LookupSystemFont(aSystemFontID, aSystemFontName,
+                                                 aFontStyle);
 }
 
 uint32_t gfxPlatformMac::ReadAntiAliasingThreshold() {
@@ -700,6 +709,7 @@ uint32_t gfxPlatformMac::ReadAntiAliasingThreshold() {
 
 bool gfxPlatformMac::AccelerateLayersByDefault() { return true; }
 
+#ifdef MOZ_WIDGET_COCOA
 // This is the renderer output callback function, called on the vsync thread
 static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
                               const CVTimeStamp* aNow,
@@ -934,9 +944,11 @@ static CVReturn VsyncCallback(CVDisplayLinkRef aDisplayLink,
   vsyncSource->NotifyVsync(previousVsync, outputTime);
   return kCVReturnSuccess;
 }
+#endif
 
 already_AddRefed<mozilla::gfx::VsyncSource>
 gfxPlatformMac::CreateGlobalHardwareVsyncSource() {
+#ifdef MOZ_WIDGET_COCOA
   RefPtr<VsyncSource> osxVsyncSource = new OSXVsyncSource();
   osxVsyncSource->EnableVsync();
   if (!osxVsyncSource->IsVsyncEnabled()) {
@@ -947,6 +959,10 @@ gfxPlatformMac::CreateGlobalHardwareVsyncSource() {
 
   osxVsyncSource->DisableVsync();
   return osxVsyncSource.forget();
+#else
+  // TODO: CADisplayLink
+  return GetSoftwareVsyncSource();
+#endif
 }
 
 bool gfxPlatformMac::SupportsHDR() {
@@ -958,8 +974,10 @@ bool gfxPlatformMac::SupportsHDR() {
     return false;
   }
 
+#ifdef MOZ_WIDGET_UIKIT
+  return false;
+#elif defined(EARLY_BETA_OR_EARLIER)
   // Screen is capable. Is the OS capable?
-#ifdef EARLY_BETA_OR_EARLIER
   // More-or-less supported in Catalina.
   return true;
 #else
@@ -974,7 +992,10 @@ nsTArray<uint8_t> gfxPlatformMac::GetPlatformCMSOutputProfileData() {
     return prefProfileData;
   }
 
-  CGColorSpaceRef cspace = ::CGDisplayCopyColorSpace(::CGMainDisplayID());
+  CGColorSpaceRef cspace = nil;
+#ifdef MOZ_WIDGET_COCOA
+  cspace = ::CGDisplayCopyColorSpace(::CGMainDisplayID());
+#endif
   if (!cspace) {
     cspace = ::CGColorSpaceCreateDeviceRGB();
   }

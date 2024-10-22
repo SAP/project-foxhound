@@ -4,6 +4,7 @@
 
 
 import itertools
+import logging
 import os
 import re
 from datetime import datetime, timedelta
@@ -20,6 +21,9 @@ from gecko_taskgraph.util.attributes import (
 )
 from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 from gecko_taskgraph.util.platforms import platform_family
+
+logger = logging.getLogger(__name__)
+
 
 # Some tasks show up in the target task set, but are possibly special cases,
 # uncommon tasks, or tasks running against limited hardware set that they
@@ -247,9 +251,38 @@ def accept_raptor_android_build(platform):
     if "p5" in platform and "aarch64" in platform:
         return False
     if "p6" in platform and "aarch64" in platform:
-        return False
+        return True
+    if "s21" in platform and "aarch64" in platform:
+        return True
     if "a51" in platform:
         return True
+    return False
+
+
+def accept_raptor_desktop_build(platform):
+    """Helper function for selecting correct desktop raptor builds."""
+    if "android" in platform:
+        return False
+    # ignore all windows 7 perf jobs scheduled automatically
+    if "windows7" in platform or "windows10-32" in platform:
+        return False
+    # Completely ignore all non-shippable platforms
+    if "shippable" in platform:
+        return True
+    return False
+
+
+def accept_awsy_task(try_name, platform):
+    if accept_raptor_desktop_build(platform):
+        if "windows" in platform and "windows11-64" not in platform:
+            return False
+        if "dmd" in try_name:
+            return False
+        if "awsy-base" in try_name:
+            return True
+        if "awsy-tp6" in try_name:
+            return True
+    return False
 
 
 def filter_unsupported_artifact_builds(task, parameters):
@@ -267,7 +300,33 @@ def filter_out_shippable(task):
 
 def _try_task_config(full_task_graph, parameters, graph_config):
     requested_tasks = parameters["try_task_config"]["tasks"]
-    return list(set(requested_tasks) & full_task_graph.graph.nodes)
+    pattern_tasks = [x for x in requested_tasks if x.endswith("-*")]
+    tasks = list(set(requested_tasks) - set(pattern_tasks))
+    matched_tasks = []
+    missing = set()
+    for pattern in pattern_tasks:
+        found = [
+            t
+            for t in full_task_graph.graph.nodes
+            if t.split(pattern.replace("*", ""))[-1].isnumeric()
+        ]
+        if found:
+            matched_tasks.extend(found)
+        else:
+            missing.add(pattern)
+
+        if "MOZHARNESS_TEST_PATHS" in parameters["try_task_config"].get("env", {}):
+            matched_tasks = [x for x in matched_tasks if x.endswith("-1")]
+
+    selected_tasks = set(tasks) | set(matched_tasks)
+    missing.update(selected_tasks - set(full_task_graph.tasks))
+
+    if missing:
+        missing_str = "\n  ".join(sorted(missing))
+        logger.warning(
+            f"The following tasks were requested but do not exist in the full task graph and will be skipped:\n  {missing_str}"
+        )
+    return list(selected_tasks - missing)
 
 
 def _try_option_syntax(full_task_graph, parameters, graph_config):
@@ -663,23 +722,42 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
 
 @_target_task("pine_tasks")
 def target_tasks_pine(full_task_graph, parameters, graph_config):
-    """Bug 1339179 - no mobile automation needed on pine"""
+    """Bug 1879960 - no reftests or wpt needed"""
+    filtered_for_project = target_tasks_default(
+        full_task_graph, parameters, graph_config
+    )
 
     def filter(task):
-        platform = task.attributes.get("build_platform")
-        # disable mobile jobs
-        if str(platform).startswith("android"):
+        suite = task.attributes.get("unittest_suite", "")
+        if "reftest" in suite or "web-platform" in suite:
             return False
-        # disable asan
-        if platform == "linux64-asan":
-            return False
-        # disable non-pine and tasks with a shipping phase
-        if standard_filter(task, parameters) or filter_out_shipping_phase(
-            task, parameters
-        ):
-            return True
+        return True
 
-    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+    return [l for l in filtered_for_project if filter(full_task_graph[l])]
+
+
+@_target_task("larch_tasks")
+def target_tasks_larch(full_task_graph, parameters, graph_config):
+    """Bug 1879213 - only run necessary tasks on larch"""
+    filtered_for_project = target_tasks_default(
+        full_task_graph, parameters, graph_config
+    )
+
+    def filter(task):
+        # no localized builds, no android
+        if (
+            "l10n" in task.kind
+            or "msix" in task.kind
+            or "android" in task.attributes.get("build_platform", "")
+            or (task.kind == "test" and "msix" in task.label)
+        ):
+            return False
+        # otherwise reduce tests only
+        if task.kind != "test":
+            return True
+        return "browser-chrome" in task.label or "xpcshell" in task.label
+
+    return [l for l in filtered_for_project if filter(full_task_graph[l])]
 
 
 @_target_task("kaios_tasks")
@@ -734,19 +812,16 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
 
         try_name = attributes.get("raptor_try_name")
 
-        # Completely ignore all non-shippable platforms
-        if "shippable" not in platform:
-            return False
-
-        # ignore all windows 7 perf jobs scheduled automatically
-        if "windows10-32" in platform:
-            return False
-
         # Desktop and Android selection for CaR
-        if "browsertime" in try_name and (
-            "custom-car" in try_name or "cstm-car-m" in try_name
+        if accept_raptor_desktop_build(platform) or accept_raptor_android_build(
+            platform
         ):
-            return True
+            if "browsertime" in try_name and (
+                "custom-car" in try_name or "cstm-car-m" in try_name
+            ):
+                if "hw-s21" in platform and "speedometer3" not in try_name:
+                    return False
+                return True
         return False
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
@@ -766,14 +841,6 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
 
         try_name = attributes.get("raptor_try_name")
 
-        # Completely ignore all non-shippable platforms
-        if "shippable" not in platform:
-            return False
-
-        # ignore all windows 7 perf jobs scheduled automatically
-        if "windows7" in platform or "windows10-32" in platform:
-            return False
-
         if "tp6-bench" in try_name:
             return False
 
@@ -782,7 +849,7 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
             return False
 
         # Desktop selection
-        if "android" not in platform:
+        if accept_raptor_desktop_build(platform):
             # Select some browsertime tasks as desktop smoke-tests
             if "browsertime" in try_name:
                 if "chrome" in try_name:
@@ -804,12 +871,11 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     if "speedometer" in try_name:
                         return True
                 if "safari" and "benchmark" in try_name:
-                    # Speedometer 3 is broken on Safari, see bug 1802922
-                    if "speedometer3" in try_name:
-                        return False
                     return True
         # Android selection
         elif accept_raptor_android_build(platform):
+            if "hw-s21" in platform and "speedometer3" not in try_name:
+                return False
             if "chrome-m" in try_name and (
                 ("ebay" in try_name and "live" not in try_name)
                 or (
@@ -887,8 +953,13 @@ def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
         attributes = task.attributes
         if attributes.get("unittest_suite") != "raptor":
             return False
-        if "windows10-32" not in platform:
+
+        if accept_raptor_desktop_build(platform) or accept_raptor_android_build(
+            platform
+        ):
             try_name = attributes.get("raptor_try_name")
+            if "hw-s21" in platform and "speedometer3" not in try_name:
+                return False
             if (
                 "browsertime" in try_name
                 and "speedometer" in try_name
@@ -904,7 +975,9 @@ def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     """Select the set of tasks required for a nightly build of linux. The
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
-    filter = make_desktop_nightly_filter({"linux64-shippable", "linux-shippable"})
+    filter = make_desktop_nightly_filter(
+        {"linux64-shippable", "linux-shippable", "linux-aarch64-shippable"}
+    )
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
 
@@ -1014,6 +1087,7 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
         "searchfox-macosx64-searchfox/debug",
         "searchfox-win64-searchfox/debug",
         "searchfox-android-armv7-searchfox/debug",
+        "searchfox-ios-searchfox/debug",
         "source-test-file-metadata-bugzilla-components",
         "source-test-file-metadata-test-info-all",
         "source-test-wpt-metadata-summary",
@@ -1212,12 +1286,65 @@ def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
     def filter(task):
         platform = task.attributes.get("test_platform")
         attributes = task.attributes
-        try_name = attributes.get("raptor_try_name")
+        try_name = attributes.get("raptor_try_name") or task.label
 
-        if attributes.get("unittest_suite") != "raptor":
+        unittest_suite = attributes.get("unittest_suite")
+        if unittest_suite not in ("raptor", "awsy", "talos"):
+            return False
+        if not platform:
             return False
 
-        if platform and accept_raptor_android_build(platform):
+        # Select beta tasks for awsy
+        if "awsy" in try_name:
+            if accept_awsy_task(try_name, platform):
+                return True
+            return False
+
+        # Select beta tasks for talos
+        if "talos" == unittest_suite:
+            if accept_raptor_desktop_build(platform):
+                if "windows11-64" in platform:
+                    if "xperf" in try_name:
+                        return True
+                    return False
+                if ("mac" in platform or "windows" in platform) and "g3" in try_name:
+                    return False
+                if "-swr" in try_name:
+                    if "dromaeo" in try_name:
+                        return False
+                    if "perf-reftest-singletons" in try_name:
+                        return False
+                    if "realworldweb" in try_name:
+                        return False
+                if any(
+                    x in try_name
+                    for x in ("prof", "ipc", "gli", "sessionrestore", "tabswitch")
+                ):
+                    return False
+                return True
+            return False
+
+        if accept_raptor_desktop_build(platform):
+            if "browsertime" and "firefox" in try_name:
+                if "profiling" in try_name:
+                    return False
+                if "bytecode" in try_name:
+                    return False
+                if "live" in try_name:
+                    return False
+                if "webext" in try_name:
+                    return False
+                if "unity" in try_name:
+                    return False
+                if "wasm" in try_name:
+                    return False
+                if "tp6-bench" in try_name:
+                    return False
+                if "tp6" in try_name:
+                    return True
+                if "benchmark" in try_name:
+                    return True
+        elif accept_raptor_android_build(platform):
             # Select browsertime & geckoview specific tests
             if "browsertime" and "geckoview" in try_name:
                 if "power" in try_name:
@@ -1249,12 +1376,41 @@ def target_tasks_weekly_release_perf(full_task_graph, parameters, graph_config):
     def filter(task):
         platform = task.attributes.get("test_platform")
         attributes = task.attributes
-        try_name = attributes.get("raptor_try_name")
+        try_name = attributes.get("raptor_try_name") or task.label
 
-        if attributes.get("unittest_suite") != "raptor":
+        if attributes.get("unittest_suite") not in ("raptor", "awsy"):
+            return False
+        if not platform:
             return False
 
-        if platform and accept_raptor_android_build(platform):
+        # Select release tasks for awsy
+        if "awsy" in try_name:
+            if accept_awsy_task(try_name, platform):
+                return True
+            return False
+
+        # Select browsertime tests
+        if accept_raptor_desktop_build(platform):
+            if "browsertime" and "firefox" in try_name:
+                if "power" in try_name:
+                    return False
+                if "profiling" in try_name:
+                    return False
+                if "bytecode" in try_name:
+                    return False
+                if "live" in try_name:
+                    return False
+                if "webext" in try_name:
+                    return False
+                if "tp6-bench" in try_name:
+                    return False
+                if "tp6" in try_name:
+                    return True
+                if "benchmark" in try_name:
+                    return True
+                if "youtube-playback" in try_name:
+                    return True
+        elif accept_raptor_android_build(platform):
             # Select browsertime & geckoview specific tests
             if "browsertime" and "geckoview" in try_name:
                 if "power" in try_name:

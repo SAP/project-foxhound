@@ -12,9 +12,11 @@
 #include "GMPUtils.h"  // ToHexString
 #include "mozilla/Components.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/Logging.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
@@ -27,11 +29,13 @@
 
 #include <algorithm>
 #include <sstream>
+#include <string>
 
 #ifdef XP_WIN
 #  include <windows.h>
 #  define SECURITY_WIN32 1
 #  include <security.h>
+#  include "mozilla/WinDllServices.h"
 #endif  // XP_WIN
 
 namespace mozilla::contentanalysis {
@@ -52,8 +56,10 @@ namespace {
 const char* kIsDLPEnabledPref = "browser.contentanalysis.enabled";
 const char* kIsPerUserPref = "browser.contentanalysis.is_per_user";
 const char* kPipePathNamePref = "browser.contentanalysis.pipe_path_name";
-
-static constexpr uint32_t kAnalysisTimeoutSecs = 30;  // 30 sec
+const char* kDefaultAllowPref = "browser.contentanalysis.default_allow";
+const char* kClientSignature = "browser.contentanalysis.client_signature";
+const char* kAllowUrlPref = "browser.contentanalysis.allow_url_regex_list";
+const char* kDenyUrlPref = "browser.contentanalysis.deny_url_regex_list";
 
 nsresult MakePromise(JSContext* aCx, RefPtr<mozilla::dom::Promise>* aPromise) {
   nsIGlobalObject* go = xpc::CurrentNativeGlobal(aCx);
@@ -128,8 +134,9 @@ ContentAnalysisRequest::GetFilePath(nsAString& aFilePath) {
 }
 
 NS_IMETHODIMP
-ContentAnalysisRequest::GetUrl(nsAString& aUrl) {
-  aUrl = mUrl;
+ContentAnalysisRequest::GetUrl(nsIURI** aUrl) {
+  NS_ENSURE_ARG_POINTER(aUrl);
+  NS_IF_ADDREF(*aUrl = mUrl);
   return NS_OK;
 }
 
@@ -179,8 +186,9 @@ ContentAnalysisRequest::GetWindowGlobalParent(
   return NS_OK;
 }
 
-nsresult ContentAnalysis::CreateContentAnalysisClient(nsCString&& aPipePathName,
-                                                      bool aIsPerUser) {
+nsresult ContentAnalysis::CreateContentAnalysisClient(
+    nsCString&& aPipePathName, nsString&& aClientSignatureSetting,
+    bool aIsPerUser) {
   MOZ_ASSERT(!NS_IsMainThread());
   // This method should only be called once
   MOZ_ASSERT(!mCaClientPromise->IsResolved());
@@ -189,6 +197,30 @@ nsresult ContentAnalysis::CreateContentAnalysisClient(nsCString&& aPipePathName,
       content_analysis::sdk::Client::Create({aPipePathName.Data(), aIsPerUser})
           .release());
   LOGD("Content analysis is %s", client ? "connected" : "not available");
+#ifdef XP_WIN
+  if (client && !aClientSignatureSetting.IsEmpty()) {
+    std::string agentPath = client->GetAgentInfo().binary_path;
+    nsString agentWidePath = NS_ConvertUTF8toUTF16(agentPath);
+    UniquePtr<wchar_t[]> orgName =
+        mozilla::DllServices::Get()->GetBinaryOrgName(agentWidePath.Data());
+    bool signatureMatches = false;
+    if (orgName) {
+      auto dependentOrgName = nsDependentString(orgName.get());
+      LOGD("Content analysis client signed with organization name \"%S\"",
+           static_cast<const wchar_t*>(dependentOrgName.get()));
+      signatureMatches = aClientSignatureSetting.Equals(dependentOrgName);
+    } else {
+      LOGD("Content analysis client has no signature");
+    }
+    if (!signatureMatches) {
+      LOGE(
+          "Got mismatched content analysis client signature! All content "
+          "analysis operations will fail.");
+      mCaClientPromise->Reject(NS_ERROR_INVALID_SIGNATURE, __func__);
+      return NS_OK;
+    }
+  }
+#endif  // XP_WIN
   mCaClientPromise->Resolve(client, __func__);
 
   return NS_OK;
@@ -196,8 +228,8 @@ nsresult ContentAnalysis::CreateContentAnalysisClient(nsCString&& aPipePathName,
 
 ContentAnalysisRequest::ContentAnalysisRequest(
     AnalysisType aAnalysisType, nsString aString, bool aStringIsFilePath,
-    nsCString aSha256Digest, nsString aUrl, OperationType aOperationType,
-    dom::WindowGlobalParent* aWindowGlobalParent)
+    nsCString aSha256Digest, nsCOMPtr<nsIURI> aUrl,
+    OperationType aOperationType, dom::WindowGlobalParent* aWindowGlobalParent)
     : mAnalysisType(aAnalysisType),
       mUrl(std::move(aUrl)),
       mSha256Digest(std::move(aSha256Digest)),
@@ -244,7 +276,7 @@ nsresult ContentAnalysisRequest::GetFileDigest(const nsAString& aFilePath,
   PRInt32 bytesRead = PR_Read(fd, buffer.get(), kBufferSize);
   while (bytesRead != 0) {
     if (bytesRead == -1) {
-      return NS_ERROR_DOM_FILE_NOT_READABLE_ERR;
+      return NS_ErrorAccordingToNSPR();
     }
     digest.Update(mozilla::Span<const uint8_t>(buffer.get(), bytesRead));
     bytesRead = PR_Read(fd, buffer.get(), kBufferSize);
@@ -255,6 +287,15 @@ nsresult ContentAnalysisRequest::GetFileDigest(const nsAString& aFilePath,
   aDigestString = mozilla::ToHexString(digestResults);
   return NS_OK;
 }
+
+// Generate an ID that will be shared by all DLP requests.
+// Used to cancel all requests on Firefox shutdown.
+void ContentAnalysis::GenerateUserActionId() {
+  nsID id = nsID::GenerateUUID();
+  mUserActionId = nsPrintfCString("Firefox %s", id.ToString().get());
+}
+
+nsCString ContentAnalysis::GetUserActionId() { return mUserActionId; }
 
 static nsresult ConvertToProtobuf(
     nsIClientDownloadResource* aIn,
@@ -275,9 +316,11 @@ static nsresult ConvertToProtobuf(
 }
 
 static nsresult ConvertToProtobuf(
-    nsIContentAnalysisRequest* aIn,
+    nsIContentAnalysisRequest* aIn, nsCString&& aUserActionId,
+    int64_t aRequestCount,
     content_analysis::sdk::ContentAnalysisRequest* aOut) {
-  aOut->set_expires_at(time(nullptr) + kAnalysisTimeoutSecs);  // TODO:
+  uint32_t timeout = StaticPrefs::browser_contentanalysis_agent_timeout();
+  aOut->set_expires_at(time(nullptr) + timeout);
 
   nsIContentAnalysisRequest::AnalysisType analysisType;
   nsresult rv = aIn->GetAnalysisType(&analysisType);
@@ -291,16 +334,22 @@ static nsresult ConvertToProtobuf(
   NS_ENSURE_SUCCESS(rv, rv);
   aOut->set_request_token(requestToken.get(), requestToken.Length());
 
+  aOut->set_user_action_id(aUserActionId.get());
+  aOut->set_user_action_requests_count(aRequestCount);
+
   const std::string tag = "dlp";  // TODO:
   *aOut->add_tags() = tag;
 
   auto* requestData = aOut->mutable_request_data();
 
-  nsString url;
-  rv = aIn->GetUrl(url);
+  nsCOMPtr<nsIURI> url;
+  rv = aIn->GetUrl(getter_AddRefs(url));
   NS_ENSURE_SUCCESS(rv, rv);
-  if (!url.IsEmpty()) {
-    requestData->set_url(NS_ConvertUTF16toUTF8(url).get());
+  nsCString urlString;
+  rv = url->GetSpec(urlString);
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (!urlString.IsEmpty()) {
+    requestData->set_url(urlString.get());
   }
 
   nsString email;
@@ -435,8 +484,7 @@ static void LogRequest(
 }
 
 ContentAnalysisResponse::ContentAnalysisResponse(
-    content_analysis::sdk::ContentAnalysisResponse&& aResponse)
-    : mHasAcknowledged(false) {
+    content_analysis::sdk::ContentAnalysisResponse&& aResponse) {
   mAction = Action::eUnspecified;
   for (const auto& result : aResponse.results()) {
     if (!result.has_status() ||
@@ -464,7 +512,7 @@ ContentAnalysisResponse::ContentAnalysisResponse(
 
 ContentAnalysisResponse::ContentAnalysisResponse(
     Action aAction, const nsACString& aRequestToken)
-    : mAction(aAction), mRequestToken(aRequestToken), mHasAcknowledged(false) {}
+    : mAction(aAction), mRequestToken(aRequestToken) {}
 
 /* static */
 already_AddRefed<ContentAnalysisResponse> ContentAnalysisResponse::FromProtobuf(
@@ -635,14 +683,138 @@ NS_IMETHODIMP ContentAnalysisResult::GetShouldAllowContent(
     bool* aShouldAllowContent) {
   if (mValue.is<NoContentAnalysisResult>()) {
     NoContentAnalysisResult result = mValue.as<NoContentAnalysisResult>();
-    *aShouldAllowContent =
-        result == NoContentAnalysisResult::AGENT_NOT_PRESENT ||
-        result == NoContentAnalysisResult::NO_PARENT_BROWSER;
+    if (Preferences::GetBool(kDefaultAllowPref)) {
+      *aShouldAllowContent = result != NoContentAnalysisResult::CANCELED;
+    } else {
+      // Note that we allow content if we're unable to get it (for example, if
+      // there's clipboard content that is not text or file)
+      *aShouldAllowContent =
+          result == NoContentAnalysisResult::CONTENT_ANALYSIS_NOT_ACTIVE ||
+          result ==
+              NoContentAnalysisResult::CONTEXT_EXEMPT_FROM_CONTENT_ANALYSIS ||
+          result == NoContentAnalysisResult::ERROR_COULD_NOT_GET_DATA;
+    }
   } else {
     *aShouldAllowContent =
         ShouldAllowAction(mValue.as<nsIContentAnalysisResponse::Action>());
   }
   return NS_OK;
+}
+
+void ContentAnalysis::EnsureParsedUrlFilters() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mParsedUrlLists) {
+    return;
+  }
+
+  mParsedUrlLists = true;
+  nsAutoCString allowList;
+  MOZ_ALWAYS_SUCCEEDS(Preferences::GetCString(kAllowUrlPref, allowList));
+  for (const nsACString& regexSubstr : allowList.Split(u' ')) {
+    if (!regexSubstr.IsEmpty()) {
+      auto flatStr = PromiseFlatCString(regexSubstr);
+      const char* regex = flatStr.get();
+      LOGD("CA will allow URLs that match %s", regex);
+      mAllowUrlList.push_back(std::regex(regex));
+    }
+  }
+
+  nsAutoCString denyList;
+  MOZ_ALWAYS_SUCCEEDS(Preferences::GetCString(kDenyUrlPref, denyList));
+  for (const nsACString& regexSubstr : denyList.Split(u' ')) {
+    if (!regexSubstr.IsEmpty()) {
+      auto flatStr = PromiseFlatCString(regexSubstr);
+      const char* regex = flatStr.get();
+      LOGD("CA will block URLs that match %s", regex);
+      mDenyUrlList.push_back(std::regex(regex));
+    }
+  }
+}
+
+ContentAnalysis::UrlFilterResult ContentAnalysis::FilterByUrlLists(
+    nsIContentAnalysisRequest* aRequest) {
+  EnsureParsedUrlFilters();
+
+  nsIURI* nsiUrl = nullptr;
+  MOZ_ALWAYS_SUCCEEDS(aRequest->GetUrl(&nsiUrl));
+  nsCString urlString;
+  nsresult rv = nsiUrl->GetSpec(urlString);
+  NS_ENSURE_SUCCESS(rv, UrlFilterResult::eDeny);
+  MOZ_ASSERT(!urlString.IsEmpty());
+  std::string url = urlString.BeginReading();
+  size_t count = 0;
+  for (const auto& denyFilter : mDenyUrlList) {
+    if (std::regex_search(url, denyFilter)) {
+      LOGD("Denying CA request : Deny filter %zu matched url %s", count,
+           url.c_str());
+      return UrlFilterResult::eDeny;
+    }
+    ++count;
+  }
+
+  count = 0;
+  UrlFilterResult result = UrlFilterResult::eCheck;
+  for (const auto& allowFilter : mAllowUrlList) {
+    if (std::regex_match(url, allowFilter)) {
+      LOGD("CA request : Allow filter %zu matched %s", count, url.c_str());
+      result = UrlFilterResult::eAllow;
+      break;
+    }
+    ++count;
+  }
+
+  // The rest only applies to download resources.
+  nsIContentAnalysisRequest::AnalysisType analysisType;
+  MOZ_ALWAYS_SUCCEEDS(aRequest->GetAnalysisType(&analysisType));
+  if (analysisType != ContentAnalysisRequest::AnalysisType::eFileDownloaded) {
+    MOZ_ASSERT(result == UrlFilterResult::eCheck ||
+               result == UrlFilterResult::eAllow);
+    LOGD("CA request filter result: %s",
+         result == UrlFilterResult::eCheck ? "check" : "allow");
+    return result;
+  }
+
+  nsTArray<RefPtr<nsIClientDownloadResource>> resources;
+  MOZ_ALWAYS_SUCCEEDS(aRequest->GetResources(resources));
+  for (size_t resourceIdx = 0; resourceIdx < resources.Length();
+       /* noop */) {
+    auto& resource = resources[resourceIdx];
+    nsAutoString nsUrl;
+    MOZ_ALWAYS_SUCCEEDS(resource->GetUrl(nsUrl));
+    std::string url = NS_ConvertUTF16toUTF8(nsUrl).get();
+    count = 0;
+    for (auto& denyFilter : mDenyUrlList) {
+      if (std::regex_search(url, denyFilter)) {
+        LOGD(
+            "Denying CA request : Deny filter %zu matched download resource "
+            "at url %s",
+            count, url.c_str());
+        return UrlFilterResult::eDeny;
+      }
+      ++count;
+    }
+
+    count = 0;
+    bool removed = false;
+    for (auto& allowFilter : mAllowUrlList) {
+      if (std::regex_search(url, allowFilter)) {
+        LOGD(
+            "CA request : Allow filter %zu matched download resource "
+            "at url %s",
+            count, url.c_str());
+        resources.RemoveElementAt(resourceIdx);
+        removed = true;
+        break;
+      }
+      ++count;
+    }
+    if (!removed) {
+      ++resourceIdx;
+    }
+  }
+
+  // Check unless all were allowed.
+  return resources.Length() ? UrlFilterResult::eCheck : UrlFilterResult::eAllow;
 }
 
 NS_IMPL_CLASSINFO(ContentAnalysisRequest, nullptr, 0, {0});
@@ -659,8 +831,11 @@ ContentAnalysis::ContentAnalysis()
     : mCaClientPromise(
           new ClientPromise::Private("ContentAnalysis::ContentAnalysis")),
       mClientCreationAttempted(false),
+      mSetByEnterprise(false),
       mCallbackMap("ContentAnalysis::mCallbackMap"),
-      mWarnResponseDataMap("ContentAnalysis::mWarnResponseDataMap") {}
+      mWarnResponseDataMap("ContentAnalysis::mWarnResponseDataMap") {
+  GenerateUserActionId();
+}
 
 ContentAnalysis::~ContentAnalysis() {
   // Accessing mClientCreationAttempted so need to be on the main thread
@@ -676,12 +851,20 @@ ContentAnalysis::GetIsActive(bool* aIsActive) {
   *aIsActive = false;
   // Need to be on the main thread to read prefs
   MOZ_ASSERT(NS_IsMainThread());
-  // gAllowContentAnalysis is only set in the parent process
+  // gAllowContentAnalysisArgPresent is only set in the parent process
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (!gAllowContentAnalysis || !Preferences::GetBool(kIsDLPEnabledPref)) {
+  if (!Preferences::GetBool(kIsDLPEnabledPref)) {
     LOGD("Local DLP Content Analysis is not active");
     return NS_OK;
   }
+  if (!gAllowContentAnalysisArgPresent && !mSetByEnterprise) {
+    LOGE(
+        "The content analysis pref is enabled but not by an enterprise "
+        "policy and -allow-content-analysis was not present on the "
+        "command-line.  Content Analysis will not be active.");
+    return NS_OK;
+  }
+
   *aIsActive = true;
   LOGD("Local DLP Content Analysis is active");
   // mClientCreationAttempted is only accessed on the main thread,
@@ -697,12 +880,15 @@ ContentAnalysis::GetIsActive(bool* aIsActive) {
       return rv;
     }
     bool isPerUser = Preferences::GetBool(kIsPerUserPref);
+    nsString clientSignature;
+    // It's OK if this fails, we will default to the empty string
+    Preferences::GetString(kClientSignature, clientSignature);
     rv = NS_DispatchBackgroundTask(NS_NewCancelableRunnableFunction(
         "ContentAnalysis::CreateContentAnalysisClient",
         [owner = RefPtr{this}, pipePathName = std::move(pipePathName),
-         isPerUser]() mutable {
-          owner->CreateContentAnalysisClient(std::move(pipePathName),
-                                             isPerUser);
+         clientSignature = std::move(clientSignature), isPerUser]() mutable {
+          owner->CreateContentAnalysisClient(
+              std::move(pipePathName), std::move(clientSignature), isPerUser);
         }));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       mCaClientPromise->Reject(rv, __func__);
@@ -723,16 +909,49 @@ ContentAnalysis::GetMightBeActive(bool* aMightBeActive) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+ContentAnalysis::GetIsSetByEnterprisePolicy(bool* aSetByEnterprise) {
+  *aSetByEnterprise = mSetByEnterprise;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ContentAnalysis::SetIsSetByEnterprisePolicy(bool aSetByEnterprise) {
+  mSetByEnterprise = aSetByEnterprise;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ContentAnalysis::TestOnlySetCACmdLineArg(bool aVal) {
+#ifdef ENABLE_TESTS
+  gAllowContentAnalysisArgPresent = aVal;
+  return NS_OK;
+#else
+  LOGE("ContentAnalysis::TestOnlySetCACmdLineArg is test-only");
+  return NS_ERROR_UNEXPECTED;
+#endif
+}
+
 nsresult ContentAnalysis::CancelWithError(nsCString aRequestToken,
                                           nsresult aResult) {
   return NS_DispatchToMainThread(NS_NewCancelableRunnableFunction(
-      "ContentAnalysis::RunAnalyzeRequestTask::HandleResponse",
+      "ContentAnalysis::CancelWithError",
       [aResult, aRequestToken = std::move(aRequestToken)] {
         RefPtr<ContentAnalysis> owner = GetContentAnalysisFromService();
         if (!owner) {
           // May be shutting down
           return;
         }
+        nsCOMPtr<nsIObserverService> obsServ =
+            mozilla::services::GetObserverService();
+        bool allow = Preferences::GetBool(kDefaultAllowPref);
+        RefPtr<ContentAnalysisResponse> response =
+            ContentAnalysisResponse::FromAction(
+                allow ? nsIContentAnalysisResponse::Action::eAllow
+                      : nsIContentAnalysisResponse::Action::eCanceled,
+                aRequestToken);
+        response->SetOwner(owner);
+        obsServ->NotifyObservers(response, "dlp-response", nullptr);
         nsMainThreadPtrHandle<nsIContentAnalysisCallback> callbackHolder;
         {
           auto lock = owner->mCallbackMap.Lock();
@@ -742,7 +961,11 @@ nsresult ContentAnalysis::CancelWithError(nsCString aRequestToken,
           }
         }
         if (callbackHolder) {
-          callbackHolder->Error(aResult);
+          if (allow) {
+            callbackHolder->ContentResult(response);
+          } else {
+            callbackHolder->Error(aResult);
+          }
         }
       }));
 }
@@ -760,7 +983,10 @@ RefPtr<ContentAnalysis> ContentAnalysis::GetContentAnalysisFromService() {
 
 nsresult ContentAnalysis::RunAnalyzeRequestTask(
     const RefPtr<nsIContentAnalysisRequest>& aRequest, bool aAutoAcknowledge,
+    int64_t aRequestCount,
     const RefPtr<nsIContentAnalysisCallback>& aCallback) {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsresult rv = NS_ERROR_FAILURE;
   auto callbackCopy = aCallback;
   auto se = MakeScopeExit([&] {
@@ -770,23 +996,52 @@ nsresult ContentAnalysis::RunAnalyzeRequestTask(
     }
   });
 
-  content_analysis::sdk::ContentAnalysisRequest pbRequest;
-  rv = ConvertToProtobuf(aRequest, &pbRequest);
+  nsCString requestToken;
+  rv = aRequest->GetRequestToken(requestToken);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCString requestToken;
   nsMainThreadPtrHandle<nsIContentAnalysisCallback> callbackHolderCopy(
       new nsMainThreadPtrHolder<nsIContentAnalysisCallback>(
           "content analysis callback", aCallback));
   CallbackData callbackData(std::move(callbackHolderCopy), aAutoAcknowledge);
-  rv = aRequest->GetRequestToken(requestToken);
-  NS_ENSURE_SUCCESS(rv, rv);
   {
     auto lock = mCallbackMap.Lock();
     lock->InsertOrUpdate(requestToken, std::move(callbackData));
   }
 
+  // Check URLs of requested info against
+  // browser.contentanalysis.allow_url_regex_list/deny_url_regex_list.
+  // Build the list once since creating regexs is slow.
+  // URLs that match the allow list are removed from the check.  There is
+  // only one URL in all cases except downloads.  If all contents are removed
+  // or the page URL is allowed (for downloads) then the operation is allowed.
+  // URLs that match the deny list block the entire operation.
+  // If the request is completely covered by this filter then flag it as
+  // not needing to send an Acknowledge.
+  auto filterResult = FilterByUrlLists(aRequest);
+  if (filterResult == ContentAnalysis::UrlFilterResult::eDeny) {
+    LOGD("Blocking request due to deny URL filter.");
+    auto response = ContentAnalysisResponse::FromAction(
+        nsIContentAnalysisResponse::Action::eBlock, requestToken);
+    response->DoNotAcknowledge();
+    IssueResponse(response);
+    return NS_OK;
+  }
+  if (filterResult == ContentAnalysis::UrlFilterResult::eAllow) {
+    LOGD("Allowing request -- all operations match allow URL filter.");
+    auto response = ContentAnalysisResponse::FromAction(
+        nsIContentAnalysisResponse::Action::eAllow, requestToken);
+    response->DoNotAcknowledge();
+    IssueResponse(response);
+    return NS_OK;
+  }
+
   LOGD("Issuing ContentAnalysisRequest for token %s", requestToken.get());
+
+  content_analysis::sdk::ContentAnalysisRequest pbRequest;
+  rv =
+      ConvertToProtobuf(aRequest, GetUserActionId(), aRequestCount, &pbRequest);
+  NS_ENSURE_SUCCESS(rv, rv);
   LogRequest(&pbRequest);
 
   mCaClientPromise->Then(
@@ -888,75 +1143,75 @@ void ContentAnalysis::DoAnalyzeRequest(
           LOGE("Content analysis got invalid response!");
           return;
         }
-        nsCString responseRequestToken;
-        nsresult requestRv = response->GetRequestToken(responseRequestToken);
-        if (NS_FAILED(requestRv)) {
-          LOGE(
-              "Content analysis couldn't get request token "
-              "from response!");
-          return;
-        }
 
-        Maybe<CallbackData> maybeCallbackData;
-        {
-          auto callbackMap = owner->mCallbackMap.Lock();
-          maybeCallbackData = callbackMap->Extract(responseRequestToken);
-        }
-        if (maybeCallbackData.isNothing()) {
-          LOGD(
-              "Content analysis did not find callback for "
-              "token %s",
-              responseRequestToken.get());
-          return;
-        }
-        response->SetOwner(owner);
-        if (maybeCallbackData->Canceled()) {
-          // request has already been cancelled, so there's
-          // nothing to do
-          LOGD(
-              "Content analysis got response but ignoring "
-              "because it was already cancelled for token %s",
-              responseRequestToken.get());
-          // Note that we always acknowledge here, even if
-          // autoAcknowledge isn't set, since we raise an exception
-          // at the caller on cancellation.
-          auto acknowledgement = MakeRefPtr<ContentAnalysisAcknowledgement>(
-              nsIContentAnalysisAcknowledgement::Result::eTooLate,
-              nsIContentAnalysisAcknowledgement::FinalAction::eBlock);
-          response->Acknowledge(acknowledgement);
-          return;
-        }
-
-        LOGD(
-            "Content analysis resolving response promise for "
-            "token %s",
-            responseRequestToken.get());
-        nsIContentAnalysisResponse::Action action = response->GetAction();
-        nsCOMPtr<nsIObserverService> obsServ =
-            mozilla::services::GetObserverService();
-        if (action == nsIContentAnalysisResponse::Action::eWarn) {
-          {
-            auto warnResponseDataMap = owner->mWarnResponseDataMap.Lock();
-            warnResponseDataMap->InsertOrUpdate(
-                responseRequestToken,
-                WarnResponseData(std::move(*maybeCallbackData), response));
-          }
-          obsServ->NotifyObservers(response, "dlp-response", nullptr);
-          return;
-        }
-
-        obsServ->NotifyObservers(response, "dlp-response", nullptr);
-        if (maybeCallbackData->AutoAcknowledge()) {
-          auto acknowledgement = MakeRefPtr<ContentAnalysisAcknowledgement>(
-              nsIContentAnalysisAcknowledgement::Result::eSuccess,
-              ConvertResult(action));
-          response->Acknowledge(acknowledgement);
-        }
-
-        nsMainThreadPtrHandle<nsIContentAnalysisCallback> callbackHolder =
-            maybeCallbackData->TakeCallbackHolder();
-        callbackHolder->ContentResult(response);
+        owner->IssueResponse(response);
       }));
+}
+
+void ContentAnalysis::IssueResponse(RefPtr<ContentAnalysisResponse>& response) {
+  MOZ_ASSERT(NS_IsMainThread());
+  nsCString responseRequestToken;
+  nsresult requestRv = response->GetRequestToken(responseRequestToken);
+  if (NS_FAILED(requestRv)) {
+    LOGE("Content analysis couldn't get request token from response!");
+    return;
+  }
+
+  Maybe<CallbackData> maybeCallbackData;
+  {
+    auto callbackMap = mCallbackMap.Lock();
+    maybeCallbackData = callbackMap->Extract(responseRequestToken);
+  }
+  if (maybeCallbackData.isNothing()) {
+    LOGD("Content analysis did not find callback for token %s",
+         responseRequestToken.get());
+    return;
+  }
+  response->SetOwner(this);
+  if (maybeCallbackData->Canceled()) {
+    // request has already been cancelled, so there's
+    // nothing to do
+    LOGD(
+        "Content analysis got response but ignoring "
+        "because it was already cancelled for token %s",
+        responseRequestToken.get());
+    // Note that we always acknowledge here, even if
+    // autoAcknowledge isn't set, since we raise an exception
+    // at the caller on cancellation.
+    auto acknowledgement = MakeRefPtr<ContentAnalysisAcknowledgement>(
+        nsIContentAnalysisAcknowledgement::Result::eTooLate,
+        nsIContentAnalysisAcknowledgement::FinalAction::eBlock);
+    response->Acknowledge(acknowledgement);
+    return;
+  }
+
+  LOGD("Content analysis resolving response promise for token %s",
+       responseRequestToken.get());
+  nsIContentAnalysisResponse::Action action = response->GetAction();
+  nsCOMPtr<nsIObserverService> obsServ =
+      mozilla::services::GetObserverService();
+  if (action == nsIContentAnalysisResponse::Action::eWarn) {
+    {
+      auto warnResponseDataMap = mWarnResponseDataMap.Lock();
+      warnResponseDataMap->InsertOrUpdate(
+          responseRequestToken,
+          WarnResponseData(std::move(*maybeCallbackData), response));
+    }
+    obsServ->NotifyObservers(response, "dlp-response", nullptr);
+    return;
+  }
+
+  obsServ->NotifyObservers(response, "dlp-response", nullptr);
+  if (maybeCallbackData->AutoAcknowledge()) {
+    auto acknowledgement = MakeRefPtr<ContentAnalysisAcknowledgement>(
+        nsIContentAnalysisAcknowledgement::Result::eSuccess,
+        ConvertResult(action));
+    response->Acknowledge(acknowledgement);
+  }
+
+  nsMainThreadPtrHandle<nsIContentAnalysisCallback> callbackHolder =
+      maybeCallbackData->TakeCallbackHolder();
+  callbackHolder->ContentResult(response);
 }
 
 NS_IMETHODIMP
@@ -991,8 +1246,11 @@ ContentAnalysis::AnalyzeContentRequestCallback(
       mozilla::services::GetObserverService();
   obsServ->NotifyObservers(aRequest, "dlp-request-made", nullptr);
 
-  rv = RunAnalyzeRequestTask(aRequest, aAutoAcknowledge, aCallback);
-  return rv;
+  MOZ_ASSERT(NS_IsMainThread());
+  // since we're on the main thread, don't need to synchronize this
+  int64_t requestCount = ++mRequestCount;
+  return RunAnalyzeRequestTask(aRequest, aAutoAcknowledge, requestCount,
+                               aCallback);
 }
 
 NS_IMETHODIMP
@@ -1017,6 +1275,33 @@ ContentAnalysis::CancelContentAnalysisRequest(const nsACString& aRequestToken) {
     LOGD("Content analysis request not found when trying to cancel %s",
          requestToken.get());
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ContentAnalysis::CancelAllRequests() {
+  mCaClientPromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [&](std::shared_ptr<content_analysis::sdk::Client> client) {
+        auto owner = GetContentAnalysisFromService();
+        if (!owner) {
+          // May be shutting down
+          return;
+        }
+        if (!client) {
+          LOGE("CancelAllRequests got a null client");
+          return;
+        }
+        content_analysis::sdk::ContentAnalysisCancelRequests requests;
+        requests.set_user_action_id(owner->GetUserActionId().get());
+        int err = client->CancelRequests(requests);
+        if (err != 0) {
+          LOGE("CancelAllRequests got error %d", err);
+        } else {
+          LOGD("CancelAllRequests did cancelling of requests");
+        }
+      },
+      [&](nsresult rv) { LOGE("CancelAllRequests failed to get the client"); });
   return NS_OK;
 }
 
@@ -1082,6 +1367,10 @@ ContentAnalysisResponse::Acknowledge(
     return NS_ERROR_FAILURE;
   }
   mHasAcknowledged = true;
+
+  if (mDoNotAcknowledge) {
+    return NS_OK;
+  }
   return mOwner->RunAcknowledgeTask(aAcknowledgement, mRequestToken);
 };
 

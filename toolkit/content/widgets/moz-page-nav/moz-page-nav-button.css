@@ -1,0 +1,123 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  border-radius: var(--border-radius-small);
+  &:focus-visible {
+    outline-offset: var(--page-nav-focus-outline-inset);
+  }
+}
+
+button {
+  background-color: var(--page-nav-button-background-color);
+  border: 1px solid var(--page-nav-border-color);
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  gap: 12px;
+  align-items: center;
+  font-size: inherit;
+  width: 100%;
+  font-weight: normal;
+  border-radius: var(--page-nav-button-border-radius);
+  color: var(--page-nav-button-text-color);
+  text-align: start;
+  transition: background-color 150ms;
+  padding: var(--page-nav-button-padding);
+}
+
+button:hover {
+  cursor: pointer;
+}
+
+@media not (prefers-contrast) {
+  button {
+    border-inline-start: 2px solid transparent;
+    border-inline-end: none;
+    border-block: none;
+  }
+
+  button:hover,
+  button[selected]:hover {
+    background-color: var(--page-nav-button-background-color-hover);
+  }
+
+  button[selected]:hover {
+    border-inline-start-color: inherit;
+  }
+
+  button[selected],
+  button[selected]:hover {
+    border-inline-start: 2px solid;
+  }
+
+  button[selected]:not(:focus-visible) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+
+  button[selected]:not(:hover) {
+    color: var(--color-accent-primary);
+    background-color: color-mix(in srgb, var(--page-nav-button-background-color-selected) 5%, transparent);
+    border-inline-start-color: var(--color-accent-primary);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  button[selected] {
+    background-color: color-mix(in srgb, var(--page-nav-button-background-color-selected) 12%, transparent);
+  }
+}
+
+button:focus-visible,
+button[selected]:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  border-radius: var(--border-radius-small);
+}
+
+.page-nav-icon {
+  height: 20px;
+  width: 20px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+@media (prefers-contrast) {
+  button {
+    transition: none;
+    border-color: ButtonText;
+    background-color: var(--button-background-color);
+  }
+
+  button:hover {
+    color: SelectedItem;
+  }
+
+  button[selected] {
+    color: SelectedItemText;
+    background-color: SelectedItem;
+    border-color: SelectedItem;
+  }
+}
+
+slot {
+  font-size: var(--font-size-large);
+  margin: 0;
+  padding-inline-start: 0;
+  user-select: none;
+}
+
+@media (max-width: 52rem) {
+  button {
+    grid-template-columns: min-content;
+    justify-content: center;
+    margin-inline: 0;
+  }
+
+  slot {
+    display: none;
+  }
+}

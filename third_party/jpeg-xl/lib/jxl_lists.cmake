@@ -5,7 +5,6 @@
 
 # This file is generated, do not modify by manually.
 # Run `tools/scripts/build_cleaner.py --update` to regenerate it.
-
 set(JPEGXL_INTERNAL_BASE_SOURCES
   jxl/base/arch_macros.h
   jxl/base/bits.h
@@ -145,7 +144,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/convolve-inl.h
   jxl/convolve.h
   jxl/convolve_separable5.cc
-  jxl/convolve_separable7.cc
   jxl/convolve_slow.cc
   jxl/convolve_symmetric3.cc
   jxl/convolve_symmetric5.cc
@@ -187,8 +185,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/epf.cc
   jxl/epf.h
   jxl/fast_dct-inl.h
-  jxl/fast_dct.cc
-  jxl/fast_dct.h
   jxl/fast_dct128-inl.h
   jxl/fast_dct16-inl.h
   jxl/fast_dct256-inl.h
@@ -201,8 +197,6 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/frame_dimensions.h
   jxl/frame_header.cc
   jxl/frame_header.h
-  jxl/gauss_blur.cc
-  jxl/gauss_blur.h
   jxl/headers.cc
   jxl/headers.h
   jxl/huffman_table.cc
@@ -217,6 +211,7 @@ set(JPEGXL_INTERNAL_DEC_SOURCES
   jxl/image_bundle.h
   jxl/image_metadata.cc
   jxl/image_metadata.h
+  jxl/image_ops.cc
   jxl/image_ops.h
   jxl/inverse_mtf-inl.h
   jxl/lehmer_code.h
@@ -458,7 +453,6 @@ set(JPEGXL_INTERNAL_GBENCH_SOURCES
   extras/tone_mapping_gbench.cc
   jxl/dec_external_image_gbench.cc
   jxl/enc_external_image_gbench.cc
-  jxl/gauss_blur_gbench.cc
   jxl/splines_gbench.cc
   jxl/tf_gbench.cc
 )
@@ -610,7 +604,6 @@ set(JPEGXL_INTERNAL_TESTS
   jxl/fast_math_test.cc
   jxl/fields_test.cc
   jxl/gamma_correct_test.cc
-  jxl/gauss_blur_test.cc
   jxl/gradient_test.cc
   jxl/iaca_test.cc
   jxl/icc_codec_test.cc

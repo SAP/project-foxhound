@@ -11,9 +11,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
-  PhoneNumber: "resource://autofill/phonenumberutils/PhoneNumber.sys.mjs",
+  PhoneNumber: "resource://gre/modules/shared/PhoneNumber.sys.mjs",
   PhoneNumberNormalizer:
-    "resource://autofill/phonenumberutils/PhoneNumberNormalizer.sys.mjs",
+    "resource://gre/modules/shared/PhoneNumberNormalizer.sys.mjs",
 });
 
 /**
@@ -201,7 +201,7 @@ class StreetAddress extends AddressField {
     super(value, region);
 
     this.#structuredStreetAddress = lazy.AddressParser.parseStreetAddress(
-      lazy.AddressParser.replaceControlCharacters(this.userValue, " ")
+      lazy.AddressParser.replaceControlCharacters(this.userValue)
     );
   }
 
@@ -491,7 +491,7 @@ class Country extends AddressField {
     return this.country_code == other.country_code;
   }
 
-  contains(other) {
+  contains(_other) {
     return false;
   }
 
@@ -645,17 +645,7 @@ class Name extends AddressField {
   }
 
   static fromRecord(record, region) {
-    let name;
-    if (record.name) {
-      name = record.name;
-    } else {
-      name = lazy.FormAutofillNameUtils.joinNameParts({
-        given: record["given-name"],
-        middle: record["additional-name"],
-        family: record["family-name"],
-      });
-    }
-    return new Name(name, region);
+    return new Name(record[Name.ac], region);
   }
 }
 
@@ -851,7 +841,7 @@ class Email extends AddressField {
     );
   }
 
-  contains(other) {
+  contains(_other) {
     return false;
   }
 
@@ -1025,37 +1015,35 @@ export class AddressComponent {
     this.record = {};
 
     // Get country code first so we can use it to parse other fields
-    const country = Country.fromRecord(record, FormAutofill.DEFAULT_REGION);
+    const country = new Country(
+      record[Country.ac],
+      FormAutofill.DEFAULT_REGION
+    );
     const region =
       country.country_code ||
       lazy.FormAutofillUtils.identifyCountryCode(FormAutofill.DEFAULT_REGION);
 
-    let fields = [
+    // Build an mapping that the key is field name and the value is the AddressField object
+    [
       country,
-      StreetAddress.fromRecord(record, region),
-      PostalCode.fromRecord(record, region),
-      State.fromRecord(record, region),
-      City.fromRecord(record, region),
-      Name.fromRecord(record, region),
-      Tel.fromRecord(record, region),
-      Organization.fromRecord(record, region),
-      Email.fromRecord(record, region),
-    ];
-
-    for (const field of fields) {
-      if (field.isEmpty() || (ignoreInvalid && !field.isValid())) {
-        continue;
+      new StreetAddress(record[StreetAddress.ac], region),
+      new PostalCode(record[PostalCode.ac], region),
+      new State(record[State.ac], region),
+      new City(record[City.ac], region),
+      new Name(record[Name.ac], region),
+      new Tel(record[Tel.ac], region),
+      new Organization(record[Organization.ac], region),
+      new Email(record[Email.ac], region),
+    ].forEach(addressField => {
+      if (
+        !addressField.isEmpty() &&
+        (!ignoreInvalid || addressField.isValid())
+      ) {
+        const fieldName = addressField.constructor.ac;
+        this.#fields[fieldName] = addressField;
+        this.record[fieldName] = record[fieldName];
       }
-      this.#fields[field.constructor.ac] = field;
-
-      if (field.constructor.ac == "name") {
-        this.record["given-name"] = record["given-name"] ?? "";
-        this.record["additional-name"] = record["additional-name"] ?? "";
-        this.record["family-name"] = record["family-name"] ?? "";
-      } else {
-        this.record[field.constructor.ac] = record[field.constructor.ac];
-      }
-    }
+    });
   }
 
   /**

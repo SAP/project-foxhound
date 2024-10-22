@@ -108,6 +108,7 @@
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/ClientsBinding.h"
 #include "mozilla/dom/Console.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
 #include "mozilla/dom/ContentMediaController.h"
 #include "mozilla/dom/CustomElementRegistry.h"
@@ -169,6 +170,7 @@
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/TrustedTypePolicyFactory.h"
 #include "mozilla/dom/VRDisplay.h"
 #include "mozilla/dom/VRDisplayEvent.h"
 #include "mozilla/dom/VRDisplayEventBinding.h"
@@ -226,6 +228,7 @@
 #include "nsIBrowserChild.h"
 #include "nsICancelableRunnable.h"
 #include "nsIChannel.h"
+#include "nsIClipboard.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIControllers.h"
 #include "nsICookieJarSettings.h"
@@ -1184,11 +1187,6 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   // Remove our reference to the document and the document principal.
   mFocusedElement = nullptr;
 
-  if (mIndexedDB) {
-    mIndexedDB->DisconnectFromGlobal(this);
-    mIndexedDB = nullptr;
-  }
-
   nsIGlobalObject::UnlinkObjectsInGlobal();
 
   NotifyWindowIDDestroyed("inner-window-destroyed");
@@ -1291,6 +1289,8 @@ void nsGlobalWindowInner::FreeInnerObjects() {
     mWebTaskScheduler = nullptr;
   }
 
+  mTrustedTypePolicyFactory = nullptr;
+
   mSharedWorkers.Clear();
 
 #ifdef MOZ_WEBSPEECH
@@ -1386,6 +1386,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebTaskScheduler)
 
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTrustedTypePolicyFactory)
+
 #ifdef MOZ_WEBSPEECH
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSpeechSynthesis)
 #endif
@@ -1454,6 +1456,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mInstallTrigger)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIntlUtils)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualViewport)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentPasteDataTransfer)
 
   tmp->TraverseObjectsInGlobal(cb);
 
@@ -1489,6 +1492,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mWebTaskScheduler)
   }
 
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mTrustedTypePolicyFactory)
+
 #ifdef MOZ_WEBSPEECH
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSpeechSynthesis)
 #endif
@@ -1522,10 +1527,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
     NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocalStorage)
   }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSessionStorage)
-  if (tmp->mIndexedDB) {
-    tmp->mIndexedDB->DisconnectFromGlobal(tmp);
-    NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexedDB)
-  }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mIndexedDB)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentPrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentCookiePrincipal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentStoragePrincipal)
@@ -1565,6 +1567,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mInstallTrigger)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIntlUtils)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualViewport)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCurrentPasteDataTransfer)
 
   tmp->UnlinkObjectsInGlobal();
 
@@ -5093,7 +5096,7 @@ nsGlobalWindowInner::ShowSlowScriptDialog(JSContext* aCx,
   }
 
   // Reached only on non-e10s - once per slow script dialog.
-  // On e10s - we probe once at ProcessHangsMonitor.jsm
+  // On e10s - we probe once at ProcessHangsMonitor.sys.mjs
   Telemetry::Accumulate(Telemetry::SLOW_SCRIPT_NOTICE_COUNT, 1);
 
   // Get the nsIPrompt interface from the docshell
@@ -7461,7 +7464,8 @@ void nsGlobalWindowInner::ForgetSharedWorker(SharedWorker* aSharedWorker) {
   mSharedWorkers.RemoveElement(aSharedWorker);
 }
 
-void nsGlobalWindowInner::StorageAccessPermissionChanged() {
+RefPtr<GenericPromise> nsGlobalWindowInner::StorageAccessPermissionChanged(
+    bool aGranted) {
   // Invalidate cached StorageAllowed field so that calls to GetLocalStorage
   // give us the updated localStorage object.
   ClearStorageAllowedCache();
@@ -7481,7 +7485,18 @@ void nsGlobalWindowInner::StorageAccessPermissionChanged() {
       if (mDoc) {
         mDoc->ClearActiveCookieAndStoragePrincipals();
       }
-      return;
+      // When storage access is granted the content process needs to request the
+      // updated cookie list from the parent process. Otherwise the site won't
+      // have access to unpartitioned cookies via document.cookie without a
+      // reload.
+      if (aGranted) {
+        nsIChannel* channel = mDoc->GetChannel();
+        if (channel) {
+          // The promise resolves when the updated cookie list has been received
+          // from the parent.
+          return ContentChild::UpdateCookieStatus(channel);
+        }
+      }
     }
   }
 
@@ -7494,7 +7509,8 @@ void nsGlobalWindowInner::StorageAccessPermissionChanged() {
     IgnoredErrorResult error;
     GetLocalStorage(error);
     if (NS_WARN_IF(error.Failed())) {
-      return;
+      return MozPromise<bool, nsresult, true>::CreateAndReject(
+          error.StealNSResult(), __func__);
     }
 
     MOZ_ASSERT(mLocalStorage &&
@@ -7526,6 +7542,19 @@ void nsGlobalWindowInner::StorageAccessPermissionChanged() {
           mDoc->NodePrincipal(), mDoc->EffectiveStoragePrincipal());
     }
   }
+
+  // When storage access is granted the content process needs to request the
+  // updated cookie list from the parent process. Otherwise the site won't have
+  // access to unpartitioned cookies via document.cookie without a reload.
+  if (aGranted) {
+    nsIChannel* channel = mDoc->GetChannel();
+    if (channel) {
+      // The promise resolves when the updated cookie list has been received
+      // from the parent.
+      return ContentChild::UpdateCookieStatus(channel);
+    }
+  }
+  return MozPromise<bool, nsresult, true>::CreateAndResolve(true, __func__);
 }
 
 ContentMediaController* nsGlobalWindowInner::GetContentMediaController() {
@@ -7591,6 +7620,27 @@ JS::loader::ModuleLoaderBase* nsGlobalWindowInner::GetModuleLoader(
   return loader->GetModuleLoader();
 }
 
+void nsGlobalWindowInner::SetCurrentPasteDataTransfer(
+    DataTransfer* aDataTransfer) {
+  MOZ_ASSERT_IF(aDataTransfer, aDataTransfer->GetEventMessage() == ePaste);
+  MOZ_ASSERT_IF(aDataTransfer, aDataTransfer->ClipboardType() ==
+                                   nsIClipboard::kGlobalClipboard);
+  MOZ_ASSERT_IF(aDataTransfer, aDataTransfer->GetAsyncGetClipboardData());
+  mCurrentPasteDataTransfer = aDataTransfer;
+}
+
+DataTransfer* nsGlobalWindowInner::GetCurrentPasteDataTransfer() const {
+  return mCurrentPasteDataTransfer;
+}
+
+TrustedTypePolicyFactory* nsGlobalWindowInner::TrustedTypes() {
+  if (!mTrustedTypePolicyFactory) {
+    mTrustedTypePolicyFactory = MakeRefPtr<TrustedTypePolicyFactory>(this);
+  }
+
+  return mTrustedTypePolicyFactory;
+}
+
 nsIURI* nsPIDOMWindowInner::GetDocumentURI() const {
   return mDoc ? mDoc->GetDocumentURI() : mDocumentURI.get();
 }
@@ -7643,22 +7693,24 @@ const nsIGlobalObject* nsPIDOMWindowInner::AsGlobal() const {
   return nsGlobalWindowInner::Cast(this);
 }
 
-void nsPIDOMWindowInner::SaveStorageAccessPermissionGranted() {
+RefPtr<GenericPromise>
+nsPIDOMWindowInner::SaveStorageAccessPermissionGranted() {
   WindowContext* wc = GetWindowContext();
   if (wc) {
     Unused << wc->SetUsingStorageAccess(true);
   }
 
-  nsGlobalWindowInner::Cast(this)->StorageAccessPermissionChanged();
+  return nsGlobalWindowInner::Cast(this)->StorageAccessPermissionChanged(true);
 }
 
-void nsPIDOMWindowInner::SaveStorageAccessPermissionRevoked() {
+RefPtr<GenericPromise>
+nsPIDOMWindowInner::SaveStorageAccessPermissionRevoked() {
   WindowContext* wc = GetWindowContext();
   if (wc) {
     Unused << wc->SetUsingStorageAccess(false);
   }
 
-  nsGlobalWindowInner::Cast(this)->StorageAccessPermissionChanged();
+  return nsGlobalWindowInner::Cast(this)->StorageAccessPermissionChanged(false);
 }
 
 bool nsPIDOMWindowInner::UsingStorageAccess() {

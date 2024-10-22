@@ -84,10 +84,14 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
 
     def add_chunk_patterns(tg):
         for task_name, task in tg.tasks.items():
+            chunk_index = -1
+            if task_name.endswith("-cf"):
+                chunk_index = -2
+
             chunks = task.task.get("extra", {}).get("chunks", {})
             if isinstance(chunks, int):
                 task.chunk_pattern = "{}-*/{}".format(
-                    "-".join(task_name.split("-")[:-1]), chunks
+                    "-".join(task_name.split("-")[:chunk_index]), chunks
                 )
             else:
                 assert isinstance(chunks, dict)
@@ -95,7 +99,7 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
                     task.chunk_pattern = task_name
                 else:
                     task.chunk_pattern = "{}-*".format(
-                        "-".join(task_name.split("-")[:-1])
+                        "-".join(task_name.split("-")[:chunk_index])
                     )
         return tg
 
@@ -146,6 +150,17 @@ def generate_tasks(params=None, full=False, disable_target_task_filter=False):
     if full:
         return tg_full
     return tg_target
+
+
+def filter_tasks_by_worker_type(tasks, params):
+    worker_types = params.get("try_task_config", {}).get("worker-types", [])
+    if worker_types:
+        retVal = {}
+        for t in tasks:
+            if tasks[t].task["workerType"] in worker_types:
+                retVal[t] = tasks[t]
+        return retVal
+    return tasks
 
 
 def filter_tasks_by_paths(tasks, paths):

@@ -784,4 +784,26 @@ interface nsIAccessibleRole : nsISupports
    */
   const unsigned long ROLE_SUPERSCRIPT = 134;
 
+  /**
+   * Represents one or more emphasized characters. Use this role to stress or
+   * emphasize content.
+   */
+  const unsigned long ROLE_EMPHASIS = 135;
+
+  /**
+   * Represents content that is important, serious, or urgent.
+   */
+  const unsigned long ROLE_STRONG = 136;
+
+  /**
+   * Represents a specific point in time.
+   */
+  const unsigned long ROLE_TIME = 137;
+
+  /**
+   * Represents a composite widget containing a collection of one or more rows
+   * with one or more cells where some or all cells in the grid are focusable
+   * by using methods of two-dimensional navigation.
+   */
+  const unsigned long ROLE_GRID = 138;
 };

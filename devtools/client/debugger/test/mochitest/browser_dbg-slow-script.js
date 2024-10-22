@@ -7,6 +7,11 @@
 // Tests the slow script warning
 
 add_task(async function openDebuggerFirst() {
+  // This test fails with pending vsync at end of test without fission, not EFT
+  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
+    return;
+  }
+
   // In mochitest, the timeout is disable, so set it to a short, but non zero duration
   await pushPref("dom.max_script_run_time", 1);
   // Prevents having to click on the page to have the dialog to appear
@@ -41,6 +46,11 @@ add_task(async function openDebuggerFirst() {
 });
 
 add_task(async function openDebuggerFromDialog() {
+  // This test fails with pending vsync at end of test without fission, not EFT
+  if (!isFissionEnabled() && !isEveryFrameTargetEnabled()) {
+    return;
+  }
+
   const tab = await addTab(EXAMPLE_URL + "doc-slow-script.html");
 
   const alert = BrowserTestUtils.waitForGlobalNotificationBar(
@@ -57,7 +67,7 @@ add_task(async function openDebuggerFromDialog() {
   // And mochitest may consider this as an error. So ignore any rejection.
   SpecialPowers.spawn(gBrowser.selectedBrowser, [], function () {
     content.wrappedJSObject.infiniteLoop();
-  }).catch(e => {});
+  }).catch(() => {});
 
   info("Wait for the slow script warning");
   const notification = await alert;

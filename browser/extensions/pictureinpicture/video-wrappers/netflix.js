@@ -22,20 +22,18 @@ class PictureInPictureVideoWrapper {
    * The Netflix player returns the current time in milliseconds so we convert
    * to seconds before returning.
    *
-   * @param {HTMLVideoElement} video The original video element
    * @returns {number} The current time in seconds
    */
-  getCurrentTime(video) {
+  getCurrentTime() {
     return this.player.getCurrentTime() / 1000;
   }
   /**
    * The Netflix player returns the duration in milliseconds so we convert to
    * seconds before returning.
    *
-   * @param {HTMLVideoElement} video The original video element
    * @returns {number} The duration in seconds
    */
-  getDuration(video) {
+  getDuration() {
     return this.player.getDuration() / 1000;
   }
   play() {
@@ -50,7 +48,7 @@ class PictureInPictureVideoWrapper {
 
     if (container) {
       updateCaptionsFunction("");
-      const callback = function (mutationsList, observer) {
+      const callback = function () {
         let text = container.querySelector(".player-timedtext").innerText;
         updateCaptionsFunction(text);
       };

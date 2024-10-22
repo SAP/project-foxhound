@@ -192,7 +192,7 @@ class RecentlyClosedTabsInView extends ViewPage {
       recentlyClosedItem.icon = recentlyClosedItem.image;
       recentlyClosedItem.primaryL10nId = "fxviewtabrow-tabs-list-tab";
       recentlyClosedItem.primaryL10nArgs = JSON.stringify({
-        targetURI,
+        targetURI: typeof targetURI === "string" ? targetURI : "",
       });
       recentlyClosedItem.secondaryL10nId =
         "firefoxview-closed-tabs-dismiss-tab";
@@ -279,13 +279,8 @@ class RecentlyClosedTabsInView extends ViewPage {
     );
   }
 
-  willUpdate(changedProperties) {
+  willUpdate() {
     this.fullyUpdated = false;
-    if (changedProperties.has("searchQuery")) {
-      this.cumulativeSearches = this.searchQuery
-        ? this.cumulativeSearches + 1
-        : 0;
-    }
   }
 
   updated() {
@@ -355,14 +350,13 @@ class RecentlyClosedTabsInView extends ViewPage {
           ?hidden=${!this.selectedTab}
         >
           <h2
-            class="page-header heading-large"
+            class="page-header"
             data-l10n-id="firefoxview-recently-closed-header"
           ></h2>
           ${when(
             isSearchEnabled(),
             () => html`<div>
               <fxview-search-textbox
-                .query=${this.searchQuery}
                 data-l10n-id="firefoxview-search-text-box-recentlyclosed"
                 data-l10n-attrs="placeholder"
                 @fxview-search-textbox-query=${this.onSearchQuery}
@@ -404,6 +398,7 @@ class RecentlyClosedTabsInView extends ViewPage {
                   .tabItems=${this.searchResults || this.recentlyClosedTabs}
                   @fxview-tab-list-secondary-action=${this.onDismissTab}
                   @fxview-tab-list-primary-action=${this.onReopenTab}
+                  secondaryActionClass="dismiss-button"
                 ></fxview-tab-list>
               `
           )}
@@ -435,6 +430,9 @@ class RecentlyClosedTabsInView extends ViewPage {
   onSearchQuery(e) {
     this.searchQuery = e.detail.query;
     this.showAll = false;
+    this.cumulativeSearches = this.searchQuery
+      ? this.cumulativeSearches + 1
+      : 0;
     this.#updateSearchResults();
   }
 

@@ -1,12 +1,14 @@
 [DEFAULT]
 skip-if = [
   "os == 'linux' && ccov", # bug 1821945
-  "toolkit == 'android'", # bug 1730213
+  "os == 'android'", # bug 1730213
 ]
 firefox-appdir = "browser"
 head = "head.js"
 support-files = ["../fixtures/**"]
-prefs = ["extensions.formautofill.heuristics.visibilityCheckThreshold=0"]
+prefs = [
+  "extensions.formautofill.test.ignoreVisibilityCheck=true",
+]
 
 ["test_activeStatus.js"]
 
@@ -99,9 +101,6 @@ skip-if = ["tsan"] # Times out, bug 1612707
 
 ["test_nameUtils.js"]
 
-["test_onFormSubmitted.js"]
-skip-if = ["tsan"] # Times out, bug 1612707
-
 ["test_parseAddressFormat.js"]
 
 ["test_parseStreetAddress.js"]
@@ -137,6 +136,9 @@ skip-if = [
 ["test_sync.js"]
 head = "head.js ../../../../../services/sync/tests/unit/head_appinfo.js ../../../../../services/common/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_http_server.js"
 skip-if = ["tsan"] # Times out, bug 1612707
+
+["test_sync_deprecate_address_x_name_fields.js"]
+head = "head.js ../../../../../services/sync/tests/unit/head_appinfo.js ../../../../../services/common/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_http_server.js"
 
 ["test_sync_deprecate_credit_card_v4.js"]
 head = "head.js ../../../../../services/sync/tests/unit/head_appinfo.js ../../../../../services/common/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_helpers.js ../../../../../services/sync/tests/unit/head_http_server.js"

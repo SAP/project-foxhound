@@ -11,10 +11,7 @@ support-files = [
   "windowminmaxsize8.xhtml",
   "windowminmaxsize9.xhtml",
   "windowminmaxsize10.xhtml",
-  "titledpanelwindow.xhtml",
 ]
-
-["test_bug1197913.xhtml"]
 
 ["test_bug159346.xhtml"]
 
@@ -33,6 +30,8 @@ support-files = [
 ["test_bug987230.xhtml"]
 skip-if = ["os == 'linux'"] # No native mousedown event on Linux
 
+["test_bug1197913.xhtml"]
+
 ["test_menuitem_ctrl_click.xhtml"]
 
 ["test_popupReflowPos.xhtml"]
@@ -46,10 +45,8 @@ skip-if = ["os == 'linux'"] # No native mousedown event on Linux
 ["test_resizer_incontent.xhtml"]
 
 ["test_splitter.xhtml"]
-skip-if = ["toolkit == 'android'"] # no XUL theme
 
 ["test_splitter_sibling.xhtml"]
-skip-if = ["toolkit == 'android'"] # no XUL theme
 
 ["test_submenuClose.xhtml"]
 

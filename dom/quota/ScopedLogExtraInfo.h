@@ -12,6 +12,7 @@
 #include <map>
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Tainting.h"
 #include "mozilla/ThreadLocal.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
@@ -19,8 +20,12 @@
 namespace mozilla::dom::quota {
 
 struct MOZ_STACK_CLASS ScopedLogExtraInfo {
-  static constexpr const char kTagQuery[] = "query";
-  static constexpr const char kTagContext[] = "context";
+  static constexpr const char kTagQueryTainted[] = "query";
+  static constexpr const char kTagContextTainted[] = "context";
+  // Using the storage origin (instead of normal origin) on purpose to store
+  // the masked origin (uuid based) on the stack for origins partitioned for
+  // private browsing.
+  static constexpr const char kTagStorageOriginTainted[] = "storage-origin";
 
 #ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
  private:
@@ -41,18 +46,20 @@ struct MOZ_STACK_CLASS ScopedLogExtraInfo {
   ScopedLogExtraInfo(const ScopedLogExtraInfo&) = delete;
   ScopedLogExtraInfo& operator=(const ScopedLogExtraInfo&) = delete;
 
-  using ScopedLogExtraInfoMap = std::map<const char*, const nsACString*>;
+  using ScopedLogExtraInfoMap =
+      std::map<const char*, const Tainted<nsCString>*>;
   static ScopedLogExtraInfoMap GetExtraInfoMap();
 
   static void Initialize();
 
  private:
   const char* mTag;
-  const nsACString* mPreviousValue;
-  nsCString mCurrentValue;
+  const Tainted<nsCString>* mPreviousValue;
+  Tainted<nsCString> mCurrentValue;
 
-  static MOZ_THREAD_LOCAL(const nsACString*) sQueryValue;
-  static MOZ_THREAD_LOCAL(const nsACString*) sContextValue;
+  static MOZ_THREAD_LOCAL(const Tainted<nsCString>*) sQueryValueTainted;
+  static MOZ_THREAD_LOCAL(const Tainted<nsCString>*) sContextValueTainted;
+  static MOZ_THREAD_LOCAL(const Tainted<nsCString>*) sStorageOriginValueTainted;
 
   void AddInfo();
 #else

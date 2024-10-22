@@ -31,9 +31,7 @@ const {
 } = require("resource://devtools/server/actors/targets/base-target-actor.js");
 const { TargetActorRegistry } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
-  {
-    loadInDevToolsLoader: false,
-  }
+  { global: "shared" }
 );
 
 loader.lazyRequireGetter(
@@ -67,7 +65,7 @@ class ContentProcessTargetActor extends BaseTargetActor {
     this.makeDebugger = makeDebugger.bind(null, {
       findDebuggees: dbg =>
         dbg.findAllGlobals().map(g => g.unsafeDereference()),
-      shouldAddNewGlobalAsDebuggee: global => true,
+      shouldAddNewGlobalAsDebuggee: () => true,
     });
 
     const sandboxPrototype = {
@@ -149,7 +147,7 @@ class ContentProcessTargetActor extends BaseTargetActor {
     }
 
     if (!this.threadActor) {
-      this.threadActor = new ThreadActor(this, null);
+      this.threadActor = new ThreadActor(this);
       this.manage(this.threadActor);
     }
     if (!this.memoryActor) {
@@ -218,7 +216,7 @@ class ContentProcessTargetActor extends BaseTargetActor {
     this.ensureWorkerList().workerPauser.setPauseServiceWorkers(request.origin);
   }
 
-  destroy() {
+  destroy({ isModeSwitching } = {}) {
     // Avoid reentrancy. We will destroy the Transport when emitting "destroyed",
     // which will force destroying all actors.
     if (this.destroying) {
@@ -230,7 +228,7 @@ class ContentProcessTargetActor extends BaseTargetActor {
     // otherwise you might have leaks reported when running browser_browser_toolbox_netmonitor.js in debug builds
     Resources.unwatchAllResources(this);
 
-    this.emit("destroyed");
+    this.emit("destroyed", { isModeSwitching });
 
     super.destroy();
 

@@ -117,8 +117,8 @@ struct LinkData : LinkDataCacheablePod {
   };
   using InternalLinkVector = Vector<InternalLink, 0, SystemAllocPolicy>;
 
-  struct SymbolicLinkArray
-      : EnumeratedArray<SymbolicAddress, SymbolicAddress::Limit, Uint32Vector> {
+  struct SymbolicLinkArray : EnumeratedArray<SymbolicAddress, Uint32Vector,
+                                             size_t(SymbolicAddress::Limit)> {
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   };
 
@@ -362,6 +362,7 @@ struct MetadataCacheablePod {
   Maybe<uint32_t> startFuncIndex;
   Maybe<uint32_t> nameCustomSectionIndex;
   BuiltinModuleIds builtinModules;
+  FeatureUsage featureUsage;
   bool filenameIsURL;
   uint32_t typeDefsOffsetStart;
   uint32_t memoriesOffsetStart;
@@ -370,7 +371,7 @@ struct MetadataCacheablePod {
   uint32_t padding;
 
   WASM_CHECK_CACHEABLE_POD(kind, instanceDataLength, startFuncIndex,
-                           nameCustomSectionIndex, builtinModules,
+                           nameCustomSectionIndex, builtinModules, featureUsage,
                            filenameIsURL, typeDefsOffsetStart,
                            memoriesOffsetStart, tablesOffsetStart,
                            tagsOffsetStart)
@@ -378,6 +379,7 @@ struct MetadataCacheablePod {
   explicit MetadataCacheablePod(ModuleKind kind)
       : kind(kind),
         instanceDataLength(0),
+        featureUsage(FeatureUsage::None),
         filenameIsURL(false),
         typeDefsOffsetStart(UINT32_MAX),
         memoriesOffsetStart(UINT32_MAX),
@@ -855,6 +857,7 @@ class Code : public ShareableBase<Code> {
   bool containsCodePC(const void* pc) const;
   bool lookupTrap(void* pc, Trap* trap, BytecodeOffset* bytecode) const;
   const CodeRangeUnwindInfo* lookupUnwindInfo(void* pc) const;
+  bool lookupFunctionTier(const CodeRange* codeRange, Tier* tier) const;
 
   // To save memory, profilingLabels_ are generated lazily when profiling mode
   // is enabled.

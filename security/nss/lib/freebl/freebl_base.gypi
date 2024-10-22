@@ -36,7 +36,9 @@
     'ecl/ecp_mont.c',
     'ecl/ecp_secp256r1.c',
     'ecl/ecp_secp384r1.c',
+    'ecl/ecp_secp384r1_wrap.c',
     'ecl/ecp_secp521r1.c',
+    'ecl/ecp_secp521r1_wrap.c',
     'verified/Hacl_P256.c',
     'verified/Hacl_P384.c',
     'verified/Hacl_P521.c',
@@ -71,6 +73,8 @@
     'verified/Hacl_Hash_SHA3.c',
     'sha3.c',
     'shake.c',
+    'verified/Hacl_Curve25519_51.c',
+    'verified/Hacl_Ed25519.c',
   ],
   'defines': [
     # For kyber-pqcrystals-ref.c. If we ever decide to support Kyber512 or

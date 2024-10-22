@@ -13,6 +13,7 @@
 #include "mozilla/gfx/DrawTargetWebgl.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/BufferTexture.h"
@@ -66,7 +67,8 @@ UniquePtr<TextureData> CanvasTranslator::CreateTextureData(
 CanvasTranslator::CanvasTranslator(
     layers::SharedSurfacesHolder* aSharedSurfacesHolder,
     const dom::ContentParentId& aContentId, uint32_t aManagerId)
-    : mSharedSurfacesHolder(aSharedSurfacesHolder),
+    : mTranslationTaskQueue(gfx::CanvasRenderThread::CreateWorkerTaskQueue()),
+      mSharedSurfacesHolder(aSharedSurfacesHolder),
       mMaxSpinCount(StaticPrefs::gfx_canvas_remote_max_spin_count()),
       mContentId(aContentId),
       mManagerId(aManagerId) {
@@ -130,15 +132,17 @@ bool CanvasTranslator::EnsureSharedContextWebgl() {
 }
 
 mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
-    TextureType aTextureType, gfx::BackendType aBackendType,
-    Handle&& aReadHandle, nsTArray<Handle>&& aBufferHandles,
-    uint64_t aBufferSize, CrossProcessSemaphoreHandle&& aReaderSem,
-    CrossProcessSemaphoreHandle&& aWriterSem, bool aUseIPDLThread) {
+    TextureType aTextureType, TextureType aWebglTextureType,
+    gfx::BackendType aBackendType, Handle&& aReadHandle,
+    nsTArray<Handle>&& aBufferHandles, uint64_t aBufferSize,
+    CrossProcessSemaphoreHandle&& aReaderSem,
+    CrossProcessSemaphoreHandle&& aWriterSem) {
   if (mHeaderShmem) {
     return IPC_FAIL(this, "RecvInitTranslator called twice.");
   }
 
   mTextureType = aTextureType;
+  mWebglTextureType = aWebglTextureType;
   mBackendType = aBackendType;
   mOtherPid = OtherPid();
 
@@ -165,10 +169,6 @@ mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
   if (gfx::gfxVars::UseAcceleratedCanvas2D() && !EnsureSharedContextWebgl()) {
     gfxCriticalNote
         << "GFX: CanvasTranslator failed creating WebGL shared context";
-  }
-
-  if (!aUseIPDLThread) {
-    mTranslationTaskQueue = gfx::CanvasRenderThread::CreateWorkerTaskQueue();
   }
 
   // Use the first buffer as our current buffer.
@@ -365,19 +365,19 @@ void CanvasTranslator::NextBuffer() {
 void CanvasTranslator::ActorDestroy(ActorDestroyReason why) {
   MOZ_ASSERT(gfx::CanvasRenderThread::IsInCanvasRenderThread());
 
-  if (!mTranslationTaskQueue) {
-    gfx::CanvasRenderThread::Dispatch(
-        NewRunnableMethod("CanvasTranslator::FinishShutdown", this,
-                          &CanvasTranslator::FinishShutdown));
+  // Since we might need to access the actor status off the owning IPDL thread,
+  // we need to cache it here.
+  mIPDLClosed = true;
+
+  DispatchToTaskQueue(NewRunnableMethod("CanvasTranslator::ClearTextureInfo",
+                                        this,
+                                        &CanvasTranslator::ClearTextureInfo));
+
+  if (mTranslationTaskQueue) {
+    gfx::CanvasRenderThread::ShutdownWorkerTaskQueue(mTranslationTaskQueue);
     return;
   }
-
-  mTranslationTaskQueue->BeginShutdown();
-  mTranslationTaskQueue->AwaitShutdownAndIdle();
-  FinishShutdown();
 }
-
-void CanvasTranslator::FinishShutdown() { ClearTextureInfo(); }
 
 bool CanvasTranslator::CheckDeactivated() {
   if (mDeactivated) {
@@ -485,7 +485,7 @@ void CanvasTranslator::CheckAndSignalWriter() {
         // The writer is making a decision about whether to wait. So, we must
         // wait until it has decided to avoid races. Check if the writer is
         // closed to avoid hangs.
-        if (!CanSend()) {
+        if (mIPDLClosed) {
           return;
         }
         continue;
@@ -580,7 +580,7 @@ void CanvasTranslator::TranslateRecording() {
         [&](RecordedEvent* recordedEvent) -> bool {
           // Make sure that the whole event was read from the stream.
           if (!mCurrentMemReader.good()) {
-            if (!CanSend()) {
+            if (mIPDLClosed) {
               // The other side has closed only warn about read failure.
               gfxWarning() << "Failed to read event type: "
                            << recordedEvent->GetType();
@@ -619,7 +619,7 @@ void CanvasTranslator::TranslateRecording() {
   case _typeenum: {                                                    \
     auto e = _class(mCurrentMemReader);                                \
     if (!mCurrentMemReader.good()) {                                   \
-      if (!CanSend()) {                                                \
+      if (mIPDLClosed) {                                               \
         /* The other side has closed only warn about read failure. */  \
         gfxWarning() << "Failed to read event type: " << _typeenum;    \
       } else {                                                         \
@@ -640,7 +640,11 @@ bool CanvasTranslator::HandleExtensionEvent(int32_t aType) {
   }
 }
 
-void CanvasTranslator::BeginTransaction() { mIsInTransaction = true; }
+void CanvasTranslator::BeginTransaction() {
+  PROFILER_MARKER_TEXT("CanvasTranslator", GRAPHICS, {},
+                       "CanvasTranslator::BeginTransaction"_ns);
+  mIsInTransaction = true;
+}
 
 void CanvasTranslator::Flush() {
 #if defined(XP_WIN)
@@ -731,9 +735,15 @@ bool CanvasTranslator::CheckForFreshCanvasDevice(int aLineNumber) {
     NotifyDeviceChanged();
   }
 
-  RefPtr<Runnable> runnable = NS_NewRunnableFunction(
-      "CanvasTranslator NotifyDeviceReset",
-      []() { gfx::GPUParent::GetSingleton()->NotifyDeviceReset(); });
+  RefPtr<Runnable> runnable =
+      NS_NewRunnableFunction("CanvasTranslator NotifyDeviceReset", []() {
+        if (XRE_IsGPUProcess()) {
+          gfx::GPUParent::GetSingleton()->NotifyDeviceReset();
+        } else {
+          gfx::GPUProcessManager::Get()->OnInProcessDeviceReset(
+              /* aTrackThreshold */ false);
+        }
+      });
 
   // It is safe to wait here because only the Compositor thread waits on us and
   // the main thread doesn't wait on the compositor thread in the GPU process.
@@ -962,9 +972,9 @@ void CanvasTranslator::RemoveTexture(int64_t aTextureId,
     return;
   }
   auto& info = result->second;
-  if (aTxnType && aTxnId) {
-    RemoteTextureMap::Get()->WaitForTxn(info.mRemoteTextureOwnerId, mOtherPid,
-                                        aTxnType, aTxnId);
+  if (mRemoteTextureOwner && aTxnType && aTxnId) {
+    mRemoteTextureOwner->WaitForTxn(info.mRemoteTextureOwnerId, aTxnType,
+                                    aTxnId);
   }
   if (--info.mLocked > 0) {
     return;
@@ -1028,6 +1038,8 @@ bool CanvasTranslator::UnlockTexture(int64_t aTextureId) {
 }
 
 bool CanvasTranslator::PresentTexture(int64_t aTextureId, RemoteTextureId aId) {
+  AUTO_PROFILER_MARKER_TEXT("CanvasTranslator", GRAPHICS, {},
+                            "CanvasTranslator::PresentTexture"_ns);
   auto result = mTextureInfo.find(aTextureId);
   if (result == mTextureInfo.end()) {
     return false;
@@ -1036,7 +1048,8 @@ bool CanvasTranslator::PresentTexture(int64_t aTextureId, RemoteTextureId aId) {
   RemoteTextureOwnerId ownerId = info.mRemoteTextureOwnerId;
   if (gfx::DrawTargetWebgl* webgl = info.GetDrawTargetWebgl()) {
     EnsureRemoteTextureOwner(ownerId);
-    if (webgl->CopyToSwapChain(aId, ownerId, mRemoteTextureOwner)) {
+    if (webgl->CopyToSwapChain(mWebglTextureType, aId, ownerId,
+                               mRemoteTextureOwner)) {
       return true;
     }
     if (mSharedContext && mSharedContext->IsContextLost()) {
@@ -1138,6 +1151,10 @@ void CanvasTranslator::ClearTextureInfo() {
   if (mRemoteTextureOwner) {
     mRemoteTextureOwner->UnregisterAllTextureOwners();
     mRemoteTextureOwner = nullptr;
+  }
+  if (mTranslationTaskQueue) {
+    gfx::CanvasRenderThread::FinishShutdownWorkerTaskQueue(
+        mTranslationTaskQueue);
   }
 }
 

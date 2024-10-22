@@ -24,6 +24,7 @@ job-defaults:
                     PATH: "/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin"
             default:
                 max-run-time: 3600
+    use-system-python: false
     treeherder:
         kind: test
         tier: 1
@@ -379,11 +380,11 @@ mozbuild:
         toolchain:
             by-platform:
                 linux1804-64/opt:
-                    - linux64-node-12
+                    - linux64-node
                 macosx1015-64/opt:
-                    - macosx64-node-12
+                    - macosx64-node
                 windows11-64/opt:
-                    - win64-node-12
+                    - win64-node
                     - win64-mozmake
     when:
         files-changed:
@@ -452,21 +453,21 @@ fxms-schemas:
         using: run-task
         cwd: '{checkout}'
         command: >
-            cd browser/components/newtab/content-src/asrouter/schemas &&
+            cd browser/components/asrouter/content-src/schemas &&
             env LD_LIBRARY_PATH=${MOZ_FETCHES_DIR}/firefox \
                 ${MOZ_FETCHES_DIR}/bin/xpcshell \
                     -g ${MOZ_FETCHES_DIR}/firefox \
                     -a ${MOZ_FETCHES_DIR}/firefox/browser \
                     extract-test-corpus.js
-            ../../../../../../mach python -- make-schemas.py --check
+            ../../../../../mach python -- make-schemas.py --check
     when:
         files-changed:
-            - 'browser/components/newtab/content-src/asrouter/schemas/extract-test-corpus.js'
-            - 'browser/components/newtab/content-src/asrouter/schemas/make-schemas.py'
-            - 'browser/components/newtab/content-src/**/*.schema.json'
-            - 'browser/components/newtab/lib/CFRMessageProvider.sys.mjs'
-            - 'browser/components/newtab/lib/OnboardingMessageProvider.jsm'
-            - 'browser/components/newtab/lib/PanelTestProvider.sys.mjs'
+            - 'browser/components/asrouter/content-src/schemas/extract-test-corpus.js'
+            - 'browser/components/asrouter/content-src/schemas/make-schemas.py'
+            - 'browser/components/asrouter/content-src/**/*.schema.json'
+            - 'browser/components/asrouter/modules/CFRMessageProvider.sys.mjs'
+            - 'browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs'
+            - 'browser/components/asrouter/modules/PanelTestProvider.sys.mjs'
 
 condprof:
     description: testing/condprofile unit tests

@@ -20,7 +20,6 @@
 #include "gc/GCEnum.h"
 #include "gc/Memory.h"
 #include "irregexp/RegExpTypes.h"
-#include "jit/PcScriptCache.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/Exception.h"
 #include "js/GCVector.h"
@@ -563,9 +562,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
   js::ContextData<uint32_t> debuggerMutations;
 
-  // Cache for jit::GetPcScript().
-  js::ContextData<js::UniquePtr<js::jit::PcScriptCache>> ionPcScriptCache;
-
  private:
   // Indicates if an exception is pending and the reason for it.
   js::ContextData<JS::ExceptionStatus> status;
@@ -693,9 +689,9 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    * overridden by passing AllowCrossRealm::Allow.
    */
   enum class AllowCrossRealm { DontAllow = false, Allow = true };
-  inline JSScript* currentScript(
-      jsbytecode** pc = nullptr,
-      AllowCrossRealm allowCrossRealm = AllowCrossRealm::DontAllow) const;
+  JSScript* currentScript(
+      jsbytecode** ppc = nullptr,
+      AllowCrossRealm allowCrossRealm = AllowCrossRealm::DontAllow);
 
   inline void minorGC(JS::GCReason reason);
 
@@ -704,8 +700,23 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return JS::IsCatchableExceptionStatus(status);
   }
 
+  /**
+   * Return the pending exception and wrap it into the current compartment.
+   */
   [[nodiscard]] bool getPendingException(JS::MutableHandleValue rval);
 
+  /**
+   * Return the pending exception stack and wrap it into the current
+   * compartment. Return |JS::NullValue| when the pending exception has no stack
+   * attached.
+   */
+  [[nodiscard]] bool getPendingExceptionStack(JS::MutableHandleValue rval);
+
+  /**
+   * Return the pending exception stack, but does not wrap it into the current
+   * compartment. Return |nullptr| when the pending exception has no stack
+   * attached.
+   */
   js::SavedFrame* getPendingExceptionStack();
 
   bool isThrowingDebuggeeWouldRun();

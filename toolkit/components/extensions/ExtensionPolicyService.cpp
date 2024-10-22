@@ -84,9 +84,9 @@ mozIExtensionProcessScript& ExtensionPolicyService::ProcessScript() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (MOZ_UNLIKELY(!sProcessScript)) {
-    sProcessScript =
-        do_ImportModule("resource://gre/modules/ExtensionProcessScript.jsm",
-                        "ExtensionProcessScript");
+    sProcessScript = do_ImportESModule(
+        "resource://gre/modules/ExtensionProcessScript.sys.mjs",
+        "ExtensionProcessScript");
     ClearOnShutdown(&sProcessScript);
   }
   return *sProcessScript;
@@ -406,10 +406,9 @@ nsresult ExtensionPolicyService::InjectContentScripts(
     DocInfo docInfo(win);
 
     using RunAt = dom::ContentScriptRunAt;
-    namespace RunAtValues = dom::ContentScriptRunAtValues;
     using Scripts = AutoTArray<RefPtr<WebExtensionContentScript>, 8>;
 
-    Scripts scripts[RunAtValues::Count];
+    Scripts scripts[ContiguousEnumSize<RunAt>::value];
 
     auto GetScripts = [&](RunAt aRunAt) -> Scripts&& {
       static_assert(sizeof(aRunAt) == 1, "Our cast is wrong");

@@ -5,6 +5,7 @@
 # and do not need to be listed here. Their external dependencies are vendored
 # into `third_party/rust` by `mach vendor rust`.
 members = [
+  "browser/app/nmhproxy/",
   "js/src/frontend/smoosh",
   "js/src/rust",
   "netwerk/test/http3server",
@@ -103,6 +104,13 @@ mozilla-central-workspace-hack = { path = "build/workspace-hack" }
 # windows-targets replacement. It avoids the large dependencies of the original
 # crate, which we don't really need as we require MSVC anyways.
 windows-targets = { path = "build/rust/windows-targets" }
+windows-targets_0_48 = { package = "windows-targets", path = "build/rust/windows-targets-0.48" }
+
+# Patch windows-sys from 0.48.0 to 0.52.0
+windows-sys = { path = "build/rust/windows-sys" }
+
+# Patch windows to use a non-vendored local copy of the crate.
+windows = { path = "build/rust/windows" }
 
 # Dummy oslog replacement. It's only used by glean in code that is not actually used.
 oslog = { path = "build/rust/oslog" }
@@ -113,14 +121,12 @@ terminal_size = { path = "build/rust/terminal_size" }
 # Patch bitflags 1.0 to 2.0
 bitflags = { path = "build/rust/bitflags" }
 
-# Patch memmap2 0.5.x to 0.8.0
+# Patch memmap2 0.5.x and 0.8 to 0.9
+memmap2_0_5 = { package = "memmap2", path = "build/rust/memmap2-0.5" }
 memmap2 = { path = "build/rust/memmap2" }
 
 # Patch cfg-if 0.1 to 1.0
 cfg-if = { path = "build/rust/cfg-if" }
-
-# Patch serde_with 1.0 to 3.0
-serde_with = { path = "build/rust/serde_with" }
 
 # Patch redox_users to an empty crate
 redox_users = { path = "build/rust/redox_users" }
@@ -142,9 +148,8 @@ wasi = { path = "build/rust/wasi" }
 # else we do use requires backtrace, so dummy it out for now.
 backtrace = { path = "build/rust/backtrace" }
 
-# Patch bindgen 0.63 and 0.64 to 0.69
+# Patch bindgen 0.63 to 0.69
 bindgen_0_63 = { package = "bindgen", path = "build/rust/bindgen-0.63" }
-bindgen_0_64 = { package = "bindgen", path = "build/rust/bindgen-0.64" }
 
 # Patch nix 0.26 to 0.27
 nix = { path = "build/rust/nix" }
@@ -184,6 +189,7 @@ rure = { path = "third_party/rust/rure" }
 # To-be-published changes.
 cssparser = { git = "https://github.com/servo/rust-cssparser", rev = "aaa966d9d6ae70c4b8a62bb5e3a14c068bb7dff0" }
 cssparser-macros = { git = "https://github.com/servo/rust-cssparser", rev = "aaa966d9d6ae70c4b8a62bb5e3a14c068bb7dff0" }
+unicode-bidi = { git = "https://github.com/servo/unicode-bidi", rev = "ca612daf1c08c53abe07327cb3e6ef6e0a760f0c" }
 
 # Other overrides
 chardetng = { git = "https://github.com/hsivonen/chardetng", rev = "3484d3e3ebdc8931493aa5df4d7ee9360a90e76b" }
@@ -202,13 +208,16 @@ warp = { git = "https://github.com/seanmonstar/warp", rev = "9d081461ae1167eb321
 malloc_size_of_derive = { path = "xpcom/rust/malloc_size_of_derive" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-suggest = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+suggest = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+tabs = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "5fc8ee2f0f6950e36d4096983757bd046d55df9f" }
+
+# Patch mio 0.8.8 to use windows-sys 0.52 (backport https://github.com/tokio-rs/mio/commit/eea9e3e0c469480e5c59c01e6c3c7e5fd88f0848)
+mio_0_8 = { package = "mio", git = "https://github.com/glandium/mio", rev = "9a2ef335c366044ffe73b1c4acabe50a1daefe05" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.

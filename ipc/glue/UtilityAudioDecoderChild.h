@@ -58,32 +58,7 @@ class UtilityAudioDecoderChild final : public PUtilityAudioDecoderChild
 
   UtilityActorName GetActorName() { return GetAudioActorName(mSandbox); }
 
-  nsresult BindToUtilityProcess(RefPtr<UtilityProcessParent> aUtilityParent) {
-    Endpoint<PUtilityAudioDecoderChild> utilityAudioDecoderChildEnd;
-    Endpoint<PUtilityAudioDecoderParent> utilityAudioDecoderParentEnd;
-    nsresult rv = PUtilityAudioDecoder::CreateEndpoints(
-        aUtilityParent->OtherPid(), base::GetCurrentProcId(),
-        &utilityAudioDecoderParentEnd, &utilityAudioDecoderChildEnd);
-
-    if (NS_FAILED(rv)) {
-      MOZ_ASSERT(false, "Protocol endpoints failure");
-      return NS_ERROR_FAILURE;
-    }
-
-    if (!aUtilityParent->SendStartUtilityAudioDecoderService(
-            std::move(utilityAudioDecoderParentEnd))) {
-      MOZ_ASSERT(false, "StartUtilityAudioDecoder service failure");
-      return NS_ERROR_FAILURE;
-    }
-
-    Bind(std::move(utilityAudioDecoderChildEnd));
-
-    PROFILER_MARKER_UNTYPED(
-        "UtilityAudioDecoderChild::BindToUtilityProcess", IPC,
-        MarkerOptions(
-            MarkerTiming::IntervalUntilNowFrom(mAudioDecoderChildStart)));
-    return NS_OK;
-  }
+  nsresult BindToUtilityProcess(RefPtr<UtilityProcessParent> aUtilityParent);
 
   void ActorDestroy(ActorDestroyReason aReason) override;
 
@@ -95,8 +70,6 @@ class UtilityAudioDecoderChild final : public PUtilityAudioDecoderChild
 
 #ifdef MOZ_WMF_MEDIA_ENGINE
   mozilla::ipc::IPCResult RecvCompleteCreatedVideoBridge();
-
-  bool HasCreatedVideoBridge() const;
 
   void OnVarChanged(const gfx::GfxVarUpdate& aVar) override;
 
@@ -120,7 +93,8 @@ class UtilityAudioDecoderChild final : public PUtilityAudioDecoderChild
 #ifdef MOZ_WMF_MEDIA_ENGINE
   // True if the utility process has created a video bridge with the GPU prcess.
   // Currently only used for media egine cdm. Main thread only.
-  bool mHasCreatedVideoBridge = false;
+  enum class State { None, Creating, Created };
+  State mHasCreatedVideoBridge = State::None;
 #endif
 
   TimeStamp mAudioDecoderChildStart;

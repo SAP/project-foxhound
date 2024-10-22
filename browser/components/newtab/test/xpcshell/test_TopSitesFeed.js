@@ -3,29 +3,22 @@
 
 "use strict";
 
-const { TopSitesFeed, DEFAULT_TOP_SITES } = ChromeUtils.import(
-  "resource://activity-stream/lib/TopSitesFeed.jsm"
+const { TopSitesFeed, DEFAULT_TOP_SITES } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/TopSitesFeed.sys.mjs"
 );
 
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
   "resource://activity-stream/common/Actions.sys.mjs"
 );
 
-const { Screenshots } = ChromeUtils.import(
-  "resource://activity-stream/lib/Screenshots.jsm"
-);
-const { shortURL } = ChromeUtils.import(
-  "resource://activity-stream/lib/ShortURL.jsm"
-);
-const { FilterAdult } = ChromeUtils.import(
-  "resource://activity-stream/lib/FilterAdult.jsm"
-);
-
 ChromeUtils.defineESModuleGetters(this, {
+  FilterAdult: "resource://activity-stream/lib/FilterAdult.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
+  shortURL: "resource://activity-stream/lib/ShortURL.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
+  Screenshots: "resource://activity-stream/lib/Screenshots.sys.mjs",
   Sampling: "resource://gre/modules/components-utils/Sampling.sys.mjs",
   SearchService: "resource://gre/modules/SearchService.sys.mjs",
   TOP_SITES_DEFAULT_ROWS: "resource://activity-stream/common/Reducers.sys.mjs",

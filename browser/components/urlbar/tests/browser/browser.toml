@@ -14,16 +14,14 @@ prefs = [
 
 ["browser_UrlbarInput_formatValue.js"]
 
-["browser_UrlbarInput_formatValue_strikeout.js"]
-support-files = [
-  "mixed_active.html",
-]
-
 ["browser_UrlbarInput_formatValue_detachedTab.js"]
 skip-if = [
   "apple_catalina", # Bug 1756585
   "os == 'win'", # Bug 1756585
 ]
+
+["browser_UrlbarInput_formatValue_strikeout.js"]
+support-files = ["mixed_active.html"]
 
 ["browser_UrlbarInput_hiddenFocus.js"]
 
@@ -73,7 +71,6 @@ skip-if = [
 ]
 
 ["browser_acknowledgeFeedbackAndDismissal.js"]
-fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_action_searchengine.js"]
 skip-if = [
@@ -171,11 +168,12 @@ support-files = [
 ["browser_clipboard.js"]
 
 ["browser_closePanelOnClick.js"]
-fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and/or labeled
 
 ["browser_content_opener.js"]
 
 ["browser_contextualsearch.js"]
+
+["browser_copy_and_paste_first_result.js"]
 
 ["browser_copy_during_load.js"]
 support-files = ["slow-page.sjs"]
@@ -299,6 +297,8 @@ fail-if = ["a11y_checks"] # Bug 1854660 clicked element may not be focusable and
 
 ["browser_new_tab_urlbar_reset.js"]
 
+["browser_observers_for_strip_on_share.js"]
+
 ["browser_oneOffs.js"]
 support-files = [
   "searchSuggestionEngine.xml",
@@ -314,7 +314,6 @@ support-files = [
 ["browser_oneOffs_heuristicRestyle.js"]
 skip-if = [
   "os == 'linux' && bits == 64 && !debug", # Bug 1775811
-  "a11y_checks", # Bugs 1858041 and 1854661 to investigate intermittent a11y_checks results
 ]
 
 ["browser_oneOffs_keyModifiers.js"]
@@ -398,6 +397,9 @@ https_first_disabled = true
 ["browser_retainedResultsOnFocus.js"]
 
 ["browser_revert.js"]
+
+["browser_search_continuation.js"]
+support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
 
 ["browser_searchFunction.js"]
 
@@ -593,6 +595,8 @@ https_first_disabled = true
 ["browser_top_sites_private.js"]
 https_first_disabled = true
 
+["browser_top_sites_switchtab.js"]
+
 ["browser_typed_value.js"]
 
 ["browser_unitConversion.js"]
@@ -687,5 +691,3 @@ skip-if = [
 https_first_disabled = true
 
 ["browser_whereToOpen.js"]
-
-["browser_observers_for_strip_on_share.js"]

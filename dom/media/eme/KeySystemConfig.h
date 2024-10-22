@@ -36,6 +36,7 @@ struct KeySystemConfig {
   static constexpr auto EME_CODEC_VORBIS = "vorbis"_ns;
   static constexpr auto EME_CODEC_FLAC = "flac"_ns;
   static constexpr auto EME_CODEC_H264 = "h264"_ns;
+  static constexpr auto EME_CODEC_AV1 = "av1"_ns;
   static constexpr auto EME_CODEC_VP8 = "vp8"_ns;
   static constexpr auto EME_CODEC_VP9 = "vp9"_ns;
   static constexpr auto EME_CODEC_HEVC = "hevc"_ns;
@@ -123,7 +124,13 @@ struct KeySystemConfig {
 
   // Return true if given key system is supported on the current device.
   static bool Supports(const nsAString& aKeySystem);
+
+  enum class DecryptionInfo : uint8_t {
+    Software,
+    Hardware,
+  };
   static bool CreateKeySystemConfigs(const nsAString& aKeySystem,
+                                     const DecryptionInfo aDecryption,
                                      nsTArray<KeySystemConfig>& aOutConfigs);
   static void GetGMPKeySystemConfigs(dom::Promise* aPromise);
 
@@ -176,6 +183,7 @@ struct KeySystemConfig {
   nsTArray<nsString> mEncryptionSchemes;
   ContainerSupport mMP4;
   ContainerSupport mWebM;
+  bool mIsHDCP22Compatible = false;
 };
 
 KeySystemConfig::SessionType ConvertToKeySystemConfigSessionType(

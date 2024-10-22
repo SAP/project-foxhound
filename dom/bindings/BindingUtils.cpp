@@ -3831,7 +3831,6 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     } else if (definition->mLocalName == nsGkAtoms::resizer) {
       cb = XULResizerElement_Binding::GetConstructorObject;
     } else if (definition->mLocalName == nsGkAtoms::menupopup ||
-               definition->mLocalName == nsGkAtoms::popup ||
                definition->mLocalName == nsGkAtoms::panel ||
                definition->mLocalName == nsGkAtoms::tooltip) {
       cb = XULPopupElement_Binding::GetConstructorObject;

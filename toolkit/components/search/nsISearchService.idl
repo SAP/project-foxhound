@@ -99,7 +99,7 @@ interface nsISearchEngine : nsISupports
    *   Width of the requested icon. If not specified, it is assumed that
    *   16x16 is desired.
    */
-  jsval getIconURL([optional] in unsigned short preferredWidth);
+  Promise getIconURL([optional] in unsigned short preferredWidth);
 
   /**
    * Opens a speculative connection to the engine's search URI
@@ -116,8 +116,8 @@ interface nsISearchEngine : nsISupports
   void speculativeConnect(in jsval options);
 
   /**
-   * An optional shortcut alias for the engine.
-   * When not an empty string, this is a unique identifier.
+   * A user defined alias for the engine.
+   * When not an empty string, this should be a unique identifier.
    */
   attribute AString alias;
 
@@ -255,6 +255,7 @@ interface nsISearchService : nsISupports
   const unsigned short CHANGE_REASON_EXPERIMENT = 0xA;
   const unsigned short CHANGE_REASON_ENTERPRISE = 0xB;
   const unsigned short CHANGE_REASON_UITOUR = 0xC;
+  const unsigned short CHANGE_REASON_ENGINE_UPDATE = 0xD;
 
   /**
    * Start asynchronous initialization.

@@ -1024,7 +1024,7 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
   if (rv != SECSuccess) {
     return;
   }
-  // keyExchange null=0, rsa=1, dh=2, fortezza=3, ecdh=4, ecdh_hybrid=5
+  // keyExchange null=0, rsa=1, dh=2, fortezza=3, ecdh=4, ecdh_hybrid=8
   Telemetry::Accumulate(infoObject->IsFullHandshake()
                             ? Telemetry::SSL_KEY_EXCHANGE_ALGORITHM_FULL
                             : Telemetry::SSL_KEY_EXCHANGE_ALGORITHM_RESUMED,
@@ -1136,4 +1136,17 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
 
   infoObject->NoteTimeUntilReady();
   infoObject->SetHandshakeCompleted();
+}
+
+void SecretCallback(PRFileDesc* fd, PRUint16 epoch, SSLSecretDirection dir,
+                    PK11SymKey* secret, void* arg) {
+  // arg must be set to an NSSSocketControl* in SSL_SecretCallback
+  MOZ_ASSERT(arg);
+  NSSSocketControl* infoObject = (NSSSocketControl*)arg;
+  if (epoch == 2 && dir == ssl_secret_read) {
+    // |secret| is the server_handshake_traffic_secret. Set a flag to indicate
+    // that the Server Hello has been processed successfully. We use this when
+    // deciding whether to retry a connection in which a Xyber share was sent.
+    infoObject->SetHasTls13HandshakeSecrets();
+  }
 }

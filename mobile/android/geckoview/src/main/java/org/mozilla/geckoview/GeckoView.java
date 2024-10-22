@@ -32,6 +32,7 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.util.TypedValue;
 import android.view.DisplayCutout;
+import android.view.DragEvent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -766,12 +767,18 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
     if (super.onKeyUp(keyCode, event)) {
       return true;
     }
+    if (AndroidGamepadManager.handleKeyEvent(event)) {
+      return true;
+    }
     return mSession != null && mSession.getTextInput().onKeyUp(keyCode, event);
   }
 
   @Override
   public boolean onKeyDown(final int keyCode, final KeyEvent event) {
     if (super.onKeyDown(keyCode, event)) {
+      return true;
+    }
+    if (AndroidGamepadManager.handleKeyEvent(event)) {
       return true;
     }
     return mSession != null && mSession.getTextInput().onKeyDown(keyCode, event);
@@ -1232,5 +1239,14 @@ public class GeckoView extends FrameLayout implements GeckoDisplay.NewSurfacePro
             mSurfaceWrapper.getView().setVisibility(View.VISIBLE);
           }
         });
+  }
+
+  /** Handle drag and drop event */
+  @Override
+  public boolean onDragEvent(final DragEvent event) {
+    if (mSession == null) {
+      return false;
+    }
+    return mSession.getPanZoomController().onDragEvent(event);
   }
 }

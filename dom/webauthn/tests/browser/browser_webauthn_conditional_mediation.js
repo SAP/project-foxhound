@@ -74,7 +74,7 @@ add_task(async function test_webauthn_resume_conditional_get() {
     browsingContextId,
     TEST_URL
   );
-  ok(transactionId == 0, "should not have a pending conditional get");
+  Assert.equal(transactionId, 0, "should not have a pending conditional get");
 
   let requestStarted = TestUtils.topicObserved(gPendingConditionalGetSubject);
 
@@ -87,8 +87,9 @@ add_task(async function test_webauthn_resume_conditional_get() {
   await requestStarted;
 
   transactionId = gWebAuthnService.hasPendingConditionalGet(0, TEST_URL);
-  ok(
-    transactionId == 0,
+  Assert.equal(
+    transactionId,
+    0,
     "hasPendingConditionalGet should check the browsing context id"
   );
 
@@ -96,13 +97,17 @@ add_task(async function test_webauthn_resume_conditional_get() {
     browsingContextId,
     "https://example.org"
   );
-  ok(transactionId == 0, "hasPendingConditionalGet should check the origin");
+  Assert.equal(
+    transactionId,
+    0,
+    "hasPendingConditionalGet should check the origin"
+  );
 
   transactionId = gWebAuthnService.hasPendingConditionalGet(
     browsingContextId,
     TEST_URL
   );
-  ok(transactionId != 0, "should have a pending conditional get");
+  Assert.notEqual(transactionId, 0, "should have a pending conditional get");
 
   ok(active, "request should still be active");
 
@@ -130,7 +135,7 @@ add_task(async function test_webauthn_select_autofill_entry() {
     browsingContextId,
     TEST_URL
   );
-  ok(transactionId == 0, "should not have a pending conditional get");
+  Assert.equal(transactionId, 0, "should not have a pending conditional get");
 
   let requestStarted = TestUtils.topicObserved(gPendingConditionalGetSubject);
 
@@ -145,7 +150,7 @@ add_task(async function test_webauthn_select_autofill_entry() {
     browsingContextId,
     TEST_URL
   );
-  ok(transactionId != 0, "should have a pending conditional get");
+  Assert.notEqual(transactionId, 0, "should have a pending conditional get");
 
   let autoFillEntries = gWebAuthnService.getAutoFillEntries(transactionId);
   ok(

@@ -13,6 +13,8 @@ policy-3rdparty = Set policies that WebExtensions can access via chrome.storage.
 
 policy-AllowedDomainsForApps = Define domains allowed to access Google Workspace.
 
+policy-AllowFileSelectionDialogs = Allow file selection dialogs.
+
 policy-AppAutoUpdate = Enable or disable automatic application update.
 
 policy-AppUpdatePin = Prevent { -brand-short-name } from being updated beyond the specified version.
@@ -20,6 +22,10 @@ policy-AppUpdatePin = Prevent { -brand-short-name } from being updated beyond th
 policy-AppUpdateURL = Set custom app update URL.
 
 policy-Authentication = Configure integrated authentication for websites that support it.
+
+policy-AutofillAddressEnabled = Enable autofill for addresses.
+
+policy-AutofillCreditCardEnabled = Enable autofill for payment methods.
 
 policy-AutoLaunchProtocolsFromOrigins = Define a list of external protocols that can be used from listed origins without prompting the user.
 
@@ -38,6 +44,8 @@ policy-Bookmarks = Create bookmarks in the Bookmarks toolbar, Bookmarks menu, or
 policy-CaptivePortal = Enable or disable captive portal support.
 
 policy-CertificatesDescription = Add certificates or use built-in certificates.
+
+policy-ContentAnalysis = Enable or disable connection to data-loss-prevention agent.
 
 policy-Cookies = Allow or deny websites to set cookies.
 

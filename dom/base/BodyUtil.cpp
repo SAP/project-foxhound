@@ -267,7 +267,7 @@ class MOZ_STACK_CLASS FormDataParser {
     }
 
     // Determine boundary from mimetype.
-    UniquePtr<CMimeType> parsed = CMimeType::Parse(mMixedCaseMimeType);
+    RefPtr<CMimeType> parsed = CMimeType::Parse(mMixedCaseMimeType);
     if (!parsed) {
       return false;
     }
@@ -422,7 +422,7 @@ already_AddRefed<FormData> BodyUtil::ConsumeFormData(
   if (isValidUrlEncodedMimeType) {
     RefPtr<FormData> fd = new FormData(aParent);
     DebugOnly<bool> status = URLParams::Parse(
-        aStr, [&fd](const nsAString& aName, const nsAString& aValue) {
+        aStr, true, [&fd](const nsAString& aName, const nsAString& aValue) {
           ErrorResult rv;
           fd->Append(aName, aValue, rv);
           MOZ_ASSERT(!rv.Failed());

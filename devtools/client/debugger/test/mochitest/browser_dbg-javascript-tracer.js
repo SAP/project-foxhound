@@ -18,7 +18,7 @@ add_task(async function () {
   const topLevelThreadActorID =
     dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
   info("Wait for tracing to be enabled");
-  await waitForState(dbg, state => {
+  await waitForState(dbg, () => {
     return dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
   });
 
@@ -52,7 +52,7 @@ add_task(async function () {
     gBrowser.selectedBrowser
   );
 
-  await hasConsoleMessage(dbg, "DOM(click)");
+  await hasConsoleMessage(dbg, "DOM | click");
   await hasConsoleMessage(dbg, "λ simple");
 
   // Test Blackboxing
@@ -90,7 +90,7 @@ add_task(async function () {
   info("Disable the tracing");
   await clickElement(dbg, "trace");
   info("Wait for tracing to be disabled");
-  await waitForState(dbg, state => {
+  await waitForState(dbg, () => {
     return !dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
   });
   await hasConsoleMessage(dbg, "Stopped tracing");
@@ -116,7 +116,7 @@ add_task(async function () {
   const newTopLevelThread =
     dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
   info("Wait for tracing to be re-enabled");
-  await waitForState(dbg, state => {
+  await waitForState(dbg, () => {
     return dbg.selectors.getIsThreadCurrentlyTracing(newTopLevelThread);
   });
 
@@ -138,61 +138,6 @@ add_task(async function () {
   await waitForSelectedSource(dbg, "main.js");
   await waitForSelectedLocation(dbg, 4, 2);
   ok(true, "The selected source and location is on the original file");
-
-  await dbg.toolbox.closeToolbox();
-});
-
-add_task(async function testTracingWorker() {
-  // We have to enable worker targets and disable this pref to have functional tracing for workers
-  await pushPref("dom.worker.console.dispatch_events_to_main_thread", false);
-
-  const dbg = await initDebugger("doc-scripts.html");
-
-  info("Instantiate a worker");
-  const { targetCommand } = dbg.toolbox.commands;
-  let onAvailable;
-  const onNewTarget = new Promise(resolve => {
-    onAvailable = ({ targetFront }) => {
-      resolve(targetFront);
-    };
-  });
-  await targetCommand.watchTargets({
-    types: [targetCommand.TYPES.FRAME],
-    onAvailable,
-  });
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
-    content.worker = new content.Worker("simple-worker.js");
-  });
-  info("Wait for the worker target");
-  const workerTarget = await onNewTarget;
-
-  await waitFor(
-    () => findAllElements(dbg, "threadsPaneItems").length == 2,
-    "Wait for the two threads to be displayed in the thread pane"
-  );
-  const threadsEl = findAllElements(dbg, "threadsPaneItems");
-  is(threadsEl.length, 2, "There are two threads in the thread panel");
-
-  info("Enable tracing on all threads");
-  await clickElement(dbg, "trace");
-  info("Wait for tracing to be enabled for the worker");
-  await waitForState(dbg, state => {
-    return dbg.selectors.getIsThreadCurrentlyTracing(
-      workerTarget.threadFront.actorID
-    );
-  });
-
-  // `timer` is called within the worker via a setInterval of 1 second
-  await hasConsoleMessage(dbg, "setIntervalCallback");
-  await hasConsoleMessage(dbg, "λ timer");
-
-  // Also verify that postMessage are traced
-  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
-    content.worker.postMessage("foo");
-  });
-
-  await hasConsoleMessage(dbg, "DOM(message)");
-  await hasConsoleMessage(dbg, "λ onmessage");
 
   await dbg.toolbox.closeToolbox();
 });
@@ -271,7 +216,7 @@ add_task(async function testPageKeyShortcut() {
   });
 
   info("Wait for tracing to be enabled");
-  await waitForState(dbg, state => {
+  await waitForState(dbg, () => {
     return dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
   });
 
@@ -291,7 +236,7 @@ add_task(async function testPageKeyShortcut() {
   });
 
   info("Wait for tracing to be disabled");
-  await waitForState(dbg, state => {
+  await waitForState(dbg, () => {
     return !dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
   });
 });
@@ -375,116 +320,4 @@ add_task(async function testPageKeyShortcutWithoutDebugger() {
 
   info("Wait for tracing to be disabled");
   await onTracingStateDisabled;
-});
-
-add_task(async function testTracingValues() {
-  await pushPref("devtools.debugger.features.javascript-tracing", true);
-  // Cover tracing function argument values
-  const jsCode = `function foo() { bar(1, ["array"], { attribute: 3 }, BigInt(4), Infinity, Symbol("6"), "7"); }; function bar(a, b, c) {}`;
-  const dbg = await initDebuggerWithAbsoluteURL(
-    "data:text/html," + encodeURIComponent(`<script>${jsCode}</script>`)
-  );
-
-  await openContextMenuInDebugger(dbg, "trace");
-  const toggled = waitForDispatch(
-    dbg.store,
-    "TOGGLE_JAVASCRIPT_TRACING_VALUES"
-  );
-  selectContextMenuItem(dbg, `#debugger-trace-menu-item-log-values`);
-  await toggled;
-  ok(true, "Toggled the log values setting");
-
-  await clickElement(dbg, "trace");
-
-  const topLevelThreadActorID =
-    dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
-  info("Wait for tracing to be enabled");
-  await waitForState(dbg, state => {
-    return dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
-  });
-
-  invokeInTab("foo");
-
-  await hasConsoleMessage(dbg, "λ foo()");
-  await hasConsoleMessage(dbg, "λ bar");
-  const { value } = await findConsoleMessage(dbg, "λ bar");
-  is(
-    value,
-    `interpreter⟶λ bar(1, \nArray [ "array" ]\n, \nObject { attribute: 3 }\n, 4n, Infinity, Symbol("6"), "7")`,
-    "The argument were printed for bar()"
-  );
-
-  // Reset the log values setting
-  Services.prefs.clearUserPref("devtools.debugger.javascript-tracing-values");
-});
-
-add_task(async function testTracingOnNextInteraction() {
-  await pushPref("devtools.debugger.features.javascript-tracing", true);
-  // Cover tracing only on next user interaction
-  const jsCode = `function foo() {}; window.addEventListener("mousedown", function onmousedown(){}, { capture: true }); window.onclick = function onclick() {};`;
-  const dbg = await initDebuggerWithAbsoluteURL(
-    "data:text/html," +
-      encodeURIComponent(`<script>${jsCode}</script><body></body>`)
-  );
-
-  await openContextMenuInDebugger(dbg, "trace");
-  const toggled = waitForDispatch(
-    dbg.store,
-    "TOGGLE_JAVASCRIPT_TRACING_ON_NEXT_INTERACTION"
-  );
-  selectContextMenuItem(dbg, `#debugger-trace-menu-item-next-interaction`);
-  await toggled;
-  ok(true, "Toggled the trace on next interaction");
-
-  await clickElement(dbg, "trace");
-
-  const topLevelThreadActorID =
-    dbg.toolbox.commands.targetCommand.targetFront.threadFront.actorID;
-  info("Wait for tracing to be enabled");
-  await waitForState(dbg, state => {
-    return dbg.selectors.getIsThreadCurrentlyTracing(topLevelThreadActorID);
-  });
-
-  invokeInTab("foo");
-
-  // Let a change to have the tracer to regress and log foo call
-  await wait(500);
-
-  is(
-    (await findConsoleMessages(dbg.toolbox, "λ foo")).length,
-    0,
-    "The tracer did not log the function call before trigerring the click event"
-  );
-
-  // We intentionally turn off this a11y check, because the following click
-  // is send on an empty <body> to to test the click event tracer performance,
-  // and not to activate any control, therefore this check can be ignored.
-  AccessibilityUtils.setEnv({
-    mustHaveAccessibleRule: false,
-  });
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "body",
-    {},
-    gBrowser.selectedBrowser
-  );
-  AccessibilityUtils.resetEnv();
-
-  await hasConsoleMessage(dbg, "λ onmousedown");
-  await hasConsoleMessage(dbg, "λ onclick");
-
-  is(
-    (await findConsoleMessages(dbg.toolbox, "λ foo")).length,
-    0,
-    "Even after the click, the code called before the click is still not logged"
-  );
-
-  // But if we call this code again, now it should be logged
-  invokeInTab("foo");
-  await hasConsoleMessage(dbg, "λ foo");
-  ok(true, "foo was traced as expected");
-
-  // Reset the trace on next interaction setting
-  Services.prefs.clearUserPref(
-    "devtools.debugger.javascript-tracing-on-next-interaction"
-  );
 });

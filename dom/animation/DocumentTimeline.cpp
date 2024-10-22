@@ -55,9 +55,9 @@ DocumentTimeline::DocumentTimeline(Document* aDocument,
 }
 
 DocumentTimeline::~DocumentTimeline() {
-  MOZ_ASSERT(!mIsObservingRefreshDriver,
-             "Timeline should have disassociated"
-             " from the refresh driver before being destroyed");
+  MOZ_RELEASE_ASSERT(!mIsObservingRefreshDriver,
+                     "Timeline should have disassociated"
+                     " from the refresh driver before being destroyed");
   if (isInList()) {
     remove();
   }
@@ -105,34 +105,35 @@ TimeStamp DocumentTimeline::GetCurrentTimeStamp() const {
                        : mLastRefreshDriverTime;
 }
 
-void DocumentTimeline::UpdateLastRefreshDriverTime() {
-  nsRefreshDriver* refreshDriver = GetRefreshDriver();
-  TimeStamp refreshTime =
-      refreshDriver ? refreshDriver->MostRecentRefresh() : TimeStamp();
+void DocumentTimeline::UpdateLastRefreshDriverTime(TimeStamp aKnownTime) {
+  TimeStamp result = [&] {
+    if (!aKnownTime.IsNull()) {
+      return aKnownTime;
+    }
+    if (auto* rd = GetRefreshDriver()) {
+      return rd->MostRecentRefresh();
+    };
+    return mLastRefreshDriverTime;
+  }();
 
-  // Always return the same object to benefit from return-value optimization.
-  TimeStamp result =
-      !refreshTime.IsNull() ? refreshTime : mLastRefreshDriverTime;
-
-  nsDOMNavigationTiming* timing = mDocument->GetNavigationTiming();
-  // If we don't have a refresh driver and we've never had one use the
-  // timeline's zero time.
-  // In addition, it's possible that our refresh driver's timestamp is behind
-  // from the navigation start time because the refresh driver timestamp is
-  // sent through an IPC call whereas the navigation time is set by calling
-  // TimeStamp::Now() directly. In such cases we also use the timeline's zero
-  // time.
-  if (timing &&
-      (result.IsNull() || result < timing->GetNavigationStartTimeStamp())) {
-    result = timing->GetNavigationStartTimeStamp();
-    // Also, let this time represent the current refresh time. This way
-    // we'll save it as the last refresh time and skip looking up
-    // navigation start time each time.
-    refreshTime = result;
+  if (nsDOMNavigationTiming* timing = mDocument->GetNavigationTiming()) {
+    // If we don't have a refresh driver and we've never had one use the
+    // timeline's zero time.
+    // In addition, it's possible that our refresh driver's timestamp is behind
+    // from the navigation start time because the refresh driver timestamp is
+    // sent through an IPC call whereas the navigation time is set by calling
+    // TimeStamp::Now() directly. In such cases we also use the timeline's zero
+    // time.
+    // Also, let this time represent the current refresh time. This way we'll
+    // save it as the last refresh time and skip looking up navigation start
+    // time each time.
+    if (result.IsNull() || result < timing->GetNavigationStartTimeStamp()) {
+      result = timing->GetNavigationStartTimeStamp();
+    }
   }
 
-  if (!refreshTime.IsNull()) {
-    mLastRefreshDriverTime = refreshTime;
+  if (!result.IsNull()) {
+    mLastRefreshDriverTime = result;
   }
 }
 
@@ -175,7 +176,8 @@ void DocumentTimeline::MostRecentRefreshTimeUpdated() {
 
   nsAutoAnimationMutationBatch mb(mDocument);
 
-  bool ticked = Tick();
+  TickState state;
+  bool ticked = Tick(state);
   if (!ticked) {
     // We already assert that GetRefreshDriver() is non-null at the beginning
     // of this function but we check it again here to be sure that ticking
@@ -188,7 +190,13 @@ void DocumentTimeline::MostRecentRefreshTimeUpdated() {
   }
 }
 
-void DocumentTimeline::WillRefresh(mozilla::TimeStamp aTime) {
+void DocumentTimeline::TriggerAllPendingAnimationsNow() {
+  for (Animation* animation : mAnimationOrder) {
+    animation->TryTriggerNow();
+  }
+}
+
+void DocumentTimeline::WillRefresh(TimeStamp aTime) {
   UpdateLastRefreshDriverTime();
   MostRecentRefreshTimeUpdated();
 }
@@ -198,7 +206,8 @@ void DocumentTimeline::NotifyTimerAdjusted(TimeStamp aTime) {
 }
 
 void DocumentTimeline::ObserveRefreshDriver(nsRefreshDriver* aDriver) {
-  MOZ_ASSERT(!mIsObservingRefreshDriver);
+  MOZ_RELEASE_ASSERT(!mIsObservingRefreshDriver,
+                     "shouldn't register as an observer more than once");
   // Set the mIsObservingRefreshDriver flag before calling AddRefreshObserver
   // since it might end up calling NotifyTimerAdjusted which calls
   // MostRecentRefreshTimeUpdated which has an assertion for
@@ -210,9 +219,10 @@ void DocumentTimeline::ObserveRefreshDriver(nsRefreshDriver* aDriver) {
 }
 
 void DocumentTimeline::NotifyRefreshDriverCreated(nsRefreshDriver* aDriver) {
-  MOZ_ASSERT(!mIsObservingRefreshDriver,
-             "Timeline should not be observing the refresh driver before"
-             " it is created");
+  MOZ_RELEASE_ASSERT(
+      !mIsObservingRefreshDriver,
+      "Timeline should not be observing the refresh driver before"
+      " it is created");
 
   if (!mAnimationOrder.isEmpty()) {
     MOZ_ASSERT(isInList(),

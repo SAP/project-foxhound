@@ -27,7 +27,7 @@ const TEST_PATH_PAGE = `${TEST_BASE_PATH}file_favicon.png`;
 const TEST_PATH_FRAME = `${TEST_BASE_PATH}file_favicon.png`;
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window);
+MockFilePicker.init(window.browsingContext);
 const tempDir = createTemporarySaveDirectory();
 MockFilePicker.displayDirectory = tempDir;
 
@@ -38,6 +38,7 @@ add_setup(async function () {
     set: [
       ["privacy.firstparty.isolate", true],
       ["dom.security.https_first", false],
+      ["dom.block_download_insecure", false],
     ],
   });
 

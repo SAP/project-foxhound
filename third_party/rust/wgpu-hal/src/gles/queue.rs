@@ -40,10 +40,14 @@ fn get_z_offset(target: u32, base: &crate::TextureCopyBase) -> u32 {
 impl super::Queue {
     /// Performs a manual shader clear, used as a workaround for a clearing bug on mesa
     unsafe fn perform_shader_clear(&self, gl: &glow::Context, draw_buffer: u32, color: [f32; 4]) {
-        unsafe { gl.use_program(Some(self.shader_clear_program)) };
+        let shader_clear = self
+            .shader_clear_program
+            .as_ref()
+            .expect("shader_clear_program should always be set if the workaround is enabled");
+        unsafe { gl.use_program(Some(shader_clear.program)) };
         unsafe {
             gl.uniform_4_f32(
-                Some(&self.shader_clear_program_color_uniform_location),
+                Some(&shader_clear.color_uniform_location),
                 color[0],
                 color[1],
                 color[2],
@@ -109,7 +113,7 @@ impl super::Queue {
             super::TextureInner::Texture { raw, target } => {
                 let num_layers = view.array_layers.end - view.array_layers.start;
                 if num_layers > 1 {
-                    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                    #[cfg(webgl)]
                     unsafe {
                         gl.framebuffer_texture_multiview_ovr(
                             fbo_target,
@@ -143,7 +147,7 @@ impl super::Queue {
                     };
                 }
             }
-            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+            #[cfg(webgl)]
             super::TextureInner::ExternalFramebuffer { ref inner } => unsafe {
                 gl.bind_external_framebuffer(glow::FRAMEBUFFER, inner);
             },
@@ -432,7 +436,7 @@ impl super::Queue {
                     unsafe { gl.bind_buffer(copy_dst_target, None) };
                 }
             }
-            #[cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))]
+            #[cfg(webgl)]
             C::CopyExternalImageToTexture {
                 ref src,
                 dst,
@@ -1748,6 +1752,7 @@ impl crate::Queue<super::Api> for super::Queue {
     unsafe fn submit(
         &self,
         command_buffers: &[&super::CommandBuffer],
+        _surface_textures: &[&super::Texture],
         signal_fence: Option<(&mut super::Fence, crate::FenceValue)>,
     ) -> Result<(), crate::DeviceError> {
         let shared = Arc::clone(&self.shared);
@@ -1805,15 +1810,7 @@ impl crate::Queue<super::Api> for super::Queue {
     }
 }
 
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Sync for super::Queue {}
-#[cfg(all(
-    target_arch = "wasm32",
-    feature = "fragile-send-sync-non-atomic-wasm",
-    not(target_feature = "atomics")
-))]
+#[cfg(send_sync)]
 unsafe impl Send for super::Queue {}

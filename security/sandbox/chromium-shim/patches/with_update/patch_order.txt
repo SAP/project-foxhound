@@ -1,5 +1,3 @@
-revert_remove_AddTargetPeer.patch
-revert_remove_BrokerDuplicateHandle.patch
 replace_ScopedNativeLibrary_in_ApplyMitigationsToCurrentThread.patch
 ifdef_out_FromStringInternal.patch
 add_option_to_not_use_restricting_sids.patch
@@ -32,3 +30,4 @@ derive_sid_from_name.patch
 add_loongarch_defines.patch
 block_NtImpersonateAnonymousToken_before_LowerToken.patch
 fix_broker_alive_mutex.patch
+fix_max_syscalls_linux_aarch64.patch

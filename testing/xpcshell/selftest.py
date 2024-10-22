@@ -112,7 +112,7 @@ add_test(function test_loop () {
 });
 """
 
-PASSING_TEST_UNICODE = b"""
+PASSING_TEST_UNICODE = rb"""
 function run_test () { run_next_test(); }
 
 add_test(function test_unicode_print () {
@@ -288,7 +288,9 @@ no_such_var = "foo"; // assignment to undeclared variable
 # A test that crashes outright.
 TEST_CRASHING = """
 function run_test () {
-  const { ctypes } = ChromeUtils.import("resource://gre/modules/ctypes.jsm");
+  const { ctypes } = ChromeUtils.importESModule(
+    "resource://gre/modules/ctypes.sys.mjs"
+  );
   let zero = new ctypes.intptr_t(8);
   let badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
   badptr.contents;
@@ -657,8 +659,8 @@ prefs = [
 
         self.assertInLog("###!!! ASSERTION")
         log_lines = self.log.getvalue().splitlines()
-        line_pat = "#\d\d:"
-        unknown_pat = "#\d\d\: \?\?\?\[.* \+0x[a-f0-9]+\]"
+        line_pat = r"#\d\d:"
+        unknown_pat = r"#\d\d\: \?\?\?\[.* \+0x[a-f0-9]+\]"
         self.assertFalse(
             any(re.search(unknown_pat, line) for line in log_lines),
             "An stack frame without symbols was found in\n%s"

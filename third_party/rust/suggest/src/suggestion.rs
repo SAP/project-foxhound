@@ -5,6 +5,8 @@
 
 use chrono::Local;
 
+use crate::db::DEFAULT_SUGGESTION_SCORE;
+
 /// The template parameter for a timestamp in a "raw" sponsored suggestion URL.
 const TIMESTAMP_TEMPLATE: &str = "%YYYYMMDDHH%";
 
@@ -14,6 +16,11 @@ const TIMESTAMP_TEMPLATE: &str = "%YYYYMMDDHH%";
 /// 2 bytes shorter than [`TIMESTAMP_TEMPLATE`].
 const TIMESTAMP_LENGTH: usize = 10;
 
+/// Suggestion Types for Amp
+pub(crate) enum AmpSuggestionType {
+    Mobile,
+    Desktop,
+}
 /// A suggestion from the database to show in the address bar.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Suggestion {
@@ -29,6 +36,7 @@ pub enum Suggestion {
         impression_url: String,
         click_url: String,
         raw_click_url: String,
+        score: f64,
     },
     Pocket {
         title: String,
@@ -55,9 +63,50 @@ pub enum Suggestion {
     Yelp {
         url: String,
         title: String,
+        icon: Option<Vec<u8>>,
+        score: f64,
+        has_location_sign: bool,
+        subject_exact_match: bool,
+        location_param: String,
+    },
+    Mdn {
+        title: String,
+        url: String,
+        description: String,
+        score: f64,
+    },
+    Weather {
+        score: f64,
     },
 }
 
+impl PartialOrd for Suggestion {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Suggestion {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let a_score = match self {
+            Suggestion::Amp { score, .. }
+            | Suggestion::Pocket { score, .. }
+            | Suggestion::Amo { score, .. } => score,
+            _ => &DEFAULT_SUGGESTION_SCORE,
+        };
+        let b_score = match other {
+            Suggestion::Amp { score, .. }
+            | Suggestion::Pocket { score, .. }
+            | Suggestion::Amo { score, .. } => score,
+            _ => &DEFAULT_SUGGESTION_SCORE,
+        };
+        b_score
+            .partial_cmp(a_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+impl Eq for Suggestion {}
 /// Replaces all template parameters in a "raw" sponsored suggestion URL,
 /// producing a "cooked" URL with real values.
 pub(crate) fn cook_raw_suggestion_url(raw_url: &str) -> String {

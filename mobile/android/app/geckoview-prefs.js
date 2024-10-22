@@ -142,14 +142,10 @@ pref("browser.sessionstore.max_tabs_undo", 10);
 pref("browser.sessionstore.privacy_level", 0);
 pref("browser.sessionstore.resume_from_crash", true);
 
-pref("browser.tabs.remote.autostart", true);
-
-// Bug 1809922 to enable translations
-#ifdef NIGHTLY_BUILD
-  pref("browser.translations.enable", true);
-  // Used for mocking data for GeckoView Translations tests, should use in addition with an automation check.
-  pref("browser.translations.geckoview.enableAllTestMocks", false);
-#endif
+// Enables the translations engine
+pref("browser.translations.enable", true);
+// Used for mocking data for GeckoView Translations tests, should use in addition with an automation check.
+pref("browser.translations.geckoview.enableAllTestMocks", false);
 
 // SSL error page behaviour (bug 437372)
 pref("browser.xul.error_pages.expert_bad_cert", false);
@@ -216,7 +212,7 @@ pref("dom.webshare.enabled", true);
 pref("extensions.abuseReport.amWebAPI.enabled", false);
 
 // Disable add-ons that are not installed by the user in all scopes by default (See the SCOPE
-// constants in AddonManager.jsm for values to use here, and Bug 1405528 for a rationale)
+// constants in AddonManager.sys.mjs for values to use here, and Bug 1405528 for a rationale)
 pref("extensions.autoDisableScopes", 15);
 
 pref("extensions.enabledScopes", 5);
@@ -395,6 +391,8 @@ pref("pdfjs.handleOctetStream", true);
 
 // Disable tracking protection in PBM for GeckoView (bug 1436887)
 pref("privacy.trackingprotection.pbmode.enabled", false);
+
+pref("privacy.fingerprintingProtection.pbmode", true);
 
 // Relay integration is not supported on mobile
 pref("signon.firefoxRelay.feature", "not available");

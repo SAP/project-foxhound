@@ -12,8 +12,8 @@ const iceStateTransitions = {
   checking: ["new", "connected", "failed", "closed"], //Note: do we need to
   // allow 'completed' in
   // here as well?
-  connected: ["new", "completed", "disconnected", "closed"],
-  completed: ["new", "disconnected", "closed"],
+  connected: ["new", "checking", "completed", "disconnected", "closed"],
+  completed: ["new", "checking", "disconnected", "closed"],
   disconnected: ["new", "connected", "completed", "failed", "closed"],
   failed: ["new", "disconnected", "closed"],
   closed: [],
@@ -367,9 +367,7 @@ PeerConnectionTest.prototype.createDataChannel = function (options) {
 PeerConnectionTest.prototype.createAnswer = function (peer) {
   return peer.createAnswer().then(answer => {
     // make a copy so this does not get updated with ICE candidates
-    this.originalAnswer = new RTCSessionDescription(
-      JSON.parse(JSON.stringify(answer))
-    );
+    this.originalAnswer = JSON.parse(JSON.stringify(answer));
     return answer;
   });
 };
@@ -384,9 +382,7 @@ PeerConnectionTest.prototype.createAnswer = function (peer) {
 PeerConnectionTest.prototype.createOffer = function (peer) {
   return peer.createOffer().then(offer => {
     // make a copy so this does not get updated with ICE candidates
-    this.originalOffer = new RTCSessionDescription(
-      JSON.parse(JSON.stringify(offer))
-    );
+    this.originalOffer = JSON.parse(JSON.stringify(offer));
     return offer;
   });
 };
@@ -1399,10 +1395,6 @@ PeerConnectionWrapper.prototype = {
     });
   },
 
-  isTrackOnPC(track) {
-    return !!this.getStreamForRecvTrack(track);
-  },
-
   allExpectedTracksAreObserved(expected, observed) {
     return Object.keys(expected).every(trackId => observed[trackId]);
   },
@@ -1459,7 +1451,10 @@ PeerConnectionWrapper.prototype = {
   setupTrackEventHandler() {
     this._pc.addEventListener("track", ({ track, streams }) => {
       info(`${this}: 'ontrack' event fired for ${track.id}`);
-      ok(this.isTrackOnPC(track), `Found track ${track.id}`);
+      ok(
+        this._pc.getReceivers().some(r => r.track == track),
+        `Found track ${track.id}`
+      );
 
       let gratuitousEvent = true;
       let streamsContainingTrack = this.remoteStreamsByTrackId.get(track.id);

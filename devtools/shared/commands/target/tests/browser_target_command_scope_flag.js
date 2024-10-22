@@ -43,7 +43,7 @@ add_task(async function () {
     onAvailable,
     onDestroyed,
   });
-  ok(targets.size > 1, "We get many targets");
+  Assert.greater(targets.size, 1, "We get many targets");
 
   info("Open a tab in a new content process");
   await BrowserTestUtils.openNewForegroundTab({
@@ -51,6 +51,25 @@ add_task(async function () {
     url: TEST_URL,
     forceNewProcess: true,
   });
+
+  // Verify that only PROCESS and top target have their thread actor attached.
+  // We especially care about having the FRAME targets to not be attached,
+  // otherwise we would have two thread actor debugging the same thread
+  // with the PROCESS target already debugging all FRAME documents.
+  for (const target of targets) {
+    const threadFront = await target.getFront("thread");
+    const isAttached = await threadFront.isAttached();
+    if (target.targetType == TYPES.PROCESS) {
+      ok(isAttached, "All process targets are attached");
+    } else if (target.isTopLevel) {
+      ok(isAttached, "The top level target is attached");
+    } else {
+      ok(
+        !isAttached,
+        "The frame targets should not be attached in multiprocess mode"
+      );
+    }
+  }
 
   const newTabProcessID =
     gBrowser.selectedTab.linkedBrowser.browsingContext.currentWindowGlobal

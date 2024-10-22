@@ -4,11 +4,11 @@ const { AboutWelcomeParent } = ChromeUtils.importESModule(
   "resource:///actors/AboutWelcomeParent.sys.mjs"
 );
 
-const { AboutWelcomeTelemetry } = ChromeUtils.import(
-  "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.jsm"
+const { AboutWelcomeTelemetry } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AboutWelcomeTelemetry.sys.mjs"
 );
-const { AWScreenUtils } = ChromeUtils.import(
-  "resource:///modules/aboutwelcome/AWScreenUtils.jsm"
+const { AWScreenUtils } = ChromeUtils.importESModule(
+  "resource:///modules/aboutwelcome/AWScreenUtils.sys.mjs"
 );
 const { InternalTestingProfileMigrator } = ChromeUtils.importESModule(
   "resource:///modules/InternalTestingProfileMigrator.sys.mjs"
@@ -58,7 +58,7 @@ add_task(async function test_aboutwelcome_mr_template_telemetry() {
   await clickVisibleButton(browser, ".action-buttons button.secondary");
 
   const { callCount } = messageStub;
-  ok(callCount >= 1, `${callCount} Stub was called`);
+  Assert.greaterOrEqual(callCount, 1, `${callCount} Stub was called`);
   let clickCall;
   for (let i = 0; i < callCount; i++) {
     const call = messageStub.getCall(i);
@@ -111,7 +111,7 @@ add_task(async function test_aboutwelcome_easy_setup_screen_impression() {
   );
 
   const { callCount } = impressionSpy;
-  ok(callCount >= 1, `${callCount} impressionSpy was called`);
+  Assert.greaterOrEqual(callCount, 1, `${callCount} impressionSpy was called`);
   let impressionCall;
   for (let i = 0; i < callCount; i++) {
     const call = impressionSpy.getCall(i);

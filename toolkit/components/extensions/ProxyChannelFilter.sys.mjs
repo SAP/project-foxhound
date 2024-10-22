@@ -174,9 +174,9 @@ const ProxyInfoData = {
         `ProxyInfoData: Invalid proxy server authorization header: "${proxyAuthorizationHeader}"`
       );
     }
-    if (type !== "https") {
+    if (type !== "https" && type !== "http") {
       throw new ExtensionError(
-        `ProxyInfoData: ProxyAuthorizationHeader requires type "https"`
+        `ProxyInfoData: ProxyAuthorizationHeader requires type "https" or "http"`
       );
     }
   },
@@ -286,8 +286,8 @@ export class ProxyChannelFilter {
     );
   }
 
-  // Originally duplicated from WebRequest.jsm with small changes.  Keep this
-  // in sync with WebRequest.jsm as well as parent/ext-webRequest.js when
+  // Originally duplicated from WebRequest.sys.mjs with small changes.  Keep this
+  // in sync with WebRequest.sys.mjs as well as parent/ext-webRequest.js when
   // apropiate.
   getRequestData(channel, extraData) {
     let originAttributes = channel.loadInfo?.originAttributes;

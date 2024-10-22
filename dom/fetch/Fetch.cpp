@@ -801,7 +801,7 @@ class WorkerFetchResponseRunnable final : public MainThreadWorkerRunnable {
   WorkerFetchResponseRunnable(WorkerPrivate* aWorkerPrivate,
                               WorkerFetchResolver* aResolver,
                               SafeRefPtr<InternalResponse> aResponse)
-      : MainThreadWorkerRunnable(aWorkerPrivate),
+      : MainThreadWorkerRunnable(aWorkerPrivate, "WorkerFetchResponseRunnable"),
         mResolver(aResolver),
         mInternalResponse(std::move(aResponse)) {
     MOZ_ASSERT(mResolver);
@@ -857,7 +857,8 @@ class WorkerDataAvailableRunnable final : public MainThreadWorkerRunnable {
  public:
   WorkerDataAvailableRunnable(WorkerPrivate* aWorkerPrivate,
                               WorkerFetchResolver* aResolver)
-      : MainThreadWorkerRunnable(aWorkerPrivate), mResolver(aResolver) {}
+      : MainThreadWorkerRunnable(aWorkerPrivate, "WorkerDataAvailableRunnable"),
+        mResolver(aResolver) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     MOZ_ASSERT(aWorkerPrivate);
@@ -897,7 +898,8 @@ class WorkerFetchResponseEndRunnable final : public MainThreadWorkerRunnable,
   WorkerFetchResponseEndRunnable(WorkerPrivate* aWorkerPrivate,
                                  WorkerFetchResolver* aResolver,
                                  FetchDriverObserver::EndReason aReason)
-      : MainThreadWorkerRunnable(aWorkerPrivate),
+      : MainThreadWorkerRunnable(aWorkerPrivate,
+                                 "WorkerFetchResponseEndRunnable"),
         WorkerFetchResponseEndBase(aResolver),
         mReason(aReason) {}
 

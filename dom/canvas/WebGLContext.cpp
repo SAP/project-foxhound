@@ -149,6 +149,7 @@ WebGLContext::WebGLContext(HostWebGLContext* host,
     host->mContext = this;
   }
   const FuncScope funcScope(*this, "<Create>");
+  WebGLMemoryTracker::EnsureRegistered();
 }
 
 WebGLContext::~WebGLContext() { DestroyResourcesAndContext(); }
@@ -652,7 +653,7 @@ RefPtr<WebGLContext> WebGLContext::Create(HostWebGLContext* host,
   out->limits = *webgl->mLimits;
   out->uploadableSdTypes = UploadableSdTypes();
   out->vendor = webgl->gl->Vendor();
-  out->isRgb8Renderable = webgl->mIsRgb8Renderable;
+  out->optionalRenderableFormatBits = webgl->mOptionalRenderableFormatBits;
 
   return webgl;
 }
@@ -709,15 +710,36 @@ void WebGLContext::FinishInit() {
     const auto tex = gl::ScopedTexture(gl);
     const auto fb = gl::ScopedFramebuffer(gl);
     gl->fBindTexture(LOCAL_GL_TEXTURE_2D, tex);
-    gl->fTexImage2D(LOCAL_GL_TEXTURE_2D, 0, LOCAL_GL_RGB, 1, 1, 0, LOCAL_GL_RGB,
-                    LOCAL_GL_UNSIGNED_BYTE, nullptr);
-
     gl->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, fb);
     gl->fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
                               LOCAL_GL_TEXTURE_2D, tex, 0);
 
-    const auto status = gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
-    mIsRgb8Renderable = (status == LOCAL_GL_FRAMEBUFFER_COMPLETE);
+    const auto IsRenderable = [&](const GLint internalFormat,
+                                  const GLenum unpackFormat) {
+      gl->fTexImage2D(LOCAL_GL_TEXTURE_2D, 0, internalFormat, 1, 1, 0,
+                      unpackFormat, LOCAL_GL_UNSIGNED_BYTE, nullptr);
+      const auto status = gl->fCheckFramebufferStatus(LOCAL_GL_FRAMEBUFFER);
+      return (status == LOCAL_GL_FRAMEBUFFER_COMPLETE);
+    };
+
+    if (IsRenderable(LOCAL_GL_RGB, LOCAL_GL_RGB)) {
+      mOptionalRenderableFormatBits |=
+          webgl::OptionalRenderableFormatBits::RGB8;
+    }
+    if (gl->IsSupported(gl::GLFeature::sRGB)) {
+      struct {
+        GLint internal;
+        GLenum unpack;
+      } formats = {LOCAL_GL_SRGB8, LOCAL_GL_RGB};
+      const bool isEs2 = (gl->IsGLES() && gl->Version() < 300);
+      if (isEs2) {
+        formats = {LOCAL_GL_SRGB, LOCAL_GL_SRGB};
+      }
+      if (IsRenderable(formats.internal, formats.unpack)) {
+        mOptionalRenderableFormatBits |=
+            webgl::OptionalRenderableFormatBits::SRGB8;
+      }
+    }
   }
 
   //////
@@ -1053,7 +1075,10 @@ void WebGLContext::Present(WebGLFramebuffer* const xrFb,
                            const bool webvr,
                            const webgl::SwapChainOptions& options) {
   const FuncScope funcScope(*this, "<Present>");
-  if (IsContextLost()) return;
+  if (IsContextLost()) {
+    EnsureContextLostRemoteTextureOwner(options);
+    return;
+  }
 
   auto swapChain = GetSwapChain(xrFb, webvr);
   const gl::MozFramebuffer* maybeFB = nullptr;
@@ -1068,6 +1093,7 @@ void WebGLContext::Present(WebGLFramebuffer* const xrFb,
   bool valid =
       maybeFB ? PresentIntoXR(*swapChain, *maybeFB) : PresentInto(*swapChain);
   if (!valid) {
+    EnsureContextLostRemoteTextureOwner(options);
     return;
   }
 
@@ -1075,6 +1101,17 @@ void WebGLContext::Present(WebGLFramebuffer* const xrFb,
                   options.remoteTextureId.IsValid();
   if (useAsync) {
     PushRemoteTexture(nullptr, *swapChain, swapChain->FrontBuffer(), options);
+  }
+}
+
+void WebGLContext::WaitForTxn(layers::RemoteTextureOwnerId ownerId,
+                              layers::RemoteTextureTxnType txnType,
+                              layers::RemoteTextureTxnId txnId) {
+  if (!ownerId.IsValid() || !txnType || !txnId) {
+    return;
+  }
+  if (mRemoteTextureOwner && mRemoteTextureOwner->IsRegistered(ownerId)) {
+    mRemoteTextureOwner->WaitForTxn(ownerId, txnType, txnId);
   }
 }
 
@@ -1272,6 +1309,30 @@ bool WebGLContext::PushRemoteTexture(
     }
   }
   return true;
+}
+
+void WebGLContext::EnsureContextLostRemoteTextureOwner(
+    const webgl::SwapChainOptions& options) {
+  if (!options.remoteTextureOwnerId.IsValid()) {
+    return;
+  }
+
+  if (!mRemoteTextureOwner) {
+    // Ensure we have a remote texture owner client for WebGLParent.
+    const auto* outOfProcess = mHost ? mHost->mOwnerData.outOfProcess : nullptr;
+    if (!outOfProcess) {
+      return;
+    }
+    auto pid = outOfProcess->OtherPid();
+    mRemoteTextureOwner = MakeRefPtr<layers::RemoteTextureOwnerClient>(pid);
+  }
+
+  layers::RemoteTextureOwnerId ownerId = options.remoteTextureOwnerId;
+
+  if (!mRemoteTextureOwner->IsRegistered(ownerId)) {
+    mRemoteTextureOwner->RegisterTextureOwner(ownerId);
+  }
+  mRemoteTextureOwner->NotifyContextLost();
 }
 
 void WebGLContext::EndOfFrame() {

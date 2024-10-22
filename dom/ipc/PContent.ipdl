@@ -98,6 +98,7 @@ using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
+using mozilla::EventMessage from "mozilla/EventForwards.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::ImagePoint from "Units.h";
 using mozilla::ImageIntSize from "Units.h";
@@ -187,7 +188,7 @@ struct SystemFontListEntry {
     uint8_t   index;
     FontVisibility visibility;
 };
-#elif defined(XP_MACOSX)
+#elif defined(XP_MACOSX) || defined(XP_IOS)
 // Used on Mac OS X to pass the list of font families (not faces)
 // from chrome to content processes.
 // The entryType field distinguishes several types of font family
@@ -469,8 +470,13 @@ struct IPCImage {
     ImageIntSize size;
 };
 
-union PClipboardReadRequestOrError {
-    PClipboardReadRequest;
+struct ClipboardReadRequest {
+    ManagedEndpoint<PClipboardReadRequestChild> childEndpoint;
+    nsCString[] availableTypes;
+};
+
+union ClipboardReadRequestOrError {
+    ClipboardReadRequest;
     nsresult;
 };
 
@@ -823,6 +829,8 @@ child:
                             MaybeDiscardedWindowContext aSourceTopWindowContext,
                             IPCTransferableData[] transfers, uint32_t action);
 
+    async UpdateDragSession(IPCTransferableData[] transfers, EventMessage message);
+
     async EndDragSession(bool aDoneDrag, bool aUserCancelled,
                          LayoutDeviceIntPoint aDragEndPoint,
                          uint32_t aKeyModifiers,
@@ -1054,8 +1062,6 @@ child:
 
     async PRemotePrintJob();
 
-    async PClipboardReadRequest(nsCString[] aTypes);
-
 parent:
     async SynchronizeLayoutHistoryState(MaybeDiscardedBrowsingContext aContext,
                                         nullable nsILayoutHistoryState aState);
@@ -1217,17 +1223,22 @@ parent:
 
     // Given a list of supported types, returns the clipboard data for the
     // first type that matches.
-    sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard)
+    // aRequestingWindowContext is the window that is requesting the clipboard,
+    // which is used for content analysis.
+    sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard,
+                      MaybeDiscardedWindowContext aRequestingWindowContext)
         returns (IPCTransferableData transferableData);
-
-    // Returns a list of formats supported by the clipboard
-    sync GetExternalClipboardFormats(int32_t aWhichClipboard, bool aPlainTextOnly) returns (nsCString[] aTypes);
 
     // Requests getting data from clipboard.
     async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard,
                             MaybeDiscardedWindowContext aRequestingWindowContext,
                             nsIPrincipal aRequestingPrincipal)
-        returns (PClipboardReadRequestOrError aClipboardReadRequest);
+        returns (ClipboardReadRequestOrError aClipboardReadRequestOrError);
+
+    // Requests getting data from clipboard.
+    sync GetClipboardDataSnapshotSync(nsCString[] aTypes, int32_t aWhichClipboard,
+                                      MaybeDiscardedWindowContext aRequestingWindowContext)
+        returns (ClipboardReadRequestOrError aClipboardReadRequestOrError);
 
     // Clears the clipboard.
     async EmptyClipboard(int32_t aWhichClipboard);
@@ -1727,7 +1738,7 @@ parent:
      */
     async NotifyPositionStateChanged(
         MaybeDiscardedBrowsingContext aContext,
-        PositionState aState);
+        PositionState? aState);
 
     /**
      * This method will make canonical browsing context to update the count of

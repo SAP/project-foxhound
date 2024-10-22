@@ -258,6 +258,8 @@ class RaptorGatherer(FrameworkGatherer):
                 result += f"   {idx+1}. **{description['name']}**\n\n"
             if "owner" in description.keys():
                 result += f"   **Owner**: {description['owner']}\n\n"
+            if test_description:
+                result += f"   **Description**: {test_description}\n\n"
 
             for key in sorted(description.keys()):
                 if key in ["owner", "name", "manifest", "metrics"]:
@@ -265,8 +267,8 @@ class RaptorGatherer(FrameworkGatherer):
                 sub_title = key.replace("_", " ")
                 if key == "test_url":
                     if "<" in description[key] or ">" in description[key]:
-                        description[key] = description[key].replace("<", "\<")
-                        description[key] = description[key].replace(">", "\>")
+                        description[key] = description[key].replace("<", r"\<")
+                        description[key] = description[key].replace(">", r"\>")
                     result += f"   * **{sub_title}**: `<{description[key]}>`__\n"
                 elif key == "secondary_url":
                     result += f"   * **{sub_title}**: `<{description[key]}>`__\n"

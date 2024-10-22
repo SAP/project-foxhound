@@ -18,11 +18,11 @@ cram==0.7
 distro==1.8.0
 ecdsa==0.15
 esprima==4.0.1
-fluent.migrate==0.12.0
+fluent.migrate==0.13.0
 fluent.syntax==0.19.0
 # Pin `frozenlist` as it is required for `aiohttp`. Use minimum required version.
 frozenlist==1.1.1
-glean_parser==11.0.1
+glean_parser==13.0.0
 importlib-metadata==6.0.0
 # required for compatibility with Flask >= 2 in tools/tryselect/selectors/chooser
 jinja2==3.1.2
@@ -30,6 +30,7 @@ jsmin==3.0.0
 json-e==4.5.3
 jsonschema==4.17.3
 looseversion==1.0.1
+mako==1.1.2
 mozilla-repo-urls==0.1.1
 mozilla-version==2.0.0
 packaging==23.1
@@ -55,7 +56,7 @@ taskcluster==44.2.2
 taskcluster-taskgraph==6.3.0
 taskcluster-urls==13.0.1
 toml==0.10.2
-tomlkit==0.11.8
+tomlkit==0.12.3
 tqdm==4.62.3
 urllib3==1.26.17
 voluptuous==0.12.1

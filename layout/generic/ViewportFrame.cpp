@@ -21,7 +21,6 @@
 #include "nsCanvasFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsSubDocumentFrame.h"
-#include "nsIMozBrowserFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "MobileViewportManager.h"
 
@@ -318,19 +317,8 @@ nsPoint ViewportFrame::AdjustReflowInputForScrollbars(
 
 nsRect ViewportFrame::AdjustReflowInputAsContainingBlock(
     ReflowInput* aReflowInput) const {
-#ifdef DEBUG
-  nsPoint offset =
-#endif
-      AdjustReflowInputForScrollbars(aReflowInput);
-
-  NS_ASSERTION(GetAbsoluteContainingBlock()->GetChildList().IsEmpty() ||
-                   (offset.x == 0 && offset.y == 0),
-               "We don't handle correct positioning of fixed frames with "
-               "scrollbars in odd positions");
-
-  nsRect rect(0, 0, aReflowInput->ComputedWidth(),
-              aReflowInput->ComputedHeight());
-
+  const nsPoint origin = AdjustReflowInputForScrollbars(aReflowInput);
+  nsRect rect(origin, aReflowInput->ComputedPhysicalSize());
   rect.SizeTo(AdjustViewportSizeForFixedPosition(rect));
 
   return rect;
@@ -353,7 +341,7 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
   // Set our size up front, since some parts of reflow depend on it
   // being already set.  Note that the computed height may be
   // unconstrained; that's ok.  Consumers should watch out for that.
-  SetSize(nsSize(aReflowInput.ComputedWidth(), aReflowInput.ComputedHeight()));
+  SetSize(aReflowInput.ComputedPhysicalSize());
 
   // Reflow the main content first so that the placeholders of the
   // fixed-position frames will be in the right places on an initial

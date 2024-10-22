@@ -55,7 +55,6 @@
 #include "jsapi.h"
 #include "nsContentUtils.h"
 #include "nsTextFrame.h"
-#include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/PendingFullscreenEvent.h"
 #include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/Preferences.h"
@@ -2167,16 +2166,6 @@ struct DocumentFrameCallbacks {
   nsTArray<FrameRequest> mCallbacks;
 };
 
-static bool HasPendingAnimations(PresShell* aPresShell) {
-  Document* doc = aPresShell->GetDocument();
-  if (!doc) {
-    return false;
-  }
-
-  PendingAnimationTracker* tracker = doc->GetPendingAnimationTracker();
-  return tracker && tracker->HasPendingAnimations();
-}
-
 static void TakeFrameRequestCallbacksFrom(
     Document* aDocument, nsTArray<DocumentFrameCallbacks>& aTarget) {
   aTarget.AppendElement(aDocument);
@@ -2275,7 +2264,8 @@ void nsRefreshDriver::DetermineProximityToViewportAndNotifyResizeObservers() {
       return false;
     }
     return ps->HasContentVisibilityAutoFrames() ||
-           aDocument->HasResizeObservers();
+           aDocument->HasResizeObservers() ||
+           aDocument->HasElementsWithLastRememberedSize();
   };
 
   AutoTArray<RefPtr<Document>, 32> documents;
@@ -2405,13 +2395,11 @@ void nsRefreshDriver::RunFrameRequestCallbacks(TimeStamp aNowTime) {
 
       if (docCallbacks.mDocument->GetReadyStateEnum() ==
           Document::READYSTATE_COMPLETE) {
-        Telemetry::AccumulateTimeDelta(
-            Telemetry::PERF_REQUEST_ANIMATION_CALLBACK_NON_PAGELOAD_MS,
-            startTime, TimeStamp::Now());
+        glean::performance_responsiveness::req_anim_frame_callback
+            .AccumulateRawDuration(TimeStamp::Now() - startTime);
       } else {
-        Telemetry::AccumulateTimeDelta(
-            Telemetry::PERF_REQUEST_ANIMATION_CALLBACK_PAGELOAD_MS, startTime,
-            TimeStamp::Now());
+        glean::performance_pageload::req_anim_frame_callback
+            .AccumulateRawDuration(TimeStamp::Now() - startTime);
       }
     }
   }
@@ -2540,10 +2528,7 @@ bool nsRefreshDriver::TickObserverArray(uint32_t aIdx, TimeStamp aNowTime) {
       RefPtr<PresShell> presShell = rawPresShell;
       presShell->mObservingLayoutFlushes = false;
       presShell->mWasLastReflowInterrupted = false;
-      const auto flushType = HasPendingAnimations(presShell)
-                                 ? FlushType::Layout
-                                 : FlushType::InterruptibleLayout;
-      const ChangesToFlush ctf(flushType, false);
+      const ChangesToFlush ctf(FlushType::InterruptibleLayout, false);
       presShell->FlushPendingNotifications(ctf);
       if (presShell->FixUpFocus()) {
         presShell->FlushPendingNotifications(ctf);

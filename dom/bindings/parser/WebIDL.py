@@ -43,25 +43,22 @@ def parseInt(literal):
     return value * sign
 
 
-def enum(*names, **kw):
-    class Foo(object):
-        attrs = OrderedDict()
+# This is surprisingly faster than using the enum.IntEnum type (which doesn't
+# support 'base' anyway)
+def enum(*names, base=None):
+    if base is not None:
+        names = base.attrs + names
 
-        def __init__(self, names):
-            for v, k in enumerate(names):
-                self.attrs[k] = v
-
-        def __getattr__(self, attr):
-            if attr in self.attrs:
-                return self.attrs[attr]
-            raise AttributeError
+    class CustomEnumType(object):
+        attrs = names
 
         def __setattr__(self, name, value):  # this makes it read-only
             raise NotImplementedError
 
-    if "base" not in kw:
-        return Foo(names)
-    return Foo(chain(kw["base"].attrs.keys(), names))
+    for v, k in enumerate(names):
+        setattr(CustomEnumType, k, v)
+
+    return CustomEnumType()
 
 
 class WebIDLError(Exception):
@@ -85,13 +82,10 @@ class Location(object):
         self._lineno = lineno
         self._lexpos = lexpos
         self._lexdata = lexer.lexdata
-        self._file = filename if filename else "<unknown>"
+        self.filename = filename if filename else "<unknown>"
 
     def __eq__(self, other):
-        return self._lexpos == other._lexpos and self._file == other._file
-
-    def filename(self):
-        return self._file
+        return self._lexpos == other._lexpos and self.filename == other.filename
 
     def resolve(self):
         if self._line:
@@ -110,7 +104,7 @@ class Location(object):
 
     def get(self):
         self.resolve()
-        return "%s line %s:%s" % (self._file, self._lineno, self._colno)
+        return "%s line %s:%s" % (self.filename, self._lineno, self._colno)
 
     def _pointerline(self):
         return " " * self._colno + "^"
@@ -118,7 +112,7 @@ class Location(object):
     def __str__(self):
         self.resolve()
         return "%s line %s:%s\n%s\n%s" % (
-            self._file,
+            self.filename,
             self._lineno,
             self._colno,
             self._line,
@@ -129,12 +123,10 @@ class Location(object):
 class BuiltinLocation(object):
     def __init__(self, text):
         self.msg = text + "\n"
+        self.filename = "<builtin>"
 
     def __eq__(self, other):
         return isinstance(other, BuiltinLocation) and self.msg == other.msg
-
-    def filename(self):
-        return "<builtin>"
 
     def resolve(self):
         pass
@@ -153,9 +145,7 @@ class IDLObject(object):
     def __init__(self, location):
         self.location = location
         self.userData = dict()
-
-    def filename(self):
-        return self.location.filename()
+        self.filename = location and location.filename
 
     def isInterface(self):
         return False
@@ -220,8 +210,8 @@ class IDLObject(object):
         visited.add(self)
 
         deps = set()
-        if self.filename() != "<builtin>":
-            deps.add(self.filename())
+        if self.filename != "<builtin>":
+            deps.add(self.filename)
 
         for d in self._getDependentObjects():
             deps.update(d.getDeps(visited))
@@ -3032,6 +3022,9 @@ class IDLRecordType(IDLParametrizedType):
         if other.isUnion():
             # Just forward to the union; it'll deal
             return other.isDistinguishableFrom(self)
+        if other.isCallback():
+            # Let other determine if it's a LegacyTreatNonObjectAsNull callback
+            return other.isDistinguishableFrom(self)
         return (
             other.isPrimitive()
             or other.isString()
@@ -3490,7 +3483,7 @@ class IDLWrapperType(IDLType):
                 or other.isSequence()
                 or other.isRecord()
             )
-        if self.isDictionary() and (other.nullable() or other.isUndefined()):
+        if self.isDictionary() and other.nullable():
             return False
         if (
             other.isPrimitive()
@@ -3499,28 +3492,51 @@ class IDLWrapperType(IDLType):
             or other.isSequence()
         ):
             return True
-        if self.isDictionary():
+
+        # If this needs to handle other dictionary-like types we probably need
+        # some additional checks first.
+        assert self.isDictionaryLike() == (
+            self.isDictionary() or self.isCallbackInterface()
+        )
+        if self.isDictionaryLike():
+            if other.isCallback():
+                # Let other determine if it's a LegacyTreatNonObjectAsNull callback
+                return other.isDistinguishableFrom(self)
+
+            assert (
+                other.isNonCallbackInterface()
+                or other.isAny()
+                or other.isUndefined()
+                or other.isObject()
+                or other.isDictionaryLike()
+            )
+            # At this point, dictionary-like (for 'self') and interface-like
+            # (for 'other') are the only two that are distinguishable.
+            # any is the union of all non-union types, so it's not distinguishable
+            # from other unions (because it is a union itself), or from all
+            # non-union types (because it has all of them as its members).
             return other.isNonCallbackInterface()
 
-        assert self.isInterface()
-        if other.isInterface():
+        assert self.isNonCallbackInterface()
+
+        if other.isUndefined() or other.isDictionaryLike() or other.isCallback():
+            return True
+
+        if other.isNonCallbackInterface():
             if other.isSpiderMonkeyInterface():
                 # Just let |other| handle things
                 return other.isDistinguishableFrom(self)
+
             assert self.isGeckoInterface() and other.isGeckoInterface()
             if self.inner.isExternal() or other.unroll().inner.isExternal():
                 return self != other
-            return len(
-                self.inner.interfacesBasedOnSelf
-                & other.unroll().inner.interfacesBasedOnSelf
-            ) == 0 and (self.isNonCallbackInterface() or other.isNonCallbackInterface())
-        if (
-            other.isUndefined()
-            or other.isDictionary()
-            or other.isCallback()
-            or other.isRecord()
-        ):
-            return self.isNonCallbackInterface()
+            return (
+                len(
+                    self.inner.interfacesBasedOnSelf
+                    & other.unroll().inner.interfacesBasedOnSelf
+                )
+                == 0
+            )
 
         # Not much else |other| can be.
         # any is the union of all non-union types, so it's not distinguishable
@@ -6067,6 +6083,9 @@ class IDLCallbackType(IDLType):
         if other.isUnion():
             # Just forward to the union; it'll deal
             return other.isDistinguishableFrom(self)
+        # Callbacks without `LegacyTreatNonObjectAsNull` are distinguishable from Dictionary likes
+        if other.isDictionaryLike():
+            return not self.callback._treatNonObjectAsNull
         return (
             other.isUndefined()
             or other.isPrimitive()
@@ -6943,7 +6962,7 @@ class IDLExtendedAttribute(IDLObject):
 
 
 class Tokenizer(object):
-    tokens = ["INTEGER", "FLOATLITERAL", "IDENTIFIER", "STRING", "WHITESPACE", "OTHER"]
+    tokens = ["INTEGER", "FLOATLITERAL", "IDENTIFIER", "STRING", "COMMENTS", "OTHER"]
 
     def t_FLOATLITERAL(self, t):
         r"(-?(([0-9]+\.[0-9]*|[0-9]*\.[0-9]+)([Ee][+-]?[0-9]+)?|[0-9]+[Ee][+-]?[0-9]+|Infinity))|NaN"
@@ -6979,17 +6998,19 @@ class Tokenizer(object):
         t.value = t.value[1:-1]
         return t
 
-    def t_WHITESPACE(self, t):
-        r"[\t\n\r ]+|[\t\n\r ]*((//[^\n]*|/\*.*?\*/)[\t\n\r ]*)+"
+    t_ignore = "\t\n\r "
+
+    def t_COMMENTS(self, t):
+        r"//[^\n]*|/\*(?s:.)*?\*/"
         pass
 
     def t_ELLIPSIS(self, t):
         r"\.\.\."
-        t.type = self.keywords.get(t.value)
+        t.type = "ELLIPSIS"
         return t
 
     def t_OTHER(self, t):
-        r"[^\t\n\r 0-9A-Z_a-z]"
+        r"[^0-9A-Z_a-z]"
         t.type = self.keywords.get(t.value, "OTHER")
         return t
 
@@ -7086,14 +7107,14 @@ class Tokenizer(object):
         if lexer:
             self.lexer = lexer
         else:
-            self.lexer = lex.lex(object=self, reflags=re.DOTALL)
+            self.lexer = lex.lex(object=self)
 
 
 class SqueakyCleanLogger(object):
     errorWhitelist = [
-        # Web IDL defines the WHITESPACE token, but doesn't actually
+        # Web IDL defines the COMMENTS token, but doesn't actually
         # use it ... so far.
-        "Token 'WHITESPACE' defined, but not used",
+        "Token 'COMMENTS' defined, but not used",
         # And that means we have an unused token
         "There is 1 unused token",
         # Web IDL defines a OtherOrComma rule that's only used in
@@ -9097,13 +9118,8 @@ class Parser(Tokenizer):
             production.validate()
 
         # De-duplicate self._productions, without modifying its order.
-        seen = set()
-        result = []
-        for p in self._productions:
-            if p not in seen:
-                seen.add(p)
-                result.append(p)
-        return result
+        result = dict.fromkeys(self._productions)
+        return list(result.keys())
 
     def reset(self):
         return Parser(lexer=self.lexer)

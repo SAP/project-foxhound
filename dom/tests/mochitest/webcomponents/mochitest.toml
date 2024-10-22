@@ -50,6 +50,10 @@ support-files = [
 
 ["test_custom_element_when_defined.html"]
 
+["test_declarative_shadowdom_failure_log.html"]
+
+["test_declarative_shadowdom_reentry.html"]
+
 ["test_detached_style.html"]
 
 ["test_document_adoptnode.html"]
@@ -59,8 +63,6 @@ support-files = [
 ["test_event_composed.html"]
 
 ["test_event_retarget.html"]
-
-["test_event_stopping.html"]
 
 ["test_link_prefetch.html"]
 

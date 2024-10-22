@@ -14,6 +14,7 @@
 #include "GLTypes.h"  // for GLenum
 #include "nsISupportsImpl.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/Hal.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/DataMutex.h"
 #include "mozilla/Maybe.h"
@@ -292,7 +293,8 @@ class RenderThread final {
   bool SyncObjectNeeded();
 
   size_t RendererCount() const;
-  size_t ActiveRendererCount() const;
+  size_t ActiveRendererCount() const { return sActiveRendererCount; };
+  void UpdateActiveRendererCount();
 
   void BeginRecordingForWindow(wr::WindowId aWindowId,
                                const TimeStamp& aRecordingStart,
@@ -302,7 +304,13 @@ class RenderThread final {
 
   static void MaybeEnableGLDebugMessage(gl::GLContext* aGLContext);
 
+  void SetBatteryInfo(const hal::BatteryInformation& aBatteryInfo);
+  bool GetPowerIsCharging();
+
  private:
+  static size_t sRendererCount;
+  static size_t sActiveRendererCount;
+
   enum class RenderTextureOp {
     PrepareForUse,
     NotifyForUse,
@@ -433,6 +441,8 @@ class RenderThread final {
   RefPtr<layers::SurfacePool> mSurfacePool;
 
   std::map<wr::WindowId, UniquePtr<RendererOGL>> mRenderers;
+
+  DataMutex<Maybe<hal::BatteryInformation>> mBatteryInfo;
 
   struct PendingFrameInfo {
     TimeStamp mStartTime;

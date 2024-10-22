@@ -17,6 +17,7 @@ const {
 } = require("resource://devtools/server/tracer/tracer.jsm");
 
 const { LOG_METHODS } = require("resource://devtools/server/actors/tracer.js");
+const Targets = require("resource://devtools/server/actors/targets/index.js");
 
 class TracingStateWatcher {
   /**
@@ -30,6 +31,11 @@ class TracingStateWatcher {
    *          This will be called for each resource.
    */
   async watch(targetActor, { onAvailable }) {
+    // Bug 1874204: tracer doesn't support tracing content process from the browser toolbox just yet
+    if (targetActor.targetType == Targets.TYPES.PROCESS) {
+      return;
+    }
+
     this.targetActor = targetActor;
     this.onAvailable = onAvailable;
 
@@ -43,6 +49,9 @@ class TracingStateWatcher {
    * Stop watching for tracing state
    */
   destroy() {
+    if (!this.tracingListener) {
+      return;
+    }
     removeTracingListener(this.tracingListener);
   }
 
@@ -59,6 +68,15 @@ class TracingStateWatcher {
   onTracingToggled(enabled, reason) {
     const tracerActor = this.targetActor.getTargetScopedActor("tracer");
     const logMethod = tracerActor?.getLogMethod();
+
+    // JavascriptTracer only supports recording once in the same process/thread.
+    // If we open another DevTools, on the same process, we would receive notification
+    // about a JavascriptTracer controlled by another toolbox's tracer actor.
+    // Ignore them as our current tracer actor didn't start tracing.
+    if (!logMethod) {
+      return;
+    }
+
     this.onAvailable([
       {
         resourceType: JSTRACER_STATE,

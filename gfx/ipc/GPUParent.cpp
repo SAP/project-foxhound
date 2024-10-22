@@ -115,8 +115,9 @@ static void ReportHardwareMediaCodecSupportIfNeeded() {
 #if defined(XP_WIN)
   NS_GetCurrentThread()->Dispatch(NS_NewRunnableFunction(
       "GPUParent:ReportHardwareMediaCodecSupportIfNeeded", []() {
-        // Only report telemetry when hardware decoding is avaliable.
-        if (!gfx::gfxVars::CanUseHardwareVideoDecoding()) {
+        // Only report telemetry when hardware decoding is available.
+        if (!gfx::gfxVars::IsInitialized() ||
+            !gfx::gfxVars::CanUseHardwareVideoDecoding()) {
           return;
         }
         sReported = true;
@@ -567,6 +568,19 @@ mozilla::ipc::IPCResult GPUParent::RecvUpdateVar(const GfxVarUpdate& aUpdate) {
 
 mozilla::ipc::IPCResult GPUParent::RecvPreferenceUpdate(const Pref& aPref) {
   Preferences::SetPreference(aPref);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GPUParent::RecvScreenInformationChanged() {
+#if defined(XP_WIN)
+  DeviceManagerDx::Get()->PostUpdateMonitorInfo();
+#endif
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult GPUParent::RecvNotifyBatteryInfo(
+    const BatteryInformation& aBatteryInfo) {
+  wr::RenderThread::Get()->SetBatteryInfo(aBatteryInfo);
   return IPC_OK();
 }
 

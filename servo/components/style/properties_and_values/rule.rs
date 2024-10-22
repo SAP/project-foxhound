@@ -7,9 +7,12 @@
 //! https://drafts.css-houdini.org/css-properties-values-api-1/#at-property-rule
 
 use super::{
-    registry::PropertyRegistration,
+    registry::{PropertyRegistration, PropertyRegistrationData},
     syntax::Descriptor,
-    value::{AllowComputationallyDependent, SpecifiedValue as SpecifiedRegisteredValue},
+    value::{
+        AllowComputationallyDependent, ComputedValue as ComputedRegisteredValue,
+        SpecifiedValue as SpecifiedRegisteredValue,
+    },
 };
 use crate::custom_properties::{Name as CustomPropertyName, SpecifiedValue};
 use crate::error_reporting::ContextualParseError;
@@ -91,9 +94,11 @@ pub fn parse_property_block<'i, 't>(
 
     Ok(PropertyRegistration {
         name,
-        syntax,
-        inherits,
-        initial_value: descriptors.initial_value,
+        data: PropertyRegistrationData {
+            syntax,
+            inherits,
+            initial_value: descriptors.initial_value,
+        },
         url_data: context.url_data.clone(),
         source_location,
     })
@@ -146,7 +151,7 @@ macro_rules! property_descriptors {
         impl PropertyRegistration {
             fn decl_to_css(&self, dest: &mut CssStringWriter) -> fmt::Result {
                 $(
-                    let $ident = Option::<&$ty>::from(&self.$ident);
+                    let $ident = Option::<&$ty>::from(&self.data.$ident);
                     if let Some(ref value) = $ident {
                         dest.write_str(concat!($name, ": "))?;
                         value.to_css(&mut CssWriter::new(dest))?;
@@ -214,10 +219,14 @@ impl PropertyRegistration {
     pub fn compute_initial_value(
         &self,
         computed_context: &computed::Context,
-    ) -> Result<InitialValue, ()> {
-        let Some(ref initial) = self.initial_value else {
+    ) -> Result<ComputedRegisteredValue, ()> {
+        let Some(ref initial) = self.data.initial_value else {
             return Err(());
         };
+
+        if self.data.syntax.is_universal() {
+            return Ok(ComputedRegisteredValue::universal(Arc::clone(initial)));
+        }
 
         let mut input = ParserInput::new(initial.css_text());
         let mut input = Parser::new(&mut input);
@@ -225,7 +234,7 @@ impl PropertyRegistration {
 
         match SpecifiedRegisteredValue::compute(
             &mut input,
-            self,
+            &self.data,
             &self.url_data,
             computed_context,
             AllowComputationallyDependent::No,

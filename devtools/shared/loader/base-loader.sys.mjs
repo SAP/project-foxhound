@@ -20,9 +20,13 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIResProtocolHandler"
 );
 
-ChromeUtils.defineESModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
-});
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+  },
+  { global: "contextual" }
+);
 
 // Define some shortcuts.
 function* getOwnIdentifiers(x) {
@@ -115,6 +119,7 @@ function Sandbox(options) {
       "ChromeUtils",
       "CSS",
       "CSSRule",
+      "CustomStateSet",
       "DOMParser",
       "Element",
       "Event",
@@ -336,7 +341,9 @@ export function Require(loader, requirer) {
       module.exports = ChromeUtils.import(uri);
     } else if (isSYSMJSURI(uri)) {
       module = modules[uri] = Module(requirement, uri);
-      module.exports = ChromeUtils.importESModule(uri);
+      module.exports = ChromeUtils.importESModule(uri, {
+        global: "contextual",
+      });
     } else if (isJSONURI(uri)) {
       let data;
 

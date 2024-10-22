@@ -20,11 +20,13 @@
 #include "js/Modules.h"  // JS::FinishDynamicModuleImport, JS::{G,S}etModuleResolveHook, JS::Get{ModulePrivate,ModuleScript,RequestedModule{s,Specifier,SourcePos}}, JS::SetModule{DynamicImport,Metadata}Hook
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_GetElement
 #include "js/SourceText.h"
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/ScriptLoadContext.h"
 #include "mozilla/CycleCollectedJSContext.h"  // nsAutoMicroTask
 #include "mozilla/Preferences.h"
+#include "mozilla/RefPtr.h"  // mozilla::StaticRefPtr
 #include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsICacheInfoChannel.h"  // nsICacheInfoChannel
@@ -74,8 +76,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(ModuleLoaderBase)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTION(ModuleLoaderBase, mFetchingModules, mFetchedModules,
-                         mDynamicImportRequests, mGlobalObject, mEventTarget,
-                         mLoader)
+                         mDynamicImportRequests, mGlobalObject, mLoader)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(ModuleLoaderBase)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(ModuleLoaderBase)
@@ -335,8 +336,40 @@ bool ModuleLoaderBase::HostImportModuleDynamically(
     return false;
   }
 
-  loader->StartDynamicImport(request);
+  nsresult rv = loader->StartDynamicImport(request);
+  if (NS_SUCCEEDED(rv)) {
+    loader->OnDynamicImportStarted(request);
+  }
+
   return true;
+}
+
+AutoOverrideModuleLoader::AutoOverrideModuleLoader(ModuleLoaderBase* aTarget,
+                                                   ModuleLoaderBase* aLoader)
+    : mTarget(aTarget) {
+  mTarget->SetOverride(aLoader);
+}
+
+AutoOverrideModuleLoader::~AutoOverrideModuleLoader() {
+  mTarget->ResetOverride();
+}
+
+void ModuleLoaderBase::SetOverride(ModuleLoaderBase* aLoader) {
+  MOZ_ASSERT(!mOverriddenBy);
+  MOZ_ASSERT(!aLoader->mOverriddenBy);
+  MOZ_ASSERT(mGlobalObject == aLoader->mGlobalObject);
+  mOverriddenBy = aLoader;
+}
+
+bool ModuleLoaderBase::IsOverridden() { return !!mOverriddenBy; }
+
+bool ModuleLoaderBase::IsOverriddenBy(ModuleLoaderBase* aLoader) {
+  return mOverriddenBy == aLoader;
+}
+
+void ModuleLoaderBase::ResetOverride() {
+  MOZ_ASSERT(mOverriddenBy);
+  mOverriddenBy = nullptr;
 }
 
 // static
@@ -363,6 +396,11 @@ ModuleLoaderBase* ModuleLoaderBase::GetCurrentModuleLoader(JSContext* aCx) {
   MOZ_ASSERT(loader->mGlobalObject == global);
 
   reportError.release();
+
+  if (loader->mOverriddenBy) {
+    MOZ_ASSERT(loader->mOverriddenBy->mGlobalObject == global);
+    return loader->mOverriddenBy;
+  }
   return loader;
 }
 
@@ -898,7 +936,7 @@ void ModuleLoadRequest::ChildLoadComplete(bool aSuccess) {
   }
 }
 
-void ModuleLoaderBase::StartDynamicImport(ModuleLoadRequest* aRequest) {
+nsresult ModuleLoaderBase::StartDynamicImport(ModuleLoadRequest* aRequest) {
   MOZ_ASSERT(aRequest->mLoader == this);
 
   LOG(("ScriptLoadRequest (%p): Start dynamic import", aRequest));
@@ -910,6 +948,7 @@ void ModuleLoaderBase::StartDynamicImport(ModuleLoadRequest* aRequest) {
     mLoader->ReportErrorToConsole(aRequest, rv);
     FinishDynamicImportAndReject(aRequest, rv);
   }
+  return rv;
 }
 
 void ModuleLoaderBase::FinishDynamicImportAndReject(ModuleLoadRequest* aRequest,
@@ -930,7 +969,12 @@ void ModuleLoaderBase::FinishDynamicImport(
   LOG(("ScriptLoadRequest (%p): Finish dynamic import %x %d", aRequest,
        unsigned(aResult), JS_IsExceptionPending(aCx)));
 
-  MOZ_ASSERT(GetCurrentModuleLoader(aCx) == aRequest->mLoader);
+  MOZ_ASSERT_IF(NS_SUCCEEDED(aResult),
+                GetCurrentModuleLoader(aCx) == aRequest->mLoader);
+  // For failure case, aRequest may have already been unlinked by CC.
+  MOZ_ASSERT_IF(
+      NS_FAILED(aResult),
+      GetCurrentModuleLoader(aCx) == aRequest->mLoader || !aRequest->mLoader);
 
   // If aResult is a failed result, we don't have an EvaluationPromise. If it
   // succeeded, evaluationPromise may still be null, but in this case it will
@@ -972,13 +1016,9 @@ void ModuleLoaderBase::FinishDynamicImport(
 }
 
 ModuleLoaderBase::ModuleLoaderBase(ScriptLoaderInterface* aLoader,
-                                   nsIGlobalObject* aGlobalObject,
-                                   nsISerialEventTarget* aEventTarget)
-    : mGlobalObject(aGlobalObject),
-      mEventTarget(aEventTarget),
-      mLoader(aLoader) {
+                                   nsIGlobalObject* aGlobalObject)
+    : mGlobalObject(aGlobalObject), mLoader(aLoader) {
   MOZ_ASSERT(mGlobalObject);
-  MOZ_ASSERT(mEventTarget);
   MOZ_ASSERT(mLoader);
 
   EnsureModuleHooksInitialized();
@@ -1009,8 +1049,11 @@ void ModuleLoaderBase::Shutdown() {
   mFetchingModules.Clear();
   mFetchedModules.Clear();
   mGlobalObject = nullptr;
-  mEventTarget = nullptr;
   mLoader = nullptr;
+}
+
+bool ModuleLoaderBase::HasFetchingModules() const {
+  return !mFetchingModules.IsEmpty();
 }
 
 bool ModuleLoaderBase::HasPendingDynamicImports() const {
@@ -1019,7 +1062,8 @@ bool ModuleLoaderBase::HasPendingDynamicImports() const {
 
 void ModuleLoaderBase::CancelDynamicImport(ModuleLoadRequest* aRequest,
                                            nsresult aResult) {
-  MOZ_ASSERT(aRequest->mLoader == this);
+  // aRequest may have already been unlinked by CC.
+  MOZ_ASSERT(aRequest->mLoader == this || !aRequest->mLoader);
 
   RefPtr<ScriptLoadRequest> req = mDynamicImportRequests.Steal(aRequest);
   if (!aRequest->IsCanceled()) {
@@ -1184,7 +1228,10 @@ nsresult ModuleLoaderBase::EvaluateModuleInContext(
     JSContext* aCx, ModuleLoadRequest* aRequest,
     JS::ModuleErrorBehaviour errorBehaviour) {
   MOZ_ASSERT(aRequest->mLoader == this);
-  MOZ_ASSERT(mGlobalObject->GetModuleLoader(aCx) == this);
+  MOZ_ASSERT_IF(!mGlobalObject->GetModuleLoader(aCx)->IsOverridden(),
+                mGlobalObject->GetModuleLoader(aCx) == this);
+  MOZ_ASSERT_IF(mGlobalObject->GetModuleLoader(aCx)->IsOverridden(),
+                mGlobalObject->GetModuleLoader(aCx)->IsOverriddenBy(this));
 
   AUTO_PROFILER_LABEL("ModuleLoaderBase::EvaluateModule", JS);
 
@@ -1346,6 +1393,42 @@ void ModuleLoaderBase::RegisterImportMap(UniquePtr<ImportMap> aImportMap) {
 
   // Step 3. Set global's import map to result's import map.
   mImportMap = std::move(aImportMap);
+}
+
+void ModuleLoaderBase::CopyModulesTo(ModuleLoaderBase* aDest) {
+  MOZ_ASSERT(aDest->mFetchingModules.IsEmpty());
+  MOZ_ASSERT(aDest->mFetchedModules.IsEmpty());
+  MOZ_ASSERT(mFetchingModules.IsEmpty());
+
+  for (const auto& entry : mFetchedModules) {
+    RefPtr<ModuleScript> moduleScript = entry.GetData();
+    if (!moduleScript) {
+      continue;
+    }
+    aDest->mFetchedModules.InsertOrUpdate(entry.GetKey(), moduleScript);
+  }
+}
+
+void ModuleLoaderBase::MoveModulesTo(ModuleLoaderBase* aDest) {
+  MOZ_ASSERT(mFetchingModules.IsEmpty());
+  MOZ_ASSERT(aDest->mFetchingModules.IsEmpty());
+
+  for (const auto& entry : mFetchedModules) {
+    RefPtr<ModuleScript> moduleScript = entry.GetData();
+    if (!moduleScript) {
+      continue;
+    }
+
+#ifdef DEBUG
+    if (auto existingEntry = aDest->mFetchedModules.Lookup(entry.GetKey())) {
+      MOZ_ASSERT(moduleScript == existingEntry.Data());
+    }
+#endif
+
+    aDest->mFetchedModules.InsertOrUpdate(entry.GetKey(), moduleScript);
+  }
+
+  mFetchedModules.Clear();
 }
 
 #undef LOG

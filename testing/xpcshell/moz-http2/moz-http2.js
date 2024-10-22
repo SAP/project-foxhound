@@ -56,7 +56,7 @@ var framer_module = node_http2_root + "/lib/protocol/framer";
 var http2_framer = require(framer_module);
 var Serializer = http2_framer.Serializer;
 var originalTransform = Serializer.prototype._transform;
-var newTransform = function (frame, encoding, done) {
+var newTransform = function (frame) {
   if (frame.type == "DATA") {
     // Insert our empty DATA frame
     const emptyFrame = {};
@@ -834,6 +834,16 @@ function handleRequest(req, res) {
     });
     push.writeHead(200, pushResponseHeaders);
     push.end("ok");
+  } else if (u.pathname === "/hugecontinuedheaders") {
+    for (let i = 0; i < u.query.size; i++) {
+      res.setHeader(
+        "X-Test-Header-" + i,
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".repeat(1024)
+      );
+    }
+    res.writeHead(200);
+    res.end(content);
+    return;
   } else if (u.pathname === "/altsvc1") {
     if (
       req.httpVersionMajor != 2 ||
@@ -879,9 +889,13 @@ function handleRequest(req, res) {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader(
       "Alt-Svc",
-      "h2=foo2.example.com:8000,h3-29=" +
-        req.headers["x-altsvc"] +
-        ",h3-30=foo2.example.com:8443"
+      "h2=foo2.example.com:8000,h3-29=" + req.headers["x-altsvc"]
+    );
+  } else if (u.pathname === "/http3-test3") {
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader(
+      "Alt-Svc",
+      "h3-29=" + req.headers["x-altsvc"] + ",h3=" + req.headers["x-altsvc"]
     );
   }
   // for use with test_trr.js
@@ -1753,7 +1767,7 @@ server.on("connection", function (socket) {
   });
 });
 
-server.on("connect", function (req, clientSocket, head) {
+server.on("connect", function (req, clientSocket) {
   clientSocket.write(
     "HTTP/1.1 404 Not Found\r\nProxy-agent: Node.js-Proxy\r\n\r\n"
   );

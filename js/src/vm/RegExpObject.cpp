@@ -23,10 +23,12 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "js/Object.h"                // JS::GetBuiltinClass
+#include "js/Printer.h"               // js::GenericPrinter
 #include "js/RegExp.h"
 #include "js/RegExpFlags.h"  // JS::RegExpFlags
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"
+#include "vm/JSONPrinter.h"  // js::JSONPrinter
 #include "vm/MatchPairs.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpStatics.h"
@@ -298,6 +300,85 @@ void RegExpObject::initAndZeroLastIndex(JSAtom* source, RegExpFlags flags,
   initIgnoringLastIndex(source, flags);
   zeroLastIndex(cx);
 }
+
+template <typename KnownF, typename UnknownF>
+void ForEachRegExpFlag(JS::RegExpFlags flags, KnownF known, UnknownF unknown) {
+  uint8_t raw = flags.value();
+
+  for (uint8_t i = 1; i; i = i << 1) {
+    if (!(raw & i)) {
+      continue;
+    }
+    switch (raw & i) {
+      case RegExpFlag::HasIndices:
+        known("HasIndices", "d");
+        break;
+      case RegExpFlag::Global:
+        known("Global", "g");
+        break;
+      case RegExpFlag::IgnoreCase:
+        known("IgnoreCase", "i");
+        break;
+      case RegExpFlag::Multiline:
+        known("Multiline", "m");
+        break;
+      case RegExpFlag::DotAll:
+        known("DotAll", "s");
+        break;
+      case RegExpFlag::Unicode:
+        known("Unicode", "u");
+        break;
+      case RegExpFlag::Sticky:
+        known("Sticky", "y");
+        break;
+      default:
+        unknown(i);
+        break;
+    }
+  }
+}
+
+std::ostream& JS::operator<<(std::ostream& os, RegExpFlags flags) {
+  ForEachRegExpFlag(
+      flags, [&](const char* name, const char* c) { os << c; },
+      [&](uint8_t value) { os << '?'; });
+  return os;
+}
+
+#if defined(DEBUG) || defined(JS_JITSPEW)
+void RegExpObject::dumpOwnFields(js::JSONPrinter& json) const {
+  {
+    js::GenericPrinter& out = json.beginStringProperty("source");
+    getSource()->dumpPropertyName(out);
+    json.endStringProperty();
+  }
+
+  json.beginInlineListProperty("flags");
+  ForEachRegExpFlag(
+      getFlags(),
+      [&](const char* name, const char* c) { json.value("%s", name); },
+      [&](uint8_t value) { json.value("Unknown(%02x)", value); });
+  json.endInlineList();
+
+  {
+    js::GenericPrinter& out = json.beginStringProperty("lastIndex");
+    getLastIndex().dumpStringContent(out);
+    json.endStringProperty();
+  }
+}
+
+void RegExpObject::dumpOwnStringContent(js::GenericPrinter& out) const {
+  out.put("/");
+
+  getSource()->dumpCharsNoQuote(out);
+
+  out.put("/");
+
+  ForEachRegExpFlag(
+      getFlags(), [&](const char* name, const char* c) { out.put(c); },
+      [&](uint8_t value) {});
+}
+#endif /* defined(DEBUG) || defined(JS_JITSPEW) */
 
 static MOZ_ALWAYS_INLINE bool IsRegExpLineTerminator(const JS::Latin1Char c) {
   return c == '\n' || c == '\r';
@@ -1049,36 +1130,7 @@ static bool ParseRegExpFlags(const CharT* chars, size_t length,
 
   for (size_t i = 0; i < length; i++) {
     uint8_t flag;
-    switch (chars[i]) {
-      case 'd':
-        flag = RegExpFlag::HasIndices;
-        break;
-      case 'g':
-        flag = RegExpFlag::Global;
-        break;
-      case 'i':
-        flag = RegExpFlag::IgnoreCase;
-        break;
-      case 'm':
-        flag = RegExpFlag::Multiline;
-        break;
-      case 's':
-        flag = RegExpFlag::DotAll;
-        break;
-      case 'u':
-        flag = RegExpFlag::Unicode;
-        break;
-      case 'v':
-        flag = RegExpFlag::UnicodeSets;
-        break;
-      case 'y':
-        flag = RegExpFlag::Sticky;
-        break;
-      default:
-        *invalidFlag = chars[i];
-        return false;
-    }
-    if (*flagsOut & flag) {
+    if (!JS::MaybeParseRegExpFlag(chars[i], &flag) || *flagsOut & flag) {
       *invalidFlag = chars[i];
       return false;
     }

@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-@import 'chrome://global/skin/design-system/tokens-brand.css';
 /* stylelint-disable max-nesting-depth */
 #feature-callout {
   --fc-background: var(--fc-background-light, #fff);
@@ -329,11 +328,16 @@ div#feature-callout.hidden {
   align-items: end;
 }
 #feature-callout .screen[pos=callout] .multi-select-container {
-  margin-block: 0;
+  margin: 0;
   font-size: 0.813em;
   row-gap: 12px;
   color: inherit;
   overflow: visible;
+}
+#feature-callout .screen[pos=callout] .multi-select-container #multi-stage-multi-select-label {
+  font-size: inherit;
+  margin: -4px 0 0;
+  color: inherit;
 }
 #feature-callout .screen[pos=callout] .cta-link {
   background: none;
@@ -419,6 +423,9 @@ div#feature-callout.hidden {
 }
 #feature-callout .screen[pos=callout] .action-buttons[alignment=start] {
   justify-content: start;
+}
+#feature-callout .screen[pos=callout] .action-buttons[alignment=space-between] {
+  justify-content: space-between;
 }
 #feature-callout .screen[pos=callout] .action-buttons .secondary-cta {
   font-size: inherit;
@@ -751,7 +758,7 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
 }
 @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
   .onboardingContainer.shopping .screen[pos=split] {
-    box-shadow: 0 2px 6px #15141a;
+    box-shadow: 0 2px 6px rgb(21, 20, 26);
   }
 }
 .onboardingContainer.shopping .screen[pos=split]::before {
@@ -806,6 +813,7 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
   margin-block: 0 20px;
   padding-inline: 30px;
   text-align: start;
+  color: inherit;
 }
 .onboardingContainer.shopping .screen[pos=split] .section-main .main-content .legal-paragraph a {
   text-decoration: underline;
@@ -842,6 +850,7 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
 }
 .onboardingContainer.shopping .screen[pos=split][layout=survey] .main-content .main-content-inner {
   min-height: auto;
+  align-items: initial;
 }
 .onboardingContainer.shopping .screen[pos=split][layout=survey] .main-content .main-content-inner .welcome-text {
   align-items: initial;
@@ -877,6 +886,12 @@ panel#feature-callout[arrow-position=inline-start-bottom] {
   font-size: 1em;
   gap: 12px;
   width: 100%;
+}
+.onboardingContainer.shopping .screen[pos=split][layout=survey] .main-content .main-content-inner .multi-select-container #multi-stage-multi-select-label {
+  color: inherit;
+  line-height: 20px;
+  margin-block: -2px 0;
+  font-size: 1em;
 }
 .onboardingContainer.shopping .screen[pos=split][layout=survey] .main-content .main-content-inner .multi-select-container .multi-select-item input {
   margin-block: 0;
@@ -1257,9 +1272,35 @@ html {
   font-size: 13px;
   font-weight: 400;
 }
+.onboardingContainer .screen[pos=center].addons-picker .addon-container .install-button-wrapper {
+  display: flex;
+}
 .onboardingContainer .screen[pos=center].addons-picker .addon-container button {
   align-self: center;
-  margin-inline: auto 12px;
+  width: 124px;
+}
+.onboardingContainer .screen[pos=center].addons-picker .loader {
+  width: 1em;
+  height: 1em;
+  border: 3px solid var(--in-content-primary-button-text-color);
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  box-sizing: border-box;
+  animation: rotation 1s linear infinite;
+  justify-self: center;
+}
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+.onboardingContainer .screen[pos=center].addons-picker .loaderContainer {
+  display: flex;
+  padding: 1.5px 37.5px;
+  margin: auto;
 }
 .onboardingContainer .screen:not([pos=split]) .secondary-cta .secondary {
   background: none;
@@ -1329,10 +1370,12 @@ html {
 .onboardingContainer .screen[pos=split] .section-main {
   flex-direction: row;
   display: block;
-  margin: auto auto auto 0;
+  margin: auto;
+  margin-inline-start: 0;
 }
 .onboardingContainer .screen[pos=split] .section-main:dir(rtl) {
-  margin: auto 0 auto auto;
+  margin: auto;
+  margin-inline-start: 0;
 }
 .onboardingContainer .screen[pos=split] .section-main.embedded-migration .main-content {
   padding-block: 100px 0;
@@ -1349,6 +1392,22 @@ html {
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content:dir(rtl) {
   border-radius: 8px 0 0 8px;
+}
+.onboardingContainer .screen[pos=split] .section-main .main-content .legal-paragraph {
+  text-align: start;
+  font-size: 11px;
+  line-height: 16.5px;
+  color: #5B5B66;
+}
+@media only screen and (width <= 800px) {
+  .onboardingContainer .screen[pos=split] .section-main .main-content .legal-paragraph {
+    padding-inline: 30px;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  .onboardingContainer .screen[pos=split] .section-main .main-content .legal-paragraph {
+    color: #CFCFD8;
+  }
 }
 .onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner {
   min-height: 330px;
@@ -1523,7 +1582,8 @@ html {
 }
 .onboardingContainer .screen[pos=split] .section-secondary:dir(rtl) {
   border-radius: 0 8px 8px 0;
-  margin: auto auto auto 0;
+  margin: auto;
+  margin-inline-end: 0;
 }
 .onboardingContainer .screen[pos=split] .section-secondary h1 {
   color: var(--mr-screen-heading-color);
@@ -1591,130 +1651,221 @@ html {
   .onboardingContainer .screen[pos=split] .tiles-theme-section {
     margin-inline-start: -10px;
   }
+  .onboardingContainer .screen[pos=split][reverse-split] {
+    flex-direction: row-reverse;
+  }
+  .onboardingContainer .screen[pos=split][reverse-split] .section-main {
+    margin: auto;
+    margin-inline-end: 0;
+    border-radius: 8px 0 0 8px;
+  }
+  .onboardingContainer .screen[pos=split][reverse-split] .section-main .main-content {
+    border-radius: inherit;
+  }
+  .onboardingContainer .screen[pos=split][reverse-split] .section-main:dir(rtl) {
+    border-radius: 0 8px 8px 0;
+    margin: auto;
+    margin-inline-end: 0;
+  }
+  .onboardingContainer .screen[pos=split][reverse-split] .section-secondary {
+    margin: auto;
+    margin-inline-start: 0;
+    border-radius: 0 8px 8px 0;
+  }
+  .onboardingContainer .screen[pos=split][reverse-split] .section-secondary:dir(rtl) {
+    border-radius: 8px 0 0 8px;
+    margin: auto;
+    margin-inline-start: 0;
+  }
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true]) .tiles-theme-section {
+  margin-inline-start: -10px;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] {
+  flex-direction: row-reverse;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] .section-main {
+  margin: auto;
+  margin-inline-end: 0;
+  border-radius: 8px 0 0 8px;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] .section-main .main-content {
+  border-radius: inherit;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] .section-main:dir(rtl) {
+  border-radius: 0 8px 8px 0;
+  margin: auto;
+  margin-inline-end: 0;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] .section-secondary {
+  margin: auto;
+  margin-inline-start: 0;
+  border-radius: 0 8px 8px 0;
+}
+.onboardingContainer .screen[pos=split]:where([no-rdm=true])[reverse-split] .section-secondary:dir(rtl) {
+  border-radius: 8px 0 0 8px;
+  margin: auto;
+  margin-inline-start: 0;
 }
 @media only screen and (width <= 800px) {
-  .onboardingContainer .screen[pos=split] {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) {
     flex-direction: column;
     min-height: 550px;
   }
-  .onboardingContainer .screen[pos=split]::before {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))::before {
     width: 400px;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary,
-.onboardingContainer .screen[pos=split] .section-main {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))[reverse-split] {
+    flex-direction: column;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))[reverse-split] .section-secondary {
+    border-radius: 8px 8px 0 0;
+    margin: auto;
+    margin-bottom: 0;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))[reverse-split] .section-secondary:dir(rtl) {
+    margin: auto;
+    margin-bottom: 0;
+    border-radius: 8px 8px 0 0;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))[reverse-split] .section-main {
+    margin: auto;
+    margin-top: 0;
+    border-radius: 0 0 8px 8px;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm]))[reverse-split] .section-main:dir(rtl) {
+    margin: auto;
+    margin-top: 0;
+    border-radius: 0 0 8px 8px;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary,
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main {
     width: 400px;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary {
     --mr-secondary-background-position-y: top;
     --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
     border-radius: 8px 8px 0 0;
-    margin: auto auto 0;
+    margin: auto;
+    margin-bottom: 0;
     height: 100px;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary .hero-image img {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary .hero-image img {
     margin: 6px 0;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary .message-text {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary .message-text {
     margin-inline: auto;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary h1 {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary h1 {
     font-size: 35px;
     text-align: center;
     white-space: normal;
     margin-inline: auto;
     margin-block: 14px 6px;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary:dir(rtl) {
-    margin: auto auto 0;
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary:dir(rtl) {
+    margin: auto;
+    margin-bottom: 0;
     border-radius: 8px 8px 0 0;
   }
-  .onboardingContainer .screen[pos=split] .section-secondary.with-secondary-section-hidden {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-secondary.with-secondary-section-hidden {
     display: none;
   }
-  .onboardingContainer .screen[pos=split] migration-wizard::part(deck) {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) migration-wizard::part(deck) {
     min-width: 330px;
     margin-inline: 36px;
   }
-  .onboardingContainer .screen[pos=split] .section-main {
-    margin: 0 auto auto;
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main {
+    margin: auto;
+    margin-top: 0;
     height: 450px;
   }
-  .onboardingContainer .screen[pos=split] .section-main migration-wizard::part(buttons) {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main migration-wizard::part(buttons) {
     flex-direction: column;
     margin-inline: 46px;
   }
-  .onboardingContainer .screen[pos=split] .section-main[hide-secondary-section=responsive] {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main[hide-secondary-section=responsive] {
     height: 550px;
     margin: auto;
   }
-  .onboardingContainer .screen[pos=split] .section-main[hide-secondary-section=responsive] .main-content {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main[hide-secondary-section=responsive]:dir(rtl) {
+    margin: auto;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main[hide-secondary-section=responsive] .main-content {
     padding: 50px 0 0;
     border-radius: 8px;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main[hide-secondary-section=responsive] .main-content:dir(rtl) {
+    border-radius: 8px;
+  }
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content {
     border-radius: 0 0 8px 8px;
     padding: 30px 0 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .main-content-inner {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .main-content-inner {
     align-items: center;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .logo-container {
     text-align: center;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .brand-logo {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .logo-container .brand-logo {
     min-height: 25px;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .brand-logo, .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .brand-logo:dir(rtl) {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .logo-container .brand-logo, .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .logo-container .brand-logo:dir(rtl) {
     background-position: center;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .logo-container .logo-alt {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .logo-container .logo-alt {
     width: inherit;
     height: inherit;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .welcome-text {
     align-items: center;
     text-align: center;
     margin-inline: 0;
     padding-inline: 30px;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text .spacer-bottom,
-.onboardingContainer .screen[pos=split] .section-main .main-content .welcome-text .spacer-top {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .welcome-text .spacer-bottom,
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .welcome-text .spacer-top {
     display: none;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .action-buttons {
     text-align: center;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .checkbox-container {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .action-buttons .checkbox-container {
     display: none;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .action-buttons .secondary-cta {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .action-buttons .secondary-cta {
     position: relative;
     margin-block: 10px 0;
     bottom: 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .primary,
-.onboardingContainer .screen[pos=split] .section-main .main-content .secondary {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .primary,
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .secondary {
     min-width: 240px;
     margin-inline: 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .steps {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .steps {
     padding-block: 0;
     margin: 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main .main-content .steps.progress-bar {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .main-content .steps.progress-bar {
     margin-inline: 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main .additional-cta.cta-link {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .additional-cta.cta-link {
     align-self: center;
   }
-  .onboardingContainer .screen[pos=split] .section-main .dismiss-button {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main .dismiss-button {
     top: -100px;
   }
-  .onboardingContainer .screen[pos=split] .section-main:dir(rtl) {
-    margin: 0 auto auto;
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main:dir(rtl) {
+    margin: auto;
+    margin-top: 0;
   }
-  .onboardingContainer .screen[pos=split] .section-main:dir(rtl) .main-content {
+  .onboardingContainer .screen[pos=split]:where(:not([no-rdm])) .section-main:dir(rtl) .main-content {
     border-radius: 0 0 8px 8px;
+  }
+  .onboardingContainer .screen[pos=split][no-rdm] {
+    width: 800px;
   }
 }
 @media only screen and (height <= 650px) and (800px <= width <= 990px) {
@@ -1990,6 +2141,7 @@ html {
   align-items: flex-start;
   gap: 16px;
   margin-block: -1em 2em;
+  margin-inline: 1em;
   color: #5B5B66;
   font-weight: 400;
   font-size: 14px;
@@ -1997,6 +2149,32 @@ html {
   transition: var(--transition);
   z-index: 1;
 }
+.onboardingContainer .multi-select-container #multi-stage-multi-select-label {
+  color: var(--in-content-page-color);
+  line-height: 1.5;
+  font-size: 16px;
+  font-weight: normal;
+  letter-spacing: -0.01em;
+  margin: calc(0.5em + 10px) 6px 0;
+  max-width: 750px;
+}
+.onboardingContainer .screen[pos=split] .multi-select-container #multi-stage-multi-select-label {
+  margin: calc(-35px + 1em + 10px) 0 0;
+  min-height: 1em;
+  font-size: 15px;
+  line-height: 1.5;
+}
+@media (prefers-contrast: no-preference) {
+  .onboardingContainer .screen[pos=split] .multi-select-container #multi-stage-multi-select-label {
+    color: #5B5B66;
+  }
+}
+@media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+  .onboardingContainer .screen[pos=split] .multi-select-container #multi-stage-multi-select-label {
+    color: #CFCFD8;
+  }
+}
+
 .onboardingContainer .multi-select-container .checkbox-container {
   display: flex;
 }
@@ -2061,7 +2239,7 @@ html {
 }
 .onboardingContainer .dismiss-button {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   top: 0;
   left: auto;
   right: 0;
@@ -2206,6 +2384,9 @@ html {
 .onboardingContainer .additional-cta-container[flow][flow=row] .secondary-cta {
   flex-basis: 100%;
 }
+.onboardingContainer .legal-paragraph {
+  transition: var(--transition);
+}
 .onboardingContainer .primary,
 .onboardingContainer .secondary,
 .onboardingContainer .additional-cta,
@@ -2340,7 +2521,8 @@ html {
 .onboardingContainer .dialog-initial .secondary,
 .onboardingContainer .dialog-initial .secondary-cta,
 .onboardingContainer .dialog-initial .steps,
-.onboardingContainer .dialog-initial .cta-link {
+.onboardingContainer .dialog-initial .cta-link,
+.onboardingContainer .dialog-initial .legal-paragraph {
   transition-delay: 1s;
 }
 .onboardingContainer .screen:not(.dialog-initial) .tiles-theme-section,
@@ -2350,7 +2532,8 @@ html {
 .onboardingContainer .screen:not(.dialog-initial) .primary,
 .onboardingContainer .screen:not(.dialog-initial) .secondary,
 .onboardingContainer .screen:not(.dialog-initial) .secondary-cta,
-.onboardingContainer .screen:not(.dialog-initial) .cta-link {
+.onboardingContainer .screen:not(.dialog-initial) .cta-link,
+.onboardingContainer .screen:not(.dialog-initial) .legal-paragraph {
   transition-delay: 0.4s;
 }
 .onboardingContainer .screen-2 .section-main {
@@ -2406,6 +2589,7 @@ html {
 .onboardingContainer.transition-in .screen .secondary,
 .onboardingContainer.transition-in .screen .secondary-cta:not(.top),
 .onboardingContainer.transition-in .screen .cta-link,
+.onboardingContainer.transition-in .screen .legal-paragraph,
 .onboardingContainer.transition-in .screen migration-wizard {
   opacity: 0;
   translate: 0 calc(-1 * var(--translate));
@@ -2438,7 +2622,8 @@ html {
 .onboardingContainer.transition-out .screen:not(.dialog-last) .checkbox-container:not(.multi-select-item),
 .onboardingContainer.transition-out .screen:not(.dialog-last) .secondary,
 .onboardingContainer.transition-out .screen:not(.dialog-last) .secondary-cta:not(.top),
-.onboardingContainer.transition-out .screen:not(.dialog-last) .cta-link {
+.onboardingContainer.transition-out .screen:not(.dialog-last) .cta-link,
+.onboardingContainer.transition-out .screen:not(.dialog-last) .legal-paragraph {
   opacity: 0;
   translate: 0 var(--translate);
   transition-delay: 0.3s;

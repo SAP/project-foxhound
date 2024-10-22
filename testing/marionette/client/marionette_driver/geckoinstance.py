@@ -60,8 +60,8 @@ class GeckoInstance(object):
         # Do not show datareporting policy notifications which can interfere with tests
         "datareporting.policy.dataSubmissionEnabled": False,
         "datareporting.policy.dataSubmissionPolicyBypassNotification": True,
-        # Automatically unload beforeunload alerts
-        "dom.disable_beforeunload": True,
+        # Disable popup-blocker
+        "dom.disable_open_during_load": False,
         # Enabling the support for File object creation in the content process.
         "dom.file.createInChild": True,
         # Disable delayed user input event handling
@@ -140,6 +140,8 @@ class GeckoInstance(object):
         "network.manage-offline-status": False,
         # Make sure SNTP requests don't hit the network
         "network.sntp.pools": "%(server)s",
+        # Disabled for causing marionette crashes on OSX. See bug 1882856
+        "network.dns.native_https_query": False,
         # Privacy and Tracking Protection
         "privacy.trackingprotection.enabled": False,
         # Disable recommended automation prefs in CI
@@ -439,8 +441,6 @@ class FennecInstance(GeckoInstance):
         "browser.safebrowsing.update.enabled": False,
         # Do not restore the last open set of tabs if the browser has crashed
         "browser.sessionstore.resume_from_crash": False,
-        # Disable e10s by default
-        "browser.tabs.remote.autostart": False,
     }
 
     def __init__(
@@ -600,6 +600,8 @@ class DesktopInstance(GeckoInstance):
         "browser.startup.homepage_override.mstone": "ignore",
         # Start with a blank page by default
         "browser.startup.page": 0,
+        # Unload the previously selected tab immediately
+        "browser.tabs.remote.unloadDelayMs": 0,
         # Don't unload tabs when available memory is running low
         "browser.tabs.unloadOnLowMemory": False,
         # Do not warn when closing all open tabs

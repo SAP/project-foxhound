@@ -61,7 +61,8 @@ void HTMLAreaElement::GetLinkTarget(nsAString& aTarget) {
 
 nsDOMTokenList* HTMLAreaElement::RelList() {
   if (!mRelList) {
-    mRelList = new nsDOMTokenList(this, nsGkAtoms::rel, sSupportedRelValues);
+    mRelList =
+        new nsDOMTokenList(this, nsGkAtoms::rel, sAnchorAndFormRelValues);
   }
   return mRelList;
 }
@@ -74,8 +75,8 @@ nsresult HTMLAreaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return rv;
 }
 
-void HTMLAreaElement::UnbindFromTree(bool aNullParent) {
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+void HTMLAreaElement::UnbindFromTree(UnbindContext& aContext) {
+  nsGenericHTMLElement::UnbindFromTree(aContext);
   // Without removing the link state we risk a dangling pointer in the
   // mStyledLinks hashtable
   Link::UnbindFromTree();

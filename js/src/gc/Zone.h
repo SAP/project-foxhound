@@ -29,6 +29,7 @@
 #include "js/GCHashTable.h"
 #include "js/Vector.h"
 #include "vm/AtomsTable.h"
+#include "vm/InvalidatingFuse.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/ShapeZone.h"
@@ -374,15 +375,13 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   bool registerObjectWithWeakPointers(JSObject* obj);
   void sweepObjectsWithWeakPointers(JSTracer* trc);
 
-  void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
-                              JS::CodeSizes* code, size_t* regexpZone,
-                              size_t* jitZone, size_t* cacheIRStubs,
-                              size_t* uniqueIdMap, size_t* initialPropMapTable,
-                              size_t* shapeTables, size_t* atomsMarkBitmaps,
-                              size_t* compartmentObjects,
-                              size_t* crossCompartmentWrappersTables,
-                              size_t* compartmentsPrivateData,
-                              size_t* scriptCountsMapArg);
+  void addSizeOfIncludingThis(
+      mozilla::MallocSizeOf mallocSizeOf, size_t* zoneObject,
+      JS::CodeSizes* code, size_t* regexpZone, size_t* jitZone,
+      size_t* cacheIRStubs, size_t* uniqueIdMap, size_t* initialPropMapTable,
+      size_t* shapeTables, size_t* atomsMarkBitmaps, size_t* compartmentObjects,
+      size_t* crossCompartmentWrappersTables, size_t* compartmentsPrivateData,
+      size_t* scriptCountsMapArg);
 
   // Iterate over all cells in the zone. See the definition of ZoneCellIter
   // in gc/GC-inl.h for the possible arguments and documentation.
@@ -676,6 +675,20 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   // was swept in in the last GC.
   unsigned lastSweepGroupIndex() { return gcSweepGroupIndex; }
 #endif
+
+  // Support for invalidating fuses
+
+  // A dependent script set pairs a fuse with a set of scripts which depend
+  // on said fuse; this is a vector of script sets because the expectation for
+  // now is that the number of runtime wide invalidating fuses will be small.
+  // This will need to be revisited (convert to HashMap?) should that no
+  // longer be the case
+  //
+  // Note: This isn't  traced through the zone, but rather through the use
+  // of JS::WeakCache.
+  js::Vector<js::DependentScriptSet, 1, js::SystemAllocPolicy> fuseDependencies;
+  js::DependentScriptSet* getOrCreateDependentScriptSet(
+      JSContext* cx, js::InvalidatingFuse* fuse);
 
  private:
   js::jit::JitZone* createJitZone(JSContext* cx);

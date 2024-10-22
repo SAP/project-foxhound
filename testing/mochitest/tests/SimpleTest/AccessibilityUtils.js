@@ -233,15 +233,103 @@ this.AccessibilityUtils = (function () {
     if (!node || !node.ownerGlobal) {
       return false;
     }
-    const toolbar = node.closest("toolbar");
-    if (
-      !toolbar ||
-      toolbar.getAttribute("keyNav") != "true" ||
-      node.id == "urlbar-go-button"
-    ) {
+    const toolbar =
+      node.closest("toolbar") ||
+      node.flattenedTreeParentNode.closest("toolbar");
+    if (!toolbar || toolbar.getAttribute("keyNav") != "true") {
       return false;
     }
+    // The Go button in the Url Bar is an example of a purposefully
+    // non-focusable image toolbar button that provides an mouse/touch-only
+    // control for the search query submission, while a keyboard user could
+    // press `Enter` to do it. Similarly, two scroll buttons that appear when
+    // toolbar is overflowing, and keyboard-only users would actually scroll
+    // tabs in the toolbar while trying to navigate to these controls. When
+    // toolbarbuttons are redundant for keyboard users, we do not want to
+    // create an extra tab stop for such controls, thus we are expecting the
+    // button markup to include `keyNav="false"` attribute to flag it.
+    if (node.getAttribute("keyNav") == "false") {
+      const ariaRoles = getAriaRoles(accessible);
+      return (
+        ariaRoles.includes("button") ||
+        accessible.role == Ci.nsIAccessibleRole.ROLE_PUSHBUTTON
+      );
+    }
     return node.ownerGlobal.ToolbarKeyboardNavigator._isButton(node);
+  }
+
+  /**
+   * Determine if an accessible is a keyboard focusable control within a Firefox
+   * View list. The main landmark of the Firefox View has role="application" for
+   * users to expect a custom keyboard navigation pattern. Controls within this
+   * area aren't keyboard focusable in the usual way. Instead, focus is managed
+   * by JS code which sets tabindex on a single control within each list at a
+   * time. Thus, we need to special case the focusable check for these controls.
+   */
+  function isKeyboardFocusableFxviewControlInApplication(accessible) {
+    const node = accessible.DOMNode;
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    // Firefox View application rows currently include only buttons and links:
+    if (
+      !node.className.includes("fxview-tab-row-") ||
+      (accessible.role != Ci.nsIAccessibleRole.ROLE_PUSHBUTTON &&
+        accessible.role != Ci.nsIAccessibleRole.ROLE_LINK)
+    ) {
+      return false; // Not a button or a link in a Firefox View app.
+    }
+    // ToDo: We may eventually need to support intervening generics between
+    // a list and its listitem here and/or aria-owns lists.
+    const listitemAcc = accessible.parent;
+    const listAcc = listitemAcc.parent;
+    if (
+      (!listAcc || listAcc.role != Ci.nsIAccessibleRole.ROLE_LIST) &&
+      (!listitemAcc || listitemAcc.role != Ci.nsIAccessibleRole.ROLE_LISTITEM)
+    ) {
+      return false; // This button/link isn't inside a listitem within a list.
+    }
+    // All listitems should be not focusable while both a button and a link
+    // within each list item might have tabindex="-1".
+    if (
+      node.tabIndex &&
+      matchState(accessible, STATE_FOCUSABLE) &&
+      !matchState(listitemAcc, STATE_FOCUSABLE)
+    ) {
+      // ToDo: We may eventually need to support lists which use aria-owns here.
+      // Check that there is only one keyboard reachable control within the list.
+      const childCount = listAcc.childCount;
+      let foundFocusable = false;
+      for (let c = 0; c < childCount; c++) {
+        const listitem = listAcc.getChildAt(c);
+        const listitemChildCount = listitem.childCount;
+        for (let i = 0; i < listitemChildCount; i++) {
+          const listitemControl = listitem.getChildAt(i);
+          // Use tabIndex rather than a11y focusable state because all controls
+          // within the listitem might have tabindex="-1".
+          if (listitemControl.DOMNode.tabIndex == 0) {
+            if (foundFocusable) {
+              // Only one control within a list should be focusable.
+              // ToDo: Fine-tune the a11y-check error message generated in this case.
+              // Strictly speaking, it's not ideal that we're performing an action
+              // from an is function, which normally only queries something without
+              // any externally observable behaviour. That said, fixing that would
+              // involve different return values for different cases (not a list,
+              // too many focusable listitem controls, etc) so we could move the
+              // a11yFail call to the caller.
+              a11yFail(
+                "Only one control should be focusable in a list",
+                accessible
+              );
+              return false;
+            }
+            foundFocusable = true;
+          }
+        }
+      }
+      return foundFocusable;
+    }
+    return false;
   }
 
   /**
@@ -300,19 +388,23 @@ this.AccessibilityUtils = (function () {
     if (accessible.role != Ci.nsIAccessibleRole.ROLE_PAGETAB) {
       return false; // Not a tab.
     }
-    // ToDo: We may eventually need to support intervening generics between
-    // a tab and its tablist here.
-    const tablist = accessible.parent;
+    const tablist = findNonGenericParentAccessible(accessible);
     if (!tablist || tablist.role != Ci.nsIAccessibleRole.ROLE_PAGETABLIST) {
       return false; // The tab isn't inside a tablist.
     }
     // ToDo: We may eventually need to support tablists which use
     // aria-activedescendant here.
     // Check that there is only one keyboard reachable tab.
-    const childCount = tablist.childCount;
     let foundFocusable = false;
-    for (let c = 0; c < childCount; c++) {
-      const tab = tablist.getChildAt(c);
+    for (const tab of findNonGenericChildrenAccessible(tablist)) {
+      // Allow whitespaces to be included in the tablist for styling purposes
+      const isWhitespace =
+        tab.role == Ci.nsIAccessibleRole.ROLE_TEXT_LEAF &&
+        tab.DOMNode.textContent.trim().length === 0;
+      if (tab.role != Ci.nsIAccessibleRole.ROLE_PAGETAB && !isWhitespace) {
+        // The tablist includes children other than tabs or whitespaces
+        a11yFail("Only tabs should be included in a tablist", accessible);
+      }
       // Use tabIndex rather than a11y focusable state because all tabs might
       // have tabindex="-1".
       if (tab.DOMNode.tabIndex == 0) {
@@ -373,6 +465,72 @@ this.AccessibilityUtils = (function () {
   }
 
   /**
+   * The gridcells are not expected to be interactive and focusable
+   * individually, but it is allowed to manually manage focus within the grid
+   * per ARIA Grid pattern (https://www.w3.org/WAI/ARIA/apg/patterns/grid/).
+   * Example of such grid would be a datepicker where one gridcell can be
+   * selected and the focus is moved with arrow keys once the user tabbed into
+   * the grid. In grids like a calendar, only one element would be included in
+   * the focus order and the rest of grid cells may not have an interactive
+   * accessible created. We need to special case the check for these gridcells.
+   */
+  function isAccessibleGridcell(node) {
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const accessible = getAccessible(node);
+
+    if (!accessible || accessible.role != Ci.nsIAccessibleRole.ROLE_GRID_CELL) {
+      return false; // Not a grid cell.
+    }
+    // ToDo: We may eventually need to support intervening generics between
+    // a grid cell and its grid container here.
+    const gridRow = accessible.parent;
+    if (!gridRow || gridRow.role != Ci.nsIAccessibleRole.ROLE_ROW) {
+      return false; // The grid cell isn't inside a row.
+    }
+    let grid = gridRow.parent;
+    if (!grid) {
+      return false; // The grid cell isn't inside a grid.
+    }
+    if (grid.role == Ci.nsIAccessibleRole.ROLE_GROUPING) {
+      // Grid built on the HTML table may include <tbody> wrapper:
+      grid = grid.parent;
+      if (!grid || grid.role != Ci.nsIAccessibleRole.ROLE_GRID) {
+        return false; // The grid cell isn't inside a grid.
+      }
+    }
+    // Check that there is only one keyboard reachable grid cell.
+    let foundFocusable = false;
+    for (const gridCell of grid.DOMNode.querySelectorAll(
+      "td, [role=gridcell]"
+    )) {
+      // Grid cells are not expected to have a "tabindex" attribute and to be
+      // included in the focus order, with the exception of the only one cell
+      // that is included in the page tab sequence to provide access to the grid.
+      if (gridCell.tabIndex == 0) {
+        if (foundFocusable) {
+          // Only one grid cell within a grid should be focusable.
+          // ToDo: Fine-tune the a11y-check error message generated in this case.
+          // Strictly speaking, it's not ideal that we're performing an action
+          // from an is function, which normally only queries something without
+          // any externally observable behaviour. That said, fixing that would
+          // involve different return values for different cases (not a grid
+          // cell, too many focusable grid cells, etc) so we could move the
+          // a11yFail call to the caller.
+          a11yFail(
+            "Only one grid cell should be focusable in a grid",
+            accessible
+          );
+          return false;
+        }
+        foundFocusable = true;
+      }
+    }
+    return foundFocusable;
+  }
+
+  /**
    * XUL treecol elements currently aren't focusable, making them inaccessible.
    * For now, we don't flag these as a failure to avoid breaking multiple tests.
    * ToDo: We should remove this exception after this is fixed in bug 1848397.
@@ -389,7 +547,7 @@ this.AccessibilityUtils = (function () {
   }
 
   /**
-   * Determine if an accessible is a combobox container of the url bar. We
+   * Determine if a DOM node is a combobox container of the url bar. We
    * intentionally leave this element unlabeled, because its child is a search
    * input that is the target and main control of this component. In general, we
    * want to avoid duplication in the label announcement when a user focuses the
@@ -398,38 +556,122 @@ this.AccessibilityUtils = (function () {
    * difficult to keep the accessible name synchronized between the combobox and
    * the input. Thus, we need to special case the label check for this control.
    */
-  function isUnlabeledUrlBarCombobox(accessible) {
-    const node = accessible.DOMNode;
+  function isUnlabeledUrlBarCombobox(node) {
     if (!node || !node.ownerGlobal) {
       return false;
     }
-    const ariaRoles = getAriaRoles(accessible);
+    let ariaRole = node.getAttribute("role");
     // There are only two cases of this pattern: <moz-input-box> and <searchbar>
     const isMozInputBox =
       node.tagName == "moz-input-box" &&
       node.classList.contains("urlbar-input-box");
     const isSearchbar = node.tagName == "searchbar" && node.id == "searchbar";
-    return (isMozInputBox || isSearchbar) && ariaRoles.includes("combobox");
+    return (isMozInputBox || isSearchbar) && ariaRole == "combobox";
   }
 
   /**
-   * Determine if an accessible is an option within the url bar. We know each
+   * Determine if a DOM node is an option within the url bar. We know each
    * url bar option is accessible, but it disappears as soon as it is clicked
    * during tests and the a11y-checks do not have time to test the label,
    * because the Fluent localization is not yet completed by then. Thus, we
    * need to special case the label check for these controls.
    */
-  function isUnlabeledUrlBarOption(accessible) {
-    const node = accessible.DOMNode;
+  function isUnlabeledUrlBarOption(node) {
     if (!node || !node.ownerGlobal) {
       return false;
     }
-    const ariaRoles = getAriaRoles(accessible);
-    return (
+    const role = getAccessible(node)?.role;
+    const isOption =
       node.tagName == "span" &&
-      ariaRoles.includes("option") &&
-      node.classList.contains("urlbarView-row-inner")
+      node.getAttribute("role") == "option" &&
+      node.classList.contains("urlbarView-row-inner");
+    const isMenuItem =
+      node.tagName == "menuitem" &&
+      role == Ci.nsIAccessibleRole.ROLE_MENUITEM &&
+      node.classList.contains("urlbarView-result-menuitem");
+    // Not all options have "data-l10n-id" attributes in the URL Bar, because
+    // some of options are autocomplete options based on the user input and
+    // they are not expected to be localized.
+    return isOption || isMenuItem;
+  }
+
+  /**
+   * Determine if a DOM node is a menuitem within the XUL menu. We know each
+   * menuitem is accessible, but it disappears as soon as it is clicked during
+   * tests and the a11y-checks do not have time to test the label, because the
+   * Fluent localization is not yet completed by then. Thus, we need to special
+   * case the label check for these controls.
+   */
+  function isUnlabeledMenuitem(node) {
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const hasLabel = node.querySelector("label, description");
+    const isMenuItem =
+      node.getAttribute("role") == "menuitem" ||
+      (node.tagName == "richlistitem" &&
+        node.classList.contains("autocomplete-richlistitem")) ||
+      (node.tagName == "menuitem" &&
+        node.classList.contains("urlbarView-result-menuitem"));
+
+    const isParentMenu =
+      node.parentNode.getAttribute("role") == "menu" ||
+      (node.parentNode.tagName == "richlistbox" &&
+        node.parentNode.classList.contains("autocomplete-richlistbox")) ||
+      (node.parentNode.tagName == "menupopup" &&
+        node.parentNode.classList.contains("urlbarView-result-menu"));
+    return (
+      isMenuItem &&
+      isParentMenu &&
+      hasLabel &&
+      (node.hasAttribute("data-l10n-id") || node.tagName == "richlistitem")
     );
+  }
+
+  /**
+   * Determine if the node is a "Show All" or one of image buttons on the
+   * about:config page, or a "X" close button on moz-message-bar. We know these
+   * buttons are accessible, but they disappear/are replaced as soon as they
+   * are clicked during tests and the a11y-checks do not have time to test the
+   * label, because the Fluent localization is not yet completed by then.
+   * Thus, we need to special case the label check for these controls.
+   */
+  function isUnlabeledImageButton(node) {
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const isShowAllButton = node.id == "show-all";
+    const isReplacedImageButton =
+      node.classList.contains("button-add") ||
+      node.classList.contains("button-delete") ||
+      node.classList.contains("button-reset");
+    const isCloseMozMessageBarButton =
+      node.classList.contains("close") &&
+      node.getAttribute("data-l10n-id") == "moz-message-bar-close-button";
+    return (
+      node.tagName.toLowerCase() == "button" &&
+      node.hasAttribute("data-l10n-id") &&
+      (isShowAllButton || isReplacedImageButton || isCloseMozMessageBarButton)
+    );
+  }
+
+  /**
+   * Determine if a node is a XUL:button on a prompt popup. We know this button
+   * is accessible, but it disappears as soon as it is clicked during tests and
+   * the a11y-checks do not have time to test the label, because the Fluent
+   * localization is not yet completed by then. Thus, we need to special case
+   * the label check for these controls.
+   */
+  function isUnlabeledXulButton(node) {
+    if (!node || !node.ownerGlobal) {
+      return false;
+    }
+    const hasLabel = node.querySelector("label, xul\\:label");
+    const isButton =
+      node.getAttribute("role") == "button" ||
+      node.tagName == "button" ||
+      node.tagName == "xul:button";
+    return isButton && hasLabel && node.hasAttribute("data-l10n-id");
   }
 
   /**
@@ -460,7 +702,8 @@ this.AccessibilityUtils = (function () {
       isKeyboardFocusablePanelMultiViewControl(accessible) ||
       isKeyboardFocusableUrlbarButton(accessible) ||
       isKeyboardFocusableXULTab(accessible) ||
-      isKeyboardFocusableTabInTablist(accessible)
+      isKeyboardFocusableTabInTablist(accessible) ||
+      isKeyboardFocusableFxviewControlInApplication(accessible)
     ) {
       return true;
     }
@@ -640,12 +883,6 @@ this.AccessibilityUtils = (function () {
    */
   function assertLabelled(accessible, allowRecurse = true) {
     const { DOMNode } = accessible;
-    if (
-      isUnlabeledUrlBarCombobox(accessible) ||
-      isUnlabeledUrlBarOption(accessible)
-    ) {
-      return;
-    }
     let name = accessible.name;
     if (!name) {
       // If text has just been inserted into the tree, the a11y engine might not
@@ -656,6 +893,21 @@ this.AccessibilityUtils = (function () {
       } catch (e) {
         // The Accessible died because the DOM node was removed or hidden.
         if (gEnv.labelRule) {
+          // Some elements disappear as soon as they are clicked during tests,
+          // their accessible dies before the Fluent localization is completed.
+          // We want to exclude these groups of nodes from the label check.
+          // Note: In other cases, this first block isn't necessarily hit
+          // because Fluent isn't finished yet. This might happen if a text
+          // node was inserted (whether by Fluent or something else) but a11y
+          // hasn't picked it up yet, but the node gets hidden before a11y
+          // can pick it up.
+          if (
+            isUnlabeledUrlBarOption(DOMNode) ||
+            isUnlabeledMenuitem(DOMNode) ||
+            isUnlabeledImageButton(DOMNode)
+          ) {
+            return;
+          }
           a11yWarn("Unlabeled element removed before l10n finished", {
             DOMNode,
           });
@@ -678,6 +930,13 @@ this.AccessibilityUtils = (function () {
               accessible.name;
             } catch (e) {
               // The Accessible died because the DOM node was removed or hidden.
+              if (
+                isUnlabeledUrlBarOption(DOMNode) ||
+                isUnlabeledImageButton(DOMNode) ||
+                isUnlabeledXulButton(DOMNode)
+              ) {
+                return;
+              }
               a11yWarn("Unlabeled element removed before l10n finished", {
                 DOMNode,
               });
@@ -694,6 +953,15 @@ this.AccessibilityUtils = (function () {
       name = name.trim();
     }
     if (gEnv.labelRule && !name) {
+      // The URL and Search Bar comboboxes are purposefully unlabeled,
+      // since they include labeled inputs that are receiving focus.
+      // Or the Accessible died because the DOM node was removed or hidden.
+      if (
+        isUnlabeledUrlBarCombobox(DOMNode) ||
+        isUnlabeledUrlBarOption(DOMNode)
+      ) {
+        return;
+      }
       a11yFail("Interactive elements must be labeled", accessible);
 
       return;
@@ -818,6 +1086,36 @@ this.AccessibilityUtils = (function () {
     return null;
   }
 
+  /**
+   * Find the nearest non-generic ancestor for a node to account for generic
+   * containers to intervene between the ancestor and it child.
+   */
+  function findNonGenericParentAccessible(childAcc) {
+    for (let acc = childAcc.parent; acc; acc = acc.parent) {
+      if (acc.computedARIARole != "generic") {
+        return acc;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find the nearest non-generic children for a node to account for generic
+   * containers to intervene between the ancestor and its children.
+   */
+  function* findNonGenericChildrenAccessible(parentAcc) {
+    const count = parentAcc.childCount;
+    for (let c = 0; c < count; ++c) {
+      const child = parentAcc.getChildAt(c);
+      // When Gecko will consider only one role as generic, we'd use child.role
+      if (child.computedARIARole == "generic") {
+        yield* findNonGenericChildrenAccessible(child);
+      } else {
+        yield child;
+      }
+    }
+  }
+
   function runIfA11YChecks(task) {
     return (...args) => (gA11YChecks ? task(...args) : null);
   }
@@ -839,7 +1137,7 @@ this.AccessibilityUtils = (function () {
       // node might be the image.
       const acc = findInteractiveAccessible(node);
       if (!acc) {
-        if (isInaccessibleXulTreecol(node)) {
+        if (isAccessibleGridcell(node) || isInaccessibleXulTreecol(node)) {
           return;
         }
         if (gEnv.mustHaveAccessibleRule) {

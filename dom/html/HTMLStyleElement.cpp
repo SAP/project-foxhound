@@ -14,6 +14,7 @@
 #include "nsThreadUtils.h"
 #include "nsContentUtils.h"
 #include "nsStubMutationObserver.h"
+#include "nsDOMTokenList.h"
 
 NS_IMPL_NS_NEW_HTML_ELEMENT(Style)
 
@@ -32,11 +33,13 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLStyleElement)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLStyleElement,
                                                   nsGenericHTMLElement)
   tmp->LinkStyle::Traverse(cb);
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBlocking)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLStyleElement,
                                                 nsGenericHTMLElement)
   tmp->LinkStyle::Unlink();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBlocking)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLStyleElement,
@@ -88,13 +91,27 @@ nsresult HTMLStyleElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return rv;
 }
 
-void HTMLStyleElement::UnbindFromTree(bool aNullParent) {
+void HTMLStyleElement::UnbindFromTree(UnbindContext& aContext) {
   RefPtr<Document> oldDoc = GetUncomposedDoc();
   ShadowRoot* oldShadow = GetContainingShadow();
 
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadow);
+}
+
+bool HTMLStyleElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                                      const nsAString& aValue,
+                                      nsIPrincipal* aMaybeScriptedPrincipal,
+                                      nsAttrValue& aResult) {
+  if (aNamespaceID == kNameSpaceID_None && aAttribute == nsGkAtoms::blocking &&
+      StaticPrefs::dom_element_blocking_enabled()) {
+    aResult.ParseAtomArray(aValue);
+    return true;
+  }
+
+  return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
+                                              aMaybeScriptedPrincipal, aResult);
 }
 
 void HTMLStyleElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -186,6 +203,23 @@ Maybe<LinkStyle::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
 JSObject* HTMLStyleElement::WrapNode(JSContext* aCx,
                                      JS::Handle<JSObject*> aGivenProto) {
   return HTMLStyleElement_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+nsDOMTokenList* HTMLStyleElement::Blocking() {
+  if (!mBlocking) {
+    mBlocking =
+        new nsDOMTokenList(this, nsGkAtoms::blocking, sSupportedBlockingValues);
+  }
+  return mBlocking;
+}
+
+bool HTMLStyleElement::IsPotentiallyRenderBlocking() {
+  return BlockingContainsRender();
+
+  // TODO: handle implicitly potentially render blocking
+  // https://html.spec.whatwg.org/#implicitly-potentially-render-blocking
+  // A style element is implicitly potentially render-blocking if the element
+  // was created by its node document's parser.
 }
 
 }  // namespace mozilla::dom

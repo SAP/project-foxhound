@@ -35,6 +35,7 @@
 #include "nsTreeColumns.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/ElementInternals.h"
 #include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Selection.h"
@@ -546,6 +547,32 @@ bool nsCoreUtils::IsWhitespaceString(const nsAString& aString) {
   return iterBegin == iterEnd;
 }
 
+void nsCoreUtils::TrimNonBreakingSpaces(nsAString& aString) {
+  if (aString.IsEmpty()) {
+    return;
+  }
+
+  // Find the index past the last nbsp prefix character.
+  constexpr char16_t nbsp{0xA0};
+  size_t startIndex = 0;
+  while (aString.CharAt(startIndex) == nbsp) {
+    startIndex++;
+  }
+
+  // Find the index before the first nbsp suffix character.
+  size_t endIndex = aString.Length() - 1;
+  while (endIndex > startIndex && aString.CharAt(endIndex) == nbsp) {
+    endIndex--;
+  }
+  if (startIndex > endIndex) {
+    aString.Truncate();
+    return;
+  }
+
+  // Trim the string down, removing the non-breaking space characters.
+  aString = Substring(aString, startIndex, endIndex - startIndex + 1);
+}
+
 bool nsCoreUtils::AccEventObserversExist() {
   nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
   NS_ENSURE_TRUE(obsService, false);
@@ -619,4 +646,35 @@ bool nsCoreUtils::IsDocumentVisibleConsideringInProcessAncestors(
     }
   } while ((parent = parent->GetInProcessParentDocument()));
   return true;
+}
+
+bool nsCoreUtils::IsDescendantOfAnyShadowIncludingAncestor(
+    nsINode* aDescendant, nsINode* aStartAncestor) {
+  const nsINode* descRoot = aDescendant->SubtreeRoot();
+  nsINode* ancRoot = aStartAncestor->SubtreeRoot();
+  for (;;) {
+    if (ancRoot == descRoot) {
+      return true;
+    }
+    auto* shadow = mozilla::dom::ShadowRoot::FromNode(ancRoot);
+    if (!shadow || !shadow->GetHost()) {
+      break;
+    }
+    ancRoot = shadow->GetHost()->SubtreeRoot();
+  }
+  return false;
+}
+
+Element* nsCoreUtils::GetAriaActiveDescendantElement(Element* aElement) {
+  if (Element* activeDescendant = aElement->GetAriaActiveDescendantElement()) {
+    return activeDescendant;
+  }
+
+  if (auto* element = nsGenericHTMLElement::FromNode(aElement)) {
+    if (auto* internals = element->GetInternals()) {
+      return internals->GetAriaActiveDescendantElement();
+    }
+  }
+
+  return nullptr;
 }

@@ -4,16 +4,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg_attr(feature = "deny-warnings", deny(warnings))]
-#![warn(clippy::pedantic)]
+use std::{
+    collections::HashMap,
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use bindgen::Builder;
 use serde_derive::Deserialize;
-use std::collections::HashMap;
-use std::env;
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 
 const BINDINGS_DIR: &str = "bindings";
 const BINDINGS_CONFIG: &str = "bindings.toml";
@@ -35,7 +34,7 @@ struct Bindings {
     opaque: Vec<String>,
     /// enumerations that are turned into a module (without this, the enum is
     /// mapped using the default, which means that the individual values are
-    /// formed with an underscore as <enum_type>_<enum_value_name>).
+    /// formed with an underscore as <`enum_type`>_<`enum_value_name`>).
     #[serde(default)]
     enums: Vec<String>,
 
@@ -51,16 +50,18 @@ struct Bindings {
 }
 
 fn is_debug() -> bool {
-    env::var("DEBUG")
-        .map(|d| d.parse::<bool>().unwrap_or(false))
-        .unwrap_or(false)
+    // Check the build profile and not whether debug symbols are enabled (i.e.,
+    // `env::var("DEBUG")`), because we enable those for benchmarking/profiling and still want
+    // to build NSS in release mode.
+    env::var("PROFILE").unwrap_or_default() == "debug"
 }
 
 // bindgen needs access to libclang.
 // On windows, this doesn't just work, you have to set LIBCLANG_PATH.
 // Rather than download the 400Mb+ files, like gecko does, let's just reuse their work.
 fn setup_clang() {
-    if env::consts::OS != "windows" {
+    // If this isn't Windows, or we're in CI, then we don't need to do anything.
+    if env::consts::OS != "windows" || env::var("GITHUB_WORKFLOW").unwrap() == "CI" {
         return;
     }
     println!("rerun-if-env-changed=LIBCLANG_PATH");
@@ -123,13 +124,18 @@ fn nss_dir() -> PathBuf {
         }
         dir
     };
-    assert!(dir.is_dir(), "NSS_DIR {:?} doesn't exist", dir);
+    assert!(dir.is_dir(), "NSS_DIR {dir:?} doesn't exist");
     // Note that this returns a relative path because UNC
     // paths on windows cause certain tools to explode.
     dir
 }
 
 fn get_bash() -> PathBuf {
+    // If BASH is set, use that.
+    if let Ok(bash) = env::var("BASH") {
+        return PathBuf::from(bash);
+    }
+
     // When running under MOZILLABUILD, we need to make sure not to invoke
     // another instance of bash that might be sitting around (like WSL).
     match env::var("MOZILLABUILD") {
@@ -142,10 +148,10 @@ fn build_nss(dir: PathBuf) {
     let mut build_nss = vec![
         String::from("./build.sh"),
         String::from("-Ddisable_tests=1"),
+        // Generate static libraries in addition to shared libraries.
+        String::from("--static"),
     ];
-    if is_debug() {
-        build_nss.push(String::from("--static"));
-    } else {
+    if !is_debug() {
         build_nss.push(String::from("-o"));
     }
     if let Ok(d) = env::var("NSS_JOBS") {
@@ -257,7 +263,7 @@ fn build_bindings(base: &str, bindings: &Bindings, flags: &[String], gecko: bool
             builder = builder.clang_arg("-DANDROID");
         }
         if bindings.cplusplus {
-            builder = builder.clang_args(&["-x", "c++", "-std=c++11"]);
+            builder = builder.clang_args(&["-x", "c++", "-std=c++14"]);
         }
     }
 
@@ -310,7 +316,7 @@ fn setup_standalone() -> Vec<String> {
         "cargo:rustc-link-search=native={}",
         nsslibdir.to_str().unwrap()
     );
-    if is_debug() {
+    if is_debug() || env::consts::OS == "windows" {
         static_link();
     } else {
         dynamic_link();

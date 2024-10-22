@@ -177,13 +177,7 @@ function setTimeout(callback, ms) {
 
 const lazy = {};
 ChromeUtils.defineLazyGetter(lazy, "logger", function () {
-  return console.createInstance({
-    prefix: "PlacesTransactions",
-    maxLogLevel: Services.prefs.getCharPref(
-      "places.transactions.logLevel",
-      "Error"
-    ),
-  });
+  return PlacesUtils.getLogger({ prefix: "Transactions" });
 });
 
 class TransactionsHistoryArray extends Array {
@@ -357,7 +351,9 @@ export var PlacesTransactions = {
           // skip most of the work for functions depending on previous results.
           // Moreover in both cases we should notify the user about the problem.
           accumulatedResults.push(undefined);
-          console.error(ex);
+          // Using console.error() here sometimes fails, due to unknown XPC
+          // wrappers reasons, so just use our logger.
+          lazy.logger.error(`Failed to execute batched transaction: ${ex}`);
         }
       }
       return accumulatedResults;

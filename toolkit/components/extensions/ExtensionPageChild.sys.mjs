@@ -299,7 +299,7 @@ class ExtensionPageContextChild extends ExtensionBaseContextChild {
    * APIs (provided that the correct permissions have been requested).
    *
    * This is the child side of the ExtensionPageContextParent class
-   * defined in ExtensionParent.jsm.
+   * defined in ExtensionParent.sys.mjs.
    *
    * @param {BrowserExtensionContent} extension This context's owner.
    * @param {object} params
@@ -391,7 +391,7 @@ export var ExtensionPageChild = {
     Services.obs.addObserver(this, "inner-window-destroyed"); // eslint-ignore-line mozilla/balanced-listeners
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     if (topic === "inner-window-destroyed") {
       let windowId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
 

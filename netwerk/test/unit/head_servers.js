@@ -327,21 +327,31 @@ class BaseProxyCode {
     // Connect to an origin server
     const { port, hostname } = new URL(`https://${req.url}`);
     const serverSocket = net
-      .connect(port || 443, hostname, () => {
-        clientSocket.write(
-          "HTTP/1.1 200 Connection Established\r\n" +
-            "Proxy-agent: Node.js-Proxy\r\n" +
-            "\r\n"
-        );
-        serverSocket.write(head);
-        serverSocket.pipe(clientSocket);
-        clientSocket.pipe(serverSocket);
-      })
+      .connect(
+        {
+          port: port || 443,
+          host: hostname,
+          family: 4, // Specifies to use IPv4
+        },
+        () => {
+          clientSocket.write(
+            "HTTP/1.1 200 Connection Established\r\n" +
+              "Proxy-agent: Node.js-Proxy\r\n" +
+              "\r\n"
+          );
+          serverSocket.write(head);
+          serverSocket.pipe(clientSocket);
+          clientSocket.pipe(serverSocket);
+        }
+      )
       .on("error", e => {
+        console.log("error" + e);
         // The socket will error out when we kill the connection
         // just ignore it.
       });
+
     clientSocket.on("error", e => {
+      console.log("client error" + e);
       // Sometimes we got ECONNRESET error on windows platform.
       // Ignore it for now.
     });
@@ -848,22 +858,22 @@ class WebSocketConnection {
     ]);
   }
 
-  onAcknowledge(aContext, aSize) {}
+  onAcknowledge() {}
   onBinaryMessageAvailable(aContext, aMsg) {
     this._messages.push(aMsg);
     this._msgCallback();
   }
-  onMessageAvailable(aContext, aMsg) {}
-  onServerClose(aContext, aCode, aReason) {}
-  onWebSocketListenerStart(aContext) {}
-  onStart(aContext) {
+  onMessageAvailable() {}
+  onServerClose() {}
+  onWebSocketListenerStart() {}
+  onStart() {
     this._openCallback();
   }
   onStop(aContext, aStatusCode) {
     this._stopCallback({ status: aStatusCode });
     this._ws = null;
   }
-  onProxyAvailable(req, chan, proxyInfo, status) {
+  onProxyAvailable(req, chan, proxyInfo) {
     if (proxyInfo) {
       this._proxyAvailCallback({ type: proxyInfo.type });
     } else {

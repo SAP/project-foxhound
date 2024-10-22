@@ -397,9 +397,9 @@ const SymbolicAddressSignature SASigArrayCopy = {
 #define VISIT_BUILTIN_FUNC(op, export, sa_name, ...)   \
   const SymbolicAddressSignature SASig##sa_name = {    \
       SymbolicAddress::sa_name,                        \
-      DECLARE_BUILTIN_MODULE_FUNC_RESULT_SASTYPE_##op, \
+      DECLARE_BUILTIN_MODULE_FUNC_RESULT_MIRTYPE_##op, \
       DECLARE_BUILTIN_MODULE_FUNC_FAILMODE_##op,       \
-      DECLARE_BUILTIN_MODULE_FUNC_PARAM_SASTYPES_##op};
+      DECLARE_BUILTIN_MODULE_FUNC_PARAM_MIRTYPES_##op};
 
 FOR_EACH_BUILTIN_MODULE_FUNC(VISIT_BUILTIN_FUNC)
 #undef VISIT_BUILTIN_FUNC
@@ -564,10 +564,10 @@ static bool WasmHandleDebugTrap() {
 }
 
 // Check if the pending exception, if any, is catchable by wasm.
-static bool HasCatchableException(JitActivation* activation, JSContext* cx,
-                                  MutableHandleValue exn) {
+static WasmExceptionObject* GetOrWrapWasmException(JitActivation* activation,
+                                                   JSContext* cx) {
   if (!cx->isExceptionPending()) {
-    return false;
+    return nullptr;
   }
 
   // Traps are generally not catchable as wasm exceptions. The only case in
@@ -575,28 +575,57 @@ static bool HasCatchableException(JitActivation* activation, JSContext* cx,
   // compiler uses to throw exceptions and is the source of exceptions from C++.
   if (activation->isWasmTrapping() &&
       activation->wasmTrapData().trap != Trap::ThrowReported) {
-    return false;
+    return nullptr;
   }
 
   if (cx->isThrowingOverRecursed() || cx->isThrowingOutOfMemory()) {
-    return false;
+    return nullptr;
   }
 
   // Write the exception out here to exn to avoid having to get the pending
   // exception and checking for OOM multiple times.
-  if (cx->getPendingException(exn)) {
+  RootedValue exn(cx);
+  if (cx->getPendingException(&exn)) {
     // Check if a JS exception originated from a wasm trap.
     if (exn.isObject() && exn.toObject().is<ErrorObject>()) {
       ErrorObject& err = exn.toObject().as<ErrorObject>();
       if (err.fromWasmTrap()) {
-        return false;
+        return nullptr;
       }
     }
-    return true;
+
+    // Get or create a wasm exception to represent the pending exception
+    Rooted<WasmExceptionObject*> wasmExn(cx);
+    if (exn.isObject() && exn.toObject().is<WasmExceptionObject>()) {
+      // We're already throwing a wasm exception
+      wasmExn = &exn.toObject().as<WasmExceptionObject>();
+
+      // If wasm is rethrowing a wrapped JS value, then set the pending
+      // exception on cx to be the wrapped value. This will ensure that if we
+      // unwind out of wasm the wrapper exception will not escape.
+      //
+      // We also do this here, and not at the end of wasm::HandleThrow so that
+      // any DebugAPI calls see the wrapped JS value, not the wrapper
+      // exception.
+      if (wasmExn->isWrappedJSValue()) {
+        // Re-use exn to avoid needing a new root
+        exn = wasmExn->wrappedJSValue();
+        cx->setPendingException(exn, nullptr);
+      }
+    } else {
+      // Wrap all thrown JS values in a wasm exception. This is required so
+      // that all exceptions have tags, and the 'null' JS value becomes a
+      // non-null wasm exception.
+      wasmExn = WasmExceptionObject::wrapJSValue(cx, exn);
+    }
+
+    if (wasmExn) {
+      return wasmExn;
+    }
   }
 
   MOZ_ASSERT(cx->isThrowingOutOfMemory());
-  return false;
+  return nullptr;
 }
 
 // Unwind the entire activation in response to a thrown exception. This function
@@ -635,8 +664,8 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
   Rooted<WasmInstanceObject*> keepAlive(cx, iter.instance()->object());
 
   JitActivation* activation = CallingActivation(cx);
-  RootedValue exn(cx);
-  bool hasCatchableException = HasCatchableException(activation, cx, &exn);
+  Rooted<WasmExceptionObject*> wasmExn(cx,
+                                       GetOrWrapWasmException(activation, cx));
 
   for (; !iter.done(); ++iter) {
     // Wasm code can enter same-compartment realms, so reset cx->realm to
@@ -644,7 +673,7 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
     cx->setRealmForJitExceptionHandler(iter.instance()->realm());
 
     // Only look for an exception handler if there's a catchable exception.
-    if (hasCatchableException) {
+    if (wasmExn) {
       const wasm::Code& code = iter.instance()->code();
       const uint8_t* pc = iter.resumePCinCurrentFrame();
       Tier tier;
@@ -661,15 +690,8 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
 #endif
 
         cx->clearPendingException();
-        RootedAnyRef ref(cx, AnyRef::null());
-        if (!AnyRef::fromJSValue(cx, exn, &ref)) {
-          MOZ_ASSERT(cx->isThrowingOutOfMemory());
-          hasCatchableException = false;
-          continue;
-        }
-
         MOZ_ASSERT(iter.instance() == iter.instance());
-        iter.instance()->setPendingException(ref);
+        iter.instance()->setPendingException(wasmExn);
 
         rfe->kind = ExceptionResumeKind::WasmCatch;
         rfe->framePointer = (uint8_t*)iter.frame();
@@ -707,6 +729,7 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
           // TODO properly handle forced return and resume wasm execution.
           JS_ReportErrorASCII(
               cx, "Unexpected resumption value from onExceptionUnwind");
+          wasmExn = nullptr;
         }
       }
     }
@@ -717,12 +740,26 @@ bool wasm::HandleThrow(JSContext* cx, WasmFrameIter& iter,
       // since throw recovery is not yet implemented in the wasm baseline.
       // TODO properly handle success and resume wasm execution.
       JS_ReportErrorASCII(cx, "Unexpected success from onLeaveFrame");
+      wasmExn = nullptr;
     }
     frame->leave(cx);
   }
 
   MOZ_ASSERT(!cx->activation()->asJit()->isWasmTrapping(),
              "unwinding clears the trapping state");
+
+  // Assert that any pending exception escaping to non-wasm code is not a
+  // wrapper exception object
+#ifdef DEBUG
+  Rooted<Value> pendingException(cx);
+  if (cx->isExceptionPending() && cx->getPendingException(&pendingException)) {
+    MOZ_ASSERT_IF(pendingException.isObject() &&
+                      pendingException.toObject().is<WasmExceptionObject>(),
+                  !pendingException.toObject()
+                       .as<WasmExceptionObject>()
+                       .isWrappedJSValue());
+  }
+#endif
 
   // In case of no handler, exit wasm via ret().
   // FailInstanceReg signals to wasm stub to do a failure return.
@@ -1440,6 +1477,8 @@ void* wasm::AddressOf(SymbolicAddress imm, ABIFunctionType* abiType) {
       *abiType = Args_Int32_GeneralGeneralInt32GeneralInt32Int32Int32;
       MOZ_ASSERT(*abiType == ToABIType(SASigArrayCopy));
       return FuncCast(Instance::arrayCopy, *abiType);
+    case SymbolicAddress::SlotsToAllocKindBytesTable:
+      return (void*)gc::slotsToAllocKindBytes;
     case SymbolicAddress::ExceptionNew:
       *abiType = Args_General2;
       MOZ_ASSERT(*abiType == ToABIType(SASigExceptionNew));
@@ -1533,6 +1572,10 @@ bool wasm::NeedsBuiltinThunk(SymbolicAddress sym) {
     case SymbolicAddress::PrintText:
       return false;
 #endif
+
+    // No thunk because they're just data
+    case SymbolicAddress::SlotsToAllocKindBytesTable:
+      return false;
 
     // Everyone else gets a thunk to handle the exit from the activation
     case SymbolicAddress::ToInt32:
@@ -1796,7 +1839,7 @@ using TypedNativeToCodeRangeMap =
     HashMap<TypedNative, uint32_t, TypedNative, SystemAllocPolicy>;
 
 using SymbolicAddressToCodeRangeArray =
-    EnumeratedArray<SymbolicAddress, SymbolicAddress::Limit, uint32_t>;
+    EnumeratedArray<SymbolicAddress, uint32_t, size_t(SymbolicAddress::Limit)>;
 
 struct BuiltinThunks {
   uint8_t* codeBase;

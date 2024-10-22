@@ -252,7 +252,8 @@ An override expression can be evaluated at pipeline creation time.
     clippy::collapsible_if,
     clippy::derive_partial_eq_without_eq,
     clippy::needless_borrowed_reference,
-    clippy::single_match
+    clippy::single_match,
+    clippy::enum_variant_names
 )]
 #![warn(
     trivial_casts,
@@ -458,6 +459,10 @@ pub enum VectorSize {
     Quad = 4,
 }
 
+impl VectorSize {
+    const MAX: usize = Self::Quad as u8 as usize;
+}
+
 /// Primitive type for a scalar.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
@@ -486,7 +491,7 @@ pub enum ScalarKind {
 }
 
 /// Characteristics of a scalar type.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -683,8 +688,7 @@ pub enum ImageClass {
 }
 
 /// A data type declared in the module.
-#[derive(Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "clone", derive(Clone))]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -696,8 +700,7 @@ pub struct Type {
 }
 
 /// Enum with additional information, depending on the kind of type.
-#[derive(Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "clone", derive(Clone))]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[cfg_attr(feature = "serialize", derive(Serialize))]
 #[cfg_attr(feature = "deserialize", derive(Deserialize))]
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
@@ -763,7 +766,7 @@ pub enum TypeInner {
         space: AddressSpace,
     },
 
-    /// Homogenous list of elements.
+    /// Homogeneous list of elements.
     ///
     /// The `base` type must be a [`SIZED`], [`DATA`] type.
     ///
@@ -882,6 +885,7 @@ pub enum Literal {
     F32(f32),
     U32(u32),
     I32(i32),
+    U64(u64),
     I64(i64),
     Bool(bool),
     AbstractInt(i64),
@@ -1253,15 +1257,18 @@ pub enum SampleLevel {
 #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub enum ImageQuery {
     /// Get the size at the specified level.
+    ///
+    /// The return value is a `u32` for 1D images, and a `vecN<u32>`
+    /// for an image with dimensions N > 2.
     Size {
         /// If `None`, the base level is considered.
         level: Option<Handle<Expression>>,
     },
-    /// Get the number of mipmap levels.
+    /// Get the number of mipmap levels, a `u32`.
     NumLevels,
-    /// Get the number of array layers.
+    /// Get the number of array layers, a `u32`.
     NumLayers,
-    /// Get the number of samples.
+    /// Get the number of samples, a `u32`.
     NumSamples,
 }
 
@@ -1681,6 +1688,10 @@ pub enum Statement {
     /// A block containing more statements, to be executed sequentially.
     Block(Block),
     /// Conditionally executes one of two blocks, based on the value of the condition.
+    ///
+    /// Naga IR does not have "phi" instructions. If you need to use
+    /// values computed in an `accept` or `reject` block after the `If`,
+    /// store them in a [`LocalVariable`].
     If {
         condition: Handle<Expression>, //bool
         accept: Block,
@@ -1699,6 +1710,10 @@ pub enum Statement {
     /// multiple values, like `case 1: case 2: case 3: { ... }`. This is
     /// represented in the IR as a series of fallthrough cases with empty
     /// bodies, except for the last.
+    ///
+    /// Naga IR does not have "phi" instructions. If you need to use
+    /// values computed in a [`SwitchCase::body`] block after the `Switch`,
+    /// store them in a [`LocalVariable`].
     ///
     /// [`value`]: SwitchCase::value
     /// [`body`]: SwitchCase::body
@@ -1733,6 +1748,10 @@ pub enum Statement {
     /// top of body as usual. The `break_if` expression corresponds to a "break
     /// if" statement in WGSL, or a loop whose back edge is an
     /// `OpBranchConditional` instruction in SPIR-V.
+    ///
+    /// Naga IR does not have "phi" instructions. If you need to use
+    /// values computed in a `body` or `continuing` block after the
+    /// `Loop`, store them in a [`LocalVariable`].
     ///
     /// [`Break`]: Statement::Break
     /// [`Continue`]: Statement::Continue

@@ -57,7 +57,7 @@ using FontID = mozilla::LookAndFeel::FontID;
 
 template <typename Index, typename Value, Index kEnd>
 class EnumeratedCache {
-  mozilla::EnumeratedArray<Index, kEnd, Value> mEntries;
+  mozilla::EnumeratedArray<Index, Value, size_t(kEnd)> mEntries;
   std::bitset<size_t(kEnd)> mValidity;
 
  public:
@@ -161,7 +161,6 @@ static const char sIntPrefs[][45] = {
     "ui.SpellCheckerUnderlineStyle",
     "ui.menuBarDrag",
     "ui.scrollbarButtonAutoRepeatBehavior",
-    "ui.tooltipDelay",
     "ui.swipeAnimationEnabled",
     "ui.scrollbarDisplayOnMouseMove",
     "ui.scrollbarFadeBeginDelay",
@@ -185,6 +184,7 @@ static const char sIntPrefs[][45] = {
     "ui.systemScrollbarSize",
     "ui.touchDeviceSupportPresent",
     "ui.titlebarRadius",
+    "ui.titlebarButtonSpacing",
     "ui.dynamicRange",
     "ui.videoDynamicRange",
     "ui.panelAnimations",
@@ -620,28 +620,38 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
     case ColorID::Accentcolortext:
       return widget::sDefaultAccentText.ToABGR();
       COLOR(SpellCheckerUnderline, 0xff, 0x00, 0x00)
-      COLOR(TextSelectDisabledBackground, 0xaa, 0xaa, 0xaa)
+      COLOR(TextSelectDisabledBackground, 0xAA, 0xAA, 0xAA)
 
       // Titlebar colors
-      COLOR(Activeborder, 0xB4, 0xB4, 0xB4)
-      COLOR(Inactiveborder, 0xB4, 0xB4, 0xB4)
-      COLOR(Activecaption, 0xF0, 0xF0, 0xF4)
-      COLOR(Inactivecaption, 0xF0, 0xF0, 0xF4)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Activeborder, 0xE3, 0xE3, 0xE3)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Inactiveborder, 0xE3, 0xE3, 0xE3)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Activecaption, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Inactivecaption, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvastext/Windowtext:
       COLOR(Captiontext, 0x00, 0x00, 0x00)
-      COLOR(Inactivecaptiontext, 0x00, 0x00, 0x00)
+      // deprecated in CSS Color Level 4, same as Graytext:
+      COLOR(Inactivecaptiontext, 0x6D, 0x6D, 0x6D)
 
       // CSS 2 colors:
-      COLOR(Appworkspace, 0xAB, 0xAB, 0xAB)
-      COLOR(Background, 0x00, 0x00, 0x00)
-      COLOR(Buttonhighlight, 0xFF, 0xFF, 0xFF)
-      COLOR(Buttonshadow, 0xA0, 0xA0, 0xA0)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Appworkspace, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Background, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Buttonface:
+      COLOR(Buttonhighlight, 0xE9, 0xE9, 0xED)
+      // deprecated in CSS Color Level 4, same as Buttonface:
+      COLOR(Buttonshadow, 0xE9, 0xE9, 0xED)
 
       // Buttons and comboboxes should be kept in sync since they are drawn with
       // the same colors by the non-native theme.
-      COLOR(Buttonface, 0xe9, 0xe9, 0xed)
-      COLORA(MozButtondisabledface, 0xe9, 0xe9, 0xed, 128)
+      COLOR(Buttonface, 0xE9, 0xE9, 0xED)
+      COLORA(MozButtondisabledface, 0xE9, 0xE9, 0xED, 128)
 
-      COLOR(MozCombobox, 0xe9, 0xe9, 0xed)
+      COLOR(MozCombobox, 0xE9, 0xE9, 0xED)
 
       COLOR(Buttontext, 0x00, 0x00, 0x00)
       COLOR(MozComboboxtext, 0x00, 0x00, 0x00)
@@ -649,21 +659,31 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       COLOR(Graytext, 0x6D, 0x6D, 0x6D)
       COLOR(Highlight, 0x33, 0x99, 0xFF)
       COLOR(Highlighttext, 0xFF, 0xFF, 0xFF)
-      COLOR(Infobackground, 0xFF, 0xFF, 0xE1)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Infobackground, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvastext/Windowtext:
       COLOR(Infotext, 0x00, 0x00, 0x00)
-      COLOR(Menu, 0xF0, 0xF0, 0xF0)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Menu, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvastext/Windowtext:
       COLOR(Menutext, 0x00, 0x00, 0x00)
-      COLOR(Scrollbar, 0xC8, 0xC8, 0xC8)
-      COLOR(Threeddarkshadow, 0x69, 0x69, 0x69)
-      COLOR(Threedface, 0xF0, 0xF0, 0xF0)
-      COLOR(Threedhighlight, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Canvas/Window:
+      COLOR(Scrollbar, 0xFF, 0xFF, 0xFF)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Threeddarkshadow, 0xE3, 0xE3, 0xE3)
+      // deprecated in CSS Color Level 4, same as Buttonface:
+      COLOR(Threedface, 0xE9, 0xE9, 0xED)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Threedhighlight, 0xE3, 0xE3, 0xE3)
       COLOR(Threedlightshadow, 0xE3, 0xE3, 0xE3)
-      COLOR(Threedshadow, 0xA0, 0xA0, 0xA0)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Threedshadow, 0xE3, 0xE3, 0xE3)
       COLOR(Buttonborder, 0xE3, 0xE3, 0xE3)
       COLOR(Mark, 0xFF, 0xFF, 0x00)
       COLOR(Marktext, 0x00, 0x00, 0x00)
       COLOR(Window, 0xFF, 0xFF, 0xFF)
-      COLOR(Windowframe, 0x64, 0x64, 0x64)
+      // deprecated in CSS Color Level 4, same as Buttonborder:
+      COLOR(Windowframe, 0xE3, 0xE3, 0xE3)
       COLOR(Windowtext, 0x00, 0x00, 0x00)
       COLOR(Field, 0xFF, 0xFF, 0xFF)
       COLORA(MozDisabledfield, 0xFF, 0xFF, 0xFF, 128)
@@ -708,6 +728,9 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
   switch (aID) {
     case ColorID::Window:  // --in-content-page-background
     case ColorID::Background:
+    case ColorID::Appworkspace:
+    case ColorID::Scrollbar:
+    case ColorID::Infobackground:
       color = kWindowBackground;
       break;
 
@@ -729,6 +752,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
       color = NS_RGB(0x3a, 0x39, 0x44);
       break;
 
+    case ColorID::MozEventreerow:
     case ColorID::MozOddtreerow:
     case ColorID::MozDialog:  // --in-content-box-background
       color = NS_RGB(35, 34, 43);
@@ -737,6 +761,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozDialogtext:
     case ColorID::MozSidebartext:
     case ColorID::Fieldtext:
+    case ColorID::Infotext:
     case ColorID::Buttontext:  // --in-content-button-text-color (via
                                // --in-content-page-color)
     case ColorID::MozComboboxtext:
@@ -756,6 +781,8 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::Threedshadow:
     case ColorID::MozSidebarborder:
     case ColorID::Threedlightshadow:
+    case ColorID::Threedhighlight:
+    case ColorID::Windowframe:
     case ColorID::Buttonborder:  // --in-content-box-border-color computed
                                  // with kWindowText above
                                  // kWindowBackground.
@@ -772,6 +799,7 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::MozSidebar:
     case ColorID::Field:
     case ColorID::Buttonface:  // --in-content-button-background
+    case ColorID::Buttonhighlight:
     case ColorID::MozColheader:
     case ColorID::Threedface:
     case ColorID::MozCombobox:
@@ -1259,9 +1287,26 @@ static constexpr std::bitset<size_t(ColorID::End)> sNonNativeThemeStandinColors{
     BIT_FOR(Field) | BIT_FOR(Fieldtext) |
     // Used by disabled form controls.
     BIT_FOR(MozDisabledfield) | BIT_FOR(Graytext) |
+    // Per spec, the following colors are deprecated, see
+    // https://drafts.csswg.org/css-color-4/#deprecated-system-colors
+    // should match ButtonFace:
+    BIT_FOR(Buttonhighlight) | BIT_FOR(Buttonshadow) | BIT_FOR(Threedface) |
+    // should match ButtonBorder:
+    BIT_FOR(Activeborder) | BIT_FOR(Inactiveborder) |
+    BIT_FOR(Threeddarkshadow) | BIT_FOR(Threedhighlight) |
+    BIT_FOR(Threedshadow) | BIT_FOR(Windowframe) |
+    // should match GrayText:
+    BIT_FOR(Inactivecaptiontext) |
+    // should match Canvas/Window:
+    BIT_FOR(Appworkspace) | BIT_FOR(Background) | BIT_FOR(Inactivecaption) |
+    BIT_FOR(Infobackground) | BIT_FOR(Menu) | BIT_FOR(Scrollbar) |
+    // should match CanvasText/WindowText:
+    BIT_FOR(Activecaption) | BIT_FOR(Captiontext) | BIT_FOR(Infotext) |
+    BIT_FOR(Menutext) |
     // Some pages expect these to return windows-like colors, see bug 1773795.
-    // Also, per spec these should match Canvas/CanvasText, see
-    // https://drafts.csswg.org/css-color-4/#window
+    // Also, per spec, these should match Canvas/CanvasText, see
+    // https://drafts.csswg.org/css-color-4/#valdef-color-window and
+    // https://drafts.csswg.org/css-color-4/#valdef-color-windowtext
     BIT_FOR(Window) | BIT_FOR(Windowtext)};
 #undef BIT_FOR
 
@@ -1454,6 +1499,11 @@ bool LookAndFeel::DrawInTitlebar() {
       break;
   }
   return nsLookAndFeel::GetInstance()->GetDefaultDrawInTitlebar();
+}
+
+LookAndFeel::TitlebarAction LookAndFeel::GetTitlebarAction(
+    TitlebarEvent aEvent) {
+  return nsLookAndFeel::GetInstance()->GetTitlebarAction(aEvent);
 }
 
 void LookAndFeel::GetThemeInfo(nsACString& aOut) {

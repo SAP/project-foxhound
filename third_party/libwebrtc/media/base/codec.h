@@ -20,7 +20,6 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/audio_codecs/audio_format.h"
-#include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "media/base/media_constants.h"
@@ -28,7 +27,7 @@
 
 namespace cricket {
 
-typedef std::map<std::string, std::string> CodecParameterMap;
+using CodecParameterMap = std::map<std::string, std::string>;
 
 class FeedbackParam {
  public:
@@ -112,8 +111,7 @@ struct RTC_EXPORT Codec {
   // Indicates if this codec is compatible with the specified codec by
   // checking the assigned id and profile values for the relevant video codecs.
   // H264 levels are not compared.
-  bool Matches(const Codec& codec,
-               const webrtc::FieldTrialsView* field_trials = nullptr) const;
+  bool Matches(const Codec& codec) const;
   bool MatchesRtpCodec(const webrtc::RtpCodec& capability) const;
 
   // Find the parameter for `name` and write the value to `out`.
@@ -187,6 +185,9 @@ struct RTC_EXPORT Codec {
 using VideoCodec = Codec;
 using AudioCodec = Codec;
 
+using VideoCodecs = std::vector<Codec>;
+using AudioCodecs = std::vector<Codec>;
+
 Codec CreateAudioCodec(int id,
                        const std::string& name,
                        int clockrate,
@@ -200,14 +201,7 @@ Codec CreateVideoRtxCodec(int rtx_payload_type, int associated_payload_type);
 
 // Get the codec setting associated with `payload_type`. If there
 // is no codec associated with that payload type it returns nullptr.
-template <class Codec>
-const Codec* FindCodecById(const std::vector<Codec>& codecs, int payload_type) {
-  for (const auto& codec : codecs) {
-    if (codec.id == payload_type)
-      return &codec;
-  }
-  return nullptr;
-}
+const Codec* FindCodecById(const std::vector<Codec>& codecs, int payload_type);
 
 bool HasLntf(const Codec& codec);
 bool HasNack(const Codec& codec);

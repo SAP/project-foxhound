@@ -4,7 +4,7 @@
 
 @import url("chrome://global/skin/design-system/tokens-shared.css");
 
-@media not (prefers-contrast) {
+@layer tokens-foundation {
   :root,
   :host(.anonymous-content-host) {
     /** Border **/
@@ -14,14 +14,13 @@
     --button-background-color: var(--button-bgcolor);
     --button-background-color-hover: var(--button-hover-bgcolor);
     --button-background-color-active: var(--button-active-bgcolor);
+    --button-text-color: var(--button-color);
+    --button-text-color-primary: var(--button-primary-color);
 
     /** Color **/
-    --color-accent-primary: var(--platform-color-accent);
-    --color-accent-primary-hover: var(--platform-color-accent-hover);
-    --color-accent-primary-active: var(--platform-color-accent-active);
-    --platform-color-accent: var(--button-primary-bgcolor, AccentColor);
-    --platform-color-accent-hover: var(--button-primary-hover-bgcolor);
-    --platform-color-accent-active: var(--button-primary-active-bgcolor);
+    --color-accent-primary: var(--button-primary-bgcolor, AccentColor);
+    --color-accent-primary-hover: var(--button-primary-hover-bgcolor);
+    --color-accent-primary-active: var(--button-primary-active-bgcolor);
     --color-canvas: Canvas;
 
     /** Font size **/
@@ -30,13 +29,6 @@
     --font-size-large: unset;
     --font-size-xlarge: unset;
     --font-size-xxlarge: unset;
-
-    /** Font weight **/
-    --font-weight-light: unset;
-
-    /** Line height **/
-    --line-height-small: unset;
-    --line-height-default: normal;
 
     /** Link **/
     --link-color: LinkText;

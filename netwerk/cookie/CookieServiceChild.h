@@ -41,7 +41,7 @@ class CookieServiceChild final : public PCookieServiceChild,
 
   static already_AddRefed<CookieServiceChild> GetSingleton();
 
-  void TrackCookieLoad(nsIChannel* aChannel);
+  RefPtr<GenericPromise> TrackCookieLoad(nsIChannel* aChannel);
 
  private:
   ~CookieServiceChild();
@@ -54,7 +54,7 @@ class CookieServiceChild final : public PCookieServiceChild,
   static bool RequireThirdPartyCheck(nsILoadInfo* aLoadInfo);
 
   mozilla::ipc::IPCResult RecvTrackCookiesLoad(
-      nsTArray<CookieStruct>&& aCookiesList, const OriginAttributes& aAttrs);
+      nsTArray<CookieStructTable>&& aCookiesListTable);
 
   mozilla::ipc::IPCResult RecvRemoveAll();
 

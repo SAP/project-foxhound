@@ -45,7 +45,7 @@ void Queue::Submit(
     }
   }
 
-  mBridge->SendQueueSubmit(mId, mParent->mId, list);
+  mBridge->QueueSubmit(mId, mParent->mId, list);
 }
 
 already_AddRefed<dom::Promise> Queue::OnSubmittedWorkDone(ErrorResult& aRv) {
@@ -69,18 +69,36 @@ void Queue::WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
     return;
   }
 
-  dom::ProcessTypedArraysFixed(aData, [&](const Span<const uint8_t>& aData) {
-    uint64_t length = aData.Length();
-    const auto checkedSize = aSize.WasPassed()
-                                 ? CheckedInt<size_t>(aSize.Value())
-                                 : CheckedInt<size_t>(length) - aDataOffset;
-    if (!checkedSize.isValid()) {
+  size_t elementByteSize = 1;
+  if (aData.IsArrayBufferView()) {
+    auto type = aData.GetAsArrayBufferView().Type();
+    if (type != JS::Scalar::MaxTypedArrayViewType) {
+      elementByteSize = byteSize(type);
+    }
+  }
+  dom::ProcessTypedArraysFixed(aData, [&, elementByteSize](
+                                          const Span<const uint8_t>& aData) {
+    uint64_t byteLength = aData.Length();
+
+    auto checkedByteOffset =
+        CheckedInt<uint64_t>(aDataOffset) * elementByteSize;
+    if (!checkedByteOffset.isValid()) {
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
+    auto offset = checkedByteOffset.value();
 
-    const auto& size = checkedSize.value();
-    if (aDataOffset + size > length) {
+    const auto checkedByteSize =
+        aSize.WasPassed() ? CheckedInt<size_t>(aSize.Value()) * elementByteSize
+                          : CheckedInt<size_t>(byteLength) - offset;
+    if (!checkedByteSize.isValid()) {
+      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      return;
+    }
+    auto size = checkedByteSize.value();
+
+    auto checkedByteEnd = CheckedInt<uint64_t>(offset) + size;
+    if (!checkedByteEnd.isValid() || checkedByteEnd.value() > byteLength) {
       aRv.ThrowAbortError(nsPrintfCString("Wrong data size %" PRIuPTR, size));
       return;
     }
@@ -102,10 +120,8 @@ void Queue::WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
     memcpy(mapping.Bytes().data(), aData.Elements() + aDataOffset, size);
     ipc::ByteBuf bb;
     ffi::wgpu_queue_write_buffer(aBuffer.mId, aBufferOffset, ToFFI(&bb));
-    if (!mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
-                                       std::move(handle))) {
-      MOZ_CRASH("IPC failure");
-    }
+    mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
+                                  std::move(handle));
   });
 }
 
@@ -149,10 +165,8 @@ void Queue::WriteTexture(const dom::GPUImageCopyTexture& aDestination,
 
     ipc::ByteBuf bb;
     ffi::wgpu_queue_write_texture(copyView, dataLayout, extent, ToFFI(&bb));
-    if (!mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
-                                       std::move(handle))) {
-      MOZ_CRASH("IPC failure");
-    }
+    mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
+                                  std::move(handle));
   });
 }
 
@@ -410,10 +424,8 @@ void Queue::CopyExternalImageToTexture(
   CommandEncoder::ConvertTextureCopyViewToFFI(aDestination, &copyView);
   ipc::ByteBuf bb;
   ffi::wgpu_queue_write_texture(copyView, dataLayout, extent, ToFFI(&bb));
-  if (!mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
-                                     std::move(handle))) {
-    MOZ_CRASH("IPC failure");
-  }
+  mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
+                                std::move(handle));
 }
 
 }  // namespace mozilla::webgpu

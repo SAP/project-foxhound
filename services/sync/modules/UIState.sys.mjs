@@ -87,7 +87,7 @@ const UIStateInternal = {
     this._initialized = false;
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "weave:service:sync:start":
         this.toggleSyncActivity(true);
@@ -192,7 +192,7 @@ const UIStateInternal = {
 
   _setLastSyncTime(state) {
     if (state?.status == UIState.STATUS_SIGNED_IN) {
-      const lastSync = Services.prefs.getCharPref(
+      const lastSync = Services.prefs.getStringPref(
         "services.sync.lastSync",
         null
       );

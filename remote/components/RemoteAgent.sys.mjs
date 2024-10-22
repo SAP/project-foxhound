@@ -9,6 +9,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Deferred: "chrome://remote/content/shared/Sync.sys.mjs",
   HttpServer: "chrome://remote/content/server/httpd.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  RecommendedPreferences:
+    "chrome://remote/content/shared/RecommendedPreferences.sys.mjs",
   WebDriverBiDi: "chrome://remote/content/webdriver-bidi/WebDriverBiDi.sys.mjs",
 });
 
@@ -31,7 +33,6 @@ const DEFAULT_PORT = 9222;
 
 const isRemote =
   Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT;
-
 class RemoteAgentParentProcess {
   #allowHosts;
   #allowOrigins;
@@ -166,7 +167,7 @@ class RemoteAgentParentProcess {
 
   handle(cmdLine) {
     // remote-debugging-port has to be consumed in nsICommandLineHandler:handle
-    // to avoid issues on macos. See Marionette.jsm::handle() for more details.
+    // to avoid issues on macos. See Marionette.sys.mjs::handle() for more details.
     // TODO: remove after Bug 1724251 is fixed.
     try {
       cmdLine.handleFlagWithParam("remote-debugging-port", false);
@@ -394,6 +395,9 @@ class RemoteAgentParentProcess {
           Services.obs.addObserver(this, "mail-idle-startup-tasks-finished");
           Services.obs.addObserver(this, "quit-application");
 
+          // Apply the common set of preferences for all supported protocols
+          lazy.RecommendedPreferences.applyPreferences();
+
           // With Bug 1717899 we will extend the lifetime of the Remote Agent to
           // the whole Firefox session, which will be identical to Marionette. For
           // now prevent logging if the component is not enabled during startup.
@@ -484,12 +488,6 @@ class RemoteAgentParentProcess {
 }
 
 class RemoteAgentContentProcess {
-  #classID;
-
-  constructor() {
-    this.#classID = Components.ID("{8f685a9d-8181-46d6-a71d-869289099c6d}");
-  }
-
   get running() {
     let reply = Services.cpmm.sendSyncMessage("RemoteAgent:IsRunning");
     if (!reply.length) {

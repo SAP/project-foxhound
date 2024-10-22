@@ -270,8 +270,8 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
 // Shared subtyping function across validation.
 
 [[nodiscard]] bool CheckIsSubtypeOf(Decoder& d, const ModuleEnvironment& env,
-                                    size_t opcodeOffset, FieldType subType,
-                                    FieldType superType);
+                                    size_t opcodeOffset, StorageType subType,
+                                    StorageType superType);
 
 // The local entries are part of function bodies and thus serialized by both
 // wasm and asm.js and decoded as part of both validation and compilation.
@@ -285,11 +285,13 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
                                                Decoder& d,
                                                ValTypeVector* locals);
 
-// This validates the entries.
+// This validates the entries. Function params are inserted before the locals
+// to generate the full local entries for use in validation
 
-[[nodiscard]] bool DecodeLocalEntries(Decoder& d, const TypeContext& types,
-                                      const FeatureArgs& features,
-                                      ValTypeVector* locals);
+[[nodiscard]] bool DecodeLocalEntriesWithParams(Decoder& d,
+                                                const ModuleEnvironment& env,
+                                                uint32_t funcIndex,
+                                                ValTypeVector* locals);
 
 // Returns whether the given [begin, end) prefix of a module's bytecode starts a
 // code section and, if so, returns the SectionRange of that code section.

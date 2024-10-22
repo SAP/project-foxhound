@@ -11,7 +11,6 @@
 #define mozilla_dom_HTMLAnchorElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/AnchorAreaFormRelValues.h"
 #include "mozilla/dom/Link.h"
 #include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsGenericHTMLElement.h"
@@ -24,8 +23,7 @@ namespace dom {
 
 class HTMLAnchorElement final : public nsGenericHTMLElement,
                                 public Link,
-                                public SupportsDNSPrefetch,
-                                public AnchorAreaFormRelValues {
+                                public SupportsDNSPrefetch {
  public:
   using Element::GetText;
 
@@ -52,7 +50,7 @@ class HTMLAnchorElement final : public nsGenericHTMLElement,
   NS_DECL_ADDSIZEOFEXCLUDINGTHIS
 
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
   bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
 

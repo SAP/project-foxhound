@@ -9,7 +9,7 @@ import re
 from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
-from perftest import TRACE_APPS
+from perftest import GECKO_PROFILER_APPS, TRACE_APPS
 from six.moves.urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from utils import (
     bool_from_str,
@@ -44,7 +44,7 @@ playback_settings = [
 
 def filter_app(tests, values):
     for test in tests:
-        if values["app"] in test["apps"]:
+        if values["app"] in [app.strip() for app in test["apps"].split(",")]:
             yield test
 
 
@@ -350,6 +350,18 @@ def get_raptor_test_list(args, oskey):
             tests_to_run.append(next_test)
             break
 
+    # Check to make sure that there isn't another test with the same name
+    # and raise an exception if that happens
+    all_tests_available = [
+        next_test for next_test in available_tests if next_test["name"] == args.test
+    ]
+    if len(all_tests_available) > 1:
+        raise Exception(
+            f"Too many tests found with the same test name `{args.test}` for this app. "
+            f"Found in these manifests: "
+            f"{[test['manifest'] for test in all_tests_available]}"
+        )
+
     # no matches, so now look for all subtests that come from a test toml
     # manifest that matches the test name provided on the commmand line
     if len(tests_to_run) == 0:
@@ -392,73 +404,83 @@ def get_raptor_test_list(args, oskey):
                 next_test["playback_pageset_manifest"], next_test["name"]
             )
 
-        if args.gecko_profile is True:
-            next_test["gecko_profile"] = True
-            LOG.info("gecko-profiling enabled")
-            max_page_cycles = 3
-            max_browser_cycles = 3
+        # Check if either --gecko-profiler or --extra-profiler-run is enabled.
+        if args.gecko_profile or (
+            args.extra_profiler_run and (args.app in GECKO_PROFILER_APPS + TRACE_APPS)
+        ):
+            if args.gecko_profile:
+                # This is a --gecko-profiler run.
+                next_test["gecko_profile"] = True
+                LOG.info("gecko-profiling enabled")
+                max_page_cycles = 3
+                max_browser_cycles = 3
+            else:
+                # This is an --extra-profiler-run run.
+                next_test["extra_profiler_run"] = True
+                LOG.info("extra-profiler-run enabled")
+                next_test["extra_profiler_run_browser_cycles"] = 1
+                if args.chimera:
+                    next_test["extra_profiler_run_page_cycles"] = 2
+                else:
+                    next_test["extra_profiler_run_page_cycles"] = 1
 
-            if (
-                "gecko_profile_entries" in args
-                and args.gecko_profile_entries is not None
-            ):
-                next_test["gecko_profile_entries"] = str(args.gecko_profile_entries)
-                LOG.info(
-                    "gecko-profiling entries set to %s" % args.gecko_profile_entries
-                )
-
-            if (
-                "gecko_profile_interval" in args
-                and args.gecko_profile_interval is not None
-            ):
-                next_test["gecko_profile_interval"] = str(args.gecko_profile_interval)
-                LOG.info(
-                    "gecko-profiling interval set to %s" % args.gecko_profile_interval
-                )
-
-            if (
-                "gecko_profile_threads" in args
-                and args.gecko_profile_threads is not None
-            ):
-                # pylint --py3k: W1639
-                threads = list(
-                    filter(None, next_test.get("gecko_profile_threads", "").split(","))
-                )
-                threads.extend(args.gecko_profile_threads.split(","))
+            # Both --gecko-profiler and --extra-profiler-run shares the same arguments for Firefox.
+            if args.app in GECKO_PROFILER_APPS:
                 if (
-                    "gecko_profile_extra_threads" in args
-                    and args.gecko_profile_extra_threads is not None
+                    "gecko_profile_entries" in args
+                    and args.gecko_profile_entries is not None
                 ):
-                    threads.extend(getattr(args, "gecko_profile_extra_threads", []))
-                next_test["gecko_profile_threads"] = ",".join(threads)
-                LOG.info("gecko-profiling threads %s" % args.gecko_profile_threads)
-            if (
-                "gecko_profile_features" in args
-                and args.gecko_profile_features is not None
-            ):
-                next_test["gecko_profile_features"] = args.gecko_profile_features
-                LOG.info("gecko-profiling features %s" % args.gecko_profile_features)
+                    next_test["gecko_profile_entries"] = str(args.gecko_profile_entries)
+                    LOG.info(
+                        "gecko-profiling entries set to %s" % args.gecko_profile_entries
+                    )
 
+                if (
+                    "gecko_profile_interval" in args
+                    and args.gecko_profile_interval is not None
+                ):
+                    next_test["gecko_profile_interval"] = str(
+                        args.gecko_profile_interval
+                    )
+                    LOG.info(
+                        "gecko-profiling interval set to %s"
+                        % args.gecko_profile_interval
+                    )
+
+                if (
+                    "gecko_profile_threads" in args
+                    and args.gecko_profile_threads is not None
+                ):
+                    # pylint --py3k: W1639
+                    threads = list(
+                        filter(
+                            None, next_test.get("gecko_profile_threads", "").split(",")
+                        )
+                    )
+                    threads.extend(args.gecko_profile_threads.split(","))
+                    if (
+                        "gecko_profile_extra_threads" in args
+                        and args.gecko_profile_extra_threads is not None
+                    ):
+                        threads.extend(getattr(args, "gecko_profile_extra_threads", []))
+                    next_test["gecko_profile_threads"] = ",".join(threads)
+                    LOG.info("gecko-profiling threads %s" % args.gecko_profile_threads)
+                if (
+                    "gecko_profile_features" in args
+                    and args.gecko_profile_features is not None
+                ):
+                    next_test["gecko_profile_features"] = args.gecko_profile_features
+                    LOG.info(
+                        "gecko-profiling features %s" % args.gecko_profile_features
+                    )
         else:
-            # if the gecko profiler is not enabled, ignore all of its settings
+            # if the gecko profiler or extra profiler run is not enabled, ignore all of its
+            # settings.
+            args.extra_profiler_run = False
             next_test.pop("gecko_profile_entries", None)
             next_test.pop("gecko_profile_interval", None)
             next_test.pop("gecko_profile_threads", None)
             next_test.pop("gecko_profile_features", None)
-
-        if args.extra_profiler_run is True and (
-            args.app == "firefox" or args.app in TRACE_APPS
-        ):
-            next_test["extra_profiler_run"] = True
-            LOG.info("extra-profiler-run enabled")
-            next_test["extra_profiler_run_browser_cycles"] = 1
-            if args.chimera:
-                next_test["extra_profiler_run_page_cycles"] = 2
-            else:
-                next_test["extra_profiler_run_page_cycles"] = 1
-        else:
-            args.extra_profiler_run = False
-            LOG.info("extra-profiler-run disabled")
 
         if args.debug_mode is True:
             next_test["debug_mode"] = True

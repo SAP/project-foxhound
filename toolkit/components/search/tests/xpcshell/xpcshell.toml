@@ -33,6 +33,8 @@ support-files = [
   "data/engine-same-name/_locales/gd/messages.json",
   "data/engines-no-order-hint.json",
   "data/engines.json",
+  "data/search-config-v2.json",
+  "data/search-config-v2-no-order-hint.json",
   "data/iconsRedirect.sjs",
   "data/search.json",
   "data/search-legacy.json",
@@ -56,10 +58,11 @@ support-files = [
   "data1/engines.json",
   "data1/search-config-v2.json",
   "simple-engines/engines.json",
+  "simple-engines/search-config-v2.json",
   "simple-engines/basic/manifest.json",
-  "simple-engines/hidden/manifest.json",
   "simple-engines/simple/manifest.json",
   "test-extensions/engines.json",
+  "test-extensions/search-config-v2.json",
   "test-extensions/plainengine/favicon.ico",
   "test-extensions/plainengine/manifest.json",
   "test-extensions/special-engine/favicon.ico",
@@ -75,6 +78,9 @@ support-files = [
 
 ["test_appDefaultEngine.js"]
 
+["test_appProvided_icons.js"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
+
 ["test_async.js"]
 
 ["test_config_engine_params.js"]
@@ -82,6 +88,7 @@ support-files = [
   "method-extensions/get/manifest.json",
   "method-extensions/post/manifest.json",
   "method-extensions/engines.json",
+  "method-extensions/search-config-v2.json",
 ]
 
 ["test_defaultEngine.js"]
@@ -98,28 +105,28 @@ support-files = [
 
 ["test_engine_multiple_alias.js"]
 
-["test_engine_selector.js"]
+["test_engine_old_selector.js"]
 
-["test_engine_selector_engine_orders.js"]
+["test_engine_old_selector_application.js"]
+
+["test_engine_old_selector_application_distribution.js"]
+
+["test_engine_old_selector_application_name.js"]
+
+["test_engine_old_selector_order.js"]
+
+["test_engine_old_selector_override.js"]
+
+["test_engine_old_selector_remote_override.js"]
+
+["test_engine_old_selector_remote_settings.js"]
+tags = "remotesettings searchmain"
 
 ["test_engine_selector_defaults.js"]
 
-["test_engine_selector_application.js"]
-
-["test_engine_selector_application_distribution.js"]
-
-["test_engine_selector_application_name.js"]
+["test_engine_selector_engine_orders.js"]
 
 ["test_engine_selector_environment.js"]
-
-["test_engine_selector_order.js"]
-
-["test_engine_selector_override.js"]
-
-["test_engine_selector_remote_settings.js"]
-tags = "remotesettings searchmain"
-
-["test_engine_selector_remote_override.js"]
 
 ["test_engine_selector_variants.js"]
 
@@ -171,6 +178,7 @@ tags = "remotesettings searchmain"
 support-files = [
   "opensearch/mozilla-ns.xml",
   "opensearch/post.xml",
+  "opensearch/searchform-invalid.xml",
   "opensearch/simple.xml",
   "opensearch/suggestion.xml",
   "opensearch/suggestion-alternate.xml",
@@ -214,11 +222,15 @@ support-files = [
 
 ["test_override_allowlist.js"]
 
+["test_override_allowlist_switch.js"]
+
 ["test_parseSubmissionURL.js"]
 
 ["test_policyEngine.js"]
 
 ["test_reload_engines.js"]
+
+["test_reload_engines_duplicate.js"]
 
 ["test_reload_engines_experiment.js"]
 
@@ -268,8 +280,6 @@ support-files = ["data/search_ignorelist.json"]
 ["test_settings_obsolete.js"]
 
 ["test_settings_persist.js"]
-
-["test_settings_persist_diff_locale_same_name.js"]
 
 ["test_sort_orders-no-hints.js"]
 

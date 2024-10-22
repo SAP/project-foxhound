@@ -173,6 +173,24 @@ def enable_decorators(value):
 set_config("ENABLE_DECORATORS", enable_decorators)
 set_define("ENABLE_DECORATORS", enable_decorators)
 
+# Enable JSON.parse with source
+# ===================================================
+option(
+    "--enable-json-parse-with-source",
+    default=False,
+    help="Enable experimental JS JSON.parse with source support",
+)
+
+
+@depends("--enable-json-parse-with-source")
+def enable_json_parse_with_source(value):
+    if value:
+        return True
+
+
+set_config("ENABLE_JSON_PARSE_WITH_SOURCE", enable_json_parse_with_source)
+set_define("ENABLE_JSON_PARSE_WITH_SOURCE", enable_json_parse_with_source)
+
 
 # Portable Baseline Intepreter
 # =======================================================
@@ -549,7 +567,7 @@ set_config("JS_MASM_VERBOSE", depends_if("--enable-masm-verbose")(lambda _: True
 # FJCVTZS instruction as part of ARMv8.3-JSConv.
 @depends(target)
 def is_apple_silicon(target):
-    return target.os == "OSX" and target.kernel == "Darwin" and target.cpu == "aarch64"
+    return target.kernel == "Darwin" and target.cpu == "aarch64"
 
 
 option(
@@ -687,29 +705,6 @@ option(
     help="Force disable all wasm experimental features for testing.",
 )
 
-# Support for WebAssembly function-references.
-# ===========================
-
-
-option(
-    "--disable-wasm-function-references",
-    default=True,
-    help="{Enable|Disable} WebAssembly function-references",
-)
-
-
-@depends("--disable-wasm-function-references", "--wasm-no-experimental")
-def wasm_function_references(value, no_experimental):
-    if no_experimental:
-        return
-
-    if value:
-        return True
-
-
-set_config("ENABLE_WASM_FUNCTION_REFERENCES", wasm_function_references)
-set_define("ENABLE_WASM_FUNCTION_REFERENCES", wasm_function_references)
-
 # Support for WebAssembly tail-calls.
 # ===========================
 
@@ -747,28 +742,14 @@ set_define("ENABLE_WASM_TAIL_CALLS", wasm_tail_calls)
 # ===========================
 
 
-@depends("--disable-wasm-function-references")
-def default_wasm_gc(function_references):
-    if function_references:
-        return True
+option("--disable-wasm-gc", default=True, help="{Enable|Disable} WebAssembly GC")
 
 
-option(
-    "--disable-wasm-gc", default=default_wasm_gc, help="{Enable|Disable} WebAssembly GC"
-)
-
-
-@depends(
-    "--disable-wasm-gc", "--disable-wasm-function-references", "--wasm-no-experimental"
-)
-def wasm_gc(value, function_references, no_experimental):
-    if no_experimental or not value:
+@depends("--disable-wasm-gc")
+def wasm_gc(value):
+    if not value:
         return
-
-    if function_references:
-        return True
-
-    die("--disable-wasm-gc only possible with --disable-wasm-function-references")
+    return True
 
 
 set_config("ENABLE_WASM_GC", wasm_gc)
@@ -778,20 +759,14 @@ set_define("ENABLE_WASM_GC", wasm_gc)
 # ==========================================
 
 
-@depends(milestone.is_nightly)
-def default_wasm_js_string_builtins(is_nightly):
-    if is_nightly:
-        return True
-
-
 option(
-    "--enable-wasm-js-string-builtins",
-    default=default_wasm_js_string_builtins,
+    "--disable-wasm-js-string-builtins",
+    default=True,
     help="{Enable|Disable} WebAssembly JS String Builtins",
 )
 
 
-@depends("--enable-wasm-js-string-builtins", "--wasm-no-experimental")
+@depends("--disable-wasm-js-string-builtins", "--wasm-no-experimental")
 def wasm_js_string_builtins(value, no_experimental):
     if no_experimental or not value:
         return
@@ -820,25 +795,6 @@ def enable_shared_memory(value):
 
 set_config("ENABLE_SHARED_MEMORY", enable_shared_memory)
 set_define("ENABLE_SHARED_MEMORY", enable_shared_memory)
-
-# Support for WebAssembly extended constant expressions
-# =====================================================
-
-
-option(
-    "--disable-wasm-extended-const",
-    help="{Enable|Disable} WebAssembly extended constant expressions",
-)
-
-
-@depends("--disable-wasm-extended-const")
-def wasm_extended_const(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_WASM_EXTENDED_CONST", wasm_extended_const)
-set_define("ENABLE_WASM_EXTENDED_CONST", wasm_extended_const)
 
 # Support for WebAssembly SIMD
 # =====================================================
@@ -1110,25 +1066,16 @@ set_define("ENABLE_WASM_MEMORY_CONTROL", wasm_memory_control)
 # =====================================
 
 
-@depends(milestone.is_nightly)
-def default_wasm_multi_memory(is_nightly):
-    if is_nightly:
-        return True
-
-
 option(
-    "--enable-wasm-multi-memory",
-    default=default_wasm_multi_memory,
+    "--disable-wasm-multi-memory",
     help="{Enable|Disable} WebAssembly multi-memory",
 )
 
 
-@depends("--enable-wasm-multi-memory", "--wasm-no-experimental")
-def wasm_multi_memory(value, no_experimental):
-    if no_experimental or not value:
-        return
-
-    return True
+@depends("--disable-wasm-multi-memory")
+def wasm_multi_memory(value):
+    if value:
+        return True
 
 
 set_config("ENABLE_WASM_MULTI_MEMORY", wasm_multi_memory)
@@ -1391,6 +1338,16 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
     set_define("HAVE_PTHREAD_GETNAME_NP", check_symbol("pthread_getname_np"))
     set_define("HAVE_PTHREAD_GET_NAME_NP", check_symbol("pthread_get_name_np"))
     set_define("HAVE_STRERROR", check_symbol("strerror"))
+
+    set_config(
+        "HAVE_LANGINFO_CODESET",
+        try_link(
+            includes=["langinfo.h"],
+            body="char* cs = nl_langinfo(CODESET);",
+            check_msg="for nl_langinfo and CODESET",
+            when=building_with_gnu_cc,
+        ),
+    )
 
     @depends(check_symbol("__cxa_demangle", language="C++"), moz_debug, dmd)
     def demangle_symbols(cxa_demangle, moz_debug, dmd):

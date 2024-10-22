@@ -1,17 +1,7 @@
 /**
- * Copyright 2018 Google Inc. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @license
+ * Copyright 2018 Google Inc.
+ * SPDX-License-Identifier: Apache-2.0
  */
 import expect from 'expect';
 import {Puppeteer} from 'puppeteer';
@@ -184,29 +174,29 @@ describe('querySelector', function () {
       const elements = await page.$$('div');
       expect(elements).toHaveLength(0);
     });
-  });
 
-  describe('Page.$x', function () {
-    it('should query existing element', async () => {
-      const {page} = await getTestState();
+    describe('xpath', function () {
+      it('should query existing element', async () => {
+        const {page} = await getTestState();
 
-      await page.setContent('<section>test</section>');
-      const elements = await page.$x('/html/body/section');
-      expect(elements[0]).toBeTruthy();
-      expect(elements).toHaveLength(1);
-    });
-    it('should return empty array for non-existing element', async () => {
-      const {page} = await getTestState();
+        await page.setContent('<section>test</section>');
+        const elements = await page.$$('xpath/html/body/section');
+        expect(elements[0]).toBeTruthy();
+        expect(elements).toHaveLength(1);
+      });
+      it('should return empty array for non-existing element', async () => {
+        const {page} = await getTestState();
 
-      const element = await page.$x('/html/body/non-existing-element');
-      expect(element).toEqual([]);
-    });
-    it('should return multiple elements', async () => {
-      const {page} = await getTestState();
+        const element = await page.$$('xpath/html/body/non-existing-element');
+        expect(element).toEqual([]);
+      });
+      it('should return multiple elements', async () => {
+        const {page} = await getTestState();
 
-      await page.setContent('<div></div><div></div>');
-      const elements = await page.$x('/html/body/div');
-      expect(elements).toHaveLength(2);
+        await page.setContent('<div></div><div></div>');
+        const elements = await page.$$('xpath/html/body/div');
+        expect(elements).toHaveLength(2);
+      });
     });
   });
 
@@ -357,37 +347,40 @@ describe('querySelector', function () {
       const elements = await html.$$('div');
       expect(elements).toHaveLength(0);
     });
-  });
 
-  describe('ElementHandle.$x', function () {
-    it('should query existing element', async () => {
-      const {page, server} = await getTestState();
+    describe('xpath', function () {
+      it('should query existing element', async () => {
+        const {page, server} = await getTestState();
 
-      await page.goto(server.PREFIX + '/playground.html');
-      await page.setContent(
-        '<html><body><div class="second"><div class="inner">A</div></div></body></html>'
-      );
-      using html = (await page.$('html'))!;
-      const second = await html.$x(`./body/div[contains(@class, 'second')]`);
-      const inner = await second[0]!.$x(`./div[contains(@class, 'inner')]`);
-      const content = await page.evaluate(e => {
-        return e.textContent;
-      }, inner[0]!);
-      expect(content).toBe('A');
+        await page.goto(server.PREFIX + '/playground.html');
+        await page.setContent(
+          '<html><body><div class="second"><div class="inner">A</div></div></body></html>'
+        );
+        using html = (await page.$('html'))!;
+        const second = await html.$$(
+          `xpath/./body/div[contains(@class, 'second')]`
+        );
+        const inner = await second[0]!.$$(
+          `xpath/./div[contains(@class, 'inner')]`
+        );
+        const content = await page.evaluate(e => {
+          return e.textContent;
+        }, inner[0]!);
+        expect(content).toBe('A');
+      });
+
+      it('should return null for non-existing element', async () => {
+        const {page} = await getTestState();
+
+        await page.setContent(
+          '<html><body><div class="second"><div class="inner">B</div></div></body></html>'
+        );
+        using html = (await page.$('html'))!;
+        const second = await html.$$(`xpath/div[contains(@class, 'third')]`);
+        expect(second).toEqual([]);
+      });
     });
-
-    it('should return null for non-existing element', async () => {
-      const {page} = await getTestState();
-
-      await page.setContent(
-        '<html><body><div class="second"><div class="inner">B</div></div></body></html>'
-      );
-      using html = (await page.$('html'))!;
-      const second = await html.$x(`/div[contains(@class, 'third')]`);
-      expect(second).toEqual([]);
-    });
   });
-
   // This is the same tests for `$$eval` and `$$` as above, but with a queryAll
   // handler that returns an array instead of a list of nodes.
   describe('QueryAll', function () {

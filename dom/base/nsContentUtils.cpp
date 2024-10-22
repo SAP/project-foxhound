@@ -59,6 +59,7 @@
 #include "mozAutoDocUpdate.h"
 #include "mozIDOMWindow.h"
 #include "nsIOService.h"
+#include "nsObjectLoadingContent.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/ArrayIterator.h"
 #include "mozilla/ArrayUtils.h"
@@ -315,7 +316,6 @@
 #include "nsIObserverService.h"
 #include "nsIParserUtils.h"
 #include "nsIPermissionManager.h"
-#include "nsIPluginTag.h"
 #include "nsIPrincipal.h"
 #include "nsIProperties.h"
 #include "nsIProtocolHandler.h"
@@ -360,7 +360,6 @@
 #include "nsPIDOMWindowInlines.h"
 #include "nsParser.h"
 #include "nsParserConstants.h"
-#include "nsPluginHost.h"
 #include "nsPoint.h"
 #include "nsPointerHashKeys.h"
 #include "nsPresContext.h"
@@ -3063,13 +3062,15 @@ bool nsContentUtils::PositionIsBefore(nsINode* aNode1, nsINode* aNode2,
 }
 
 /* static */
-Maybe<int32_t> nsContentUtils::ComparePoints(
-    const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
-    uint32_t aOffset2, ComparePointsCache* aParent1Cache) {
+Maybe<int32_t> nsContentUtils::ComparePoints(const nsINode* aParent1,
+                                             uint32_t aOffset1,
+                                             const nsINode* aParent2,
+                                             uint32_t aOffset2,
+                                             NodeIndexCache* aIndexCache) {
   bool disconnected{false};
 
   const int32_t order = ComparePoints_Deprecated(
-      aParent1, aOffset1, aParent2, aOffset2, &disconnected, aParent1Cache);
+      aParent1, aOffset1, aParent2, aOffset2, &disconnected, aIndexCache);
   if (disconnected) {
     return Nothing();
   }
@@ -3080,7 +3081,7 @@ Maybe<int32_t> nsContentUtils::ComparePoints(
 /* static */
 int32_t nsContentUtils::ComparePoints_Deprecated(
     const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
-    uint32_t aOffset2, bool* aDisconnected, ComparePointsCache* aParent1Cache) {
+    uint32_t aOffset2, bool* aDisconnected, NodeIndexCache* aIndexCache) {
   if (aParent1 == aParent2) {
     return aOffset1 < aOffset2 ? -1 : aOffset1 > aOffset2 ? 1 : 0;
   }
@@ -3125,10 +3126,15 @@ int32_t nsContentUtils::ComparePoints_Deprecated(
       if (MOZ_UNLIKELY(child2->IsShadowRoot())) {
         return 1;
       }
-      const Maybe<uint32_t> child1Index =
-          aParent1Cache ? aParent1Cache->ComputeIndexOf(parent, child1)
-                        : parent->ComputeIndexOf(child1);
-      const Maybe<uint32_t> child2Index = parent->ComputeIndexOf(child2);
+      Maybe<uint32_t> child1Index;
+      Maybe<uint32_t> child2Index;
+      if (aIndexCache) {
+        aIndexCache->ComputeIndicesOf(parent, child1, child2, child1Index,
+                                      child2Index);
+      } else {
+        child1Index = parent->ComputeIndexOf(child1);
+        child2Index = parent->ComputeIndexOf(child2);
+      }
       if (MOZ_LIKELY(child1Index.isSome() && child2Index.isSome())) {
         return *child1Index < *child2Index ? -1 : 1;
       }
@@ -3146,7 +3152,9 @@ int32_t nsContentUtils::ComparePoints_Deprecated(
 
   if (!pos1) {
     const nsINode* child2 = parents2.ElementAt(--pos2);
-    const Maybe<uint32_t> child2Index = parent->ComputeIndexOf(child2);
+    const Maybe<uint32_t> child2Index =
+        aIndexCache ? aIndexCache->ComputeIndexOf(parent, child2)
+                    : parent->ComputeIndexOf(child2);
     if (MOZ_UNLIKELY(NS_WARN_IF(child2Index.isNothing()))) {
       return 1;
     }
@@ -3155,8 +3163,8 @@ int32_t nsContentUtils::ComparePoints_Deprecated(
 
   const nsINode* child1 = parents1.ElementAt(--pos1);
   const Maybe<uint32_t> child1Index =
-      aParent1Cache ? aParent1Cache->ComputeIndexOf(parent, child1)
-                    : parent->ComputeIndexOf(child1);
+      aIndexCache ? aIndexCache->ComputeIndexOf(parent, child1)
+                  : parent->ComputeIndexOf(child1);
   if (MOZ_UNLIKELY(NS_WARN_IF(child1Index.isNothing()))) {
     return -1;
   }
@@ -4040,7 +4048,8 @@ nsresult nsContentUtils::LoadImage(
     int32_t aLoadFlags, const nsAString& initiatorType,
     imgRequestProxy** aRequest, nsContentPolicyType aContentPolicyType,
     bool aUseUrgentStartForChannel, bool aLinkPreload,
-    uint64_t aEarlyHintPreloaderId) {
+    uint64_t aEarlyHintPreloaderId,
+    mozilla::dom::FetchPriority aFetchPriority) {
   MOZ_ASSERT(aURI, "Must have a URI");
   MOZ_ASSERT(aContext, "Must have a context");
   MOZ_ASSERT(aLoadingDocument, "Must have a document");
@@ -4077,7 +4086,7 @@ nsresult nsContentUtils::LoadImage(
                               initiatorType,      /* the load initiator */
                               aUseUrgentStartForChannel, /* urgent-start flag */
                               aLinkPreload, /* <link preload> initiator */
-                              aEarlyHintPreloaderId, aRequest);
+                              aEarlyHintPreloaderId, aFetchPriority, aRequest);
 }
 
 // static
@@ -5518,25 +5527,30 @@ uint32_t computeSanitizationFlags(nsIPrincipal* aPrincipal, int32_t aFlags) {
 void nsContentUtils::SetHTMLUnsafe(FragmentOrElement* aTarget,
                                    Element* aContext,
                                    const nsAString& aSource) {
-  MOZ_ASSERT(!sFragmentParsingActive, "Re-entrant fragment parsing attempted.");
-  mozilla::AutoRestore<bool> guard(sFragmentParsingActive);
-  sFragmentParsingActive = true;
-  if (!sHTMLFragmentParser) {
-    NS_ADDREF(sHTMLFragmentParser = new nsHtml5StringParser());
-    // Now sHTMLFragmentParser owns the object
-  }
+  RefPtr<DocumentFragment> fragment;
+  {
+    MOZ_ASSERT(!sFragmentParsingActive,
+               "Re-entrant fragment parsing attempted.");
+    mozilla::AutoRestore<bool> guard(sFragmentParsingActive);
+    sFragmentParsingActive = true;
+    if (!sHTMLFragmentParser) {
+      NS_ADDREF(sHTMLFragmentParser = new nsHtml5StringParser());
+      // Now sHTMLFragmentParser owns the object
+    }
 
-  nsAtom* contextLocalName = aContext->NodeInfo()->NameAtom();
-  int32_t contextNameSpaceID = aContext->GetNameSpaceID();
+    nsAtom* contextLocalName = aContext->NodeInfo()->NameAtom();
+    int32_t contextNameSpaceID = aContext->GetNameSpaceID();
 
-  RefPtr<Document> doc = aTarget->OwnerDoc();
-  RefPtr<DocumentFragment> fragment = doc->CreateDocumentFragment();
-  nsresult rv = sHTMLFragmentParser->ParseFragment(
-      aSource, fragment, contextLocalName, contextNameSpaceID,
-      fragment->OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks,
-      true, true);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Failed to parse fragment for SetHTMLUnsafe");
+    RefPtr<Document> doc = aTarget->OwnerDoc();
+    fragment = doc->CreateDocumentFragment();
+    nsresult rv = sHTMLFragmentParser->ParseFragment(
+        aSource, fragment, contextLocalName, contextNameSpaceID,
+        fragment->OwnerDoc()->GetCompatibilityMode() ==
+            eCompatibility_NavQuirks,
+        true, true);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Failed to parse fragment for SetHTMLUnsafe");
+    }
   }
 
   aTarget->ReplaceChildren(fragment, IgnoreErrors());
@@ -9122,13 +9136,19 @@ class StringBuilder {
       TextFragmentWithEncode,
     };
 
+    struct LiteralSpan {
+      const char16_t* mData;
+      uint32_t mLength;
+
+      Span<const char16_t> AsSpan() { return Span(mData, mLength); }
+    };
+
     union {
       nsAtom* mAtom;
-      const char16_t* mLiteral;
+      LiteralSpan mLiteral;
       nsString mString;
       const nsTextFragment* mTextFragment;
     };
-    uint32_t mLength = 0;
     Type mType = Type::Unknown;
   };
 
@@ -9160,17 +9180,15 @@ class StringBuilder {
     u->mAtom = aAtom;
     u->mType = Unit::Type::Atom;
     uint32_t len = aAtom->GetLength();
-    u->mLength = len;
     mLength += len;
   }
 
   template <int N>
   void Append(const char16_t (&aLiteral)[N]) {
+    constexpr uint32_t len = N - 1;
     Unit* u = AddUnit();
-    u->mLiteral = aLiteral;
+    u->mLiteral = {aLiteral, len};
     u->mType = Unit::Type::Literal;
-    uint32_t len = N - 1;
-    u->mLength = len;
     mLength += len;
   }
 
@@ -9179,15 +9197,14 @@ class StringBuilder {
     uint32_t len = aString.Length();
     new (&u->mString) nsString(std::move(aString));
     u->mType = Unit::Type::String;
-    u->mLength = len;
     mLength += len;
   }
 
-  void AppendWithAttrEncode(nsString&& aString, uint32_t aLen) {
+  // aLen can be !isValid(), which will get propagated into mLength.
+  void AppendWithAttrEncode(nsString&& aString, CheckedInt<uint32_t> aLen) {
     Unit* u = AddUnit();
     new (&u->mString) nsString(std::move(aString));
     u->mType = Unit::Type::StringWithEncode;
-    u->mLength = aLen;
     mLength += aLen;
   }
 
@@ -9196,15 +9213,15 @@ class StringBuilder {
     u->mTextFragment = aTextFragment;
     u->mType = Unit::Type::TextFragment;
     uint32_t len = aTextFragment->GetLength();
-    u->mLength = len;
     mLength += len;
   }
 
-  void AppendWithEncode(const nsTextFragment* aTextFragment, uint32_t aLen) {
+  // aLen can be !isValid(), which will get propagated into mLength.
+  void AppendWithEncode(const nsTextFragment* aTextFragment,
+                        CheckedInt<uint32_t> aLen) {
     Unit* u = AddUnit();
     u->mTextFragment = aTextFragment;
     u->mType = Unit::Type::TextFragmentWithEncode;
-    u->mLength = aLen;
     mLength += aLen;
   }
 
@@ -9235,7 +9252,7 @@ class StringBuilder {
             EncodeAttrString(u.mString, appender, u.mString.Taint());
             break;
           case Unit::Type::Literal:
-            appender.Append(Span(u.mLiteral, u.mLength), EmptyTaint);
+            appender.Append(u.mLiteral.AsSpan(), EmptyTaint);
             break;
           case Unit::Type::TextFragment:
             if (u.mTextFragment->Is2b()) {
@@ -9372,7 +9389,7 @@ static_assert(sizeof(StringBuilder) <= StringBuilder::TARGET_SIZE,
 
 static void AppendEncodedCharacters(const nsTextFragment* aText,
                                     StringBuilder& aBuilder) {
-  uint32_t extraSpaceNeeded = 0;
+  uint32_t numEncodedChars = 0;
   uint32_t len = aText->GetLength();
   if (aText->Is2b()) {
     const char16_t* data = aText->Get2b();
@@ -9380,16 +9397,10 @@ static void AppendEncodedCharacters(const nsTextFragment* aText,
       const char16_t c = data[i];
       switch (c) {
         case '<':
-          extraSpaceNeeded += ArrayLength("&lt;") - 2;
-          break;
         case '>':
-          extraSpaceNeeded += ArrayLength("&gt;") - 2;
-          break;
         case '&':
-          extraSpaceNeeded += ArrayLength("&amp;") - 2;
-          break;
         case 0x00A0:
-          extraSpaceNeeded += ArrayLength("&nbsp;") - 2;
+          ++numEncodedChars;
           break;
         default:
           break;
@@ -9401,16 +9412,10 @@ static void AppendEncodedCharacters(const nsTextFragment* aText,
       const unsigned char c = data[i];
       switch (c) {
         case '<':
-          extraSpaceNeeded += ArrayLength("&lt;") - 2;
-          break;
         case '>':
-          extraSpaceNeeded += ArrayLength("&gt;") - 2;
-          break;
         case '&':
-          extraSpaceNeeded += ArrayLength("&amp;") - 2;
-          break;
         case 0x00A0:
-          extraSpaceNeeded += ArrayLength("&nbsp;") - 2;
+          ++numEncodedChars;
           break;
         default:
           break;
@@ -9418,28 +9423,37 @@ static void AppendEncodedCharacters(const nsTextFragment* aText,
     }
   }
 
-  if (extraSpaceNeeded) {
-    aBuilder.AppendWithEncode(aText, len + extraSpaceNeeded);
+  if (numEncodedChars) {
+    // For simplicity, conservatively estimate the size of the string after
+    // encoding. This will result in reserving more memory than we actually
+    // need, but that should be fine unless the string has an enormous number of
+    // eg < in it. We subtract 1 for the null terminator, then 1 more for the
+    // existing character that will be replaced.
+    constexpr uint32_t maxCharExtraSpace =
+        std::max({ArrayLength("&lt;"), ArrayLength("&gt;"),
+                  ArrayLength("&amp;"), ArrayLength("&nbsp;")}) -
+        2;
+    static_assert(maxCharExtraSpace < 100, "Possible underflow");
+    CheckedInt<uint32_t> maxExtraSpace =
+        CheckedInt<uint32_t>(numEncodedChars) * maxCharExtraSpace;
+    aBuilder.AppendWithEncode(aText, maxExtraSpace + len);
   } else {
     aBuilder.Append(aText);
   }
 }
 
-static uint32_t ExtraSpaceNeededForAttrEncoding(const nsAString& aValue) {
+static CheckedInt<uint32_t> ExtraSpaceNeededForAttrEncoding(
+    const nsAString& aValue) {
   const char16_t* c = aValue.BeginReading();
   const char16_t* end = aValue.EndReading();
 
-  uint32_t extraSpaceNeeded = 0;
+  uint32_t numEncodedChars = 0;
   while (c < end) {
     switch (*c) {
       case '"':
-        extraSpaceNeeded += ArrayLength("&quot;") - 2;
-        break;
       case '&':
-        extraSpaceNeeded += ArrayLength("&amp;") - 2;
-        break;
       case 0x00A0:
-        extraSpaceNeeded += ArrayLength("&nbsp;") - 2;
+        ++numEncodedChars;
         break;
       default:
         break;
@@ -9447,19 +9461,33 @@ static uint32_t ExtraSpaceNeededForAttrEncoding(const nsAString& aValue) {
     ++c;
   }
 
-  return extraSpaceNeeded;
+  if (!numEncodedChars) {
+    return 0;
+  }
+
+  // For simplicity, conservatively estimate the size of the string after
+  // encoding. This will result in reserving more memory than we actually
+  // need, but that should be fine unless the string has an enormous number of
+  // & in it. We subtract 1 for the null terminator, then 1 more for the
+  // existing character that will be replaced.
+  constexpr uint32_t maxCharExtraSpace =
+      std::max({ArrayLength("&quot;"), ArrayLength("&amp;"),
+                ArrayLength("&nbsp;")}) -
+      2;
+  static_assert(maxCharExtraSpace < 100, "Possible underflow");
+  return CheckedInt<uint32_t>(numEncodedChars) * maxCharExtraSpace;
 }
 
 static void AppendEncodedAttributeValue(const nsAttrValue& aValue,
                                         StringBuilder& aBuilder) {
   if (nsAtom* atom = aValue.GetStoredAtom()) {
     nsDependentAtomString atomStr(atom);
-    uint32_t space = ExtraSpaceNeededForAttrEncoding(atomStr);
-    if (!space) {
+    auto space = ExtraSpaceNeededForAttrEncoding(atomStr);
+    if (space.isValid() && !space.value()) {
       aBuilder.Append(atom);
     } else {
       aBuilder.AppendWithAttrEncode(nsString(atomStr),
-                                    atomStr.Length() + space);
+                                    space + atomStr.Length());
     }
     return;
   }
@@ -9467,9 +9495,9 @@ static void AppendEncodedAttributeValue(const nsAttrValue& aValue,
   // nsStringBuffer.
   nsString str;
   aValue.ToString(str);
-  uint32_t space = ExtraSpaceNeededForAttrEncoding(str);
-  if (space) {
-    aBuilder.AppendWithAttrEncode(std::move(str), str.Length() + space);
+  auto space = ExtraSpaceNeededForAttrEncoding(str);
+  if (!space.isValid() || space.value()) {
+    aBuilder.AppendWithAttrEncode(std::move(str), space + str.Length());
   } else {
     aBuilder.Append(std::move(str));
   }
@@ -10614,13 +10642,13 @@ static bool HtmlObjectContentSupportsDocument(const nsCString& aMimeType) {
 
 /* static */
 uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
-    const nsCString& aMIMEType, bool aNoFakePlugin) {
+    const nsCString& aMIMEType) {
   if (aMIMEType.IsEmpty()) {
-    return nsIObjectLoadingContent::TYPE_NULL;
+    return nsIObjectLoadingContent::TYPE_FALLBACK;
   }
 
   if (imgLoader::SupportImageWithMimeType(aMIMEType)) {
-    return ResolveObjectType(nsIObjectLoadingContent::TYPE_IMAGE);
+    return nsIObjectLoadingContent::TYPE_DOCUMENT;
   }
 
   // Faking support of the PDF content as a document for EMBED tags
@@ -10633,13 +10661,7 @@ uint32_t nsContentUtils::HtmlObjectContentTypeForMIMEType(
     return nsIObjectLoadingContent::TYPE_DOCUMENT;
   }
 
-  bool isSpecialPlugin = nsPluginHost::GetSpecialType(aMIMEType) !=
-                         nsPluginHost::eSpecialType_None;
-  if (isSpecialPlugin) {
-    return nsIObjectLoadingContent::TYPE_FALLBACK;
-  }
-
-  return nsIObjectLoadingContent::TYPE_NULL;
+  return nsIObjectLoadingContent::TYPE_FALLBACK;
 }
 
 /* static */
@@ -11353,28 +11375,6 @@ nsresult nsContentUtils::AnonymizeId(nsAString& aId,
   return NS_OK;
 }
 
-/* static */
-bool nsContentUtils::ShouldHideObjectOrEmbedImageDocument() {
-  return StaticPrefs::
-             browser_opaqueResponseBlocking_syntheticBrowsingContext_AtStartup() &&
-         StaticPrefs::
-             browser_opaqueResponseBlocking_syntheticBrowsingContext_filter_AtStartup_DoNotUseDirectly();
-}
-
-/* static */
-uint32_t nsContentUtils::ResolveObjectType(uint32_t aType) {
-  if (!StaticPrefs::
-          browser_opaqueResponseBlocking_syntheticBrowsingContext_AtStartup()) {
-    return aType;
-  }
-
-  if (aType != nsIObjectLoadingContent::TYPE_IMAGE) {
-    return aType;
-  }
-
-  return nsIObjectLoadingContent::TYPE_DOCUMENT;
-}
-
 void nsContentUtils::RequestGeckoTaskBurst() {
   nsCOMPtr<nsIAppShell> appShell = do_GetService(NS_APPSHELL_CID);
   if (appShell) {
@@ -11392,86 +11392,128 @@ nsIContent* nsContentUtils::GetClosestLinkInFlatTree(nsIContent* aContent) {
   return nullptr;
 }
 
-namespace {
-
-struct TreePositionComparator {
-  Element* const mChild;
-  nsIContent* const mAncestor;
-  TreePositionComparator(Element* aChild, nsIContent* aAncestor)
-      : mChild(aChild), mAncestor(aAncestor) {}
-  int operator()(Element* aElement) const {
-    return nsLayoutUtils::CompareTreePosition(mChild, aElement, mAncestor);
+template <TreeKind aKind>
+MOZ_ALWAYS_INLINE const nsINode* GetParent(const nsINode* aNode) {
+  if constexpr (aKind == TreeKind::DOM) {
+    return aNode->GetParentNode();
+  } else {
+    return aNode->GetFlattenedTreeParentNode();
   }
-};
-
-}  // namespace
-
-/* static */
-int32_t nsContentUtils::CompareTreePosition(nsIContent* aContent1,
-                                            nsIContent* aContent2,
-                                            const nsIContent* aCommonAncestor) {
-  NS_ASSERTION(aContent1 != aContent2, "Comparing content to itself");
-
-  // TODO: remove the prevent asserts fix, see bug 598468.
-#ifdef DEBUG
-  nsLayoutUtils::gPreventAssertInCompareTreePosition = true;
-  int32_t rVal =
-      nsLayoutUtils::CompareTreePosition(aContent1, aContent2, aCommonAncestor);
-  nsLayoutUtils::gPreventAssertInCompareTreePosition = false;
-
-  return rVal;
-#else   // DEBUG
-  return nsLayoutUtils::CompareTreePosition(aContent1, aContent2,
-                                            aCommonAncestor);
-#endif  // DEBUG
 }
 
-/* static */
-template <typename ElementType, typename ElementPtr>
-bool nsContentUtils::AddElementToListByTreeOrder(nsTArray<ElementType>& aList,
-                                                 ElementPtr aChild,
-                                                 nsIContent* aCommonAncestor) {
-  NS_ASSERTION(aList.IndexOf(aChild) == aList.NoIndex,
-               "aChild already in aList");
-
-  const uint32_t count = aList.Length();
-  ElementType element;
-
-  // Optimize most common case where we insert at the end.
-  int32_t position = -1;
-  if (count > 0) {
-    element = aList[count - 1];
-    position = CompareTreePosition(aChild, element, aCommonAncestor);
+template <TreeKind aKind>
+MOZ_ALWAYS_INLINE Maybe<uint32_t> GetIndexInParent(const nsINode* aParent,
+                                                   const nsINode* aNode) {
+  if constexpr (aKind == TreeKind::DOM) {
+    return aParent->ComputeIndexOf(aNode);
+  } else {
+    return aParent->ComputeFlatTreeIndexOf(aNode);
   }
-
-  // If this item comes after the last element, or the elements array is
-  // empty, we append to the end. Otherwise, we do a binary search to
-  // determine where the element should go.
-  if (position >= 0 || count == 0) {
-    aList.AppendElement(aChild);
-    return true;
-  }
-
-  size_t idx;
-  BinarySearchIf(aList, 0, count,
-                 TreePositionComparator(aChild, aCommonAncestor), &idx);
-
-  aList.InsertElementAt(idx, aChild);
-  return false;
 }
 
-template bool nsContentUtils::AddElementToListByTreeOrder(
-    nsTArray<nsGenericHTMLFormElement*>& aList,
-    nsGenericHTMLFormElement* aChild, nsIContent* aAncestor);
-template bool nsContentUtils::AddElementToListByTreeOrder(
-    nsTArray<HTMLImageElement*>& aList, HTMLImageElement* aChild,
-    nsIContent* aAncestor);
-template bool nsContentUtils::AddElementToListByTreeOrder(
-    nsTArray<RefPtr<HTMLInputElement>>& aList, HTMLInputElement* aChild,
-    nsIContent* aAncestor);
+template <TreeKind aTreeKind>
+int32_t nsContentUtils::CompareTreePosition(const nsINode* aNode1,
+                                            const nsINode* aNode2,
+                                            const nsINode* aCommonAncestor) {
+  MOZ_ASSERT(aNode1, "aNode1 must not be null");
+  MOZ_ASSERT(aNode2, "aNode2 must not be null");
+
+  if (MOZ_UNLIKELY(NS_WARN_IF(aNode1 == aNode2))) {
+    return 0;
+  }
+
+  AutoTArray<const nsINode*, 32> node1Ancestors;
+  const nsINode* c1;
+  for (c1 = aNode1; c1 && c1 != aCommonAncestor;
+       c1 = GetParent<aTreeKind>(c1)) {
+    node1Ancestors.AppendElement(c1);
+  }
+  if (!c1 && aCommonAncestor) {
+    // So, it turns out aCommonAncestor was not an ancestor of c1. Oops.
+    // Never mind. We can continue as if aCommonAncestor was null.
+    aCommonAncestor = nullptr;
+  }
+
+  AutoTArray<const nsINode*, 32> node2Ancestors;
+  const nsINode* c2;
+  for (c2 = aNode2; c2 && c2 != aCommonAncestor;
+       c2 = GetParent<aTreeKind>(c2)) {
+    node2Ancestors.AppendElement(c2);
+  }
+  if (!c2 && aCommonAncestor) {
+    // So, it turns out aCommonAncestor was not an ancestor of c2.
+    // We need to retry with no common ancestor hint.
+    return CompareTreePosition<aTreeKind>(aNode1, aNode2, nullptr);
+  }
+
+  int last1 = node1Ancestors.Length() - 1;
+  int last2 = node2Ancestors.Length() - 1;
+  const nsINode* node1Ancestor = nullptr;
+  const nsINode* node2Ancestor = nullptr;
+  while (last1 >= 0 && last2 >= 0 &&
+         ((node1Ancestor = node1Ancestors.ElementAt(last1)) ==
+          (node2Ancestor = node2Ancestors.ElementAt(last2)))) {
+    last1--;
+    last2--;
+  }
+
+  if (last1 < 0) {
+    if (last2 < 0) {
+      NS_ASSERTION(aNode1 == aNode2, "internal error?");
+      return 0;
+    }
+    // aContent1 is an ancestor of aContent2
+    return -1;
+  }
+
+  if (last2 < 0) {
+    // aContent2 is an ancestor of aContent1
+    return 1;
+  }
+
+  // node1Ancestor != node2Ancestor, so they must be siblings with the
+  // same parent
+  const nsINode* parent = GetParent<aTreeKind>(node1Ancestor);
+  if (NS_WARN_IF(!parent)) {  // different documents??
+    return 0;
+  }
+
+  const Maybe<uint32_t> index1 =
+      GetIndexInParent<aTreeKind>(parent, node1Ancestor);
+  const Maybe<uint32_t> index2 =
+      GetIndexInParent<aTreeKind>(parent, node2Ancestor);
+
+  // None of the nodes are anonymous, just do a regular comparison.
+  if (index1.isSome() && index2.isSome()) {
+    return static_cast<int32_t>(static_cast<int64_t>(*index1) - *index2);
+  }
+
+  // Otherwise handle pseudo-element and anonymous node ordering.
+  // ::marker -> ::before -> anon siblings -> regular siblings -> ::after
+  auto PseudoIndex = [](const nsINode* aNode,
+                        const Maybe<uint32_t>& aNodeIndex) -> int32_t {
+    if (aNodeIndex.isSome()) {
+      return 1;  // Not a pseudo.
+    }
+    if (aNode->IsGeneratedContentContainerForMarker()) {
+      return -2;
+    }
+    if (aNode->IsGeneratedContentContainerForBefore()) {
+      return -1;
+    }
+    if (aNode->IsGeneratedContentContainerForAfter()) {
+      return 2;
+    }
+    return 0;
+  };
+
+  return PseudoIndex(node1Ancestor, index1) -
+         PseudoIndex(node2Ancestor, index2);
+}
 
 nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
                                                         ShadowRootMode aMode,
+                                                        bool aIsClonable,
                                                         bool aDelegatesFocus) {
   RefPtr<Element> host = mozilla::dom::Element::FromNodeOrNull(aHost);
   if (!host) {
@@ -11482,12 +11524,21 @@ nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
   init.mMode = aMode;
   init.mDelegatesFocus = aDelegatesFocus;
   init.mSlotAssignment = SlotAssignmentMode::Named;
-  init.mClonable = true;
+  init.mClonable = aIsClonable;
 
   RefPtr shadowRoot = host->AttachShadow(init, IgnoreErrors(),
                                          Element::ShadowRootDeclarative::Yes);
+  if (shadowRoot) {
+    // https://html.spec.whatwg.org/#parsing-main-inhead:available-to-element-internals
+    shadowRoot->SetAvailableToElementInternals();
+  }
   return shadowRoot;
 }
+
+template int32_t nsContentUtils::CompareTreePosition<TreeKind::DOM>(
+    const nsINode*, const nsINode*, const nsINode*);
+template int32_t nsContentUtils::CompareTreePosition<TreeKind::Flat>(
+    const nsINode*, const nsINode*, const nsINode*);
 
 namespace mozilla {
 std::ostream& operator<<(std::ostream& aOut,

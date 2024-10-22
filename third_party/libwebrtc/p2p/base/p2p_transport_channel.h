@@ -36,7 +36,6 @@
 #include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/async_dns_resolver.h"
-#include "api/async_resolver_factory.h"
 #include "api/candidate.h"
 #include "api/ice_transport_interface.h"
 #include "api/rtc_error.h"
@@ -47,7 +46,6 @@
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
 #include "logging/rtc_event_log/ice_logger.h"
 #include "p2p/base/active_ice_controller_factory_interface.h"
-#include "p2p/base/basic_async_resolver_factory.h"
 #include "p2p/base/candidate_pair_interface.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/ice_agent_interface.h"
@@ -342,10 +340,7 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal,
   void OnRoleConflict(PortInterface* port);
 
   void OnConnectionStateChange(Connection* connection);
-  void OnReadPacket(Connection* connection,
-                    const char* data,
-                    size_t len,
-                    int64_t packet_time_us);
+  void OnReadPacket(Connection* connection, const rtc::ReceivedPacket& packet);
   void OnSentPacket(const rtc::SentPacket& sent_packet);
   void OnReadyToSend(Connection* connection);
   void OnConnectionDestroyed(Connection* connection);

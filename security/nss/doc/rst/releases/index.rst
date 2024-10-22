@@ -8,6 +8,9 @@ Releases
    :glob:
    :hidden:
 
+   nss_3_99.rst
+   nss_3_98.rst
+   nss_3_97.rst
    nss_3_96_1.rst
    nss_3_96.rst
    nss_3_95.rst
@@ -61,18 +64,23 @@ Releases
 
 .. note::
 
-   **NSS 3.96.1** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_96_1_release_notes`
+   **NSS 3.99** is the latest version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_99_release_notes`
 
-   **NSS 3.90.1 (ESR)** is the latest version of NSS.
-   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_90_1_release_notes`
+   **NSS 3.90.2 (ESR)** is the latest version of NSS.
+   Complete release notes are available here: :ref:`mozilla_projects_nss_nss_3_90_2_release_notes`
 
 .. container::
 
-   Changes in 3.96.1 (from 3.95.0) included in this release:
+   Changes in 3.99 included in this release:
 
-  - Bug 1869408 - Use pypi dependencies for MacOS worker in ./build_gyp.sh
-  - Bug 1830978 - p7sign: add -a hash and -u certusage (also p7verify cleanups).
-  - Bug 1867408 - add a defensive check for large ssl_DefSend return values.
-  - Bug 1869378 - Add dependency to the taskcluster script for Darwin
-  - Bug 1869378 - Upgrade version of the MacOS worker for the CI
+ - Bug 1325335 - Removing check for message len in ed25519
+ - Bug 1884276 - add ed25519 to SECU_ecName2params.
+ - Bug 1325335 - add EdDSA wycheproof tests.
+ - Bug 1325335 - nss/lib layer code for EDDSA.
+ - Bug 1325335 - Adding EdDSA implementation.
+ - Bug 1881027 - Exporting Certificate Compression types
+ - Bug 1880857 - Updating ACVP docker to rust 1.74
+ - Bug 1325335 - Updating HACL* to 0f136f28935822579c244f287e1d2a1908a7e552
+ - Bug 1877730 - Add NSS_CMSRecipient_IsSupported.
+

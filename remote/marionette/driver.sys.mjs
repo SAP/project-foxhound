@@ -114,6 +114,9 @@ export function GeckoDriver(server) {
   // WebDriver Session
   this._currentSession = null;
 
+  // Flag to indicate that the application is shutting down
+  this._isShuttingDown = false;
+
   this.browsers = {};
 
   // points to current browser
@@ -211,7 +214,16 @@ GeckoDriver.prototype.handleClosedModalDialog = function () {
  */
 GeckoDriver.prototype.handleOpenModalDialog = function (eventName, data) {
   this.dialog = data.prompt;
-  this.getActor().notifyDialogOpened();
+
+  if (this.dialog.promptType === "beforeunload") {
+    lazy.logger.trace(`Implicitly accepted "beforeunload" prompt`);
+    this.dialog.accept();
+    return;
+  }
+
+  if (!this._isShuttingDown) {
+    this.getActor().notifyDialogOpened(this.dialog);
+  }
 };
 
 /**
@@ -528,7 +540,7 @@ GeckoDriver.prototype.handleEvent = function ({ target, type }) {
   }
 };
 
-GeckoDriver.prototype.observe = async function (subject, topic, data) {
+GeckoDriver.prototype.observe = async function (subject, topic) {
   switch (topic) {
     case TOPIC_BROWSER_READY:
       this.registerWindow(subject);
@@ -2244,7 +2256,13 @@ GeckoDriver.prototype.newWindow = async function (cmd) {
   }
 
   // If an invalid or no type has been specified default to a tab.
-  if (typeof type == "undefined" || !["tab", "window"].includes(type)) {
+  // On Android always use a new tab instead because the application has a
+  // single window only.
+  if (
+    typeof type == "undefined" ||
+    !["tab", "window"].includes(type) ||
+    lazy.AppInfo.isAndroid
+  ) {
     type = "tab";
   }
 
@@ -2369,7 +2387,9 @@ GeckoDriver.prototype.deleteSession = function () {
   // reset to the top-most frame
   this.mainFrame = null;
 
-  if (this.promptListener) {
+  if (!this._isShuttingDown && this.promptListener) {
+    // Do not stop the prompt listener when quitting the browser to
+    // allow us to also accept beforeunload prompts during shutdown.
     this.promptListener.stopListening();
     this.promptListener = null;
   }
@@ -2786,6 +2806,12 @@ GeckoDriver.prototype._handleUserPrompts = async function () {
     return;
   }
 
+  if (this.dialog.promptType == "beforeunload") {
+    // Wait until the "beforeunload" prompt has been accepted.
+    await this.promptListener.dialogClosed();
+    return;
+  }
+
   const textContent = await this.dialog.getText();
 
   const behavior = this.currentSession.unhandledPromptBehavior;
@@ -2893,16 +2919,17 @@ GeckoDriver.prototype.quit = async function (cmd) {
 
   let quitApplicationResponse;
   try {
+    this._isShuttingDown = true;
     quitApplicationResponse = await lazy.quit(
       flags,
       safeMode,
       this.currentSession.capabilities.get("moz:windowless")
     );
   } catch (e) {
+    this._isShuttingDown = false;
     if (e instanceof TypeError) {
       throw new lazy.error.InvalidArgumentError(e.message);
     }
-
     throw new lazy.error.UnsupportedOperationError(e.message);
   } finally {
     Services.obs.removeObserver(this, TOPIC_QUIT_APPLICATION_REQUESTED);
@@ -3317,20 +3344,58 @@ GeckoDriver.prototype.setUserVerified = function (cmd) {
 
 GeckoDriver.prototype.setPermission = async function (cmd) {
   const { descriptor, state, oneRealm = false } = cmd.parameters;
+  const browsingContext = lazy.assert.open(this.getBrowsingContext());
+
+  // XXX: WPT should not have these but currently they do and we pass testing pref to
+  // pass them, see bug 1875837.
+  if (
+    ["clipboard-read", "clipboard-write"].includes(descriptor.name) &&
+    state === "granted"
+  ) {
+    if (
+      Services.prefs.getBoolPref("dom.events.testing.asyncClipboard", false)
+    ) {
+      // Okay, do nothing. The clipboard module will work without permission.
+      return;
+    }
+    throw new lazy.error.UnsupportedOperationError(
+      "setPermission: expected dom.events.testing.asyncClipboard to be set"
+    );
+  }
+
+  // XXX: We currently depend on camera/microphone tests throwing UnsupportedOperationError,
+  // the fix is ongoing in bug 1609427.
+  if (["camera", "microphone"].includes(descriptor.name)) {
+    throw new lazy.error.UnsupportedOperationError(
+      "setPermission: camera and microphone permissions are currently unsupported"
+    );
+  }
+
+  // XXX: Allowing this permission causes timing related Android crash, see also bug 1878741
+  if (descriptor.name === "notifications") {
+    if (Services.prefs.getBoolPref("notification.prompt.testing", false)) {
+      // Okay, do nothing. The notifications module will work without permission.
+      return;
+    }
+    throw new lazy.error.UnsupportedOperationError(
+      "setPermission: expected notification.prompt.testing to be set"
+    );
+  }
+
+  let params;
+  try {
+    params =
+      await this.curBrowser.window.navigator.permissions.parseSetParameters({
+        descriptor,
+        state,
+      });
+  } catch (err) {
+    throw new lazy.error.InvalidArgumentError(`setPermission: ${err.message}`);
+  }
 
   lazy.assert.boolean(oneRealm);
-  lazy.assert.that(
-    state => ["granted", "denied", "prompt"].includes(state),
-    `state is ${state}, expected "granted", "denied", or "prompt"`
-  )(state);
 
-  lazy.permissions.set(
-    descriptor,
-    state,
-    oneRealm,
-    this.getBrowsingContext(),
-    this.getBrowsingContext({ top: true })
-  );
+  lazy.permissions.set(params.type, params.state, oneRealm, browsingContext);
 };
 
 /**

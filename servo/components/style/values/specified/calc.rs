@@ -6,7 +6,6 @@
 //!
 //! [calc]: https://drafts.csswg.org/css-values/#calc-notation
 
-use crate::color::parsing::{AngleOrNumber, NumberOrPercentage};
 use crate::parser::ParserContext;
 use crate::values::generics::calc::{
     self as generic, CalcNodeLeaf, CalcUnits, MinMaxOp, ModRemOp, PositivePercentageBasis,
@@ -179,11 +178,21 @@ impl generic::CalcNodeLeaf for Leaf {
             return None;
         }
 
+        if matches!(self, Percentage(..)) && matches!(basis, PositivePercentageBasis::Unknown) {
+            return None;
+        }
+
+        let self_negative = self.is_negative();
+        if self_negative != other.is_negative() {
+            return Some(if self_negative {
+                cmp::Ordering::Less
+            } else {
+                cmp::Ordering::Greater
+            });
+        }
+
         match (self, other) {
-            (&Percentage(ref one), &Percentage(ref other)) => match basis {
-                PositivePercentageBasis::Yes => one.partial_cmp(other),
-                PositivePercentageBasis::Unknown => None,
-            },
+            (&Percentage(ref one), &Percentage(ref other)) => one.partial_cmp(other),
             (&Length(ref one), &Length(ref other)) => one.partial_cmp(other),
             (&Angle(ref one), &Angle(ref other)) => one.degrees().partial_cmp(&other.degrees()),
             (&Time(ref one), &Time(ref other)) => one.seconds().partial_cmp(&other.seconds()),
@@ -476,7 +485,7 @@ impl CalcNode {
     /// Parse a top-level `calc` expression, with all nested sub-expressions.
     ///
     /// This is in charge of parsing, for example, `2 + 3 * 100%`.
-    fn parse<'i, 't>(
+    pub fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
         function: MathFunction,
@@ -518,13 +527,18 @@ impl CalcNode {
                     }
 
                     let value = Self::parse_argument(context, input, allowed_units)?;
-                    input.expect_comma()?;
-                    let step = Self::parse_argument(context, input, allowed_units)?;
+
+                    // <step> defaults to the number 1 if not provided
+                    // https://drafts.csswg.org/css-values-4/#funcdef-round
+                    let step = input.try_parse(|input| {
+                        input.expect_comma()?;
+                        Self::parse_argument(context, input, allowed_units)
+                    });
 
                     Ok(Self::Round {
                         strategy: strategy.unwrap_or(RoundingStrategy::Nearest),
                         value: Box::new(value),
-                        step: Box::new(step),
+                        step: Box::new(step.unwrap_or(Self::Leaf(Leaf::Number(1.0)))),
                     })
                 },
                 MathFunction::Mod | MathFunction::Rem => {
@@ -1039,42 +1053,5 @@ impl CalcNode {
         Self::parse(context, input, function, CalcUnits::RESOLUTION)?
             .to_resolution()
             .map_err(|()| input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
-    }
-
-    /// Convenience parsing function for `<number>` or `<percentage>`.
-    pub fn parse_number_or_percentage<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-        function: MathFunction,
-    ) -> Result<NumberOrPercentage, ParseError<'i>> {
-        let node = Self::parse(context, input, function, CalcUnits::PERCENTAGE)?;
-
-        if let Ok(value) = node.to_number() {
-            return Ok(NumberOrPercentage::Number { value });
-        }
-
-        match node.to_percentage() {
-            Ok(unit_value) => Ok(NumberOrPercentage::Percentage { unit_value }),
-            Err(()) => Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
-        }
-    }
-
-    /// Convenience parsing function for `<number>` or `<angle>`.
-    pub fn parse_angle_or_number<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-        function: MathFunction,
-    ) -> Result<AngleOrNumber, ParseError<'i>> {
-        let node = Self::parse(context, input, function, CalcUnits::ANGLE)?;
-
-        if let Ok(angle) = node.to_angle() {
-            let degrees = angle.degrees();
-            return Ok(AngleOrNumber::Angle { degrees });
-        }
-
-        match node.to_number() {
-            Ok(value) => Ok(AngleOrNumber::Number { value }),
-            Err(()) => Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
-        }
     }
 }

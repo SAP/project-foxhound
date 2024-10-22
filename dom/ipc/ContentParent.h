@@ -23,7 +23,6 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DataMutex.h"
-#include "mozilla/FileUtils.h"
 #include "mozilla/HalTypes.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
@@ -38,7 +37,6 @@
 #include "nsClassHashtable.h"
 #include "nsTHashMap.h"
 #include "nsTHashSet.h"
-#include "nsPluginTags.h"
 #include "nsHashKeys.h"
 #include "nsIAsyncShutdown.h"
 #include "nsIDOMProcessParent.h"
@@ -219,14 +217,6 @@ class ContentParent final : public PContentParent,
                              hal::ProcessPriority::PROCESS_PRIORITY_FOREGROUND);
 
   /**
-   * Get or create a content process for a JS plugin. aPluginID is the id of the
-   * JS plugin
-   * (@see nsFakePlugin::mId). There is a maximum of one process per JS plugin.
-   */
-  static already_AddRefed<ContentParent> GetNewOrUsedJSPluginProcess(
-      uint32_t aPluginID, const hal::ProcessPriority& aPriority);
-
-  /**
    * Get or create a content process for the given TabContext.  aFrameElement
    * should be the frame/iframe element with which this process will
    * associated.
@@ -391,9 +381,6 @@ class ContentParent final : public PContentParent,
   bool IsDead() const { return mLifecycleState == LifecycleState::DEAD; }
 
   bool IsForBrowser() const { return mIsForBrowser; }
-  bool IsForJSPlugin() const {
-    return mJSPluginID != nsFakePluginTag::NOT_JSPLUGIN;
-  }
 
   GeckoChildProcessHost* Process() const { return mSubprocess; }
 
@@ -475,7 +462,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvNotifyShutdownSuccess();
 
-  void MaybeInvokeDragSession(BrowserParent* aParent);
+  void MaybeInvokeDragSession(BrowserParent* aParent, EventMessage aMessage);
 
   PContentPermissionRequestParent* AllocPContentPermissionRequestParent(
       const nsTArray<PermissionRequest>& aRequests, nsIPrincipal* aPrincipal,
@@ -690,8 +677,6 @@ class ContentParent final : public PContentParent,
    */
   static nsClassHashtable<nsCStringHashKey, nsTArray<ContentParent*>>*
       sBrowserContentParents;
-  static mozilla::StaticAutoPtr<nsTHashMap<nsUint32HashKey, ContentParent*>>
-      sJSPluginContentParents;
   static mozilla::StaticAutoPtr<LinkedList<ContentParent>> sContentParents;
 
   /**
@@ -728,11 +713,7 @@ class ContentParent final : public PContentParent,
       bool aLoadUri, nsIContentSecurityPolicy* aCsp,
       const OriginAttributes& aOriginAttributes);
 
-  explicit ContentParent(int32_t aPluginID) : ContentParent(""_ns, aPluginID) {}
-  explicit ContentParent(const nsACString& aRemoteType)
-      : ContentParent(aRemoteType, nsFakePluginTag::NOT_JSPLUGIN) {}
-
-  ContentParent(const nsACString& aRemoteType, int32_t aPluginID);
+  explicit ContentParent(const nsACString& aRemoteType);
 
   // Launch the subprocess and associated initialization.
   // Returns false if the process fails to start.
@@ -795,9 +776,9 @@ class ContentParent final : public PContentParent,
   void RemoveFromList();
 
   /**
-   * Return if the process has an active worker or JSPlugin
+   * Return if the process has an active worker.
    */
-  bool HasActiveWorkerOrJSPlugin();
+  bool HasActiveWorker();
 
   /**
    * Decide whether the process should be kept alive even when it would normally
@@ -974,6 +955,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvGetClipboard(
       nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
+      const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
       IPCTransferableData* aTransferableData);
 
   mozilla::ipc::IPCResult RecvEmptyClipboard(const int32_t& aWhichClipboard);
@@ -982,15 +964,16 @@ class ContentParent final : public PContentParent,
                                                const int32_t& aWhichClipboard,
                                                bool* aHasType);
 
-  mozilla::ipc::IPCResult RecvGetExternalClipboardFormats(
-      const int32_t& aWhichClipboard, const bool& aPlainTextOnly,
-      nsTArray<nsCString>* aTypes);
-
   mozilla::ipc::IPCResult RecvGetClipboardAsync(
       nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
       const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
       mozilla::NotNull<nsIPrincipal*> aRequestingPrincipal,
       GetClipboardAsyncResolver&& aResolver);
+
+  mozilla::ipc::IPCResult RecvGetClipboardDataSnapshotSync(
+      nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
+      const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
+      ClipboardReadRequestOrError* aRequestOrError);
 
   already_AddRefed<PClipboardWriteRequestParent>
   AllocPClipboardWriteRequestParent(const int32_t& aClipboardType);
@@ -1288,7 +1271,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvNotifyPositionStateChanged(
       const MaybeDiscarded<BrowsingContext>& aContext,
-      const PositionState& aState);
+      const Maybe<PositionState>& aState);
 
   mozilla::ipc::IPCResult RecvAddOrRemovePageAwakeRequest(
       const MaybeDiscarded<BrowsingContext>& aContext,
@@ -1437,6 +1420,9 @@ class ContentParent final : public PContentParent,
     return mThreadsafeHandle;
   }
 
+  void GetIPCTransferableData(nsIDragSession* aSession, BrowserParent* aParent,
+                              nsTArray<IPCTransferableData>& aIPCTransferables);
+
  private:
   // Return an existing ContentParent if possible. Otherwise, `nullptr`.
   static already_AddRefed<ContentParent> GetUsedBrowserProcess(
@@ -1467,12 +1453,6 @@ class ContentParent final : public PContentParent,
 
   ContentParentId mChildID;
   int32_t mGeolocationWatchID;
-
-  // This contains the id for the JS plugin (@see nsFakePluginTag) if this is
-  // the ContentParent for a process containing iframes for that JS plugin. If
-  // this is not a ContentParent for a JS plugin then it contains the value
-  // nsFakePluginTag::NOT_JSPLUGIN.
-  int32_t mJSPluginID;
 
   // After we destroy the last Browser, we also start a timer to ensure
   // that even content processes that are not responding will get a
@@ -1551,7 +1531,7 @@ class ContentParent final : public PContentParent,
 #ifdef MOZ_X11
   // Dup of child's X socket, used to scope its resources to this
   // object instead of the child process's lifetime.
-  ScopedClose mChildXSocketFdDup;
+  UniqueFileHandle mChildXSocketFdDup;
 #endif
 
   RefPtr<PProcessHangMonitorParent> mHangMonitorActor;

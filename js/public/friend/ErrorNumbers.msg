@@ -154,7 +154,6 @@ MSG_DEF(JSMSG_CANT_DECLARE_GLOBAL_BINDING, 2, JSEXN_TYPEERR, "cannot declare glo
 // Date
 MSG_DEF(JSMSG_INVALID_DATE,            0, JSEXN_RANGEERR, "invalid date")
 MSG_DEF(JSMSG_BAD_TOISOSTRING_PROP,    0, JSEXN_TYPEERR, "toISOString property is not callable")
-MSG_DEF(JSMSG_DEPRECATED_LATE_WEEKDAY, 0, JSEXN_WARN, "day of week after day of month in date format is deprecated")
 
 // String
 MSG_DEF(JSMSG_BAD_URI,                 0, JSEXN_URIERR, "malformed URI sequence")
@@ -473,7 +472,7 @@ MSG_DEF(JSMSG_WASM_BAD_I31REF_VALUE,  0, JSEXN_TYPEERR,     "can only pass a 31-
 MSG_DEF(JSMSG_WASM_BAD_STRUCTREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass a WebAssembly struct object to a structref")
 MSG_DEF(JSMSG_WASM_BAD_ARRAYREF_VALUE,  0, JSEXN_TYPEERR,     "can only pass a WebAssembly array object to an arrayref")
 MSG_DEF(JSMSG_WASM_BAD_TYPEREF_VALUE,  0, JSEXN_TYPEERR,     "bad type")
-MSG_DEF(JSMSG_WASM_BAD_VAL_TYPE,       0, JSEXN_TYPEERR,     "cannot pass v128 to or from JS")
+MSG_DEF(JSMSG_WASM_BAD_VAL_TYPE,       0, JSEXN_TYPEERR,     "cannot pass value to or from JS")
 MSG_DEF(JSMSG_WASM_BAD_STRING_VAL_TYPE,    0, JSEXN_TYPEERR,     "bad value type")
 MSG_DEF(JSMSG_WASM_BAD_STRING_IDX_TYPE,    0, JSEXN_TYPEERR,     "bad index type")
 MSG_DEF(JSMSG_WASM_BAD_EXN_ARG,        0, JSEXN_TYPEERR,     "first argument must be a WebAssembly.Tag")
@@ -580,6 +579,7 @@ MSG_DEF(JSMSG_QUERY_LINE_WITHOUT_URL, 0, JSEXN_TYPEERR, "findScripts query objec
 MSG_DEF(JSMSG_DEBUG_CANT_SET_OPT_ENV, 1, JSEXN_REFERENCEERR, "can't set '{0}' in an optimized-out environment")
 MSG_DEF(JSMSG_DEBUG_INVISIBLE_COMPARTMENT, 0, JSEXN_TYPEERR, "object in compartment marked as invisible to Debugger")
 MSG_DEF(JSMSG_DEBUG_CENSUS_BREAKDOWN,  1, JSEXN_TYPEERR, "unrecognized 'by' value in takeCensus breakdown: {0}")
+MSG_DEF(JSMSG_DEBUG_CENSUS_BREAKDOWN_NESTED,  1, JSEXN_TYPEERR, "takeCensus breakdown 'by' value nested within itself: {0}")
 MSG_DEF(JSMSG_DEBUG_PROMISE_NOT_RESOLVED, 0, JSEXN_TYPEERR, "Promise hasn't been resolved")
 MSG_DEF(JSMSG_DEBUG_PROMISE_NOT_FULFILLED, 0, JSEXN_TYPEERR, "Promise hasn't been fulfilled")
 MSG_DEF(JSMSG_DEBUG_PROMISE_NOT_REJECTED, 0, JSEXN_TYPEERR, "Promise hasn't been rejected")
@@ -648,9 +648,6 @@ MSG_DEF(JSMSG_INVALID_CLASS_SET_OP,        0, JSEXN_SYNTAXERR, "invalid class se
 MSG_DEF(JSMSG_INVALID_CHAR_IN_CLASS,       0, JSEXN_SYNTAXERR, "invalid character in class in regular expression")
 MSG_DEF(JSMSG_NEGATED_CLASS_WITH_STR,      0, JSEXN_SYNTAXERR, "negated character class with strings in regular expression")
 
-// Self-hosting
-MSG_DEF(JSMSG_DEFAULT_LOCALE_ERROR,    0, JSEXN_ERR, "internal error getting the default locale")
-
 // Typed object
 MSG_DEF(JSMSG_TYPEDOBJECT_SETTING_IMMUTABLE, 0, JSEXN_ERR, "setting immutable field")
 
@@ -666,6 +663,7 @@ MSG_DEF(JSMSG_SHORT_ARRAY_BUFFER_RETURNED, 2, JSEXN_TYPEERR, "expected ArrayBuff
 MSG_DEF(JSMSG_TYPED_ARRAY_BAD_ARGS,    0, JSEXN_TYPEERR, "invalid arguments")
 MSG_DEF(JSMSG_TYPED_ARRAY_DETACHED,    0, JSEXN_TYPEERR, "attempting to access detached ArrayBuffer")
 MSG_DEF(JSMSG_ARRAYBUFFER_LENGTH_PINNED, 0, JSEXN_RANGEERR, "attempting to change pinned length of ArrayBuffer")
+MSG_DEF(JSMSG_TYPED_ARRAY_RESIZED_BOUNDS, 0, JSEXN_TYPEERR, "attempting to access outside the bounds of resized ArrayBuffer")
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_OFFSET_BOUNDS, 2, JSEXN_RANGEERR, "start offset of {0}Array should be a multiple of {1}")
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_OFFSET_MISALIGNED, 2, JSEXN_RANGEERR, "buffer length for {0}Array should be a multiple of {1}")
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_OFFSET_LENGTH_BOUNDS, 1, JSEXN_RANGEERR, "size of buffer is too small for {0}Array with byteOffset")
@@ -677,7 +675,8 @@ MSG_DEF(JSMSG_NON_TYPED_ARRAY_RETURNED, 0, JSEXN_TYPEERR, "constructor didn't re
 MSG_DEF(JSMSG_SHORT_TYPED_ARRAY_RETURNED, 2, JSEXN_TYPEERR, "expected TypedArray of at least length {0}, but constructor returned TypedArray of length {1}")
 MSG_DEF(JSMSG_TYPED_ARRAY_NOT_COMPATIBLE, 2, JSEXN_TYPEERR, "{0} elements are incompatible with {1}")
 MSG_DEF(JSMSG_ARRAYBUFFER_REQUIRED, 0, JSEXN_TYPEERR, "ArrayBuffer object required")
-
+MSG_DEF(JSMSG_ARRAYBUFFER_LENGTH_LARGER_THAN_MAXIMUM, 0, JSEXN_RANGEERR, "byte length is larger than maximum byte length")
+MSG_DEF(JSMSG_ARRAYBUFFER_NON_RESIZABLE, 0, JSEXN_TYPEERR, "can't resize non-resizable ArrayBuffer")
 MSG_DEF(JSMSG_ARRAYBUFFER_COPY_RANGE, 0, JSEXN_RANGEERR, "ArrayBuffer range incorrect for copying")
 
 // Shared array buffer
@@ -685,6 +684,7 @@ MSG_DEF(JSMSG_SHARED_ARRAY_BAD_LENGTH,  0, JSEXN_RANGEERR, "length argument out 
 MSG_DEF(JSMSG_NON_SHARED_ARRAY_BUFFER_RETURNED, 0, JSEXN_TYPEERR, "expected SharedArrayBuffer, but species constructor returned non-SharedArrayBuffer")
 MSG_DEF(JSMSG_SAME_SHARED_ARRAY_BUFFER_RETURNED, 0, JSEXN_TYPEERR, "expected different SharedArrayBuffer, but species constructor returned same SharedArrayBuffer")
 MSG_DEF(JSMSG_SHORT_SHARED_ARRAY_BUFFER_RETURNED, 2, JSEXN_TYPEERR, "expected SharedArrayBuffer with at least {0} bytes, but species constructor returns SharedArrayBuffer with {1} bytes")
+MSG_DEF(JSMSG_SHARED_ARRAY_LENGTH_SMALLER_THAN_CURRENT, 0, JSEXN_RANGEERR, "byte length is smaller than current byte length")
 
 // Reflect
 MSG_DEF(JSMSG_BAD_PARSE_NODE,          0, JSEXN_INTERNALERR, "bad parse node")
@@ -722,6 +722,7 @@ MSG_DEF(JSMSG_MISSING_EXPORT,               1, JSEXN_SYNTAXERR, "local binding f
 MSG_DEF(JSMSG_BAD_MODULE_STATUS,            1, JSEXN_INTERNALERR, "module record has unexpected status: {0}")
 MSG_DEF(JSMSG_DYNAMIC_IMPORT_FAILED,        1, JSEXN_TYPEERR, "error loading dynamically imported module: {0}")
 MSG_DEF(JSMSG_DYNAMIC_IMPORT_NOT_SUPPORTED, 0, JSEXN_TYPEERR, "Dynamic import not supported in this context")
+MSG_DEF(JSMSG_BAD_MODULE_TYPE,              0, JSEXN_TYPEERR, "invalid module type")
 
 // Import maps
 MSG_DEF(JSMSG_IMPORT_MAPS_PARSE_FAILED, 1, JSEXN_SYNTAXERR, "Failed to parse import map: Invalid JSON format. {0}")

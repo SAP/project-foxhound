@@ -317,6 +317,17 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/actors/FormHistoryChild.sys.mjs",
       events: {
+        "form-submission-detected": {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  FormHandler: {
+    child: {
+      esModuleURI: "resource://gre/actors/FormHandlerChild.sys.mjs",
+      events: {
         DOMFormBeforeSubmit: {},
       },
     },
@@ -355,7 +366,7 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/modules/LoginManagerChild.sys.mjs",
       events: {
-        DOMFormBeforeSubmit: {},
+        "form-submission-detected": {},
         DOMFormHasPassword: {},
         DOMFormHasPossibleUsername: {},
         DOMInputPasswordAdded: {},
@@ -370,6 +381,22 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/modules/ManifestMessagesChild.sys.mjs",
     },
+  },
+
+  // A single process (shared with translations) that manages machine learning engines.
+  MLEngine: {
+    parent: {
+      esModuleURI: "resource://gre/actors/MLEngineParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/MLEngineChild.sys.mjs",
+      events: {
+        DOMContentLoaded: { createActor: true },
+      },
+    },
+    includeChrome: true,
+    matches: ["chrome://global/content/ml/MLEngine.html"],
+    enablePreference: "browser.ml.enable",
   },
 
   NetError: {

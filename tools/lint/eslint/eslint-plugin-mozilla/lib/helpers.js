@@ -6,13 +6,12 @@
  */
 "use strict";
 
-const parser = require("@babel/eslint-parser");
+const parser = require("espree");
 const { analyze } = require("eslint-scope");
 const { KEYS: defaultVisitorKeys } = require("eslint-visitor-keys");
 const estraverse = require("estraverse");
 const path = require("path");
 const fs = require("fs");
-const ini = require("multi-ini");
 const toml = require("toml-eslint-parser");
 const recommendedConfig = require("./configs/recommended");
 
@@ -22,13 +21,6 @@ var directoryManifests = new Map();
 let xpidlData;
 
 module.exports = {
-  get iniParser() {
-    if (!this._iniParser) {
-      this._iniParser = new ini.Parser();
-    }
-    return this._iniParser;
-  },
-
   get servicesData() {
     return require("./services.json");
   },
@@ -104,18 +96,19 @@ module.exports = {
     // can parse.
     let config = { ...this.getPermissiveConfig(configOptions), ...astOptions };
 
-    let parseResult =
-      "parseForESLint" in parser
-        ? parser.parseForESLint(sourceText, config)
-        : { ast: parser.parse(sourceText, config) };
+    let parseResult = parser.parse(sourceText, config);
 
     let visitorKeys = parseResult.visitorKeys || defaultVisitorKeys;
-    visitorKeys.ExperimentalRestProperty = visitorKeys.RestElement;
-    visitorKeys.ExperimentalSpreadProperty = visitorKeys.SpreadElement;
+
+    // eslint-scope doesn't support "latest" as a version, so we pass a really
+    // big number to ensure this always reads as the latest.
+    // xref https://github.com/eslint/eslint-scope/issues/74
+    config.ecmaVersion =
+      config.ecmaVersion == "latest" ? 1e8 : config.ecmaVersion;
 
     return {
-      ast: parseResult.ast,
-      scopeManager: parseResult.scopeManager || analyze(parseResult.ast),
+      ast: parseResult,
+      scopeManager: parseResult.scopeManager || analyze(parseResult, config),
       visitorKeys,
     };
   },
@@ -198,13 +191,13 @@ module.exports = {
     let parents = [];
 
     estraverse.traverse(ast, {
-      enter(node, parent) {
+      enter(node) {
         listener(node.type, node, parents);
 
         parents.push(node);
       },
 
-      leave(node, parent) {
+      leave() {
         if (!parents.length) {
           throw new Error("Left more nodes than entered.");
         }
@@ -292,34 +285,15 @@ module.exports = {
    * @return {Object}
    *         Espree compatible permissive config.
    */
-  getPermissiveConfig({ useBabel = true } = {}) {
-    const config = {
+  getPermissiveConfig() {
+    return {
       range: true,
-      requireConfigFile: false,
-      babelOptions: {
-        // configFile: path.join(gRootDir, ".babel-eslint.rc.js"),
-        // parserOpts: {
-        //   plugins: [
-        //     "@babel/plugin-proposal-class-static-block",
-        //     "@babel/plugin-syntax-class-properties",
-        //     "@babel/plugin-syntax-jsx",
-        //   ],
-        // },
-      },
       loc: true,
       comment: true,
       attachComment: true,
       ecmaVersion: this.getECMAVersion(),
       sourceType: "script",
     };
-
-    if (useBabel && this.isMozillaCentralBased()) {
-      config.babelOptions.configFile = path.join(
-        gRootDir,
-        ".babel-eslint.rc.js"
-      );
-    }
-    return config;
   },
 
   /**
@@ -517,17 +491,7 @@ module.exports = {
     }
 
     for (let name of names) {
-      if (name.endsWith(".ini")) {
-        try {
-          let manifest = this.iniParser.parse(
-            fs.readFileSync(path.join(dir, name), "utf8").split("\n")
-          );
-          manifests.push({
-            file: path.join(dir, name),
-            manifest,
-          });
-        } catch (e) {}
-      } else if (name.endsWith(".toml")) {
+      if (name.endsWith(".toml")) {
         try {
           const ast = toml.parseTOML(
             fs.readFileSync(path.join(dir, name), "utf8")
@@ -547,7 +511,7 @@ module.exports = {
             manifest,
           });
         } catch (e) {
-          console.log(
+          console.error(
             "TOML ERROR: " +
               e.message +
               " @line: " +

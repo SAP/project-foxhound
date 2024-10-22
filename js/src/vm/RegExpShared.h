@@ -103,7 +103,7 @@ class RegExpShared
 
     size_t byteCodeLength() const {
       MOZ_ASSERT(byteCode);
-      return byteCode->length;
+      return byteCode->length();
     }
   };
 
@@ -255,11 +255,6 @@ class RegExpShared
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
-
-#ifdef DEBUG
-  static bool dumpBytecode(JSContext* cx, MutableHandleRegExpShared res,
-                           Handle<JSLinearString*> input);
-#endif
 
  public:
   static const JS::TraceKind TraceKind = JS::TraceKind::RegExpShared;

@@ -10,7 +10,8 @@
 const SEARCH_ENGINE_DETAILS = [
   {
     alias: "a",
-    baseURL: "https://www.amazon.com/s?k=foo",
+    baseURL:
+      "https://www.amazon.com/s?tag=admarketus-20&ref=pd_sl_a71c226e8a96bfdb7ae5bc6d1f30e9e88d9e4e3436d7bfb941a95d0a&mfadid=adm&k=foo",
     codes: {
       context: "",
       keyword: "",
@@ -21,9 +22,13 @@ const SEARCH_ENGINE_DETAILS = [
   },
   {
     alias: "b",
-    baseURL: `https://www.bing.com/search?{code}pc=${
-      SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "MOZR" : "MOZI"
-    }&q=foo`,
+    baseURL: SearchUtils.newSearchConfigEnabled
+      ? `https://www.bing.com/search?pc=${
+          SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "MOZR" : "MOZI"
+        }&{code}q=foo`
+      : `https://www.bing.com/search?{code}pc=${
+          SearchUtils.MODIFIED_APP_CHANNEL == "esr" ? "MOZR" : "MOZI"
+        }&q=foo`,
     codes: {
       context: "form=MOZCON&",
       keyword: "form=MOZLBR&",
@@ -73,7 +78,7 @@ const SEARCH_ENGINE_DETAILS = [
 ];
 
 function promiseContentSearchReady(browser) {
-  return SpecialPowers.spawn(browser, [], async function (args) {
+  return SpecialPowers.spawn(browser, [], async function () {
     SpecialPowers.pushPrefEnv({
       set: [
         [

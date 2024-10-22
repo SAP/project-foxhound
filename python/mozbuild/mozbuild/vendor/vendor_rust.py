@@ -75,14 +75,13 @@ Cargo.lock to the HEAD version, run `git checkout -- Cargo.lock` or
 """
 
 
-PACKAGES_WE_DONT_WANT = {
-    "windows": "The windows crate is too big to vendor.",
-}
+PACKAGES_WE_DONT_WANT = {}
 
 PACKAGES_WE_ALWAYS_WANT_AN_OVERRIDE_OF = [
     "autocfg",
     "cmake",
     "vcpkg",
+    "windows",
     "windows-targets",
 ]
 
@@ -333,6 +332,9 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
         "icu_collections": ICU4X_LICENSE_SHA256,
         "icu_locid": ICU4X_LICENSE_SHA256,
         "icu_locid_transform": ICU4X_LICENSE_SHA256,
+        "icu_locid_transform_data": ICU4X_LICENSE_SHA256,
+        "icu_properties": ICU4X_LICENSE_SHA256,
+        "icu_properties_data": ICU4X_LICENSE_SHA256,
         "icu_provider": ICU4X_LICENSE_SHA256,
         "icu_provider_adapters": ICU4X_LICENSE_SHA256,
         "icu_provider_macros": ICU4X_LICENSE_SHA256,

@@ -303,12 +303,12 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
 
     nsresult rv = nsDocumentOpenInfo::OnStartRequest(request);
 
-    // If we didn't find a content handler,
-    // and we don't have a listener, then just forward to our
-    // default listener. This happens when the channel is in
-    // an error state, and we want to just forward that on to be
-    // handled in the content process.
-    if (NS_SUCCEEDED(rv) && !mUsedContentHandler && !m_targetStreamListener) {
+    // If we didn't find a content handler, and we don't have a listener, then
+    // just forward to our default listener. This happens when the channel is in
+    // an error state, and we want to just forward that on to be handled in the
+    // content process, or when DONT_RETARGET is set.
+    if ((NS_SUCCEEDED(rv) || rv == NS_ERROR_WONT_HANDLE_CONTENT) &&
+        !mUsedContentHandler && !m_targetStreamListener) {
       m_targetStreamListener = mListener;
       return m_targetStreamListener->OnStartRequest(request);
     }
@@ -340,6 +340,17 @@ class ParentProcessDocumentOpenInfo final : public nsDocumentOpenInfo,
 
   nsresult OnObjectStartRequest(nsIRequest* request) {
     LOG(("ParentProcessDocumentOpenInfo OnObjectStartRequest [this=%p]", this));
+
+    // If this load will be treated as a document load, run through
+    // nsDocumentOpenInfo for consistency with other document loads.
+    //
+    // If the dom.navigation.object_embed.allow_retargeting pref is enabled,
+    // this may lead to the resource being downloaded.
+    if (nsCOMPtr<nsIChannel> channel = do_QueryInterface(request);
+        channel && channel->IsDocument()) {
+      return OnDocumentStartRequest(request);
+    }
+
     // Just redirect to the nsObjectLoadingContent in the content process.
     m_targetStreamListener = mListener;
     return m_targetStreamListener->OnStartRequest(request);
@@ -815,11 +826,9 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
   }
 
   // Recalculate the openFlags, matching the logic in use in Content process.
-  // NOTE: The only case not handled here to mirror Content process is
-  // redirecting to re-use the channel.
   MOZ_ASSERT(!aLoadState->GetPendingRedirectedChannel());
-  uint32_t openFlags =
-      nsDocShell::ComputeURILoaderFlags(loadingContext, aLoadState->LoadType());
+  uint32_t openFlags = nsDocShell::ComputeURILoaderFlags(
+      loadingContext, aLoadState->LoadType(), mIsDocumentLoad);
 
   RefPtr<ParentProcessDocumentOpenInfo> openInfo =
       new ParentProcessDocumentOpenInfo(mParentChannelListener, openFlags,
@@ -2377,8 +2386,8 @@ bool DocumentLoadListener::MaybeHandleLoadErrorWithURIFixup(nsresult aStatus) {
   // we can downgrade the scheme to HTTP again.
   bool isHTTPSFirstFixup = false;
   if (!newURI) {
-    newURI = nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(mChannel,
-                                                                     aStatus);
+    newURI =
+        nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(this, aStatus);
     isHTTPSFirstFixup = true;
   }
 

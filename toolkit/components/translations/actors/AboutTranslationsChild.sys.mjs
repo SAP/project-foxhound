@@ -84,17 +84,6 @@ export class AboutTranslationsChild extends JSWindowActorChild {
   }
 
   /**
-   * @returns {TranslationsChild}
-   */
-  #getTranslationsChild() {
-    const child = this.contentWindow.windowGlobalChild.getActor("Translations");
-    if (!child) {
-      throw new Error("Unable to find the TranslationsChild");
-    }
-    return child;
-  }
-
-  /**
    * A privileged promise can't be used in the content page, so convert a privileged
    * promise into a content one.
    *
@@ -194,6 +183,7 @@ export class AboutTranslationsChild extends JSWindowActorChild {
 
   /**
    * Does this device support the translation engine?
+   *
    * @returns {Promise<boolean>}
    */
   AT_isTranslationEngineSupported() {

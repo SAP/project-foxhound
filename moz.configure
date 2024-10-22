@@ -208,10 +208,12 @@ include("build/moz.configure/toolchain.configure", when="--enable-compile-enviro
 include("build/moz.configure/pkg.configure")
 include("build/moz.configure/memory.configure", when="--enable-compile-environment")
 include("build/moz.configure/headers.configure", when="--enable-compile-environment")
+include("build/moz.configure/libraries.configure", when="--enable-compile-environment")
 include("build/moz.configure/warnings.configure", when="--enable-compile-environment")
 include("build/moz.configure/flags.configure", when="--enable-compile-environment")
 include("build/moz.configure/lto-pgo.configure", when="--enable-compile-environment")
 # rust.configure is included by js/moz.configure.
+
 
 option("--enable-valgrind", help="Enable Valgrind integration hooks")
 
@@ -351,8 +353,13 @@ def llvm_tool(name):
 
 
 @template
-def plain_llvm_or_prefixed(name):
-    @depends(llvm_tool(f"llvm-{name}"), toolchain_prefix)
+def plain_llvm_or_prefixed(name, llvm_name=None):
+    # look for a tool, using the following alternatives, in that order:
+    # 1. llvm-${llvm_name}, or llvm-${name} if ${llvm_name} is not provided
+    # 2. ${toolchain_prefix}${name}
+    # 3. ${name}
+
+    @depends(llvm_tool("llvm-{}".format(llvm_name or name)), toolchain_prefix)
     def plain_llvm_or_prefixed(llvm_tool, toolchain_prefix):
         commands = [llvm_tool[0], name]
         for prefix in toolchain_prefix or ():
@@ -776,23 +783,10 @@ check_prog(
 
 check_prog(
     "INSTALL_NAME_TOOL",
-    plain_llvm_or_prefixed("install-name-tool"),
+    plain_llvm_or_prefixed("install_name_tool", llvm_name="install-name-tool"),
     when=compile_environment & target_is_darwin & js_standalone,
     paths=clang_search_path,
 )
-
-option("--enable-dtrace", help="Build with dtrace support")
-
-dtrace = check_header(
-    "sys/sdt.h",
-    when="--enable-dtrace",
-    onerror=lambda: die("dtrace enabled but sys/sdt.h not found"),
-)
-
-set_config("HAVE_DTRACE", True, when=dtrace)
-set_define("INCLUDE_MOZILLA_DTRACE", True, when=dtrace)
-add_old_configure_assignment("enable_dtrace", "yes", when=dtrace)
-
 
 option("--disable-icf", help="Disable Identical Code Folding")
 

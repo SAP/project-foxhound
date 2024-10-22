@@ -354,6 +354,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // theme changes.
   void NotifyThemeChanged(mozilla::widget::ThemeChangeKind);
 
+  void NotifyAPZOfDPIChange();
+
 #ifdef ACCESSIBILITY
   // Get the accessible for the window.
   mozilla::a11y::LocalAccessible* GetRootAccessible();
@@ -364,13 +366,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   bool IsSmallPopup() const;
 
   PopupLevel GetPopupLevel() { return mPopupLevel; }
-
-  // return true if this is a popup widget with a native titlebar
-  bool IsPopupWithTitleBar() const {
-    return (mWindowType == WindowType::Popup &&
-            mBorderStyle != BorderStyle::Default &&
-            mBorderStyle & BorderStyle::Title);
-  }
 
   void ReparentNativeWidget(nsIWidget* aNewParent) override {}
 

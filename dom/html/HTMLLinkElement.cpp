@@ -60,6 +60,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLLinkElement,
   tmp->LinkStyle::Traverse(cb);
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mRelList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSizes)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mBlocking)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLLinkElement,
@@ -67,6 +68,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLLinkElement,
   tmp->LinkStyle::Unlink();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mRelList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSizes)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mBlocking)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(HTMLLinkElement,
@@ -108,7 +110,7 @@ void HTMLLinkElement::LinkAdded() {
   CreateAndDispatchEvent(u"DOMLinkAdded"_ns);
 }
 
-void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
+void HTMLLinkElement::UnbindFromTree(UnbindContext& aContext) {
   CancelDNSPrefetch(*this);
   CancelPrefetchOrPreload();
 
@@ -128,7 +130,7 @@ void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
     }
   }
 
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
 }
@@ -160,6 +162,12 @@ bool HTMLLinkElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
     if (aAttribute == nsGkAtoms::fetchpriority) {
       ParseFetchPriority(aValue, aResult);
+      return true;
+    }
+
+    if (aAttribute == nsGkAtoms::blocking &&
+        StaticPrefs::dom_element_blocking_enabled()) {
+      aResult.ParseAtomArray(aValue);
       return true;
     }
   }
@@ -691,6 +699,24 @@ bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
   aSelf.GetAttr(nsGkAtoms::type, type);
   nsContentUtils::SplitMimeType(type, mimeType, notUsed);
   return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
+}
+
+nsDOMTokenList* HTMLLinkElement::Blocking() {
+  if (!mBlocking) {
+    mBlocking =
+        new nsDOMTokenList(this, nsGkAtoms::blocking, sSupportedBlockingValues);
+  }
+  return mBlocking;
+}
+
+bool HTMLLinkElement::IsPotentiallyRenderBlocking() {
+  return BlockingContainsRender();
+
+  // TODO: handle implicitly potentially render blocking
+  // https://html.spec.whatwg.org/#implicitly-potentially-render-blocking
+  // The default type for resources given by the stylesheet keyword is text/css.
+  // A link element of this type is implicitly potentially render-blocking if
+  // the element was created by its node document's parser.
 }
 
 }  // namespace mozilla::dom

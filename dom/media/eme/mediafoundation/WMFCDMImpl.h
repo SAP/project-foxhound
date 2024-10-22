@@ -34,9 +34,9 @@ class WMFCDMImpl final {
 
   explicit WMFCDMImpl(const nsAString& aKeySystem) : mKeySystem(aKeySystem) {}
 
-  static bool Supports(const nsAString& aKeySystem);
   // TODO: make this async?
-  bool GetCapabilities(nsTArray<KeySystemConfig>& aOutConfigs);
+  bool GetCapabilities(bool aIsHardwareDecryption,
+                       nsTArray<KeySystemConfig>& aOutConfigs);
 
   using InitPromise = GenericPromise;
   struct InitParams {
@@ -90,6 +90,12 @@ class WMFCDMImpl final {
                                               nsTArray<uint8_t>& aCert) {
     MOZ_DIAGNOSTIC_ASSERT(mCDM);
     return mCDM->SetServerCertificate(aPromiseId, aCert);
+  }
+
+  RefPtr<GenericPromise> GetStatusForPolicy(
+      uint32_t aPromiseId, const dom::HDCPVersion& aMinHdcpVersion) {
+    MOZ_DIAGNOSTIC_ASSERT(mCDM);
+    return mCDM->GetStatusForPolicy(aPromiseId, aMinHdcpVersion);
   }
 
   uint64_t Id() {

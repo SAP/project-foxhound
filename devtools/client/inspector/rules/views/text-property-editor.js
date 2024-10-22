@@ -314,6 +314,10 @@ TextPropertyEditor.prototype = {
         }
       });
 
+      const cssVariables = this.rule.elementStyle.getAllCustomProperties(
+        this.rule.pseudoElement
+      );
+
       editableField({
         start: this._onStartEditing,
         element: this.nameSpan,
@@ -323,6 +327,7 @@ TextPropertyEditor.prototype = {
         contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
         popup: this.popup,
         cssProperties: this.cssProperties,
+        cssVariables,
         // (Shift+)Tab will move the focus to the previous/next editable field (so property value
         // or new selector).
         focusEditableFieldAfterApply: true,
@@ -380,7 +385,7 @@ TextPropertyEditor.prototype = {
         }
       });
 
-      this.valueSpan.addEventListener("mouseup", event => {
+      this.valueSpan.addEventListener("mouseup", () => {
         // if we have dragged, we will handle the pending click in _draggingOnMouseUp instead
         if (this._hasDragged) {
           return;
@@ -421,9 +426,7 @@ TextPropertyEditor.prototype = {
         multiline: true,
         maxWidth: () => this.container.getBoundingClientRect().width,
         cssProperties: this.cssProperties,
-        cssVariables:
-          this.rule.elementStyle.variablesMap.get(this.rule.pseudoElement) ||
-          [],
+        cssVariables,
         getGridLineNames: this.getGridlineNames,
         showSuggestCompletionOnEmpty: true,
         // (Shift+)Tab will move the focus to the previous/next editable field (so property name,
@@ -1143,10 +1146,8 @@ TextPropertyEditor.prototype = {
    *        True if the change should be applied.
    * @param {Number} direction
    *        The move focus direction number.
-   * @param {Number} key
-   *        The event keyCode that trigger the editor to close
    */
-  _onNameDone(value, commit, direction, key) {
+  _onNameDone(value, commit, direction) {
     const isNameUnchanged =
       (!commit && !this.ruleEditor.isEditing) || this.committed.name === value;
     if (this.prop.value && isNameUnchanged) {
@@ -1230,10 +1231,8 @@ TextPropertyEditor.prototype = {
    *        True if the change should be applied.
    * @param {Number} direction
    *        The move focus direction number.
-   * @param {Number} key
-   *        The event keyCode that trigger the editor to close
    */
-  _onValueDone(value = "", commit, direction, key) {
+  _onValueDone(value = "", commit, direction) {
     const parsedProperties = this._getValueAndExtraProperties(value);
     const val = parseSingleValue(
       this.cssProperties.isKnown,

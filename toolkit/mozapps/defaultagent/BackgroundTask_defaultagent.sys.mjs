@@ -17,15 +17,11 @@ const EXIT_CODE = {
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
-  BackgroundTasksUtils: "resource://gre/modules/BackgroundTasksUtils.sys.mjs",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  ShellService: "resource:///modules/ShellService.sys.mjs",
 });
 XPCOMUtils.defineLazyServiceGetters(lazy, {
   AlertsService: ["@mozilla.org/alerts-service;1", "nsIAlertsService"],
-  XreDirProvider: [
-    "@mozilla.org/xre/directory-provider;1",
-    "nsIXREDirProvider",
-  ],
 });
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
   let { ConsoleAPI } = ChromeUtils.importESModule(
@@ -39,11 +35,20 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   return new ConsoleAPI(consoleOptions);
 });
 
-// Should be slightly longer than NOTIFICATION_WAIT_TIMEOUT_MS in
-// Notification.cpp (divided by 1000 to convert millseconds to seconds) to not
-// cause race between timeouts. Currently 12 hours + 5 additional minutes.
-export const backgroundTaskTimeoutSec = 12 * 60 * 60 + 60 * 5;
-const kNotificationTimeoutMs = 12 * 60 * 60 * 1000;
+// Should be slightly longer than kNotificationTimeoutMs and kGleanSendWait below
+// (divided by 1000 to convert millseconds to seconds) to not cause race
+// between timeouts.
+//
+// Additionally, should be less than the Windows Scheduled Task timeout
+// execTimeLimitBStr in ScheduledTask.cpp.
+//
+// Current bounds are 11 hours 55 minutes 10 seconds and 12 hours 5 minutes.
+export const backgroundTaskTimeoutSec = 12 * 60 * 60;
+
+// 11 hours 55 minutes in milliseconds.
+const kNotificationTimeoutMs = 11 * 60 * 60 * 1000 + 55 * 60 * 1000;
+// 10 seconds in milliseconds.
+const kGleanSendWait = 10000;
 
 const kNotificationShown = Object.freeze({
   notShown: "not-shown",
@@ -150,25 +155,11 @@ export async function runBackgroundTask(commandLine) {
 
       lazy.log.info(`Running do-task with AUMID "${aumid}"`);
 
-      let cppFallback = false;
       try {
-        await lazy.BackgroundTasksUtils.enableNimbus(commandLine);
-        cppFallback =
-          lazy.NimbusFeatures.defaultAgent.getVariable("cppFallback");
-      } catch (e) {
-        lazy.log.error(`Error enabling nimbus: ${e}`);
-      }
-
-      try {
-        if (!cppFallback) {
-          lazy.log.info("Running JS do-task.");
-          await runWithRegistryLocked(async () => {
-            await doTask(defaultAgent, force);
-          });
-        } else {
-          lazy.log.info("Running C++ do-task.");
-          defaultAgent.doTask(aumid, force);
-        }
+        lazy.log.info("Running JS do-task.");
+        await runWithRegistryLocked(async () => {
+          await doTask(defaultAgent, force);
+        });
       } catch (e) {
         if (e.message) {
           lazy.log.error(e.message);
@@ -183,7 +174,7 @@ export async function runBackgroundTask(commandLine) {
 
       // Bug 1857333: We wait for arbitrary time for Glean to submit telemetry.
       lazy.log.info("Pinged glean, waiting for submission.");
-      await new Promise(resolve => lazy.setTimeout(resolve, 5000));
+      await new Promise(resolve => lazy.setTimeout(resolve, kGleanSendWait));
 
       return EXIT_CODE.SUCCESS;
     }
@@ -244,9 +235,9 @@ async function doTask(defaultAgent, force) {
       kNotificationAction.makeFirefoxDefaultButton ||
     notificationTelemetry.action == kNotificationAction.toastClicked
   ) {
-    let aumid = lazy.XreDirProvider.getInstallHash();
-    lazy.log.info(`Setting default browser with AUMID: ${aumid}`);
-    defaultAgent.setDefaultBrowserUserChoice(aumid, []);
+    await lazy.ShellService.setDefaultBrowser(false).catch(e => {
+      lazy.log.error(`setDefaultBrowser failed: ${e}`);
+    });
   }
 
   defaultAgent.sendPing(

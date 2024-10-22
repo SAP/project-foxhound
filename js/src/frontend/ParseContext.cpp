@@ -593,12 +593,27 @@ bool ParseContext::hasUsedName(const UsedNameTracker& usedNames,
   return false;
 }
 
+bool ParseContext::hasClosedOverName(const UsedNameTracker& usedNames,
+                                     TaggedParserAtomIndex name) {
+  if (auto p = usedNames.lookup(name)) {
+    return p->value().isClosedOver(scriptId());
+  }
+  return false;
+}
+
 bool ParseContext::hasUsedFunctionSpecialName(const UsedNameTracker& usedNames,
                                               TaggedParserAtomIndex name) {
   MOZ_ASSERT(name == TaggedParserAtomIndex::WellKnown::arguments() ||
              name == TaggedParserAtomIndex::WellKnown::dot_this_() ||
              name == TaggedParserAtomIndex::WellKnown::dot_newTarget_());
   return hasUsedName(usedNames, name) ||
+         functionBox()->bindingsAccessedDynamically();
+}
+
+bool ParseContext::hasClosedOverFunctionSpecialName(
+    const UsedNameTracker& usedNames, TaggedParserAtomIndex name) {
+  MOZ_ASSERT(name == TaggedParserAtomIndex::WellKnown::arguments());
+  return hasClosedOverName(usedNames, name) ||
          functionBox()->bindingsAccessedDynamically();
 }
 
@@ -644,17 +659,41 @@ bool ParseContext::declareFunctionArgumentsObject(
   ParseContext::Scope& funScope = functionScope();
   ParseContext::Scope& _varScope = varScope();
 
-  bool usesArguments = false;
   bool hasExtraBodyVarScope = &funScope != &_varScope;
 
   // Time to implement the odd semantics of 'arguments'.
   auto argumentsName = TaggedParserAtomIndex::WellKnown::arguments();
 
-  bool tryDeclareArguments;
+  bool tryDeclareArguments = false;
+  bool needsArgsObject = false;
+
+  // When delazifying simply defer to the function box.
   if (canSkipLazyClosedOverBindings) {
     tryDeclareArguments = funbox->shouldDeclareArguments();
+    needsArgsObject = funbox->needsArgsObj();
   } else {
-    tryDeclareArguments = hasUsedFunctionSpecialName(usedNames, argumentsName);
+    // We cannot compute these values when delazifying, hence why we need to
+    // rely on the function box flags instead.
+    bool bindingClosedOver =
+        hasClosedOverFunctionSpecialName(usedNames, argumentsName);
+    bool bindingUsedOnlyHere =
+        hasUsedFunctionSpecialName(usedNames, argumentsName) &&
+        !bindingClosedOver;
+
+    // Declare arguments if there's a closed-over consumer of the binding, or if
+    // there is a non-length use and we will reference the binding during
+    // bytecode emission.
+    tryDeclareArguments =
+        !funbox->isEligibleForArgumentsLength() || bindingClosedOver;
+    // If we have a use and the binding isn't closed over, then we will do
+    // bytecode emission with the arguments intrinsic.
+    if (bindingUsedOnlyHere && funbox->isEligibleForArgumentsLength()) {
+      // If we're using the intrinsic we should not be declaring the binding.
+      MOZ_ASSERT(!tryDeclareArguments);
+      funbox->setUsesArgumentsIntrinsics();
+    } else if (tryDeclareArguments) {
+      needsArgsObject = true;
+    }
   }
 
   // ES 9.2.12 steps 19 and 20 say formal parameters, lexical bindings,
@@ -670,9 +709,19 @@ bool ParseContext::declareFunctionArgumentsObject(
   DeclaredNamePtr p = _varScope.lookupDeclaredName(argumentsName);
   if (p && p->value()->kind() == DeclarationKind::Var) {
     if (hasExtraBodyVarScope) {
+      // While there is a binding in the var scope, we should declare
+      // the binding in the function scope.
       tryDeclareArguments = true;
     } else {
-      usesArguments = true;
+      // A binding in the function scope (since varScope and functionScope are
+      // the same) exists, so arguments is used.
+      if (needsArgsObject) {
+        funbox->setNeedsArgsObj();
+      }
+
+      // There is no point in continuing on below: We know we already have
+      // a declaration of arguments in the function scope.
+      return true;
     }
   }
 
@@ -685,17 +734,11 @@ bool ParseContext::declareFunctionArgumentsObject(
         return false;
       }
       funbox->setShouldDeclareArguments();
-      usesArguments = true;
-    } else if (hasExtraBodyVarScope) {
-      // Formal parameters shadow the arguments object.
-      return true;
+      if (needsArgsObject) {
+        funbox->setNeedsArgsObj();
+      }
     }
   }
-
-  if (usesArguments) {
-    funbox->setNeedsArgsObj();
-  }
-
   return true;
 }
 

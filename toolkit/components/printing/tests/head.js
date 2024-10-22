@@ -185,8 +185,9 @@ class PrintHelper {
   assertDialogHidden() {
     is(this._dialogs.length, 1, "There is one print dialog");
     ok(BrowserTestUtils.isHidden(this.dialog._box), "The dialog is hidden");
-    ok(
-      this.dialog._box.getBoundingClientRect().width > 0,
+    Assert.greater(
+      this.dialog._box.getBoundingClientRect().width,
+      0,
       "The dialog should still have boxes"
     );
   }
@@ -207,7 +208,7 @@ class PrintHelper {
       50
     );
 
-    ok(file.fileSize > 0, "Target file not empty");
+    Assert.greater(file.fileSize, 0, "Target file not empty");
   }
 
   setupMockPrint() {
@@ -520,7 +521,7 @@ class PrintHelper {
   mockFilePickerCancel() {
     if (!pickerMocked) {
       pickerMocked = true;
-      MockFilePicker.init(window);
+      MockFilePicker.init(window.browsingContext);
       registerCleanupFunction(() => MockFilePicker.cleanup());
     }
     MockFilePicker.returnValue = MockFilePicker.returnCancel;
@@ -529,7 +530,7 @@ class PrintHelper {
   mockFilePicker(filename) {
     if (!pickerMocked) {
       pickerMocked = true;
-      MockFilePicker.init(window);
+      MockFilePicker.init(window.browsingContext);
       registerCleanupFunction(() => MockFilePicker.cleanup());
     }
     MockFilePicker.returnValue = MockFilePicker.returnOK;

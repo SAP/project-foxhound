@@ -226,6 +226,7 @@ struct nsTextFrame::DrawTextRunParams {
   float textStrokeWidth = 0.0f;
   bool drawSoftHyphen = false;
   bool hasTextShadow = false;
+  bool paintingShadows = false;
   DrawTextRunParams(gfxContext* aContext,
                     mozilla::gfx::PaletteCache& aPaletteCache)
       : context(aContext), paletteCache(aPaletteCache) {}
@@ -276,6 +277,7 @@ struct nsTextFrame::PaintShadowParams {
   Point framePt;
   Point textBaselinePt;
   gfxContext* context;
+  DrawPathCallbacks* callbacks = nullptr;
   nscolor foregroundColor = NS_RGBA(0, 0, 0, 0);
   const ClipEdges* clipEdges = nullptr;
   PropertyProvider* provider = nullptr;
@@ -781,7 +783,8 @@ static bool IsTrimmableSpace(const nsTextFragment* aFrag, uint32_t aPos,
              !IsSpaceCombiningSequenceTail(aFrag, aPos + 1);
     case '\n':
       return !aStyleText->NewlineIsSignificantStyle() &&
-             aStyleText->mWhiteSpace != mozilla::StyleWhiteSpace::PreSpace;
+             aStyleText->mWhiteSpaceCollapse !=
+                 StyleWhiteSpaceCollapse::PreserveSpaces;
     case '\t':
     case '\r':
     case '\f':
@@ -1171,27 +1174,23 @@ static bool TextContainsLineBreakerWhiteSpace(const void* aText,
 
 static nsTextFrameUtils::CompressionMode GetCSSWhitespaceToCompressionMode(
     nsTextFrame* aFrame, const nsStyleText* aStyleText) {
-  switch (aStyleText->mWhiteSpace) {
-    case StyleWhiteSpace::Normal:
-    case StyleWhiteSpace::Nowrap:
+  switch (aStyleText->mWhiteSpaceCollapse) {
+    case StyleWhiteSpaceCollapse::Collapse:
       return nsTextFrameUtils::COMPRESS_WHITESPACE_NEWLINE;
-    case StyleWhiteSpace::Pre:
-    case StyleWhiteSpace::PreWrap:
-    case StyleWhiteSpace::BreakSpaces:
+    case StyleWhiteSpaceCollapse::PreserveBreaks:
+      return nsTextFrameUtils::COMPRESS_WHITESPACE;
+    case StyleWhiteSpaceCollapse::Preserve:
+    case StyleWhiteSpaceCollapse::PreserveSpaces:
+    case StyleWhiteSpaceCollapse::BreakSpaces:
       if (!aStyleText->NewlineIsSignificant(aFrame)) {
         // If newline is set to be preserved, but then suppressed,
         // transform newline to space.
         return nsTextFrameUtils::COMPRESS_NONE_TRANSFORM_TO_SPACE;
       }
       return nsTextFrameUtils::COMPRESS_NONE;
-    case StyleWhiteSpace::PreSpace:
-      return nsTextFrameUtils::COMPRESS_NONE_TRANSFORM_TO_SPACE;
-    case StyleWhiteSpace::PreLine:
-      return nsTextFrameUtils::COMPRESS_WHITESPACE;
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unknown white-space value");
-      return nsTextFrameUtils::COMPRESS_WHITESPACE_NEWLINE;
   }
+  MOZ_ASSERT_UNREACHABLE("Unknown white-space-collapse value");
+  return nsTextFrameUtils::COMPRESS_WHITESPACE_NEWLINE;
 }
 
 struct FrameTextTraversal {
@@ -4371,7 +4370,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsContinuingTextFrame)
 
 nsTextFrame::~nsTextFrame() = default;
 
-Maybe<nsIFrame::Cursor> nsTextFrame::GetCursor(const nsPoint& aPoint) {
+nsIFrame::Cursor nsTextFrame::GetCursor(const nsPoint& aPoint) {
   StyleCursorKind kind = StyleUI()->Cursor().keyword;
   if (kind == StyleCursorKind::Auto) {
     if (!IsSelectable(nullptr)) {
@@ -4381,7 +4380,7 @@ Maybe<nsIFrame::Cursor> nsTextFrame::GetCursor(const nsPoint& aPoint) {
                                            : StyleCursorKind::Text;
     }
   }
-  return Some(Cursor{kind, AllowCustomCursorImage::Yes});
+  return Cursor{kind, AllowCustomCursorImage::Yes};
 }
 
 nsTextFrame* nsTextFrame::LastInFlow() const {
@@ -4571,7 +4570,7 @@ nsresult nsTextFrame::CharacterDataChanged(
   // dirty bit without bothering to call FrameNeedsReflow again.)
   nsIFrame* lastDirtiedFrameParent = nullptr;
 
-  mozilla::PresShell* presShell = PresContext()->GetPresShell();
+  mozilla::PresShell* presShell = PresShell();
   do {
     // textFrame contained deleted text (or the insertion point,
     // if this was a pure insertion).
@@ -5377,9 +5376,8 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
 
   // Text-shadow overflows
   if (aIncludeShadows) {
-    nsRect shadowRect =
+    *aInkOverflowRect =
         nsLayoutUtils::GetTextShadowRectsUnion(*aInkOverflowRect, this);
-    aInkOverflowRect->UnionRect(*aInkOverflowRect, shadowRect);
   }
 
   // When this frame is not selected, the text-decoration area must be in
@@ -5463,6 +5461,7 @@ struct nsTextFrame::PaintDecorationLineParams
   gfxFloat baselineOffset = 0.0f;
   DecorationType decorationType = DecorationType::Normal;
   DrawPathCallbacks* callbacks = nullptr;
+  bool paintingShadows = false;
 };
 
 void nsTextFrame::PaintDecorationLine(
@@ -5477,9 +5476,11 @@ void nsTextFrame::PaintDecorationLine(
   if (aParams.callbacks) {
     Rect path = nsCSSRendering::DecorationLineToPath(params);
     if (aParams.decorationType == DecorationType::Normal) {
-      aParams.callbacks->PaintDecorationLine(path, params.color);
+      aParams.callbacks->PaintDecorationLine(path, aParams.paintingShadows,
+                                             params.color);
     } else {
-      aParams.callbacks->PaintSelectionDecorationLine(path, params.color);
+      aParams.callbacks->PaintSelectionDecorationLine(
+          path, aParams.paintingShadows, params.color);
     }
   } else {
     nsCSSRendering::PaintDecorationLine(this, *aParams.context->GetDrawTarget(),
@@ -5941,6 +5942,7 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
   gfxFloat advanceWidth;
   nsTextPaintStyle textPaintStyle(this);
   DrawTextParams params(shadowContext, PresContext()->FontPaletteCache());
+  params.paintingShadows = true;
   params.advanceWidth = &advanceWidth;
   params.dirtyRect = aParams.dirtyRect;
   params.framePt = aParams.framePt + shadowGfxOffset;
@@ -5948,9 +5950,10 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
   params.textStyle = &textPaintStyle;
   params.textColor =
       aParams.context == shadowContext ? shadowColor : NS_RGB(0, 0, 0);
+  params.callbacks = aParams.callbacks;
   params.clipEdges = aParams.clipEdges;
   params.drawSoftHyphen = HasAnyStateBits(TEXT_HYPHEN_BREAK);
-  // Multi-color shadow is not allowed, so we use the same color of the text
+  // Multi-color shadow is not allowed, so we use the same color as the text
   // color.
   params.decorationOverrideColor = &params.textColor;
   params.fontPalette = StyleFont()->GetFontPaletteAtom();
@@ -6256,6 +6259,7 @@ bool nsTextFrame::PaintTextWithSelectionColors(
 
   PaintShadowParams shadowParams(aParams);
   shadowParams.provider = aParams.provider;
+  shadowParams.callbacks = aParams.callbacks;
   shadowParams.clipEdges = &aClipEdges;
 
   // Draw text
@@ -6818,6 +6822,7 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
     shadowParams.textBaselinePt = textBaselinePt;
     shadowParams.leftSideOffset = snappedStartEdge;
     shadowParams.provider = &provider;
+    shadowParams.callbacks = aParams.callbacks;
     shadowParams.foregroundColor = foregroundColor;
     shadowParams.clipEdges = &clipEdges;
     PaintShadows(textStyle->mTextShadow.AsSpan(), shadowParams);
@@ -6857,7 +6862,8 @@ static void DrawTextRun(const gfxTextRun* aTextRun,
   params.callbacks = aParams.callbacks;
   params.hasTextShadow = aParams.hasTextShadow;
   if (aParams.callbacks) {
-    aParams.callbacks->NotifyBeforeText(aParams.textColor);
+    aParams.callbacks->NotifyBeforeText(aParams.paintingShadows,
+                                        aParams.textColor);
     params.drawMode = DrawMode::GLYPH_PATH;
     aTextRun->Draw(aRange, aTextBaselinePt, params);
     aParams.callbacks->NotifyAfterText();
@@ -6998,6 +7004,7 @@ void nsTextFrame::DrawTextRunAndDecorations(
   params.callbacks = aParams.callbacks;
   params.glyphRange = aParams.glyphRange;
   params.provider = aParams.provider;
+  params.paintingShadows = aParams.paintingShadows;
   // pt is the physical point where the decoration is to be drawn,
   // relative to the frame; one of its coordinates will be updated below.
   params.pt = Point(x / app, y / app);
@@ -9539,7 +9546,8 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   }
   bool canTrimTrailingWhitespace = !textStyle->WhiteSpaceIsSignificant() ||
                                    HasAnyStateBits(TEXT_IS_IN_TOKEN_MATHML);
-  bool isBreakSpaces = textStyle->mWhiteSpace == StyleWhiteSpace::BreakSpaces;
+  bool isBreakSpaces =
+      textStyle->mWhiteSpaceCollapse == StyleWhiteSpaceCollapse::BreakSpaces;
   // allow whitespace to overflow the container
   bool whitespaceCanHang = textStyle->WhiteSpaceCanHangOrVisuallyCollapse();
   gfxBreakPriority breakPriority = aLineLayout.LastOptionalBreakPriority();
@@ -9843,6 +9851,9 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   if (completedFirstLetter) {
     aLineLayout.SetFirstLetterStyleOK(false);
     aStatus.SetFirstLetterComplete();
+  }
+  if (brokeText && breakPriority == gfxBreakPriority::eWordWrapBreak) {
+    aLineLayout.SetUsedOverflowWrap();
   }
 
   // Updated the cached NewlineProperty, or delete it.
@@ -10319,9 +10330,9 @@ bool nsTextFrame::IsEmpty() {
     return true;
   }
 
-  bool isEmpty =
-      IsAllWhitespace(TextFragment(), textStyle->mWhiteSpace !=
-                                          mozilla::StyleWhiteSpace::PreLine);
+  bool isEmpty = IsAllWhitespace(TextFragment(),
+                                 textStyle->mWhiteSpaceCollapse !=
+                                     StyleWhiteSpaceCollapse::PreserveBreaks);
   AddStateBits(isEmpty ? TEXT_IS_ONLY_WHITESPACE : TEXT_ISNOT_ONLY_WHITESPACE);
   return isEmpty;
 }

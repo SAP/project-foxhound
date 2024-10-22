@@ -7,7 +7,7 @@
 #include "AppleVTDecoder.h"
 
 #include <CoreVideo/CVPixelBufferIOSurface.h>
-#include <IOSurface/IOSurface.h>
+#include <IOSurface/IOSurfaceRef.h>
 #include <limits>
 
 #include "AppleDecoderModule.h"
@@ -475,15 +475,17 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
     gfx::IntRect visible = gfx::IntRect(0, 0, mPictureWidth, mPictureHeight);
 
     // Copy the image data into our own format.
-    data = VideoData::CreateAndCopyData(
-        info, mImageContainer, aFrameRef.byte_offset,
-        aFrameRef.composition_timestamp, aFrameRef.duration, buffer,
-        aFrameRef.is_sync_point, aFrameRef.decode_timestamp, visible,
-        mKnowsCompositor);
+    Result<already_AddRefed<VideoData>, MediaResult> result =
+        VideoData::CreateAndCopyData(
+            info, mImageContainer, aFrameRef.byte_offset,
+            aFrameRef.composition_timestamp, aFrameRef.duration, buffer,
+            aFrameRef.is_sync_point, aFrameRef.decode_timestamp, visible,
+            mKnowsCompositor);
+    // TODO: Reject mPromise below with result's error return.
+    data = result.unwrapOr(nullptr);
     // Unlock the returned image data.
     CVPixelBufferUnlockBaseAddress(aImage, kCVPixelBufferLock_ReadOnly);
   } else {
-#ifndef MOZ_WIDGET_UIKIT
     // Set pixel buffer properties on aImage before we extract its surface.
     // This ensures that we can use defined enums to set values instead
     // of later setting magic CFSTR values on the surface itself.
@@ -532,9 +534,6 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
         info.mDisplay, aFrameRef.byte_offset, aFrameRef.composition_timestamp,
         aFrameRef.duration, image.forget(), aFrameRef.is_sync_point,
         aFrameRef.decode_timestamp);
-#else
-    MOZ_ASSERT_UNREACHABLE("No MacIOSurface on iOS");
-#endif
   }
 
   if (!data) {
@@ -716,7 +715,6 @@ CFDictionaryRef AppleVTDecoder::CreateOutputConfiguration() {
         &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
   }
 
-#ifndef MOZ_WIDGET_UIKIT
   // Output format type:
 
   bool is10Bit = (gfx::BitDepthForColorDepth(mColorDepth) == 10);
@@ -751,9 +749,6 @@ CFDictionaryRef AppleVTDecoder::CreateOutputConfiguration() {
   return CFDictionaryCreate(
       kCFAllocatorDefault, outputKeys, outputValues, ArrayLength(outputKeys),
       &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-#else
-  MOZ_ASSERT_UNREACHABLE("No MacIOSurface on iOS");
-#endif
 }
 
 }  // namespace mozilla

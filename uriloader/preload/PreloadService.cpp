@@ -137,46 +137,28 @@ void PreloadService::PreloadLinkHeader(
 }
 
 // The mapping is specified as implementation-defined, see step 15 of
-// <https://fetch.spec.whatwg.org/#concept-fetch>. For web-compatibility,
-// Chromium's mapping described at
-// <https://web.dev/articles/fetch-priority#browser_priority_and_fetchpriority>
-// is chosen.
+// <https://fetch.spec.whatwg.org/#concept-fetch>.
+// See corresponding preferences in StaticPrefList.yaml for more context.
 class SupportsPriorityValueFor {
  public:
   static int32_t LinkRelPreloadFont(const FetchPriority aFetchPriority) {
+    int32_t priorityValue = nsISupportsPriority::PRIORITY_HIGH;
     if (!StaticPrefs::network_fetchpriority_enabled()) {
-      return nsISupportsPriority::PRIORITY_HIGH;
+      return priorityValue;
     }
 
-    switch (aFetchPriority) {
-      case FetchPriority::Auto:
-        return nsISupportsPriority::PRIORITY_HIGH;
-      case FetchPriority::High:
-        return nsISupportsPriority::PRIORITY_HIGH;
-      case FetchPriority::Low:
-        return nsISupportsPriority::PRIORITY_LOW;
-    }
-
-    MOZ_ASSERT_UNREACHABLE();
-    return nsISupportsPriority::PRIORITY_HIGH;
+    return priorityValue +
+           FETCH_PRIORITY_ADJUSTMENT_FOR(link_preload_font, aFetchPriority);
   }
 
   static int32_t LinkRelPreloadFetch(const FetchPriority aFetchPriority) {
+    int32_t priorityValue = nsISupportsPriority::PRIORITY_NORMAL;
     if (!StaticPrefs::network_fetchpriority_enabled()) {
-      return nsISupportsPriority::PRIORITY_NORMAL;
+      return priorityValue;
     }
 
-    switch (aFetchPriority) {
-      case FetchPriority::Auto:
-        return nsISupportsPriority::PRIORITY_HIGH;
-      case FetchPriority::High:
-        return nsISupportsPriority::PRIORITY_HIGH;
-      case FetchPriority::Low:
-        return nsISupportsPriority::PRIORITY_LOW;
-    }
-
-    MOZ_ASSERT_UNREACHABLE();
-    return nsISupportsPriority::PRIORITY_NORMAL;
+    return priorityValue +
+           FETCH_PRIORITY_ADJUSTMENT_FOR(link_preload_fetch, aFetchPriority);
   }
 };
 
@@ -244,7 +226,8 @@ PreloadService::PreloadOrCoalesceResult PreloadService::PreloadOrCoalesce(
         break;
     }
   } else if (aAs.LowerCaseEqualsASCII("image")) {
-    PreloadImage(uri, aCORS, aReferrerPolicy, isImgSet, aEarlyHintPreloaderId);
+    PreloadImage(uri, aCORS, aReferrerPolicy, isImgSet, aEarlyHintPreloaderId,
+                 aFetchPriority);
   } else if (aAs.LowerCaseEqualsASCII("font")) {
     PreloadFont(uri, aCORS, aReferrerPolicy, aEarlyHintPreloaderId,
                 aFetchPriority);
@@ -276,10 +259,11 @@ void PreloadService::PreloadScript(
 void PreloadService::PreloadImage(nsIURI* aURI, const nsAString& aCrossOrigin,
                                   const nsAString& aImageReferrerPolicy,
                                   bool aIsImgSet,
-                                  uint64_t aEarlyHintPreloaderId) {
-  mDocument->PreLoadImage(aURI, aCrossOrigin,
-                          PreloadReferrerPolicy(aImageReferrerPolicy),
-                          aIsImgSet, true, aEarlyHintPreloaderId);
+                                  uint64_t aEarlyHintPreloaderId,
+                                  const nsAString& aFetchPriority) {
+  mDocument->PreLoadImage(
+      aURI, aCrossOrigin, PreloadReferrerPolicy(aImageReferrerPolicy),
+      aIsImgSet, true, aEarlyHintPreloaderId, aFetchPriority);
 }
 
 void PreloadService::PreloadFont(nsIURI* aURI, const nsAString& aCrossOrigin,

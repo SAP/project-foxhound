@@ -23,7 +23,7 @@
 //! let cfg = ConfigurationBuilder::new(true, "/tmp/data", "org.mozilla.glean_core.example").build();
 //! glean::initialize(cfg, ClientInfoMetrics::unknown());
 //!
-//! let prototype_ping = PingType::new("prototype", true, true, true, vec!());
+//! let prototype_ping = PingType::new("prototype", true, true, true, true, vec!());
 //!
 //! prototype_ping.submit(None);
 //! ```
@@ -170,6 +170,12 @@ pub fn set_experiment_active(
 /// See [`glean_core::Glean::set_experiment_inactive`].
 pub fn set_experiment_inactive(experiment_id: String) {
     glean_core::glean_set_experiment_inactive(experiment_id)
+}
+
+/// Dynamically set the experimentation identifier, as opposed to setting it through the configuration
+/// during initialization.
+pub fn set_experimentation_id(experimentation_id: String) {
+    glean_core::glean_set_experimentation_id(experimentation_id);
 }
 
 /// TEST ONLY FUNCTION.

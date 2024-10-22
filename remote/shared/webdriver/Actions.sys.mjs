@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   dom: "chrome://remote/content/shared/DOM.sys.mjs",
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
-  event: "chrome://remote/content/marionette/event.sys.mjs",
+  event: "chrome://remote/content/shared/webdriver/Event.sys.mjs",
   keyData: "chrome://remote/content/shared/webdriver/KeyData.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
   pprint: "chrome://remote/content/shared/Format.sys.mjs",
@@ -508,11 +508,8 @@ class Origin {
    * Viewport coordinates of the origin of this coordinate system.
    *
    * This is overridden in subclasses to provide a class-specific origin.
-   *
-   * @param {InputSource} inputSource - State of current input device.
-   * @param {WindowProxy} win - Current window global
    */
-  getOriginCoordinates(inputSource, win) {
+  getOriginCoordinates() {
     throw new Error(
       `originCoordinates not defined for ${this.constructor.name}`
     );
@@ -559,13 +556,13 @@ class Origin {
 }
 
 class ViewportOrigin extends Origin {
-  getOriginCoordinates(inputSource, win) {
+  getOriginCoordinates() {
     return { x: 0, y: 0 };
   }
 }
 
 class PointerOrigin extends Origin {
-  getOriginCoordinates(inputSource, win) {
+  getOriginCoordinates(inputSource) {
     return { x: inputSource.x, y: inputSource.y };
   }
 }
@@ -624,13 +621,9 @@ class Action {
    * This is overridden by subclasses to implement the type-specific
    * dispatch of the action.
    *
-   * @param {State} state - Actions state.
-   * @param {InputSource} inputSource - State of the current input device.
-   * @param {number} tickDuration - Length of the current tick, in ms.
-   * @param {WindowProxy} win - Current window global.
    * @returns {Promise} - Promise that is resolved once the action is complete.
    */
-  dispatch(state, inputSource, tickDuration, win) {
+  dispatch() {
     throw new Error(
       `Action subclass ${this.constructor.name} must override dispatch()`
     );
@@ -708,10 +701,9 @@ class PauseAction extends NullAction {
    * @param {State} state - Actions state.
    * @param {InputSource} inputSource - State of the current input device.
    * @param {number} tickDuration - Length of the current tick, in ms.
-   * @param {WindowProxy} win - Current window global.
    * @returns {Promise} - Promise that is resolved once the action is complete.
    */
-  dispatch(state, inputSource, tickDuration, win) {
+  dispatch(state, inputSource, tickDuration) {
     const ms = this.duration ?? tickDuration;
 
     lazy.logger.trace(
@@ -1416,15 +1408,9 @@ class TouchActionGroup {
    * This is overridden by subclasses to implement the type-specific
    * dispatch of the action.
    *
-   * @param {State} state - Actions state.
-   * @param {null} inputSource
-   *     This is always null; the argument only exists for compatibility
-   *     with {@link Action.dispatch}.
-   * @param {number} tickDuration - Length of the current tick, in ms.
-   * @param {WindowProxy} win - Current window global.
    * @returns {Promise} - Promise that is resolved once the action is complete.
    */
-  dispatch(state, inputSource, tickDuration, win) {
+  dispatch() {
     throw new Error(
       "TouchActionGroup subclass missing dispatch implementation"
     );
@@ -1622,7 +1608,7 @@ class PointerMoveTouchActionGroup extends TouchActionGroup {
       }
     );
     const reachedTarget = perPointerData.every(
-      ([inputSource, action, target]) =>
+      ([inputSource, , target]) =>
         target[0] === inputSource.x && target[1] === inputSource.y
     );
 
@@ -1778,38 +1764,22 @@ class Pointer {
 
   /**
    * Implementation of depressing the pointer.
-   *
-   * @param {State} state - Actions state.
-   * @param {InputSource} inputSource - State of the current input device.
-   * @param {Action} action - The Action object invoking the pointer
-   * @param {WindowProxy} win - Current window global.
    */
-  pointerDown(state, inputSource, action, win) {
+  pointerDown() {
     throw new Error(`Unimplemented pointerDown for pointerType ${this.type}`);
   }
 
   /**
    * Implementation of releasing the pointer.
-   *
-   * @param {State} state - Actions state.
-   * @param {InputSource} inputSource - State of the current input device.
-   * @param {Action} action - The Action object invoking the pointer
-   * @param {WindowProxy} win - Current window global.
    */
-  pointerUp(state, inputSource, action, win) {
+  pointerUp() {
     throw new Error(`Unimplemented pointerUp for pointerType ${this.type}`);
   }
 
   /**
    * Implementation of moving the pointer.
-   *
-   * @param {State} state - Actions state.
-   * @param {InputSource} inputSource - State of the current input device.
-   * @param {number} targetX - Target X coordinate of the pointer move
-   * @param {number} targetY - Target Y coordinate of the pointer move
-   * @param {WindowProxy} win - Current window global.
    */
-  pointerMove(state, inputSource, targetX, targetY, win) {
+  pointerMove() {
     throw new Error(`Unimplemented pointerMove for pointerType ${this.type}`);
   }
 
@@ -2138,11 +2108,8 @@ class InputEventData {
 
   /**
    * Update the input data based on global and input state
-   *
-   * @param {State} state - Actions state.
-   * @param {InputSource} inputSource - State of the current input device.
    */
-  update(state, inputSource) {}
+  update() {}
 
   toString() {
     return `${this.constructor.name} ${JSON.stringify(this)}`;

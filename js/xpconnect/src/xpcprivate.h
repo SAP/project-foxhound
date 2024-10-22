@@ -560,7 +560,6 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   JSObject* UnprivilegedJunkScope(const mozilla::fallible_t&);
 
   bool IsUnprivilegedJunkScope(JSObject*);
-  JSObject* LoaderGlobal();
 
   void DeleteSingletonScopes();
 
@@ -610,7 +609,6 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   JS::GCSliceCallback mPrevGCSliceCallback;
   JS::DoCycleCollectionCallback mPrevDoCycleCollectionCallback;
   mozilla::WeakPtr<SandboxPrivate> mUnprivilegedJunkScope;
-  JS::PersistentRootedObject mLoaderGlobal;
   RefPtr<AsyncFreeSnowWhite> mAsyncSnowWhiteFreer;
 
   friend class XPCJSContext;
@@ -1428,7 +1426,6 @@ class XPCWrappedNative final : public nsIXPConnectWrappedNative {
 
   static nsresult WrapNewGlobal(JSContext* cx, xpcObjectHelper& nativeHelper,
                                 nsIPrincipal* principal,
-                                bool initStandardClasses,
                                 JS::RealmOptions& aOptions,
                                 XPCWrappedNative** wrappedGlobal);
 
@@ -2194,6 +2191,7 @@ struct GlobalProperties {
   bool ChromeUtils : 1;
   bool CSS : 1;
   bool CSSRule : 1;
+  bool CustomStateSet : 1;
   bool Directory : 1;
   bool Document : 1;
   bool DOMException : 1;

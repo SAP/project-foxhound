@@ -123,6 +123,8 @@ def main(args=sys.argv[1:]):
             benchmark_revision=args.benchmark_revision,
             benchmark_branch=args.benchmark_branch,
             page_timeout=args.page_timeout,
+            clean=args.clean,
+            screenshot_on_failure=args.screenshot_on_failure,
         )
     except Exception:
         traceback.print_exc()

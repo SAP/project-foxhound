@@ -47,7 +47,7 @@ function run_test() {
   // because these tests were originally written for OneCRL.
   client = RemoteSettings("signed", { signerName: SIGNER_NAME });
 
-  Services.prefs.setCharPref("services.settings.loglevel", "debug");
+  Services.prefs.setStringPref("services.settings.loglevel", "debug");
 
   // Set up an HTTP Server
   server = new HttpServer();
@@ -148,7 +148,7 @@ add_task(async function test_check_synchronization_with_signatures() {
   }
 
   // set up prefs so the kinto updater talks to the test server
-  Services.prefs.setCharPref(
+  Services.prefs.setStringPref(
     PREF_SETTINGS_SERVER,
     `http://localhost:${server.identity.primaryPort}/v1`
   );
@@ -487,7 +487,7 @@ add_task(async function test_check_synchronization_with_signatures() {
   );
 
   let syncEventSent = false;
-  client.on("sync", ({ data }) => {
+  client.on("sync", () => {
     syncEventSent = true;
   });
 
@@ -542,7 +542,7 @@ add_task(async function test_check_synchronization_with_signatures() {
   registerHandlers(badSigGoodOldResponses);
 
   syncEventSent = false;
-  client.on("sync", ({ data }) => {
+  client.on("sync", () => {
     syncEventSent = true;
   });
 
@@ -783,7 +783,7 @@ add_task(async function test_check_synchronization_with_signatures() {
   const sigCalls = [];
   let i = 0;
   client._verifier = {
-    async asyncVerifyContentSignature(serialized, signature) {
+    async asyncVerifyContentSignature(serialized) {
       sigCalls.push(serialized);
       console.log(`verify call ${i}`);
       return [

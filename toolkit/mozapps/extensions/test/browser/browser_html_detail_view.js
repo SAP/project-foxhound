@@ -171,15 +171,16 @@ function assertDeckHeadingHidden(group) {
   ok(group.hidden, "The tab group is hidden");
   let buttons = group.querySelectorAll(".tab-button");
   for (let button of buttons) {
-    ok(button.offsetHeight == 0, `The ${button.name} is hidden`);
+    Assert.equal(button.offsetHeight, 0, `The ${button.name} is hidden`);
   }
 }
 
 function assertDeckHeadingButtons(group, visibleButtons) {
   ok(!group.hidden, "The tab group is shown");
   let buttons = group.querySelectorAll(".tab-button");
-  ok(
-    buttons.length >= visibleButtons.length,
+  Assert.greaterOrEqual(
+    buttons.length,
+    visibleButtons.length,
     `There should be at least ${visibleButtons.length} buttons`
   );
   for (let button of buttons) {
@@ -343,7 +344,14 @@ add_task(async function testOpenDetailView() {
   let card = getAddonCard(win, id);
   ok(!card.querySelector("addon-details"), "The card doesn't have details");
   let loaded = waitForViewLoad(win);
+  // We intentionally turn off this a11y check, because the following click
+  // is purposefully targeting a non-interactive container to open the card
+  // with a mouse, while its inner link element is accessible and is being
+  // tested in other test cases, thus this rule check shall be ignored by
+  // a11y_checks suite.
+  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
   EventUtils.synthesizeMouseAtCenter(card, { clickCount: 1 }, win);
+  AccessibilityUtils.resetEnv();
   await loaded;
 
   card = getAddonCard(win, id);
@@ -402,7 +410,14 @@ add_task(async function testDetailOperations() {
   let card = getAddonCard(win, id);
   ok(!card.querySelector("addon-details"), "The card doesn't have details");
   let loaded = waitForViewLoad(win);
+  // We intentionally turn off this a11y check, because the following click
+  // is purposefully targeting a non-interactive container to open the card
+  // with a mouse, while its inner link element is accessible and is being
+  // tested in other test cases, thus this rule check shall be ignored by
+  // a11y_checks suite.
+  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
   EventUtils.synthesizeMouseAtCenter(card, { clickCount: 1 }, win);
+  AccessibilityUtils.resetEnv();
   await loaded;
 
   card = getAddonCard(win, id);

@@ -54,6 +54,7 @@
 #include "base/basictypes.h"
 #include "jsapi.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EMEUtils.h"
@@ -4905,14 +4906,14 @@ nsresult HTMLMediaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return rv;
 }
 
-void HTMLMediaElement::UnbindFromTree(bool aNullParent) {
+void HTMLMediaElement::UnbindFromTree(UnbindContext& aContext) {
   mVisibilityState = Visibility::Untracked;
 
   if (IsInComposedDoc()) {
     NotifyUAWidgetTeardown();
   }
 
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 
   MOZ_ASSERT(IsActuallyInvisible());
   NotifyDecoderActivityChanges();
@@ -7009,6 +7010,11 @@ void HTMLMediaElement::MakeAssociationWithCDMResolved() {
 
   // 5.4 Set the mediaKeys attribute to mediaKeys.
   mMediaKeys = mIncomingMediaKeys;
+#ifdef MOZ_WMF_CDM
+  if (mMediaKeys && mMediaKeys->GetCDMProxy()) {
+    mIsUsingWMFCDM = !!mMediaKeys->GetCDMProxy()->AsWMFCDMProxy();
+  }
+#endif
   // 5.5 Let this object's attaching media keys value be false.
   ResetSetMediaKeysTempVariables();
   // 5.6 Resolve promise.
@@ -7879,6 +7885,10 @@ void HTMLMediaElement::NodeInfoChanged(Document* aOldDoc) {
 
   nsGenericHTMLElement::NodeInfoChanged(aOldDoc);
 }
+
+#ifdef MOZ_WMF_CDM
+bool HTMLMediaElement::IsUsingWMFCDM() const { return mIsUsingWMFCDM; };
+#endif
 
 }  // namespace mozilla::dom
 

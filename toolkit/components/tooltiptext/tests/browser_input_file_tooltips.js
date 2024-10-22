@@ -2,7 +2,7 @@
 
 let tempFile;
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({ set: [["ui.tooltipDelay", 0]] });
+  await SpecialPowers.pushPrefEnv({ set: [["ui.tooltip.delay_ms", 0]] });
   tempFile = createTempFile();
   registerCleanupFunction(function () {
     tempFile.remove(true);
@@ -63,7 +63,7 @@ async function do_test(test) {
   if (test.value) {
     info("Creating mock filepicker to select files");
     let MockFilePicker = SpecialPowers.MockFilePicker;
-    MockFilePicker.init(window);
+    MockFilePicker.init(window.browsingContext);
     MockFilePicker.returnValue = MockFilePicker.returnOK;
     MockFilePicker.displayDirectory = FileUtils.getDir("TmpD", []);
     MockFilePicker.setFiles([tempFile]);

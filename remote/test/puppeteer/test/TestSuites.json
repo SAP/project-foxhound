@@ -13,9 +13,9 @@
       "expectedLineCoverage": 93
     },
     {
-      "id": "chrome-new-headless",
+      "id": "chrome-headless-shell",
       "platforms": ["linux"],
-      "parameters": ["chrome", "new-headless", "cdp"],
+      "parameters": ["chrome", "chrome-headless-shell", "cdp"],
       "expectedLineCoverage": 93
     },
     {
@@ -37,9 +37,15 @@
       "expectedLineCoverage": 56
     },
     {
+      "id": "firefox-bidi-headful",
+      "platforms": ["linux"],
+      "parameters": ["firefox", "headful", "webDriverBiDi"],
+      "expectedLineCoverage": 56
+    },
+    {
       "id": "chrome-bidi",
       "platforms": ["linux"],
-      "parameters": ["chrome", "headless", "webDriverBiDi"],
+      "parameters": ["chrome", "chrome-headless-shell", "webDriverBiDi"],
       "expectedLineCoverage": 56
     }
   ],
@@ -57,8 +63,8 @@
     "headful": {
       "HEADLESS": "false"
     },
-    "new-headless": {
-      "HEADLESS": "new"
+    "chrome-headless-shell": {
+      "HEADLESS": "shell"
     },
     "webDriverBiDi": {
       "PUPPETEER_PROTOCOL": "webDriverBiDi"

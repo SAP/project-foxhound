@@ -12,6 +12,10 @@ const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-t
 const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const GripMessageBody = require("resource://devtools/client/webconsole/components/Output/GripMessageBody.js");
 
+const {
+  MESSAGE_TYPE,
+} = require("resource://devtools/client/webconsole/constants.js");
+
 const Message = createFactory(
   require("resource://devtools/client/webconsole/components/Output/Message.js")
 );
@@ -52,31 +56,75 @@ function JSTracerTrace(props) {
     implementation,
     displayName,
     parameters,
+
+    // Attributes specific to function call returns
+    returnedValue,
+    relatedTraceId,
+    // See tracer.jsm FRAME_EXIT_REASONS
+    why,
+
+    // Attributes specific to DOM Mutations
+    mutationType,
+    mutationElement,
   } = message;
 
-  // When we are logging a DOM event, we have the `eventName` defined.
-  const messageBody = eventName
-    ? [dom.span({ className: "jstracer-dom-event" }, eventName)]
-    : [
-        dom.span({ className: "jstracer-implementation" }, implementation),
-        "⟶",
-        dom.span({ className: "jstracer-display-name" }, displayName),
-      ];
-
-  // Arguments will only be passed on-demand
-  if (parameters) {
-    const messageBodyConfig = {
+  let messageBodyConfig;
+  if (parameters || why || mutationType) {
+    messageBodyConfig = {
       dispatch,
-      parameters,
       serviceContainer,
-      type: "",
       maybeScrollToBottom,
       setExpanded,
+      type: "",
+      useQuotes: true,
 
       // Disable custom formatter for now in traces
       customFormat: false,
     };
-    messageBody.push("(", ...formatReps(messageBodyConfig), ")");
+  }
+
+  // When we are logging a DOM event, we have the `eventName` defined.
+  let messageBody;
+  if (eventName) {
+    messageBody = [dom.span({ className: "jstracer-dom-event" }, eventName)];
+  } else if (typeof relatedTraceId == "number") {
+    messageBody = [
+      dom.span({ className: "jstracer-io" }, "⟵ "),
+      dom.span({ className: "jstracer-display-name" }, displayName),
+    ];
+  } else if (mutationType) {
+    messageBody = [
+      dom.span(
+        { className: "jstracer-dom-mutation" },
+        // Add an extra space at the end to have nice copy-paste messages
+        "— DOM Mutation | " + mutationType + " "
+      ),
+      formatRep(messageBodyConfig, mutationElement),
+    ];
+  } else if (displayName) {
+    messageBody = [
+      dom.span({ className: "jstracer-io" }, "⟶ "),
+      dom.span({ className: "jstracer-implementation" }, implementation),
+      // Add a space in order to improve copy paste rendering
+      dom.span({ className: "jstracer-display-name" }, " " + displayName),
+    ];
+  } else {
+    messageBody = [dom.span({ className: "jstracer-io" }, "—")];
+  }
+
+  // Arguments will only be passed on-demand
+  if (parameters) {
+    messageBody.push("(", ...formatReps(messageBodyConfig, parameters), ")");
+  }
+  // Returned value will also only be passed on-demand
+  if (why) {
+    messageBody.push(
+      // Add a spaces in order to improve copy paste rendering
+      dom.span({ className: "jstracer-exit-frame-reason" }, " " + why + " ")
+    );
+    if (returnedValue !== undefined) {
+      messageBody.push(formatRep(messageBodyConfig, returnedValue));
+    }
   }
 
   if (prefix) {
@@ -95,7 +143,7 @@ function JSTracerTrace(props) {
   return Message({
     collapsible: false,
     source,
-    level: "jstracer",
+    level: MESSAGE_TYPE.JSTRACER,
     topLevelClasses,
     messageBody,
     repeat,
@@ -113,45 +161,31 @@ function JSTracerTrace(props) {
   });
 }
 
-function formatReps(options = {}) {
-  const {
-    dispatch,
-    loadedObjectProperties,
-    loadedObjectEntries,
-    parameters,
-    serviceContainer,
-    type,
-    maybeScrollToBottom,
-    setExpanded,
-    customFormat,
-  } = options;
-
+/**
+ * Generated the list of GripMessageBody for a list of objects.
+ * GripMessageBody is Rep's rendering for a given Object, via its object actor's front.
+ */
+function formatReps(messageBodyConfig, objects) {
   const elements = [];
-  const parametersLength = parameters.length;
-  for (let i = 0; i < parametersLength; i++) {
-    elements.push(
-      GripMessageBody({
-        dispatch,
-        grip: parameters[i],
-        key: i,
-        serviceContainer,
-        useQuotes: true,
-        loadedObjectProperties,
-        loadedObjectEntries,
-        type,
-        maybeScrollToBottom,
-        setExpanded,
-        customFormat,
-      })
-    );
+  const length = objects.length;
+  for (let i = 0; i < length; i++) {
+    elements.push(formatRep(messageBodyConfig, objects[i], i));
 
     // We need to interleave a comma if we are not on the last element
-    if (i !== parametersLength - 1) {
+    if (i !== length - 1) {
       elements.push(", ");
     }
   }
 
   return elements;
+}
+
+function formatRep(messageBodyConfig, grip, key) {
+  return GripMessageBody({
+    ...messageBodyConfig,
+    grip,
+    key,
+  });
 }
 
 module.exports = JSTracerTrace;

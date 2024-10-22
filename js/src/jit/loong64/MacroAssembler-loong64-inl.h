@@ -313,6 +313,10 @@ void MacroAssembler::add32(Imm32 imm, Register dest) {
   ma_add_w(dest, dest, imm);
 }
 
+void MacroAssembler::add32(Imm32 imm, Register src, Register dest) {
+  ma_add_w(dest, src, imm);
+}
+
 void MacroAssembler::add32(Imm32 imm, const Address& dest) {
   SecondScratchRegisterScope scratch2(asMasm());
   load32(dest, scratch2);
@@ -1911,6 +1915,14 @@ void MacroAssembler::cmp32Load32(Condition cond, Register lhs,
 }
 
 void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Register rhs,
+                                 const Address& src, Register dest) {
+  Label skip;
+  branch32(Assembler::InvertCondition(cond), lhs, rhs, &skip);
+  load32(src, dest);
+  bind(&skip);
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Imm32 rhs,
                                  const Address& src, Register dest) {
   Label skip;
   branch32(Assembler::InvertCondition(cond), lhs, rhs, &skip);

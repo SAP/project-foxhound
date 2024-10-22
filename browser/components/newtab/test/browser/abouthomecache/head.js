@@ -9,8 +9,8 @@ let { AboutHomeStartupCache } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-const { DiscoveryStreamFeed } = ChromeUtils.import(
-  "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
+const { DiscoveryStreamFeed } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/DiscoveryStreamFeed.sys.mjs"
 );
 
 // Some Activity Stream preferences are JSON encoded, and quite complex.
@@ -19,8 +19,8 @@ const { DiscoveryStreamFeed } = ChromeUtils.import(
 // we need and write them to preferences here dynamically. We do this in
 // its own scope to avoid polluting the global scope.
 {
-  const { PREFS_CONFIG } = ChromeUtils.import(
-    "resource://activity-stream/lib/ActivityStream.jsm"
+  const { PREFS_CONFIG } = ChromeUtils.importESModule(
+    "resource://activity-stream/lib/ActivityStream.sys.mjs"
   );
 
   let defaultDSConfig = JSON.parse(

@@ -158,7 +158,7 @@ class ArrayBufferDataStream {
     // UniFFI Pointers are **always** 8 bytes long. That is enforced
     // by the C++ and Rust Scaffolding code.
     readPointerSprite() {
-        const pointerId = 7; // sprites:Sprite
+        const pointerId = 8; // sprites:Sprite
         const res = UniFFIScaffolding.readPointer(pointerId, this.dataView.buffer, this.pos);
         this.pos += 8;
         return res;
@@ -168,7 +168,7 @@ class ArrayBufferDataStream {
     // UniFFI Pointers are **always** 8 bytes long. That is enforced
     // by the C++ and Rust Scaffolding code.
     writePointerSprite(value) {
-        const pointerId = 7; // sprites:Sprite
+        const pointerId = 8; // sprites:Sprite
         UniFFIScaffolding.writePointer(pointerId, value, this.dataView.buffer, this.pos);
         this.pos += 8;
     }
@@ -325,7 +325,7 @@ export class Sprite {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                99, // sprites:uniffi_uniffi_sprites_fn_constructor_sprite_new
+                106, // sprites:uniffi_uniffi_sprites_fn_constructor_sprite_new
                 FfiConverterOptionalTypePoint.lower(initialPosition),
             )
         }
@@ -361,7 +361,7 @@ export class Sprite {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                100, // sprites:uniffi_uniffi_sprites_fn_constructor_sprite_new_relative_to
+                107, // sprites:uniffi_uniffi_sprites_fn_constructor_sprite_new_relative_to
                 FfiConverterTypePoint.lower(reference),
                 FfiConverterTypeVector.lower(direction),
             )
@@ -377,7 +377,7 @@ export class Sprite {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callAsync(
-                101, // sprites:uniffi_uniffi_sprites_fn_method_sprite_get_position
+                108, // sprites:uniffi_uniffi_sprites_fn_method_sprite_get_position
                 FfiConverterTypeSprite.lower(this),
             )
         }
@@ -401,7 +401,7 @@ export class Sprite {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                102, // sprites:uniffi_uniffi_sprites_fn_method_sprite_move_by
+                109, // sprites:uniffi_uniffi_sprites_fn_method_sprite_move_by
                 FfiConverterTypeSprite.lower(this),
                 FfiConverterTypeVector.lower(direction),
             )
@@ -426,7 +426,7 @@ export class Sprite {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                103, // sprites:uniffi_uniffi_sprites_fn_method_sprite_move_to
+                110, // sprites:uniffi_uniffi_sprites_fn_method_sprite_move_to
                 FfiConverterTypeSprite.lower(this),
                 FfiConverterTypePoint.lower(position),
             )
@@ -466,7 +466,7 @@ export class FfiConverterTypeSprite extends FfiConverter {
 }
 
 export class Point {
-    constructor(x,y) {
+    constructor({ x, y } = {}) {
         try {
             FfiConverterF64.checkType(x)
         } catch (e) {
@@ -497,10 +497,10 @@ export class Point {
 // Export the FFIConverter object to make external types work.
 export class FfiConverterTypePoint extends FfiConverterArrayBuffer {
     static read(dataStream) {
-        return new Point(
-            FfiConverterF64.read(dataStream), 
-            FfiConverterF64.read(dataStream)
-        );
+        return new Point({
+            x: FfiConverterF64.read(dataStream),
+            y: FfiConverterF64.read(dataStream),
+        });
     }
     static write(dataStream, value) {
         FfiConverterF64.write(dataStream, value.x);
@@ -516,6 +516,9 @@ export class FfiConverterTypePoint extends FfiConverterArrayBuffer {
 
     static checkType(value) {
         super.checkType(value);
+        if (!(value instanceof Point)) {
+            throw new TypeError(`Expected 'Point', found '${typeof value}'`);
+        }
         try {
             FfiConverterF64.checkType(value.x);
         } catch (e) {
@@ -536,7 +539,7 @@ export class FfiConverterTypePoint extends FfiConverterArrayBuffer {
 }
 
 export class Vector {
-    constructor(dx,dy) {
+    constructor({ dx, dy } = {}) {
         try {
             FfiConverterF64.checkType(dx)
         } catch (e) {
@@ -567,10 +570,10 @@ export class Vector {
 // Export the FFIConverter object to make external types work.
 export class FfiConverterTypeVector extends FfiConverterArrayBuffer {
     static read(dataStream) {
-        return new Vector(
-            FfiConverterF64.read(dataStream), 
-            FfiConverterF64.read(dataStream)
-        );
+        return new Vector({
+            dx: FfiConverterF64.read(dataStream),
+            dy: FfiConverterF64.read(dataStream),
+        });
     }
     static write(dataStream, value) {
         FfiConverterF64.write(dataStream, value.dx);
@@ -586,6 +589,9 @@ export class FfiConverterTypeVector extends FfiConverterArrayBuffer {
 
     static checkType(value) {
         super.checkType(value);
+        if (!(value instanceof Vector)) {
+            throw new TypeError(`Expected 'Vector', found '${typeof value}'`);
+        }
         try {
             FfiConverterF64.checkType(value.dx);
         } catch (e) {
@@ -668,7 +674,7 @@ export function translate(position,direction) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                104, // sprites:uniffi_uniffi_sprites_fn_func_translate
+                111, // sprites:uniffi_uniffi_sprites_fn_func_translate
                 FfiConverterTypePoint.lower(position),
                 FfiConverterTypeVector.lower(direction),
             )

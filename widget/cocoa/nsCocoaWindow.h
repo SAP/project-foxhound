@@ -10,7 +10,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "mozilla/StaticMutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsBaseWidget.h"
 #include "nsPIWidgetCocoa.h"
@@ -383,7 +382,6 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
     Deminiaturize,
     Zoom,
   };
-  void FinishCurrentTransition();
   void FinishCurrentTransitionIfMatching(const TransitionType& aTransition);
 
   // Called when something has happened that might cause us to update our
@@ -462,8 +460,11 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   void QueueTransition(const TransitionType& aTransition);
   void ProcessTransitions();
 
+  // Call this to stop all transition processing, which is useful during
+  // window closing and shutdown.
+  void CancelAllTransitions();
+
   bool mInProcessTransitions = false;
-  bool mInLocalRunLoop = false;
 
   // While running an emulated fullscreen transition, we want to suppress
   // sending size mode events due to window resizing. We fix it up at the end
@@ -481,8 +482,6 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   // unnecessary OcclusionStateChanged events.
   bool mHasStartedNativeFullscreen;
 
-  bool mWaitingOnFinishCurrentTransition = false;
-
   bool mModal;
   bool mFakeModal;
 
@@ -493,6 +492,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   bool mWindowTransformIsIdentity;
   bool mAlwaysOnTop;
   bool mAspectRatioLocked;
+  bool mIsAlert = false;  // True if this is an non-native alert window.
 
   int32_t mNumModalDescendents;
   InputContext mInputContext;
@@ -501,13 +501,12 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
  private:
   // This is class state for tracking which nsCocoaWindow, if any, is in the
   // middle of a native fullscreen transition.
-  static mozilla::StaticDataMutex<nsCocoaWindow*> sWindowInNativeTransition;
+  static nsCocoaWindow* sWindowInNativeTransition;
 
   // This function returns true if the caller has been able to claim the sole
   // permission to start a native transition. It must be followed by a call
   // to EndOurNativeTransition() when the native transition is complete.
   bool CanStartNativeTransition();
-  bool WeAreInNativeTransition();
   void EndOurNativeTransition();
 
   // true if Show() has been called.

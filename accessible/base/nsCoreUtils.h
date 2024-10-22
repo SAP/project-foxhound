@@ -30,6 +30,7 @@ namespace mozilla {
 class PresShell;
 namespace dom {
 class Document;
+class Element;
 class XULTreeElement;
 }  // namespace dom
 }  // namespace mozilla
@@ -41,6 +42,7 @@ class nsCoreUtils {
  public:
   typedef mozilla::PresShell PresShell;
   typedef mozilla::dom::Document Document;
+  typedef mozilla::dom::Element Element;
 
   /**
    * Return true if the given node is a label of a control.
@@ -305,6 +307,11 @@ class nsCoreUtils {
            aChar == 0xa0;
   }
 
+  /**
+   * Remove non-breaking spaces from the beginning and end of the string.
+   */
+  static void TrimNonBreakingSpaces(nsAString& aString);
+
   /*
    * Return true if there are any observers of accessible events.
    */
@@ -324,6 +331,15 @@ class nsCoreUtils {
    */
   static bool IsDocumentVisibleConsideringInProcessAncestors(
       const Document* aDocument);
+
+  /**
+   * Return true if `aDescendant` is a descendant of any of `aStartAncestor`'s
+   * shadow-including ancestors.
+   */
+  static bool IsDescendantOfAnyShadowIncludingAncestor(nsINode* aDescendant,
+                                                       nsINode* aStartAncestor);
+
+  static Element* GetAriaActiveDescendantElement(Element* aElement);
 };
 
 #endif

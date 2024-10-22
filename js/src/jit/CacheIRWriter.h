@@ -262,6 +262,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
                   "GuardClassKind must fit in a byte");
     buffer_.writeByte(uint8_t(kind));
   }
+  void writeArrayBufferViewKindImm(ArrayBufferViewKind kind) {
+    static_assert(sizeof(ArrayBufferViewKind) == sizeof(uint8_t),
+                  "ArrayBufferViewKind must fit in a byte");
+    buffer_.writeByte(uint8_t(kind));
+  }
   void writeValueTypeImm(ValueType type) {
     static_assert(sizeof(ValueType) == sizeof(uint8_t),
                   "ValueType must fit in uint8_t");
@@ -432,6 +437,11 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
   NumberOperandId guardIsNumber(ValOperandId input) {
     guardIsNumber_(input);
     return NumberOperandId(input.id());
+  }
+
+  StringOperandId stringToAtom(StringOperandId input) {
+    stringToAtom_(input);
+    return input;
   }
 
   ValOperandId boxObject(ObjOperandId input) {

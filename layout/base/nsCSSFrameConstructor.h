@@ -297,11 +297,38 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                   nsContainerFrame* aParentFrame,
                                   bool aIsFluid = true);
 
-  void SetNextPageContentFramePageName(const nsAtom* aAtom) {
+  /**
+   * Sets the page name when a page break is being generated due to a change
+   * in page name.
+   *
+   * Should only be used during paginated reflow, to signal what page value
+   * the next page content frame should have.
+   *
+   * It is an error to set this if a new page name has already been set, either
+   * through SetNextPageContentFramePageName or
+   * MaybeSetNextPageContentFramePageName.
+   */
+  void SetNextPageContentFramePageName(const nsAtom* aPageName) {
+    MOZ_ASSERT(aPageName, "New page name should never be null");
     MOZ_ASSERT(!mNextPageContentFramePageName,
                "PageContentFrame page name was already set");
-    mNextPageContentFramePageName = aAtom;
+    mNextPageContentFramePageName = aPageName;
   }
+
+  /**
+   * If a new page name has not been set for the next page, sets the value
+   * using the given frame.
+   *
+   * |aFrame| should be a frame to be placed on the new page.
+   *
+   * This function handles the work of resolving an atom for the frame, and
+   * avoids doing this extra work when not necessary.
+   *
+   * This is used during block reflow when a page break has occurred but it was
+   * not caused by a change in page name. It should only be used during
+   * paginated reflow.
+   */
+  void MaybeSetNextPageContentFramePageName(const nsIFrame* aFrame);
 
   // Copy over fixed frames from aParentFrame's prev-in-flow
   nsresult ReplicateFixedFrames(nsPageContentFrame* aParentFrame);
@@ -696,10 +723,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
      This can be used with or without FCDATA_FUNC_IS_FULL_CTOR.
      The child items might still need table pseudo processing. */
 #define FCDATA_USE_CHILD_ITEMS 0x10000
-  /* If FCDATA_FORCED_NON_SCROLLABLE_BLOCK is set, then this block
-     would have been scrollable but has been forced to be
-     non-scrollable due to being in a paginated context. */
-#define FCDATA_FORCED_NON_SCROLLABLE_BLOCK 0x20000
   /* If FCDATA_CREATE_BLOCK_WRAPPER_FOR_ALL_KIDS is set, then create a
      block formatting context wrapper around the kids of this frame
      using the FrameConstructionData's mPseudoAtom for its anonymous
@@ -1361,14 +1384,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                              nsFrameState aTypeBit);
 
  private:
-  // ConstructSelectFrame puts the new frame in aFrameList and
-  // handles the kids of the select.
-  nsIFrame* ConstructSelectFrame(nsFrameConstructorState& aState,
-                                 FrameConstructionItem& aItem,
-                                 nsContainerFrame* aParentFrame,
-                                 const nsStyleDisplay* aStyleDisplay,
-                                 nsFrameList& aFrameList);
-
   // ConstructFieldSetFrame puts the new frame in aFrameList and
   // handles the kids of the fieldset
   nsIFrame* ConstructFieldSetFrame(nsFrameConstructorState& aState,
@@ -1376,6 +1391,12 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                    nsContainerFrame* aParentFrame,
                                    const nsStyleDisplay* aStyleDisplay,
                                    nsFrameList& aFrameList);
+
+  nsIFrame* ConstructListBoxSelectFrame(nsFrameConstructorState& aState,
+                                        FrameConstructionItem& aItem,
+                                        nsContainerFrame* aParentFrame,
+                                        const nsStyleDisplay* aStyleDisplay,
+                                        nsFrameList& aFrameList);
 
   // Creates a block frame wrapping an anonymous ruby frame.
   nsIFrame* ConstructBlockRubyFrame(nsFrameConstructorState& aState,
@@ -1423,6 +1444,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                    nsIFrame* aParentFrame,
                                                    ComputedStyle&);
   // HTML data-finding helper functions
+  static const FrameConstructionData* FindSelectData(const Element&,
+                                                     ComputedStyle&);
   static const FrameConstructionData* FindImgData(const Element&,
                                                   ComputedStyle&);
   static const FrameConstructionData* FindGeneratedImageData(const Element&,

@@ -13,19 +13,17 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/HTMLImageElementBinding.h"
 #include "mozilla/dom/NameSpaceConstants.h"
+#include "mozilla/dom/UnbindContext.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsSize.h"
 #include "mozilla/dom/Document.h"
 #include "nsImageFrame.h"
-#include "nsIScriptContext.h"
 #include "nsContentUtils.h"
 #include "nsContainerFrame.h"
 #include "nsNodeInfoManager.h"
 #include "mozilla/MouseEvents.h"
-#include "nsContentPolicyUtils.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/HTMLFormElement.h"
@@ -33,7 +31,6 @@
 #include "mozilla/dom/UserActivation.h"
 #include "nsAttrValueOrString.h"
 #include "imgLoader.h"
-#include "Image.h"
 
 // Responsive images!
 #include "mozilla/dom/HTMLSourceElement.h"
@@ -226,6 +223,10 @@ bool HTMLImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     }
     if (aAttribute == nsGkAtoms::loading) {
       return ParseLoadingAttribute(aValue, aResult);
+    }
+    if (aAttribute == nsGkAtoms::fetchpriority) {
+      ParseFetchPriority(aValue, aResult);
+      return true;
     }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       return true;
@@ -580,9 +581,9 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return rv;
 }
 
-void HTMLImageElement::UnbindFromTree(bool aNullParent) {
+void HTMLImageElement::UnbindFromTree(UnbindContext& aContext) {
   if (mForm) {
-    if (aNullParent || !FindAncestorForm(mForm)) {
+    if (aContext.IsUnbindRoot(this) || !FindAncestorForm(mForm)) {
       ClearForm(true);
     } else {
       UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
@@ -594,8 +595,8 @@ void HTMLImageElement::UnbindFromTree(bool aNullParent) {
     mInDocResponsiveContent = false;
   }
 
-  nsImageLoadingContent::UnbindFromTree(aNullParent);
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsImageLoadingContent::UnbindFromTree();
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 }
 
 void HTMLImageElement::UpdateFormOwner() {
@@ -1391,6 +1392,10 @@ void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
   // queued event, and so earlier tasks are implicitly canceled.
   mPendingImageLoadTask = task;
   CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
+}
+
+FetchPriority HTMLImageElement::GetFetchPriorityForImage() const {
+  return nsGenericHTMLElement::GetFetchPriority();
 }
 
 }  // namespace mozilla::dom

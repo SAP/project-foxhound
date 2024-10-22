@@ -117,7 +117,7 @@ jobs:
           - mozilla-central
       when:
           by-project:
-              mozilla-central: [{hour: 20, minute: 30}]
+              mozilla-central: [{hour: 01, minute: 0}]
 
     # For more context on this job, see:
     # https://github.com/mozsearch/mozsearch-mozilla#how-searchfoxorg-stays-up-to-date
@@ -232,7 +232,7 @@ jobs:
       run-on-projects:
           - mozilla-beta
       when:
-          - {hour: 16, minute: 0}
+          - {hour: 12, minute: 0}
 
     - name: weekly-release-perf
       job:
@@ -243,7 +243,7 @@ jobs:
       run-on-projects:
           - mozilla-release
       when:
-          - {weekday: 'Friday', hour: 16, minute: 0}
+          - {weekday: 'Friday', hour: 12, minute: 0}
 
     - name: raptor-tp6m
       job:

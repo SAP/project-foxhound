@@ -119,8 +119,8 @@
 
       Services.obs.addObserver(this, "contextual-identity-updated");
 
-      Services.els.addSystemEventListener(document, "keydown", this, false);
-      Services.els.addSystemEventListener(document, "keypress", this, false);
+      document.addEventListener("keydown", this, { mozSystemGroup: true });
+      document.addEventListener("keypress", this, { mozSystemGroup: true });
       document.addEventListener("visibilitychange", this);
       window.addEventListener("framefocusrequested", this);
       window.addEventListener("activate", this);
@@ -785,11 +785,7 @@
           aTab.container.getElementsByTagName("tab")
         )
           .filter(tab => tab.hasAttribute("busy"))
-          .map(tab => {
-            const throbber = tab.throbber;
-            return throbber ? throbber.getAnimations({ subtree: true }) : [];
-          })
-          .reduce((a, b) => a.concat(b), [])
+          .flatMap(tab => tab.throbber?.getAnimations({ subtree: true }) ?? [])
           .filter(
             anim =>
               CSSAnimation.isInstance(anim) &&
@@ -2094,7 +2090,6 @@
       uriIsAboutBlank,
       userContextId,
       skipLoad,
-      initiallyActive,
     } = {}) {
       let b = document.createXULElement("browser");
       // Use the JSM global to create the permanentKey, so that if the
@@ -2120,6 +2115,7 @@
         messagemanagergroup: "browsers",
         tooltip: "aHTMLTooltip",
         type: "content",
+        manualactiveness: "true",
       };
       for (let attribute in defaultBrowserAttributes) {
         b.setAttribute(attribute, defaultBrowserAttributes[attribute]);
@@ -2127,10 +2123,6 @@
 
       if (gMultiProcessBrowser || remoteType) {
         b.setAttribute("maychangeremoteness", "true");
-      }
-
-      if (!initiallyActive) {
-        b.setAttribute("initiallyactive", "false");
       }
 
       if (userContextId) {
@@ -5956,14 +5948,11 @@
         }
       }
 
-      Services.els.removeSystemEventListener(document, "keydown", this, false);
+      document.removeEventListener("keydown", this, { mozSystemGroup: true });
       if (AppConstants.platform == "macosx") {
-        Services.els.removeSystemEventListener(
-          document,
-          "keypress",
-          this,
-          false
-        );
+        document.removeEventListener("keypress", this, {
+          mozSystemGroup: true,
+        });
       }
       document.removeEventListener("visibilitychange", this);
       window.removeEventListener("framefocusrequested", this);

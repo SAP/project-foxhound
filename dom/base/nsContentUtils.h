@@ -42,6 +42,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/FromParser.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/fallible.h"
 #include "mozilla/gfx/Point.h"
 #include "nsCOMPtr.h"
@@ -232,6 +233,8 @@ enum EventNameType {
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
 };
+
+enum class TreeKind : uint8_t { DOM, Flat };
 
 struct EventNameMapping {
   // This holds pointers to nsGkAtoms members, and is therefore safe as a
@@ -546,24 +549,113 @@ class nsContentUtils {
                                mozilla::Maybe<uint32_t>* aNode1Index = nullptr,
                                mozilla::Maybe<uint32_t>* aNode2Index = nullptr);
 
-  struct ComparePointsCache {
+  /**
+   * Cache implementation for ComparePoints().
+   *
+   * This cache keeps the last cache_size child/index combinations
+   * in a stack-allocated array for fast lookup.
+   * If the cache is full, the entries are overridden,
+   * starting from the oldest entry.
+   *
+   * Note: This cache does not observe invalidation. As soon as script has
+   * run, this cache must not be used anymore.
+   * Also, this cache uses raw pointers. Beware!
+   */
+  template <size_t cache_size>
+  struct ResizableNodeIndexCache {
+    /**
+     * Looks up or computes two indices in one loop.
+     */
+    void ComputeIndicesOf(const nsINode* aParent, const nsINode* aChild1,
+                          const nsINode* aChild2,
+                          mozilla::Maybe<uint32_t>& aChild1Index,
+                          mozilla::Maybe<uint32_t>& aChild2Index) {
+      bool foundChild1 = false;
+      bool foundChild2 = false;
+      for (size_t cacheIndex = 0; cacheIndex < cache_size; ++cacheIndex) {
+        if (foundChild1 && foundChild2) {
+          return;
+        }
+        const nsINode* node = mNodes[cacheIndex];
+        if (!node) {
+          // reached the end of not-fully-populated cache.
+          break;
+        }
+        if (!foundChild1 && node == aChild1) {
+          aChild1Index = mIndices[cacheIndex];
+          foundChild1 = true;
+          continue;
+        }
+        if (!foundChild2 && node == aChild2) {
+          aChild2Index = mIndices[cacheIndex];
+          foundChild2 = true;
+          continue;
+        }
+      }
+      if (!foundChild1) {
+        aChild1Index = ComputeAndInsertIndexIntoCache(aParent, aChild1);
+      }
+      if (!foundChild2) {
+        aChild2Index = ComputeAndInsertIndexIntoCache(aParent, aChild2);
+      }
+    }
+    /**
+     * Looks up or computes child index.
+     */
     mozilla::Maybe<uint32_t> ComputeIndexOf(const nsINode* aParent,
                                             const nsINode* aChild) {
-      if (aParent == mParent && aChild == mChild) {
-        return mIndex;
+      for (size_t cacheIndex = 0; cacheIndex < cache_size; ++cacheIndex) {
+        const nsINode* node = mNodes[cacheIndex];
+        if (!node) {
+          break;
+        }
+        if (node == aChild) {
+          return mIndices[cacheIndex];
+        }
       }
-
-      mIndex = aParent->ComputeIndexOf(aChild);
-      mParent = aParent;
-      mChild = aChild;
-      return mIndex;
+      return ComputeAndInsertIndexIntoCache(aParent, aChild);
     }
 
    private:
-    const nsINode* mParent = nullptr;
-    const nsINode* mChild = nullptr;
-    mozilla::Maybe<uint32_t> mIndex;
+    /**
+     * Computes the index of aChild in aParent, inserts the index into the
+     * cache, and returns the index.
+     */
+    mozilla::Maybe<uint32_t> ComputeAndInsertIndexIntoCache(
+        const nsINode* aParent, const nsINode* aChild) {
+      mozilla::Maybe<uint32_t> childIndex = aParent->ComputeIndexOf(aChild);
+
+      mNodes[mNext] = aChild;
+      mIndices[mNext] = childIndex;
+
+      ++mNext;
+      if (mNext == cache_size) {
+        // the last element of the cache has been reached.
+        // set mNext to 0 to start overriding the oldest cache entries.
+        mNext = 0;
+      }
+      return childIndex;
+    }
+
+    /// Node storage. The array is initialized to null
+    /// by the empty initializer list.
+    const nsINode* mNodes[cache_size]{};
+
+    mozilla::Maybe<uint32_t> mIndices[cache_size];
+
+    /// The next element in the cache that will be written to.
+    /// If the cache is full (mNext == cache_size),
+    /// the oldest entries in the cache will be overridden,
+    /// ie. mNext will be set to 0.
+    size_t mNext{0};
   };
+
+  /**
+   * Typedef with a reasonable default cache size.
+   * If Caches of different sizes are needed,
+   * ComparePoints would need to become templated.
+   */
+  using NodeIndexCache = ResizableNodeIndexCache<100>;
 
   /**
    *  Utility routine to compare two "points", where a point is a node/offset
@@ -578,7 +670,7 @@ class nsContentUtils {
    */
   static mozilla::Maybe<int32_t> ComparePoints(
       const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
-      uint32_t aOffset2, ComparePointsCache* aParent1Cache = nullptr);
+      uint32_t aOffset2, NodeIndexCache* aIndexCache = nullptr);
   template <typename FPT, typename FRT, typename SPT, typename SRT>
   static mozilla::Maybe<int32_t> ComparePoints(
       const mozilla::RangeBoundaryBase<FPT, FRT>& aFirstBoundary,
@@ -593,13 +685,16 @@ class nsContentUtils {
    *  the result is 1, and the optional aDisconnected parameter
    *  is set to true.
    *
-   *  Pass a cache object as aParent1Cache if you expect to repeatedly
-   *  call this function with the same value as aParent1.
+   *  Pass a cache object as aIndexCache if you expect to repeatedly
+   *  call this function.
+   * ComparePointsCache will store the last X (currently 100) node/index
+   * combinations in a stack-allocated array and does a lookup there
+   * before going into the expensive ComputeIndexOf() method.
    */
   static int32_t ComparePoints_Deprecated(
       const nsINode* aParent1, uint32_t aOffset1, const nsINode* aParent2,
       uint32_t aOffset2, bool* aDisconnected = nullptr,
-      ComparePointsCache* aParent1Cache = nullptr);
+      NodeIndexCache* aIndexCache = nullptr);
   template <typename FPT, typename FRT, typename SPT, typename SRT>
   static int32_t ComparePoints_Deprecated(
       const mozilla::RangeBoundaryBase<FPT, FRT>& aFirstBoundary,
@@ -1027,7 +1122,9 @@ class nsContentUtils {
       nsContentPolicyType aContentPolicyType =
           nsIContentPolicy::TYPE_INTERNAL_IMAGE,
       bool aUseUrgentStartForChannel = false, bool aLinkPreload = false,
-      uint64_t aEarlyHintPreloaderId = 0);
+      uint64_t aEarlyHintPreloaderId = 0,
+      mozilla::dom::FetchPriority aFetchPriority =
+          mozilla::dom::FetchPriority::Auto);
 
   /**
    * Obtain an image loader that respects the given document/channel's privacy
@@ -3178,10 +3275,8 @@ class nsContentUtils {
    * take that into account.
    *
    * @param aMIMEType  The MIME type of the document being loaded.
-   * @param aNoFakePlugin  If false then this method should consider JS plugins.
    */
-  static uint32_t HtmlObjectContentTypeForMIMEType(const nsCString& aMIMEType,
-                                                   bool aNoFakePlugin);
+  static uint32_t HtmlObjectContentTypeForMIMEType(const nsCString& aMIMEType);
 
   /**
    * Detect whether a string is a local-url.
@@ -3386,19 +3481,6 @@ class nsContentUtils {
                               OriginFormat aFormat = OriginFormat::Base64);
 
   /**
-   * Return true if we should hide the synthetic browsing context for <object>
-   * or <embed> images in synthetic documents.
-   */
-  static bool ShouldHideObjectOrEmbedImageDocument();
-
-  /**
-   * Returns the object type that the object loading content will actually use
-   * to load the resource. Used for ORB and loading images into synthetic
-   * documents.
-   */
-  static uint32_t ResolveObjectType(uint32_t aType);
-
-  /**
    * Create and load the string bundle for the 'aFile'.
    * This API is used to preload the string bundle on the main thread so later
    * other thread could access it.
@@ -3436,35 +3518,25 @@ class nsContentUtils {
   static bool IsExternalProtocol(nsIURI* aURI);
 
   /**
-   * Add an element to a list, keeping the list sorted by tree order.
-   * Can take a potential ancestor of the elements in order to speed up
-   * tree-order comparisons, if such an ancestor exists.
-   * Returns true if the element is appended to the end of the list.
-   */
-  template <typename ElementType, typename ElementPtr>
-  static bool AddElementToListByTreeOrder(nsTArray<ElementType>& aList,
-                                          ElementPtr aChild,
-                                          nsIContent* aCommonAncestor);
-
-  /**
-   * Compares the position of aContent1 and aContent2 in the document
-   * @param aContent1 First content to compare.
-   * @param aContent2 Second content to compare.
+   * Compares the position of aNode1 and aNode2 in the document
+   * @param aNode1 First content to compare.
+   * @param aNode2 Second content to compare.
    * @param aCommonAncestor Potential ancestor of the contents, if one exists.
    *                        This is only a hint; if it's not an ancestor of
-   *                        aContent1 or aContent2, this function will still
-   *                        work, but it will be slower than normal.
-   * @return < 0 if aContent1 is before aContent2,
-   *         > 0 if aContent1 is after aContent2,
+   *                        aNode1 or aNode2, this function will still
+   *                        work, but it will be slower.
+   * @return < 0 if aNode1 is before aNode2,
+   *         > 0 if aNode1 is after aNode2,
    *         0 otherwise
    */
-  static int32_t CompareTreePosition(nsIContent* aContent1,
-                                     nsIContent* aContent2,
-                                     const nsIContent* aCommonAncestor);
+  template <TreeKind>
+  static int32_t CompareTreePosition(const nsINode* aNode1,
+                                     const nsINode* aNode2,
+                                     const nsINode* aCommonAncestor);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static nsIContent* AttachDeclarativeShadowRoot(
-      nsIContent* aHost, mozilla::dom::ShadowRootMode aMode,
+      nsIContent* aHost, mozilla::dom::ShadowRootMode aMode, bool aIsClonable,
       bool aDelegatesFocus);
 
  private:

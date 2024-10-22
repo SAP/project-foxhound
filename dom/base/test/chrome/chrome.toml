@@ -18,23 +18,10 @@ support-files = [
   "custom_element_ep.js",
   "window_nsITextInputProcessor.xhtml",
   "title_window.xhtml",
-  "window_swapFrameLoaders.xhtml",
 ]
 prefs = ["gfx.font_rendering.fallback.async=false"]
 
-["test_bug1063837.xhtml"]
-
-["test_bug1098074_throw_from_ReceiveMessage.xhtml"]
-
-["test_bug1139964.xhtml"]
-
 ["test_bug120684.xhtml"]
-
-["test_bug1209621.xhtml"]
-
-["test_bug1339722.html"]
-
-["test_bug1346936.html"]
 
 ["test_bug206691.xhtml"]
 
@@ -46,8 +33,6 @@ prefs = ["gfx.font_rendering.fallback.async=false"]
 support-files = ["../file_bug357450.js"]
 
 ["test_bug380418.html"]
-
-["test_bug380418.html^headers^"]
 
 ["test_bug383430.html"]
 
@@ -96,6 +81,20 @@ skip-if = ["verify"]
 
 ["test_bug990812.xhtml"]
 
+["test_bug1063837.xhtml"]
+
+["test_bug1098074_throw_from_ReceiveMessage.xhtml"]
+
+["test_bug1139964.xhtml"]
+
+["test_bug1209621.xhtml"]
+
+["test_bug1339722.html"]
+
+["test_bug1346936.html"]
+
+["test_bug380418.html^headers^"]
+
 ["test_chromeOuterWindowID.xhtml"]
 support-files = ["window_chromeOuterWindowID.xhtml"]
 
@@ -119,13 +118,12 @@ support-files = [
 
 ["test_nsITextInputProcessor.xhtml"]
 
+["test_nsITextInputProcessorCallback_at_changing_default_value_of_textarea.html"]
+
 ["test_permission_hasValidTransientUserActivation.xhtml"]
 support-files = ["../dummy.html"]
 
 ["test_range_getClientRectsAndTexts.html"]
-
-["test_swapFrameLoaders.xhtml"]
-skip-if = ["os == 'mac'"] # bug 1674413
 
 ["test_title.xhtml"]
 support-files = ["file_title.xhtml"]

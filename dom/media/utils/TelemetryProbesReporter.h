@@ -21,6 +21,9 @@ class TelemetryProbesReporterOwner {
   virtual FrameStatistics* GetFrameStatistics() const = 0;
   virtual bool IsEncrypted() const = 0;
   virtual void DispatchAsyncTestingEvent(const nsAString& aName) = 0;
+#ifdef MOZ_WMF_CDM
+  virtual bool IsUsingWMFCDM() const = 0;
+#endif
 };
 
 enum class MediaContent : uint8_t {
@@ -63,6 +66,8 @@ class TelemetryProbesReporter final {
   void OnMutedChanged(bool aMuted);
   void OnDecodeSuspended();
   void OnDecodeResumed();
+  void OntFirstFrameLoaded(const TimeDuration& aLoadedFirstFrameTime,
+                           bool aIsMSE, bool aIsExternalEngineStateMachine);
 
   double GetTotalVideoPlayTimeInSeconds() const;
   double GetTotalVideoHDRPlayTimeInSeconds() const;
@@ -91,6 +96,10 @@ class TelemetryProbesReporter final {
   void ReportResultForAudio();
   void ReportResultForVideoFrameStatistics(double aTotalPlayTimeS,
                                            const nsCString& key);
+#ifdef MOZ_WMF_CDM
+  void ReportResultForMFCDMPlaybackIfNeeded(double aTotalPlayTimeS,
+                                            const nsCString& aResolution);
+#endif
 
   // Helper class to measure times for playback telemetry stats
   class TimeDurationAccumulator {

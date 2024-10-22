@@ -26,6 +26,8 @@
 #include "pkcs11t.h"
 #if defined(XP_UNIX)
 #include "unistd.h"
+#elif defined(XP_WIN)
+#include <process.h>
 #endif
 #include "nssrwlk.h"
 #include "prthread.h"
@@ -246,6 +248,8 @@ typedef struct {
 
 /* MAX_SIGNATURE_SCHEMES allows for all the values we support. */
 #define MAX_SIGNATURE_SCHEMES 18
+
+#define MAX_SUPPORTED_CERTIFICATE_COMPRESSION_ALGS 32
 
 typedef struct sslOptionsStr {
     /* If SSL_SetNextProtoNego has been called, then this contains the
@@ -731,8 +735,8 @@ typedef struct SSL3HandshakeStateStr {
 
     PRUint32 rtRetries;  /* The retry counter */
     SECItem srvVirtName; /* for server: name that was negotiated
-                                    * with a client. For client - is
-                                    * always set to NULL.*/
+                          * with a client. For client - is
+                          * always set to NULL.*/
 
     /* This group of values is used for TLS 1.3 and above */
     PK11SymKey *currentSecret;            /* The secret down the "left hand side"
@@ -813,7 +817,6 @@ typedef struct SSL3HandshakeStateStr {
         PORT_Assert(ss->ssl3.hs.messages.len == 0);                  \
         PORT_Assert(ss->ssl3.hs.echInnerMessages.len == 0);          \
     } while (0)
-
 /*
 ** This is the "ssl3" struct, as in "ss->ssl3".
 ** note:
@@ -878,6 +881,9 @@ struct ssl3StateStr {
      * of TLS. Default is 0 in which case we check against the maximum
      * configured version for this socket. Used only on the client. */
     SSL3ProtocolVersion downgradeCheckVersion;
+    /* supported certificate compression algorithms (if any) */
+    SSLCertificateCompressionAlgorithm supportedCertCompressionAlgorithms[MAX_SUPPORTED_CERTIFICATE_COMPRESSION_ALGS];
+    PRUint8 supportedCertCompressionAlgorithmsCount;
 };
 
 /* Ethernet MTU but without subtracting the headers,
@@ -1956,7 +1962,7 @@ SECStatus SSLExp_AeadDecrypt(const SSLAeadContext *ctx, PRUint64 counter,
                              const PRUint8 *aad, unsigned int aadLen,
                              const PRUint8 *plaintext, unsigned int plaintextLen,
                              PRUint8 *out, unsigned int *outLen, unsigned int maxOut);
-
+SECStatus SSLExp_SetCertificateCompressionAlgorithm(PRFileDesc *fd, SSLCertificateCompressionAlgorithm alg);
 SECStatus SSLExp_HkdfExtract(PRUint16 version, PRUint16 cipherSuite,
                              PK11SymKey *salt, PK11SymKey *ikm, PK11SymKey **keyp);
 SECStatus SSLExp_HkdfExpandLabel(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
@@ -2027,7 +2033,6 @@ SEC_END_PROTOS
 #if defined(XP_UNIX) || defined(XP_OS2)
 #define SSL_GETPID getpid
 #elif defined(WIN32)
-extern int __cdecl _getpid(void);
 #define SSL_GETPID _getpid
 #else
 #define SSL_GETPID() 0

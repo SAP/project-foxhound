@@ -5,6 +5,11 @@
 "use strict";
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
+const {
+  TYPES,
+  getResourceWatcher,
+} = require("resource://devtools/server/actors/resources/index.js");
+const Targets = require("devtools/server/actors/targets/index");
 
 loader.lazyRequireGetter(
   this,
@@ -107,6 +112,9 @@ class BaseTargetActor extends Actor {
     );
   }
 
+  // List of actor prefixes (string) which have already been instantiated via getTargetScopedActor method.
+  #instantiatedTargetScopedActors = new Set();
+
   /**
    * Try to return any target scoped actor instance, if it exists.
    * They are lazily instantiated and so will only be available
@@ -121,7 +129,86 @@ class BaseTargetActor extends Actor {
       return null;
     }
     const form = this.form();
+    this.#instantiatedTargetScopedActors.add(prefix);
     return this.conn._getOrCreateActor(form[prefix + "Actor"]);
+  }
+
+  /**
+   * Returns true, if the related target scoped actor has already been queried
+   * and instantiated via `getTargetScopedActor` method.
+   *
+   * @param {String} prefix
+   *        See getTargetScopedActor definition
+   * @return Boolean
+   *         True, if the actor has already been instantiated.
+   */
+  hasTargetScopedActor(prefix) {
+    return this.#instantiatedTargetScopedActors.has(prefix);
+  }
+
+  /**
+   * Apply target-specific options.
+   *
+   * This will be called by the watcher when the DevTools target-configuration
+   * is updated, or when a target is created via JSWindowActors.
+   *
+   * @param {JSON} options
+   *        Configuration object provided by the client.
+   *        See target-configuration actor.
+   * @param {Boolean} calledFromDocumentCreate
+   *        True, when this is called with initial configuration when the related target
+   *        actor is instantiated.
+   */
+  updateTargetConfiguration(options = {}, calledFromDocumentCreation = false) {
+    // If there is some tracer options, we should start tracing, otherwise we should stop (if we were)
+    if (options.tracerOptions) {
+      // Ignore the SessionData update if the user requested to start the tracer on next page load and:
+      //   - we apply it to an already loaded WindowGlobal,
+      //   - the target isn't the top level one.
+      if (
+        options.tracerOptions.traceOnNextLoad &&
+        (!calledFromDocumentCreation || !this.isTopLevelTarget)
+      ) {
+        if (this.isTopLevelTarget) {
+          const consoleMessageWatcher = getResourceWatcher(
+            this,
+            TYPES.CONSOLE_MESSAGE
+          );
+          if (consoleMessageWatcher) {
+            consoleMessageWatcher.emitMessages([
+              {
+                arguments: [
+                  "Waiting for next navigation or page reload before starting tracing",
+                ],
+                styles: [],
+                level: "jstracer",
+                chromeContext: false,
+                timeStamp: ChromeUtils.dateNow(),
+              },
+            ]);
+          }
+        }
+        return;
+      }
+      // Bug 1874204: For now, in the browser toolbox, only frame and workers are traced.
+      // Content process targets are ignored as they would also include each document/frame target.
+      // This would require some work to ignore FRAME targets from here, only in case of browser toolbox,
+      // and also handle all content process documents for DOM Event logging.
+      //
+      // Bug 1874219: Also ignore extensions for now as they are all running in the same process,
+      // whereas we can only spawn one tracer per thread.
+      if (
+        this.targetType == Targets.TYPES.PROCESS ||
+        this.url?.startsWith("moz-extension://")
+      ) {
+        return;
+      }
+      const tracerActor = this.getTargetScopedActor("tracer");
+      tracerActor.startTracing(options.tracerOptions);
+    } else if (this.hasTargetScopedActor("tracer")) {
+      const tracerActor = this.getTargetScopedActor("tracer");
+      tracerActor.stopTracing();
+    }
   }
 }
 exports.BaseTargetActor = BaseTargetActor;

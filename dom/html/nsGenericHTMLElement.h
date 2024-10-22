@@ -335,7 +335,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
  public:
   // Implementation for nsIContent
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   Focusable IsFocusableWithoutStyle(bool aWithMouse) override {
     Focusable result;
@@ -734,6 +734,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
       const nsAttrValue* aOldValue, nsIPrincipal* aMaybeScriptedPrincipal,
       bool aNotify) override;
 
+  void OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
+                              const nsAttrValueOrString& aValue,
+                              bool aNotify) override;
+
   MOZ_CAN_RUN_SCRIPT void AfterSetPopoverAttr();
 
   mozilla::EventListenerManager* GetEventListenerManagerForAttr(
@@ -865,14 +869,31 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   uint32_t GetDimensionAttrAsUnsignedInt(nsAtom* aAttr,
                                          uint32_t aDefault) const;
 
+  enum class Reflection {
+    Unlimited,
+    OnlyPositive,
+  };
+
   /**
    * Sets value of attribute to specified double. Only works for attributes
    * in null namespace.
    *
+   * Implements
+   * https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes:idl-double
+   *
    * @param aAttr    name of attribute.
    * @param aValue   Double value of attribute.
    */
+  template <Reflection Limited = Reflection::Unlimited>
   void SetDoubleAttr(nsAtom* aAttr, double aValue, mozilla::ErrorResult& aRv) {
+    // 1. If the reflected IDL attribute is limited to only positive numbers and
+    //    the given value is not greater than 0, then return.
+    if (Limited == Reflection::OnlyPositive && aValue <= 0) {
+      return;
+    }
+
+    // 2. Run this's set the content attribute with the given value, converted
+    //    to the best representation of the number as a floating-point number.
     nsAutoString value;
     value.AppendFloat(aValue);
 
@@ -994,7 +1015,7 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement {
   // nsIContent
   void SaveSubtreeState() override;
   nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  void UnbindFromTree(bool aNullParent = true) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   /**
    * This callback is called by a fieldest on all its elements whenever its

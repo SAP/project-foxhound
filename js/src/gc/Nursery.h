@@ -328,9 +328,7 @@ class Nursery {
   }
   JS::GCReason minorGCTriggerReason() const { return minorGCTriggerReason_; }
 
-  bool shouldCollect() const;
-  bool isNearlyFull() const;
-  bool isUnderused() const;
+  bool wantEagerCollection() const;
 
   bool enableProfiling() const { return enableProfiling_; }
 
@@ -389,12 +387,11 @@ class Nursery {
         KeyCount
   };
 
-  using ProfileTimes =
-      mozilla::EnumeratedArray<ProfileKey, ProfileKey::KeyCount,
-                               mozilla::TimeStamp>;
+  using ProfileTimes = mozilla::EnumeratedArray<ProfileKey, mozilla::TimeStamp,
+                                                size_t(ProfileKey::KeyCount)>;
   using ProfileDurations =
-      mozilla::EnumeratedArray<ProfileKey, ProfileKey::KeyCount,
-                               mozilla::TimeDuration>;
+      mozilla::EnumeratedArray<ProfileKey, mozilla::TimeDuration,
+                               size_t(ProfileKey::KeyCount)>;
 
   // Calculate the promotion rate of the most recent minor GC.
   // The valid_for_tenuring parameter is used to return whether this
@@ -450,6 +447,9 @@ class Nursery {
   inline void* tryAllocate(size_t size);
 
   [[nodiscard]] bool moveToNextChunk();
+
+  bool freeSpaceIsBelowEagerThreshold() const;
+  bool isUnderused() const;
 
   struct CollectionResult {
     size_t tenuredBytes;

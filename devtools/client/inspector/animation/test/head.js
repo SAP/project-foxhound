@@ -69,16 +69,8 @@ const closeAnimationInspector = async function () {
  * yet including parts of the Web Animations API.
  */
 const enableAnimationFeatures = function () {
-  return new Promise(resolve => {
-    SpecialPowers.pushPrefEnv(
-      {
-        set: [
-          ["dom.animations-api.getAnimations.enabled", true],
-          ["dom.animations-api.timelines.enabled", true],
-        ],
-      },
-      resolve
-    );
+  return SpecialPowers.pushPrefEnv({
+    set: [["dom.animations-api.timelines.enabled", true]],
   });
 };
 
@@ -673,7 +665,7 @@ const setStyles = async function (animationInspector, selector, properties) {
 };
 
 /**
- * Wait until curren time of animations will be changed to give currrent time.
+ * Wait until current time of animations will be changed to given current time.
  *
  * @param {AnimationInspector} animationInspector
  * @param {Number} currentTime
@@ -684,9 +676,9 @@ const waitUntilCurrentTimeChangedAt = async function (
 ) {
   info(`Wait until current time will be change to ${currentTime}`);
   await waitUntil(() =>
-    animationInspector.state.animations.every(
-      a => a.state.currentTime === currentTime
-    )
+    animationInspector.state.animations.every(a => {
+      return a.state.currentTime === currentTime;
+    })
   );
 };
 
@@ -1028,8 +1020,9 @@ function checkAdjustingTheTime(animation1, animation2) {
     animation2.currentTime / animation2.playbackRate -
     animation1.currentTime / animation1.playbackRate;
   const createdTimeDiff = animation1.createdTime - animation2.createdTime;
-  ok(
-    Math.abs(adjustedCurrentTimeDiff - createdTimeDiff) < 0.1,
+  Assert.less(
+    Math.abs(adjustedCurrentTimeDiff - createdTimeDiff),
+    0.1,
     "Adjusted time is correct"
   );
 }

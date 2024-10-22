@@ -130,8 +130,13 @@ class EditorBase : public nsIEditor,
    */
   explicit EditorBase(EditorType aEditorType);
 
-  bool IsInitialized() const { return !!mDocument; }
-  bool Destroyed() const { return mDidPreDestroy; }
+  [[nodiscard]] bool IsInitialized() const {
+    return mDocument && mDidPostCreate;
+  }
+  [[nodiscard]] bool IsBeingInitialized() const {
+    return mDocument && !mDidPostCreate;
+  }
+  [[nodiscard]] bool Destroyed() const { return mDidPreDestroy; }
 
   Document* GetDocument() const { return mDocument; }
   nsPIDOMWindowOuter* GetWindow() const;
@@ -1012,7 +1017,7 @@ class EditorBase : public nsIEditor,
     }
 
     [[nodiscard]] bool IsDataAvailable() const {
-      return mSelection && mEditorBase.IsInitialized();
+      return mSelection && mEditorBase.mDocument;
     }
 
     /**
@@ -2380,7 +2385,7 @@ class EditorBase : public nsIEditor,
 
   virtual nsresult InstallEventListeners();
   virtual void CreateEventListeners();
-  virtual void RemoveEventListeners();
+  void RemoveEventListeners();
   [[nodiscard]] bool IsListeningToEvents() const;
 
   /**
@@ -2512,6 +2517,25 @@ class EditorBase : public nsIEditor,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   DeleteSelectionWithTransaction(nsIEditor::EDirection aDirectionAndAmount,
                                  nsIEditor::EStripWrappers aStripWrappers);
+
+  /**
+   * DeleteRangeWithTransaction() removes content in aRangeToDelete or content
+   * around collapsed aRangeToDelete with transactions and remove empty
+   * inclusive ancestor inline elements of the collapsed range after removing
+   * the contents.
+   *
+   * @param aDirectionAndAmount How much range should be removed.
+   * @param aStripWrappers      Whether the parent blocks should be removed
+   *                            when they become empty.
+   *                            Note that this must be `nsIEditor::eNoStrip`
+   *                            if this is a TextEditor because anyway it'll
+   *                            be ignored.
+   * @param aRangeToDelete     The range to delete content.
+   */
+  [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CaretPoint, nsresult>
+  DeleteRangeWithTransaction(nsIEditor::EDirection aDirectionAndAmount,
+                             nsIEditor::EStripWrappers aStripWrappers,
+                             nsRange& aRangeToDelete);
 
   /**
    * DeleteRangesWithTransaction() removes content in aRangesToDelete or content

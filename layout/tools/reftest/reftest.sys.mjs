@@ -182,6 +182,10 @@ export function OnRefTestLoad(win) {
   g.browser.setAttribute("id", "browser");
   g.browser.setAttribute("type", "content");
   g.browser.setAttribute("primary", "true");
+  // FIXME: This ideally shouldn't be needed, but on android and windows
+  // sometimes the window is occluded / hidden, which causes some crashtests
+  // to time out. Bug 1864255 might be able to help here.
+  g.browser.setAttribute("manualactiveness", "true");
   g.browser.setAttribute("remote", g.browserIsRemote ? "true" : "false");
   // Make sure the browser element is exactly 800x1000, no matter
   // what size our window is
@@ -204,6 +208,8 @@ export function OnRefTestLoad(win) {
   }
 
   g.browserMessageManager = g.browser.frameLoader.messageManager;
+  // See the comment above about manualactiveness.
+  g.browser.docShellIsActive = true;
   // The content script waits for the initial onload, then notifies
   // us.
   RegisterMessageListenersAndLoadContentScript(false);
@@ -1764,19 +1770,19 @@ function RegisterMessageListenersAndLoadContentScript(aReload) {
   );
   g.browserMessageManager.addMessageListener(
     "reftest:FailedNoPaint",
-    function (m) {
+    function () {
       RecvFailedNoPaint();
     }
   );
   g.browserMessageManager.addMessageListener(
     "reftest:FailedNoDisplayList",
-    function (m) {
+    function () {
       RecvFailedNoDisplayList();
     }
   );
   g.browserMessageManager.addMessageListener(
     "reftest:FailedDisplayList",
-    function (m) {
+    function () {
       RecvFailedDisplayList();
     }
   );
@@ -1794,7 +1800,7 @@ function RegisterMessageListenersAndLoadContentScript(aReload) {
   );
   g.browserMessageManager.addMessageListener(
     "reftest:InitCanvasWithSnapshot",
-    function (m) {
+    function () {
       RecvInitCanvasWithSnapshot();
     }
   );
@@ -1830,13 +1836,13 @@ function RegisterMessageListenersAndLoadContentScript(aReload) {
   );
   g.browserMessageManager.addMessageListener(
     "reftest:UpdateWholeCanvasForInvalidation",
-    function (m) {
+    function () {
       RecvUpdateWholeCanvasForInvalidation();
     }
   );
   g.browserMessageManager.addMessageListener(
     "reftest:ExpectProcessCrash",
-    function (m) {
+    function () {
       RecvExpectProcessCrash();
     }
   );
@@ -2012,7 +2018,7 @@ async function RecvUpdateWholeCanvasForInvalidation() {
   SendUpdateCurrentCanvasWithSnapshotDone(true);
 }
 
-function OnProcessCrashed(subject, topic, data) {
+function OnProcessCrashed(subject, topic) {
   let id;
   let additionalDumps;
   let propbag = subject.QueryInterface(Ci.nsIPropertyBag2);

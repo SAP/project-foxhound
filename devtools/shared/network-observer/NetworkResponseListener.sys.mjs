@@ -4,15 +4,19 @@
 
 const lazy = {};
 
-ChromeUtils.defineESModuleGetters(lazy, {
-  NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
-  NetworkHelper:
-    "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
-  NetworkUtils:
-    "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
-  getResponseCacheObject:
-    "resource://devtools/shared/platform/CacheEntry.sys.mjs",
-});
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
+    NetworkHelper:
+      "resource://devtools/shared/network-observer/NetworkHelper.sys.mjs",
+    NetworkUtils:
+      "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
+    getResponseCacheObject:
+      "resource://devtools/shared/platform/CacheEntry.sys.mjs",
+  },
+  { global: "contextual" }
+);
 
 // Network logging
 
@@ -77,13 +81,8 @@ export class NetworkResponseListener {
    *
    * @type {nsIInputStream}
    */
+  // eslint-disable-next-line no-unused-private-class-members
   #inputStream = null;
-  /**
-   * Explicit flag to check if this listener was already destroyed.
-   *
-   * @type {boolean}
-   */
-  #isDestroyed = false;
   /**
    * Internal promise used to hold the completion of #getSecurityInfo.
    *
@@ -412,7 +411,7 @@ export class NetworkResponseListener {
    * Handle progress event as data is transferred.  This is used to record the
    * size on the wire, which may be compressed / encoded.
    */
-  onProgress(request, progress, progressMax) {
+  onProgress(request, progress) {
     this.#bodySize = progress;
 
     // Need to forward as well to keep things like Download Manager's progress
@@ -553,8 +552,6 @@ export class NetworkResponseListener {
     this.#inputStream = null;
     this.#converter = null;
     this.#request = null;
-
-    this.#isDestroyed = true;
   }
 
   /**

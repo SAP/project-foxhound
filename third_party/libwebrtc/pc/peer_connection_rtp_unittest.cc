@@ -53,6 +53,7 @@
 #include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "pc/test/fake_audio_capture_module.h"
+#include "pc/test/integration_test_helpers.h"
 #include "pc/test/mock_peer_connection_observers.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/gunit.h"
@@ -73,16 +74,14 @@ using ::testing::Pair;
 using ::testing::UnorderedElementsAre;
 using ::testing::Values;
 
-const uint32_t kDefaultTimeout = 10000u;
-
 template <typename MethodFunctor>
-class OnSuccessObserver : public webrtc::SetRemoteDescriptionObserverInterface {
+class OnSuccessObserver : public SetRemoteDescriptionObserverInterface {
  public:
   explicit OnSuccessObserver(MethodFunctor on_success)
       : on_success_(std::move(on_success)) {}
 
-  // webrtc::SetRemoteDescriptionObserverInterface implementation.
-  void OnSetRemoteDescriptionComplete(webrtc::RTCError error) override {
+  // SetRemoteDescriptionObserverInterface implementation.
+  void OnSetRemoteDescriptionComplete(RTCError error) override {
     RTC_CHECK(error.ok());
     on_success_();
   }
@@ -114,7 +113,7 @@ class PeerConnectionRtpBaseTest : public ::testing::Test {
                                             Dav1dDecoderTemplateAdapter>>(),
             nullptr /* audio_mixer */,
             nullptr /* audio_processing */)) {
-    webrtc::metrics::Reset();
+    metrics::Reset();
   }
 
   std::unique_ptr<PeerConnectionWrapper> CreatePeerConnection() {
@@ -202,7 +201,7 @@ class PeerConnectionRtpTestUnifiedPlan : public PeerConnectionRtpBaseTest {
   }
 };
 
-// These tests cover `webrtc::PeerConnectionObserver` callbacks firing upon
+// These tests cover `PeerConnectionObserver` callbacks firing upon
 // setting the remote description.
 
 TEST_P(PeerConnectionRtpTest, AddTrackWithoutStreamFiresOnAddTrack) {
@@ -826,7 +825,8 @@ TEST_F(PeerConnectionRtpTestUnifiedPlan, TracksDoNotEndWhenSsrcChanges) {
   for (size_t i = 0; i < contents.size(); ++i) {
     auto& mutable_streams = contents[i].media_description()->mutable_streams();
     ASSERT_EQ(mutable_streams.size(), 1u);
-    mutable_streams[0].ssrcs[0] = kFirstMungedSsrc + static_cast<uint32_t>(i);
+    ReplaceFirstSsrc(mutable_streams[0],
+                     kFirstMungedSsrc + static_cast<uint32_t>(i));
   }
   ASSERT_TRUE(
       callee->SetLocalDescription(CloneSessionDescription(answer.get())));
@@ -934,8 +934,8 @@ TEST_P(PeerConnectionRtpTest,
   auto caller = CreatePeerConnection();
   auto callee = CreatePeerConnection();
 
-  rtc::scoped_refptr<webrtc::MockSetSessionDescriptionObserver> observer =
-      rtc::make_ref_counted<webrtc::MockSetSessionDescriptionObserver>();
+  rtc::scoped_refptr<MockSetSessionDescriptionObserver> observer =
+      rtc::make_ref_counted<MockSetSessionDescriptionObserver>();
 
   auto offer = caller->CreateOfferAndSetAsLocal();
   callee->pc()->SetRemoteDescription(observer.get(), offer.release());

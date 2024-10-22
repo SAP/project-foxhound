@@ -215,7 +215,7 @@ export class MessageHandler extends EventEmitter {
 
   /**
    * Retrieve all module classes matching the moduleName and destination.
-   * See `getAllModuleClasses` (ModuleCache.jsm) for more details.
+   * See `getAllModuleClasses` (ModuleCache.sys.mjs) for more details.
    *
    * @param {string} moduleName
    *     The name of the module.
@@ -267,11 +267,8 @@ export class MessageHandler extends EventEmitter {
    * provided to this MessageHandler on startup. Implementation is specific to each MessageHandler class.
    *
    * By default the implementation is a no-op.
-   *
-   * @param {Array<SessionDataItem>} sessionDataItems
-   *     Initial session data items for this MessageHandler.
    */
-  async initialize(sessionDataItems) {}
+  async initialize() {}
 
   /**
    * Returns the module path corresponding to this MessageHandler class.
@@ -297,7 +294,7 @@ export class MessageHandler extends EventEmitter {
    *
    * Needs to be implemented in the sub class.
    */
-  static getIdFromContext(context) {
+  static getIdFromContext() {
     throw new Error("Not implemented");
   }
 
@@ -306,7 +303,7 @@ export class MessageHandler extends EventEmitter {
    *
    * Needs to be implemented in the sub class.
    */
-  forwardCommand(command) {
+  forwardCommand() {
     throw new Error("Not implemented");
   }
 
@@ -316,7 +313,7 @@ export class MessageHandler extends EventEmitter {
    *
    * Needs to be implemented in the sub class.
    */
-  matchesContext(contextDescriptor) {
+  matchesContext() {
     throw new Error("Not implemented");
   }
 

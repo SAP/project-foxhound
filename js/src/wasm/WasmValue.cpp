@@ -345,22 +345,15 @@ class wasm::DebugCodegenVal {
   static void print(void* v) { print(" ptr(%p)", v); }
 };
 
-template bool wasm::ToWebAssemblyValue<NoDebug>(JSContext* cx, HandleValue val,
-                                                FieldType type, void* loc,
-                                                bool mustWrite64,
-                                                CoercionLevel level);
-template bool wasm::ToWebAssemblyValue<DebugCodegenVal>(
-    JSContext* cx, HandleValue val, FieldType type, void* loc, bool mustWrite64,
-    CoercionLevel level);
 template bool wasm::ToJSValue<NoDebug>(JSContext* cx, const void* src,
-                                       FieldType type, MutableHandleValue dst,
+                                       StorageType type, MutableHandleValue dst,
                                        CoercionLevel level);
 template bool wasm::ToJSValue<DebugCodegenVal>(JSContext* cx, const void* src,
-                                               FieldType type,
+                                               StorageType type,
                                                MutableHandleValue dst,
                                                CoercionLevel level);
-template bool wasm::ToJSValueMayGC<NoDebug>(FieldType type);
-template bool wasm::ToJSValueMayGC<DebugCodegenVal>(FieldType type);
+template bool wasm::ToJSValueMayGC<NoDebug>(StorageType type);
+template bool wasm::ToJSValueMayGC<DebugCodegenVal>(StorageType type);
 
 template bool wasm::ToWebAssemblyValue<NoDebug>(JSContext* cx, HandleValue val,
                                                 ValType type, void* loc,
@@ -380,20 +373,6 @@ template bool wasm::ToJSValue<DebugCodegenVal>(JSContext* cx, const void* src,
                                                CoercionLevel level);
 template bool wasm::ToJSValueMayGC<NoDebug>(ValType type);
 template bool wasm::ToJSValueMayGC<DebugCodegenVal>(ValType type);
-
-template <typename Debug = NoDebug>
-bool ToWebAssemblyValue_i8(JSContext* cx, HandleValue val, int8_t* loc) {
-  bool ok = ToInt8(cx, val, loc);
-  Debug::print(*loc);
-  return ok;
-}
-
-template <typename Debug = NoDebug>
-bool ToWebAssemblyValue_i16(JSContext* cx, HandleValue val, int16_t* loc) {
-  bool ok = ToInt16(cx, val, loc);
-  Debug::print(*loc);
-  return ok;
-}
 
 template <typename Debug = NoDebug>
 bool ToWebAssemblyValue_i32(JSContext* cx, HandleValue val, int32_t* loc,
@@ -642,7 +621,7 @@ bool ToWebAssemblyValue_lossless(JSContext* cx, HandleValue val, ValType type,
 }
 
 template <typename Debug>
-bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
+bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
                               void* loc, bool mustWrite64,
                               CoercionLevel level) {
   if (level == CoercionLevel::Lossless &&
@@ -652,22 +631,18 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
   }
 
   switch (type.kind()) {
-    case FieldType::I8:
-      return ToWebAssemblyValue_i8<Debug>(cx, val, (int8_t*)loc);
-    case FieldType::I16:
-      return ToWebAssemblyValue_i16<Debug>(cx, val, (int16_t*)loc);
-    case FieldType::I32:
+    case ValType::I32:
       return ToWebAssemblyValue_i32<Debug>(cx, val, (int32_t*)loc, mustWrite64);
-    case FieldType::I64:
+    case ValType::I64:
       return ToWebAssemblyValue_i64<Debug>(cx, val, (int64_t*)loc, mustWrite64);
-    case FieldType::F32:
+    case ValType::F32:
       return ToWebAssemblyValue_f32<Debug>(cx, val, (float*)loc, mustWrite64);
-    case FieldType::F64:
+    case ValType::F64:
       return ToWebAssemblyValue_f64<Debug>(cx, val, (double*)loc, mustWrite64);
-    case FieldType::V128:
+    case ValType::V128:
       break;
-    case FieldType::Ref:
-#ifdef ENABLE_WASM_FUNCTION_REFERENCES
+    case ValType::Ref:
+#ifdef ENABLE_WASM_GC
       if (!type.isNullable() && val.isNull()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                  JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE);
@@ -720,14 +695,6 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, FieldType type,
   JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                            JSMSG_WASM_BAD_VAL_TYPE);
   return false;
-}
-
-template <typename Debug>
-bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
-                              void* loc, bool mustWrite64,
-                              CoercionLevel level) {
-  return wasm::ToWebAssemblyValue(cx, val, FieldType(type.packed()), loc,
-                                  mustWrite64, level);
 }
 
 template <typename Debug = NoDebug>
@@ -813,7 +780,7 @@ bool ToJSValue_lossless(JSContext* cx, const void* src, MutableHandleValue dst,
 }
 
 template <typename Debug>
-bool wasm::ToJSValue(JSContext* cx, const void* src, FieldType type,
+bool wasm::ToJSValue(JSContext* cx, const void* src, StorageType type,
                      MutableHandleValue dst, CoercionLevel level) {
   if (level == CoercionLevel::Lossless) {
     MOZ_ASSERT(type.isValType());
@@ -821,27 +788,27 @@ bool wasm::ToJSValue(JSContext* cx, const void* src, FieldType type,
   }
 
   switch (type.kind()) {
-    case FieldType::I8:
+    case StorageType::I8:
       return ToJSValue_i8<Debug>(cx, *reinterpret_cast<const int8_t*>(src),
                                  dst);
-    case FieldType::I16:
+    case StorageType::I16:
       return ToJSValue_i16<Debug>(cx, *reinterpret_cast<const int16_t*>(src),
                                   dst);
-    case FieldType::I32:
+    case StorageType::I32:
       return ToJSValue_i32<Debug>(cx, *reinterpret_cast<const int32_t*>(src),
                                   dst);
-    case FieldType::I64:
+    case StorageType::I64:
       return ToJSValue_i64<Debug>(cx, *reinterpret_cast<const int64_t*>(src),
                                   dst);
-    case FieldType::F32:
+    case StorageType::F32:
       return ToJSValue_f32<Debug>(cx, *reinterpret_cast<const float*>(src),
                                   dst);
-    case FieldType::F64:
+    case StorageType::F64:
       return ToJSValue_f64<Debug>(cx, *reinterpret_cast<const double*>(src),
                                   dst);
-    case FieldType::V128:
+    case StorageType::V128:
       break;
-    case FieldType::Ref:
+    case StorageType::Ref:
       switch (type.refType().hierarchy()) {
         case RefTypeHierarchy::Func:
           return ToJSValue_funcref<Debug>(
@@ -865,19 +832,19 @@ bool wasm::ToJSValue(JSContext* cx, const void* src, FieldType type,
 }
 
 template <typename Debug>
-bool wasm::ToJSValueMayGC(FieldType type) {
-  return type.kind() == FieldType::I64;
+bool wasm::ToJSValueMayGC(StorageType type) {
+  return type.kind() == StorageType::I64;
 }
 
 template <typename Debug>
 bool wasm::ToJSValue(JSContext* cx, const void* src, ValType type,
                      MutableHandleValue dst, CoercionLevel level) {
-  return wasm::ToJSValue(cx, src, FieldType(type.packed()), dst, level);
+  return wasm::ToJSValue(cx, src, StorageType(type.packed()), dst, level);
 }
 
 template <typename Debug>
 bool wasm::ToJSValueMayGC(ValType type) {
-  return wasm::ToJSValueMayGC(FieldType(type.packed()));
+  return wasm::ToJSValueMayGC(StorageType(type.packed()));
 }
 
 /* static */

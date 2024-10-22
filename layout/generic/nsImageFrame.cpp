@@ -18,6 +18,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/HTMLEditor.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/ImageTracker.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
@@ -268,7 +269,7 @@ BrokenImageIcon::BrokenImageIcon(const nsImageFrame& aFrame) {
                     loadFlags, nullptr, contentPolicyType, u""_ns,
                     false, /* aUseUrgentStartForChannel */
                     false, /* aLinkPreload */
-                    0, getter_AddRefs(mImage));
+                    0, FetchPriority::Auto, getter_AddRefs(mImage));
   Unused << NS_WARN_IF(NS_FAILED(rv));
 }
 
@@ -554,15 +555,16 @@ void nsImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
   //
   // TODO(emilio): We might want to do the same for regular list-style-image or
   // even simple content: url() changes.
-  if (mKind == Kind::XULImage) {
-    if (!mContent->AsElement()->HasNonEmptyAttr(nsGkAtoms::src) && aOldStyle &&
+  if (mKind == Kind::XULImage && aOldStyle) {
+    if (!mContent->AsElement()->HasNonEmptyAttr(nsGkAtoms::src) &&
         aOldStyle->StyleList()->mListStyleImage !=
             StyleList()->mListStyleImage) {
       UpdateXULImage();
     }
-    if (!mOwnedRequest && aOldStyle &&
-        aOldStyle->StyleDisplay()->EffectiveAppearance() !=
-            StyleDisplay()->EffectiveAppearance()) {
+    // If we have no image our intrinsic size might be themed. We need to
+    // update the size even if the effective appearance hasn't changed to
+    // deal correctly with theme changes.
+    if (!mOwnedRequest) {
       UpdateIntrinsicSize();
     }
   }
@@ -825,7 +827,7 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
                                           const nsImageFrame& aFrame) {
   const auto containAxes = aFrame.GetContainSizeAxes();
   if (containAxes.IsBoth()) {
-    return containAxes.ContainIntrinsicSize(IntrinsicSize(0, 0), aFrame);
+    return aFrame.FinishIntrinsicSize(containAxes, IntrinsicSize(0, 0));
   }
 
   nsSize size;
@@ -853,14 +855,14 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
           intrinsicSize,
           aFrame.GetImageFromStyle()->GetResolution(*aFrame.Style()));
     }
-    return containAxes.ContainIntrinsicSize(intrinsicSize, aFrame);
+    return aFrame.FinishIntrinsicSize(containAxes, intrinsicSize);
   }
 
   if (aKind == nsImageFrame::Kind::ListStyleImage) {
     // Note: images are handled above, this handles gradients etc.
-    nscoord defaultLength = ListImageDefaultLength(aFrame);
-    return containAxes.ContainIntrinsicSize(
-        IntrinsicSize(defaultLength, defaultLength), aFrame);
+    const nscoord defaultLength = ListImageDefaultLength(aFrame);
+    return aFrame.FinishIntrinsicSize(
+        containAxes, IntrinsicSize(defaultLength, defaultLength));
   }
 
   if (aKind == nsImageFrame::Kind::XULImage && aFrame.IsThemed()) {
@@ -871,20 +873,21 @@ static IntrinsicSize ComputeIntrinsicSize(imgIContainer* aImage,
         aFrame.StyleDisplay()->EffectiveAppearance());
     const IntrinsicSize intrinsicSize(
         LayoutDeviceIntSize::ToAppUnits(widgetSize, pc->AppUnitsPerDevPixel()));
-    return containAxes.ContainIntrinsicSize(intrinsicSize, aFrame);
+    return aFrame.FinishIntrinsicSize(containAxes, intrinsicSize);
   }
 
   if (aFrame.ShouldShowBrokenImageIcon()) {
     nscoord edgeLengthToUse = nsPresContext::CSSPixelsToAppUnits(
         ICON_SIZE + (2 * (ICON_PADDING + ALT_BORDER_WIDTH)));
-    return containAxes.ContainIntrinsicSize(
-        IntrinsicSize(edgeLengthToUse, edgeLengthToUse), aFrame);
+    return aFrame.FinishIntrinsicSize(
+        containAxes, IntrinsicSize(edgeLengthToUse, edgeLengthToUse));
   }
 
   if (aUseMappedRatio && aFrame.StylePosition()->mAspectRatio.HasRatio()) {
     return IntrinsicSize();
   }
 
+  // XXX: No FinishIntrinsicSize?
   return IntrinsicSize(0, 0);
 }
 
@@ -1347,7 +1350,7 @@ void nsImageFrame::MaybeDecodeForPredictedSize() {
   }
 
   // OK, we're ready to decode. Compute the scale to the screen...
-  mozilla::PresShell* presShell = PresContext()->PresShell();
+  mozilla::PresShell* presShell = PresShell();
   MatrixScales scale =
       ScaleFactor<UnknownUnits, UnknownUnits>(
           presShell->GetCumulativeResolution()) *
@@ -1418,8 +1421,7 @@ void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
     // If we have 'contain:size', then we have no intrinsic aspect ratio,
     // and the intrinsic size is determined by contain-intrinsic-size,
     // regardless of what our underlying image may think.
-    mIntrinsicSize =
-        containAxes.ContainIntrinsicSize(IntrinsicSize(0, 0), *this);
+    mIntrinsicSize = FinishIntrinsicSize(containAxes, IntrinsicSize(0, 0));
     mIntrinsicRatio = AspectRatio();
     return;
   }
@@ -1540,15 +1542,10 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     RemoveStateBits(IMAGE_SIZECONSTRAINED);
   }
 
-  mComputedSize =
-      nsSize(aReflowInput.ComputedWidth(), aReflowInput.ComputedHeight());
+  mComputedSize = aReflowInput.ComputedPhysicalSize();
 
-  aMetrics.Width() = mComputedSize.width;
-  aMetrics.Height() = mComputedSize.height;
-
-  // add borders and padding
-  aMetrics.Width() += aReflowInput.ComputedPhysicalBorderPadding().LeftRight();
-  aMetrics.Height() += aReflowInput.ComputedPhysicalBorderPadding().TopBottom();
+  const auto wm = GetWritingMode();
+  aMetrics.SetSize(wm, aReflowInput.ComputedSizeWithBorderPadding(wm));
 
   if (GetPrevInFlow()) {
     aMetrics.Width() = GetPrevInFlow()->GetSize().width;
@@ -2778,7 +2775,7 @@ nsresult nsImageFrame::HandleEvent(nsPresContext* aPresContext,
                                              aEventStatus);
 }
 
-Maybe<nsIFrame::Cursor> nsImageFrame::GetCursor(const nsPoint& aPoint) {
+nsIFrame::Cursor nsImageFrame::GetCursor(const nsPoint& aPoint) {
   nsImageMap* map = GetImageMap();
   if (!map) {
     return nsIFrame::GetCursor(aPoint);
@@ -2801,7 +2798,7 @@ Maybe<nsIFrame::Cursor> nsImageFrame::GetCursor(const nsPoint& aPoint) {
   if (kind == StyleCursorKind::Auto) {
     kind = StyleCursorKind::Default;
   }
-  return Some(Cursor{kind, AllowCustomCursorImage::Yes, std::move(areaStyle)});
+  return Cursor{kind, AllowCustomCursorImage::Yes, std::move(areaStyle)};
 }
 
 nsresult nsImageFrame::AttributeChanged(int32_t aNameSpaceID,

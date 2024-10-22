@@ -222,7 +222,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
-  PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.sys.mjs",
   RunState: "resource:///modules/sessionstore/RunState.sys.mjs",
   SessionCookies: "resource:///modules/sessionstore/SessionCookies.sys.mjs",
   SessionFile: "resource:///modules/sessionstore/SessionFile.sys.mjs",
@@ -1731,6 +1730,13 @@ var SessionStoreInternal = {
    * and thus enables communication with OOP tabs.
    */
   receiveMessage(aMessage) {
+    if (Services.appinfo.sessionHistoryInParent) {
+      throw new Error(
+        `received unexpected message '${aMessage.name}' with ` +
+          `sessionHistoryInParent enabled`
+      );
+    }
+
     // If we got here, that means we're dealing with a frame message
     // manager message, so the target will be a <xul:browser>.
     var browser = aMessage.target;
@@ -1911,14 +1917,14 @@ var SessionStoreInternal = {
     // internal data about the window.
     aWindow.__SSi = this._generateWindowID();
 
-    let mm = aWindow.getGroupMessageManager("browsers");
-    MESSAGES.forEach(msg => {
-      let listenWhenClosed = CLOSED_MESSAGES.has(msg);
-      mm.addMessageListener(msg, this, listenWhenClosed);
-    });
-
-    // Load the frame script after registering listeners.
     if (!Services.appinfo.sessionHistoryInParent) {
+      let mm = aWindow.getGroupMessageManager("browsers");
+      MESSAGES.forEach(msg => {
+        let listenWhenClosed = CLOSED_MESSAGES.has(msg);
+        mm.addMessageListener(msg, this, listenWhenClosed);
+      });
+
+      // Load the frame script after registering listeners.
       mm.loadFrameScript(
         "chrome://browser/content/content-sessionStore.js",
         true,
@@ -2320,8 +2326,6 @@ var SessionStoreInternal = {
       // 3) When the flush is complete, revisit our decision to store the window
       //    in _closedWindows, and add/remove as necessary.
       if (!winData.isPrivate) {
-        // Remove any open private tabs the window may contain.
-        lazy.PrivacyFilter.filterPrivateTabs(winData);
         this.maybeSaveClosedWindow(winData, isLastWindow);
       }
 
@@ -2343,9 +2347,6 @@ var SessionStoreInternal = {
         // Save non-private windows if they have at
         // least one saveable tab or are the last window.
         if (!winData.isPrivate) {
-          // It's possible that a tab switched its privacy state at some point
-          // before our flush, so we need to filter again.
-          lazy.PrivacyFilter.filterPrivateTabs(winData);
           this.maybeSaveClosedWindow(winData, isLastWindow, true);
 
           if (!isLastWindow && winData.closedId > -1) {
@@ -2401,8 +2402,10 @@ var SessionStoreInternal = {
     // Cache the window state until it is completely gone.
     DyingWindowCache.set(aWindow, winData);
 
-    let mm = aWindow.getGroupMessageManager("browsers");
-    MESSAGES.forEach(msg => mm.removeMessageListener(msg, this));
+    if (!Services.appinfo.sessionHistoryInParent) {
+      let mm = aWindow.getGroupMessageManager("browsers");
+      MESSAGES.forEach(msg => mm.removeMessageListener(msg, this));
+    }
 
     this._saveableClosedWindowData.delete(winData);
     delete aWindow.__SSi;

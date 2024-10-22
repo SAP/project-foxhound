@@ -203,8 +203,6 @@ class ProcessPriorityManagerImpl final : public nsIObserver,
   void BrowserPriorityChanged(CanonicalBrowsingContext* aBC, bool aPriority);
   void BrowserPriorityChanged(BrowserParent* aBrowserParent, bool aPriority);
 
-  void ResetPriority(ContentParent* aContentParent);
-
  private:
   static bool sPrefListenersRegistered;
   static bool sInitialized;
@@ -559,12 +557,6 @@ void ProcessPriorityManagerImpl::BrowserPriorityChanged(
   }
 }
 
-void ProcessPriorityManagerImpl::ResetPriority(ContentParent* aContentParent) {
-  if (RefPtr pppm = GetParticularProcessPriorityManager(aContentParent)) {
-    pppm->ResetPriority();
-  }
-}
-
 NS_IMPL_ISUPPORTS(ParticularProcessPriorityManager, nsITimerCallback,
                   nsISupportsWeakReference, nsINamed);
 
@@ -839,11 +831,14 @@ void ParticularProcessPriorityManager::SetPriorityNow(
     // thread on low-power cores. Alternately, if we are changing from the
     // background to a higher priority, we change the main thread back to its
     // normal state.
+    // During shutdown, we will manually set the priority to the highest
+    // possible and disallow any additional priority changes.
     //
     // The messages for this will be relayed using the ProcessHangMonitor such
     // that the priority can be raised even if the main thread is unresponsive.
-    if (PriorityUsesLowPowerMainThread(mPriority) !=
-        (PriorityUsesLowPowerMainThread(oldPriority))) {
+    if (!mContentParent->IsShuttingDown() &&
+        PriorityUsesLowPowerMainThread(mPriority) !=
+            PriorityUsesLowPowerMainThread(oldPriority)) {
       if (PriorityUsesLowPowerMainThread(mPriority) &&
           PrefsUseLowPriorityThreads()) {
         mContentParent->SetMainThreadQoSPriority(nsIThread::QOS_PRIORITY_LOW);
@@ -1040,28 +1035,6 @@ void ProcessPriorityManager::BrowserPriorityChanged(
     return;
   }
   singleton->BrowserPriorityChanged(aBrowserParent, aPriority);
-}
-
-/* static */
-void ProcessPriorityManager::RemoteBrowserFrameShown(
-    nsFrameLoader* aFrameLoader) {
-  ProcessPriorityManagerImpl* singleton =
-      ProcessPriorityManagerImpl::GetSingleton();
-  if (!singleton) {
-    return;
-  }
-
-  BrowserParent* bp = BrowserParent::GetFrom(aFrameLoader);
-  NS_ENSURE_TRUE_VOID(bp);
-
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  // Ignore calls that aren't from a Browser.
-  if (!aFrameLoader->OwnerIsMozBrowserFrame()) {
-    return;
-  }
-
-  singleton->ResetPriority(bp->Manager());
 }
 
 }  // namespace mozilla

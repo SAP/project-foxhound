@@ -3,36 +3,8 @@
 //! into other language-specific user-friendly libraries.
 //!
 //! ## Feature flags
-// NOTE: feature docs. below should be kept in sync. with `Cargo.toml`!
+#![doc = document_features::document_features!()]
 //!
-//! - **`api_log_info`** --- Log all API entry points at info instead of trace level.
-//! - **`resource_log_info`** --- Log resource lifecycle management at info instead of trace level.
-//! - **`link`** _(enabled by default)_ --- Use static linking for libraries. Disale to manually
-//!   link. Enabled by default.
-//! - **`renderdoc`** --- Support the Renderdoc graphics debugger:
-//!   [https://renderdoc.org/](https://renderdoc.org/)
-//! - **`strict_asserts`** --- Apply run-time checks, even in release builds. These are in addition
-//!   to the validation carried out at public APIs in all builds.
-//! - **`trace`** --- Enable API tracing.
-//! - **`replay`** --- Enable API replaying
-//! - **`serial-pass`** --- Enable serializable compute/render passes, and bundle encoders.
-//! - **`wgsl`** --- Enable `ShaderModuleSource::Wgsl`
-//! - **`fragile-send-sync-non-atomic-wasm`** --- Implement `Send` and `Sync` on Wasm, but only if
-//!   atomics are not enabled.
-//!
-//!   WebGL/WebGPU objects can not be shared between threads. However, it can be useful to
-//!   artificially mark them as `Send` and `Sync` anyways to make it easier to write cross-platform
-//!   code. This is technically _very_ unsafe in a multithreaded environment, but on a wasm binary
-//!   compiled without atomics we know we are definitely not in a multithreaded environment.
-//!
-//!  ### Backends, passed through to wgpu-hal
-//!
-//!  - **`metal`** --- Enable the `metal` backend.
-//!  - **`vulkan`** --- Enable the `vulkan` backend.
-//!  - **`gles`** --- Enable the `GLES` backend.
-//!
-//!    This is used for all of GLES, OpenGL, and WebGL.
-//!  - **`dx12`** --- Enable the `dx12` backend.
 
 // When we have no backends, we end up with a lot of dead or otherwise unreachable code.
 #![cfg_attr(
@@ -58,7 +30,7 @@
     clippy::needless_lifetimes,
     // No need for defaults in the internal types.
     clippy::new_without_default,
-    // Needless updates are more scaleable, easier to play with features.
+    // Needless updates are more scalable, easier to play with features.
     clippy::needless_update,
     // Need many arguments for some core functions to be able to re-use code in many situations.
     clippy::too_many_arguments,
@@ -105,6 +77,7 @@ mod track;
 pub mod validation;
 
 pub use hal::{api, MAX_BIND_GROUPS, MAX_COLOR_ATTACHMENTS, MAX_VERTEX_BUFFERS};
+pub use naga;
 
 use std::{borrow::Cow, os::raw::c_char};
 
@@ -288,7 +261,7 @@ define_backend_caller! { gfx_if_empty, gfx_if_empty_hidden, "empty" if all(
 /// where the `device_create_buffer` method is defined like this:
 ///
 /// ```ignore
-/// impl<...> Global<...> {
+/// impl Global {
 ///    pub fn device_create_buffer<A: HalApi>(&self, ...) -> ...
 ///    { ... }
 /// }
@@ -307,13 +280,23 @@ define_backend_caller! { gfx_if_empty, gfx_if_empty_hidden, "empty" if all(
 /// [`Id`]: id::Id
 #[macro_export]
 macro_rules! gfx_select {
-    ($id:expr => $global:ident.$method:ident( $($param:expr),* )) => {
+    // Simple two-component expression, like `self.0.method(..)`.
+    ($id:expr => $c0:ident.$c1:tt.$method:ident $params:tt) => {
+        $crate::gfx_select!($id => {$c0.$c1}, $method $params)
+    };
+
+    // Simple identifier-only expression, like `global.method(..)`.
+    ($id:expr => $c0:ident.$method:ident $params:tt) => {
+        $crate::gfx_select!($id => {$c0}, $method $params)
+    };
+
+    ($id:expr => {$($c:tt)*}, $method:ident $params:tt) => {
         match $id.backend() {
-            wgt::Backend::Vulkan => $crate::gfx_if_vulkan!($global.$method::<$crate::api::Vulkan>( $($param),* )),
-            wgt::Backend::Metal => $crate::gfx_if_metal!($global.$method::<$crate::api::Metal>( $($param),* )),
-            wgt::Backend::Dx12 => $crate::gfx_if_dx12!($global.$method::<$crate::api::Dx12>( $($param),* )),
-            wgt::Backend::Gl => $crate::gfx_if_gles!($global.$method::<$crate::api::Gles>( $($param),+ )),
-            wgt::Backend::Empty => $crate::gfx_if_empty!($global.$method::<$crate::api::Empty>( $($param),+ )),
+            wgt::Backend::Vulkan => $crate::gfx_if_vulkan!($($c)*.$method::<$crate::api::Vulkan> $params),
+            wgt::Backend::Metal => $crate::gfx_if_metal!($($c)*.$method::<$crate::api::Metal> $params),
+            wgt::Backend::Dx12 => $crate::gfx_if_dx12!($($c)*.$method::<$crate::api::Dx12> $params),
+            wgt::Backend::Gl => $crate::gfx_if_gles!($($c)*.$method::<$crate::api::Gles> $params),
+            wgt::Backend::Empty => $crate::gfx_if_empty!($($c)*.$method::<$crate::api::Empty> $params),
             other => panic!("Unexpected backend {:?}", other),
         }
     };

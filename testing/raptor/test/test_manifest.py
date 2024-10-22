@@ -168,7 +168,7 @@ def test_get_raptor_test_list_firefox(create_args):
     test_list = get_raptor_test_list(args, mozinfo.os)
     assert len(test_list) == 4
 
-    subtests = ["google", "amazon", "facebook", "youtube"]
+    subtests = ["test-page-1", "test-page-2", "test-page-3", "test-page-4"]
 
     for next_subtest in test_list:
         assert next_subtest["name"] in subtests
@@ -197,7 +197,6 @@ def test_get_raptor_test_list_gecko_profiling_enabled(create_args):
     assert len(test_list) == 1
     assert test_list[0]["name"] == "amazon"
     assert test_list[0]["gecko_profile"] is True
-    assert test_list[0].get("gecko_profile_entries") == "14000000"
     assert test_list[0].get("gecko_profile_interval") == "1"
     assert test_list[0].get("gecko_profile_threads") is None
     assert test_list[0].get("gecko_profile_features") is None

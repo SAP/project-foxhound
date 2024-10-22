@@ -17,14 +17,14 @@ add_task(
       prefs: [["browser.translations.select.enable", true]],
     });
 
-    await assertTranslationsButton(
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true, circleArrows: false, locale: false, icon: true },
       "The button is available."
     );
 
-    await assertPageIsUntranslated(runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: true,
@@ -35,15 +35,21 @@ add_task(
       "The translate-selection context menu item should be available while full-page translations is inactive."
     );
 
-    await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
+    await FullPageTranslationsTestUtils.openPanel({
+      onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
+    });
 
-    await clickTranslateButton({
+    await FullPageTranslationsTestUtils.clickTranslateButton({
       downloadHandler: resolveDownloads,
     });
 
-    await assertPageIsTranslated("es", "en", runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsTranslated(
+      "es",
+      "en",
+      runInPage
+    );
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: true,
@@ -53,13 +59,15 @@ add_task(
       "The translate-selection context menu item should be unavailable while full-page translations is active."
     );
 
-    await openTranslationsPanel({ onOpenPanel: assertPanelRevisitView });
+    await FullPageTranslationsTestUtils.openPanel({
+      onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewRevisit,
+    });
 
-    await clickRestoreButton();
+    await FullPageTranslationsTestUtils.clickRestoreButton();
 
-    await assertPageIsUntranslated(runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: true,
@@ -88,14 +96,14 @@ add_task(
       prefs: [["browser.translations.select.enable", true]],
     });
 
-    await assertTranslationsButton(
+    await FullPageTranslationsTestUtils.assertTranslationsButton(
       { button: true, circleArrows: false, locale: false, icon: true },
       "The button is available."
     );
 
-    await assertPageIsUntranslated(runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: false,
@@ -106,15 +114,21 @@ add_task(
       "The translate-selection context menu item should be available while full-page translations is inactive."
     );
 
-    await openTranslationsPanel({ onOpenPanel: assertPanelDefaultView });
+    await FullPageTranslationsTestUtils.openPanel({
+      onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
+    });
 
-    await clickTranslateButton({
+    await FullPageTranslationsTestUtils.clickTranslateButton({
       downloadHandler: resolveDownloads,
     });
 
-    await assertPageIsTranslated("es", "en", runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsTranslated(
+      "es",
+      "en",
+      runInPage
+    );
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: false,
@@ -124,13 +138,15 @@ add_task(
       "The translate-selection context menu item should be unavailable while full-page translations is active."
     );
 
-    await openTranslationsPanel({ onOpenPanel: assertPanelRevisitView });
+    await FullPageTranslationsTestUtils.openPanel({
+      onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewRevisit,
+    });
 
-    await clickRestoreButton();
+    await FullPageTranslationsTestUtils.clickRestoreButton();
 
-    await assertPageIsUntranslated(runInPage);
+    await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
-    await assertContextMenuTranslateSelectionItem(
+    await SelectTranslationsTestUtils.assertContextMenuTranslateSelectionItem(
       runInPage,
       {
         selectSpanishParagraph: false,

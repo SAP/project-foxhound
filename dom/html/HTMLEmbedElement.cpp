@@ -32,14 +32,10 @@ HTMLEmbedElement::HTMLEmbedElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
-  RegisterActivityObserver();
   SetIsNetworkCreated(aFromParser == FROM_PARSER_NETWORK);
 }
 
-HTMLEmbedElement::~HTMLEmbedElement() {
-  UnregisterActivityObserver();
-  nsImageLoadingContent::Destroy();
-}
+HTMLEmbedElement::~HTMLEmbedElement() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLEmbedElement)
 
@@ -56,19 +52,12 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(
     HTMLEmbedElement, nsGenericHTMLElement, nsIRequestObserver,
     nsIStreamListener, nsFrameLoaderOwner, nsIObjectLoadingContent,
-    imgINotificationObserver, nsIImageLoadingContent, nsIChannelEventSink)
+    nsIChannelEventSink)
 
 NS_IMPL_ELEMENT_CLONE(HTMLEmbedElement)
 
-void HTMLEmbedElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
-  nsImageLoadingContent::AsyncEventRunning(aEvent);
-}
-
 nsresult HTMLEmbedElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = nsObjectLoadingContent::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (IsInComposedDoc()) {
@@ -80,9 +69,9 @@ nsresult HTMLEmbedElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-void HTMLEmbedElement::UnbindFromTree(bool aNullParent) {
-  nsObjectLoadingContent::UnbindFromTree(aNullParent);
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+void HTMLEmbedElement::UnbindFromTree(UnbindContext& aContext) {
+  nsObjectLoadingContent::UnbindFromTree();
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 }
 
 nsresult HTMLEmbedElement::CheckTaintSinkSetAttr(int32_t aNamespaceID, nsAtom* aName,
@@ -154,21 +143,11 @@ int32_t HTMLEmbedElement::TabIndexDefault() {
   // https://html.spec.whatwg.org/#the-tabindex-attribute
   // Otherwise, the default tab-index of <embed> is expected as -1 in a WPT:
   // https://searchfox.org/mozilla-central/rev/7d98e651953f3135d91e98fa6d33efa131aec7ea/testing/web-platform/tests/html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/tabindex-getter.html#63
-  return Type() == eType_Document ? 0 : -1;
+  return Type() == ObjectType::Document ? 0 : -1;
 }
 
 bool HTMLEmbedElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                        int32_t* aTabIndex) {
-  // Plugins that show the empty fallback should not accept focus.
-  if (Type() == eType_Fallback) {
-    if (aTabIndex) {
-      *aTabIndex = -1;
-    }
-
-    *aIsFocusable = false;
-    return false;
-  }
-
   // Has non-plugin content: let the plugin decide what to do in terms of
   // internal focus from mouse clicks
   if (aTabIndex) {
@@ -247,8 +226,7 @@ void HTMLEmbedElement::StartObjectLoad(bool aNotify, bool aForceLoad) {
 }
 
 uint32_t HTMLEmbedElement::GetCapabilities() const {
-  return eSupportPlugins | eAllowPluginSkipChannel | eSupportImages |
-         eSupportDocuments;
+  return eAllowPluginSkipChannel | eSupportImages | eSupportDocuments;
 }
 
 void HTMLEmbedElement::DestroyContent() {

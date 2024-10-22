@@ -239,7 +239,6 @@ SdpDirectionAttribute::Direction ToSdpDirection(
     case dom::RTCRtpTransceiverDirection::Inactive:
     case dom::RTCRtpTransceiverDirection::Stopped:
       return SdpDirectionAttribute::Direction::kInactive;
-    case dom::RTCRtpTransceiverDirection::EndGuard_:;
   }
   MOZ_CRASH("Invalid transceiver direction!");
 }
@@ -279,12 +278,13 @@ void RTCRtpTransceiver::Init(const RTCRtpTransceiverInit& aInit,
   mDirection = aInit.mDirection;
 }
 
-void RTCRtpTransceiver::SetDtlsTransport(dom::RTCDtlsTransport* aDtlsTransport,
-                                         bool aStable) {
+void RTCRtpTransceiver::SetDtlsTransport(
+    dom::RTCDtlsTransport* aDtlsTransport) {
   mDtlsTransport = aDtlsTransport;
-  if (aStable) {
-    mLastStableDtlsTransport = mDtlsTransport;
-  }
+}
+
+void RTCRtpTransceiver::SaveStateForRollback() {
+  mLastStableDtlsTransport = mDtlsTransport;
 }
 
 void RTCRtpTransceiver::RollbackToStableDtlsTransport() {
@@ -366,12 +366,17 @@ void RTCRtpTransceiver::InitConduitControl() {
 }
 
 void RTCRtpTransceiver::Close() {
-  // Called via PCImpl::Close -> PCImpl::CloseInt -> PCImpl::ShutdownMedia ->
-  // PCMedia::SelfDestruct.  Satisfies step 7 of
+  // Called via PCImpl::Close
+  // Satisfies steps 7 and 9 of
   // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-close
+  // No events are fired for this.
   mShutdown = true;
   if (mDtlsTransport) {
     mDtlsTransport->UpdateStateNoEvent(TransportLayer::TS_CLOSED);
+    // Might not be set if we're cycle-collecting
+    if (mDtlsTransport->IceTransport()) {
+      mDtlsTransport->IceTransport()->SetState(RTCIceTransportState::Closed);
+    }
   }
   StopImpl();
 }
@@ -401,9 +406,9 @@ void RTCRtpTransceiver::Unlink() {
 // TODO: Only called from one place in PeerConnectionImpl, synchronously, when
 // the JSEP engine has successfully completed an offer/answer exchange. This is
 // a bit squirrely, since identity validation happens asynchronously in
-// PeerConnection.jsm. This probably needs to happen once all the "in parallel"
-// steps have succeeded, but before we queue the task for JS observable state
-// updates.
+// PeerConnection.sys.mjs. This probably needs to happen once all the "in
+// parallel" steps have succeeded, but before we queue the task for JS
+// observable state updates.
 nsresult RTCRtpTransceiver::UpdateTransport() {
   if (!mHasTransport) {
     return NS_OK;
@@ -439,9 +444,9 @@ void RTCRtpTransceiver::ResetSync() { mSyncGroup = std::string(); }
 // TODO: Only called from one place in PeerConnectionImpl, synchronously, when
 // the JSEP engine has successfully completed an offer/answer exchange. This is
 // a bit squirrely, since identity validation happens asynchronously in
-// PeerConnection.jsm. This probably needs to happen once all the "in parallel"
-// steps have succeeded, but before we queue the task for JS observable state
-// updates.
+// PeerConnection.sys.mjs. This probably needs to happen once all the "in
+// parallel" steps have succeeded, but before we queue the task for JS
+// observable state updates.
 nsresult RTCRtpTransceiver::SyncWithMatchingVideoConduits(
     nsTArray<RefPtr<RTCRtpTransceiver>>& transceivers) {
   if (mStopped) {

@@ -40,7 +40,7 @@ def before_iterations(kw):
         # tests and exclude all the others
         specified_tests = kw["proxy_perftest_page"]
         if specified_tests is not None:
-            if test.get("name") in specified_tests:
+            if test.get("name") == specified_tests:
                 if test.get("login"):
                     print(f"WARNING: You selected a login test: {test.get('name')}")
                 return True
@@ -143,6 +143,12 @@ def before_runs(env):
         prefs = test_site.get("preferences", {})
         for pref, val in prefs.items():
             add_option(env, "firefox.preference", f"{pref}:{val}")
+
+        # Add prefs that will attempt to remove cookie banners
+        add_option(
+            env, "firefox.preference", "cookiebanners.bannerClicking.enabled:true"
+        )
+        add_option(env, "firefox.preference", "cookiebanners.service.mode:2")
 
         second_url = test_site.get("secondary_url", None)
         if second_url:

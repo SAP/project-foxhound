@@ -136,9 +136,27 @@ GPUProcessManager::Observer::Observe(nsISupports* aSubject, const char* aTopic,
     }
   } else if (!strcmp(aTopic, "application-background")) {
     mManager->mAppInForeground = false;
+  } else if (!strcmp(aTopic, "screen-information-changed")) {
+    mManager->ScreenInformationChanged();
   }
   return NS_OK;
 }
+
+GPUProcessManager::BatteryObserver::BatteryObserver(GPUProcessManager* aManager)
+    : mManager(aManager) {
+  hal::RegisterBatteryObserver(this);
+}
+
+void GPUProcessManager::BatteryObserver::Notify(
+    const hal::BatteryInformation& aBatteryInfo) {
+  mManager->NotifyBatteryInfo(aBatteryInfo);
+}
+
+void GPUProcessManager::BatteryObserver::ShutDown() {
+  hal::UnregisterBatteryObserver(this);
+}
+
+GPUProcessManager::BatteryObserver::~BatteryObserver() {}
 
 void GPUProcessManager::OnXPCOMShutdown() {
   if (mObserver) {
@@ -148,6 +166,7 @@ void GPUProcessManager::OnXPCOMShutdown() {
     if (obsServ) {
       obsServ->RemoveObserver(mObserver, "application-foreground");
       obsServ->RemoveObserver(mObserver, "application-background");
+      obsServ->RemoveObserver(mObserver, "screen-information-changed");
     }
     mObserver = nullptr;
   }
@@ -169,6 +188,21 @@ void GPUProcessManager::OnPreferenceChange(const char16_t* aData) {
     mGPUChild->SendPreferenceUpdate(pref);
   } else if (IsGPUProcessLaunching()) {
     mQueuedPrefs.AppendElement(pref);
+  }
+}
+
+void GPUProcessManager::ScreenInformationChanged() {
+#if defined(XP_WIN)
+  if (!!mGPUChild) {
+    mGPUChild->SendScreenInformationChanged();
+  }
+#endif
+}
+
+void GPUProcessManager::NotifyBatteryInfo(
+    const hal::BatteryInformation& aBatteryInfo) {
+  if (mGPUChild) {
+    mGPUChild->SendNotifyBatteryInfo(aBatteryInfo);
   }
 }
 
@@ -207,16 +241,21 @@ bool GPUProcessManager::LaunchGPUProcess() {
     if (obsServ) {
       obsServ->AddObserver(mObserver, "application-foreground", false);
       obsServ->AddObserver(mObserver, "application-background", false);
+      obsServ->AddObserver(mObserver, "screen-information-changed", false);
     }
   }
 
   // Start the Vsync I/O thread so can use it as soon as the process launches.
   EnsureVsyncIOThread();
 
-  // If the process didn't live long enough, reset the stable flag so that we
-  // don't end up in a restart loop.
+  // If the previous process didn't live long enough, increment our unstable
+  // attempts counter so that we don't end up in a restart loop. If the process
+  // did live long enough, reset the counter so that we don't disable the
+  // process too eagerly.
   auto newTime = TimeStamp::Now();
-  if (!IsProcessStable(newTime)) {
+  if (IsProcessStable(newTime)) {
+    mUnstableProcessAttempts = 0;
+  } else {
     mUnstableProcessAttempts++;
     mozilla::glean::gpu_process::unstable_launch_attempts.Set(
         mUnstableProcessAttempts);
@@ -562,6 +601,9 @@ void GPUProcessManager::OnProcessLaunchComplete(GPUProcessHost* aHost) {
                                           std::move(vsyncChild));
   mGPUChild->SendInitVsyncBridge(std::move(vsyncParent));
 
+  MOZ_ASSERT(!mBatteryObserver);
+  mBatteryObserver = new BatteryObserver(this);
+
   // Flush any pref updates that happened during launch and weren't
   // included in the blobs set up in LaunchGPUProcess.
   for (const mozilla::dom::Pref& pref : mQueuedPrefs) {
@@ -569,12 +611,11 @@ void GPUProcessManager::OnProcessLaunchComplete(GPUProcessHost* aHost) {
   }
   mQueuedPrefs.Clear();
 
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::GPUProcessStatus, "Running"_ns);
+  CrashReporter::RecordAnnotationCString(
+      CrashReporter::Annotation::GPUProcessStatus, "Running");
 
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::GPUProcessLaunchCount,
-      static_cast<int>(mTotalProcessAttempts));
+  CrashReporter::RecordAnnotationU32(
+      CrashReporter::Annotation::GPUProcessLaunchCount, mTotalProcessAttempts);
 
   ReinitializeRendering();
 }
@@ -750,8 +791,9 @@ void GPUProcessManager::NotifyWebRenderError(wr::WebRenderError aError) {
     Telemetry::Accumulate(Telemetry::DEVICE_RESET_REASON, uint32_t(aReason));
   }
 
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::DeviceResetReason, int(aReason));
+  CrashReporter::RecordAnnotationU32(
+      CrashReporter::Annotation::DeviceResetReason,
+      static_cast<uint32_t>(aReason));
 }
 
 bool GPUProcessManager::OnDeviceReset(bool aTrackThreshold) {
@@ -1058,9 +1100,13 @@ void GPUProcessManager::DestroyProcess(bool aUnexpectedShutdown) {
     mVsyncBridge->Close();
     mVsyncBridge = nullptr;
   }
+  if (mBatteryObserver) {
+    mBatteryObserver->ShutDown();
+    mBatteryObserver = nullptr;
+  }
 
-  CrashReporter::AnnotateCrashReport(
-      CrashReporter::Annotation::GPUProcessStatus, "Destroyed"_ns);
+  CrashReporter::RecordAnnotationCString(
+      CrashReporter::Annotation::GPUProcessStatus, "Destroyed");
 }
 
 already_AddRefed<CompositorSession> GPUProcessManager::CreateTopLevelCompositor(

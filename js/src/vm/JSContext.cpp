@@ -42,6 +42,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
 #include "js/MemoryCallbacks.h"
+#include "js/Prefs.h"
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty
 #include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimit, JS::NativeStackLimitMin
@@ -54,6 +55,7 @@
 #include "vm/BytecodeUtil.h"  // JSDVG_IGNORE_STACK
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
+#include "vm/FrameIter.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"  // js::PlainObject
@@ -608,7 +610,7 @@ void js::ReportIsNullOrUndefinedForPropertyAccess(JSContext* cx, HandleValue v,
                                                   int vIndex, HandleId key) {
   MOZ_ASSERT(v.isNullOrUndefined());
 
-  if (!cx->realm()->creationOptions().getPropertyErrorMessageFixEnabled()) {
+  if (!JS::Prefs::property_error_message_fix()) {
     ReportIsNullOrUndefinedForPropertyAccess(cx, v, vIndex);
     return;
   }
@@ -996,7 +998,6 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       suppressProfilerSampling(false),
       tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
       debuggerMutations(this, 0),
-      ionPcScriptCache(this, nullptr),
       status(this, JS::ExceptionStatus::None),
       unwrappedException_(this),
       unwrappedExceptionStack_(this),
@@ -1155,6 +1156,35 @@ bool JSContext::getPendingException(MutableHandleValue rval) {
   return true;
 }
 
+bool JSContext::getPendingExceptionStack(MutableHandleValue rval) {
+  MOZ_ASSERT(isExceptionPending());
+
+  Rooted<SavedFrame*> exceptionStack(this, unwrappedExceptionStack());
+  if (!exceptionStack) {
+    rval.setNull();
+    return true;
+  }
+  if (zone()->isAtomsZone()) {
+    rval.setObject(*exceptionStack);
+    return true;
+  }
+
+  RootedValue stack(this, ObjectValue(*exceptionStack));
+  RootedValue exception(this, unwrappedException());
+  JS::ExceptionStatus prevStatus = status;
+  clearPendingException();
+  if (!compartment()->wrap(this, &exception) ||
+      !compartment()->wrap(this, &stack)) {
+    return false;
+  }
+  this->check(stack);
+  setPendingException(exception, exceptionStack);
+  status = prevStatus;
+
+  rval.set(stack);
+  return true;
+}
+
 SavedFrame* JSContext::getPendingExceptionStack() {
   return unwrappedExceptionStack();
 }
@@ -1232,6 +1262,34 @@ void JSContext::resetJitStackLimit() {
 }
 
 void JSContext::initJitStackLimit() { resetJitStackLimit(); }
+
+JSScript* JSContext::currentScript(jsbytecode** ppc,
+                                   AllowCrossRealm allowCrossRealm) {
+  if (ppc) {
+    *ppc = nullptr;
+  }
+
+  // Fast path: there are no JS frames on the stack if there's no activation.
+  if (!activation()) {
+    return nullptr;
+  }
+
+  FrameIter iter(this);
+  if (iter.done() || !iter.hasScript()) {
+    return nullptr;
+  }
+
+  JSScript* script = iter.script();
+  if (allowCrossRealm == AllowCrossRealm::DontAllow &&
+      script->realm() != realm()) {
+    return nullptr;
+  }
+
+  if (ppc) {
+    *ppc = iter.pc();
+  }
+  return script;
+}
 
 #ifdef JS_CRASH_DIAGNOSTICS
 void ContextChecks::check(AbstractFramePtr frame, int argIndex) {

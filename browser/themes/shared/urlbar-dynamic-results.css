@@ -242,10 +242,14 @@
   }
 }
 
-
 /**
  * Weather
  */
+
+.urlbarView-row[dynamicType=weather] > .urlbarView-row-inner {
+  align-items: center;
+}
+
 .urlbarView-dynamic-weather-currentConditions {
   color: var(--urlbar-box-text-color);
   background-color: var(--urlbar-box-focus-bgcolor);

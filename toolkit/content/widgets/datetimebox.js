@@ -5,7 +5,7 @@
 "use strict";
 
 // This is a UA widget. It runs in per-origin UA widget scope,
-// to be loaded by UAWidgetsChild.jsm.
+// to be loaded by UAWidgetsChild.sys.mjs.
 
 /*
  * This is the class of entry. It will construct the actual implementation
@@ -157,8 +157,8 @@ this.DateTimeBoxWidget = class {
     this.mMinDay = 1;
     this.mMaxDay = 31;
     this.mMinYear = 1;
-    // Maximum year limited by ECMAScript date object range, year <= 275760.
-    this.mMaxYear = 275760;
+    // Maximum year limited by ISO 8601.
+    this.mMaxYear = 9999;
     this.mMonthDayLength = 2;
     this.mYearLength = 4;
     this.mMonthPageUpDownInterval = 3;

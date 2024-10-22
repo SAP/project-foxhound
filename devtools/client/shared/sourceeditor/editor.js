@@ -89,19 +89,6 @@ const CM_MAPPING = [
 
 const editors = new WeakMap();
 
-Editor.modes = {
-  cljs: { name: "text/x-clojure" },
-  css: { name: "css" },
-  fs: { name: "x-shader/x-fragment" },
-  haxe: { name: "haxe" },
-  http: { name: "http" },
-  html: { name: "htmlmixed" },
-  js: { name: "javascript" },
-  text: { name: "text" },
-  vs: { name: "x-shader/x-vertex" },
-  wasm: { name: "wasm" },
-};
-
 /**
  * A very thin wrapper around CodeMirror. Provides a number
  * of helper methods to make our use of CodeMirror easier and
@@ -123,168 +110,221 @@ Editor.modes = {
  *
  * CodeMirror docs: http://codemirror.net/doc/manual.html
  */
-function Editor(config) {
-  const tabSize = Services.prefs.getIntPref(TAB_SIZE);
-  const useTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
-  const useAutoClose = Services.prefs.getBoolPref(AUTO_CLOSE);
+class Editor extends EventEmitter {
+  // Static methods on the Editor object itself.
 
-  this.version = null;
-  this.config = {
-    value: "",
-    mode: Editor.modes.text,
-    indentUnit: tabSize,
-    tabSize,
-    contextMenu: null,
-    matchBrackets: true,
-    highlightSelectionMatches: {
-      wordsOnly: true,
-    },
-    extraKeys: {},
-    indentWithTabs: useTabs,
-    inputStyle: "accessibleTextArea",
-    // This is set to the biggest value for setTimeout (See https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout#Maximum_delay_value)
-    // This is because codeMirror queries the underlying textArea for some things that
-    // can't be retrieved with events in some browser (but we're fine in Firefox).
-    pollInterval: Math.pow(2, 31) - 1,
-    styleActiveLine: true,
-    autoCloseBrackets: "()[]{}''\"\"``",
-    autoCloseEnabled: useAutoClose,
-    theme: "mozilla",
-    themeSwitching: true,
-    autocomplete: false,
-    autocompleteOpts: {},
-    // Expect a CssProperties object (see devtools/client/fronts/css-properties.js)
-    cssProperties: null,
-    // Set to true to prevent the search addon to be activated.
-    disableSearchAddon: false,
-    maxHighlightLength: 1000,
-    // Disable codeMirror setTimeout-based cursor blinking (will be replaced by a CSS animation)
-    cursorBlinkRate: 0,
-    // List of non-printable chars that will be displayed in the editor, showing their
-    // unicode version. We only add a few characters to the default list:
-    // - \u202d LEFT-TO-RIGHT OVERRIDE
-    // - \u202e RIGHT-TO-LEFT OVERRIDE
-    // - \u2066 LEFT-TO-RIGHT ISOLATE
-    // - \u2067 RIGHT-TO-LEFT ISOLATE
-    // - \u2069 POP DIRECTIONAL ISOLATE
-    specialChars:
-      // eslint-disable-next-line no-control-regex
-      /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202d\u202e\u2066\u2067\u2069\ufeff\ufff9-\ufffc]/,
-    specialCharPlaceholder: char => {
-      // Use the doc provided to the setup function if we don't have a reference to a codeMirror
-      // editor yet (this can happen when an Editor is being created with existing content)
-      const doc = this._ownerDoc;
-      const el = doc.createElement("span");
-      el.classList.add("cm-non-printable-char");
-      el.append(doc.createTextNode(`\\u${char.codePointAt(0).toString(16)}`));
-      return el;
-    },
+  /**
+   * Returns a string representation of a shortcut 'key' with
+   * a OS specific modifier. Cmd- for Macs, Ctrl- for other
+   * platforms. Useful with extraKeys configuration option.
+   *
+   * CodeMirror defines all keys with modifiers in the following
+   * order: Shift - Ctrl/Cmd - Alt - Key
+   */
+  static accel(key, modifiers = {}) {
+    return (
+      (modifiers.shift ? "Shift-" : "") +
+      (Services.appinfo.OS == "Darwin" ? "Cmd-" : "Ctrl-") +
+      (modifiers.alt ? "Alt-" : "") +
+      key
+    );
+  }
+
+  /**
+   * Returns a string representation of a shortcut for a
+   * specified command 'cmd'. Append Cmd- for macs, Ctrl- for other
+   * platforms unless noaccel is specified in the options. Useful when overwriting
+   * or disabling default shortcuts.
+   */
+  static keyFor(cmd, opts = { noaccel: false }) {
+    const key = L10N.getStr(cmd + ".commandkey");
+    return opts.noaccel ? key : Editor.accel(key);
+  }
+
+  static modes = {
+    cljs: { name: "text/x-clojure" },
+    css: { name: "css" },
+    fs: { name: "x-shader/x-fragment" },
+    haxe: { name: "haxe" },
+    http: { name: "http" },
+    html: { name: "htmlmixed" },
+    js: { name: "javascript" },
+    text: { name: "text" },
+    vs: { name: "x-shader/x-vertex" },
+    wasm: { name: "wasm" },
   };
 
-  // Additional shortcuts.
-  this.config.extraKeys[Editor.keyFor("jumpToLine")] = () => this.jumpToLine();
-  this.config.extraKeys[Editor.keyFor("moveLineUp", { noaccel: true })] = () =>
-    this.moveLineUp();
-  this.config.extraKeys[Editor.keyFor("moveLineDown", { noaccel: true })] =
-    () => this.moveLineDown();
-  this.config.extraKeys[Editor.keyFor("toggleComment")] = "toggleComment";
+  container = null;
+  version = null;
+  config = null;
+  Doc = null;
 
-  // Disable ctrl-[ and ctrl-] because toolbox uses those shortcuts.
-  this.config.extraKeys[Editor.keyFor("indentLess")] = false;
-  this.config.extraKeys[Editor.keyFor("indentMore")] = false;
+  #CodeMirror6;
+  #compartments;
+  #lastDirty;
+  #loadedKeyMaps;
+  #ownerDoc;
+  #prefObserver;
+  #win;
 
-  // Disable Alt-B and Alt-F to navigate groups (respectively previous and next) since:
-  // - it's not standard in input fields
-  // - it also inserts a character which feels weird
-  this.config.extraKeys["Alt-B"] = false;
-  this.config.extraKeys["Alt-F"] = false;
+  constructor(config) {
+    super();
 
-  // Disable Ctrl/Cmd + U as it's used for "View Source". It's okay to disable Ctrl+U as
-  // the underlying command, `undoSelection`, isn't standard in input fields and isn't
-  // widely known.
-  this.config.extraKeys[Editor.accel("U")] = false;
+    const tabSize = Services.prefs.getIntPref(TAB_SIZE);
+    const useTabs = !Services.prefs.getBoolPref(EXPAND_TAB);
+    const useAutoClose = Services.prefs.getBoolPref(AUTO_CLOSE);
 
-  // Disable keys that trigger events with a null-string `which` property.
-  // It looks like some of those (e.g. the Function key), can trigger a poll
-  // which fails to see that there's a selection, which end up replacing the
-  // selected text with an empty string.
-  // TODO: We should investigate the root cause.
-  this.config.extraKeys["'\u0000'"] = false;
+    this.version = null;
+    this.config = {
+      cm6: false,
+      value: "",
+      mode: Editor.modes.text,
+      indentUnit: tabSize,
+      tabSize,
+      contextMenu: null,
+      matchBrackets: true,
+      highlightSelectionMatches: {
+        wordsOnly: true,
+      },
+      extraKeys: {},
+      indentWithTabs: useTabs,
+      inputStyle: "accessibleTextArea",
+      // This is set to the biggest value for setTimeout (See https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout#Maximum_delay_value)
+      // This is because codeMirror queries the underlying textArea for some things that
+      // can't be retrieved with events in some browser (but we're fine in Firefox).
+      pollInterval: Math.pow(2, 31) - 1,
+      styleActiveLine: true,
+      autoCloseBrackets: "()[]{}''\"\"``",
+      autoCloseEnabled: useAutoClose,
+      theme: "mozilla",
+      themeSwitching: true,
+      autocomplete: false,
+      autocompleteOpts: {},
+      // Expect a CssProperties object (see devtools/client/fronts/css-properties.js)
+      cssProperties: null,
+      // Set to true to prevent the search addon to be activated.
+      disableSearchAddon: false,
+      maxHighlightLength: 1000,
+      // Disable codeMirror setTimeout-based cursor blinking (will be replaced by a CSS animation)
+      cursorBlinkRate: 0,
+      // List of non-printable chars that will be displayed in the editor, showing their
+      // unicode version. We only add a few characters to the default list:
+      // - \u202d LEFT-TO-RIGHT OVERRIDE
+      // - \u202e RIGHT-TO-LEFT OVERRIDE
+      // - \u2066 LEFT-TO-RIGHT ISOLATE
+      // - \u2067 RIGHT-TO-LEFT ISOLATE
+      // - \u2069 POP DIRECTIONAL ISOLATE
+      specialChars:
+        // eslint-disable-next-line no-control-regex
+        /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u200b-\u200f\u2028\u2029\u202d\u202e\u2066\u2067\u2069\ufeff\ufff9-\ufffc]/,
+      specialCharPlaceholder: char => {
+        // Use the doc provided to the setup function if we don't have a reference to a codeMirror
+        // editor yet (this can happen when an Editor is being created with existing content)
+        const doc = this.#ownerDoc;
+        const el = doc.createElement("span");
+        el.classList.add("cm-non-printable-char");
+        el.append(doc.createTextNode(`\\u${char.codePointAt(0).toString(16)}`));
+        return el;
+      },
+    };
 
-  // Overwrite default config with user-provided, if needed.
-  Object.keys(config).forEach(k => {
-    if (k != "extraKeys") {
-      this.config[k] = config[k];
-      return;
-    }
+    // Additional shortcuts.
+    this.config.extraKeys[Editor.keyFor("jumpToLine")] = () =>
+      this.jumpToLine();
+    this.config.extraKeys[Editor.keyFor("moveLineUp", { noaccel: true })] =
+      () => this.moveLineUp();
+    this.config.extraKeys[Editor.keyFor("moveLineDown", { noaccel: true })] =
+      () => this.moveLineDown();
+    this.config.extraKeys[Editor.keyFor("toggleComment")] = "toggleComment";
 
-    if (!config.extraKeys) {
-      return;
-    }
+    // Disable ctrl-[ and ctrl-] because toolbox uses those shortcuts.
+    this.config.extraKeys[Editor.keyFor("indentLess")] = false;
+    this.config.extraKeys[Editor.keyFor("indentMore")] = false;
 
-    Object.keys(config.extraKeys).forEach(key => {
-      this.config.extraKeys[key] = config.extraKeys[key];
-    });
-  });
+    // Disable Alt-B and Alt-F to navigate groups (respectively previous and next) since:
+    // - it's not standard in input fields
+    // - it also inserts a character which feels weird
+    this.config.extraKeys["Alt-B"] = false;
+    this.config.extraKeys["Alt-F"] = false;
 
-  if (!this.config.gutters) {
-    this.config.gutters = [];
-  }
-  if (
-    this.config.lineNumbers &&
-    !this.config.gutters.includes("CodeMirror-linenumbers")
-  ) {
-    this.config.gutters.push("CodeMirror-linenumbers");
-  }
+    // Disable Ctrl/Cmd + U as it's used for "View Source". It's okay to disable Ctrl+U as
+    // the underlying command, `undoSelection`, isn't standard in input fields and isn't
+    // widely known.
+    this.config.extraKeys[Editor.accel("U")] = false;
 
-  // Remember the initial value of autoCloseBrackets.
-  this.config.autoCloseBracketsSaved = this.config.autoCloseBrackets;
+    // Disable keys that trigger events with a null-string `which` property.
+    // It looks like some of those (e.g. the Function key), can trigger a poll
+    // which fails to see that there's a selection, which end up replacing the
+    // selected text with an empty string.
+    // TODO: We should investigate the root cause.
+    this.config.extraKeys["'\u0000'"] = false;
 
-  // Overwrite default tab behavior. If something is selected,
-  // indent those lines. If nothing is selected and we're
-  // indenting with tabs, insert one tab. Otherwise insert N
-  // whitespaces where N == indentUnit option.
-  this.config.extraKeys.Tab = cm => {
-    if (config.extraKeys?.Tab) {
-      // If a consumer registers its own extraKeys.Tab, we execute it before doing
-      // anything else. If it returns false, that mean that all the key handling work is
-      // done, so we can do an early return.
-      const res = config.extraKeys.Tab(cm);
-      if (res === false) {
+    // Overwrite default config with user-provided, if needed.
+    Object.keys(config).forEach(k => {
+      if (k != "extraKeys") {
+        this.config[k] = config[k];
         return;
       }
+
+      if (!config.extraKeys) {
+        return;
+      }
+
+      Object.keys(config.extraKeys).forEach(key => {
+        this.config.extraKeys[key] = config.extraKeys[key];
+      });
+    });
+
+    if (!this.config.gutters) {
+      this.config.gutters = [];
+    }
+    if (
+      this.config.lineNumbers &&
+      !this.config.gutters.includes("CodeMirror-linenumbers")
+    ) {
+      this.config.gutters.push("CodeMirror-linenumbers");
     }
 
-    if (cm.somethingSelected()) {
-      cm.indentSelection("add");
-      return;
-    }
+    // Remember the initial value of autoCloseBrackets.
+    this.config.autoCloseBracketsSaved = this.config.autoCloseBrackets;
 
-    if (this.config.indentWithTabs) {
-      cm.replaceSelection("\t", "end", "+input");
-      return;
-    }
+    // Overwrite default tab behavior. If something is selected,
+    // indent those lines. If nothing is selected and we're
+    // indenting with tabs, insert one tab. Otherwise insert N
+    // whitespaces where N == indentUnit option.
+    this.config.extraKeys.Tab = cm => {
+      if (config.extraKeys?.Tab) {
+        // If a consumer registers its own extraKeys.Tab, we execute it before doing
+        // anything else. If it returns false, that mean that all the key handling work is
+        // done, so we can do an early return.
+        const res = config.extraKeys.Tab(cm);
+        if (res === false) {
+          return;
+        }
+      }
 
-    let num = cm.getOption("indentUnit");
-    if (cm.getCursor().ch !== 0) {
-      num -= cm.getCursor().ch % num;
-    }
-    cm.replaceSelection(" ".repeat(num), "end", "+input");
-  };
+      if (cm.somethingSelected()) {
+        cm.indentSelection("add");
+        return;
+      }
 
-  if (this.config.cssProperties) {
-    // Ensure that autocompletion has cssProperties if it's passed in via the options.
-    this.config.autocompleteOpts.cssProperties = this.config.cssProperties;
+      if (this.config.indentWithTabs) {
+        cm.replaceSelection("\t", "end", "+input");
+        return;
+      }
+
+      let num = cm.getOption("indentUnit");
+      if (cm.getCursor().ch !== 0) {
+        num -= cm.getCursor().ch % num;
+      }
+      cm.replaceSelection(" ".repeat(num), "end", "+input");
+    };
+
+    if (this.config.cssProperties) {
+      // Ensure that autocompletion has cssProperties if it's passed in via the options.
+      this.config.autocompleteOpts.cssProperties = this.config.cssProperties;
+    }
   }
-
-  EventEmitter.decorate(this);
-}
-
-Editor.prototype = {
-  container: null,
-  version: null,
-  config: null,
-  Doc: null,
 
   /**
    * Exposes the CodeMirror class. We want to be able to
@@ -293,7 +333,7 @@ Editor.prototype = {
   get CodeMirror() {
     const codeMirror = editors.get(this);
     return codeMirror?.constructor;
-  },
+  }
 
   /**
    * Exposes the CodeMirror instance. We want to get away from trying to
@@ -308,14 +348,14 @@ Editor.prototype = {
       );
     }
     return editors.get(this);
-  },
+  }
 
   /**
    * Return whether there is a CodeMirror instance associated with this Editor.
    */
   get hasCodeMirror() {
     return editors.has(this);
-  },
+  }
 
   /**
    * Appends the current Editor instance to the element specified by
@@ -344,7 +384,14 @@ Editor.prototype = {
         env.style.visibility = "";
         const win = env.contentWindow.wrappedJSObject;
         this.container = env;
-        this._setup(win.document.body, el.ownerDocument);
+
+        const editorEl = win.document.body;
+        const editorDoc = el.ownerDocument;
+        if (this.config.cm6) {
+          this.#setupCm6(editorEl, editorDoc);
+        } else {
+          this.#setup(editorEl, editorDoc);
+        }
         resolve();
       };
 
@@ -355,22 +402,27 @@ Editor.prototype = {
 
       this.once("destroy", () => el.removeChild(env));
     });
-  },
+  }
 
   appendToLocalElement(el) {
-    this._setup(el);
-  },
+    if (this.config.cm6) {
+      this.#setupCm6(el);
+    } else {
+      this.#setup(el);
+    }
+  }
 
   /**
    * Do the actual appending and configuring of the CodeMirror instance. This is
    * used by both append functions above, and does all the hard work to
    * configure CodeMirror with all the right options/modes/etc.
    */
-  _setup(el, doc) {
-    this._ownerDoc = doc || el.ownerDocument;
+  #setup(el, doc) {
+    this.#ownerDoc = doc || el.ownerDocument;
     const win = el.ownerDocument.defaultView;
 
     Services.scriptloader.loadSubScript(CM_BUNDLE, win);
+    this.#win = win;
 
     if (this.config.cssProperties) {
       // Replace the propertyKeywords, colorKeywords and valueKeywords
@@ -435,7 +487,7 @@ Editor.prototype = {
 
       let popup = this.config.contextMenu;
       if (typeof popup == "string") {
-        popup = this._ownerDoc.getElementById(this.config.contextMenu);
+        popup = this.#ownerDoc.getElementById(this.config.contextMenu);
       }
 
       this.emit("popupOpen", ev, popup);
@@ -457,8 +509,8 @@ Editor.prototype = {
 
     cm.on("change", () => {
       this.emit("change");
-      if (!this._lastDirty) {
-        this._lastDirty = true;
+      if (!this.#lastDirty) {
+        this.#lastDirty = true;
         this.emit("dirty-change");
       }
     });
@@ -473,7 +525,7 @@ Editor.prototype = {
     });
 
     if (!this.config.disableSearchAddon) {
-      this._initSearchShortcuts(win);
+      this.#initSearchShortcuts(win);
     } else {
       // Hotfix for Bug 1527898. We should remove those overrides as part of Bug 1527903.
       Object.assign(win.CodeMirror.commands, {
@@ -511,25 +563,107 @@ Editor.prototype = {
     this.reloadPreferences = this.reloadPreferences.bind(this);
     this.setKeyMap = this.setKeyMap.bind(this, win);
 
-    this._prefObserver = new PrefObserver("devtools.editor.");
-    this._prefObserver.on(TAB_SIZE, this.reloadPreferences);
-    this._prefObserver.on(EXPAND_TAB, this.reloadPreferences);
-    this._prefObserver.on(AUTO_CLOSE, this.reloadPreferences);
-    this._prefObserver.on(AUTOCOMPLETE, this.reloadPreferences);
-    this._prefObserver.on(DETECT_INDENT, this.reloadPreferences);
-    this._prefObserver.on(ENABLE_CODE_FOLDING, this.reloadPreferences);
+    this.#prefObserver = new PrefObserver("devtools.editor.");
+    this.#prefObserver.on(TAB_SIZE, this.reloadPreferences);
+    this.#prefObserver.on(EXPAND_TAB, this.reloadPreferences);
+    this.#prefObserver.on(AUTO_CLOSE, this.reloadPreferences);
+    this.#prefObserver.on(AUTOCOMPLETE, this.reloadPreferences);
+    this.#prefObserver.on(DETECT_INDENT, this.reloadPreferences);
+    this.#prefObserver.on(ENABLE_CODE_FOLDING, this.reloadPreferences);
 
     this.reloadPreferences();
 
     // Init a map of the loaded keymap files. Should be of the form Map<String->Boolean>.
-    this._loadedKeyMaps = new Set();
-    this._prefObserver.on(KEYMAP_PREF, this.setKeyMap);
+    this.#loadedKeyMaps = new Set();
+    this.#prefObserver.on(KEYMAP_PREF, this.setKeyMap);
     this.setKeyMap();
 
     win.editor = this;
     const editorReadyEvent = new win.CustomEvent("editorReady");
     win.dispatchEvent(editorReadyEvent);
-  },
+  }
+
+  /**
+   * Do the actual appending and configuring of the CodeMirror 6 instance.
+   * This is used by appendTo and appendToLocalElement, and does all the hard work to
+   * configure CodeMirror 6 with all the right options/modes/etc.
+   * This should be kept in sync with #setup.
+   *
+   * @param {Element} el: Element into which the codeMirror editor should be appended.
+   * @param {Document} document: Optional document, if not set, will default to el.ownerDocument
+   */
+  #setupCm6(el, doc) {
+    this.#ownerDoc = doc || el.ownerDocument;
+    const win = el.ownerDocument.defaultView;
+    this.#win = win;
+
+    this.#CodeMirror6 = this.#win.ChromeUtils.importESModule(
+      "resource://devtools/client/shared/sourceeditor/codemirror6/codemirror6.bundle.mjs",
+      { global: "current" }
+    );
+
+    const {
+      codemirror,
+      codemirrorView: { EditorView, lineNumbers },
+      codemirrorState: { EditorState, Compartment },
+      codemirrorLanguage,
+      codemirrorLangJavascript,
+      lezerHighlight,
+    } = this.#CodeMirror6;
+
+    const tabSizeCompartment = new Compartment();
+    const indentCompartment = new Compartment();
+    const lineWrapCompartment = new Compartment();
+
+    this.#compartments = {
+      tabSizeCompartment,
+      indentCompartment,
+      lineWrapCompartment,
+    };
+
+    const indentStr = (this.config.indentWithTabs ? "\t" : " ").repeat(
+      this.config.indentUnit || 2
+    );
+
+    const extensions = [
+      indentCompartment.of(codemirrorLanguage.indentUnit.of(indentStr)),
+      tabSizeCompartment.of(EditorState.tabSize.of(this.config.tabSize)),
+      lineWrapCompartment.of(
+        this.config.lineWrapping ? EditorView.lineWrapping : []
+      ),
+      EditorState.readOnly.of(this.config.readOnly),
+      codemirrorLanguage.codeFolding({
+        placeholderText: "↔",
+      }),
+      codemirrorLanguage.foldGutter({
+        class: "cm6-dt-foldgutter",
+        markerDOM: open => {
+          const button = this.#ownerDoc.createElement("button");
+          button.classList.add("cm6-dt-foldgutter__toggle-button");
+          button.setAttribute("aria-expanded", open);
+          return button;
+        },
+      }),
+      codemirrorLanguage.syntaxHighlighting(lezerHighlight.classHighlighter),
+      // keep last so other extension take precedence
+      codemirror.minimalSetup,
+    ];
+
+    if (this.config.mode === Editor.modes.js) {
+      extensions.push(codemirrorLangJavascript.javascript());
+    }
+
+    if (this.config.lineNumbers) {
+      extensions.push(lineNumbers());
+    }
+
+    const cm = new EditorView({
+      parent: el,
+      extensions,
+    });
+
+    editors.set(this, cm);
+  }
 
   /**
    * Returns a boolean indicating whether the editor is ready to
@@ -537,7 +671,7 @@ Editor.prototype = {
    */
   isAppended() {
     return editors.has(this);
-  },
+  }
 
   /**
    * Returns the currently active highlighting mode.
@@ -545,7 +679,7 @@ Editor.prototype = {
    */
   getMode() {
     return this.getOption("mode");
-  },
+  }
 
   /**
    * Loads a script into editor's containing window.
@@ -556,7 +690,7 @@ Editor.prototype = {
     }
     const win = this.container.contentWindow.wrappedJSObject;
     Services.scriptloader.loadSubScript(url, win);
-  },
+  }
 
   /**
    * Creates a CodeMirror Document
@@ -567,7 +701,7 @@ Editor.prototype = {
    */
   createDocument(text = "", mode) {
     return new this.Doc(text, mode);
-  },
+  }
 
   /**
    * Replaces the current document with a new source document
@@ -575,7 +709,7 @@ Editor.prototype = {
   replaceDocument(doc) {
     const cm = editors.get(this);
     cm.swapDoc(doc);
-  },
+  }
 
   /**
    * Changes the value of a currently used highlighting mode.
@@ -590,7 +724,7 @@ Editor.prototype = {
       this.setOption("autocomplete", false);
       this.setOption("autocomplete", true);
     }
-  },
+  }
 
   /**
    * The source editor can expose several commands linked from system and context menus.
@@ -601,7 +735,7 @@ Editor.prototype = {
       insertCommandsController,
     } = require("resource://devtools/client/shared/sourceeditor/editor-commands-controller.js");
     insertCommandsController(this);
-  },
+  }
 
   /**
    * Returns text from the text area. If line argument is provided
@@ -611,36 +745,36 @@ Editor.prototype = {
     const cm = editors.get(this);
 
     if (line == null) {
-      return cm.getValue();
+      return this.config.cm6 ? cm.state.doc.toString() : cm.getValue();
     }
 
     const info = this.lineInfo(line);
     return info ? info.text : "";
-  },
+  }
 
   getDoc() {
     const cm = editors.get(this);
     return cm.getDoc();
-  },
+  }
 
   get isWasm() {
     return wasm.isWasm(this.getDoc());
-  },
+  }
 
   wasmOffsetToLine(offset) {
     return wasm.wasmOffsetToLine(this.getDoc(), offset);
-  },
+  }
 
   lineToWasmOffset(number) {
     return wasm.lineToWasmOffset(this.getDoc(), number);
-  },
+  }
 
   toLineIfWasmOffset(maybeOffset) {
     if (typeof maybeOffset !== "number" || !this.isWasm) {
       return maybeOffset;
     }
     return this.wasmOffsetToLine(maybeOffset);
-  },
+  }
 
   lineInfo(lineOrOffset) {
     const line = this.toLineIfWasmOffset(lineOrOffset);
@@ -648,12 +782,28 @@ Editor.prototype = {
       return null;
     }
     const cm = editors.get(this);
+
+    if (this.config.cm6) {
+      return {
+        // cm6 lines are 1-based, while cm5 are 0-based
+        text: cm.state.doc.lineAt(line + 1)?.text,
+        // TODO: Expose those, or see usage for those and do things differently
+        line: null,
+        handle: null,
+        gutterMarkers: null,
+        textClass: null,
+        bgClass: null,
+        wrapClass: null,
+        widgets: null,
+      };
+    }
+
     return cm.lineInfo(line);
-  },
+  }
 
   getLineOrOffset(line) {
     return this.isWasm ? this.lineToWasmOffset(line) : line;
-  },
+  }
 
   /**
    * Replaces whatever is in the text area with the contents of
@@ -683,10 +833,16 @@ Editor.prototype = {
       value = { split: () => lines };
     }
 
-    cm.setValue(value);
+    if (this.config.cm6) {
+      cm.dispatch({
+        changes: { from: 0, to: cm.state.doc.length, insert: value },
+      });
+    } else {
+      cm.setValue(value);
+    }
 
     this.resetIndentUnit();
-  },
+  }
 
   /**
    * Reloads the state of the editor based on all current preferences.
@@ -705,7 +861,7 @@ Editor.prototype = {
 
     this.resetIndentUnit();
     this.setupAutoCompletion();
-  },
+  }
 
   /**
    * Set the current keyMap for CodeMirror, and load the support file if needed.
@@ -721,15 +877,15 @@ Editor.prototype = {
 
     // If alternative keymap is provided, use it.
     if (VALID_KEYMAPS.has(keyMap)) {
-      if (!this._loadedKeyMaps.has(keyMap)) {
+      if (!this.#loadedKeyMaps.has(keyMap)) {
         Services.scriptloader.loadSubScript(VALID_KEYMAPS.get(keyMap), win);
-        this._loadedKeyMaps.add(keyMap);
+        this.#loadedKeyMaps.add(keyMap);
       }
       this.setOption("keyMap", keyMap);
     } else {
       this.setOption("keyMap", "default");
     }
-  },
+  }
 
   /**
    * Sets the editor's indentation based on the current prefs and
@@ -738,18 +894,50 @@ Editor.prototype = {
   resetIndentUnit() {
     const cm = editors.get(this);
 
-    const iterFn = function (start, end, callback) {
-      cm.eachLine(start, end, line => {
-        return callback(line.text);
-      });
+    const iterFn = (start, maxEnd, callback) => {
+      if (!this.config.cm6) {
+        cm.eachLine(start, maxEnd, line => {
+          return callback(line.text);
+        });
+      } else {
+        const iterator = cm.state.doc.iterLines(
+          start + 1,
+          Math.min(cm.state.doc.lines, maxEnd) + 1
+        );
+        let callbackRes;
+        do {
+          iterator.next();
+          callbackRes = callback(iterator.value);
+        } while (iterator.done !== true && !callbackRes);
+      }
     };
 
     const { indentUnit, indentWithTabs } = getIndentationFromIteration(iterFn);
 
-    cm.setOption("tabSize", indentUnit);
-    cm.setOption("indentUnit", indentUnit);
-    cm.setOption("indentWithTabs", indentWithTabs);
-  },
+    if (!this.config.cm6) {
+      cm.setOption("tabSize", indentUnit);
+      cm.setOption("indentUnit", indentUnit);
+      cm.setOption("indentWithTabs", indentWithTabs);
+    } else {
+      const {
+        codemirrorState: { EditorState },
+        codemirrorLanguage,
+      } = this.#CodeMirror6;
+
+      cm.dispatch({
+        effects: this.#compartments.tabSizeCompartment.reconfigure(
+          EditorState.tabSize.of(indentUnit)
+        ),
+      });
+      cm.dispatch({
+        effects: this.#compartments.indentCompartment.reconfigure(
+          codemirrorLanguage.indentUnit.of(
+            (indentWithTabs ? "\t" : " ").repeat(indentUnit)
+          )
+        ),
+      });
+    }
+  }
 
   /**
    * Replaces contents of a text area within the from/to {line, ch}
@@ -772,7 +960,7 @@ Editor.prototype = {
     }
 
     cm.replaceRange(value, from, to);
-  },
+  }
 
   /**
    * Inserts text at the specified {line, ch} position, shifting existing
@@ -781,7 +969,7 @@ Editor.prototype = {
   insertText(value, at) {
     const cm = editors.get(this);
     cm.replaceRange(value, at, at);
-  },
+  }
 
   /**
    * Deselects contents of the text area.
@@ -792,7 +980,7 @@ Editor.prototype = {
     }
 
     this.setCursor(this.getCursor());
-  },
+  }
 
   /**
    * Returns true if there is more than one selection in the editor.
@@ -800,7 +988,7 @@ Editor.prototype = {
   hasMultipleSelections() {
     const cm = editors.get(this);
     return cm.listSelections().length > 1;
-  },
+  }
 
   /**
    * Gets the first visible line number in the editor.
@@ -808,7 +996,7 @@ Editor.prototype = {
   getFirstVisibleLine() {
     const cm = editors.get(this);
     return cm.lineAtHeight(0, "local");
-  },
+  }
 
   /**
    * Scrolls the view such that the given line number is the first visible line.
@@ -817,7 +1005,7 @@ Editor.prototype = {
     const cm = editors.get(this);
     const { top } = cm.charCoords({ line, ch: 0 }, "local");
     cm.scrollTo(0, top);
-  },
+  }
 
   /**
    * Sets the cursor to the specified {line, ch} position with an additional
@@ -829,7 +1017,7 @@ Editor.prototype = {
     this.alignLine(line, align);
     cm.setCursor({ line, ch });
     this.emit("cursorActivity");
-  },
+  }
 
   /**
    * Aligns the provided line to either "top", "center" or "bottom" of the
@@ -863,7 +1051,7 @@ Editor.prototype = {
     // Bringing down the topLine to total lines in the editor if exceeding.
     topLine = Math.min(topLine, this.lineCount());
     this.setFirstVisibleLine(topLine);
-  },
+  }
 
   /**
    * Returns whether a marker of a specified class exists in a line's gutter.
@@ -875,7 +1063,7 @@ Editor.prototype = {
     }
 
     return marker.classList.contains(markerClass);
-  },
+  }
 
   /**
    * Adds a marker with a specified class to a line's gutter. If another marker
@@ -901,7 +1089,7 @@ Editor.prototype = {
     marker = cm.getWrapperElement().ownerDocument.createElement("div");
     marker.className = markerClass;
     cm.setGutterMarker(info.line, gutterName, marker);
-  },
+  }
 
   /**
    * The reverse of addMarker. Removes a marker of a specified class from a
@@ -913,7 +1101,7 @@ Editor.prototype = {
     }
 
     this.lineInfo(line).gutterMarkers[gutterName].classList.remove(markerClass);
-  },
+  }
 
   /**
    * Adds a marker with a specified class and an HTML content to a line's
@@ -932,7 +1120,7 @@ Editor.prototype = {
     // eslint-disable-next-line no-unsanitized/property
     marker.innerHTML = content;
     cm.setGutterMarker(info.line, gutterName, marker);
-  },
+  }
 
   /**
    * The reverse of addContentMarker. Removes any line's markers in the
@@ -946,7 +1134,7 @@ Editor.prototype = {
     }
 
     cm.setGutterMarker(info.line, gutterName, null);
-  },
+  }
 
   getMarker(line, gutterName) {
     const info = this.lineInfo(line);
@@ -960,7 +1148,7 @@ Editor.prototype = {
     }
 
     return gutterMarkers[gutterName];
-  },
+  }
 
   /**
    * Removes all gutter markers in the gutter with the given name.
@@ -968,7 +1156,7 @@ Editor.prototype = {
   removeAllMarkers(gutterName) {
     const cm = editors.get(this);
     cm.clearGutter(gutterName);
-  },
+  }
 
   /**
    * Handles attaching a set of events listeners on a marker. They should
@@ -991,7 +1179,7 @@ Editor.prototype = {
       const listener = eventsArg[name].bind(this, line, marker, data);
       marker.addEventListener(name, listener);
     }
-  },
+  }
 
   /**
    * Returns whether a line is decorated using the specified class name.
@@ -1004,7 +1192,7 @@ Editor.prototype = {
     }
 
     return info.wrapClass.split(" ").includes(className);
-  },
+  }
 
   /**
    * Sets a CSS class name for the given line, including the text and gutter.
@@ -1013,7 +1201,7 @@ Editor.prototype = {
     const cm = editors.get(this);
     const line = this.toLineIfWasmOffset(lineOrOffset);
     cm.addLineClass(line, "wrap", className);
-  },
+  }
 
   /**
    * The reverse of addLineClass.
@@ -1022,7 +1210,7 @@ Editor.prototype = {
     const cm = editors.get(this);
     const line = this.toLineIfWasmOffset(lineOrOffset);
     cm.removeLineClass(line, "wrap", className);
-  },
+  }
 
   /**
    * Mark a range of text inside the two {line, ch} bounds. Since the range may
@@ -1041,7 +1229,7 @@ Editor.prototype = {
       anchor: span,
       clear: () => mark.clear(),
     };
-  },
+  }
 
   /**
    * Calculates and returns one or more {line, ch} objects for
@@ -1055,7 +1243,7 @@ Editor.prototype = {
     const cm = editors.get(this);
     const res = args.map(ind => cm.posFromIndex(ind));
     return args.length === 1 ? res[0] : res;
-  },
+  }
 
   /**
    * The reverse of getPosition. Similarly to getPosition this
@@ -1066,7 +1254,7 @@ Editor.prototype = {
     const cm = editors.get(this);
     const res = args.map(pos => cm.indexFromPos(pos));
     return args.length > 1 ? res : res[0];
-  },
+  }
 
   /**
    * Returns a {line, ch} object that corresponds to the
@@ -1075,7 +1263,7 @@ Editor.prototype = {
   getPositionFromCoords({ left, top }) {
     const cm = editors.get(this);
     return cm.coordsChar({ left, top });
-  },
+  }
 
   /**
    * The reverse of getPositionFromCoords. Similarly, returns a {left, top}
@@ -1084,7 +1272,7 @@ Editor.prototype = {
   getCoordsFromPosition({ line, ch }) {
     const cm = editors.get(this);
     return cm.charCoords({ line: ~~line, ch: ~~ch });
-  },
+  }
 
   /**
    * Returns true if there's something to undo and false otherwise.
@@ -1092,7 +1280,7 @@ Editor.prototype = {
   canUndo() {
     const cm = editors.get(this);
     return cm.historySize().undo > 0;
-  },
+  }
 
   /**
    * Returns true if there's something to redo and false otherwise.
@@ -1100,7 +1288,7 @@ Editor.prototype = {
   canRedo() {
     const cm = editors.get(this);
     return cm.historySize().redo > 0;
-  },
+  }
 
   /**
    * Marks the contents as clean and returns the current
@@ -1109,10 +1297,10 @@ Editor.prototype = {
   setClean() {
     const cm = editors.get(this);
     this.version = cm.changeGeneration();
-    this._lastDirty = false;
+    this.#lastDirty = false;
     this.emit("dirty-change");
     return this.version;
-  },
+  }
 
   /**
    * Returns true if contents of the text area are
@@ -1121,7 +1309,7 @@ Editor.prototype = {
   isClean() {
     const cm = editors.get(this);
     return cm.isClean(this.version);
-  },
+  }
 
   /**
    * This method opens an in-editor dialog asking for a line to
@@ -1148,7 +1336,7 @@ Editor.prototype = {
         this.setCursor({ line: matchLine - 1, ch: column ? column - 1 : 0 });
       }
     });
-  },
+  }
 
   /**
    * Moves the content of the current line or the lines selected up a line.
@@ -1187,7 +1375,7 @@ Editor.prototype = {
       { line: start.line - 1, ch: start.ch },
       { line: end.line - 1, ch: end.ch }
     );
-  },
+  }
 
   /**
    * Moves the content of the current line or the lines selected down a line.
@@ -1224,7 +1412,7 @@ Editor.prototype = {
       { line: start.line + 1, ch: start.ch },
       { line: end.line + 1, ch: end.ch }
     );
-  },
+  }
 
   /**
    * Intercept CodeMirror's Find and replace key shortcut to select the search input
@@ -1252,7 +1440,7 @@ Editor.prototype = {
     // need to call it since we prevent the propagation of the event and
     // cancel codemirror's key handling
     cm.execCommand("find");
-  },
+  }
 
   /**
    * Intercept CodeMirror's findNext and findPrev key shortcut to allow
@@ -1284,7 +1472,7 @@ Editor.prototype = {
     } else {
       cm.execCommand("findNext");
     }
-  },
+  }
 
   /**
    * Returns current font size for the editor area, in pixels.
@@ -1295,7 +1483,7 @@ Editor.prototype = {
     const win = el.ownerDocument.defaultView;
 
     return parseInt(win.getComputedStyle(el).getPropertyValue("font-size"), 10);
-  },
+  }
 
   /**
    * Sets font size for the editor area.
@@ -1304,7 +1492,24 @@ Editor.prototype = {
     const cm = editors.get(this);
     cm.getWrapperElement().style.fontSize = parseInt(size, 10) + "px";
     cm.refresh();
-  },
+  }
+
+  setLineWrapping(value) {
+    const cm = editors.get(this);
+    if (this.config.cm6) {
+      const {
+        codemirrorView: { EditorView },
+      } = this.#CodeMirror6;
+      cm.dispatch({
+        effects: this.#compartments.lineWrapCompartment.reconfigure(
+          value ? EditorView.lineWrapping : []
+        ),
+      });
+    } else {
+      cm.setOption("lineWrapping", value);
+    }
+    this.config.lineWrapping = value;
+  }
 
   /**
    * Sets an option for the editor.  For most options it just defers to
@@ -1333,7 +1538,7 @@ Editor.prototype = {
       // the prefs service.
       this.updateCodeFoldingGutter();
     }
-  },
+  }
 
   /**
    * Gets an option for the editor.  For most options it just defers to
@@ -1347,7 +1552,7 @@ Editor.prototype = {
     }
 
     return cm.getOption(o);
-  },
+  }
 
   /**
    * Sets up autocompletion for the editor. Lazily imports the required
@@ -1376,7 +1581,7 @@ Editor.prototype = {
     } else {
       this.destroyAutoCompletion();
     }
-  },
+  }
 
   getAutoCompletionText() {
     const cm = editors.get(this);
@@ -1388,7 +1593,7 @@ Editor.prototype = {
     }
 
     return mark.attributes["data-completion"] || "";
-  },
+  }
 
   setAutoCompletionText(text) {
     const cursor = this.getCursor();
@@ -1411,7 +1616,7 @@ Editor.prototype = {
         });
       }
     });
-  },
+  }
 
   /**
    * Extends an instance of the Editor object with additional
@@ -1442,27 +1647,27 @@ Editor.prototype = {
 
       this[name] = funcs[name].bind(null, ctx);
     });
-  },
+  }
 
   isDestroyed() {
     return !editors.get(this);
-  },
+  }
 
   destroy() {
     this.container = null;
     this.config = null;
     this.version = null;
-    this._ownerDoc = null;
+    this.#ownerDoc = null;
 
-    if (this._prefObserver) {
-      this._prefObserver.off(KEYMAP_PREF, this.setKeyMap);
-      this._prefObserver.off(TAB_SIZE, this.reloadPreferences);
-      this._prefObserver.off(EXPAND_TAB, this.reloadPreferences);
-      this._prefObserver.off(AUTO_CLOSE, this.reloadPreferences);
-      this._prefObserver.off(AUTOCOMPLETE, this.reloadPreferences);
-      this._prefObserver.off(DETECT_INDENT, this.reloadPreferences);
-      this._prefObserver.off(ENABLE_CODE_FOLDING, this.reloadPreferences);
-      this._prefObserver.destroy();
+    if (this.#prefObserver) {
+      this.#prefObserver.off(KEYMAP_PREF, this.setKeyMap);
+      this.#prefObserver.off(TAB_SIZE, this.reloadPreferences);
+      this.#prefObserver.off(EXPAND_TAB, this.reloadPreferences);
+      this.#prefObserver.off(AUTO_CLOSE, this.reloadPreferences);
+      this.#prefObserver.off(AUTOCOMPLETE, this.reloadPreferences);
+      this.#prefObserver.off(DETECT_INDENT, this.reloadPreferences);
+      this.#prefObserver.off(ENABLE_CODE_FOLDING, this.reloadPreferences);
+      this.#prefObserver.destroy();
     }
 
     // Remove the link between the document and code-mirror.
@@ -1472,7 +1677,7 @@ Editor.prototype = {
     }
 
     this.emit("destroy");
-  },
+  }
 
   updateCodeFoldingGutter() {
     let shouldFoldGutter = this.config.enableCodeFolding;
@@ -1509,16 +1714,15 @@ Editor.prototype = {
 
       this.setOption("foldGutter", false);
     }
-  },
+  }
 
   /**
    * Register all key shortcuts.
    */
-  _initSearchShortcuts(win) {
+  #initSearchShortcuts(win) {
     const shortcuts = new KeyShortcuts({
       window: win,
     });
-    this._onSearchShortcut = this._onSearchShortcut.bind(this);
     const keys = ["find.key", "findNext.key", "findPrev.key"];
 
     if (OS === "Darwin") {
@@ -1529,14 +1733,14 @@ Editor.prototype = {
     // Process generic keys:
     keys.forEach(name => {
       const key = L10N.getStr(name);
-      shortcuts.on(key, event => this._onSearchShortcut(name, event));
+      shortcuts.on(key, event => this.#onSearchShortcut(name, event));
     });
-  },
+  }
   /**
    * Key shortcut listener.
    */
-  _onSearchShortcut(name, event) {
-    if (!this._isInputOrTextarea(event.target)) {
+  #onSearchShortcut = (name, event) => {
+    if (!this.#isInputOrTextarea(event.target)) {
       return;
     }
     const node = event.originalTarget;
@@ -1567,16 +1771,16 @@ Editor.prototype = {
     // Prevent default for this action
     event.stopPropagation();
     event.preventDefault();
-  },
+  };
 
   /**
    * Check if a node is an input or textarea
    */
-  _isInputOrTextarea(element) {
+  #isInputOrTextarea(element) {
     const name = element.tagName.toLowerCase();
     return name === "input" || name === "textarea";
-  },
-};
+  }
+}
 
 // Since Editor is a thin layer over CodeMirror some methods
 // are mapped directly—without any changes.
@@ -1587,36 +1791,6 @@ CM_MAPPING.forEach(name => {
     return cm[name].apply(cm, args);
   };
 });
-
-// Static methods on the Editor object itself.
-
-/**
- * Returns a string representation of a shortcut 'key' with
- * a OS specific modifier. Cmd- for Macs, Ctrl- for other
- * platforms. Useful with extraKeys configuration option.
- *
- * CodeMirror defines all keys with modifiers in the following
- * order: Shift - Ctrl/Cmd - Alt - Key
- */
-Editor.accel = function (key, modifiers = {}) {
-  return (
-    (modifiers.shift ? "Shift-" : "") +
-    (Services.appinfo.OS == "Darwin" ? "Cmd-" : "Ctrl-") +
-    (modifiers.alt ? "Alt-" : "") +
-    key
-  );
-};
-
-/**
- * Returns a string representation of a shortcut for a
- * specified command 'cmd'. Append Cmd- for macs, Ctrl- for other
- * platforms unless noaccel is specified in the options. Useful when overwriting
- * or disabling default shortcuts.
- */
-Editor.keyFor = function (cmd, opts = { noaccel: false }) {
-  const key = L10N.getStr(cmd + ".commandkey");
-  return opts.noaccel ? key : Editor.accel(key);
-};
 
 /**
  * We compute the CSS property names, values, and color names to be used with

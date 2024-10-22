@@ -102,6 +102,52 @@ impl TransitionProperty {
     pub fn all() -> Self {
         TransitionProperty::NonCustom(NonCustomPropertyId::from_shorthand(ShorthandId::All))
     }
+
+    /// Returns true if it is `all`.
+    #[inline]
+    pub fn is_all(&self) -> bool {
+        self == &TransitionProperty::NonCustom(NonCustomPropertyId::from_shorthand(
+            ShorthandId::All,
+        ))
+    }
+}
+
+/// A specified value for <transition-behavior-value>.
+///
+/// https://drafts.csswg.org/css-transitions-2/#transition-behavior-property
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[repr(u8)]
+pub enum TransitionBehavior {
+    /// Transitions will not be started for discrete properties, only for interpolable properties.
+    Normal,
+    /// Transitions will be started for discrete properties as well as interpolable properties.
+    AllowDiscrete,
+}
+
+impl TransitionBehavior {
+    /// Return normal, the initial value.
+    #[inline]
+    pub fn normal() -> Self {
+        Self::Normal
+    }
+
+    /// Return true if it is normal.
+    #[inline]
+    pub fn is_normal(&self) -> bool {
+        matches!(*self, Self::Normal)
+    }
 }
 
 /// https://drafts.csswg.org/css-animations/#animation-iteration-count

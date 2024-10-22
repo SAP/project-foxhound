@@ -63,7 +63,11 @@ bool IsWidevineKeySystem(const nsAString& aKeySystem);
 #ifdef MOZ_WMF_CDM
 bool IsPlayReadyKeySystemAndSupported(const nsAString& aKeySystem);
 
+bool IsPlayReadyKeySystem(const nsAString& aKeySystem);
+
 bool IsWidevineExperimentKeySystemAndSupported(const nsAString& aKeySystem);
+
+bool IsWidevineExperimentKeySystem(const nsAString& aKeySystem);
 
 bool IsWMFClearKeySystemAndSupported(const nsAString& aKeySystem);
 #endif
@@ -85,6 +89,7 @@ const char* ToMediaKeyStatusStr(dom::MediaKeyStatus aStatus);
 // Return true if given config supports hardware decryption (SL3000 or L1).
 bool IsHardwareDecryptionSupported(
     const dom::MediaKeySystemConfiguration& aConfig);
+bool IsHardwareDecryptionSupported(const KeySystemConfig& aConfig);
 
 const char* EncryptionSchemeStr(const CryptoScheme& aScheme);
 
@@ -99,6 +104,8 @@ bool DoesKeySystemSupportClearLead(const nsAString& aKeySystem);
 // associated robustness.
 bool CheckIfHarewareDRMConfigExists(
     const nsTArray<dom::MediaKeySystemConfiguration>& aConfigs);
+
+bool DoesKeySystemSupportHardwareDecryption(const nsAString& aKeySystem);
 
 }  // namespace mozilla
 

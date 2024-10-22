@@ -514,9 +514,12 @@ inline int32_t GetIndexOfArgument(ArgumentKind kind, CallFlags flags,
 enum class GuardClassKind : uint8_t {
   Array,
   PlainObject,
-  ArrayBuffer,
-  SharedArrayBuffer,
-  DataView,
+  FixedLengthArrayBuffer,
+  ResizableArrayBuffer,
+  FixedLengthSharedArrayBuffer,
+  GrowableSharedArrayBuffer,
+  FixedLengthDataView,
+  ResizableDataView,
   MappedArguments,
   UnmappedArguments,
   WindowProxy,
@@ -524,6 +527,13 @@ enum class GuardClassKind : uint8_t {
   BoundFunction,
   Set,
   Map,
+};
+
+const JSClass* ClassFor(GuardClassKind kind);
+
+enum class ArrayBufferViewKind : uint8_t {
+  FixedLength,
+  Resizable,
 };
 
 }  // namespace jit

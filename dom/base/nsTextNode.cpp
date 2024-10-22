@@ -43,13 +43,13 @@ class nsAttributeTextNode final : public nsTextNode,
     NS_ASSERTION(mAttrName, "Must have attr name");
   }
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(bool aNullParent = true) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(UnbindContext&) override;
 
   NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
   NS_DECL_NSIMUTATIONOBSERVER_NODEWILLBEDESTROYED
 
-  virtual already_AddRefed<CharacterData> CloneDataNode(
+  already_AddRefed<CharacterData> CloneDataNode(
       mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const override {
     RefPtr<nsAttributeTextNode> it =
         new (aNodeInfo->NodeInfoManager()) nsAttributeTextNode(
@@ -124,10 +124,9 @@ nsresult nsTextNode::BindToTree(BindContext& aContext, nsINode& aParent) {
   return NS_OK;
 }
 
-void nsTextNode::UnbindFromTree(bool aNullParent) {
-  ResetDirectionSetByTextNode(this);
-
-  CharacterData::UnbindFromTree(aNullParent);
+void nsTextNode::UnbindFromTree(UnbindContext& aContext) {
+  CharacterData::UnbindFromTree(aContext);
+  ResetDirectionSetByTextNode(this, aContext);
 }
 
 #ifdef MOZ_DOM_LIST
@@ -210,16 +209,16 @@ nsresult nsAttributeTextNode::BindToTree(BindContext& aContext,
   return NS_OK;
 }
 
-void nsAttributeTextNode::UnbindFromTree(bool aNullParent) {
+void nsAttributeTextNode::UnbindFromTree(UnbindContext& aContext) {
   // UnbindFromTree can be called anytime so we have to be safe.
   if (mGrandparent) {
-    // aNullParent might not be true here, but we want to remove the
+    // aContext might not be true here, but we want to remove the
     // mutation observer anyway since we only need it while we're
     // in the document.
     mGrandparent->RemoveMutationObserver(this);
     mGrandparent = nullptr;
   }
-  nsTextNode::UnbindFromTree(aNullParent);
+  nsTextNode::UnbindFromTree(aContext);
 }
 
 void nsAttributeTextNode::AttributeChanged(Element* aElement,

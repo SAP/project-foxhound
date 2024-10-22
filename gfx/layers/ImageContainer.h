@@ -63,7 +63,7 @@ class MemoryOrShmem;
 class D3D11RecycleAllocator;
 class D3D11YCbCrRecycleAllocator;
 #endif
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 class MacIOSurfaceRecycleAllocator;
 #endif
 class SurfaceDescriptorBuffer;
@@ -80,7 +80,7 @@ class GLImage;
 class SharedRGBImage;
 #ifdef MOZ_WIDGET_ANDROID
 class SurfaceTextureImage;
-#elif defined(XP_MACOSX)
+#elif defined(XP_DARWIN)
 class MacIOSurfaceImage;
 #elif MOZ_WIDGET_GTK
 class DMABUFSurfaceImage;
@@ -129,6 +129,9 @@ class Image {
   bool IsDRM() const { return mIsDRM; }
   virtual void SetIsDRM(bool aIsDRM) { mIsDRM = aIsDRM; }
 
+  virtual void OnPrepareForwardToHost() {}
+  virtual void OnAbandonForwardToHost() {}
+
   virtual already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() = 0;
 
   enum class BuildSdbFlags : uint8_t {
@@ -156,7 +159,7 @@ class Image {
 #ifdef MOZ_WIDGET_ANDROID
   virtual SurfaceTextureImage* AsSurfaceTextureImage() { return nullptr; }
 #endif
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   virtual MacIOSurfaceImage* AsMacIOSurfaceImage() { return nullptr; }
 #endif
   virtual PlanarYCbCrImage* AsPlanarYCbCrImage() { return nullptr; }
@@ -188,8 +191,8 @@ class Image {
   virtual ~Image() = default;
 
   mozilla::EnumeratedArray<mozilla::layers::LayersBackend,
-                           mozilla::layers::LayersBackend::LAYERS_LAST,
-                           UniquePtr<ImageBackendData>>
+                           UniquePtr<ImageBackendData>,
+                           size_t(mozilla::layers::LayersBackend::LAYERS_LAST)>
       mBackendData;
 
   void* mImplData;
@@ -527,7 +530,7 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
       KnowsCompositor* aKnowsCompositor);
 #endif
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   already_AddRefed<MacIOSurfaceRecycleAllocator>
   GetMacIOSurfaceRecycleAllocator();
 #endif
@@ -615,7 +618,7 @@ class ImageContainer final : public SupportsThreadSafeWeakPtr<ImageContainer> {
   RefPtr<D3D11YCbCrRecycleAllocator> mD3D11YCbCrRecycleAllocator
       MOZ_GUARDED_BY(mRecursiveMutex);
 #endif
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   RefPtr<MacIOSurfaceRecycleAllocator> mMacIOSurfaceRecycleAllocator
       MOZ_GUARDED_BY(mRecursiveMutex);
 #endif
@@ -800,22 +803,20 @@ class PlanarYCbCrImage : public Image {
    * This makes a copy of the data buffers, in order to support functioning
    * in all different layer managers.
    */
-  virtual bool CopyData(const Data& aData) = 0;
+  virtual nsresult CopyData(const Data& aData) = 0;
 
   /**
    * This doesn't make a copy of the data buffers.
    */
-  virtual bool AdoptData(const Data& aData);
+  virtual nsresult AdoptData(const Data& aData);
 
   /**
    * This will create an empty data buffers according to the input data's size.
    */
-  virtual bool CreateEmptyBuffer(const Data& aData, const gfx::IntSize& aYSize,
-                                 const gfx::IntSize& aCbCrSize) {
-    return false;
-  }
-  bool CreateEmptyBuffer(const Data& aData) {
-    return CreateEmptyBuffer(aData, aData.YDataSize(), aData.CbCrDataSize());
+  virtual nsresult CreateEmptyBuffer(const Data& aData,
+                                     const gfx::IntSize& aYSize,
+                                     const gfx::IntSize& aCbCrSize) {
+    return NS_ERROR_NOT_IMPLEMENTED;
   }
 
   /**
@@ -873,7 +874,7 @@ class RecyclingPlanarYCbCrImage : public PlanarYCbCrImage {
   explicit RecyclingPlanarYCbCrImage(BufferRecycleBin* aRecycleBin)
       : mRecycleBin(aRecycleBin) {}
   virtual ~RecyclingPlanarYCbCrImage();
-  bool CopyData(const Data& aData) override;
+  nsresult CopyData(const Data& aData) override;
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const override;
 
  protected:

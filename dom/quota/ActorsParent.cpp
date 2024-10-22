@@ -82,6 +82,7 @@
 #include "mozilla/Variant.h"
 #include "mozilla/dom/FileSystemQuotaClientFactory.h"
 #include "mozilla/dom/FlippedOnce.h"
+#include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/dom/StorageDBUpdater.h"
 #include "mozilla/dom/cache/QuotaClient.h"
@@ -108,6 +109,7 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/net/ExtensionProtocolHandler.h"
+#include "mozilla/StorageOriginAttributes.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsBaseHashtable.h"
 #include "nsCOMPtr.h"
@@ -1377,6 +1379,9 @@ void InitializeQuotaManager() {
     RefPtr<net::ExtensionProtocolHandler> extensionProtocolHandler =
         net::ExtensionProtocolHandler::GetSingleton();
     QM_WARNONLY_TRY(MOZ_TO_RESULT(extensionProtocolHandler));
+
+    IndexedDatabaseManager* mgr = IndexedDatabaseManager::GetOrCreate();
+    QM_WARNONLY_TRY(MOZ_TO_RESULT(mgr));
   }
 
   QM_WARNONLY_TRY(QM_TO_RESULT(QuotaManager::Initialize()));
@@ -2267,7 +2272,7 @@ void QuotaManager::Shutdown() {
                               quotaManager->mQuotaManagerShutdownSteps.get());
     }
 
-    CrashReporter::AnnotateCrashReport(
+    CrashReporter::RecordAnnotationNSCString(
         CrashReporter::Annotation::QuotaManagerShutdownTimeout, annotation);
 
     MOZ_CRASH("Quota manager shutdown timed out");
@@ -2372,7 +2377,7 @@ void QuotaManager::Shutdown() {
 
   // Body of the function
 
-  ScopedLogExtraInfo scope{ScopedLogExtraInfo::kTagContext,
+  ScopedLogExtraInfo scope{ScopedLogExtraInfo::kTagContextTainted,
                            "dom::quota::QuotaManager::Shutdown"_ns};
 
   // This must be called before `flagShutdownStarted`, it would fail otherwise.
@@ -2706,6 +2711,10 @@ nsresult QuotaManager::LoadQuota() {
                                                           GetUTF8String, 3));
 
           fullOriginMetadata.mStorageOrigin = fullOriginMetadata.mOrigin;
+
+          const auto extraInfo =
+              ScopedLogExtraInfo{ScopedLogExtraInfo::kTagStorageOriginTainted,
+                                 fullOriginMetadata.mStorageOrigin};
 
           fullOriginMetadata.mIsPrivate = false;
 
@@ -3203,7 +3212,7 @@ nsresult QuotaManager::CreateDirectoryMetadata(
     const OriginMetadata& aOriginMetadata) {
   AssertIsOnIOThread();
 
-  OriginAttributes groupAttributes;
+  StorageOriginAttributes groupAttributes;
 
   nsCString groupNoSuffix;
   QM_TRY(OkIf(groupAttributes.PopulateFromOrigin(aOriginMetadata.mGroup,
@@ -3211,11 +3220,11 @@ nsresult QuotaManager::CreateDirectoryMetadata(
          NS_ERROR_FAILURE);
 
   nsCString groupPrefix;
-  GetJarPrefix(groupAttributes.mInIsolatedMozBrowser, groupPrefix);
+  GetJarPrefix(groupAttributes.InIsolatedMozBrowser(), groupPrefix);
 
   nsCString group = groupPrefix + groupNoSuffix;
 
-  OriginAttributes originAttributes;
+  StorageOriginAttributes originAttributes;
 
   nsCString originNoSuffix;
   QM_TRY(OkIf(originAttributes.PopulateFromOrigin(aOriginMetadata.mOrigin,
@@ -3223,7 +3232,7 @@ nsresult QuotaManager::CreateDirectoryMetadata(
          NS_ERROR_FAILURE);
 
   nsCString originPrefix;
-  GetJarPrefix(originAttributes.mInIsolatedMozBrowser, originPrefix);
+  GetJarPrefix(originAttributes.InIsolatedMozBrowser(), originPrefix);
 
   nsCString origin = originPrefix + originNoSuffix;
 
@@ -3588,6 +3597,10 @@ nsresult QuotaManager::InitializeRepository(PersistenceType aPersistenceType,
                         MOZ_ASSERT(metadata.mPersistenceType ==
                                    aPersistenceType);
 
+                        const auto extraInfo = ScopedLogExtraInfo{
+                            ScopedLogExtraInfo::kTagStorageOriginTainted,
+                            metadata.mStorageOrigin};
+
                         // FIXME(tt): The check for origin name consistency can
                         // be removed once we have an upgrade to traverse origin
                         // directories and check through the directory metadata
@@ -3679,6 +3692,10 @@ nsresult QuotaManager::InitializeRepository(PersistenceType aPersistenceType,
     QM_TRY(([&]() -> Result<Ok, nsresult> {
       QM_TRY(([&directory, &info, this, aPersistenceType,
                &aOriginFunc]() -> Result<Ok, nsresult> {
+               const auto extraInfo = ScopedLogExtraInfo{
+                   ScopedLogExtraInfo::kTagStorageOriginTainted,
+                   info.mFullOriginMetadata.mStorageOrigin};
+
                const auto originDirName =
                    MakeSanitizedOriginString(info.mFullOriginMetadata.mOrigin);
 
@@ -3727,6 +3744,10 @@ nsresult QuotaManager::InitializeOrigin(PersistenceType aPersistenceType,
                                         int64_t aAccessTime, bool aPersisted,
                                         nsIFile* aDirectory) {
   AssertIsOnIOThread();
+
+  // The ScopedLogExtraInfo is not set here on purpose, so the callers can
+  // decide if they want to set it. The extra info can be set sooner this way
+  // as well.
 
   const bool trackQuota = aPersistenceType != PERSISTENCE_TYPE_PERSISTENT;
 
@@ -5058,7 +5079,7 @@ RefPtr<BoolPromise> QuotaManager::TemporaryStorageInitialized() {
 RefPtr<UniversalDirectoryLockPromise> QuotaManager::OpenStorageDirectory(
     const Nullable<PersistenceType>& aPersistenceType,
     const OriginScope& aOriginScope, const Nullable<Client::Type>& aClientType,
-    bool aExclusive,
+    bool aExclusive, DirectoryLockCategory aCategory,
     Maybe<RefPtr<UniversalDirectoryLock>&> aPendingDirectoryLockOut) {
   AssertIsOnOwningThread();
 
@@ -5079,7 +5100,7 @@ RefPtr<UniversalDirectoryLockPromise> QuotaManager::OpenStorageDirectory(
 
   RefPtr<UniversalDirectoryLock> universalDirectoryLock =
       CreateDirectoryLockInternal(aPersistenceType, aOriginScope, aClientType,
-                                  aExclusive);
+                                  aExclusive, aCategory);
 
   RefPtr<BoolPromise> universalDirectoryLockPromise =
       universalDirectoryLock->Acquire();
@@ -5193,12 +5214,12 @@ RefPtr<ClientDirectoryLock> QuotaManager::CreateDirectoryLock(
 RefPtr<UniversalDirectoryLock> QuotaManager::CreateDirectoryLockInternal(
     const Nullable<PersistenceType>& aPersistenceType,
     const OriginScope& aOriginScope, const Nullable<Client::Type>& aClientType,
-    bool aExclusive) {
+    bool aExclusive, DirectoryLockCategory aCategory) {
   AssertIsOnOwningThread();
 
   return DirectoryLockImpl::CreateInternal(WrapNotNullUnchecked(this),
                                            aPersistenceType, aOriginScope,
-                                           aClientType, aExclusive);
+                                           aClientType, aExclusive, aCategory);
 }
 
 Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult>
@@ -5211,6 +5232,10 @@ QuotaManager::EnsurePersistentOriginIsInitialized(
   const auto innerFunc = [&aOriginMetadata,
                           this](const auto& firstInitializationAttempt)
       -> mozilla::Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult> {
+    const auto extraInfo =
+        ScopedLogExtraInfo{ScopedLogExtraInfo::kTagStorageOriginTainted,
+                           aOriginMetadata.mStorageOrigin};
+
     QM_TRY_UNWRAP(auto directory, GetOriginDirectory(aOriginMetadata));
 
     if (mInitializedOrigins.Contains(aOriginMetadata.mOrigin)) {
@@ -7612,7 +7637,7 @@ Result<bool, nsresult> UpgradeStorageFrom1_0To2_0Helper::MaybeRemoveAppsData(
     MOZ_ASSERT(originalSuffix[0] == '^');
 
     if (!URLParams::Parse(
-            Substring(originalSuffix, 1, originalSuffix.Length() - 1),
+            Substring(originalSuffix, 1, originalSuffix.Length() - 1), true,
             [](const nsAString& aName, const nsAString& aValue) {
               if (aName.EqualsLiteral("appId")) {
                 return false;

@@ -140,7 +140,7 @@ interface nsIClearDataService : nsISupports
    * whose base domain does not have any storage associated with it.
    *
    * The principals to be considered will need to be passed by the API consumer.
-   * It is recommended to use PrincipalsCollector.jsm for that.
+   * It is recommended to use PrincipalsCollector.sys.mjs for that.
    *
    * @param aPrincipalsWithStorage principals to be excluded from clearing
    * @param aFrom microseconds from the epoch
@@ -298,6 +298,16 @@ interface nsIClearDataService : nsISupports
   const uint32_t CLEAR_COOKIE_BANNER_EXECUTED_RECORD = 1 << 26;
 
   /**
+   * Clear state associated with the fingerprinting protection.
+   */
+  const uint32_t CLEAR_FINGERPRINTING_PROTECTION_STATE = 1 << 27;
+
+  /**
+   * Clear the bounce tracking protection state.
+   */
+  const uint32_t CLEAR_BOUNCE_TRACKING_PROTECTION_STATE = 1 << 28;
+
+  /**
    * Use this value to delete all the data.
    */
   const uint32_t CLEAR_ALL = 0xFFFFFFFF;
@@ -328,7 +338,8 @@ interface nsIClearDataService : nsISupports
     CLEAR_PREDICTOR_NETWORK_DATA | CLEAR_DOM_PUSH_NOTIFICATIONS |
     CLEAR_CLIENT_AUTH_REMEMBER_SERVICE | CLEAR_REPORTS | CLEAR_CERT_EXCEPTIONS |
     CLEAR_CREDENTIAL_MANAGER_STATE | CLEAR_COOKIE_BANNER_EXCEPTION |
-    CLEAR_COOKIE_BANNER_EXECUTED_RECORD;
+    CLEAR_COOKIE_BANNER_EXECUTED_RECORD | CLEAR_FINGERPRINTING_PROTECTION_STATE |
+    CLEAR_BOUNCE_TRACKING_PROTECTION_STATE;
 };
 
 /**

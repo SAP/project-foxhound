@@ -90,6 +90,10 @@ support-files = [
   "bipbop-cenc-videoinit.mp4^headers^",
   "bipbop-cenc-video-10s.mp4",
   "bipbop-cenc-video-10s.mp4^headers^",
+  "bipbop-clearkey-video-av1.mp4",
+  "bipbop-clearkey-video-av1.mp4^headers^",
+  "bipbop-clearkey-video-av1.webm",
+  "bipbop-clearkey-video-av1.webm^headers^",
   "bipbop-clearkey-keyrotation-clear-lead-audio.mp4",
   "bipbop-clearkey-keyrotation-clear-lead-audio.mp4^headers^",
   "bipbop-clearkey-keyrotation-clear-lead-video.mp4",
@@ -807,15 +811,12 @@ skip-if = ["true"] # bug 475110 - disabled since we don't play Wave files standa
 ["test_bug1431810_opus_downmix_to_mono.html"]
 
 ["test_can_play_type.html"]
-skip-if = ["(android_version == '25' && debug)"] # android(bug 1232305)
 
 ["test_can_play_type_mpeg.html"]
 
 ["test_can_play_type_no_ogg.html"]
-skip-if = ["(android_version == '25' && debug)"] # android(bug 1232305)
 
 ["test_can_play_type_ogg.html"]
-skip-if = ["(android_version == '25' && debug)"] # android(bug 1232305)
 
 ["test_can_play_type_wave.html"]
 
@@ -860,7 +861,8 @@ skip-if = ["(android_version == '25' && debug)"] # android(bug 1232305)
 ["test_fragment_play.html"]
 
 ["test_hevc_playback.html"]
-skip-if = ["!mda_gpu || os != 'win'"]
+run-if = ["os == 'win'"]
+skip-if = ["!mda_gpu"]
 scheme = "https"
 
 ["test_hevc_support.html"]
@@ -999,10 +1001,12 @@ skip-if = ["true"] # see bug 1319725
 ["test_readyState.html"]
 
 ["test_referer.html"]
-skip-if = ["android_version == '25' && debug"] # android(bug 1232305)
 
 ["test_reset_src.html"]
-skip-if = ["verify && debug && os == 'win'"]
+skip-if = [
+  "win10_2009 && debug && verify",
+  "win11_2009 && debug && verify",
+]
 
 ["test_source.html"]
 

@@ -1,36 +1,107 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 30 Nov 2023 11:59:00 -0600
-Subject: Bug 1867099 - Cherry-pick upstream libwebrtc commit 5f78ed6eaf - only
- updates a comment.
+Date: Mon, 18 Dec 2023 15:00:00 +0000
+Subject: Bug 1867099 - revert libwebrtc 8602f604e0. r=bwc
 
-Upstream commit: https://webrtc.googlesource.com/src/+/5f78ed6eafa40451b61747978d134afda42ca4d6
-       Minor change in comment for use of an IGraphicsCaptureSession3 API
+Upstream 8602f604e0 removed code sending BYEs which breaks some of
+our wpt.  They've opened a bug for a real fix here:
+https://bugs.chromium.org/p/webrtc/issues/detail?id=15664
 
-       Makes it more clear that a certain API is only supported in Windows 11.
+I've opened Bug 1870643 to track the real fix and upstream bug.
 
-       Bug: webrtc:15451
-       Change-Id: Ic3abfb2cbf0e30f9cb722ac843876f41279bf200
-       Reviewed-on: https://webrtc-review.googlesource.com/c/src/+/323161
-       Reviewed-by: Alexander Cooper <alcooper@chromium.org>
-       Commit-Queue: Henrik Andreassson <henrika@webrtc.org>
-       Cr-Commit-Position: refs/heads/main@{#40931}
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/f88616ffaff5074d90963348ef0bc511b48a1c6d
+Differential Revision: https://phabricator.services.mozilla.com/D196729
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/d92a578327f524ec3e1c144c82492a4c76b8266f
 ---
- modules/desktop_capture/win/wgc_capture_session.cc | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ call/rtp_video_sender.cc                      |  1 +
+ modules/rtp_rtcp/source/rtcp_sender.cc        | 19 +++++++++++++++++--
+ .../rtp_rtcp/source/rtcp_sender_unittest.cc   |  5 +++--
+ modules/rtp_rtcp/source/rtp_rtcp_impl.cc      |  1 +
+ modules/rtp_rtcp/source/rtp_rtcp_interface.h  |  2 +-
+ 5 files changed, 23 insertions(+), 5 deletions(-)
 
-diff --git a/modules/desktop_capture/win/wgc_capture_session.cc b/modules/desktop_capture/win/wgc_capture_session.cc
-index e220e4f4f8..827f257717 100644
---- a/modules/desktop_capture/win/wgc_capture_session.cc
-+++ b/modules/desktop_capture/win/wgc_capture_session.cc
-@@ -190,8 +190,8 @@ HRESULT WgcCaptureSession::StartCapture(const DesktopCaptureOptions& options) {
-   // By default, the WGC capture API adds a yellow border around the captured
-   // window or display to indicate that a capture is in progress. The section
-   // below is an attempt to remove this yellow border to make the capture
--  // experience more inline with the DXGI capture path. The QueryInterface call
--  // will silently fail on Windows versions lower than 2104 (10.0.20348.0).
-+  // experience more inline with the DXGI capture path.
-+  // This requires 10.0.20348.0 or later, which practically means Windows 11.
-   ComPtr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession3> session3;
-   if (SUCCEEDED(session_->QueryInterface(
-           ABI::Windows::Graphics::Capture::IID_IGraphicsCaptureSession3,
+diff --git a/call/rtp_video_sender.cc b/call/rtp_video_sender.cc
+index 1ace08fa32..4d99c61bb4 100644
+--- a/call/rtp_video_sender.cc
++++ b/call/rtp_video_sender.cc
+@@ -510,6 +510,7 @@ void RtpVideoSender::SetActiveModulesLocked(
+     const bool was_active = rtp_module.Sending();
+     const bool should_be_active = active_modules[i];
+ 
++    // Sends a kRtcpByeCode when going from true to false.
+     rtp_module.SetSendingStatus(active_modules[i]);
+ 
+     if (was_active && !should_be_active) {
+diff --git a/modules/rtp_rtcp/source/rtcp_sender.cc b/modules/rtp_rtcp/source/rtcp_sender.cc
+index 099b0be1a3..971f49b949 100644
+--- a/modules/rtp_rtcp/source/rtcp_sender.cc
++++ b/modules/rtp_rtcp/source/rtcp_sender.cc
+@@ -212,8 +212,23 @@ bool RTCPSender::Sending() const {
+ 
+ void RTCPSender::SetSendingStatus(const FeedbackState& feedback_state,
+                                   bool sending) {
+-  MutexLock lock(&mutex_rtcp_sender_);
+-  sending_ = sending;
++  bool sendRTCPBye = false;
++  {
++    MutexLock lock(&mutex_rtcp_sender_);
++
++    if (method_ != RtcpMode::kOff) {
++      if (sending == false && sending_ == true) {
++        // Trigger RTCP bye
++        sendRTCPBye = true;
++      }
++    }
++    sending_ = sending;
++  }
++  if (sendRTCPBye) {
++    if (SendRTCP(feedback_state, kRtcpBye) != 0) {
++      RTC_LOG(LS_WARNING) << "Failed to send RTCP BYE";
++    }
++  }
+ }
+ 
+ void RTCPSender::SetNonSenderRttMeasurement(bool enabled) {
+diff --git a/modules/rtp_rtcp/source/rtcp_sender_unittest.cc b/modules/rtp_rtcp/source/rtcp_sender_unittest.cc
+index 002a5f86f1..1dcb628722 100644
+--- a/modules/rtp_rtcp/source/rtcp_sender_unittest.cc
++++ b/modules/rtp_rtcp/source/rtcp_sender_unittest.cc
+@@ -328,12 +328,13 @@ TEST_F(RtcpSenderTest, SendBye) {
+   EXPECT_EQ(kSenderSsrc, parser()->bye()->sender_ssrc());
+ }
+ 
+-TEST_F(RtcpSenderTest, StopSendingDoesNotTriggersBye) {
++TEST_F(RtcpSenderTest, StopSendingTriggersBye) {
+   auto rtcp_sender = CreateRtcpSender(GetDefaultConfig());
+   rtcp_sender->SetRTCPStatus(RtcpMode::kReducedSize);
+   rtcp_sender->SetSendingStatus(feedback_state(), true);
+   rtcp_sender->SetSendingStatus(feedback_state(), false);
+-  EXPECT_EQ(0, parser()->bye()->num_packets());
++  EXPECT_EQ(1, parser()->bye()->num_packets());
++  EXPECT_EQ(kSenderSsrc, parser()->bye()->sender_ssrc());
+ }
+ 
+ TEST_F(RtcpSenderTest, SendFir) {
+diff --git a/modules/rtp_rtcp/source/rtp_rtcp_impl.cc b/modules/rtp_rtcp/source/rtp_rtcp_impl.cc
+index cca9a40250..a63067141d 100644
+--- a/modules/rtp_rtcp/source/rtp_rtcp_impl.cc
++++ b/modules/rtp_rtcp/source/rtp_rtcp_impl.cc
+@@ -296,6 +296,7 @@ RTCPSender::FeedbackState ModuleRtpRtcpImpl::GetFeedbackState() {
+ 
+ int32_t ModuleRtpRtcpImpl::SetSendingStatus(const bool sending) {
+   if (rtcp_sender_.Sending() != sending) {
++    // Sends RTCP BYE when going from true to false
+     rtcp_sender_.SetSendingStatus(GetFeedbackState(), sending);
+   }
+   return 0;
+diff --git a/modules/rtp_rtcp/source/rtp_rtcp_interface.h b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+index f196d11b58..bc8da63ab6 100644
+--- a/modules/rtp_rtcp/source/rtp_rtcp_interface.h
++++ b/modules/rtp_rtcp/source/rtp_rtcp_interface.h
+@@ -277,7 +277,7 @@ class RtpRtcpInterface : public RtcpFeedbackSenderInterface {
+   // Returns the FlexFEC SSRC, if there is one.
+   virtual absl::optional<uint32_t> FlexfecSsrc() const = 0;
+ 
+-  // Sets sending status.
++  // Sets sending status. Sends kRtcpByeCode when going from true to false.
+   // Returns -1 on failure else 0.
+   virtual int32_t SetSendingStatus(bool sending) = 0;
+ 

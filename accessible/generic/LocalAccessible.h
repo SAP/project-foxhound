@@ -587,7 +587,12 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   virtual LocalAccessible* ContainerWidget() const;
 
-  bool IsActiveDescendant(LocalAccessible** aWidget = nullptr) const;
+  /**
+   * Accessible's element ID is referenced as a aria-activedescendant in the
+   * document. This method is only used for ID changes and therefore does not
+   * need to work for direct element references via ariaActiveDescendantElement.
+   */
+  bool IsActiveDescendantId(LocalAccessible** aWidget = nullptr) const;
 
   /**
    * Return true if the accessible is defunct.
@@ -838,6 +843,12 @@ class LocalAccessible : public nsISupports, public Accessible {
    */
   mozilla::a11y::role ARIATransformRole(mozilla::a11y::role aRole) const;
 
+  /**
+   * Return the minimum role that should be used as a last resort if the element
+   * does not have a more specific role.
+   */
+  mozilla::a11y::role GetMinimumRole(mozilla::a11y::role aRole) const;
+
   //////////////////////////////////////////////////////////////////////////////
   // Name helpers
 
@@ -1003,6 +1014,19 @@ class LocalAccessible : public nsISupports, public Accessible {
    * OOP iframe docs and tab documents.
    */
   nsIFrame* FindNearestAccessibleAncestorFrame();
+
+  /*
+   * This function assumes that the current role is not valid. It searches for a
+   * fallback role in the role attribute string, and returns it. If there is no
+   * valid fallback role in the role attribute string, the function returns the
+   * native role. The aRolesToSkip parameter will cause the function to skip any
+   * roles found in the role attribute string when searching for the next valid
+   * role.
+   */
+  role FindNextValidARIARole(
+      std::initializer_list<nsStaticAtom*> aRolesToSkip) const;
+
+  LocalAccessible* GetPopoverTargetDetailsRelation() const;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(LocalAccessible, NS_ACCESSIBLE_IMPL_IID)

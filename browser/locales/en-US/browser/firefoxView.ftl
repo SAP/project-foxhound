@@ -12,6 +12,9 @@ menu-tools-firefox-view =
 
 firefoxview-page-title = { -firefoxview-brand-name }
 
+firefoxview-page-heading =
+  .heading = { -firefoxview-brand-name }
+
 firefoxview-page-label =
   .label = { -firefoxview-brand-name }
 
@@ -63,7 +66,7 @@ firefoxview-syncedtabs-loading-header = Sync in progress
 firefoxview-syncedtabs-loading-description = When it’s done, you’ll see any tabs you have open on other devices. Check back soon.
 
 firefoxview-tabpickup-fxa-admin-disabled-header = Your organization has disabled sync
-firefoxview-tabpickup-fxa-admin-disabled-description = { -brand-short-name } is not able to sync tabs between devices because your administrator has disabled syncing.
+firefoxview-tabpickup-fxa-disabled-by-policy-description = { -brand-short-name } is not able to sync tabs between devices because your organization has disabled syncing.
 
 firefoxview-tabpickup-network-offline-header = Check your internet connection
 firefoxview-tabpickup-network-offline-description = If you’re using a firewall or proxy, check that { -brand-short-name } has permission to access the web.
@@ -224,6 +227,8 @@ firefoxview-search-results-empty = No results for “{ $query }”
 
 firefoxview-sort-history-by-date-label = Sort by date
 firefoxview-sort-history-by-site-label = Sort by site
+firefoxview-sort-open-tabs-by-recency-label = Sort by recent activity
+firefoxview-sort-open-tabs-by-order-label = Sort by tab order
 
 # Variables:
 #   $url (string) - URL that will be opened in the new tab
@@ -290,3 +295,28 @@ firefoxview-recentlyclosed-empty-description-two = To find tabs from longer ago,
 firefoxview-syncedtabs-device-notabs = No tabs open on this device
 
 firefoxview-syncedtabs-connect-another-device = Connect another device
+
+firefoxview-pinned-tabs =
+  .title = Pinned Tabs
+
+firefoxview-tabs =
+  .title = Tabs
+
+## These tooltips will be displayed when hovering over a pinned tab on the Open Tabs page
+## Variables:
+##  $tabTitle (string) - Title of pinned tab that will be opened when selected
+
+firefoxview-opentabs-pinned-tab =
+  .title = Switch to { $tabTitle }
+
+# This tooltip will be shown for a pinned tab whose URL is currently bookmarked.
+firefoxview-opentabs-bookmarked-pinned-tab =
+  .title = Switch to (Bookmarked) { $tabTitle }
+
+## These tooltips will be displayed when hovering over an unpinned Open Tab
+## Variables:
+##   $url (string) - URL of tab that will be opened when selected
+
+# This tooltip will be shown for an unpinned tab whose URL is currently bookmarked.
+firefoxview-opentabs-bookmarked-tab =
+  .title = (Bookmarked) { $url }

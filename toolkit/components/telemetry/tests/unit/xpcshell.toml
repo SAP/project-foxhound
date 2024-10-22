@@ -5,6 +5,7 @@ firefox-appdir = "browser"
 # xpcshell fails to install tests if we move them under the test entry.
 support-files = [
   "data/search-extensions/engines.json",
+  "data/search-extensions/search-config-v2.json",
   "data/search-extensions/telemetrySearchIdentifier/manifest.json",
   "engine.xml",
   "system.xpi",
@@ -167,7 +168,7 @@ skip-if = [
   "release_or_beta",
   "apple_catalina", # Bug 1713329
   "apple_silicon",  # bug 1707747
-  "os == 'win' && bits == 32 && !debug",  # Bug 1781452
+  "win11_2009 && bits == 32 && !debug",  # Bug 1781452
   "os == 'linux' && !debug",  # Bug 1781452
 ]
 run-sequentially = "very high failure rate in parallel"

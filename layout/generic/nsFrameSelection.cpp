@@ -31,7 +31,6 @@
 #include "nsFrameTraversal.h"
 #include "nsString.h"
 #include "nsISelectionListener.h"
-#include "nsContentCID.h"
 #include "nsDeviceContext.h"
 #include "nsIContent.h"
 #include "nsRange.h"
@@ -48,7 +47,6 @@
 
 #include "nsGkAtoms.h"
 #include "nsLayoutUtils.h"
-#include "nsLayoutCID.h"
 #include "nsBidiPresUtils.h"
 #include "nsTextFrame.h"
 

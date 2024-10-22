@@ -32,6 +32,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollingMetrics.h"
 #include "mozilla/SharedStyleSheetCache.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
@@ -601,21 +602,129 @@ void ChromeUtils::Import(const GlobalObject& aGlobal,
   aRetval.set(exports);
 }
 
-static mozJSModuleLoader* GetContextualESLoader(
-    const Optional<bool>& aLoadInDevToolsLoader, JSObject* aGlobal) {
-  RefPtr devToolsModuleloader = mozJSModuleLoader::GetDevToolsLoader();
-  // We should load the module in the DevTools loader if:
-  // - ChromeUtils.importESModule's `loadInDevToolsLoader` option is true, or,
-  // - if the callsite is from a module loaded in the DevTools loader and
-  // `loadInDevToolsLoader` isn't an explicit false.
-  bool shouldUseDevToolsLoader =
-      (aLoadInDevToolsLoader.WasPassed() && aLoadInDevToolsLoader.Value()) ||
-      (devToolsModuleloader && !aLoadInDevToolsLoader.WasPassed() &&
-       devToolsModuleloader->IsLoaderGlobal(aGlobal));
-  if (shouldUseDevToolsLoader) {
-    return mozJSModuleLoader::GetOrCreateDevToolsLoader();
+static mozJSModuleLoader* GetModuleLoaderForCurrentGlobal(
+    JSContext* aCx, const GlobalObject& aGlobal,
+    Maybe<loader::NonSharedGlobalSyncModuleLoaderScope>&
+        aMaybeSyncLoaderScope) {
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+
+  if (mozJSModuleLoader::IsSharedSystemGlobal(global)) {
+    return mozJSModuleLoader::Get();
   }
-  return mozJSModuleLoader::Get();
+  if (mozJSModuleLoader::IsDevToolsLoaderGlobal(global)) {
+    return mozJSModuleLoader::GetOrCreateDevToolsLoader(aCx);
+  }
+
+  if (loader::NonSharedGlobalSyncModuleLoaderScope::IsActive()) {
+    mozJSModuleLoader* moduleloader =
+        loader::NonSharedGlobalSyncModuleLoaderScope::ActiveLoader();
+
+    if (!moduleloader->IsLoaderGlobal(global->GetGlobalJSObject())) {
+      JS_ReportErrorASCII(aCx,
+                          "global: \"current\" option cannot be used for "
+                          "different global while other importESModule "
+                          "with global: \"current\" is on the stack");
+      return nullptr;
+    }
+
+    return moduleloader;
+  }
+
+  RefPtr targetModuleLoader = global->GetModuleLoader(aCx);
+  if (!targetModuleLoader) {
+    // Sandbox without associated window returns nullptr for GetModuleLoader.
+    JS_ReportErrorASCII(aCx, "No ModuleLoader found for the current context");
+    return nullptr;
+  }
+
+  if (targetModuleLoader->HasFetchingModules()) {
+    if (!NS_IsMainThread()) {
+      JS_ReportErrorASCII(aCx,
+                          "ChromeUtils.importESModule cannot be used in worker "
+                          "when there is ongoing dynamic import");
+      return nullptr;
+    }
+
+    if (!mozilla::SpinEventLoopUntil(
+            "importESModule for current global"_ns, [&]() -> bool {
+              return !targetModuleLoader->HasFetchingModules();
+            })) {
+      JS_ReportErrorASCII(aCx, "Failed to wait for ongoing module requests");
+      return nullptr;
+    }
+  }
+
+  aMaybeSyncLoaderScope.emplace(aCx, global);
+  return aMaybeSyncLoaderScope->ActiveLoader();
+}
+
+static mozJSModuleLoader* GetModuleLoaderForOptions(
+    JSContext* aCx, const GlobalObject& aGlobal,
+    const ImportESModuleOptionsDictionary& aOptions,
+    Maybe<loader::NonSharedGlobalSyncModuleLoaderScope>&
+        aMaybeSyncLoaderScope) {
+  if (!aOptions.mGlobal.WasPassed()) {
+    return mozJSModuleLoader::Get();
+  }
+
+  switch (aOptions.mGlobal.Value()) {
+    case ImportESModuleTargetGlobal::Shared:
+      return mozJSModuleLoader::Get();
+
+    case ImportESModuleTargetGlobal::Devtools:
+      return mozJSModuleLoader::GetOrCreateDevToolsLoader(aCx);
+
+    case ImportESModuleTargetGlobal::Contextual: {
+      if (!NS_IsMainThread()) {
+        return GetModuleLoaderForCurrentGlobal(aCx, aGlobal,
+                                               aMaybeSyncLoaderScope);
+      }
+
+      RefPtr devToolsModuleloader = mozJSModuleLoader::GetDevToolsLoader();
+      if (devToolsModuleloader &&
+          devToolsModuleloader->IsLoaderGlobal(aGlobal.Get())) {
+        return mozJSModuleLoader::GetOrCreateDevToolsLoader(aCx);
+      }
+      return mozJSModuleLoader::Get();
+    }
+
+    case ImportESModuleTargetGlobal::Current:
+      return GetModuleLoaderForCurrentGlobal(aCx, aGlobal,
+                                             aMaybeSyncLoaderScope);
+
+    default:
+      MOZ_CRASH("Unknown ImportESModuleTargetGlobal");
+  }
+}
+
+static bool ValidateImportOptions(
+    JSContext* aCx, const GlobalObject& aGlobal,
+    const ImportESModuleOptionsDictionary& aOptions) {
+  if (!NS_IsMainThread() &&
+      (!aOptions.mGlobal.WasPassed() ||
+       (aOptions.mGlobal.Value() != ImportESModuleTargetGlobal::Current &&
+        aOptions.mGlobal.Value() != ImportESModuleTargetGlobal::Contextual))) {
+    JS_ReportErrorASCII(aCx,
+                        "ChromeUtils.importESModule: Only { global: "
+                        "\"current\" } and { global: \"contextual\" } options "
+                        "are supported on worker");
+    return false;
+  }
+
+  if (NS_IsMainThread()) {
+    nsCOMPtr<nsIGlobalObject> global =
+        do_QueryInterface(aGlobal.GetAsSupports());
+
+    if (mozJSModuleLoader::IsDevToolsLoaderGlobal(global) &&
+        !aOptions.mGlobal.WasPassed()) {
+      JS_ReportErrorASCII(aCx,
+                          "ChromeUtils.importESModule: global option is "
+                          "required in DevTools distinct global");
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* static */
@@ -623,16 +732,25 @@ void ChromeUtils::ImportESModule(
     const GlobalObject& aGlobal, const nsAString& aResourceURI,
     const ImportESModuleOptionsDictionary& aOptions,
     JS::MutableHandle<JSObject*> aRetval, ErrorResult& aRv) {
-  RefPtr moduleloader =
-      GetContextualESLoader(aOptions.mLoadInDevToolsLoader, aGlobal.Get());
-  MOZ_ASSERT(moduleloader);
+  JSContext* cx = aGlobal.Context();
+
+  if (!ValidateImportOptions(cx, aGlobal, aOptions)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  Maybe<loader::NonSharedGlobalSyncModuleLoaderScope> maybeSyncLoaderScope;
+  RefPtr<mozJSModuleLoader> moduleloader =
+      GetModuleLoaderForOptions(cx, aGlobal, aOptions, maybeSyncLoaderScope);
+  if (!moduleloader) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
 
   NS_ConvertUTF16toUTF8 registryLocation(aResourceURI);
 
   AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING_NONSENSITIVE(
       "ChromeUtils::ImportESModule", OTHER, registryLocation);
-
-  JSContext* cx = aGlobal.Context();
 
   JS::Rooted<JSObject*> moduleNamespace(cx);
   nsresult rv =
@@ -649,13 +767,58 @@ void ChromeUtils::ImportESModule(
     return;
   }
   aRetval.set(moduleNamespace);
+
+  if (maybeSyncLoaderScope) {
+    maybeSyncLoaderScope->Finish();
+  }
 }
+
+// An integer encoding for ImportESModuleOptionsDictionary, to pass the value
+// to the lazy getters.
+class EncodedOptions {
+ public:
+  explicit EncodedOptions(const ImportESModuleOptionsDictionary& aOptions) {
+    if (aOptions.mGlobal.WasPassed()) {
+      mValue = uint32_t(aOptions.mGlobal.Value()) + 1;
+    } else {
+      mValue = 0;
+    }
+  }
+
+  explicit EncodedOptions(uint32_t aValue) : mValue(aValue) {}
+
+  int32_t toInt32() const { return int32_t(mValue); }
+
+  void DecodeInto(ImportESModuleOptionsDictionary& aOptions) {
+    if (mValue == 0) {
+      aOptions.mGlobal.Reset();
+    } else {
+      aOptions.mGlobal.Construct(ImportESModuleTargetGlobal(mValue - 1));
+    }
+  }
+
+ private:
+  uint32_t mValue = 0;
+};
 
 namespace lazy_getter {
 
+// The property id of the getter.
+// Used by all lazy getters.
 static const size_t SLOT_ID = 0;
+
+// The URI of the module to import.
+// Used by ChromeUtils.defineModuleGetter and ChromeUtils.defineESModuleGetters.
 static const size_t SLOT_URI = 1;
+
+// An array object that contians values for PARAM_INDEX_TARGET and
+// PARAM_INDEX_LAMBDA.
+// Used by ChromeUtils.defineLazyGetter.
 static const size_t SLOT_PARAMS = 1;
+
+// The EncodedOptions value.
+// Used by ChromeUtils.defineESModuleGetters.
+static const size_t SLOT_OPTIONS = 2;
 
 static const size_t PARAM_INDEX_TARGET = 0;
 static const size_t PARAM_INDEX_LAMBDA = 1;
@@ -786,16 +949,11 @@ static bool ModuleGetterImpl(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   }
   nsDependentCString uri(bytes.get());
 
-  RefPtr moduleloader =
-      aType == ModuleType::JSM
-          ? mozJSModuleLoader::Get()
-          : GetContextualESLoader(
-                Optional<bool>(),
-                JS::GetNonCCWObjectGlobal(js::UncheckedUnwrap(thisObj)));
-  MOZ_ASSERT(moduleloader);
-
   JS::Rooted<JS::Value> value(aCx);
   if (aType == ModuleType::JSM) {
+    RefPtr moduleloader = mozJSModuleLoader::Get();
+    MOZ_ASSERT(moduleloader);
+
     JS::Rooted<JSObject*> moduleGlobal(aCx);
     JS::Rooted<JSObject*> moduleExports(aCx);
     nsresult rv = moduleloader->Import(aCx, uri, &moduleGlobal, &moduleExports);
@@ -809,6 +967,21 @@ static bool ModuleGetterImpl(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
       return false;
     }
   } else {
+    EncodedOptions encodedOptions(
+        js::GetFunctionNativeReserved(callee, SLOT_OPTIONS).toInt32());
+
+    ImportESModuleOptionsDictionary options;
+    encodedOptions.DecodeInto(options);
+
+    GlobalObject global(aCx, callee);
+
+    Maybe<loader::NonSharedGlobalSyncModuleLoaderScope> maybeSyncLoaderScope;
+    RefPtr<mozJSModuleLoader> moduleloader =
+        GetModuleLoaderForOptions(aCx, global, options, maybeSyncLoaderScope);
+    if (!moduleloader) {
+      return false;
+    }
+
     JS::Rooted<JSObject*> moduleNamespace(aCx);
     nsresult rv = moduleloader->ImportESModule(aCx, uri, &moduleNamespace);
     if (NS_FAILED(rv)) {
@@ -825,6 +998,10 @@ static bool ModuleGetterImpl(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     }
     if (!JS_WrapValue(aCx, &value)) {
       return false;
+    }
+
+    if (maybeSyncLoaderScope) {
+      maybeSyncLoaderScope->Finish();
     }
   }
 
@@ -902,8 +1079,12 @@ static bool DefineJSModuleGetter(JSContext* aCx, JS::Handle<JSObject*> aTarget,
 
 static bool DefineESModuleGetter(JSContext* aCx, JS::Handle<JSObject*> aTarget,
                                  JS::Handle<JS::PropertyKey> aId,
-                                 JS::Handle<JS::Value> aResourceURI) {
+                                 JS::Handle<JS::Value> aResourceURI,
+                                 const EncodedOptions& encodedOptions) {
   JS::Rooted<JS::Value> idVal(aCx, JS::StringValue(aId.toString()));
+
+  JS::Rooted<JS::Value> optionsVal(aCx,
+                                   JS::Int32Value(encodedOptions.toInt32()));
 
   JS::Rooted<JSObject*> getter(
       aCx, JS_GetFunctionObject(js::NewFunctionByIdWithReserved(
@@ -922,6 +1103,8 @@ static bool DefineESModuleGetter(JSContext* aCx, JS::Handle<JSObject*> aTarget,
   js::SetFunctionNativeReserved(setter, SLOT_ID, idVal);
 
   js::SetFunctionNativeReserved(getter, SLOT_URI, aResourceURI);
+
+  js::SetFunctionNativeReserved(getter, SLOT_OPTIONS, optionsVal);
 
   return JS_DefinePropertyById(aCx, aTarget, aId, getter, setter,
                                JSPROP_ENUMERATE);
@@ -955,10 +1138,10 @@ void ChromeUtils::DefineModuleGetter(const GlobalObject& global,
 }
 
 /* static */
-void ChromeUtils::DefineESModuleGetters(const GlobalObject& global,
-                                        JS::Handle<JSObject*> target,
-                                        JS::Handle<JSObject*> modules,
-                                        ErrorResult& aRv) {
+void ChromeUtils::DefineESModuleGetters(
+    const GlobalObject& global, JS::Handle<JSObject*> target,
+    JS::Handle<JSObject*> modules,
+    const ImportESModuleOptionsDictionary& aOptions, ErrorResult& aRv) {
   JSContext* cx = global.Context();
 
   JS::Rooted<JS::IdVector> props(cx, JS::IdVector(cx));
@@ -966,6 +1149,13 @@ void ChromeUtils::DefineESModuleGetters(const GlobalObject& global,
     aRv.NoteJSContextException(cx);
     return;
   }
+
+  if (!ValidateImportOptions(cx, global, aOptions)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  EncodedOptions encodedOptions(aOptions);
 
   JS::Rooted<JS::PropertyKey> prop(cx);
   JS::Rooted<JS::Value> resourceURIVal(cx);
@@ -982,7 +1172,8 @@ void ChromeUtils::DefineESModuleGetters(const GlobalObject& global,
       return;
     }
 
-    if (!lazy_getter::DefineESModuleGetter(cx, target, prop, resourceURIVal)) {
+    if (!lazy_getter::DefineESModuleGetter(cx, target, prop, resourceURIVal,
+                                           encodedOptions)) {
       aRv.NoteJSContextException(cx);
       return;
     }
@@ -1177,7 +1368,8 @@ void ChromeUtils::ClearStyleSheetCache(GlobalObject&) {
 static WebIDLProcType ProcTypeToWebIDL(mozilla::ProcType aType) {
   // Max is the value of the last enum, not the length, so add one.
   static_assert(
-      WebIDLProcTypeValues::Count == static_cast<size_t>(ProcType::Max) + 1,
+      static_cast<size_t>(MaxContiguousEnumValue<WebIDLProcType>::value) ==
+          static_cast<size_t>(ProcType::Max),
       "In order for this static cast to be okay, "
       "WebIDLProcType must match ProcType exactly");
 
@@ -1884,9 +2076,9 @@ unsigned ChromeUtils::AliveUtilityProcesses(const GlobalObject&) {
 void ChromeUtils::GetAllPossibleUtilityActorNames(GlobalObject& aGlobal,
                                                   nsTArray<nsCString>& aNames) {
   aNames.Clear();
-  for (size_t i = 0; i < WebIDLUtilityActorNameValues::Count; ++i) {
-    auto idlName = static_cast<UtilityActorName>(i);
-    aNames.AppendElement(WebIDLUtilityActorNameValues::GetString(idlName));
+  for (UtilityActorName idlName :
+       MakeWebIDLEnumeratedRange<WebIDLUtilityActorName>()) {
+    aNames.AppendElement(GetEnumString(idlName));
   }
 }
 

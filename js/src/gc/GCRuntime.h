@@ -616,6 +616,13 @@ class GCRuntime {
   bool hasDelayedMarking() const;
   void markAllDelayedChildren(ShouldReportMarkTime reportTime);
 
+  // If we have yielded to the mutator while foreground finalizing arenas from
+  // zone |zone| with kind |kind| then return a list of the arenas finalized so
+  // far. These will have been removed from the main arena lists at this
+  // point. Otherwise return nullptr.
+  SortedArenaList* maybeGetForegroundFinalizedArenas(Zone* zone,
+                                                     AllocKind kind);
+
   /*
    * Concurrent sweep infrastructure.
    */
@@ -624,7 +631,16 @@ class GCRuntime {
   void updateHelperThreadCount();
   size_t parallelWorkerCount() const;
 
+  // GC parallel task dispatch infrastructure.
+  size_t getMaxParallelThreads() const;
+  void dispatchOrQueueParallelTask(GCParallelTask* task,
+                                   const AutoLockHelperThreadState& lock);
+  void maybeDispatchParallelTasks(const AutoLockHelperThreadState& lock);
+  void onParallelTaskEnd(bool wasDispatched,
+                         const AutoLockHelperThreadState& lock);
+
   // Parallel marking.
+  bool setParallelMarkingEnabled(bool enabled);
   bool initOrDisableParallelMarking();
   [[nodiscard]] bool updateMarkersVector();
   size_t markingWorkerCount() const;
@@ -784,8 +800,11 @@ class GCRuntime {
       ParallelMarking allowParallelMarking = SingleThreadedMarking,
       ShouldReportMarkTime reportTime = ReportMarkTime);
   bool canMarkInParallel() const;
-  bool initParallelMarkers();
+  bool initParallelMarking();
   void finishParallelMarkers();
+
+  bool reserveMarkingThreads(size_t count);
+  void releaseMarkingThreads();
 
   bool hasMarkingWork(MarkColor color) const;
 
@@ -1010,6 +1029,12 @@ class GCRuntime {
   MainThreadOrGCTaskData<size_t> helperThreadCount;
   MainThreadData<size_t> markingThreadCount;
 
+  // Per-runtime helper thread task queue. Can be accessed from helper threads
+  // in maybeDispatchParallelTasks().
+  HelperThreadLockData<size_t> maxParallelThreads;
+  HelperThreadLockData<size_t> dispatchedParallelTasks;
+  HelperThreadLockData<GCParallelTaskList> queuedParallelTasks;
+
   // State used for managing atom mark bitmaps in each zone.
   AtomMarkingRuntime atomMarking;
 
@@ -1098,6 +1123,13 @@ class GCRuntime {
 
   /* Incremented on every GC slice. */
   MainThreadData<uint64_t> sliceNumber;
+
+  /*
+   * This runtime's current contribution to the global number of helper threads
+   * 'reserved' for parallel marking. Does not affect other uses of helper
+   * threads.
+   */
+  MainThreadData<size_t> reservedMarkingThreads;
 
   /* Whether the currently running GC can finish in multiple slices. */
   MainThreadOrGCTaskData<bool> isIncremental;
@@ -1192,6 +1224,15 @@ class GCRuntime {
       weakCachesToSweep;
   MainThreadData<bool> abortSweepAfterCurrentGroup;
   MainThreadOrGCTaskData<IncrementalProgress> sweepMarkResult;
+
+  /*
+   * During incremental foreground finalization, we may have a list of arenas of
+   * the current AllocKind and Zone whose contents have been finalized but which
+   * have not yet been merged back into the main arena lists.
+   */
+  MainThreadOrGCTaskData<JS::Zone*> foregroundFinalizedZone;
+  MainThreadOrGCTaskData<AllocKind> foregroundFinalizedAllocKind;
+  MainThreadData<mozilla::Maybe<SortedArenaList>> foregroundFinalizedArenas;
 
 #ifdef DEBUG
   /*
@@ -1369,12 +1410,6 @@ class GCRuntime {
   BackgroundSweepTask sweepTask;
   BackgroundFreeTask freeTask;
   BackgroundDecommitTask decommitTask;
-
-  /*
-   * During incremental sweeping, this field temporarily holds the arenas of
-   * the current AllocKind being swept in order of increasing free space.
-   */
-  MainThreadData<SortedArenaList> incrementalSweepList;
 
   MainThreadData<Nursery> nursery_;
 

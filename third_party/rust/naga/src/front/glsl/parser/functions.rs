@@ -49,7 +49,7 @@ impl<'source> ParsingContext<'source> {
         }
 
         // Type names can identify either declaration statements or type constructors
-        // depending on wether the token following the type name is a `(` (LeftParen)
+        // depending on whether the token following the type name is a `(` (LeftParen)
         if self.peek_type_name(frontend) {
             // Start by consuming the type name so that we can peek the token after it
             let token = self.bump(frontend)?;
@@ -435,7 +435,7 @@ impl<'source> ParsingContext<'source> {
 
                 if self.bump_if(frontend, TokenValue::Semicolon).is_none() {
                     if self.peek_type_name(frontend) || self.peek_type_qualifier(frontend) {
-                        self.parse_declaration(frontend, ctx, false, false)?;
+                        self.parse_declaration(frontend, ctx, false, is_inside_loop)?;
                     } else {
                         let mut stmt = ctx.stmt_ctx();
                         let expr = self.parse_expression(frontend, ctx, &mut stmt)?;

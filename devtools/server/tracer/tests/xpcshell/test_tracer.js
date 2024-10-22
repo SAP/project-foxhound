@@ -121,11 +121,11 @@ add_task(async function testTracingJSMGlobal() {
   // So only assert the last two frames.
   const lastFrame = listenerSandbox.frames.at(-1);
   const beforeLastFrame = listenerSandbox.frames.at(-2);
-  Assert.equal(beforeLastFrame.depth, 0);
+  Assert.equal(beforeLastFrame.depth, 7);
   Assert.equal(beforeLastFrame.formatedDisplayName, "λ foo");
   Assert.equal(beforeLastFrame.prefix, "testPrefix: ");
   Assert.ok(beforeLastFrame.frame);
-  Assert.equal(lastFrame.depth, 1);
+  Assert.equal(lastFrame.depth, 8);
   Assert.equal(lastFrame.formatedDisplayName, "λ bar");
   Assert.equal(lastFrame.prefix, "testPrefix: ");
   Assert.ok(lastFrame.frame);
@@ -165,6 +165,339 @@ add_task(async function testTracingValues() {
     logs[2],
     `λ bar(-0, 1, Array(1), [object Object], "4", BigInt(5), Symbol(6), Infinity, undefined, null, false, NaN, function foo(), function anonymous(), class MyClass)`
   );
+
+  info("Stop tracing");
+  stopTracing();
+});
+
+add_task(async function testTracingFunctionReturn() {
+  // Test the `traceFunctionReturn` flag
+  const sandbox = Cu.Sandbox("https://example.com");
+  Cu.evalInSandbox(
+    `function foo() { bar(); return 0 } function bar() { return "string" }; foo();`,
+    sandbox
+  );
+
+  // Pass an override method to catch all strings tentatively logged to stdout
+  const logs = [];
+  function loggingMethod(str) {
+    logs.push(str);
+  }
+
+  info("Start tracing");
+  startTracing({ global: sandbox, traceFunctionReturn: true, loggingMethod });
+
+  info("Call some code");
+  sandbox.foo();
+
+  Assert.equal(logs.length, 5);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ foo");
+  Assert.stringContains(logs[2], "λ bar");
+  Assert.stringContains(logs[3], `λ bar return`);
+  Assert.stringContains(logs[4], "λ foo return");
+
+  info("Stop tracing");
+  stopTracing();
+});
+
+add_task(async function testTracingFunctionReturnAndValues() {
+  // Test the `traceFunctionReturn` and `traceValues` flag
+  const sandbox = Cu.Sandbox("https://example.com");
+  Cu.evalInSandbox(
+    `function foo() { bar(); second(); } function bar() { return "string" }; function second() { return null; }; foo();`,
+    sandbox
+  );
+
+  // Pass an override method to catch all strings tentatively logged to stdout
+  const logs = [];
+  function loggingMethod(str) {
+    logs.push(str);
+  }
+
+  info("Start tracing");
+  startTracing({
+    global: sandbox,
+    traceFunctionReturn: true,
+    traceValues: true,
+    loggingMethod,
+  });
+
+  info("Call some code");
+  sandbox.foo();
+
+  Assert.equal(logs.length, 7);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ foo()");
+  Assert.stringContains(logs[2], "λ bar()");
+  Assert.stringContains(logs[3], `λ bar return "string"`);
+  Assert.stringContains(logs[4], "λ second()");
+  Assert.stringContains(logs[5], `λ second return null`);
+  Assert.stringContains(logs[6], "λ foo return undefined");
+
+  info("Stop tracing");
+  stopTracing();
+});
+
+add_task(async function testTracingStep() {
+  // Test the `traceStep` flag
+  const sandbox = Cu.Sandbox("https://example.com");
+  const source = `
+function foo() {
+  bar();            /* line 3 */
+  second();         /* line 4 */
+}
+function bar() {
+  let res;          /* line 7 */
+  if (1 === 1) {    /* line 8 */
+    res = "string"; /* line 9 */
+  } else {
+    res = "nope"
+  }
+  return res;       /* line 13 */
+};
+function second() {
+  let x = 0;        /* line 16 */
+  for (let i = 0; i < 2; i++) { /* line 17 */
+    x++;            /* line 18 */
+  }
+  return null;      /* line 20 */
+};
+foo();`;
+  Cu.evalInSandbox(source, sandbox, null, "file.js", 1);
+
+  // Pass an override method to catch all strings tentatively logged to stdout
+  const logs = [];
+  function loggingMethod(str) {
+    logs.push(str);
+  }
+
+  info("Start tracing");
+  startTracing({
+    global: sandbox,
+    traceSteps: true,
+    loggingMethod,
+  });
+
+  info("Call some code");
+  sandbox.foo();
+
+  Assert.equal(logs.length, 19);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ foo");
+  Assert.stringContains(logs[1], "file.js:3:3");
+
+  // Each "step" only prints the location and nothing more
+  Assert.stringContains(logs[2], "file.js:3:3");
+
+  Assert.stringContains(logs[3], "λ bar");
+  Assert.stringContains(logs[3], "file.js:6:16");
+
+  Assert.stringContains(logs[4], "file.js:8:7");
+
+  Assert.stringContains(logs[5], "file.js:9:5");
+
+  Assert.stringContains(logs[6], "file.js:13:3");
+
+  Assert.stringContains(logs[7], "file.js:4:3");
+
+  Assert.stringContains(logs[8], "λ second");
+  Assert.stringContains(logs[8], "file.js:15:19");
+
+  Assert.stringContains(logs[9], "file.js:16:11");
+
+  // For loop
+  Assert.stringContains(logs[10], "file.js:17:16");
+
+  Assert.stringContains(logs[11], "file.js:17:19");
+
+  Assert.stringContains(logs[12], "file.js:18:5");
+
+  Assert.stringContains(logs[13], "file.js:17:26");
+
+  Assert.stringContains(logs[14], "file.js:17:19");
+
+  Assert.stringContains(logs[15], "file.js:18:5");
+
+  Assert.stringContains(logs[16], "file.js:17:26");
+
+  Assert.stringContains(logs[17], "file.js:17:19");
+  // End of for loop
+
+  Assert.stringContains(logs[18], "file.js:20:3");
+
+  info("Stop tracing");
+  stopTracing();
+});
+
+add_task(async function testTracingPauseOnStep() {
+  // Test the `pauseOnStep` flag
+  const sandbox = Cu.Sandbox("https://example.com");
+  sandbox.dump = dump;
+  const source = `var counter = 0; function incrementCounter() { let x = 0; dump("++\\n"); counter++; };`;
+  Cu.evalInSandbox(source, sandbox);
+
+  // Pass an override method to catch all strings tentatively logged to stdout
+  const logs = [];
+  let loggingMethodResolve;
+  function loggingMethod(str) {
+    logs.push(str);
+    if (loggingMethodResolve) {
+      loggingMethodResolve();
+    }
+  }
+
+  info("Start tracing without pause");
+  startTracing({
+    global: sandbox,
+    loggingMethod,
+  });
+
+  info("Call some code");
+  sandbox.incrementCounter();
+
+  Assert.equal(logs.length, 2);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ incrementCounter");
+
+  info(
+    "When pauseOnStep isn't used, the traced code runs synchronously to completion"
+  );
+  Assert.equal(sandbox.counter, 1);
+
+  info("Stop tracing");
+  stopTracing();
+
+  logs.length = 0;
+  sandbox.counter = 0;
+
+  info("Start tracing with 0ms pause");
+  startTracing({
+    global: sandbox,
+    pauseOnStep: 0,
+    loggingMethod,
+  });
+
+  let onTraces = Promise.withResolvers();
+  let onResumed = Promise.withResolvers();
+  // This is used when receiving new traces in `loggingMethod()`
+  loggingMethodResolve = onTraces.resolve;
+
+  info(
+    "Run the to-be-traced code in a distinct event loop as it would be paused synchronously and would prevent further test script execution"
+  );
+  Services.tm.dispatchToMainThread(() => {
+    sandbox.incrementCounter();
+    onResumed.resolve();
+  });
+
+  info("Wait for tracer to call the listener");
+  await onTraces.promise;
+
+  Assert.equal(logs.length, 2);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ incrementCounter");
+
+  info(
+    "When pauseInStep is used, the tracer listener is called, but the traced function is paused and doesn't run synchronously to completion"
+  );
+  Assert.equal(
+    sandbox.counter,
+    0,
+    "The increment method was called but its execution flow was blocked and couldn't increment"
+  );
+
+  info("Wait for traced code to be resumed");
+  await onResumed.promise;
+  info(
+    "If we release the event loop, we can see the traced function completion"
+  );
+  Assert.equal(sandbox.counter, 1);
+
+  info("Stop tracing");
+  stopTracing();
+
+  logs.length = 0;
+  sandbox.counter = 0;
+
+  info("Start tracing with 250ms pause");
+  startTracing({
+    global: sandbox,
+    pauseOnStep: 250,
+    loggingMethod,
+  });
+
+  onTraces = Promise.withResolvers();
+  onResumed = Promise.withResolvers();
+  // This is used when receiving new traces in `loggingMethod()`
+  loggingMethodResolve = onTraces.resolve;
+
+  info(
+    "Run the to-be-traced code in a distinct event loop as it would be paused synchronously and would prevent further test script execution"
+  );
+  const startTimestamp = Cu.now();
+  Services.tm.dispatchToMainThread(() => {
+    sandbox.incrementCounter();
+    onResumed.resolve();
+  });
+
+  info("Wait for tracer to call the listener");
+  await onTraces.promise;
+
+  Assert.equal(logs.length, 2);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ incrementCounter");
+
+  info(
+    "When pauseInStep is used, the tracer lsitener is called, but the traced function is paused and doesn't run synchronously to completion"
+  );
+  Assert.equal(sandbox.counter, 0);
+
+  info("Wait for traced code to be resumed");
+  await onResumed.promise;
+  info(
+    "If we release the event loop, we can see the traced function completion"
+  );
+  Assert.equal(sandbox.counter, 1);
+  info("The thread should have paused at least the pauseOnStep's duration");
+  Assert.greater(Cu.now() - startTimestamp, 250);
+
+  info("Stop tracing");
+  stopTracing();
+});
+
+add_task(async function testTracingFilterSourceUrl() {
+  // Test the `filterFrameSourceUrl` flag
+  const sandbox = Cu.Sandbox("https://example.com");
+
+  // Use a unique global (sandbox), but with two distinct scripts (first.js and second.js)
+  const source1 = `function foo() { bar(); }`;
+  Cu.evalInSandbox(source1, sandbox, null, "first.js", 1);
+
+  // Only code running in that second source should be traced.
+  const source2 = `function bar() { }`;
+  Cu.evalInSandbox(source2, sandbox, null, "second.js", 1);
+
+  // Pass an override method to catch all strings tentatively logged to stdout
+  const logs = [];
+  function loggingMethod(str) {
+    logs.push(str);
+  }
+
+  info("Start tracing");
+  startTracing({
+    global: sandbox,
+    filterFrameSourceUrl: "second",
+    loggingMethod,
+  });
+
+  info("Call some code");
+  sandbox.foo();
+
+  Assert.equal(logs.length, 2);
+  Assert.equal(logs[0], "Start tracing JavaScript\n");
+  Assert.stringContains(logs[1], "λ bar");
+  Assert.stringContains(logs[1], "second.js:1:18");
 
   info("Stop tracing");
   stopTracing();

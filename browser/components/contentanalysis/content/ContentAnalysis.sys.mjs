@@ -35,6 +35,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "agentName",
+  "browser.contentanalysis.agent_name",
+  "A DLP agent"
+);
+
 /**
  * A class that groups browsing contexts by their top-level one.
  * This is necessary because if there may be a subframe that
@@ -149,6 +156,11 @@ class MapByTopBrowsingContext {
    * @returns {MapByTopBrowsingContext} this
    */
   setEntry(aBrowsingContext, aValue) {
+    if (!aValue.request) {
+      console.error(
+        "MapByTopBrowsingContext.setEntry() called with a value without a request!"
+      );
+    }
     let topEntry = this.#map.get(aBrowsingContext.top);
     if (!topEntry) {
       topEntry = new Map();
@@ -156,6 +168,16 @@ class MapByTopBrowsingContext {
     }
     topEntry.set(aBrowsingContext, aValue);
     return this;
+  }
+
+  getAllRequests() {
+    let requests = [];
+    this.#map.forEach(topEntry => {
+      for (let entry of topEntry.values()) {
+        requests.push(entry.request);
+      }
+    });
+    return requests;
   }
 }
 
@@ -189,7 +211,7 @@ export const ContentAnalysis = {
 
       ChromeUtils.defineLazyGetter(this, "l10n", function () {
         return new Localization(
-          ["toolkit/contentanalysis/contentanalysis.ftl"],
+          ["branding/brand.ftl", "toolkit/contentanalysis/contentanalysis.ftl"],
           true
         );
       });
@@ -210,11 +232,54 @@ export const ContentAnalysis = {
     Services.obs.addObserver(this, "dlp-request-made");
     Services.obs.addObserver(this, "dlp-response");
     Services.obs.addObserver(this, "quit-application");
+    Services.obs.addObserver(this, "quit-application-requested");
   },
 
   // nsIObserver
   async observe(aSubj, aTopic, aData) {
     switch (aTopic) {
+      case "quit-application-requested": {
+        let pendingRequests =
+          this.dlpBusyViewsByTopBrowsingContext.getAllRequests();
+        if (pendingRequests.length) {
+          let messageBody = this.l10n.formatValueSync(
+            "contentanalysis-inprogress-quit-message"
+          );
+          messageBody = messageBody + "\n\n";
+          for (const pendingRequest of pendingRequests) {
+            let name = this._getResourceNameFromNameOrOperationType(
+              this._getResourceNameOrOperationTypeFromRequest(
+                pendingRequest,
+                true
+              )
+            );
+            messageBody = messageBody + name + "\n";
+          }
+          let buttonSelected = Services.prompt.confirmEx(
+            null,
+            this.l10n.formatValueSync("contentanalysis-inprogress-quit-title"),
+            messageBody,
+            Ci.nsIPromptService.BUTTON_POS_0 *
+              Ci.nsIPromptService.BUTTON_TITLE_IS_STRING +
+              Ci.nsIPromptService.BUTTON_POS_1 *
+                Ci.nsIPromptService.BUTTON_TITLE_CANCEL +
+              Ci.nsIPromptService.BUTTON_POS_0_DEFAULT,
+            this.l10n.formatValueSync(
+              "contentanalysis-inprogress-quit-yesbutton"
+            ),
+            null,
+            null,
+            null,
+            { value: 0 }
+          );
+          if (buttonSelected === 0) {
+            lazy.gContentAnalysis.cancelAllRequests();
+          } else {
+            aSubj.data = true;
+          }
+        }
+        break;
+      }
       case "quit-application": {
         this.uninitialize();
         break;
@@ -251,11 +316,11 @@ export const ContentAnalysis = {
               "Got dlp-request-made message for a browsingContext that already has a busy view!"
             );
           }
-          let resourceNameOrL10NId =
-            this._getResourceNameOrL10NIdFromRequest(request);
+          let resourceNameOrOperationType =
+            this._getResourceNameOrOperationTypeFromRequest(request, false);
           this.requestTokenToRequestInfo.set(request.requestToken, {
             browsingContext,
-            resourceNameOrL10NId,
+            resourceNameOrOperationType,
           });
           this.dlpBusyViewsByTopBrowsingContext.setEntry(browsingContext, {
             timer: lazy.setTimeout(() => {
@@ -263,11 +328,13 @@ export const ContentAnalysis = {
                 notification: this._showSlowCAMessage(
                   operation,
                   request,
-                  resourceNameOrL10NId,
+                  resourceNameOrOperationType,
                   browsingContext
                 ),
+                request,
               });
             }, slowTimeoutMs),
+            request,
           });
         }
         break;
@@ -279,10 +346,9 @@ export const ContentAnalysis = {
           throw new Error("Got dlp-response message but no request was passed");
         }
 
-        let windowAndResourceNameOrL10NId = this.requestTokenToRequestInfo.get(
-          request.requestToken
-        );
-        if (!windowAndResourceNameOrL10NId) {
+        let windowAndResourceNameOrOperationType =
+          this.requestTokenToRequestInfo.get(request.requestToken);
+        if (!windowAndResourceNameOrOperationType) {
           // Perhaps this was cancelled just before the response came in from the
           // DLP agent.
           console.warn(
@@ -292,24 +358,24 @@ export const ContentAnalysis = {
         }
         this.requestTokenToRequestInfo.delete(request.requestToken);
         let dlpBusyView = this.dlpBusyViewsByTopBrowsingContext.getEntry(
-          windowAndResourceNameOrL10NId.browsingContext
+          windowAndResourceNameOrOperationType.browsingContext
         );
         if (dlpBusyView) {
           this._disconnectFromView(dlpBusyView);
           this.dlpBusyViewsByTopBrowsingContext.deleteEntry(
-            windowAndResourceNameOrL10NId.browsingContext
+            windowAndResourceNameOrOperationType.browsingContext
           );
         }
         const responseResult =
           request?.action ?? Ci.nsIContentAnalysisResponse.eUnspecified;
         await this._showCAResult(
-          windowAndResourceNameOrL10NId.resourceNameOrL10NId,
-          windowAndResourceNameOrL10NId.browsingContext,
+          windowAndResourceNameOrOperationType.resourceNameOrOperationType,
+          windowAndResourceNameOrOperationType.browsingContext,
           request.requestToken,
           responseResult
         );
         this._showAnotherPendingDialog(
-          windowAndResourceNameOrL10NId.browsingContext
+          windowAndResourceNameOrOperationType.browsingContext
         );
         break;
     }
@@ -327,8 +393,9 @@ export const ContentAnalysis = {
         notification: this._showSlowCABlockingMessage(
           otherBrowsingContext,
           args.requestToken,
-          args.resourceNameOrL10NId
+          args.resourceNameOrOperationType
         ),
+        request: args.request,
       });
     }
   },
@@ -400,39 +467,60 @@ export const ContentAnalysis = {
     );
   },
 
-  // This function also transforms the nameOrL10NId so we won't have to
+  // This function also transforms the nameOrOperationType so we won't have to
   // look it up again.
-  _getResourceNameFromNameOrL10NId(nameOrL10NId) {
-    if (nameOrL10NId.name) {
-      return nameOrL10NId.name;
+  _getResourceNameFromNameOrOperationType(nameOrOperationType) {
+    if (!nameOrOperationType.name) {
+      let l10nId = undefined;
+      switch (nameOrOperationType.operationType) {
+        case Ci.nsIContentAnalysisRequest.eClipboard:
+          l10nId = "contentanalysis-operationtype-clipboard";
+          break;
+        case Ci.nsIContentAnalysisRequest.eDroppedText:
+          l10nId = "contentanalysis-operationtype-dropped-text";
+          break;
+      }
+      if (!l10nId) {
+        console.error(
+          "Unknown operationTypeForDisplay: " +
+            nameOrOperationType.operationType
+        );
+        return "";
+      }
+      nameOrOperationType.name = this.l10n.formatValueSync(l10nId);
     }
-    nameOrL10NId.name = this.l10n.formatValueSync(nameOrL10NId.l10nId);
-    return nameOrL10NId.name;
+    return nameOrOperationType.name;
   },
 
-  _getResourceNameOrL10NIdFromRequest(aRequest) {
+  /**
+   * Gets a name or operation type from a request
+   *
+   * @param {object} aRequest The nsIContentAnalysisRequest
+   * @param {boolean} aStandalone Whether the message is going to be used on its own
+   *                              line. This is used to add more context to the message
+   *                              if a file is being uploaded rather than just the name
+   *                              of the file.
+   * @returns {object} An object with either a name property that can be used as-is, or
+   *                   an operationType property.
+   */
+  _getResourceNameOrOperationTypeFromRequest(aRequest, aStandalone) {
     if (
       aRequest.operationTypeForDisplay ==
       Ci.nsIContentAnalysisRequest.eCustomDisplayString
     ) {
+      if (aStandalone) {
+        return {
+          name: this.l10n.formatValueSync(
+            "contentanalysis-customdisplaystring-description",
+            {
+              filename: aRequest.operationDisplayString,
+            }
+          ),
+        };
+      }
       return { name: aRequest.operationDisplayString };
     }
-    let l10nId;
-    switch (aRequest.operationTypeForDisplay) {
-      case Ci.nsIContentAnalysisRequest.eClipboard:
-        l10nId = "contentanalysis-operationtype-clipboard";
-        break;
-      case Ci.nsIContentAnalysisRequest.eDroppedText:
-        l10nId = "contentanalysis-operationtype-dropped-text";
-        break;
-    }
-    if (!l10nId) {
-      console.error(
-        "Unknown operationTypeForDisplay: " + aRequest.operationTypeForDisplay
-      );
-      return { name: "" };
-    }
-    return { l10nId };
+    return { operationType: aRequest.operationTypeForDisplay };
   },
 
   /**
@@ -442,14 +530,12 @@ export const ContentAnalysis = {
   _showSlowCAMessage(
     aOperation,
     aRequest,
-    aResourceNameOrL10NId,
+    aResourceNameOrOperationType,
     aBrowsingContext
   ) {
     if (!this._shouldShowBlockingNotification(aOperation)) {
       return this._showMessage(
-        this.l10n.formatValueSync("contentanalysis-slow-agent-notification", {
-          content: this._getResourceNameFromNameOrL10NId(aResourceNameOrL10NId),
-        }),
+        this._getSlowDialogMessage(aResourceNameOrOperationType),
         aBrowsingContext
       );
     }
@@ -471,7 +557,7 @@ export const ContentAnalysis = {
       return {
         requestToken: aRequest.requestToken,
         dialogBrowsingContextArgs: {
-          resourceNameOrL10NId: aResourceNameOrL10NId,
+          resourceNameOrOperationType: aResourceNameOrOperationType,
         },
       };
     }
@@ -479,24 +565,54 @@ export const ContentAnalysis = {
     return this._showSlowCABlockingMessage(
       aBrowsingContext,
       aRequest.requestToken,
-      aResourceNameOrL10NId
+      aResourceNameOrOperationType
     );
+  },
+
+  _getSlowDialogMessage(aResourceNameOrOperationType) {
+    if (aResourceNameOrOperationType.name) {
+      return this.l10n.formatValueSync(
+        "contentanalysis-slow-agent-dialog-body-file",
+        {
+          agent: lazy.agentName,
+          filename: aResourceNameOrOperationType.name,
+        }
+      );
+    }
+    let l10nId = undefined;
+    switch (aResourceNameOrOperationType.operationType) {
+      case Ci.nsIContentAnalysisRequest.eClipboard:
+        l10nId = "contentanalysis-slow-agent-dialog-body-clipboard";
+        break;
+      case Ci.nsIContentAnalysisRequest.eDroppedText:
+        l10nId = "contentanalysis-slow-agent-dialog-body-dropped-text";
+        break;
+    }
+    if (!l10nId) {
+      console.error(
+        "Unknown operationTypeForDisplay: " + aResourceNameOrOperationType
+      );
+      return "";
+    }
+    return this.l10n.formatValueSync(l10nId, {
+      agent: lazy.agentName,
+    });
   },
 
   _showSlowCABlockingMessage(
     aBrowsingContext,
     aRequestToken,
-    aResourceNameOrL10NId
+    aResourceNameOrOperationType
   ) {
+    let bodyMessage = this._getSlowDialogMessage(aResourceNameOrOperationType);
     let promise = Services.prompt.asyncConfirmEx(
       aBrowsingContext,
       Ci.nsIPromptService.MODAL_TYPE_TAB,
-      this.l10n.formatValueSync("contentanalysis-slow-agent-dialog-title"),
-      this.l10n.formatValueSync("contentanalysis-slow-agent-dialog-body", {
-        content: this._getResourceNameFromNameOrL10NId(aResourceNameOrL10NId),
-      }),
+      this.l10n.formatValueSync("contentanalysis-slow-agent-dialog-header"),
+      bodyMessage,
       Ci.nsIPromptService.BUTTON_POS_0 *
         Ci.nsIPromptService.BUTTON_TITLE_CANCEL +
+        Ci.nsIPromptService.BUTTON_POS_1_DEFAULT +
         Ci.nsIPromptService.SHOW_SPINNER,
       null,
       null,
@@ -536,7 +652,7 @@ export const ContentAnalysis = {
    * @returns {object} a notification object (if shown)
    */
   async _showCAResult(
-    aResourceNameOrL10NId,
+    aResourceNameOrOperationType,
     aBrowsingContext,
     aRequestToken,
     aCAResult
@@ -552,8 +668,8 @@ export const ContentAnalysis = {
         message = await this.l10n.formatValue(
           "contentanalysis-genericresponse-message",
           {
-            content: this._getResourceNameFromNameOrL10NId(
-              aResourceNameOrL10NId
+            content: this._getResourceNameFromNameOrOperationType(
+              aResourceNameOrOperationType
             ),
             response: "REPORT_ONLY",
           }
@@ -566,8 +682,8 @@ export const ContentAnalysis = {
           Ci.nsIPromptService.MODAL_TYPE_TAB,
           await this.l10n.formatValue("contentanalysis-warndialogtitle"),
           await this.l10n.formatValue("contentanalysis-warndialogtext", {
-            content: this._getResourceNameFromNameOrL10NId(
-              aResourceNameOrL10NId
+            content: this._getResourceNameFromNameOrOperationType(
+              aResourceNameOrOperationType
             ),
           }),
           Ci.nsIPromptService.BUTTON_POS_0 *
@@ -590,13 +706,17 @@ export const ContentAnalysis = {
         return null;
       case Ci.nsIContentAnalysisResponse.eBlock:
         message = await this.l10n.formatValue("contentanalysis-block-message", {
-          content: this._getResourceNameFromNameOrL10NId(aResourceNameOrL10NId),
+          content: this._getResourceNameFromNameOrOperationType(
+            aResourceNameOrOperationType
+          ),
         });
         timeoutMs = this._RESULT_NOTIFICATION_TIMEOUT_MS;
         break;
       case Ci.nsIContentAnalysisResponse.eUnspecified:
         message = await this.l10n.formatValue("contentanalysis-error-message", {
-          content: this._getResourceNameFromNameOrL10NId(aResourceNameOrL10NId),
+          content: this._getResourceNameFromNameOrOperationType(
+            aResourceNameOrOperationType
+          ),
         });
         timeoutMs = this._RESULT_NOTIFICATION_TIMEOUT_MS;
         break;

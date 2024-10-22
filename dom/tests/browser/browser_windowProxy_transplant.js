@@ -59,7 +59,7 @@ add_task(async function () {
           return new Promise(resolve => {
             iframe.addEventListener(
               "load",
-              event => {
+              () => {
                 info("Got an iframe load event!");
                 resolve();
               },
@@ -89,7 +89,11 @@ add_task(async function () {
         let chromeWin1x = Cu.waiveXrays(iframe.contentWindow);
         content.win1x = Cu.waiveXrays(iframe.contentWindow);
 
-        ok(chromeWin1 != chromeWin1x, "waiving xrays creates a new thing?");
+        Assert.notEqual(
+          chromeWin1,
+          chromeWin1x,
+          "waiving xrays creates a new thing?"
+        );
 
         content.bc1 = iframe.browsingContext;
 

@@ -47,6 +47,7 @@
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/PContent.h"  // For TextRecognitionResult
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ImageTextBinding.h"
@@ -1143,7 +1144,8 @@ nsresult nsImageLoadingContent::LoadImage(nsIURI* aNewURI, bool aForce,
   nsresult rv = nsContentUtils::LoadImage(
       aNewURI, element, aDocument, triggeringPrincipal, 0, referrerInfo, this,
       loadFlags, element->LocalName(), getter_AddRefs(req), policyType,
-      mUseUrgentStartForChannel);
+      mUseUrgentStartForChannel, /* aLinkPreload */ false,
+      /* aEarlyHintPreloaderId */ 0, GetFetchPriorityForImage());
 
   // Reset the flag to avoid loading from XPCOM or somewhere again else without
   // initiated by user interaction.
@@ -1639,10 +1641,12 @@ void nsImageLoadingContent::BindToTree(BindContext& aContext,
   }
 }
 
-void nsImageLoadingContent::UnbindFromTree(bool aNullParent) {
+void nsImageLoadingContent::UnbindFromTree() {
   // We may be leaving the document, so if our image is tracked, untrack it.
   nsCOMPtr<Document> doc = GetOurCurrentDoc();
-  if (!doc) return;
+  if (!doc) {
+    return;
+  }
 
   UntrackImage(mCurrentRequest);
   UntrackImage(mPendingRequest);
@@ -1859,4 +1863,8 @@ nsLoadFlags nsImageLoadingContent::LoadFlags() {
     return nsIRequest::LOAD_BACKGROUND;
   }
   return nsIRequest::LOAD_NORMAL;
+}
+
+FetchPriority nsImageLoadingContent::GetFetchPriorityForImage() const {
+  return FetchPriority::Auto;
 }

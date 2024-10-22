@@ -1,5 +1,5 @@
 [DEFAULT]
-skip-if = ["toolkit == 'android'"] # bug 1730213
+skip-if = ["os == 'android'"] # bug 1730213
 head = "head.js"
 firefox-appdir = "browser"
 support-files = ["data/engine.xml"]
@@ -21,6 +21,8 @@ support-files = ["data/engine.xml"]
 ["test_UrlbarSearchUtils.js"]
 
 ["test_UrlbarUtils_addToUrlbarHistory.js"]
+
+["test_UrlbarUtils_copySnakeKeysToCamel.js"]
 
 ["test_UrlbarUtils_getShortcutOrURIAndPostData.js"]
 
@@ -126,10 +128,6 @@ prefs = [
 ["test_providerOmnibox.js"]
 
 ["test_providerOpenTabs.js"]
-skip-if = [
-  "os == 'mac' && debug", # Bug 1781972
-  "os == 'win' && debug", # Bug 1781972
-]
 
 ["test_providerPlaces.js"]
 

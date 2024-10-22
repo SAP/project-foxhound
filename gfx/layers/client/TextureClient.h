@@ -55,6 +55,7 @@ namespace layers {
 class AndroidHardwareBufferTextureData;
 class BufferTextureData;
 class CompositableForwarder;
+class FwdTransactionTracker;
 class KnowsCompositor;
 class LayersIPCChannel;
 class CompositableClient;
@@ -330,7 +331,10 @@ class TextureData {
 
   virtual bool RequiresRefresh() const { return false; }
 
-  virtual void UseCompositableForwarder(CompositableForwarder* aForwarder) {}
+  virtual already_AddRefed<FwdTransactionTracker> UseCompositableForwarder(
+      CompositableForwarder* aForwarder) {
+    return nullptr;
+  }
 
  protected:
   MOZ_COUNTED_DEFAULT_CTOR(TextureData)
@@ -673,6 +677,8 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
 
   void SetUpdated() { mUpdated = true; }
 
+  void OnPrepareForwardToHost();
+  void OnAbandonForwardToHost();
   bool OnForwardedToHost();
 
   // Mark that the TextureClient will be used by the paint thread, and should
@@ -758,6 +764,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
 #endif
   bool mIsLocked;
   bool mIsReadLocked MOZ_GUARDED_BY(mMutex);
+  bool mIsPendingForwardReadLocked MOZ_GUARDED_BY(mMutex) = false;
   // This member tracks that the texture was written into until the update
   // is sent to the compositor. We need this remember to lock mReadLock on
   // behalf of the compositor just before sending the notification.

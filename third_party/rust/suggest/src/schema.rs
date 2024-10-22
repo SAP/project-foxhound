@@ -6,8 +6,16 @@
 use rusqlite::{Connection, Transaction};
 use sql_support::open_database::{self, ConnectionInitializer};
 
-pub const VERSION: u32 = 10;
+/// The current database schema version.
+///
+/// For any changes to the schema [`SQL`], please make sure to:
+///
+///  1. Bump this version.
+///  2. Add a migration from the old version to the new version in
+///     [`SuggestConnectionInitializer::upgrade_from`].
+pub const VERSION: u32 = 14;
 
+/// The current Suggest database schema.
 pub const SQL: &str = "
     CREATE TABLE meta(
         key TEXT PRIMARY KEY,
@@ -37,7 +45,8 @@ pub const SQL: &str = "
         record_id TEXT NOT NULL,
         provider INTEGER NOT NULL,
         title TEXT NOT NULL,
-        url TEXT NOT NULL
+        url TEXT NOT NULL,
+        score REAL NOT NULL
     );
 
     CREATE TABLE amp_custom_details(
@@ -49,11 +58,6 @@ pub const SQL: &str = "
         click_url TEXT NOT NULL,
         icon_id TEXT NOT NULL,
         FOREIGN KEY(suggestion_id) REFERENCES suggestions(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE pocket_custom_details(
-        suggestion_id INTEGER PRIMARY KEY REFERENCES suggestions(id) ON DELETE CASCADE,
-        score REAL NOT NULL
     );
 
     CREATE TABLE wikipedia_custom_details(
@@ -68,7 +72,6 @@ pub const SQL: &str = "
         icon_url TEXT NOT NULL,
         rating TEXT,
         number_of_ratings INTEGER NOT NULL,
-        score REAL NOT NULL,
         FOREIGN KEY(suggestion_id) REFERENCES suggestions(id) ON DELETE CASCADE
     );
 
@@ -96,6 +99,18 @@ pub const SQL: &str = "
         need_location INTEGER NOT NULL,
         record_id TEXT NOT NULL
     ) WITHOUT ROWID;
+
+    CREATE TABLE yelp_custom_details(
+        icon_id TEXT PRIMARY KEY,
+        score REAL NOT NULL,
+        record_id TEXT NOT NULL
+    ) WITHOUT ROWID;
+
+    CREATE TABLE mdn_custom_details(
+        suggestion_id INTEGER PRIMARY KEY,
+        description TEXT NOT NULL,
+        FOREIGN KEY(suggestion_id) REFERENCES suggestions(id) ON DELETE CASCADE
+    );
 ";
 
 /// Initializes an SQLite connection to the Suggest database, performing
@@ -126,10 +141,10 @@ impl ConnectionInitializer for SuggestConnectionInitializer {
 
     fn upgrade_from(&self, _db: &Transaction<'_>, version: u32) -> open_database::Result<()> {
         match version {
-            1..=9 => {
-                // These schema versions were used during development, and never
-                // shipped in any applications. Treat these databases as
-                // corrupt, so that they'll be replaced.
+            1..=13 => {
+                // Treat databases with these older schema versions as corrupt,
+                // so that they'll be replaced by a fresh, empty database with
+                // the current schema.
                 Err(open_database::Error::Corrupt)
             }
             _ => Err(open_database::Error::IncompatibleVersion(version)),

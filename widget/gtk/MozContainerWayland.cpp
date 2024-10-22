@@ -155,8 +155,13 @@ bool moz_container_wayland_egl_window_set_size(MozContainer* container,
                                                nsIntSize aSize, int aScale) {
   MozContainerWayland* wl_container = &container->data.wl_container;
   MutexAutoLock lock(wl_container->container_lock);
+
+  // We may be called after unmap so we're missing egl window completelly.
+  // In such case don't return false which would block compositor.
+  // We return true here and don't block flush WebRender queue.
+  // We'll be repainted if our window become visible again anyway.
   if (!wl_container->eglwindow) {
-    return false;
+    return true;
   }
 
   if (wl_container->buffer_scale != aScale) {
@@ -323,6 +328,11 @@ static void moz_gdk_wayland_window_remove_frame_callback_surface_locked(
 }
 
 void moz_container_wayland_unmap(GtkWidget* widget) {
+  g_return_if_fail(IS_MOZ_CONTAINER(widget));
+
+  // Unmap MozContainer first so we can remove our resources
+  moz_container_unmap(widget);
+
   MozContainer* container = MOZ_CONTAINER(widget);
   MozContainerWayland* wl_container = &container->data.wl_container;
   MutexAutoLock lock(wl_container->container_lock);
@@ -359,9 +369,11 @@ gboolean moz_container_wayland_map_event(GtkWidget* widget,
   LOGCONTAINER("%s [%p]\n", __FUNCTION__,
                (void*)moz_container_get_nsWindow(MOZ_CONTAINER(widget)));
 
-  // We need to mark MozContainer as mapped to make sure
-  // moz_container_wayland_unmap() is called on hide/withdraw.
-  gtk_widget_set_mapped(widget, TRUE);
+  // Return early if we're not mapped. Gtk may send bogus map_event signal
+  // to unmapped widgets (see Bug 1875369).
+  if (!gtk_widget_get_mapped(widget)) {
+    return false;
+  }
 
   // Make sure we're on main thread as we can't lock mozContainer here
   // due to moz_container_wayland_add_or_fire_initial_draw_callback() call
@@ -412,6 +424,9 @@ void moz_container_wayland_map(GtkWidget* widget) {
                (void*)moz_container_get_nsWindow(MOZ_CONTAINER(widget)));
 
   g_return_if_fail(IS_MOZ_CONTAINER(widget));
+
+  // We need to mark MozContainer as mapped to make sure
+  // moz_container_wayland_unmap() is called on hide/withdraw.
   gtk_widget_set_mapped(widget, TRUE);
 
   if (gtk_widget_get_has_window(widget)) {
@@ -421,7 +436,6 @@ void moz_container_wayland_map(GtkWidget* widget) {
 
 void moz_container_wayland_size_allocate(GtkWidget* widget,
                                          GtkAllocation* allocation) {
-  MozContainer* container;
   GtkAllocation tmp_allocation;
 
   g_return_if_fail(IS_MOZ_CONTAINER(widget));
@@ -432,10 +446,8 @@ void moz_container_wayland_size_allocate(GtkWidget* widget,
                allocation->height);
 
   /* short circuit if you can */
-  container = MOZ_CONTAINER(widget);
   gtk_widget_get_allocation(widget, &tmp_allocation);
-  if (!container->data.children && tmp_allocation.x == allocation->x &&
-      tmp_allocation.y == allocation->y &&
+  if (tmp_allocation.x == allocation->x && tmp_allocation.y == allocation->y &&
       tmp_allocation.width == allocation->width &&
       tmp_allocation.height == allocation->height) {
     return;
@@ -449,6 +461,7 @@ void moz_container_wayland_size_allocate(GtkWidget* widget,
     // We need to position our subsurface according to GdkWindow
     // when offset changes (GdkWindow is maximized for instance).
     // see gtk-clutter-embed.c for reference.
+    MozContainer* container = MOZ_CONTAINER(widget);
     MutexAutoLock lock(container->data.wl_container.container_lock);
     if (!container->data.wl_container.surface) {
       if (!moz_container_wayland_surface_create_locked(lock, container)) {

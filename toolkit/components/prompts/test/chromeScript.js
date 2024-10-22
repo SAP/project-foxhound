@@ -8,16 +8,6 @@ const { BrowserTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/BrowserTestUtils.sys.mjs"
 );
 
-var tabSubDialogsEnabled = Services.prefs.getBoolPref(
-  "prompts.tabChromePromptSubDialog",
-  false
-);
-
-var contentPromptSubdialogsEnabled = Services.prefs.getBoolPref(
-  "prompts.contentPromptSubDialog",
-  false
-);
-
 // Define these to make EventUtils happy.
 let window = this;
 let parent = {};
@@ -91,31 +81,15 @@ async function handlePrompt(action, modalType, isSelect) {
   let ui;
   let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
 
-  if (
-    (!contentPromptSubdialogsEnabled &&
-      modalType === Services.prompt.MODAL_TYPE_CONTENT) ||
-    (!tabSubDialogsEnabled && modalType === Services.prompt.MODAL_TYPE_TAB)
-  ) {
-    let gBrowser = browserWin.gBrowser;
-    let promptManager = gBrowser.getTabModalPromptBox(gBrowser.selectedBrowser);
-    let prompts = promptManager.listPrompts();
-    if (!prompts.length) {
-      return false; // try again in a bit
-    }
+  let doc = getDialogDoc();
+  if (!doc) {
+    return false; // try again in a bit
+  }
 
-    ui = prompts[0].Dialog.ui;
-    checkTabModal(prompts[0], gBrowser.selectedBrowser);
+  if (isSelect) {
+    ui = doc;
   } else {
-    let doc = getDialogDoc();
-    if (!doc) {
-      return false; // try again in a bit
-    }
-
-    if (isSelect) {
-      ui = doc;
-    } else {
-      ui = doc.defaultView.Dialog.ui;
-    }
+    ui = doc.defaultView.Dialog.ui;
   }
 
   let dialogClosed = BrowserTestUtils.waitForEvent(

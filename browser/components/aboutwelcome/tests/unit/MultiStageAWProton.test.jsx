@@ -1,6 +1,6 @@
-import { AboutWelcomeDefaults } from "modules/AboutWelcomeDefaults.jsm";
+import { AboutWelcomeDefaults } from "modules/AboutWelcomeDefaults.sys.mjs";
 import { MultiStageProtonScreen } from "content-src/components/MultiStageProtonScreen";
-import { AWScreenUtils } from "modules/AWScreenUtils.jsm";
+import { AWScreenUtils } from "modules/AWScreenUtils.sys.mjs";
 import React from "react";
 import { mount } from "enzyme";
 
@@ -229,6 +229,21 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.isTrue(wrapper.find("button.primary[disabled]").exists());
     });
 
+    it("should render disabled secondary button if activeMultiSelect is in disabled property", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          secondary_button: {
+            label: "test secondary button",
+            disabled: "activeMultiSelect",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find("button.secondary[disabled]").exists());
+    });
+
     it("should not render a progress bar if there is 1 step", () => {
       const SCREEN_PROPS = {
         content: {
@@ -369,6 +384,92 @@ describe("MultiStageAboutWelcomeProton module", () => {
 
       assert.equal(textEl.at(0).prop("data-l10n-id"), "test-string-id");
       assert.equal(textEl.at(1).prop("data-l10n-id"), "test-string-id-2");
+    });
+
+    it("should render above_button_content legal copy with MultiSelect tile", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          tiles: {
+            type: "multiselect",
+            label: "Test Subtitle",
+            data: [
+              {
+                id: "checkbox-1",
+                type: "checkbox",
+                defaultValue: false,
+                label: { raw: "Checkbox 1" },
+              },
+            ],
+          },
+          above_button_content: [
+            {
+              type: "text",
+              text: {
+                string_id: "test-string-id",
+              },
+              font_styles: "legal",
+              link_keys: ["privacy_policy", "terms_of_use"],
+            },
+          ],
+        },
+        setScreenMultiSelects: sandbox.stub(),
+        setActiveMultiSelect: sandbox.stub(),
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      const legalText = wrapper.find(".legal-paragraph");
+      assert.equal(legalText.exists(), true);
+
+      const multiSelectContainer = wrapper.find(".multi-select-container");
+      assert.equal(multiSelectContainer.exists(), true);
+
+      sandbox.restore();
+    });
+
+    it("should not have no-rdm property when property is not in message content", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          layout: "inline",
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.notExists(wrapper.find("main").prop("no-rdm"));
+    });
+
+    it("should have no-rdm property when property is set in message content", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          layout: "inline",
+          no_rdm: true,
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.exists(wrapper.find("main").prop("no-rdm"));
+    });
+
+    it("should correctly set reverse-split prop", () => {
+      const SCREEN_PROPS = {
+        content: {
+          position: "split",
+          reverse_split: true,
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+          },
+          additional_button: {
+            label: "test additional button",
+            style: "link",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.equal(wrapper.find("main").prop("reverse-split"), "");
     });
   });
 
@@ -551,6 +652,23 @@ describe("MultiStageAboutWelcomeProton module", () => {
         "source",
         "test"
       );
+    });
+  });
+
+  describe("Embedded Migration Wizard", () => {
+    const SCREEN_PROPS = {
+      content: {
+        title: "test title",
+        tiles: {
+          type: "migration-wizard",
+        },
+      },
+    };
+
+    it("should render migration wizard", async () => {
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(wrapper.find("migration-wizard").exists());
     });
   });
 });

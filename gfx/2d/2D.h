@@ -1987,7 +1987,7 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
   SurfaceFormat mFormat;
 };
 
-class DrawEventRecorder : public RefCounted<DrawEventRecorder> {
+class DrawEventRecorder : public external::AtomicRefCounted<DrawEventRecorder> {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawEventRecorder)
   virtual RecorderType GetRecorderType() const { return RecorderType::UNKNOWN; }
@@ -2159,6 +2159,9 @@ class GFX2D_API Factory {
       uint8_t* aData, int32_t aStride, const IntSize& aSize,
       SurfaceFormat aFormat, SourceSurfaceDeallocator aDeallocator = nullptr,
       void* aClosure = nullptr);
+
+  static already_AddRefed<DataSourceSurface> CopyDataSourceSurface(
+      DataSourceSurface* aSource);
 
   static void CopyDataSourceSurface(DataSourceSurface* aSource,
                                     DataSourceSurface* aDest);

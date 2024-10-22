@@ -29,7 +29,6 @@ const DEFAULT_INTERVAL_MS = 1500;
 const TIMEOUT_DISABLED_PREF = "browser.sessionstore.debug.no_auto_updates";
 
 const PREF_INTERVAL = "browser.sessionstore.interval";
-const PREF_SESSION_COLLECTION = "browser.sessionstore.platform_collection";
 
 class Handler {
   constructor(store) {
@@ -96,7 +95,7 @@ class StateChangeNotifier extends Handler {
   /**
    * @see nsIWebProgressListener.onStateChange
    */
-  onStateChange(webProgress, request, stateFlags, status) {
+  onStateChange(webProgress, request, stateFlags) {
     // Ignore state changes for subframes because we're only interested in the
     // top-document starting or stopping its load.
     if (!webProgress.isTopLevel || webProgress.DOMWindow != this.mm.content) {
@@ -206,7 +205,7 @@ class SessionHistoryListener extends Handler {
     });
   }
 
-  handleEvent(event) {
+  handleEvent() {
     this.collect();
   }
 
@@ -218,30 +217,30 @@ class SessionHistoryListener extends Handler {
     this.collect();
   }
 
-  OnHistoryNewEntry(newURI, oldIndex) {
+  OnHistoryNewEntry() {
     // We ought to collect the previously current entry as well, see bug 1350567.
     // TODO: Reenable partial history collection for performance
     // this.collectFrom(oldIndex);
     this.collect();
   }
 
-  OnHistoryGotoIndex(index, gotoURI) {
+  OnHistoryGotoIndex() {
     // We ought to collect the previously current entry as well, see bug 1350567.
     // TODO: Reenable partial history collection for performance
     // this.collectFrom(LAST_INDEX);
     this.collect();
   }
 
-  OnHistoryPurge(numEntries) {
+  OnHistoryPurge() {
     this.collect();
   }
 
-  OnHistoryReload(reloadURI, reloadFlags) {
+  OnHistoryReload() {
     this.collect();
     return true;
   }
 
-  OnHistoryReplaceEntry(index) {
+  OnHistoryReplaceEntry() {
     this.collect();
   }
 }
@@ -607,7 +606,7 @@ class SessionStateAggregator extends GeckoViewChildModule {
       this.messageQueue,
     ];
 
-    if (!Services.prefs.getBoolPref(PREF_SESSION_COLLECTION, false)) {
+    if (!Services.appinfo.sessionStorePlatformCollection) {
       this.handlers.push(
         new FormDataListener(this),
         new ScrollPositionListener(this)

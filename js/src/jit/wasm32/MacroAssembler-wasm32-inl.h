@@ -229,6 +229,10 @@ void MacroAssembler::add32(Register src, Register dest) { MOZ_CRASH(); }
 
 void MacroAssembler::add32(Imm32 imm, Register dest) { MOZ_CRASH(); }
 
+void MacroAssembler::add32(Imm32 imm, Register src, Register dest) {
+  MOZ_CRASH();
+}
+
 void MacroAssembler::add32(Imm32 imm, const Address& dest) { MOZ_CRASH(); }
 
 void MacroAssembler::addFloat32(FloatRegister src, FloatRegister dest) {
@@ -888,6 +892,11 @@ void MacroAssembler::spectreBoundsCheckPtr(Register index,
                                            const Address& length,
                                            Register maybeScratch,
                                            Label* failure) {
+  MOZ_CRASH();
+}
+
+void MacroAssembler::cmp32Load32(Condition cond, Register lhs, Imm32 rhs,
+                                 const Address& src, Register dest) {
   MOZ_CRASH();
 }
 

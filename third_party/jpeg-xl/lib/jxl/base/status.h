@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "lib/jxl/base/common.h"
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/sanitizer_definitions.h"
 
@@ -74,14 +75,31 @@ namespace jxl {
 #define JXL_DEBUG_ON_ABORT JXL_DEBUG_ON_ERROR
 #endif  // JXL_DEBUG_ON_ABORT
 
-// Print a debug message on standard error. You should use the JXL_DEBUG macro
-// instead of calling Debug directly. This function returns false, so it can be
-// used as a return value in JXL_FAILURE.
+#ifdef USE_ANDROID_LOGGER
+#include <android/log.h>
+#define LIBJXL_ANDROID_LOG_TAG ("libjxl")
+inline void android_vprintf(const char* format, va_list args) {
+  char* message = nullptr;
+  int res = vasprintf(&message, format, args);
+  if (res != -1) {
+    __android_log_write(ANDROID_LOG_DEBUG, LIBJXL_ANDROID_LOG_TAG, message);
+    free(message);
+  }
+}
+#endif
+
+// Print a debug message on standard error or android logs. You should use the
+// JXL_DEBUG macro instead of calling Debug directly. This function returns
+// false, so it can be used as a return value in JXL_FAILURE.
 JXL_FORMAT(1, 2)
 inline JXL_NOINLINE bool Debug(const char* format, ...) {
   va_list args;
   va_start(args, format);
+#ifdef USE_ANDROID_LOGGER
+  android_vprintf(format, args);
+#else
   vfprintf(stderr, format, args);
+#endif
   va_end(args);
   return false;
 }
@@ -110,8 +128,12 @@ inline JXL_NOINLINE bool Debug(const char* format, ...) {
 // JXL_DEBUG version that prints the debug message if the global verbose level
 // defined at compile time by JXL_DEBUG_V_LEVEL is greater or equal than the
 // passed level.
+#if JXL_DEBUG_V_LEVEL > 0
 #define JXL_DEBUG_V(level, format, ...) \
   JXL_DEBUG(level <= JXL_DEBUG_V_LEVEL, format, ##__VA_ARGS__)
+#else
+#define JXL_DEBUG_V(level, format, ...)
+#endif
 
 // Warnings (via JXL_WARNING) are enabled by default in debug builds (opt and
 // debug).
@@ -329,7 +351,11 @@ inline JXL_FORMAT(2, 3) Status
       (JXL_DEBUG_ON_ALL_ERROR && !status)) {
     va_list args;
     va_start(args, format);
+#ifdef USE_ANDROID_LOGGER
+    android_vprintf(format, args);
+#else
     vfprintf(stderr, format, args);
+#endif
     va_end(args);
   }
 #ifdef JXL_CRASH_ON_ERROR
@@ -417,12 +443,24 @@ class JXL_MUST_USE_RESULT StatusOr {
 
 #define JXL_ASSIGN_OR_RETURN(lhs, statusor) \
   PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(        \
-      assign_or_return_temporary_variable##__LINE__, lhs, statusor)
+      JXL_JOIN(assign_or_return_temporary_variable, __LINE__), lhs, statusor)
 
 // NOLINTBEGIN(bugprone-macro-parentheses)
 #define PRIVATE_JXL_ASSIGN_OR_RETURN_IMPL(name, lhs, statusor) \
   auto name = statusor;                                        \
   JXL_RETURN_IF_ERROR(name.status());                          \
+  lhs = std::move(name).value();
+// NOLINTEND(bugprone-macro-parentheses)
+
+// NB: do not use outside of tests / tools!!!
+#define JXL_ASSIGN_OR_DIE(lhs, statusor) \
+  PRIVATE_JXL_ASSIGN_OR_DIE_IMPL(        \
+      JXL_JOIN(assign_or_die_temporary_variable, __LINE__), lhs, statusor)
+
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define PRIVATE_JXL_ASSIGN_OR_DIE_IMPL(name, lhs, statusor) \
+  auto name = statusor;                                     \
+  if (!name.ok()) jxl::Abort();                             \
   lhs = std::move(name).value();
 // NOLINTEND(bugprone-macro-parentheses)
 

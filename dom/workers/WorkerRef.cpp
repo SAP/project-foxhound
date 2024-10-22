@@ -20,7 +20,8 @@ class ReleaseRefControlRunnable final : public WorkerControlRunnable {
  public:
   ReleaseRefControlRunnable(WorkerPrivate* aWorkerPrivate,
                             already_AddRefed<StrongWorkerRef> aRef)
-      : WorkerControlRunnable(aWorkerPrivate, WorkerThread),
+      : WorkerControlRunnable(aWorkerPrivate, "ReleaseRefControlRunnable",
+                              WorkerThread),
         mRef(std::move(aRef)) {
     MOZ_ASSERT(mRef);
   }
@@ -46,7 +47,11 @@ class ReleaseRefControlRunnable final : public WorkerControlRunnable {
 
 WorkerRef::WorkerRef(WorkerPrivate* aWorkerPrivate, const char* aName,
                      bool aIsPreventingShutdown)
-    : mWorkerPrivate(aWorkerPrivate),
+    :
+#ifdef DEBUG
+      mDebugMutex("WorkerRef"),
+#endif
+      mWorkerPrivate(aWorkerPrivate),
       mName(aName),
       mIsPreventingShutdown(aIsPreventingShutdown),
       mHolding(false) {

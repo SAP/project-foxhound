@@ -164,7 +164,7 @@ SyncAuthManager.prototype = {
     this._token = null;
   },
 
-  async observe(subject, topic, data) {
+  async observe(subject, topic) {
     this._log.debug("observed " + topic);
     if (!this.username) {
       this._log.info("Sync is not configured, so ignoring the notification");
@@ -198,7 +198,7 @@ SyncAuthManager.prototype = {
           !Svc.PrefBranch.getStringPref("client.syncID", null);
         if (isFirstSync) {
           this._log.info("Doing initial sync actions");
-          Svc.PrefBranch.setCharPref("firstSync", "resetClient");
+          Svc.PrefBranch.setStringPref("firstSync", "resetClient");
           Services.obs.notifyObservers(null, "weave:service:setup-complete");
         }
         // There's no need to wait for sync to complete and it would deadlock
@@ -276,7 +276,7 @@ SyncAuthManager.prototype = {
    * allows us to avoid a network request for when we actually need the
    * migration info.
    */
-  prefetchMigrationSentinel(service) {
+  prefetchMigrationSentinel() {
     // nothing to do here until we decide to migrate away from FxA.
   },
 
@@ -361,7 +361,7 @@ SyncAuthManager.prototype = {
     // all services.sync prefs. So if that still exists, it wins.
     let url = Svc.PrefBranch.getStringPref("tokenServerURI", null); // Svc.PrefBranch "root" is services.sync
     if (!url) {
-      url = Services.prefs.getCharPref("identity.sync.tokenserver.uri");
+      url = Services.prefs.getStringPref("identity.sync.tokenserver.uri");
     }
     while (url.endsWith("/")) {
       // trailing slashes cause problems...
@@ -387,22 +387,28 @@ SyncAuthManager.prototype = {
     // Do the token dance, with a retry in case of transient auth failure.
     // We need to prove that we know the sync key in order to get a token
     // from the tokenserver.
-    let getToken = async key => {
+    let getToken = async (key, accessToken) => {
       this._log.info("Getting a sync token from", this._tokenServerUrl);
-      let token = await this._fetchTokenUsingOAuth(key);
+      let token = await this._fetchTokenUsingOAuth(key, accessToken);
       this._log.trace("Successfully got a token");
       return token;
     };
 
+    const ttl = fxAccountsCommon.OAUTH_TOKEN_FOR_SYNC_LIFETIME_SECONDS;
     try {
       let token, key;
       try {
         this._log.info("Getting sync key");
-        key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+        const tokenAndKey = await fxa.getOAuthTokenAndKey({
+          scope: SCOPE_OLD_SYNC,
+          ttl,
+        });
+
+        key = tokenAndKey.key;
         if (!key) {
           throw new Error("browser does not have the sync key, cannot sync");
         }
-        token = await getToken(key);
+        token = await getToken(key, tokenAndKey.token);
       } catch (err) {
         // If we get a 401 fetching the token it may be that our auth tokens needed
         // to be regenerated; retry exactly once.
@@ -412,8 +418,11 @@ SyncAuthManager.prototype = {
         this._log.warn(
           "Token server returned 401, retrying token fetch with fresh credentials"
         );
-        key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
-        token = await getToken(key);
+        const tokenAndKey = await fxa.getOAuthTokenAndKey({
+          scope: SCOPE_OLD_SYNC,
+          ttl,
+        });
+        token = await getToken(tokenAndKey.key, tokenAndKey.token);
       }
       // TODO: Make it be only 80% of the duration, so refresh the token
       // before it actually expires. This is to avoid sync storage errors
@@ -437,7 +446,7 @@ SyncAuthManager.prototype = {
         // A hawkclient error.
       } else if (err.code && err.code === 401) {
         err = new AuthenticationError(err, "hawkclient");
-        // An FxAccounts.jsm error.
+        // An FxAccounts.sys.mjs error.
       } else if (err.message == fxAccountsCommon.ERROR_AUTH_ERROR) {
         err = new AuthenticationError(err, "fxaccounts");
       }
@@ -460,17 +469,13 @@ SyncAuthManager.prototype = {
   },
 
   /**
-   * Generates an OAuth access_token using the OLD_SYNC scope and exchanges it
-   * for a TokenServer token.
-   *
+   * Exchanges an OAuth access_token for a TokenServer token.
    * @returns {Promise}
    * @private
    */
-  async _fetchTokenUsingOAuth(key) {
+  async _fetchTokenUsingOAuth(key, accessToken) {
     this._log.debug("Getting a token using OAuth");
     const fxa = this._fxaService;
-    const ttl = fxAccountsCommon.OAUTH_TOKEN_FOR_SYNC_LIFETIME_SECONDS;
-    const accessToken = await fxa.getOAuthToken({ scope: SCOPE_OLD_SYNC, ttl });
     const headers = {
       "X-KeyId": key.kid,
     };

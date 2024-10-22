@@ -42,13 +42,12 @@ if (largeArrayBufferSupported()) {
 }
 var MaxPagesIn32BitMemory = Math.floor(MaxBytesIn32BitMemory / PageSizeInBytes);
 
-function wasmEvalText(str, imports) {
-    let binary = wasmTextToBinary(str);
-    let valid = WebAssembly.validate(binary);
+function wasmEvalBinary(binary, imports, compileOptions) {
+    let valid = WebAssembly.validate(binary, compileOptions);
 
     let m;
     try {
-        m = new WebAssembly.Module(binary);
+        m = new WebAssembly.Module(binary, compileOptions);
         assertEq(valid, true, "failed WebAssembly.validate but still compiled successfully");
     } catch(e) {
         if (!e.toString().match(/out of memory/)) {
@@ -60,8 +59,11 @@ function wasmEvalText(str, imports) {
     return new WebAssembly.Instance(m, imports);
 }
 
-function wasmValidateText(str) {
-    let binary = wasmTextToBinary(str);
+function wasmEvalText(str, imports, compileOptions) {
+    return wasmEvalBinary(wasmTextToBinary(str), imports, compileOptions);
+}
+
+function wasmValidateBinary(binary) {
     let valid = WebAssembly.validate(binary);
     if (!valid) {
         new WebAssembly.Module(binary);
@@ -70,10 +72,17 @@ function wasmValidateText(str) {
     assertEq(valid, true, "wasm module was invalid");
 }
 
-function wasmFailValidateText(str, pattern) {
-    let binary = wasmTextToBinary(str);
+function wasmFailValidateBinary(binary, pattern) {
     assertEq(WebAssembly.validate(binary), false, "module passed WebAssembly.validate when it should not have");
     assertErrorMessage(() => new WebAssembly.Module(binary), WebAssembly.CompileError, pattern, "module failed WebAssembly.validate but did not fail to compile as expected");
+}
+
+function wasmValidateText(str) {
+    return wasmValidateBinary(wasmTextToBinary(str));
+}
+
+function wasmFailValidateText(str, pattern) {
+    return wasmFailValidateBinary(wasmTextToBinary(str), pattern);
 }
 
 // Expected compilation failure can happen in a couple of ways:
@@ -578,6 +587,21 @@ function assertSame(got, expected) {
         }
         assertEq(g, e);
     }
+}
+
+// assertEqResults([a,...],[b,...]) asserts that the two results from a wasm
+// call are the same. This will compare deeply inside the result array, and
+// relax a mismatch around single element arrays.
+//
+// This predicate is in this file because it is wasm-specific.
+function assertEqResults(got, expected) {
+    if (!Array.isArray(got)) {
+        got = [got];
+    }
+    if (!Array.isArray(expected)) {
+        expected = [expected];
+    }
+    assertSame(got, expected);
 }
 
 // TailCallIterations is selected to be large enough to trigger

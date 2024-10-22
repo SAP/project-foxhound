@@ -8,9 +8,15 @@ const Debugger = require("Debugger");
 const DevToolsUtils = require("resource://devtools/shared/DevToolsUtils.js");
 
 const lazy = {};
-ChromeUtils.defineESModuleGetters(lazy, {
-  Reflect: "resource://gre/modules/reflect.sys.mjs",
-});
+if (!isWorker) {
+  ChromeUtils.defineESModuleGetters(
+    lazy,
+    {
+      Reflect: "resource://gre/modules/reflect.sys.mjs",
+    },
+    { global: "contextual" }
+  );
+}
 loader.lazyRequireGetter(
   this,
   ["isCommand"],
@@ -99,6 +105,8 @@ function isObject(value) {
  *        - eager: Set to true if you want the evaluation to bail if it may have side effects.
  *        - url: the url to evaluate the script as. Defaults to "debugger eval code",
  *        or "debugger eager eval code" if eager is true.
+ *        - preferConsoleCommandsOverLocalSymbols: Set to true if console commands
+ *        should override local symbols.
  * @param object webConsole
  *
  * @return object
@@ -156,7 +164,7 @@ function evalWithDebugger(string, options = {}, webConsole) {
     frame,
     string,
     options.selectedNodeActor,
-    !!options.disableBreaks
+    options.preferConsoleCommandsOverLocalSymbols
   );
   let { bindings } = helpers;
 
@@ -200,9 +208,7 @@ function evalWithDebugger(string, options = {}, webConsole) {
     evalOptions.hideFromDebugger = true;
   }
 
-  if (options.disableBreaks) {
-    // disableBreaks is used for all non-user-provided code, and in this case
-    // extra bindings shouldn't be shadowed.
+  if (options.preferConsoleCommandsOverLocalSymbols) {
     evalOptions.useInnerBindings = true;
   }
 
@@ -600,8 +606,12 @@ function nativeIsEagerlyEvaluateable(fn) {
       return true;
   }
 
+  // This needs to use isSameNativeWithJitInfo instead of isSameNative, given
+  // DOM methods share single native function with different JSJitInto,
+  // and isSameNative cannot distinguish between side-effect-free methods
+  // and others.
   const natives = gSideEffectFreeNatives.get(fn.name);
-  return natives && natives.some(n => fn.isSameNative(n));
+  return natives && natives.some(n => fn.isSameNativeWithJitInfo(n));
 }
 
 function updateConsoleInputEvaluation(dbg, webConsole) {
@@ -616,7 +626,7 @@ function updateConsoleInputEvaluation(dbg, webConsole) {
   }
 }
 
-function getEvalInput(string, bindings) {
+function getEvalInput(string) {
   const trimmedString = string.trim();
   // Add easter egg for console.mihai().
   if (

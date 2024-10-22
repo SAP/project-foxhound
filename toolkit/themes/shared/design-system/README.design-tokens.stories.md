@@ -451,14 +451,6 @@ The `--font-size-root` token was created for specific use under the document's `
   </div>
 </div>
 
-Just like the specific HTML term 'root', we tend to include the term 'default' on scales in order to identify values that are used as a default, or at the global level (`:root` or `body` tag):
-
-```css
-/* tokens-brand.css */
---line-height-small: 1.3;
---line-height-default: 1.5;
-```
-
 It's okay to include intentional terms within scales that better represent the meaning of a value and when to use it. For example, our border radius collection, which uses t-shirt sizing, also mixes the 'circle' option within its scale in order to describe a border radius that will create a circular effect:
 
 <div class="box">
@@ -586,28 +578,31 @@ Shared tokens ([tokens-shared.css](https://searchfox.org/mozilla-central/source/
   </div>
 </div>
 
-#### Brand
-Tokens specific to the brand, such as colors, and typographical styles. Used within domains that rely on brand values.
+#### `tokens-brand.css`
+This file is for token values specific to the brand, such as colors and
+typographical styles. This stylesheet should be loaded in domains that rely on
+brand values.
 
-For example, we use the brand's accent color under brand contexts (in-content/about: pages):
+For example, we re-map the accent color token in `tokens-brand.css` to the
+value we want to use in brand contexts (in-content/about: pages):
 ```css
 /* tokens-brand.css */
---color-accent-primary: var(--brand-color-accent);
---brand-color-accent: light-dark(var(--color-blue-50), var(--color-cyan-50));
+--color-accent-primary: light-dark(var(--color-blue-50), var(--color-cyan-50));
 ```
 
-#### Platform
-Tokens used within the browser chrome that come from the user’s operating system, such as colors and fonts.
+#### `tokens-platform.css`
+This file is for token values used the browser chrome that come from the user’s
+operating system, such as colors and fonts.
 
-For example, we use the system's accent color under platform contexts (chrome):
+For example, we re-map the accent color token in `tokens-platform.css` to the
+value we want to use in platform contexts (chrome):
 ```css
 /* tokens-platform.css */
---color-accent-primary: var(--platform-color-accent);
---platform-color-accent: AccentColor;
+--color-accent-primary: var(--button-primary-bgcolor, AccentColor);
 ```
 
-#### Shared
-Tokens used and shared between brand and platform contexts.
+#### `tokens-shared.css`
+This file is for tokens that are shared between brand and platform contexts.
 
 For example, both the chrome and in-content pages make use of the same border-radius patterns:
 ```css
@@ -631,7 +626,7 @@ Application design tokens represent the collection of semantic design tokens tha
 
 ```css
 /* tokens-brand.css */
---brand-color-accent: var(--color-blue-50);
+--color-accent-primary: light-dark(var(--color-blue-50), var(--color-cyan-50));
 ```
 
 #### Component
@@ -641,7 +636,7 @@ Component-level tokens should live at the component-level file (e.g. [moz-toggle
 
 ```css
 /* moz-toggle.css */
---toggle-background-color-pressed: var(--brand-color-accent);
+--toggle-background-color-pressed: var(--color-accent-primary);
 ```
 
 ### File structure
@@ -718,7 +713,7 @@ We rely on the [light-dark()](https://developer.mozilla.org/en-US/docs/Web/CSS/c
 ### High contrast mode
 We rely on two queries for assigning HCM counterpart variables, @media (prefers-contrast) and @media (forced-colors). They are found at the bottom of [tokens-shared.css](https://searchfox.org/mozilla-central/rev/6eb2ebcafb1b4a8576eb513e6cd2c61e3f3ae6dc/toolkit/themes/shared/design-system/tokens-shared.css#109).
 
-<!-- This part of the documentation will link to Bug 1863436 once it lands -->
+/* This part of the documentation will link to Bug 1863436 once it lands */
 
 ## Help and support
 If you have any questions, concerns, or feedback, and if this document has not answered something specific, please reach out to Desktop Theme Reviewers or Reusable Components Reviewers.

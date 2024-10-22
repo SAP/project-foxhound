@@ -83,30 +83,6 @@ module.exports = {
       ],
     },
     {
-      // Cu, Cc etc... are not available in most devtools modules loaded by require.
-      files: ["**"],
-      excludedFiles: [
-        // Enable the rule on JSM, test head files and some specific files.
-        "**/*.jsm",
-        "**/*.sjs",
-        "**/test/**/head.js",
-        "**/test/**/shared-head.js",
-        "client/debugger/test/mochitest/code_frame-script.js",
-        "client/responsive.html/browser/content.js",
-        "server/startup/content-process.js",
-        "server/startup/frame.js",
-        "shared/loader/base-loader.sys.mjs",
-        "shared/loader/browser-loader.js",
-        "shared/loader/worker-loader.js",
-        "startup/aboutdebugging-registration.js",
-        "startup/aboutdevtoolstoolbox-registration.js",
-        "startup/devtools-startup.js",
-      ],
-      rules: {
-        "mozilla/no-define-cc-etc": "off",
-      },
-    },
-    {
       // All DevTools files should avoid relative paths.
       files: ["**"],
       excludedFiles: [
@@ -153,6 +129,16 @@ module.exports = {
         node: true,
         "mozilla/privileged": false,
         "mozilla/specific": false,
+      },
+    },
+    {
+      files: [
+        "client/inspector/markup/test/doc_markup_events_react_*_jsx.html",
+      ],
+      parserOptions: {
+        ecmaFeatures: {
+          jsx: true,
+        },
       },
     },
   ],
@@ -234,8 +220,6 @@ module.exports = {
     "no-empty": "error",
     // Disallow adding to native types
     "no-extend-native": "error",
-    // Disallow fallthrough of case statements, except if there is a comment.
-    "no-fallthrough": "error",
     // Disallow use of multiline strings (use template strings instead).
     "no-multi-str": "error",
     // Disallow usage of __proto__ property.

@@ -35,9 +35,7 @@ using namespace mozilla::a11y;
 ////////////////////////////////////////////////////////////////////////////////
 
 role HTMLFormAccessible::NativeRole() const {
-  nsAutoString name;
-  const_cast<HTMLFormAccessible*>(this)->Name(name);
-  return name.IsEmpty() ? roles::FORM : roles::FORM_LANDMARK;
+  return NameIsEmpty() ? roles::FORM : roles::FORM_LANDMARK;
 }
 
 void HTMLFormAccessible::DOMAttributeChanged(int32_t aNameSpaceID,
@@ -180,10 +178,13 @@ uint64_t HTMLButtonAccessible::NativeState() const {
 
   dom::Element* elm = Elm();
   if (auto* popover = elm->GetEffectivePopoverTargetElement()) {
-    if (popover->IsPopoverOpen()) {
-      state |= states::EXPANDED;
-    } else {
-      state |= states::COLLAPSED;
+    LocalAccessible* popoverAcc = mDoc->GetAccessible(popover);
+    if (!popoverAcc || !popoverAcc->IsAncestorOf(this)) {
+      if (popover->IsPopoverOpen()) {
+        state |= states::EXPANDED;
+      } else {
+        state |= states::COLLAPSED;
+      }
     }
   }
 
@@ -290,7 +291,7 @@ already_AddRefed<AccAttributes> HTMLTextFieldAccessible::NativeAttributes() {
   nsString placeholderText;
   if (mContent->AsElement()->GetAttr(nsGkAtoms::placeholder, placeholderText)) {
     nsAutoString name;
-    const_cast<HTMLTextFieldAccessible*>(this)->Name(name);
+    Name(name);
     if (!name.Equals(placeholderText)) {
       attributes->SetAttribute(nsGkAtoms::placeholder,
                                std::move(placeholderText));
@@ -300,11 +301,9 @@ already_AddRefed<AccAttributes> HTMLTextFieldAccessible::NativeAttributes() {
   return attributes.forget();
 }
 
-ENameValueFlag HTMLTextFieldAccessible::NativeName(nsString& aName) const {
-  ENameValueFlag nameFlag = LocalAccessible::NativeName(aName);
+ENameValueFlag HTMLTextFieldAccessible::Name(nsString& aName) const {
+  ENameValueFlag nameFlag = LocalAccessible::Name(aName);
   if (!aName.IsEmpty()) return nameFlag;
-
-  if (!aName.IsEmpty()) return eNameOK;
 
   // text inputs and textareas might have useful placeholder text
   mContent->AsElement()->GetAttr(nsGkAtoms::placeholder, aName);

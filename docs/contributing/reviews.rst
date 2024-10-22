@@ -68,6 +68,9 @@ Review groups
    * - #firefox-svg-reviewers
      - SVG-related changes
      - `Member list <https://phabricator.services.mozilla.com/project/members/97/>`__
+   * - #android-reviewers
+     - Changes to Fenix, Focus and Android Components.
+     - `Member list <https://phabricator.services.mozilla.com/project/members/200/>`__
    * - #geckoview-reviewers
      - Changes to GeckoView
      - `Member list <https://phabricator.services.mozilla.com/project/members/92/>`__
@@ -131,6 +134,9 @@ Review groups
    * - #style or #firefox-style-system-reviewers
      - Firefox style system (servo, layout/style).
      - `Member list <https://phabricator.services.mozilla.com/project/members/90/>`__
+   * - #supply-chain-reviewers
+     - Changes to third-party audits and vendoring (cargo-vet, supply_chain).
+     - `Member list <https://phabricator.services.mozilla.com/project/members/164/>`__
    * - #webcompat-reviewers
      - System addons maintained by the Web Compatibility team
      - `Member list <https://phabricator.services.mozilla.com/project/members/124/>`__

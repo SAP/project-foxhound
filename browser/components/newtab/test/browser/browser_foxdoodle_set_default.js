@@ -3,16 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { ASRouter } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouter.jsm"
+const { ASRouter } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouter.sys.mjs"
 );
 
-const { ASRouterTargeting } = ChromeUtils.import(
-  "resource://activity-stream/lib/ASRouterTargeting.jsm"
+const { ASRouterTargeting } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/ASRouterTargeting.sys.mjs"
 );
 
-const { OnboardingMessageProvider } = ChromeUtils.import(
-  "resource://activity-stream/lib/OnboardingMessageProvider.jsm"
+const { OnboardingMessageProvider } = ChromeUtils.importESModule(
+  "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs"
 );
 
 async function waitForClick(selector, win) {

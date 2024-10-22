@@ -154,6 +154,7 @@ void MediaStatusManager::SetActiveMediaSessionContextId(
       *mActiveMediaSessionContextId);
   mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   mSupportedActionsChangedEvent.Notify(GetSupportedActions());
+  mPositionStateChangedEvent.Notify(GetCurrentPositionState());
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "active-media-session-changed", nullptr);
@@ -170,6 +171,7 @@ void MediaStatusManager::ClearActiveMediaSessionContextIdIfNeeded() {
   StoreMediaSessionContextIdOnWindowContext();
   mMetadataChangedEvent.Notify(GetCurrentMediaMetadata());
   mSupportedActionsChangedEvent.Notify(GetSupportedActions());
+  mPositionStateChangedEvent.Notify(GetCurrentPositionState());
   if (StaticPrefs::media_mediacontrol_testingevents_enabled()) {
     if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
       obs->NotifyObservers(nullptr, "active-media-session-changed", nullptr);
@@ -362,8 +364,14 @@ void MediaStatusManager::DisableAction(uint64_t aBrowsingContextId,
   NotifySupportedKeysChangedIfNeeded(aBrowsingContextId);
 }
 
-void MediaStatusManager::UpdatePositionState(uint64_t aBrowsingContextId,
-                                             const PositionState& aState) {
+void MediaStatusManager::UpdatePositionState(
+    uint64_t aBrowsingContextId, const Maybe<PositionState>& aState) {
+  auto info = mMediaSessionInfoMap.Lookup(aBrowsingContextId);
+  if (info) {
+    LOG("Update position state for context %" PRIu64, aBrowsingContextId);
+    info->mPositionState = aState;
+  }
+
   // The position state comes from non-active media session which we don't care.
   if (!mActiveMediaSessionContextId ||
       *mActiveMediaSessionContextId != aBrowsingContextId) {
@@ -393,9 +401,8 @@ CopyableTArray<MediaSessionAction> MediaStatusManager::GetSupportedActions()
 
   MediaSessionInfo info =
       mMediaSessionInfoMap.Get(*mActiveMediaSessionContextId);
-  const uint8_t actionNums = uint8_t(MediaSessionAction::EndGuard_);
-  for (uint8_t actionValue = 0; actionValue < actionNums; actionValue++) {
-    MediaSessionAction action = ConvertToMediaSessionAction(actionValue);
+  for (MediaSessionAction action :
+       MakeWebIDLEnumeratedRange<MediaSessionAction>()) {
     if (info.IsActionSupported(action)) {
       supportedActions.AppendElement(action);
     }
@@ -419,6 +426,16 @@ MediaMetadataBase MediaStatusManager::GetCurrentMediaMetadata() const {
     return metadata;
   }
   return CreateDefaultMetadata();
+}
+
+Maybe<PositionState> MediaStatusManager::GetCurrentPositionState() const {
+  if (mActiveMediaSessionContextId) {
+    auto info = mMediaSessionInfoMap.Lookup(*mActiveMediaSessionContextId);
+    if (info) {
+      return info->mPositionState;
+    }
+  }
+  return Nothing();
 }
 
 void MediaStatusManager::FillMissingTitleAndArtworkIfNeeded(

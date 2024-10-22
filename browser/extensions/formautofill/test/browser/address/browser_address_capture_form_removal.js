@@ -17,7 +17,7 @@ async function expectSavedAddresses(expectedAddresses) {
 }
 
 const ADDRESS_FIELD_VALUES = {
-  "given-name": "Test User",
+  "given-name": "John",
   organization: "Sesame Street",
   "street-address": "123 Sesame Street",
 };
@@ -25,7 +25,7 @@ const ADDRESS_FIELD_VALUES = {
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["extensions.formautofill.addresses.capture.v2.enabled", true],
+      ["extensions.formautofill.addresses.capture.enabled", true],
       ["extensions.formautofill.addresses.supported", "on"],
       ["extensions.formautofill.heuristics.captureOnFormRemoval", true],
     ],
@@ -118,7 +118,7 @@ add_task(async function test_address_not_captured_without_prior_fetch() {
       });
 
       info("Ensure that address doorhanger is not shown");
-      await ensureNoDoorhanger(browser);
+      await ensureNoDoorhanger();
     }
   );
 });

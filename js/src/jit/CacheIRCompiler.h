@@ -845,21 +845,37 @@ class MOZ_RAII CacheIRCompiler {
 
   bool emitDoubleIncDecResult(bool isInc, NumberOperandId inputId);
 
+  void emitTypedArrayBoundsCheck(ArrayBufferViewKind viewKind, Register obj,
+                                 Register index, Register scratch,
+                                 Register maybeScratch, Register spectreScratch,
+                                 Label* fail);
+
+  void emitTypedArrayBoundsCheck(ArrayBufferViewKind viewKind, Register obj,
+                                 Register index, Register scratch,
+                                 mozilla::Maybe<Register> maybeScratch,
+                                 mozilla::Maybe<Register> spectreScratch,
+                                 Label* fail);
+
+  void emitDataViewBoundsCheck(ArrayBufferViewKind viewKind, size_t byteSize,
+                               Register obj, Register offset, Register scratch,
+                               Register maybeScratch, Label* fail);
+
   using AtomicsReadWriteModifyFn = int32_t (*)(TypedArrayObject*, size_t,
                                                int32_t);
 
   [[nodiscard]] bool emitAtomicsReadModifyWriteResult(
       ObjOperandId objId, IntPtrOperandId indexId, uint32_t valueId,
-      Scalar::Type elementType, AtomicsReadWriteModifyFn fn);
+      Scalar::Type elementType, ArrayBufferViewKind viewKind,
+      AtomicsReadWriteModifyFn fn);
 
   using AtomicsReadWriteModify64Fn = JS::BigInt* (*)(JSContext*,
                                                      TypedArrayObject*, size_t,
                                                      const JS::BigInt*);
 
   template <AtomicsReadWriteModify64Fn fn>
-  [[nodiscard]] bool emitAtomicsReadModifyWriteResult64(ObjOperandId objId,
-                                                        IntPtrOperandId indexId,
-                                                        uint32_t valueId);
+  [[nodiscard]] bool emitAtomicsReadModifyWriteResult64(
+      ObjOperandId objId, IntPtrOperandId indexId, uint32_t valueId,
+      ArrayBufferViewKind viewKind);
 
   void emitActivateIterator(Register objBeingIterated, Register iterObject,
                             Register nativeIter, Register scratch,

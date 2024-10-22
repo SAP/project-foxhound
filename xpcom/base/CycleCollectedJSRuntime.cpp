@@ -1046,7 +1046,7 @@ struct GCMajorMarker : public BaseMarkerType<GCMajorMarker> {
 
   using MS = MarkerSchema;
   static constexpr MS::PayloadField PayloadFields[] = {
-      {"timings", MS::InputType::String, "GC timings"}};
+      {"timings", MS::InputType::CString, "GC timings"}};
 
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable,
@@ -1793,8 +1793,8 @@ void CycleCollectedJSRuntime::AnnotateAndSetOutOfMemory(OOMState* aStatePtr,
           ? CrashReporter::Annotation::JSOutOfMemory
           : CrashReporter::Annotation::JSLargeAllocationFailure;
 
-  CrashReporter::AnnotateCrashReport(
-      annotation, nsDependentCString(OOMStateToString(aNewState)));
+  CrashReporter::RecordAnnotationCString(annotation,
+                                         OOMStateToString(aNewState));
 }
 
 void CycleCollectedJSRuntime::OnGC(JSContext* aContext, JSGCStatus aStatus,

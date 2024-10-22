@@ -286,15 +286,7 @@ async function triggerCommand(eventType, details = {}) {
         gURLBar.hasAttribute("usertyping"),
         "usertyping attribute must be set for the go button to be visible"
       );
-      // We intentionally change this a11y check, because the following click is
-      // send to test the behavior of a purposefully non-focusable image button
-      // using an alternative way of the urlbar search query submission, where
-      // other ways are keyboard accessible (and are tested above).
-      AccessibilityUtils.setEnv({
-        focusableRule: false,
-      });
       EventUtils.synthesizeMouseAtCenter(gURLBar.goButton, details);
-      AccessibilityUtils.resetEnv();
       break;
     case "keypress":
       EventUtils.synthesizeKey("KEY_Enter", details);
@@ -307,7 +299,7 @@ async function triggerCommand(eventType, details = {}) {
 function promiseLoadStarted() {
   return new Promise(resolve => {
     gBrowser.addTabsProgressListener({
-      onStateChange(browser, webProgress, req, flags, status) {
+      onStateChange(browser, webProgress, req, flags) {
         if (flags & Ci.nsIWebProgressListener.STATE_START) {
           gBrowser.removeTabsProgressListener(this);
           resolve();

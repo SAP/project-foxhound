@@ -543,7 +543,12 @@ string GetProgramPath(const string& exename) {
   // The other applications we ship with Firefox are stored in the main bundle
   // (Firefox.app/Contents/MacOS/) so we we need to go back three directories
   // to reach them.
-  path.append("../../../");
+  path.erase(pos - 1);
+  for (size_t i = 0; i < 3; i++) {
+    pos = path.rfind(UI_DIR_SEPARATOR, pos - 1);
+  }
+
+  path.erase(pos + 1);
 #endif  // XP_MACOSX
   path.append(exename + BIN_SUFFIX);
 
@@ -752,16 +757,31 @@ int main(int argc, char** argv) {
 
     vector<string> restartArgs;
 
-    ostringstream paramName;
-    int i = 0;
-    paramName << "MOZ_CRASHREPORTER_RESTART_ARG_" << i++;
-    const char* param = getenv(paramName.str().c_str());
-    while (param && *param) {
-      restartArgs.push_back(param);
+    if (!extraData.isMember("WindowsErrorReporting")) {
+      // We relaunch the application associated with the client, but only when
+      // we encountered a crash caught by the exception handler. Crashes handled
+      // by WER are prevented from directly restarting the application.
+      string programPath = GetProgramPath(MOZ_APP_NAME);
+#ifndef XP_WIN
+      const char* moz_app_launcher = getenv("MOZ_APP_LAUNCHER");
+      if (moz_app_launcher) {
+        programPath = moz_app_launcher;
+      }
+#endif  // XP_WIN
 
-      paramName.str("");
+      restartArgs.push_back(programPath);
+
+      ostringstream paramName;
+      int i = 1;
       paramName << "MOZ_CRASHREPORTER_RESTART_ARG_" << i++;
-      param = getenv(paramName.str().c_str());
+      const char* param = getenv(paramName.str().c_str());
+      while (param && *param) {
+        restartArgs.push_back(param);
+
+        paramName.str("");
+        paramName << "MOZ_CRASHREPORTER_RESTART_ARG_" << i++;
+        param = getenv(paramName.str().c_str());
+      }
     }
 
     // allow override of the server url via environment variable

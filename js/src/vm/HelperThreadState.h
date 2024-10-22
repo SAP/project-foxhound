@@ -26,13 +26,12 @@
 #include <stdint.h>  // uint32_t, uint64_t
 #include <utility>   // std::move
 
-#include "ds/Fifo.h"                        // Fifo
-#include "frontend/CompilationStencil.h"    // frontend::CompilationStencil
-#include "gc/GCRuntime.h"                   // gc::GCRuntime
-#include "js/AllocPolicy.h"                 // SystemAllocPolicy
-#include "js/CompileOptions.h"              // JS::ReadOnlyCompileOptions
-#include "js/experimental/CompileScript.h"  // JS::CompilationStorage
-#include "js/experimental/JSStencil.h"      // JS::InstantiationStorage
+#include "ds/Fifo.h"                      // Fifo
+#include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
+#include "gc/GCRuntime.h"                 // gc::GCRuntime
+#include "js/AllocPolicy.h"               // SystemAllocPolicy
+#include "js/CompileOptions.h"            // JS::ReadOnlyCompileOptions
+#include "js/experimental/JSStencil.h"    // JS::InstantiationStorage
 #include "js/HelperThreadAPI.h"  // JS::HelperThreadTaskCallback, JS::DispatchReason
 #include "js/MemoryMetrics.h"  // JS::GlobalStats
 #include "js/ProfilingStack.h"  // JS::RegisterThreadCallback, JS::UnregisterThreadCallback
@@ -115,12 +114,18 @@ class GlobalHelperThreadState {
       PromiseHelperTaskVector;
 
   // Count of running task by each threadType.
-  mozilla::EnumeratedArray<ThreadType, ThreadType::THREAD_TYPE_MAX, size_t>
+  mozilla::EnumeratedArray<ThreadType, size_t,
+                           size_t(ThreadType::THREAD_TYPE_MAX)>
       runningTaskCount;
   size_t totalCountRunningTasks;
 
   WriteOnceData<JS::RegisterThreadCallback> registerThread;
   WriteOnceData<JS::UnregisterThreadCallback> unregisterThread;
+
+  // Count of helper threads 'reserved' for parallel marking. This is used to
+  // prevent too many runtimes trying to mark in parallel at once. Does not stop
+  // threads from being used for other kinds of task, including GC tasks.
+  HelperThreadLockData<size_t> gcParallelMarkingThreads;
 
  private:
   // The lists below are all protected by |lock|.
@@ -163,9 +168,9 @@ class GlobalHelperThreadState {
   // Finished source compression tasks.
   SourceCompressionTaskVector compressionFinishedList_;
 
-  // GC tasks needing to be done in parallel.
+  // GC tasks needing to be done in parallel. These are first queued in the
+  // GCRuntime before being dispatched to the helper thread system.
   GCParallelTaskList gcParallelWorklist_;
-  size_t gcParallelThreadCount;
 
   using HelperThreadTaskVector =
       Vector<HelperThreadTask*, 0, SystemAllocPolicy>;
@@ -197,7 +202,7 @@ class GlobalHelperThreadState {
   size_t maxPromiseHelperThreads() const;
   size_t maxDelazifyThreads() const;
   size_t maxCompressionThreads() const;
-  size_t maxGCParallelThreads(const AutoLockHelperThreadState& lock) const;
+  size_t maxGCParallelThreads() const;
 
   GlobalHelperThreadState();
 
@@ -317,16 +322,6 @@ class GlobalHelperThreadState {
   }
 
   GCParallelTaskList& gcParallelWorklist() { return gcParallelWorklist_; }
-
-  size_t getGCParallelThreadCount(const AutoLockHelperThreadState& lock) const {
-    return gcParallelThreadCount;
-  }
-  void setGCParallelThreadCount(size_t count,
-                                const AutoLockHelperThreadState& lock) {
-    MOZ_ASSERT(count >= 1);
-    MOZ_ASSERT(count <= threadCount);
-    gcParallelThreadCount = count;
-  }
 
   HelperThreadTaskVector& helperTasks(const AutoLockHelperThreadState&) {
     return helperTasks_;

@@ -18,7 +18,6 @@ ChromeUtils.defineESModuleGetters(this, {
   GeckoViewActorManager: "resource://gre/modules/GeckoViewActorManager.sys.mjs",
   GeckoViewSettings: "resource://gre/modules/GeckoViewSettings.sys.mjs",
   GeckoViewUtils: "resource://gre/modules/GeckoViewUtils.sys.mjs",
-  HistogramStopwatch: "resource://gre/modules/GeckoViewTelemetry.sys.mjs",
   InitializationTracker: "resource://gre/modules/GeckoViewTelemetry.sys.mjs",
   RemoteSecuritySettings:
     "resource://gre/modules/psm/RemoteSecuritySettings.sys.mjs",
@@ -54,13 +53,6 @@ var ModuleManager = {
   },
 
   init(aBrowser, aModules) {
-    const MODULES_INIT_PROBE = new HistogramStopwatch(
-      "GV_STARTUP_MODULES_MS",
-      aBrowser
-    );
-
-    MODULES_INIT_PROBE.start();
-
     const initData = this._initData;
     this._browser = aBrowser;
     this._settings = initData.settings;
@@ -89,6 +81,9 @@ var ModuleManager = {
     // visible. To avoid flickering when changing tabs, we preserve layers for
     // all loaded tabs.
     aBrowser.preserveLayers(true);
+    // GeckoView browsers start off as active (for now at least).
+    // See bug 1815015 for an attempt at making them start off inactive.
+    aBrowser.docShellIsActive = true;
 
     WindowEventDispatcher.registerListener(this, [
       "GeckoView:UpdateModuleState",
@@ -118,8 +113,6 @@ var ModuleManager = {
 
       this._modules.clear();
     });
-
-    MODULES_INIT_PROBE.finish();
   },
 
   onPrintWindow(aParams) {
@@ -262,7 +255,7 @@ var ModuleManager = {
     this._moduleByActorName[aActorName].receiveMessage(aMessage);
   },
 
-  onEvent(aEvent, aData, aCallback) {
+  onEvent(aEvent, aData) {
     debug`onEvent ${aEvent} ${aData}`;
     switch (aEvent) {
       case "GeckoView:UpdateModuleState": {
@@ -541,6 +534,7 @@ function createBrowser() {
   browser.setAttribute("remote", "true");
   browser.setAttribute("remoteType", E10SUtils.DEFAULT_REMOTE_TYPE);
   browser.setAttribute("messagemanagergroup", "browsers");
+  browser.setAttribute("manualactiveness", "true");
 
   // This is only needed for mochitests, so that they honor the
   // prefers-color-scheme.content-override pref. GeckoView doesn't set this
@@ -871,11 +865,11 @@ function startup() {
       ModuleManager.afterBrowserRemotenessChange(switchId);
   }
 
-  browser.addEventListener("WillChangeBrowserRemoteness", event =>
+  browser.addEventListener("WillChangeBrowserRemoteness", () =>
     ModuleManager.willChangeBrowserRemoteness()
   );
 
-  browser.addEventListener("DidChangeBrowserRemoteness", event =>
+  browser.addEventListener("DidChangeBrowserRemoteness", () =>
     ModuleManager.didChangeBrowserRemoteness()
   );
 

@@ -18,7 +18,6 @@
 #include "mozilla/dom/SVGSVGElement.h"
 #include "mozilla/dom/SVGDocument.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
@@ -484,11 +483,6 @@ VectorImage::RequestRefresh(const TimeStamp& aTime) {
   if (!doc) {
     // We are racing between shutdown and a refresh.
     return;
-  }
-
-  PendingAnimationTracker* tracker = doc->GetPendingAnimationTracker();
-  if (tracker && ShouldAnimate()) {
-    tracker->TriggerPendingAnimationsOnNextTick(aTime);
   }
 
   EvaluateAnimation();
@@ -1563,12 +1557,7 @@ void VectorImage::InvalidateObserversOnNextRefreshDriverTick() {
   // set by InvalidateFrameInternal in layout/generic/nsFrame.cpp. These bits
   // get cleared when we repaint the SVG into a surface by
   // nsIFrame::ClearInvalidationStateBits in nsDisplayList::PaintRoot.
-  nsCOMPtr<nsIEventTarget> eventTarget;
-  if (mProgressTracker) {
-    eventTarget = mProgressTracker->GetEventTarget();
-  } else {
-    eventTarget = do_GetMainThread();
-  }
+  nsCOMPtr<nsIEventTarget> eventTarget = do_GetMainThread();
 
   RefPtr<VectorImage> self(this);
   nsCOMPtr<nsIRunnable> ev(NS_NewRunnableFunction(

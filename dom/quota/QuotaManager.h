@@ -22,6 +22,7 @@
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/quota/Assertions.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/DirectoryLockCategory.h"
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/InitializationTypes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
@@ -268,6 +269,7 @@ class QuotaManager final : public BackgroundThreadObject {
       const Nullable<PersistenceType>& aPersistenceType,
       const OriginScope& aOriginScope,
       const Nullable<Client::Type>& aClientType, bool aExclusive,
+      DirectoryLockCategory aCategory = DirectoryLockCategory::None,
       Maybe<RefPtr<UniversalDirectoryLock>&> aPendingDirectoryLockOut =
           Nothing());
 
@@ -285,7 +287,8 @@ class QuotaManager final : public BackgroundThreadObject {
   // reference in order to keep the lock alive.
   // Unlocking is simply done by dropping all references to the lock object.
   // In other words, protection which the lock represents dies with the lock
-  // object itself.
+  // object itself (Note that it's now possible to release directory locks
+  // sooner by calling newly added Drop method).
   RefPtr<ClientDirectoryLockPromise> OpenClientDirectory(
       const ClientMetadata& aClientMetadata,
       Maybe<RefPtr<ClientDirectoryLock>&> aPendingDirectoryLockOut = Nothing());
@@ -297,7 +300,8 @@ class QuotaManager final : public BackgroundThreadObject {
   RefPtr<UniversalDirectoryLock> CreateDirectoryLockInternal(
       const Nullable<PersistenceType>& aPersistenceType,
       const OriginScope& aOriginScope,
-      const Nullable<Client::Type>& aClientType, bool aExclusive);
+      const Nullable<Client::Type>& aClientType, bool aExclusive,
+      DirectoryLockCategory aCategory = DirectoryLockCategory::None);
 
   // Collect inactive and the least recently used origins.
   uint64_t CollectOriginsForEviction(
@@ -723,7 +727,8 @@ class QuotaManager final : public BackgroundThreadObject {
 
   nsCOMPtr<mozIStorageConnection> mStorageConnection;
 
-  EnumeratedArray<Client::Type, Client::TYPE_MAX, nsCString> mShutdownSteps;
+  EnumeratedArray<Client::Type, nsCString, size_t(Client::TYPE_MAX)>
+      mShutdownSteps;
   LazyInitializedOnce<const TimeStamp> mShutdownStartedAt;
 
   // Accesses to mQuotaManagerShutdownSteps must be protected by mQuotaMutex.

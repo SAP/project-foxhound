@@ -33,6 +33,7 @@ const ERRORS = new Set([
   "NoSuchRequestError",
   "NoSuchScriptError",
   "NoSuchShadowRootError",
+  "NoSuchUserContextError",
   "NoSuchWindowError",
   "ScriptTimeoutError",
   "SessionNotCreatedError",
@@ -40,6 +41,7 @@ const ERRORS = new Set([
   "TimeoutError",
   "UnableToCaptureScreen",
   "UnableToSetCookieError",
+  "UnableToSetFileInputError",
   "UnexpectedAlertOpenError",
   "UnknownCommandError",
   "UnknownError",
@@ -649,6 +651,21 @@ class NoSuchRequestError extends WebDriverError {
 }
 
 /**
+ * A command tried to reference an unknown user context (containers in Firefox).
+ *
+ * @param {string=} message
+ *     Optional string describing error situation.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class NoSuchUserContextError extends WebDriverError {
+  constructor(message, data = {}) {
+    super(message, data);
+    this.status = "no such user context";
+  }
+}
+
+/**
  * A command to switch to a window could not be satisfied because
  * the window could not be found.
  *
@@ -737,6 +754,21 @@ class UnableToSetCookieError extends WebDriverError {
   constructor(message, data = {}) {
     super(message, data);
     this.status = "unable to set cookie";
+  }
+}
+
+/**
+ * A command to set a file could not be satisfied.
+ *
+ * @param {string=} message
+ *     Optional string describing error situation.
+ * @param {object=} data
+ *     Additional error data helpful in diagnosing the error.
+ */
+class UnableToSetFileInputError extends WebDriverError {
+  constructor(message, data = {}) {
+    super(message, data);
+    this.status = "unable to set file input";
   }
 }
 
@@ -841,6 +873,7 @@ const STATUSES = new Map([
   ["no such request", NoSuchRequestError],
   ["no such script", NoSuchScriptError],
   ["no such shadow root", NoSuchShadowRootError],
+  ["no such user context", NoSuchUserContextError],
   ["no such window", NoSuchWindowError],
   ["script timeout", ScriptTimeoutError],
   ["session not created", SessionNotCreatedError],
@@ -848,6 +881,7 @@ const STATUSES = new Map([
   ["timeout", TimeoutError],
   ["unable to capture screen", UnableToCaptureScreen],
   ["unable to set cookie", UnableToSetCookieError],
+  ["unable to set file input", UnableToSetFileInputError],
   ["unexpected alert open", UnexpectedAlertOpenError],
   ["unknown command", UnknownCommandError],
   ["unknown error", UnknownError],

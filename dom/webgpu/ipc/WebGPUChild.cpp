@@ -40,10 +40,10 @@ void WebGPUChild::JsWarning(nsIGlobalObject* aGlobal,
   if (aGlobal) {
     dom::AutoJSAPI api;
     if (api.Init(aGlobal)) {
-      JS::WarnUTF8(api.cx(), "%s", flatString.get());
+      JS::WarnUTF8(api.cx(), "Uncaptured WebGPU error: %s", flatString.get());
     }
   } else {
-    printf_stderr("Validation error without device target: %s\n",
+    printf_stderr("Uncaptured WebGPU error without device target: %s\n",
                   flatString.get());
   }
 }
@@ -113,9 +113,7 @@ RawId WebGPUChild::RenderBundleEncoderFinish(
   RawId id = ffi::wgpu_client_create_render_bundle(
       mClient.get(), &aEncoder, aDeviceId, &desc, ToFFI(&bb));
 
-  if (!SendDeviceAction(aDeviceId, std::move(bb))) {
-    MOZ_CRASH("IPC failure");
-  }
+  SendDeviceAction(aDeviceId, std::move(bb));
 
   return id;
 }
@@ -128,9 +126,7 @@ RawId WebGPUChild::RenderBundleEncoderFinishError(RawId aDeviceId,
   RawId id = ffi::wgpu_client_create_render_bundle_error(
       mClient.get(), aDeviceId, label.Get(), ToFFI(&bb));
 
-  if (!SendDeviceAction(aDeviceId, std::move(bb))) {
-    MOZ_CRASH("IPC failure");
-  }
+  SendDeviceAction(aDeviceId, std::move(bb));
 
   return id;
 }
@@ -229,11 +225,11 @@ void WebGPUChild::RegisterDevice(Device* const aDevice) {
   mDeviceMap.insert({aDevice->mId, aDevice});
 }
 
-void WebGPUChild::UnregisterDevice(RawId aId) {
-  mDeviceMap.erase(aId);
+void WebGPUChild::UnregisterDevice(RawId aDeviceId) {
   if (IsOpen()) {
-    SendDeviceDrop(aId);
+    SendDeviceDrop(aDeviceId);
   }
+  mDeviceMap.erase(aDeviceId);
 }
 
 void WebGPUChild::FreeUnregisteredInParentDevice(RawId aId) {
@@ -258,6 +254,17 @@ void WebGPUChild::ActorDestroy(ActorDestroyReason) {
 
     device->ResolveLost(Nothing(), u"WebGPUChild destroyed"_ns);
   }
+}
+
+void WebGPUChild::QueueSubmit(RawId aSelfId, RawId aDeviceId,
+                              nsTArray<RawId>& aCommandBuffers) {
+  SendQueueSubmit(aSelfId, aDeviceId, aCommandBuffers,
+                  mSwapChainTexturesWaitingForSubmit);
+  mSwapChainTexturesWaitingForSubmit.Clear();
+}
+
+void WebGPUChild::NotifyWaitForSubmit(RawId aTextureId) {
+  mSwapChainTexturesWaitingForSubmit.AppendElement(aTextureId);
 }
 
 }  // namespace mozilla::webgpu

@@ -4,6 +4,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { Region } from "resource://gre/modules/Region.sys.mjs";
+import { AddressMetaDataLoader } from "resource://gre/modules/shared/AddressMetaDataLoader.sys.mjs";
 
 const AUTOFILL_ADDRESSES_AVAILABLE_PREF =
   "extensions.formautofill.addresses.supported";
@@ -17,8 +18,6 @@ const ENABLED_AUTOFILL_ADDRESSES_PREF =
   "extensions.formautofill.addresses.enabled";
 const ENABLED_AUTOFILL_ADDRESSES_CAPTURE_PREF =
   "extensions.formautofill.addresses.capture.enabled";
-const ENABLED_AUTOFILL_ADDRESSES_CAPTURE_V2_PREF =
-  "extensions.formautofill.addresses.capture.v2.enabled";
 const ENABLED_AUTOFILL_ADDRESSES_CAPTURE_REQUIRED_FIELDS_PREF =
   "extensions.formautofill.addresses.capture.requiredFields";
 const ENABLED_AUTOFILL_ADDRESSES_SUPPORTED_COUNTRIES_PREF =
@@ -34,17 +33,16 @@ const AUTOFILL_CREDITCARDS_AUTOCOMPLETE_OFF_PREF =
   "extensions.formautofill.creditCards.ignoreAutocompleteOff";
 const AUTOFILL_ADDRESSES_AUTOCOMPLETE_OFF_PREF =
   "extensions.formautofill.addresses.ignoreAutocompleteOff";
-const ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL =
+const ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL_PREF =
   "extensions.formautofill.heuristics.captureOnFormRemoval";
-const ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION =
+const ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION_PREF =
   "extensions.formautofill.heuristics.captureOnPageNavigation";
 
 export const FormAutofill = {
   ENABLED_AUTOFILL_ADDRESSES_PREF,
   ENABLED_AUTOFILL_ADDRESSES_CAPTURE_PREF,
-  ENABLED_AUTOFILL_ADDRESSES_CAPTURE_V2_PREF,
-  ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL,
-  ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION,
+  ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL_PREF,
+  ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION_PREF,
   ENABLED_AUTOFILL_CREDITCARDS_PREF,
   ENABLED_AUTOFILL_CREDITCARDS_REAUTH_PREF,
   AUTOFILL_CREDITCARDS_AUTOCOMPLETE_OFF_PREF,
@@ -83,7 +81,9 @@ export const FormAutofill = {
     return false;
   },
   isAutofillAddressesAvailableInCountry(country) {
-    return FormAutofill._addressAutofillSupportedCountries.includes(country);
+    return FormAutofill._addressAutofillSupportedCountries.includes(
+      country.toUpperCase()
+    );
   },
   get isAutofillEnabled() {
     return this.isAutofillAddressesEnabled || this.isAutofillCreditCardsEnabled;
@@ -103,13 +103,24 @@ export const FormAutofill = {
   /**
    * Determines if the address autofill feature is available to use in the browser.
    * If the feature is not available, then there are no user facing ways to enable it.
+   * Two conditions must be met for the autofill feature to be considered available:
+   *   1. Address autofill support is confirmed when:
+   *      - `extensions.formautofill.addresses.supported` is set to `on`.
+   *      - The user is located in a region supported by the feature
+   *        (`extensions.formautofill.creditCards.supportedCountries`).
+   *   2. Address autofill is enabled through a Nimbus experiment:
+   *      - The experiment pref `extensions.formautofill.addresses.experiments.enabled` is set to true.
    *
    * @returns {boolean} `true` if address autofill is available
    */
   get isAutofillAddressesAvailable() {
-    return this._isSupportedRegion(
+    const isUserInSupportedRegion = this._isSupportedRegion(
       FormAutofill._isAutofillAddressesAvailable,
       FormAutofill._addressAutofillSupportedCountries
+    );
+    return (
+      isUserInSupportedRegion ||
+      FormAutofill._isAutofillAddressesAvailableInExperiment
     );
   },
   /**
@@ -212,11 +223,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofill,
-  "isAutofillAddressesCaptureV2Enabled",
-  ENABLED_AUTOFILL_ADDRESSES_CAPTURE_V2_PREF
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  FormAutofill,
   "_isAutofillCreditCardsAvailable",
   AUTOFILL_CREDITCARDS_AVAILABLE_PREF
 );
@@ -263,12 +269,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
 XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofill,
   "captureOnFormRemoval",
-  ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL
+  ENABLED_AUTOFILL_CAPTURE_ON_FORM_REMOVAL_PREF
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofill,
   "captureOnPageNavigation",
-  ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION
+  ENABLED_AUTOFILL_CAPTURE_ON_PAGE_NAVIGATION_PREF
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   FormAutofill,
@@ -279,17 +285,12 @@ XPCOMUtils.defineLazyPreferenceGetter(
   val => val?.split(",").filter(v => !!v)
 );
 
-// XXX: This should be invalidated on intl:app-locales-changed.
-ChromeUtils.defineLazyGetter(FormAutofill, "countries", () => {
-  let availableRegionCodes =
-    Services.intl.getAvailableLocaleDisplayNames("region");
-  let displayNames = Services.intl.getRegionDisplayNames(
-    undefined,
-    availableRegionCodes
-  );
-  let result = new Map();
-  for (let i = 0; i < availableRegionCodes.length; i++) {
-    result.set(availableRegionCodes[i].toUpperCase(), displayNames[i]);
-  }
-  return result;
-});
+XPCOMUtils.defineLazyPreferenceGetter(
+  FormAutofill,
+  "_isAutofillAddressesAvailableInExperiment",
+  "extensions.formautofill.addresses.experiments.enabled"
+);
+
+ChromeUtils.defineLazyGetter(FormAutofill, "countries", () =>
+  AddressMetaDataLoader.getCountries()
+);

@@ -65,38 +65,77 @@ module.exports = {
   create(context) {
     let lazyProperties = new Map();
     let unknownProperties = [];
+    let isLazyExported = false;
 
-    function addProp(node, name) {
-      if (lazyProperties.has(name)) {
+    function getAncestorNodes(node) {
+      const ancestors = [];
+      node = node.parent;
+      while (node) {
+        ancestors.unshift(node);
+        node = node.parent;
+      }
+      return ancestors;
+    }
+
+    // Returns true if lazy getter definitions in prevNode and currNode are
+    // duplicate.
+    // This returns false if prevNode and currNode have the same IfStatement as
+    // ancestor and they're in different branches.
+    function isDuplicate(prevNode, currNode) {
+      const prevAncestors = getAncestorNodes(prevNode);
+      const currAncestors = getAncestorNodes(currNode);
+
+      for (
+        let i = 0;
+        i < prevAncestors.length && i < currAncestors.length;
+        i++
+      ) {
+        const prev = prevAncestors[i];
+        const curr = currAncestors[i];
+        if (prev === curr && prev.type === "IfStatement") {
+          if (prevAncestors[i + 1] !== currAncestors[i + 1]) {
+            return false;
+          }
+        }
+      }
+
+      return true;
+    }
+
+    function addProp(callNode, propNode, name) {
+      if (
+        lazyProperties.has(name) &&
+        isDuplicate(lazyProperties.get(name).callNode, callNode)
+      ) {
         context.report({
-          node,
+          node: propNode,
           messageId: "duplicateSymbol",
           data: { name },
         });
         return;
       }
-      lazyProperties.set(name, { used: false, node });
+      lazyProperties.set(name, { used: false, callNode, propNode });
     }
 
-    function setPropertiesFromArgument(node, arg) {
+    function setPropertiesFromArgument(callNode, arg) {
       if (arg.type === "ObjectExpression") {
-        for (let prop of arg.properties) {
-          if (prop.key.type == "Literal") {
+        for (let propNode of arg.properties) {
+          if (propNode.key.type == "Literal") {
             context.report({
-              node,
+              node: propNode,
               messageId: "incorrectType",
-              data: { name: prop.key.value },
+              data: { name: propNode.key.value },
             });
             continue;
           }
-          addProp(node, prop.key.name);
+          addProp(callNode, propNode, propNode.key.name);
         }
       } else if (arg.type === "ArrayExpression") {
-        for (let prop of arg.elements) {
-          if (prop.type != "Literal") {
+        for (let propNode of arg.elements) {
+          if (propNode.type != "Literal") {
             continue;
           }
-          addProp(node, prop.value);
+          addProp(callNode, propNode, propNode.value);
         }
       }
     }
@@ -109,7 +148,7 @@ module.exports = {
           node.init.type == "CallExpression" &&
           node.init.callee.name == "createLazyLoaders"
         ) {
-          setPropertiesFromArgument(node, node.init.arguments[0]);
+          setPropertiesFromArgument(node.init, node.init.arguments[0]);
         }
       },
 
@@ -134,7 +173,10 @@ module.exports = {
         for (let reg of callExpressionDefinitions) {
           let match = source.match(reg);
           if (match) {
-            if (lazyProperties.has(match[1])) {
+            if (
+              lazyProperties.has(match[1]) &&
+              isDuplicate(lazyProperties.get(match[1]).callNode, node)
+            ) {
               context.report({
                 node,
                 messageId: "duplicateSymbol",
@@ -142,7 +184,11 @@ module.exports = {
               });
               return;
             }
-            lazyProperties.set(match[1], { used: false, node });
+            lazyProperties.set(match[1], {
+              used: false,
+              callNode: node,
+              propNode: node,
+            });
             break;
           }
         }
@@ -190,6 +236,16 @@ module.exports = {
         }
       },
 
+      ExportNamedDeclaration(node) {
+        for (const spec of node.specifiers) {
+          if (spec.local.name === "lazy") {
+            // If the lazy object is exported, do not check unused property.
+            isLazyExported = true;
+            break;
+          }
+        }
+      },
+
       "Program:exit": function () {
         for (let { name, node } of unknownProperties) {
           let property = lazyProperties.get(name);
@@ -203,13 +259,15 @@ module.exports = {
             property.used = true;
           }
         }
-        for (let [name, property] of lazyProperties.entries()) {
-          if (!property.used) {
-            context.report({
-              node: property.node,
-              messageId: "unusedProperty",
-              data: { name },
-            });
+        if (!isLazyExported) {
+          for (let [name, property] of lazyProperties.entries()) {
+            if (!property.used) {
+              context.report({
+                node: property.propNode,
+                messageId: "unusedProperty",
+                data: { name },
+              });
+            }
           }
         }
       },

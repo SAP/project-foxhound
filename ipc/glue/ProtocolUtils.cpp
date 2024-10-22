@@ -47,17 +47,6 @@ using base::ProcessHandle;
 using base::ProcessId;
 
 namespace mozilla {
-
-#if defined(XP_WIN)
-// Generate RAII classes for LPTSTR and PSECURITY_DESCRIPTOR.
-MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedLPTStr,
-                                          std::remove_pointer_t<LPTSTR>,
-                                          ::LocalFree)
-MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(
-    ScopedPSecurityDescriptor, std::remove_pointer_t<PSECURITY_DESCRIPTOR>,
-    ::LocalFree)
-#endif
-
 namespace ipc {
 
 /* static */
@@ -84,23 +73,28 @@ IPCResult IPCResult::FailImpl(NotNull<IProtocol*> actor, const char* where,
 #endif
 }
 
+/* static */
+IPCResult IPCResult::FailForTesting(NotNull<IProtocol*> actor,
+                                    const char* where, const char* why) {
+  return IPCResult(false);
+}
+
 void AnnotateSystemError() {
-  int64_t error = 0;
+  uint32_t error = 0;
 #if defined(XP_WIN)
   error = ::GetLastError();
 #else
   error = errno;
 #endif
   if (error) {
-    CrashReporter::AnnotateCrashReport(
-        CrashReporter::Annotation::IPCSystemError,
-        nsPrintfCString("%" PRId64, error));
+    CrashReporter::RecordAnnotationU32(
+        CrashReporter::Annotation::IPCSystemError, error);
   }
 }
 
 #if defined(XP_MACOSX)
 void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag, int error) {
-  CrashReporter::AnnotateCrashReport(tag, error);
+  CrashReporter::RecordAnnotationU32(tag, static_cast<uint32_t>(error));
 }
 #endif  // defined(XP_MACOSX)
 
@@ -202,8 +196,8 @@ void FatalError(const char* aMsg, bool aIsParent) {
     // this process if we're off the main thread.
     formattedMessage.AppendLiteral("\". Intentionally crashing.");
     NS_ERROR(formattedMessage.get());
-    CrashReporter::AnnotateCrashReport(
-        CrashReporter::Annotation::IPCFatalErrorMsg, nsDependentCString(aMsg));
+    CrashReporter::RecordAnnotationCString(
+        CrashReporter::Annotation::IPCFatalErrorMsg, aMsg);
     AnnotateSystemError();
 #ifndef FUZZING
     MOZ_CRASH("IPC FatalError in the parent process!");
@@ -456,7 +450,7 @@ bool IProtocol::AllocShmem(size_t aSize, Shmem* aOutMem) {
     return false;
   }
 
-  *aOutMem = Shmem(rawmem, id);
+  *aOutMem = Shmem(rawmem, id, aSize, false);
   return true;
 }
 
@@ -473,7 +467,7 @@ bool IProtocol::AllocUnsafeShmem(size_t aSize, Shmem* aOutMem) {
     return false;
   }
 
-  *aOutMem = Shmem(rawmem, id);
+  *aOutMem = Shmem(rawmem, id, aSize, true);
   return true;
 }
 
@@ -722,12 +716,12 @@ void IToplevelProtocol::Unregister(int32_t aId) {
 Shmem::SharedMemory* IToplevelProtocol::CreateSharedMemory(size_t aSize,
                                                            bool aUnsafe,
                                                            Shmem::id_t* aId) {
-  RefPtr<Shmem::SharedMemory> segment(Shmem::Alloc(aSize, aUnsafe));
+  RefPtr<Shmem::SharedMemory> segment(Shmem::Alloc(aSize));
   if (!segment) {
     return nullptr;
   }
   int32_t id = NextId();
-  Shmem shmem(segment.get(), id);
+  Shmem shmem(segment.get(), id, aSize, aUnsafe);
 
   UniquePtr<Message> descriptor = shmem.MkCreatedMessage(MSG_ROUTING_CONTROL);
   if (!descriptor) {
@@ -738,12 +732,13 @@ Shmem::SharedMemory* IToplevelProtocol::CreateSharedMemory(size_t aSize,
   *aId = shmem.Id();
   Shmem::SharedMemory* rawSegment = segment.get();
   MOZ_ASSERT(!mShmemMap.Contains(*aId), "Don't insert with an existing ID");
-  mShmemMap.InsertOrUpdate(*aId, segment.forget().take());
+  mShmemMap.InsertOrUpdate(*aId, std::move(segment));
   return rawSegment;
 }
 
 Shmem::SharedMemory* IToplevelProtocol::LookupSharedMemory(Shmem::id_t aId) {
-  return mShmemMap.Get(aId);
+  auto entry = mShmemMap.Lookup(aId);
+  return entry ? entry.Data().get() : nullptr;
 }
 
 bool IToplevelProtocol::IsTrackingSharedMemory(Shmem::SharedMemory* segment) {
@@ -767,7 +762,6 @@ bool IToplevelProtocol::DestroySharedMemory(Shmem& shmem) {
   MOZ_ASSERT(mShmemMap.Contains(aId),
              "Attempting to remove an ID not in the shmem map");
   mShmemMap.Remove(aId);
-  Shmem::Dealloc(segment);
 
   MessageChannel* channel = GetIPCChannel();
   if (!channel->CanSend()) {
@@ -777,12 +771,7 @@ bool IToplevelProtocol::DestroySharedMemory(Shmem& shmem) {
   return descriptor && channel->Send(std::move(descriptor));
 }
 
-void IToplevelProtocol::DeallocShmems() {
-  for (const auto& shmem : mShmemMap.Values()) {
-    Shmem::Dealloc(shmem);
-  }
-  mShmemMap.Clear();
-}
+void IToplevelProtocol::DeallocShmems() { mShmemMap.Clear(); }
 
 bool IToplevelProtocol::ShmemCreated(const Message& aMsg) {
   Shmem::id_t id;
@@ -791,7 +780,7 @@ bool IToplevelProtocol::ShmemCreated(const Message& aMsg) {
     return false;
   }
   MOZ_ASSERT(!mShmemMap.Contains(id), "Don't insert with an existing ID");
-  mShmemMap.InsertOrUpdate(id, rawmem.forget().take());
+  mShmemMap.InsertOrUpdate(id, std::move(rawmem));
   return true;
 }
 
@@ -803,13 +792,7 @@ bool IToplevelProtocol::ShmemDestroyed(const Message& aMsg) {
   }
   reader.EndRead();
 
-  Shmem::SharedMemory* rawmem = LookupSharedMemory(id);
-  if (rawmem) {
-    MOZ_ASSERT(mShmemMap.Contains(id),
-               "Attempting to remove an ID not in the shmem map");
-    mShmemMap.Remove(id);
-    Shmem::Dealloc(rawmem);
-  }
+  mShmemMap.Remove(id);
   return true;
 }
 

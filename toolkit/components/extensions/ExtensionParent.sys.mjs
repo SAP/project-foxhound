@@ -7,7 +7,7 @@
 /**
  * This module contains code for managing APIs that need to run in the
  * parent process, and handles the parent side of operations that need
- * to be proxied from ExtensionChild.jsm.
+ * to be proxied from ExtensionChild.sys.mjs.
  */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
@@ -481,7 +481,7 @@ GlobalManager = {
 };
 
 /**
- * The proxied parent side of a context in ExtensionChild.jsm, for the
+ * The proxied parent side of a context in ExtensionChild.sys.mjs, for the
  * parent side of a proxied API.
  */
 class ProxyContextParent extends BaseContext {
@@ -625,7 +625,7 @@ class ProxyContextParent extends BaseContext {
     }
   }
 
-  logActivity(type, name, data) {
+  logActivity() {
     // The base class will throw so we catch any subclasses that do not implement.
     // We do not want to throw here, but we also do not log here.
   }
@@ -685,14 +685,14 @@ class ProxyContextParent extends BaseContext {
 
 /**
  * The parent side of proxied API context for extension content script
- * running in ExtensionContent.jsm.
+ * running in ExtensionContent.sys.mjs.
  */
 class ContentScriptContextParent extends ProxyContextParent {}
 
 /**
  * The parent side of proxied API context for extension page, such as a
  * background script, a tab page, or a popup, running in
- * ExtensionChild.jsm.
+ * ExtensionChild.sys.mjs.
  */
 class ExtensionPageContextParent extends ProxyContextParent {
   constructor(envType, extension, params, browsingContext) {
@@ -716,6 +716,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
     if (this.viewType !== "background") {
       return this.appWindow;
     }
+    return undefined;
   }
 
   get tabId() {
@@ -724,6 +725,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
     if (data.tabId >= 0) {
       return data.tabId;
     }
+    return undefined;
   }
 
   unload() {
@@ -739,7 +741,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
 
 /**
  * The parent side of proxied API context for devtools extension page, such as a
- * devtools pages and panels running in ExtensionChild.jsm.
+ * devtools pages and panels running in ExtensionChild.sys.mjs.
  */
 class DevToolsExtensionPageContextParent extends ExtensionPageContextParent {
   constructor(...params) {
@@ -904,7 +906,7 @@ ParentAPIManager = {
     extension.parentMessageManager = processMessageManager;
   },
 
-  async observe(subject, topic, data) {
+  async observe(subject, topic) {
     if (topic === "message-manager-close") {
       let mm = subject;
       for (let [childId, context] of this.proxyContexts) {
@@ -1035,7 +1037,7 @@ ParentAPIManager = {
     this.proxyContexts.set(childId, context);
   },
 
-  recvContextLoaded(data, { actor, sender }) {
+  recvContextLoaded(data, { actor }) {
     let context = this.getContextById(data.childId);
     verifyActorForContext(actor, context);
     const { extension } = context;
@@ -1390,6 +1392,7 @@ class HiddenXULWindow {
     browser.setAttribute("type", "content");
     browser.setAttribute("disableglobalhistory", "true");
     browser.setAttribute("messagemanagergroup", "webext-browsers");
+    browser.setAttribute("manualactiveness", "true");
 
     for (const [name, value] of Object.entries(xulAttributes)) {
       if (value != null) {
@@ -1408,8 +1411,12 @@ class HiddenXULWindow {
     // Forcibly flush layout so that we get a pres shell soon enough, see
     // bug 1274775.
     browser.getBoundingClientRect();
-
     await awaitFrameLoader;
+
+    // FIXME(emilio): This unconditionally active frame seems rather
+    // unfortunate, but matches previous behavior.
+    browser.docShellIsActive = true;
+
     return browser;
   }
 }
@@ -1789,7 +1796,7 @@ function promiseMessageFromChild(messageManager, messageName) {
       unregister();
       resolve(message.data);
     }
-    function observer(subject, topic, data) {
+    function observer(subject) {
       if (subject === messageManager) {
         unregister();
         reject(
@@ -2017,7 +2024,7 @@ let IconDetails = {
 
   // Returns the appropriate icon URL for the given icons object and the
   // screen resolution of the given window.
-  getPreferredIcon(icons, extension = null, size = 16) {
+  getPreferredIcon(icons, extension, size = 16) {
     const DEFAULT = "chrome://mozapps/skin/extensions/extensionGeneric.svg";
 
     let bestSize = null;
@@ -2205,13 +2212,13 @@ var StartupCache = {
       this.manifests.delete(id),
       this.permissions.delete(id),
       this.menus.delete(id),
-    ]).catch(e => {
+    ]).catch(() => {
       // Ignore the error. It happens when we try to flush the add-on
       // data after the AddonManager has flushed the entire startup cache.
     });
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     if (topic === "startupcache-invalidate") {
       this._data = new Map();
       this._dataPromise = Promise.resolve(this._data);
@@ -2292,19 +2299,4 @@ ChromeUtils.defineLazyGetter(ExtensionParent, "PlatformInfo", () => {
       return arch;
     })(),
   });
-});
-
-/**
- * Retreives the browser_style stylesheets needed for extension popups and sidebars.
- *
- * @returns {Array<string>} an array of stylesheets needed for the current platform.
- */
-ChromeUtils.defineLazyGetter(ExtensionParent, "extensionStylesheets", () => {
-  let stylesheets = ["chrome://browser/content/extension.css"];
-
-  if (AppConstants.platform === "macosx") {
-    stylesheets.push("chrome://browser/content/extension-mac.css");
-  }
-
-  return stylesheets;
 });

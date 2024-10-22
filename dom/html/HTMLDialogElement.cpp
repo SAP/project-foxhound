@@ -63,7 +63,12 @@ void HTMLDialogElement::Show(ErrorResult& aError) {
 
   StorePreviouslyFocusedElement();
 
-  OwnerDoc()->HideAllPopoversWithoutRunningScript();
+  RefPtr<nsINode> hideUntil = GetTopmostPopoverAncestor(nullptr, false);
+  if (!hideUntil) {
+    hideUntil = OwnerDoc();
+  }
+
+  OwnerDoc()->HideAllPopoversUntil(*hideUntil, false, true);
   FocusDialog();
 }
 
@@ -101,9 +106,9 @@ void HTMLDialogElement::StorePreviouslyFocusedElement() {
   }
 }
 
-void HTMLDialogElement::UnbindFromTree(bool aNullParent) {
+void HTMLDialogElement::UnbindFromTree(UnbindContext& aContext) {
   RemoveFromTopLayerIfNeeded();
-  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aContext);
 }
 
 void HTMLDialogElement::ShowModal(ErrorResult& aError) {
@@ -130,7 +135,12 @@ void HTMLDialogElement::ShowModal(ErrorResult& aError) {
 
   StorePreviouslyFocusedElement();
 
-  OwnerDoc()->HideAllPopoversWithoutRunningScript();
+  RefPtr<nsINode> hideUntil = GetTopmostPopoverAncestor(nullptr, false);
+  if (!hideUntil) {
+    hideUntil = OwnerDoc();
+  }
+
+  OwnerDoc()->HideAllPopoversUntil(*hideUntil, false, true);
   FocusDialog();
 
   aError.SuppressException();

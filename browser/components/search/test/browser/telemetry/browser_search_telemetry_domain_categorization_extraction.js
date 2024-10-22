@@ -11,6 +11,10 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
 
+// The search provider's name is provided to ensure we can extract domains
+// from relative links, e.g. /url?=https://www.foobar.com
+const SEARCH_PROVIDER_NAME = "example";
+
 const TESTS = [
   {
     title: "Extract domain from href (absolute URL) - one link.",
@@ -35,7 +39,7 @@ const TESTS = [
     expectedDomains: ["foo.com", "bar.com", "baz.com", "qux.com"],
   },
   {
-    title: "Extract domain from href (relative URL).",
+    title: "Extract domain from href (relative URL / URL matching provider)",
     extractorInfos: [
       {
         selectors:
@@ -43,38 +47,33 @@ const TESTS = [
         method: "href",
       },
     ],
-    expectedDomains: ["example.org"],
+    expectedDomains: [],
   },
   {
     title: "Extract domain from data attribute - one link.",
     extractorInfos: [
       {
         selectors: "#test4 [data-dtld]",
-        method: "data-attribute",
+        method: "dataAttribute",
         options: {
           dataAttributeKey: "dtld",
         },
       },
     ],
-    expectedDomains: ["www.abc.com"],
+    expectedDomains: ["abc.com"],
   },
   {
     title: "Extract domain from data attribute - multiple links.",
     extractorInfos: [
       {
         selectors: "#test5 [data-dtld]",
-        method: "data-attribute",
+        method: "dataAttribute",
         options: {
           dataAttributeKey: "dtld",
         },
       },
     ],
-    expectedDomains: [
-      "www.foo.com",
-      "www.bar.com",
-      "www.baz.com",
-      "www.qux.com",
-    ],
+    expectedDomains: ["foo.com", "bar.com", "baz.com", "qux.com"],
   },
   {
     title: "Extract domain from an href's query param value.",
@@ -88,40 +87,84 @@ const TESTS = [
         },
       },
     ],
+    expectedDomains: ["def.com", "bar.com", "baz.com"],
+  },
+  {
+    title:
+      "Extract domain from an href's query param value containing an href.",
+    extractorInfos: [
+      {
+        selectors: "#test7 a",
+        method: "href",
+        options: {
+          queryParamKey: "ad_domain",
+          queryParamValueIsHref: true,
+        },
+      },
+    ],
     expectedDomains: ["def.com"],
+  },
+  {
+    title:
+      "The param value contains an invalid href while queryParamValueIsHref enabled.",
+    extractorInfos: [
+      {
+        selectors: "#test8 a",
+        method: "href",
+        options: {
+          queryParamKey: "ad_domain",
+          queryParamValueIsHref: true,
+        },
+      },
+    ],
+    expectedDomains: [],
+  },
+  {
+    title: "Param value is missing from the href.",
+    extractorInfos: [
+      {
+        selectors: "#test9 a",
+        method: "href",
+        options: {
+          queryParamKey: "ad_domain",
+          queryParamValueIsHref: true,
+        },
+      },
+    ],
+    expectedDomains: [],
   },
   {
     title: "Extraction preserves order of domains within the page.",
     extractorInfos: [
       {
         selectors:
-          '#test7 [data-layout="organic"] a[data-testid="result-title-a"]',
+          '#test10 [data-layout="organic"] a[data-testid="result-title-a"]',
         method: "href",
       },
       {
-        selectors: "#test7 [data-dtld]",
-        method: "data-attribute",
+        selectors: "#test10 [data-dtld]",
+        method: "dataAttribute",
         options: {
           dataAttributeKey: "dtld",
         },
       },
       {
         selectors:
-          '#test7 .js-carousel-item-title, #test7 [data-layout="ad"] [data-testid="result-title-a"]',
+          '#test10 .js-carousel-item-title, #test7 [data-layout="ad"] [data-testid="result-title-a"]',
         method: "href",
         options: {
           queryParamKey: "ad_domain",
         },
       },
     ],
-    expectedDomains: ["foobar.com", "www.abc.com", "def.com"],
+    expectedDomains: ["foobar.com", "abc.com", "def.com"],
   },
   {
     title: "No elements match the selectors.",
     extractorInfos: [
       {
         selectors:
-          '#test8 [data-layout="organic"] a[data-testid="result-title-a"]',
+          '#test11 [data-layout="organic"] a[data-testid="result-title-a"]',
         method: "href",
       },
     ],
@@ -131,8 +174,8 @@ const TESTS = [
     title: "Data attribute is present, but value is missing.",
     extractorInfos: [
       {
-        selectors: "#test9 [data-dtld]",
-        method: "data-attribute",
+        selectors: "#test12 [data-dtld]",
+        method: "dataAttribute",
         options: {
           dataAttributeKey: "dtld",
         },
@@ -144,7 +187,7 @@ const TESTS = [
     title: "Query param is present, but value is missing.",
     extractorInfos: [
       {
-        selectors: '#test10 [data-layout="ad"] [data-testid="result-title-a"]',
+        selectors: '#test13 [data-layout="ad"] [data-testid="result-title-a"]',
         method: "href",
         options: {
           queryParamKey: "ad_domain",
@@ -158,11 +201,166 @@ const TESTS = [
     extractorInfos: [
       {
         selectors:
-          '#test11 [data-layout="organic"] a[data-testid="result-title-a"]',
+          '#test14 [data-layout="organic"] a[data-testid="result-title-a"]',
         method: "href",
       },
     ],
     expectedDomains: [],
+  },
+  {
+    title: "Second-level domains to a top-level domain.",
+    extractorInfos: [
+      {
+        selectors: "#test15 a",
+        method: "href",
+      },
+    ],
+    expectedDomains: [
+      "foobar.gc.ca",
+      "foobar.gov.uk",
+      "foobar.co.uk",
+      "foobar.co.il",
+    ],
+  },
+  {
+    title: "URL with a long subdomain.",
+    extractorInfos: [
+      {
+        selectors: "#test16 a",
+        method: "href",
+      },
+    ],
+    expectedDomains: ["foobar.com"],
+  },
+  {
+    title: "URLs with the same top level domain.",
+    extractorInfos: [
+      {
+        selectors: "#test17 a",
+        method: "href",
+      },
+    ],
+    expectedDomains: ["foobar.com"],
+  },
+  {
+    title: "Maximum domains extracted from a single selector.",
+    extractorInfos: [
+      {
+        selectors: "#test18 a",
+        method: "href",
+      },
+    ],
+    expectedDomains: [
+      "foobar1.com",
+      "foobar2.com",
+      "foobar3.com",
+      "foobar4.com",
+      "foobar5.com",
+      "foobar6.com",
+      "foobar7.com",
+      "foobar8.com",
+      "foobar9.com",
+      "foobar10.com",
+    ],
+  },
+  {
+    // This is just in case we use multiple selectors meant for separate SERPs
+    // and the provider switches to re-using their markup.
+    title: "Maximum domains extracted from multiple matching selectors.",
+    extractorInfos: [
+      {
+        selectors: "#test19 a.foo",
+        method: "href",
+      },
+      {
+        selectors: "#test19 a.baz",
+        method: "href",
+      },
+    ],
+    expectedDomains: [
+      "foobar1.com",
+      "foobar2.com",
+      "foobar3.com",
+      "foobar4.com",
+      "foobar5.com",
+      "foobar6.com",
+      "foobar7.com",
+      "foobar8.com",
+      "foobar9.com",
+      // This is from the second selector.
+      "foobaz1.com",
+    ],
+  },
+  {
+    title: "Bing organic result.",
+    extractorInfos: [
+      {
+        selectors: "#test20 #b_results .b_algo .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["organic.com"],
+  },
+  {
+    title: "Bing sponsored result.",
+    extractorInfos: [
+      {
+        selectors: "#test21 #b_results .b_ad .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["sponsored.com"],
+  },
+  {
+    title: "Bing carousel result.",
+    extractorInfos: [
+      {
+        selectors: "#test22 .adsMvCarousel cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["fixedupfromthecarousel.com"],
+  },
+  {
+    title: "Bing sidebar result.",
+    extractorInfos: [
+      {
+        selectors: "#test23 aside cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["fixedupfromthesidebar.com"],
+  },
+  {
+    title: "Extraction threshold respected using text content method.",
+    extractorInfos: [
+      {
+        selectors: "#test24 #b_results .b_ad .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: [
+      "sponsored1.com",
+      "sponsored2.com",
+      "sponsored3.com",
+      "sponsored4.com",
+      "sponsored5.com",
+      "sponsored6.com",
+      "sponsored7.com",
+      "sponsored8.com",
+      "sponsored9.com",
+      "sponsored10.com",
+    ],
+  },
+  {
+    title: "Bing organic result with no protocol.",
+    extractorInfos: [
+      {
+        selectors: "#test25 #b_results .b_algo .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["organic.com"],
   },
 ];
 
@@ -196,14 +394,15 @@ add_task(async function test_domain_extraction_heuristics() {
     let expectedDomains = new Set(currentTest.expectedDomains);
     let actualDomains = await SpecialPowers.spawn(
       gBrowser.selectedBrowser,
-      [currentTest.extractorInfos],
-      extractorInfos => {
+      [currentTest.extractorInfos, SEARCH_PROVIDER_NAME],
+      (extractorInfos, searchProviderName) => {
         const { domainExtractor } = ChromeUtils.importESModule(
           "resource:///actors/SearchSERPTelemetryChild.sys.mjs"
         );
         return domainExtractor.extractDomainsFromDocument(
           content.document,
-          extractorInfos
+          extractorInfos,
+          searchProviderName
         );
       }
     );

@@ -11,15 +11,13 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
 
-import { AutofillTelemetry } from "resource://autofill/AutofillTelemetry.sys.mjs";
+import { AutofillTelemetry } from "resource://gre/modules/shared/AutofillTelemetry.sys.mjs";
 import { showConfirmation } from "resource://gre/modules/FillHelpers.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   CreditCard: "resource://gre/modules/CreditCard.sys.mjs",
-  FormAutofillNameUtils:
-    "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
   formAutofillStorage: "resource://autofill/FormAutofillStorage.sys.mjs",
 });
 
@@ -189,7 +187,7 @@ export class AutofillDoorhanger {
 
   renderHeader() {
     // Render the header text
-    const text = this.header.querySelector(`p`);
+    const text = this.header.querySelector(`h1`);
     this.doc.l10n.setAttributes(text, this.ui.header.l10nId);
 
     // Render the menu button
@@ -463,13 +461,6 @@ export class AddressSaveDoorhanger extends AutofillDoorhanger {
   #formatTextByAddressCategory(fieldName) {
     let data = [];
     switch (fieldName) {
-      case "name":
-        data = ["given-name", "additional-name", "family-name"].map(field => [
-          field,
-          this.oldRecord[field],
-          this.newRecord[field],
-        ]);
-        break;
       case "street-address":
         data = [
           [
@@ -488,6 +479,7 @@ export class AddressSaveDoorhanger extends AutofillDoorhanger {
           field => [field, this.oldRecord[field], this.newRecord[field]]
         );
         break;
+      case "name":
       case "country":
       case "tel":
       case "email":
@@ -537,6 +529,8 @@ export class AddressSaveDoorhanger extends AutofillDoorhanger {
       //const img = this.doc.createElement("img");
       const img = this.doc.createXULElement("image");
       img.setAttribute("class", imgClass);
+      // ToDo: provide meaningful alt values (bug 1870155):
+      img.setAttribute("alt", "");
       section.appendChild(img);
 
       // Each line is consisted of multiple <span> to form diff style texts
@@ -684,17 +678,6 @@ export class AddressEditDoorhanger extends AutofillDoorhanger {
     );
   }
 
-  #getFieldDisplayData(field) {
-    if (field == "name") {
-      return lazy.FormAutofillNameUtils.joinNameParts({
-        given: this.newRecord["given-name"],
-        middle: this.newRecord["additional-name"],
-        family: this.newRecord["family-name"],
-      });
-    }
-    return this.newRecord[field];
-  }
-
   #buildCountryMenupopup() {
     const menupopup = this.doc.createXULElement("menupopup");
 
@@ -806,7 +789,7 @@ export class AddressEditDoorhanger extends AutofillDoorhanger {
 
     input.setAttribute("id", inputId);
 
-    const value = this.#getFieldDisplayData(fieldName) ?? null;
+    const value = this.newRecord[fieldName] ?? "";
     if (popup) {
       const menuitem = Array.from(popup.childNodes).find(
         item =>

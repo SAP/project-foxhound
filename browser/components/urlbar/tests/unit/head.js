@@ -180,7 +180,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     Assert.ok(context, "context is passed-in");
     Assert.equal(typeof add, "function", "add is a callback");
     this._context = context;
-    for (const result of this._results) {
+    for (const result of this.results) {
       add(this, result);
     }
   }
@@ -189,9 +189,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     if (this._context) {
       Assert.equal(this._context, context, "cancelQuery: context is the same");
     }
-    if (this._onCancel) {
-      this._onCancel();
-    }
+    this._onCancel?.();
   }
 }
 
@@ -659,10 +657,7 @@ function makeRemoteTabResult(
     url: [uri, UrlbarUtils.HIGHLIGHT.TYPED],
     device: [device, UrlbarUtils.HIGHLIGHT.TYPED],
     // Check against undefined so consumers can pass in the empty string.
-    icon:
-      typeof iconUri != "undefined"
-        ? iconUri
-        : `moz-anno:favicon:page-icon:${uri}`,
+    icon: typeof iconUri != "undefined" ? iconUri : `page-icon:${uri}`,
     lastUsed: lastUsed * 1000,
   };
 
@@ -1073,6 +1068,13 @@ async function check_results({
         `result.suggestedIndex at result index ${i}`
       );
     }
+    if (expected.hasOwnProperty("isSuggestedIndexRelativeToGroup")) {
+      Assert.equal(
+        !!actual.isSuggestedIndexRelativeToGroup,
+        expected.isSuggestedIndexRelativeToGroup,
+        `result.isSuggestedIndexRelativeToGroup at result index ${i}`
+      );
+    }
 
     if (expected.payload) {
       Assert.deepEqual(
@@ -1108,44 +1110,13 @@ async function getOriginFrecency(prefix, aHost) {
 }
 
 /**
- * Returns the origin frecency stats.
- *
- * @returns {object}
- *          An object { count, sum, squares }.
- */
-async function getOriginFrecencyStats() {
-  let db = await PlacesUtils.promiseDBConnection();
-  let rows = await db.execute(`
-    SELECT
-      IFNULL((SELECT value FROM moz_meta WHERE key = 'origin_frecency_count'), 0),
-      IFNULL((SELECT value FROM moz_meta WHERE key = 'origin_frecency_sum'), 0),
-      IFNULL((SELECT value FROM moz_meta WHERE key = 'origin_frecency_sum_of_squares'), 0)
-  `);
-  let count = rows[0].getResultByIndex(0);
-  let sum = rows[0].getResultByIndex(1);
-  let squares = rows[0].getResultByIndex(2);
-  return { count, sum, squares };
-}
-
-/**
  * Returns the origin autofill frecency threshold.
  *
  * @returns {number}
  *          The threshold.
  */
 async function getOriginAutofillThreshold() {
-  let { count, sum, squares } = await getOriginFrecencyStats();
-  if (!count) {
-    return 0;
-  }
-  if (count == 1) {
-    return sum;
-  }
-  let stddevMultiplier = UrlbarPrefs.get("autoFill.stddevMultiplier");
-  return (
-    sum / count +
-    stddevMultiplier * Math.sqrt((squares - (sum * sum) / count) / count)
-  );
+  return PlacesUtils.metadata.get("origin_frecency_threshold", 2.0);
 }
 
 /**

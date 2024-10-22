@@ -32,11 +32,11 @@ use self::device_property::*;
 use self::mixer::*;
 use self::resampler::*;
 use self::utils::*;
-use atomic;
 use backend::ringbuf::RingBuffer;
 use cubeb_backend::{
-    ffi, Context, ContextOps, DeviceCollectionRef, DeviceId, DeviceRef, DeviceType, Error, Ops,
-    Result, SampleFormat, State, Stream, StreamOps, StreamParams, StreamParamsRef, StreamPrefs,
+    ffi, ChannelLayout, Context, ContextOps, DeviceCollectionRef, DeviceId, DeviceRef, DeviceType,
+    Error, InputProcessingParams, Ops, Result, SampleFormat, State, Stream, StreamOps,
+    StreamParams, StreamParamsRef, StreamPrefs,
 };
 use mach::mach_time::{mach_absolute_time, mach_timebase_info};
 use std::cmp;
@@ -57,6 +57,8 @@ const AU_IN_BUS: AudioUnitElement = 1;
 const DISPATCH_QUEUE_LABEL: &str = "org.mozilla.cubeb";
 const PRIVATE_AGGREGATE_DEVICE_NAME: &str = "CubebAggregateDevice";
 const VOICEPROCESSING_AGGREGATE_DEVICE_NAME: &str = "VPAUAggregateAudioDevice";
+
+const APPLE_STUDIO_DISPLAY_USB_ID: &str = "05AC:1114";
 
 // Testing empirically, some headsets report a minimal latency that is very low,
 // but this does not work in practice. Lie and say the minimum is 128 frames.
@@ -281,6 +283,135 @@ fn get_volume(unit: AudioUnit) -> Result<f32> {
         cubeb_log!("AudioUnitGetParameter/kHALOutputParam_Volume rv={}", r);
         Err(Error::error())
     }
+}
+
+fn set_input_mute(unit: AudioUnit, mute: bool) -> Result<()> {
+    assert!(!unit.is_null());
+    let mute: u32 = mute.into();
+    let mut old_mute: u32 = 0;
+    let r = audio_unit_get_property(
+        unit,
+        kAUVoiceIOProperty_MuteOutput,
+        kAudioUnitScope_Global,
+        AU_IN_BUS,
+        &mut old_mute,
+        &mut mem::size_of::<u32>(),
+    );
+    if r != NO_ERR {
+        cubeb_log!(
+            "AudioUnitGetProperty/kAUVoiceIOProperty_MuteOutput rv={}",
+            r
+        );
+        return Err(Error::error());
+    }
+    if old_mute == mute {
+        return Ok(());
+    }
+    let r = audio_unit_set_property(
+        unit,
+        kAUVoiceIOProperty_MuteOutput,
+        kAudioUnitScope_Global,
+        AU_IN_BUS,
+        &mute,
+        mem::size_of::<u32>(),
+    );
+    if r == NO_ERR {
+        Ok(())
+    } else {
+        cubeb_log!(
+            "AudioUnitSetProperty/kAUVoiceIOProperty_MuteOutput rv={}",
+            r
+        );
+        Err(Error::error())
+    }
+}
+
+fn set_input_processing_params(unit: AudioUnit, params: InputProcessingParams) -> Result<()> {
+    assert!(!unit.is_null());
+    let aec = params.contains(InputProcessingParams::ECHO_CANCELLATION);
+    let ns = params.contains(InputProcessingParams::NOISE_SUPPRESSION);
+    let agc = params.contains(InputProcessingParams::AUTOMATIC_GAIN_CONTROL);
+
+    // AEC and NS are active as soon as VPIO is not bypassed, therefore the only combinations
+    // of those we can explicitly support are {} and {aec, ns}.
+    if aec != ns {
+        // No control to turn on AEC without NS or vice versa.
+        return Err(Error::error());
+    }
+
+    let mut old_agc: u32 = 0;
+    let r = audio_unit_get_property(
+        unit,
+        kAUVoiceIOProperty_VoiceProcessingEnableAGC,
+        kAudioUnitScope_Global,
+        AU_IN_BUS,
+        &mut old_agc,
+        &mut mem::size_of::<u32>(),
+    );
+    if r != NO_ERR {
+        cubeb_log!(
+            "AudioUnitGetProperty/kAUVoiceIOProperty_VoiceProcessingEnableAGC rv={}",
+            r
+        );
+        return Err(Error::error());
+    }
+
+    if (old_agc == 1) != agc {
+        let agc = u32::from(agc);
+        let r = audio_unit_set_property(
+            unit,
+            kAUVoiceIOProperty_VoiceProcessingEnableAGC,
+            kAudioUnitScope_Global,
+            AU_IN_BUS,
+            &agc,
+            mem::size_of::<u32>(),
+        );
+        if r != NO_ERR {
+            cubeb_log!(
+                "AudioUnitSetProperty/kAUVoiceIOProperty_VoiceProcessingEnableAGC rv={}",
+                r
+            );
+            return Err(Error::error());
+        }
+    }
+
+    let mut old_bypass: u32 = 0;
+    let r = audio_unit_get_property(
+        unit,
+        kAUVoiceIOProperty_BypassVoiceProcessing,
+        kAudioUnitScope_Global,
+        AU_IN_BUS,
+        &mut old_bypass,
+        &mut mem::size_of::<u32>(),
+    );
+    if r != NO_ERR {
+        cubeb_log!(
+            "AudioUnitGetProperty/kAUVoiceIOProperty_BypassVoiceProcessing rv={}",
+            r
+        );
+        return Err(Error::error());
+    }
+
+    let bypass = u32::from(!aec);
+    if old_bypass != bypass {
+        let r = audio_unit_set_property(
+            unit,
+            kAUVoiceIOProperty_BypassVoiceProcessing,
+            kAudioUnitScope_Global,
+            AU_IN_BUS,
+            &bypass,
+            mem::size_of::<u32>(),
+        );
+        if r != NO_ERR {
+            cubeb_log!(
+                "AudioUnitSetProperty/kAUVoiceIOProperty_BypassVoiceProcessing rv={}",
+                r
+            );
+            return Err(Error::error());
+        }
+    }
+
+    Ok(())
 }
 
 fn minimum_resampling_input_frames(
@@ -1057,21 +1188,6 @@ fn create_voiceprocessing_audiounit(
         return Err(Error::error());
     }
 
-    let bypass = u32::from(true);
-    let r = audio_unit_set_property(
-        unit,
-        kAudioUnitProperty_BypassEffect,
-        kAudioUnitScope_Global,
-        AU_IN_BUS,
-        &bypass,
-        mem::size_of::<u32>(),
-    );
-    if r != NO_ERR {
-        cubeb_log!("Failed to enable bypass of voiceprocessing. Error: {}", r);
-        dispose_audio_unit(unit);
-        return Err(Error::error());
-    }
-
     Ok(unit)
 }
 
@@ -1355,6 +1471,8 @@ fn get_channel_count(
     assert_ne!(devid, kAudioObjectUnknown);
 
     let mut streams = get_device_streams(devid, devtype)?;
+    let model_uid =
+        get_device_model_uid(devid, devtype).map_or_else(|_| String::new(), |s| s.into_string());
 
     if devtype == DeviceType::INPUT {
         // With VPIO, output devices will/may get a Tap that appears as input channels on the
@@ -1375,6 +1493,10 @@ fn get_channel_count(
                 kAudioStreamTerminalTypeMicrophone
                 | kAudioStreamTerminalTypeHeadsetMicrophone
                 | kAudioStreamTerminalTypeReceiverMicrophone => true,
+                kAudioStreamTerminalTypeUnknown => {
+                    cubeb_log!("Unknown TerminalType for input stream. Ignoring its channels.");
+                    false
+                }
                 t if [
                     kAudioStreamTerminalTypeSpeaker,
                     kAudioStreamTerminalTypeHeadphones,
@@ -1393,6 +1515,13 @@ fn get_channel_count(
                     cubeb_log!(
                         "INPUT_UNDEFINED TerminalType for input stream. Ignoring its channels."
                     );
+                    false
+                }
+                // The input tap stream on the Studio Display Speakers has a terminal type that
+                // is not clearly output-specific. We special-case it here.
+                EXTERNAL_DIGITAL_AUDIO_INTERFACE
+                    if model_uid.contains(APPLE_STUDIO_DISPLAY_USB_ID) =>
+                {
                     false
                 }
                 // Note INPUT_UNDEFINED is 0x200 and INPUT_MICROPHONE is 0x201
@@ -2169,6 +2298,11 @@ impl ContextOps for AudioUnitContext {
         })?;
         Ok(rate as u32)
     }
+    fn supported_input_processing_params(&mut self) -> Result<InputProcessingParams> {
+        Ok(InputProcessingParams::ECHO_CANCELLATION
+            | InputProcessingParams::NOISE_SUPPRESSION
+            | InputProcessingParams::AUTOMATIC_GAIN_CONTROL)
+    }
     fn enumerate_devices(
         &mut self,
         devtype: DeviceType,
@@ -2431,6 +2565,8 @@ struct CoreStreamData<'ctx> {
     // Info of the I/O devices.
     input_device: device_info,
     output_device: device_info,
+    input_processing_params: InputProcessingParams,
+    input_mute: bool,
     input_buffer_manager: Option<BufferManager>,
     // Listeners indicating what system events are monitored.
     default_input_listener: Option<device_property_listener>,
@@ -2469,6 +2605,8 @@ impl<'ctx> Default for CoreStreamData<'ctx> {
             output_unit: ptr::null_mut(),
             input_device: device_info::default(),
             output_device: device_info::default(),
+            input_processing_params: InputProcessingParams::NONE,
+            input_mute: false,
             input_buffer_manager: None,
             default_input_listener: None,
             default_output_listener: None,
@@ -2513,6 +2651,8 @@ impl<'ctx> CoreStreamData<'ctx> {
             output_unit: ptr::null_mut(),
             input_device: in_dev,
             output_device: out_dev,
+            input_processing_params: InputProcessingParams::NONE,
+            input_mute: false,
             input_buffer_manager: None,
             default_input_listener: None,
             default_output_listener: None,
@@ -2604,6 +2744,50 @@ impl<'ctx> CoreStreamData<'ctx> {
         input_domain == output_domain
     }
 
+    fn should_block_vpio_for_device_pair(
+        &self,
+        in_device: &device_info,
+        out_device: &device_info,
+    ) -> bool {
+        self.debug_assert_is_on_stream_queue();
+        cubeb_log!("Evaluating device pair against VPIO block list");
+        let log_device = |id, devtype| -> std::result::Result<(), OSStatus> {
+            cubeb_log!("{} uid=\"{}\", model_uid=\"{}\", transport_type={:?}, source={:?}, source_name=\"{}\", name=\"{}\", manufacturer=\"{}\"",
+                if devtype == DeviceType::INPUT {
+                    "Input"
+                } else {
+                    debug_assert_eq!(devtype, DeviceType::OUTPUT);
+                    "Output"
+                },
+                get_device_uid(id, devtype).map(|s| s.into_string()).unwrap_or_default(),
+                get_device_model_uid(id, devtype).map(|s| s.into_string()).unwrap_or_default(),
+                convert_uint32_into_string(get_device_transport_type(id, devtype).unwrap_or(0)),
+                convert_uint32_into_string(get_device_source(id, devtype).unwrap_or(0)),
+                get_device_source_name(id, devtype).map(|s| s.into_string()).unwrap_or_default(),
+                get_device_name(id, devtype).map(|s| s.into_string()).unwrap_or_default(),
+                get_device_manufacturer(id, devtype).map(|s| s.into_string()).unwrap_or_default());
+            Ok(())
+        };
+        log_device(in_device.id, DeviceType::INPUT);
+        log_device(out_device.id, DeviceType::OUTPUT);
+        match (
+            get_device_model_uid(in_device.id, DeviceType::INPUT).map(|s| s.to_string()),
+            get_device_model_uid(out_device.id, DeviceType::OUTPUT).map(|s| s.to_string()),
+        ) {
+            (Ok(in_model_uid), Ok(out_model_uid))
+                if in_model_uid.contains(APPLE_STUDIO_DISPLAY_USB_ID)
+                    && out_model_uid.contains(APPLE_STUDIO_DISPLAY_USB_ID) =>
+            {
+                cubeb_log!("Both input and output device is an Apple Studio Display. BLOCKED");
+                true
+            }
+            _ => {
+                cubeb_log!("Device pair is not blocked");
+                false
+            }
+        }
+    }
+
     fn create_audiounits(&mut self) -> Result<(device_info, device_info)> {
         self.debug_assert_is_on_stream_queue();
         let should_use_voice_processing_unit = self.has_input()
@@ -2611,7 +2795,8 @@ impl<'ctx> CoreStreamData<'ctx> {
             && self
                 .input_stream_params
                 .prefs()
-                .contains(StreamPrefs::VOICE);
+                .contains(StreamPrefs::VOICE)
+            && !self.should_block_vpio_for_device_pair(&self.input_device, &self.output_device);
 
         let should_use_aggregate_device = {
             // It's impossible to create an aggregate device from an aggregate device, and it's
@@ -2641,7 +2826,7 @@ impl<'ctx> CoreStreamData<'ctx> {
                 }
                 cubeb_log!(
                     "Output device ID: {} (aggregate: {:?})",
-                    self.input_device.id,
+                    self.output_device.id,
                     output_is_aggregate
                 );
             }
@@ -2861,8 +3046,7 @@ impl<'ctx> CoreStreamData<'ctx> {
             let params = unsafe {
                 let mut p = *self.input_stream_params.as_ptr();
                 p.channels = if using_voice_processing_unit {
-                    // With VPIO, stereo input devices configured for stereo have been observed to
-                    // spit out only a single mono channel.
+                    // VPIO is always MONO.
                     1
                 } else {
                     input_hw_desc.mChannelsPerFrame
@@ -2980,9 +3164,6 @@ impl<'ctx> CoreStreamData<'ctx> {
                 out_dev_info
             );
 
-            let device_channel_count =
-                get_channel_count(self.output_device.id, DeviceType::OUTPUT).unwrap_or(0);
-
             cubeb_log!(
                 "({:p}) Opening output side: rate {}, channels {}, format {:?}, layout {:?}, prefs {:?}, latency in frames {}, voice processing {}.",
                 self.stm_ptr,
@@ -3019,9 +3200,10 @@ impl<'ctx> CoreStreamData<'ctx> {
                 output_hw_desc
             );
 
-            // In some cases with VPIO the stream format's mChannelsPerFrame is higher than
-            // expected. Use get_channel_count as source of truth.
-            output_hw_desc.mChannelsPerFrame = device_channel_count;
+            // In some cases with (other streams using) VPIO the stream format's mChannelsPerFrame
+            // is higher than expected. Use get_channel_count as source of truth.
+            output_hw_desc.mChannelsPerFrame =
+                get_channel_count(self.output_device.id, DeviceType::OUTPUT).unwrap_or(0);
 
             // This has been observed in the wild.
             if output_hw_desc.mChannelsPerFrame == 0 {
@@ -3038,7 +3220,12 @@ impl<'ctx> CoreStreamData<'ctx> {
             // channels will be appended at the end of the raw data given by the output callback.
             let params = unsafe {
                 let mut p = *self.output_stream_params.as_ptr();
-                p.channels = output_hw_desc.mChannelsPerFrame;
+                p.channels = if using_voice_processing_unit {
+                    // VPIO is always MONO.
+                    1
+                } else {
+                    output_hw_desc.mChannelsPerFrame
+                };
                 if using_voice_processing_unit {
                     // VPIO will always use the sample rate of the input hw for both input and output,
                     // as reported to us. (We can override it but we cannot improve quality this way).
@@ -3284,6 +3471,32 @@ impl<'ctx> CoreStreamData<'ctx> {
                     self.output_device.id,
                     r
                 );
+            }
+
+            // Always try to remember the applied input mute state. If it cannot be applied
+            // to the new device pair, we notify the client of an error and it will have to
+            // open a new stream.
+            if let Err(r) = set_input_mute(self.input_unit, self.input_mute) {
+                cubeb_log!(
+                    "({:p}) Failed to set mute state of voiceprocessing. Error: {}",
+                    self.stm_ptr,
+                    r
+                );
+                return Err(r);
+            }
+
+            // Always try to remember the applied input processing params. If they cannot
+            // be applied in the new device pair, we notify the client of an error and it
+            // will have to open a new stream.
+            if let Err(r) =
+                set_input_processing_params(self.input_unit, self.input_processing_params)
+            {
+                cubeb_log!(
+                    "({:p}) Failed to set params of voiceprocessing. Error: {}",
+                    self.stm_ptr,
+                    r
+                );
+                return Err(r);
             }
         }
 
@@ -3633,23 +3846,10 @@ impl<'ctx> CoreStreamData<'ctx> {
     fn get_output_channel_layout(&self) -> Result<Vec<mixer::Channel>> {
         self.debug_assert_is_on_stream_queue();
         assert!(!self.output_unit.is_null());
-        if !self.using_voice_processing_unit() {
-            return get_channel_layout(self.output_unit);
+        if self.using_voice_processing_unit() {
+            return Ok(get_channel_order(ChannelLayout::MONO));
         }
-
-        // The VoiceProcessingIO unit (as tried on MacOS 14) is known to not support
-        // kAudioUnitProperty_AudioChannelLayout queries, and to lie about
-        // kAudioDevicePropertyPreferredChannelLayout. If we're using
-        // VoiceProcessingIO, try standing up a regular AudioUnit and query that.
-        cubeb_log!(
-            "({:p}) get_output_channel_layout with a VoiceProcessingIO output unit. Trying a dedicated unit.",
-            self.stm_ptr
-        );
-        let mut dedicated_unit = create_audiounit(&self.output_device)?;
-        let res = get_channel_layout(dedicated_unit);
-        dispose_audio_unit(dedicated_unit);
-        dedicated_unit = ptr::null_mut();
-        res
+        get_channel_layout(self.output_unit)
     }
 }
 
@@ -4106,6 +4306,74 @@ impl<'ctx> StreamOps for AudioUnitStream<'ctx> {
     }
     fn current_device(&mut self) -> Result<&DeviceRef> {
         Err(Error::not_supported())
+    }
+    fn set_input_mute(&mut self, mute: bool) -> Result<()> {
+        if self.core_stream_data.input_unit.is_null() {
+            return Err(Error::invalid_parameter());
+        }
+
+        if !self.core_stream_data.using_voice_processing_unit() {
+            return Err(Error::error());
+        }
+
+        // Execute set_input_mute in serial queue to avoid racing with destroy or reinit.
+        let mut result = Err(Error::error());
+        let set = &mut result;
+        let stream = &self;
+        self.queue.run_sync(move || {
+            *set = set_input_mute(stream.core_stream_data.input_unit, mute);
+        });
+
+        result?;
+
+        cubeb_log!(
+            "Cubeb stream ({:p}) set input mute to {}.",
+            self as *const AudioUnitStream,
+            mute
+        );
+        self.core_stream_data.input_mute = mute;
+        Ok(())
+    }
+    fn set_input_processing_params(&mut self, params: InputProcessingParams) -> Result<()> {
+        // CUBEB_ERROR_INVALID_PARAMETER if a given param is not supported by
+        // this backend, or if this stream does not have an input device
+        if self.core_stream_data.input_unit.is_null() {
+            return Err(Error::invalid_parameter());
+        }
+
+        if self
+            .context
+            .supported_input_processing_params()
+            .unwrap()
+            .intersection(params)
+            != params
+        {
+            return Err(Error::invalid_parameter());
+        }
+
+        // CUBEB_ERROR if params could not be applied
+        //   note: only works with VoiceProcessingIO
+        if !self.core_stream_data.using_voice_processing_unit() {
+            return Err(Error::error());
+        }
+
+        // Execute set_input_processing_params in serial queue to avoid racing with destroy or reinit.
+        let mut result = Err(Error::error());
+        let set = &mut result;
+        let stream = &self;
+        self.queue.run_sync(move || {
+            *set = set_input_processing_params(stream.core_stream_data.input_unit, params);
+        });
+
+        result?;
+
+        cubeb_log!(
+            "Cubeb stream ({:p}) set input processing params to {:?}.",
+            self as *const AudioUnitStream,
+            params
+        );
+        self.core_stream_data.input_processing_params = params;
+        Ok(())
     }
     #[cfg(target_os = "ios")]
     fn device_destroy(&mut self, device: &DeviceRef) -> Result<()> {

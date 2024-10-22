@@ -12,7 +12,6 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Bookmarks: "resource://gre/modules/Bookmarks.sys.mjs",
   History: "resource://gre/modules/History.sys.mjs",
-  Log: "resource://gre/modules/Log.sys.mjs",
   PlacesSyncUtils: "resource://gre/modules/PlacesSyncUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
 });
@@ -21,8 +20,12 @@ ChromeUtils.defineLazyGetter(lazy, "MOZ_ACTION_REGEX", () => {
   return /^moz-action:([^,]+),(.*)$/;
 });
 
-ChromeUtils.defineLazyGetter(lazy, "gCryptoHash", () => {
-  return Cc["@mozilla.org/security/hash;1"].createInstance(Ci.nsICryptoHash);
+ChromeUtils.defineLazyGetter(lazy, "CryptoHash", () => {
+  return Components.Constructor(
+    "@mozilla.org/security/hash;1",
+    "nsICryptoHash",
+    "initWithString"
+  );
 });
 
 // On Mac OSX, the transferable system converts "\r\n" to "\n\n", where
@@ -813,7 +816,7 @@ export var PlacesUtils = {
   },
 
   // nsIObserver
-  observe: function PU_observe(aSubject, aTopic, aData) {
+  observe: function PU_observe(aSubject, aTopic) {
     switch (aTopic) {
       case this.TOPIC_SHUTDOWN:
         Services.obs.removeObserver(this, this.TOPIC_SHUTDOWN);
@@ -1177,7 +1180,7 @@ export var PlacesUtils = {
       {
         url: { requiredIf: b => !b.guid },
         guid: { requiredIf: b => !b.url },
-        visits: { requiredIf: b => validateVisits },
+        visits: { requiredIf: () => validateVisits },
       }
     );
   },
@@ -1826,27 +1829,61 @@ export var PlacesUtils = {
    * Run some text through md5 and return the hash.
    * @param {string} data The string to hash.
    * @param {string} [format] Which format of the hash to return:
-   *   - "ascii" for ascii format.
+   *   - "base64" for ascii format.
    *   - "hex" for hex format.
-   * @returns {string} md5 hash of the input string in the required format.
+   * @returns {string} hash of the input data in the required format.
+   * @deprecated use sha256 instead.
    */
-  md5(data, { format = "ascii" } = {}) {
-    lazy.gCryptoHash.init(lazy.gCryptoHash.MD5);
-
-    // Convert the data to a byte array for hashing
-    lazy.gCryptoHash.update(
-      data.split("").map(c => c.charCodeAt(0)),
-      data.length
-    );
+  md5(data, { format = "base64" } = {}) {
+    let hasher = new lazy.CryptoHash("md5");
+    // Convert the data to a byte array for hashing.
+    data = new TextEncoder().encode(data);
+    hasher.update(data, data.length);
     switch (format) {
       case "hex":
-        let hash = lazy.gCryptoHash.finish(false);
+        let hash = hasher.finish(false);
         return Array.from(hash, (c, i) =>
           hash.charCodeAt(i).toString(16).padStart(2, "0")
         ).join("");
-      case "ascii":
+      case "base64":
       default:
-        return lazy.gCryptoHash.finish(true);
+        return hasher.finish(true);
+    }
+  },
+
+  /**
+   * Run some text through SHA256 and return the hash.
+   * @param {string|nsIStringInputStream} data The data to hash.
+   * @param {string} [format] Which format of the hash to return:
+   *   - "base64" (default) for ascii format, not safe for URIs or file names.
+   *   - "hex" for hex format.
+   *   - "base64url" for ascii format safe to be used in file names (RFC 4648).
+   *       You should normally use the "hex" format for file names, but if the
+   *       user may manipulate the file, it would be annoying to have very long
+   *       and unreadable file names, thus this provides a shorter alternative.
+   *       Note padding "=" are untouched and may have to be encoded in URIs.
+   * @returns {string} hash of the input data in the required format.
+   */
+  sha256(data, { format = "base64" } = {}) {
+    let hasher = new lazy.CryptoHash("sha256");
+    if (data instanceof Ci.nsIStringInputStream) {
+      hasher.updateFromStream(data, -1);
+    } else {
+      // Convert the data string to a byte array for hashing.
+      data = new TextEncoder().encode(data);
+      hasher.update(data, data.length);
+    }
+    switch (format) {
+      case "hex":
+        let hash = hasher.finish(false);
+        return Array.from(hash, (c, i) =>
+          hash.charCodeAt(i).toString(16).padStart(2, "0")
+        ).join("");
+      case "base64url":
+        return hasher.finish(true).replaceAll("+", "-").replaceAll("/", "_");
+      case "base64":
+      default:
+        return hasher.finish(true);
     }
   },
 
@@ -1921,31 +1958,26 @@ export var PlacesUtils = {
   },
 
   /**
-   * Creates a logger.
-   * Logging level can be controlled through places.loglevel.
+   * Creates a console logger.
+   * Logging level can be controlled through the `places.loglevel` preference.
    *
-   * @param {string} [prefix] Prefix to use for the logged messages, "::" will
-   *                 be appended automatically to the prefix.
-   * @returns {object} The logger.
+   * @param {object} options
+   * @param {string} [options.prefix] Prefix to use for the logged messages.
+   * @returns {ConsoleInstance} The console logger.
    */
   getLogger({ prefix = "" } = {}) {
-    if (!this._logger) {
-      this._logger = lazy.Log.repository.getLogger("places");
-      this._logger.manageLevelFromPref("places.loglevel");
-      this._logger.addAppender(
-        new lazy.Log.ConsoleAppender(new lazy.Log.BasicFormatter())
-      );
+    if (!this._loggers) {
+      this._loggers = new Map();
     }
-    if (prefix) {
-      // This is not an early return because it is necessary to invoke getLogger
-      // at least once before getLoggerWithMessagePrefix; it replaces a
-      // method of the original logger, rather than using an actual Proxy.
-      return lazy.Log.repository.getLoggerWithMessagePrefix(
-        "places",
-        prefix + " :: "
-      );
+    let logger = this._loggers.get(prefix);
+    if (!logger) {
+      logger = console.createInstance({
+        prefix: `Places${prefix ? " - " + prefix : ""}`,
+        maxLogLevelPref: "places.loglevel",
+      });
+      this._loggers.set(prefix, logger);
     }
-    return this._logger;
+    return logger;
   },
 };
 
@@ -2271,7 +2303,7 @@ PlacesUtils.metadata = {
         }
         return true;
       })
-      .map(([key, value]) => key);
+      .map(([key]) => key);
     if (keysToDelete.length) {
       await this.deleteWithConnection(db, ...keysToDelete);
       if (keysToDelete.length == pairs.size) {

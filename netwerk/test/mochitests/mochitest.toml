@@ -95,7 +95,7 @@ support-files = ["test_accept_header.sjs"]
 ["test_arraybufferinputstream_large.html"]
 # Large ArrayBuffers not supported on 32-bit. TSan shadow memory causes OOMs.
 skip-if = [
-  "bits == 32",
+  "win11_2009 && bits == 32",
   "tsan",
   "asan",
 ]
@@ -206,12 +206,12 @@ skip-if = [
 ["test_uri_scheme.html"]
 skip-if = ["verify && debug && os == 'mac'"]
 
-["test_viewsource_unlinkable.html"]
-
-["test_xhr_method_case.html"]
-skip-if = ["http2"]
-
 ["test_url_perf.html"]
 # test to check the performance of URL parsing.
 # No need to run in CI.
 skip-if = ["true"]
+
+["test_viewsource_unlinkable.html"]
+
+["test_xhr_method_case.html"]
+skip-if = ["http2"]
