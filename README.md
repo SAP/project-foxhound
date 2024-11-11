@@ -23,6 +23,12 @@ This functionality can be expanded in a web extension in order to alert the user
 
 More information on the sources and sinks which are instrumented as part of the code can be found [here](taint).
 
+## Download Foxhound
+
+[TU Braunschweig is hosting foxhound binaries (with and without playwright 
+integration).](https://foxhound.ias.tu-bs.de/foxhound.html)
+In case you have any issues with the provided binaries, feel free to open an issue here.
+
 ## Building
 The "Foxhound" browser can be built mostly by following instructions on how to build [Firefox](https://firefox-source-docs.mozilla.org/setup/), for either [Linux](https://firefox-source-docs.mozilla.org/setup/linux_build.html) or [Windows](https://firefox-source-docs.mozilla.org/setup/windows_build.html). In theory [Mac](https://firefox-source-docs.mozilla.org/setup/macos_build.html) builds are also possible, but this has not been tested!
 
