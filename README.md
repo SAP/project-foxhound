@@ -26,7 +26,7 @@ More information on the sources and sinks which are instrumented as part of the 
 ## Download Foxhound
 
 [TU Braunschweig is hosting foxhound binaries (with and without playwright 
-integration).](https://foxhound.ias.tu-bs.de/foxhound.html)
+integration).](https://foxhound.ias.tu-bs.de/)
 In case you have any issues with the provided binaries, feel free to open an issue here.
 
 ## Building
