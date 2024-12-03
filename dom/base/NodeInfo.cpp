@@ -152,6 +152,10 @@ void NodeInfo::GetPrefix(nsAString& aPrefix) const {
 
 void NodeInfo::GetNamespaceURI(nsAString& aNameSpaceURI) const {
   if (mInner.mNamespaceID > 0) {
+    if (!nsNameSpaceManager::GetInstance()) {
+      SetDOMStringToNull(aNameSpaceURI);
+      return;
+    }
     nsresult rv = nsNameSpaceManager::GetInstance()->GetNameSpaceURI(
         mInner.mNamespaceID, aNameSpaceURI);
     // How can we possibly end up with a bogus namespace ID here?
