@@ -143,6 +143,17 @@ void JSONPrinter::property(const char* name, const char* value) {
   endStringProperty();
 }
 
+void JSONPrinter::property(const char* name, const char16_t* value, size_t length) {
+  beginStringProperty(name);
+  JSONString(out_, value, length);
+  endStringProperty();
+}
+
+void JSONPrinter::string(const char16_t* value, size_t length) {
+  JSONString(beginString(), value, length);
+  endString();
+}
+
 void JSONPrinter::formatProperty(const char* name, const char* format, ...) {
   va_list ap;
   va_start(ap, format);

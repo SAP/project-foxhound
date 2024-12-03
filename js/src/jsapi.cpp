@@ -5072,6 +5072,8 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   RootedValue rval(cx);
   JS_CallFunction(cx, nullptr, report, arguments, &rval);
   MOZ_ASSERT(!cx->isExceptionPending());
+
+  MaybeSpewStringTaint(cx, str);
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,

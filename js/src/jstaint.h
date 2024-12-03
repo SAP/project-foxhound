@@ -85,6 +85,9 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
+// Write the taint report to file
+void MaybeSpewStringTaint(JSContext* cx, JSString* str);
+
 // Print a message to stdout.
 void TaintFoxReport(JSContext* cx, const char* msg);
 
