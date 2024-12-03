@@ -373,14 +373,19 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
 }
 
 void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
-//#ifdef JS_STRUCTURED_SPEW
+#ifdef JS_STRUCTURED_SPEW
   if (!str || !str->taint()) {
     return;
   }
 
   AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
   if (spew) {
-    spew->property("str", str);
+    JSLinearString* linear = str->ensureLinear(cx);
+    if (linear) {
+      spew->property("str", linear);
+    } else {
+      spew->property("str", "Non-linear String!");
+    }
 
     spew->beginListProperty("taint");
     for (const TaintRange& range : str->taint()) {
@@ -419,7 +424,7 @@ void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
     spew->endList();
 
   }
-//#endif
+#endif
 }
 
 // Print a message to stdout.
