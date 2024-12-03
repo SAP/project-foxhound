@@ -49,6 +49,7 @@ class JSONPrinter {
 
   void property(const char* name, JSLinearString* value);
   void property(const char* name, const char* value);
+  void property(const char* name, const char16_t* value, size_t length);
   void property(const char* name, int32_t value);
   void property(const char* name, uint32_t value);
   void property(const char* name, int64_t value);
@@ -59,6 +60,8 @@ class JSONPrinter {
   // uint32_t or uint64_t.
   void property(const char* name, size_t value);
 #endif
+
+  void string(const char16_t* value, size_t length);
 
   void formatProperty(const char* name, const char* format, ...)
       MOZ_FORMAT_PRINTF(3, 4);

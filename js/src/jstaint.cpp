@@ -17,6 +17,7 @@
 #include "js/ErrorReport.h"
 #include "js/UniquePtr.h"
 #include "vm/FrameIter.h"
+#include "vm/JSAtomUtils.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/StringType.h"
@@ -369,6 +370,54 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
       }
     }
   }
+}
+
+void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
+//#ifdef JS_STRUCTURED_SPEW
+  if (!str || !str->taint()) {
+    return;
+  }
+
+  AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
+  if (spew) {
+    spew->beginList();
+    for (const TaintRange& range : str->taint()) {
+      spew->beginObject();
+      spew->property("begin", range.begin());
+      spew->property("end", range.end());
+
+      spew->beginListProperty("flow");
+      for (TaintNode& node : range.flow()) {
+        const TaintOperation& op = node.operation();
+        spew->beginObject();
+        spew->property("operation", op.name());
+        spew->boolProperty("builtin", op.is_native());
+        spew->boolProperty("source", op.isSource());
+
+        const TaintLocation& loc = op.location();
+        spew->beginObjectProperty("location");
+        spew->property("filename", loc.filename().c_str(), loc.filename().size());
+        spew->property("line", loc.line());
+        spew->property("pos", loc.pos());
+        spew->property("scriptline", loc.scriptStartLine());
+        spew->property("scripthash", JS::convertDigestToHexString(loc.scriptHash()).c_str());
+        spew->endObject(); // Location
+
+        spew->beginListProperty("arguments");
+        for (auto& arg : op.arguments()) {
+          spew->string(arg.c_str(), arg.size());
+        }
+        spew->endList();
+
+        spew->endObject(); // Operation
+      }
+      spew->endList(); // flow
+      spew->endObject(); // range
+    }
+    spew->endList();
+
+  }
+//#endif
 }
 
 // Print a message to stdout.
