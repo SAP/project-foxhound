@@ -152,6 +152,7 @@ void JSONPrinter::property(const char* name, const char16_t* value, size_t lengt
 void JSONPrinter::string(const char16_t* value, size_t length) {
   JSONString(beginString(), value, length);
   endString();
+  first_ = false;
 }
 
 void JSONPrinter::formatProperty(const char* name, const char* format, ...) {
