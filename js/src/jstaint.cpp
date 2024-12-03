@@ -380,7 +380,9 @@ void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
 
   AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
   if (spew) {
-    spew->beginList();
+    spew->property("str", str);
+
+    spew->beginListProperty("taint");
     for (const TaintRange& range : str->taint()) {
       spew->beginObject();
       spew->property("begin", range.begin());
