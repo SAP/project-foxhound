@@ -427,6 +427,28 @@ void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
 #endif
 }
 
+void JS::MaybeSpewMessage(JSContext* cx, JSString* str) {
+  // First print message to stderr
+  SEprinter p;
+  p.put("!!! foxhound() called with message: ");
+  p.putString(cx, str);
+  p.put("\n");
+  p.flush();
+
+#ifdef JS_STRUCTURED_SPEW
+  // Spew to file if enabled
+  AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
+  if (spew) {
+    JSLinearString* linear = str->ensureLinear(cx);
+    if (linear) {
+      spew->property("foxhound", linear);
+    } else {
+      spew->property("foxhound", "Non-linear String!");
+    }
+  }
+#endif
+}
+
 // Print a message to stdout.
 void JS::TaintFoxReport(JSContext* cx, const char* msg)
 {

@@ -87,6 +87,8 @@ void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS:
 
 // Write the taint report to file
 void MaybeSpewStringTaint(JSContext* cx, JSString* str);
+// Write a message to the file
+void MaybeSpewMessage(JSContext* cx, JSString* str);
 
 // Print a message to stdout.
 void TaintFoxReport(JSContext* cx, const char* msg);
