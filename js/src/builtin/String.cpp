@@ -123,6 +123,8 @@ static bool str_encodeURI(JSContext* cx, unsigned argc, Value* vp);
 
 static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
 
+static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp);
+
 /*
  * Global string methods
  */
@@ -723,7 +725,7 @@ static const JSFunctionSpec string_functions[] = {
     JS_FN("encodeURI", str_encodeURI, 1, JSPROP_RESOLVING),
     JS_FN("decodeURIComponent", str_decodeURI_Component, 1, JSPROP_RESOLVING),
     JS_FN("encodeURIComponent", str_encodeURI_Component, 1, JSPROP_RESOLVING),
-
+    JS_FN("foxhound", str_foxhound, 1, JSPROP_RESOLVING),
     JS_FS_END,
 };
 
@@ -5323,6 +5325,21 @@ JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
     return NewStringCopyN<CanGC>(cx, chars, length);
   }
   return sb.finishString();
+}
+
+static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "foxhound");
+  CallArgs args = CallArgsFromVp(argc, vp);
+  // This will also do conversions from numbers to strings
+  Rooted<JSLinearString*> str(cx, ArgToLinearString(cx, args, 0));
+  if (!str) {
+    return false;
+  }
+
+  MaybeSpewMessage(cx, str);
+
+  args.rval().setUndefined();
+  return true;
 }
 
 static bool FlatStringMatchHelper(JSContext* cx, HandleString str,
