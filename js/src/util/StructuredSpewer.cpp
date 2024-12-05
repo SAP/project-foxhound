@@ -31,7 +31,7 @@ const StructuredSpewer::NameArray StructuredSpewer::names_ = {
 #    if defined(_WIN32)
 #      define DEFAULT_SPEW_DIRECTORY "."
 #    elif defined(__ANDROID__)
-#      define DEFAULT_SPEW_DIRECTORY "/data/local/tmp"
+#      define DEFAULT_SPEW_DIRECTORY "/sdcard/Download"
 #    else
 #      define DEFAULT_SPEW_DIRECTORY "."
 #    endif
