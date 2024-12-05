@@ -126,9 +126,13 @@ class StructuredSpewer {
         spewingEnabled_(0),
         json_(mozilla::Nothing()),
         selectedChannel_() {
+#if defined(__ANDROID__)
+      parseSpewFlags("TaintFlowSpewer,AtStartup");
+#else
     if (getenv("SPEW")) {
       parseSpewFlags(getenv("SPEW"));
     }
+#endif
   }
 
   ~StructuredSpewer() {
