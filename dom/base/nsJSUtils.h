@@ -119,12 +119,14 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
     if (chars[len] == '\0') {
       AssignFromStringBuffer(
           nsStringBuffer::FromData(const_cast<char16_t*>(chars)), len, dest);
+      dest.AssignTaint(JS_GetStringTaint(s));
       return true;
     }
   } else if (XPCStringConvert::MaybeGetLiteralStringChars(s, &chars)) {
     // The characters represent a literal char16_t string constant
     // compiled into libxul; we can just use it as-is.
     dest.AssignLiteral(chars, len);
+    dest.AssignTaint(JS_GetStringTaint(s));
     return true;
   }
 
@@ -184,6 +186,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 
   MOZ_ASSERT(read == JS::GetStringLength(s));
   handle.Finish(written, kAllowShrinking);
+  dest.AssignTaint(JS_GetStringTaint(s));
   return true;
 }
 

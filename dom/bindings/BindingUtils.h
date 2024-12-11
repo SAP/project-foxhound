@@ -2589,6 +2589,7 @@ inline bool NonVoidUTF8StringToJsval(JSContext* cx, const nsACString& str,
   if (!jsStr) {
     return false;
   }
+  JS_SetStringTaint(cx, jsStr, str.Taint());
   rval.setString(jsStr);
   return true;
 }
