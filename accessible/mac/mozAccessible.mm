@@ -295,7 +295,8 @@ using namespace mozilla::a11y;
 
 - (NSString*)moxRole {
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
+             msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
+             nameRule)                                                      \
   case roles::geckoRole:                                                    \
     return macRole;
 
@@ -366,7 +367,8 @@ using namespace mozilla::a11y;
   }
 
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
+             msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
+             nameRule)                                                      \
   case roles::geckoRole:                                                    \
     if (![macSubrole isEqualToString:NSAccessibilityUnknownSubrole]) {      \
       return macSubrole;                                                    \
@@ -644,6 +646,16 @@ struct RoleDescrComparator {
 
   // Default aria-relevant value
   return @"additions text";
+}
+
+- (NSString*)moxPlaceholderValue {
+  // First, check for plaecholder HTML attribute
+  if (NSString* placeholder = utils::GetAccAttr(self, nsGkAtoms::placeholder)) {
+    return placeholder;
+  }
+
+  // If no placeholder HTML attribute, check for the aria version.
+  return utils::GetAccAttr(self, nsGkAtoms::aria_placeholder);
 }
 
 - (id)moxTitleUIElement {

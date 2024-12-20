@@ -506,7 +506,7 @@ void nsFrameMessageManager::SendSyncMessage(JSContext* aCx,
                "Should not have parent manager in content!");
 
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING(
-      "nsFrameMessageManager::SendMessage", OTHER, aMessageName);
+      "nsFrameMessageManager::SendSyncMessage", OTHER, aMessageName);
   profiler_add_marker("SendSyncMessage", geckoprofiler::category::IPC, {},
                       FrameMessageMarker{}, aMessageName, true);
 
@@ -1428,8 +1428,7 @@ class SameParentProcessMessageManagerCallback : public MessageManagerCallback {
                                   bool aRunInGlobalScope) override {
     auto* global = ContentProcessMessageManager::Get();
     MOZ_ASSERT(!aRunInGlobalScope);
-    global->LoadScript(aURL);
-    return true;
+    return global && global->LoadScript(aURL);
   }
 
   nsresult DoSendAsyncMessage(const nsAString& aMessage,

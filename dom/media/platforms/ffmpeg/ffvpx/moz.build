@@ -11,9 +11,12 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     "../FFmpegAudioDecoder.cpp",
+    "../FFmpegAudioEncoder.cpp",
     "../FFmpegDataDecoder.cpp",
+    "../FFmpegDataEncoder.cpp",
     "../FFmpegDecoderModule.cpp",
     "../FFmpegEncoderModule.cpp",
+    "../FFmpegUtils.cpp",
     "../FFmpegVideoDecoder.cpp",
     "../FFmpegVideoEncoder.cpp",
 ]

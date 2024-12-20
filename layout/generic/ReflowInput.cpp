@@ -13,10 +13,8 @@
 #include "CounterStyleManager.h"
 #include "LayoutLogging.h"
 #include "mozilla/dom/HTMLInputElement.h"
-#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
 #include "nsBlockFrame.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsFlexContainerFrame.h"
 #include "nsFontInflationData.h"
 #include "nsFontMetrics.h"
@@ -31,7 +29,6 @@
 #include "nsLineBox.h"
 #include "nsPresContext.h"
 #include "nsStyleConsts.h"
-#include "nsTableCellFrame.h"
 #include "nsTableFrame.h"
 #include "StickyScrollContainer.h"
 
@@ -1238,11 +1235,11 @@ static bool AxisPolarityFlipped(LogicalAxis aThisAxis, WritingMode aThisWm,
 }
 
 static bool InlinePolarityFlipped(WritingMode aThisWm, WritingMode aOtherWm) {
-  return AxisPolarityFlipped(eLogicalAxisInline, aThisWm, aOtherWm);
+  return AxisPolarityFlipped(LogicalAxis::Inline, aThisWm, aOtherWm);
 }
 
 static bool BlockPolarityFlipped(WritingMode aThisWm, WritingMode aOtherWm) {
-  return AxisPolarityFlipped(eLogicalAxisBlock, aThisWm, aOtherWm);
+  return AxisPolarityFlipped(LogicalAxis::Block, aThisWm, aOtherWm);
 }
 
 // Calculate the position of the hypothetical box that the element would have
@@ -1292,7 +1289,6 @@ void ReflowInput::CalculateHypotheticalPosition(
     // For non-replaced inline-level elements the 'inline size' property
     // doesn't apply, so we don't know what the inline size would have
     // been without reflowing it
-
   } else {
     // It's either a replaced inline-level element or a block-level element
 
@@ -1301,17 +1297,17 @@ void ReflowInput::CalculateHypotheticalPosition(
     // been in the flow. Note that we ignore any 'auto' and 'inherit'
     // values
     nscoord insideBoxISizing, outsideBoxISizing;
-    CalculateBorderPaddingMargin(eLogicalAxisInline, blockContentSize.ISize(wm),
-                                 &insideBoxISizing, &outsideBoxISizing);
+    CalculateBorderPaddingMargin(LogicalAxis::Inline,
+                                 blockContentSize.ISize(wm), &insideBoxISizing,
+                                 &outsideBoxISizing);
 
     if (mFlags.mIsReplaced && isAutoISize) {
-      // It's a replaced element with an 'auto' inline size so the box
-      // inline size is its intrinsic size plus any border/padding/margin
+      // It's a replaced element with an 'auto' inline size so the box inline
+      // size is its intrinsic size plus any border/padding/margin
       if (intrinsicSize) {
         boxISize.emplace(LogicalSize(wm, *intrinsicSize).ISize(wm) +
                          outsideBoxISizing + insideBoxISizing);
       }
-
     } else if (isAutoISize) {
       // The box inline size is the containing block inline size
       boxISize.emplace(blockContentSize.ISize(wm));
@@ -1320,7 +1316,7 @@ void ReflowInput::CalculateHypotheticalPosition(
       // percentage based this computed value may be different from the computed
       // value calculated using the absolute containing block width
       nscoord insideBoxBSizing, dummy;
-      CalculateBorderPaddingMargin(eLogicalAxisBlock,
+      CalculateBorderPaddingMargin(LogicalAxis::Block,
                                    blockContentSize.ISize(wm),
                                    &insideBoxBSizing, &dummy);
       boxISize.emplace(
@@ -1500,7 +1496,7 @@ void ReflowInput::CalculateHypotheticalPosition(
     // been in the flow. Note that we ignore any 'auto' and 'inherit'
     // values.
     nscoord insideBoxSizing, outsideBoxSizing;
-    CalculateBorderPaddingMargin(eLogicalAxisBlock, blockContentSize.BSize(wm),
+    CalculateBorderPaddingMargin(LogicalAxis::Block, blockContentSize.BSize(wm),
                                  &insideBoxSizing, &outsideBoxSizing);
 
     nscoord boxBSize;
@@ -1627,7 +1623,7 @@ LogicalSize ReflowInput::CalculateAbsoluteSizeWithResolvedAutoBlockSize(
           : LogicalSize(wm);
   auto transferredISize =
       mStylePosition->mAspectRatio.ToLayoutRatio().ComputeRatioDependentSize(
-          LogicalAxis::eLogicalAxisInline, wm, aAutoBSize, boxSizingAdjust);
+          LogicalAxis::Inline, wm, aAutoBSize, boxSizingAdjust);
   resultSize.ISize(wm) = ApplyMinMaxISize(transferredISize);
 
   MOZ_ASSERT(mFlags.mIsBSizeSetByAspectRatio,
@@ -2167,8 +2163,6 @@ void ReflowInput::InitConstraints(
   WritingMode wm = GetWritingMode();
   LogicalSize cbSize = aContainingBlockSize.valueOr(
       LogicalSize(mWritingMode, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE));
-  DISPLAY_INIT_CONSTRAINTS(mFrame, this, cbSize.ISize(wm), cbSize.BSize(wm),
-                           aBorder, aPadding);
 
   // If this is a reflow root, then set the computed width and
   // height equal to the available space
@@ -2239,7 +2233,7 @@ void ReflowInput::InitConstraints(
         // eStyleUnit_Auto;" used to be called exclusively.
         if (mFlags.mIsReplaced && mStyleDisplay->IsInlineOutsideStyle()) {
           // Get the containing block's reflow input
-          NS_ASSERTION(nullptr != cbri, "no containing block");
+          NS_ASSERTION(cbri, "no containing block");
           // in quirks mode, get the cb height using the special quirk method
           if (!wm.IsVertical() &&
               eCompatibility_NavQuirks == aPresContext->CompatibilityMode()) {
@@ -2359,46 +2353,79 @@ void ReflowInput::InitConstraints(
     } else {
       AutoMaybeDisableFontInflation an(mFrame);
 
-      const bool isBlockLevel =
-          ((!mStyleDisplay->IsInlineOutsideStyle() &&
-            // internal table values on replaced elements behaves as inline
-            // https://drafts.csswg.org/css-tables-3/#table-structure
-            // "... it is handled instead as though the author had declared
-            //  either 'block' (for 'table' display) or 'inline' (for all
-            //  other values)"
-            !(mFlags.mIsReplaced && (mStyleDisplay->IsInnerTableStyle() ||
-                                     mStyleDisplay->DisplayOutside() ==
-                                         StyleDisplayOutside::TableCaption))) ||
-           // The inner table frame always fills its outer wrapper table frame,
-           // even for 'inline-table'.
-           mFrame->IsTableFrame()) &&
-          // XXX abs.pos. continuations treated like blocks, see comment in
-          // the else-if condition above.
-          (!mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) ||
-           mStyleDisplay->IsAbsolutelyPositionedStyle());
+      nsIFrame* const alignCB = [&] {
+        nsIFrame* cb = mFrame->GetParent();
+        if (cb->IsTableWrapperFrame()) {
+          nsIFrame* alignCBParent = cb->GetParent();
+          if (alignCBParent && alignCBParent->IsGridContainerFrame()) {
+            return alignCBParent;
+          }
+        }
+        return cb;
+      }();
 
-      if (!isBlockLevel) {
+      const bool isInlineLevel = [&] {
+        if (mFrame->IsTableFrame()) {
+          // An inner table frame is not inline-level, even if it happens to
+          // have 'display:inline-table'. (That makes its table-wrapper frame be
+          // inline-level, but not the inner table frame)
+          return false;
+        }
+        if (mStyleDisplay->IsInlineOutsideStyle()) {
+          return true;
+        }
+        if (mFlags.mIsReplaced && (mStyleDisplay->IsInnerTableStyle() ||
+                                   mStyleDisplay->DisplayOutside() ==
+                                       StyleDisplayOutside::TableCaption)) {
+          // Internal table values on replaced elements behave as inline
+          // https://drafts.csswg.org/css-tables-3/#table-structure
+          //
+          //     ... it is handled instead as though the author had declared
+          //     either 'block' (for 'table' display) or 'inline' (for all
+          //     other values)"
+          //
+          // FIXME(emilio): The only test that covers this is
+          // table-anonymous-objects-211.xht, which fails on other browsers (but
+          // differently to us, if you just remove this condition).
+          return true;
+        }
+        if (mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW) &&
+            !mStyleDisplay->IsAbsolutelyPositionedStyle()) {
+          // Floats are treated as inline-level and also shrink-wrap.
+          return true;
+        }
+        return false;
+      }();
+
+      const bool shouldShrinkWrap = [&] {
+        if (isInlineLevel) {
+          return true;
+        }
+        if (mFlags.mIsReplaced && !alignCB->IsFlexOrGridContainer()) {
+          // Shrink-wrap replaced elements when in-flow (out of flows are
+          // handled above). We exclude replaced elements in grid or flex
+          // contexts, where we don't want to shrink-wrap unconditionally (so
+          // that stretching can happen). When grid/flex explicitly want
+          // shrink-wrapping, they can request it directly using the relevant
+          // flag.
+          return true;
+        }
+        if (!alignCB->IsGridContainerFrame() && mCBReflowInput &&
+            mCBReflowInput->GetWritingMode().IsOrthogonalTo(mWritingMode)) {
+          // Shrink-wrap blocks that are orthogonal to their container (unless
+          // we're in a grid?)
+          return true;
+        }
+        return false;
+      }();
+
+      if (shouldShrinkWrap) {
         mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
       }
 
-      nsIFrame* alignCB = mFrame->GetParent();
-      if (alignCB->IsTableWrapperFrame()) {
-        nsIFrame* alignCBParent = alignCB->GetParent();
-        if (alignCBParent && alignCBParent->IsGridContainerFrame()) {
-          alignCB = alignCBParent;
-        }
-      }
-      if (!alignCB->IsGridContainerFrame()) {
-        // Shrink-wrap blocks that are orthogonal to their container.
-        if (isBlockLevel && mCBReflowInput &&
-            mCBReflowInput->GetWritingMode().IsOrthogonalTo(mWritingMode)) {
-          mComputeSizeFlags += ComputeSizeFlag::ShrinkWrap;
-        }
-      }
-
       if (cbSize.ISize(wm) == NS_UNCONSTRAINEDSIZE) {
-        // For orthogonal flows, where we found a parent orthogonal-limit
-        // for AvailableISize() in Init(), we'll use the same here as well.
+        // For orthogonal flows, where we found a parent orthogonal-limit for
+        // AvailableISize() in Init(), we'll use the same here as well.
         cbSize.ISize(wm) = AvailableISize();
       }
 
@@ -2418,10 +2445,7 @@ void ReflowInput::InitConstraints(
           size.mAspectRatioUsage == nsIFrame::AspectRatioUsage::ToComputeBSize;
 
       const bool shouldCalculateBlockSideMargins = [&]() {
-        if (!isBlockLevel) {
-          return false;
-        }
-        if (mStyleDisplay->mDisplay == StyleDisplay::InlineTable) {
+        if (isInlineLevel) {
           return false;
         }
         if (mFrame->IsTableFrame()) {
@@ -2475,7 +2499,6 @@ void SizeComputationInput::InitOffsets(WritingMode aCBWM, nscoord aPercentBasis,
                                        const Maybe<LogicalMargin>& aBorder,
                                        const Maybe<LogicalMargin>& aPadding,
                                        const nsStyleDisplay* aDisplay) {
-  DISPLAY_INIT_OFFSETS(mFrame, this, aPercentBasis, aCBWM, aBorder, aPadding);
   nsPresContext* presContext = mFrame->PresContext();
 
   // Compute margins from the specified margin style information. These
@@ -2533,7 +2556,7 @@ void SizeComputationInput::InitOffsets(WritingMode aCBWM, nscoord aPercentBasis,
       }
       mComputedPadding.Side(side, wm) += val;
       needPaddingProp = true;
-      if (aAxis == eLogicalAxisBlock && val > 0) {
+      if (aAxis == LogicalAxis::Block && val > 0) {
         // We have a baseline-adjusted block-axis start padding, so
         // we need this to mark lines dirty when mIsBResize is true:
         this->mFrame->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
@@ -2541,10 +2564,10 @@ void SizeComputationInput::InitOffsets(WritingMode aCBWM, nscoord aPercentBasis,
     }
   };
   if (!aFlags.contains(ComputeSizeFlag::IsGridMeasuringReflow)) {
-    ApplyBaselinePadding(eLogicalAxisBlock, nsIFrame::BBaselinePadProperty());
+    ApplyBaselinePadding(LogicalAxis::Block, nsIFrame::BBaselinePadProperty());
   }
   if (!aFlags.contains(ComputeSizeFlag::ShrinkWrap)) {
-    ApplyBaselinePadding(eLogicalAxisInline, nsIFrame::IBaselinePadProperty());
+    ApplyBaselinePadding(LogicalAxis::Inline, nsIFrame::IBaselinePadProperty());
   }
 
   LogicalMargin border(wm);

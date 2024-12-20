@@ -1,6 +1,6 @@
 /*eslint max-nested-callbacks: ["error", 10]*/
 import { ASRouterChild } from "actors/ASRouterChild.sys.mjs";
-import { MESSAGE_TYPE_HASH as msg } from "modules/ActorConstants.sys.mjs";
+import { MESSAGE_TYPE_HASH as msg } from "modules/ActorConstants.mjs";
 
 describe("ASRouterChild", () => {
   let asRouterChild = null;
@@ -24,7 +24,6 @@ describe("ASRouterChild", () => {
         msg.DISABLE_PROVIDER,
         msg.ENABLE_PROVIDER,
         msg.EXPIRE_QUERY_CACHE,
-        msg.FORCE_WHATSNEW_PANEL,
         msg.IMPRESSION,
         msg.RESET_PROVIDER_PREF,
         msg.SET_PROVIDER_USER_PREF,

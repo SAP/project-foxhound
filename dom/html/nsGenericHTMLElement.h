@@ -63,7 +63,6 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
       : nsGenericHTMLElementBase(std::move(aNodeInfo)) {
     NS_ASSERTION(mNodeInfo->NamespaceID() == kNameSpaceID_XHTML,
                  "Unexpected namespace");
-    AddStatesSilently(mozilla::dom::ElementState::LTR);
   }
 
   NS_INLINE_DECL_REFCOUNTING_INHERITED(nsGenericHTMLElement,
@@ -644,6 +643,7 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * @param aResult    result value [out]
    */
   void GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr, nsAString& aResult) const;
+  void GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr, nsACString& aResult) const;
 
   /**
    * Gets the absolute URI values of an attribute, by resolving any relative
@@ -651,7 +651,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
    * isn't a relative URI, the substring is returned as is. Only works for
    * attributes in null namespace.
    */
-  bool GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr, nsIURI** aURI) const;
+  const nsAttrValue* GetURIAttr(nsAtom* aAttr, nsAtom* aBaseAttr,
+                                nsIURI** aURI) const;
 
   bool IsHidden() const { return HasAttr(nsGkAtoms::hidden); }
 
@@ -772,6 +773,9 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     GetEnumAttr(aName, nullptr, aResult);
   }
   void GetHTMLURIAttr(nsAtom* aName, nsAString& aResult) const {
+    GetURIAttr(aName, nullptr, aResult);
+  }
+  void GetHTMLURIAttr(nsAtom* aName, nsACString& aResult) const {
     GetURIAttr(aName, nullptr, aResult);
   }
 

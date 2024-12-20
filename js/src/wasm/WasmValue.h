@@ -224,9 +224,9 @@ class LitVal {
   Cell& cell() { return cell_; }
   const Cell& cell() const { return cell_; }
 
-  // Updates the type of the LitVal. Does not check that the type is valid for the
-  // actual value, so make sure the type is definitely correct via validation or
-  // something.
+  // Updates the type of the LitVal. Does not check that the type is valid for
+  // the actual value, so make sure the type is definitely correct via
+  // validation or something.
   void unsafeSetType(ValType type) { type_ = type; }
 
   uint32_t i32() const {

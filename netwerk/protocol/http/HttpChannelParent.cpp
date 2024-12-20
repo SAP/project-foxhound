@@ -587,7 +587,7 @@ bool HttpChannelParent::DoAsyncOpen(
 
   if (aCorsPreflightArgs.isSome()) {
     const CorsPreflightArgs& args = aCorsPreflightArgs.ref();
-    httpChannel->SetCorsPreflightParameters(args.unsafeHeaders(), false);
+    httpChannel->SetCorsPreflightParameters(args.unsafeHeaders(), false, false);
   }
 
   nsCOMPtr<nsIInputStream> stream = DeserializeIPCStream(uploadStream);
@@ -896,7 +896,7 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRedirect2Verify(
         MOZ_RELEASE_ASSERT(newInternalChannel);
         const CorsPreflightArgs& args = aCorsPreflightArgs.ref();
         newInternalChannel->SetCorsPreflightParameters(args.unsafeHeaders(),
-                                                       false);
+                                                       false, false);
       }
 
       if (aReferrerInfo) {
@@ -1180,7 +1180,7 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
     PContentParent* pcp = Manager()->Manager();
     MOZ_ASSERT(pcp, "We should have a manager if our IPC isn't closed");
     DebugOnly<nsresult> rv =
-        static_cast<ContentParent*>(pcp)->AboutToLoadHttpFtpDocumentForChild(
+        static_cast<ContentParent*>(pcp)->AboutToLoadHttpDocumentForChild(
             chan, &args.shouldWaitForOnStartRequestSent());
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }

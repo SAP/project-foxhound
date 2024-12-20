@@ -29,6 +29,7 @@ pub enum Suggestion {
         url: String,
         raw_url: String,
         icon: Option<Vec<u8>>,
+        icon_mimetype: Option<String>,
         full_keyword: String,
         block_id: i64,
         advertiser: String,
@@ -48,6 +49,7 @@ pub enum Suggestion {
         title: String,
         url: String,
         icon: Option<Vec<u8>>,
+        icon_mimetype: Option<String>,
         full_keyword: String,
     },
     Amo {
@@ -64,6 +66,7 @@ pub enum Suggestion {
         url: String,
         title: String,
         icon: Option<Vec<u8>>,
+        icon_mimetype: Option<String>,
         score: f64,
         has_location_sign: bool,
         subject_exact_match: bool,
@@ -103,6 +106,37 @@ impl Ord for Suggestion {
         b_score
             .partial_cmp(a_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+impl Suggestion {
+    /// Get the URL for this suggestion, if present
+    pub fn url(&self) -> Option<&str> {
+        match self {
+            Self::Amp { url, .. }
+            | Self::Pocket { url, .. }
+            | Self::Wikipedia { url, .. }
+            | Self::Amo { url, .. }
+            | Self::Yelp { url, .. }
+            | Self::Mdn { url, .. } => Some(url),
+            _ => None,
+        }
+    }
+
+    /// Get the raw URL for this suggestion, if present
+    ///
+    /// This is the same as `url` except for Amp.  In that case, `url` is the URL after being
+    /// "cooked" using template interpolation, while `raw_url` is the URL template.
+    pub fn raw_url(&self) -> Option<&str> {
+        match self {
+            Self::Amp { raw_url: url, .. }
+            | Self::Pocket { url, .. }
+            | Self::Wikipedia { url, .. }
+            | Self::Amo { url, .. }
+            | Self::Yelp { url, .. }
+            | Self::Mdn { url, .. } => Some(url),
+            _ => None,
+        }
     }
 }
 

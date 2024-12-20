@@ -75,7 +75,7 @@ static const char* PacketModeStr(const webrtc::CodecSpecificInfo& aInfo) {
 }
 
 static std::pair<H264_PROFILE, H264_LEVEL> ConvertProfileLevel(
-    const webrtc::SdpVideoFormat::Parameters& aParameters) {
+    const webrtc::CodecParameterMap& aParameters) {
   const absl::optional<webrtc::H264ProfileLevelId> profileLevel =
       webrtc::ParseSdpForH264ProfileLevelId(aParameters);
 
@@ -143,9 +143,9 @@ WebrtcMediaDataEncoder::~WebrtcMediaDataEncoder() {
   }
 }
 
-static void InitCodecSpecficInfo(
-    webrtc::CodecSpecificInfo& aInfo, const webrtc::VideoCodec* aCodecSettings,
-    const webrtc::SdpVideoFormat::Parameters& aParameters) {
+static void InitCodecSpecficInfo(webrtc::CodecSpecificInfo& aInfo,
+                                 const webrtc::VideoCodec* aCodecSettings,
+                                 const webrtc::CodecParameterMap& aParameters) {
   MOZ_ASSERT(aCodecSettings);
 
   aInfo.codecType = aCodecSettings->codecType;
@@ -290,13 +290,11 @@ already_AddRefed<MediaDataEncoder> WebrtcMediaDataEncoder::CreateEncoder(
       MOZ_MAKE_COMPILER_ASSUME_IS_UNREACHABLE("Unsupported codec type");
   }
   EncoderConfig config(
-      type, {aCodecSettings->width, aCodecSettings->height},
-      MediaDataEncoder::Usage::Realtime, MediaDataEncoder::PixelFormat::YUV420P,
-      MediaDataEncoder::PixelFormat::YUV420P, aCodecSettings->maxFramerate,
-      keyframeInterval, mBitrateAdjuster.GetTargetBitrateBps(),
-      MediaDataEncoder::BitrateMode::Variable,
-      MediaDataEncoder::HardwarePreference::None,
-      MediaDataEncoder::ScalabilityMode::None, specific);
+      type, {aCodecSettings->width, aCodecSettings->height}, Usage::Realtime,
+      dom::ImageBitmapFormat::YUV420P, dom::ImageBitmapFormat::YUV420P,
+      aCodecSettings->maxFramerate, keyframeInterval,
+      mBitrateAdjuster.GetTargetBitrateBps(), BitrateMode::Variable,
+      HardwarePreference::None, ScalabilityMode::None, specific);
   return mFactory->CreateEncoder(config, mTaskQueue);
 }
 

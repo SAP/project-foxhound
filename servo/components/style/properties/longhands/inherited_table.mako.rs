@@ -4,12 +4,11 @@
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
-<% data.new_style_struct("InheritedTable", inherited=True, gecko_name="TableBorder") %>
-
 ${helpers.single_keyword(
     "border-collapse",
     "separate collapse",
-    engines="gecko servo-2013",
+    engines="gecko servo",
+    servo_pref="layout.legacy_layout",
     gecko_enum_prefix="StyleBorderCollapse",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-tables/#propdef-border-collapse",
@@ -20,7 +19,8 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "empty-cells",
     "show hide",
-    engines="gecko servo-2013",
+    engines="gecko servo",
+    servo_pref="layout.legacy_layout",
     gecko_enum_prefix="StyleEmptyCells",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-tables/#propdef-empty-cells",
@@ -32,7 +32,8 @@ ${helpers.predefined_type(
     "caption-side",
     "table::CaptionSide",
     "computed::table::CaptionSide::Top",
-    engines="gecko servo-2013",
+    engines="gecko servo",
+    servo_pref="layout.legacy_layout",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-tables/#propdef-caption-side",
     servo_restyle_damage="rebuild_and_reflow",
@@ -43,8 +44,7 @@ ${helpers.predefined_type(
     "border-spacing",
     "BorderSpacing",
     "computed::BorderSpacing::zero()",
-    engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
+    engines="gecko servo",
     animation_value_type="BorderSpacing",
     boxed=True,
     spec="https://drafts.csswg.org/css-tables/#propdef-border-spacing",

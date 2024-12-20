@@ -249,6 +249,12 @@ extern JS_PUBLIC_API bool EnqueueJob(JSContext* cx, JS::HandleObject job);
  */
 extern JS_PUBLIC_API void StopDrainingJobQueue(JSContext* cx);
 
+/**
+ * Instruct the runtime to restart draining the internal job queue after
+ * stopping it with StopDrainingJobQueue.
+ */
+extern JS_PUBLIC_API void RestartDrainingJobQueue(JSContext* cx);
+
 extern JS_PUBLIC_API void RunJobs(JSContext* cx);
 
 extern JS_PUBLIC_API JS::Zone* GetRealmZone(JS::Realm* realm);
@@ -391,6 +397,10 @@ JS_PUBLIC_API JSFunction* NewFunctionByIdWithReserved(JSContext* cx,
                                                       JSNative native,
                                                       unsigned nargs,
                                                       unsigned flags, jsid id);
+
+JS_PUBLIC_API JSFunction* NewFunctionByIdWithReservedAndProto(
+    JSContext* cx, JSNative native, JS::Handle<JSObject*> proto, unsigned nargs,
+    unsigned flags, jsid id);
 
 /**
  * Get or set function's reserved slot value.

@@ -167,9 +167,6 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
   ElementState elementState = GetContentState(aFrame, aAppearance);
   if (aState) {
     memset(aState, 0, sizeof(GtkWidgetState));
-
-    // For XUL checkboxes and radio buttons, the state of the parent
-    // determines our state.
     if (aWidgetFlags) {
       if (elementState.HasState(ElementState::CHECKED)) {
         *aWidgetFlags |= MOZ_GTK_WIDGET_CHECKED;
@@ -241,7 +238,8 @@ bool nsNativeThemeGTK::GetGtkWidgetAndState(StyleAppearance aAppearance,
         aAppearance == StyleAppearance::MozWindowButtonMinimize ||
         aAppearance == StyleAppearance::MozWindowButtonMaximize ||
         aAppearance == StyleAppearance::MozWindowButtonRestore) {
-      aState->backdrop = !nsWindow::GetTopLevelWindowActiveState(aFrame);
+      aState->backdrop = aFrame->PresContext()->Document()->State().HasState(
+          dom::DocumentState::WINDOW_INACTIVE);
     }
   }
 
@@ -884,11 +882,6 @@ LayoutDeviceIntMargin nsNativeThemeGTK::GetWidgetBorder(
   CSSIntMargin result;
   GtkTextDirection direction = GetTextDirection(aFrame);
   switch (aAppearance) {
-    case StyleAppearance::Toolbox:
-      // gtk has no toolbox equivalent.  So, although we map toolbox to
-      // gtk's 'toolbar' for purposes of painting the widget background,
-      // we don't use the toolbar border for toolbox.
-      break;
     case StyleAppearance::Dualbutton:
       // TOOLBAR_DUAL_BUTTON is an interesting case.  We want a border to draw
       // around the entire button + dropdown, and also an inner border if you're
@@ -1169,9 +1162,7 @@ nsNativeThemeGTK::WidgetStateChanged(nsIFrame* aFrame,
   }
 
   // Some widget types just never change state.
-  if (aAppearance == StyleAppearance::Toolbox ||
-      aAppearance == StyleAppearance::Toolbar ||
-      aAppearance == StyleAppearance::Progresschunk ||
+  if (aAppearance == StyleAppearance::Progresschunk ||
       aAppearance == StyleAppearance::ProgressBar ||
       aAppearance == StyleAppearance::Tooltip ||
       aAppearance == StyleAppearance::MozWindowDecorations) {
@@ -1244,7 +1235,6 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Button:
     case StyleAppearance::Radio:
     case StyleAppearance::Checkbox:
-    case StyleAppearance::Toolbox:  // N/A
     case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Dualbutton:  // so we can override the border with 0
     case StyleAppearance::ToolbarbuttonDropdown:

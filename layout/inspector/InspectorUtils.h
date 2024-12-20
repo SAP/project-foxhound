@@ -270,11 +270,18 @@ class InspectorUtils {
       nsTArray<InspectorCSSPropertyDefinition>& aResult);
 
   /**
-   * Get the rule body text start and end offsets within aInitialText
+   * Get the rule body text within aInitialText
    */
-  static void GetRuleBodyTextOffsets(
-      GlobalObject&, const nsACString& aInitialText,
-      Nullable<InspectorGetRuleBodyTextResult>& aResult);
+  static void GetRuleBodyText(GlobalObject&, const nsACString& aInitialText,
+                              nsACString& aBodyText);
+
+  /**
+   * Replace the rule body text in aStyleSheetText at passed line and column
+   */
+  static void ReplaceBlockRuleBodyTextInStylesheet(
+      GlobalObject&, const nsACString& aStyleSheetText, uint32_t aLine,
+      uint32_t aColumn, const nsACString& aNewBodyText,
+      nsACString& aNewStyleSheetText);
 };
 
 }  // namespace mozilla::dom

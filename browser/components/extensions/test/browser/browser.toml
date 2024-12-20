@@ -46,10 +46,13 @@ support-files = [
   "empty.xpi",
   "../../../../../toolkit/components/extensions/test/mochitest/head_webrequest.js",
   "../../../../../toolkit/components/extensions/test/mochitest/redirection.sjs",
-  "../../../../../toolkit/components/reader/test/readerModeNonArticle.html",
-  "../../../../../toolkit/components/reader/test/readerModeArticle.html",
+  "../../../../../toolkit/components/reader/tests/browser/readerModeNonArticle.html",
+  "../../../../../toolkit/components/reader/tests/browser/readerModeArticle.html",
 ]
-skip-if = ["os == 'linux' && os_version == '18.04' && asan"] # Bug 1721945 - Software WebRender
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # Bug 1721945 - Software WebRender
+  "os == 'linux' && os_version == '18.04' && tsan", # manifest runs too long
+]
 
 ["browser_AMBrowserExtensionsImport.js"]
 
@@ -700,7 +703,6 @@ tags = "fullscreen"
 ["browser_toolbar_prefers_color_scheme.js"]
 
 ["browser_unified_extensions.js"]
-fail-if = ["a11y_checks"] # Bug 1854460 clicked browser may not be accessible
 
 ["browser_unified_extensions_accessibility.js"]
 

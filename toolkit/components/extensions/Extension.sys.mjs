@@ -31,7 +31,9 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs";
 import { ExtensionParent } from "resource://gre/modules/ExtensionParent.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
+import { Log } from "resource://gre/modules/Log.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -54,7 +56,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionTelemetry: "resource://gre/modules/ExtensionTelemetry.sys.mjs",
   LightweightThemeManager:
     "resource://gre/modules/LightweightThemeManager.sys.mjs",
-  Log: "resource://gre/modules/Log.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   SITEPERMS_ADDON_TYPE:
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
@@ -684,14 +685,13 @@ export var ExtensionProcessCrashObserver = {
   // `processCrashTimeframe` milliseconds.
   lastCrashTimestamps: [],
 
+  logger: Log.repository.getLogger("addons.process-crash-observer"),
+
   init() {
     if (!this.initialized) {
       Services.obs.addObserver(this, "ipc:content-created");
       Services.obs.addObserver(this, "process-type-set");
       Services.obs.addObserver(this, "ipc:content-shutdown");
-      this.logger = lazy.Log.repository.getLogger(
-        "addons.process-crash-observer"
-      );
       if (this._isAndroid) {
         Services.obs.addObserver(this, "geckoview-initial-foreground");
         Services.obs.addObserver(this, "application-foreground");
@@ -948,7 +948,7 @@ export class ExtensionData {
 
   get logger() {
     let id = this.id || "<unknown>";
-    return lazy.Log.repository.getLogger(LOGGER_ID_BASE + id);
+    return Log.repository.getLogger(LOGGER_ID_BASE + id);
   }
 
   /**
@@ -1118,6 +1118,24 @@ export class ExtensionData {
 
   get restrictSchemes() {
     return !(this.isPrivileged && this.hasPermission("mozillaAddons"));
+  }
+
+  get optionsPageProperties() {
+    let page = this.manifest.options_ui?.page ?? this.manifest.options_page;
+    if (!page) {
+      return null;
+    }
+    return {
+      page,
+      open_in_tab: this.manifest.options_ui
+        ? this.manifest.options_ui.open_in_tab ?? false
+        : true,
+      // `options_ui.browser_style` is assigned the proper default value
+      // (true for MV2 and false for MV3 when not explicitly set),
+      // in `#parseBrowserStyleInManifest` (called when we are loading
+      // and parse manifest data from the `parseManifest` method).
+      browser_style: this.manifest.options_ui?.browser_style ?? false,
+    };
   }
 
   /**
@@ -1658,6 +1676,8 @@ export class ExtensionData {
       );
     }
 
+    // manifest.options_page opens the extension page in a new tab
+    // and so we will not need to special handling browser_style.
     if (manifest.options_ui) {
       if (manifest.options_ui.open_in_tab) {
         // browser_style:true has no effect when open_in_tab is true.
@@ -2748,10 +2768,10 @@ class DictionaryBootstrapScope extends BootstrapScope {
   install() {}
   uninstall() {}
 
-  startup(data, reason) {
+  startup(data) {
     // eslint-disable-next-line no-use-before-define
     this.dictionary = new Dictionary(data);
-    return this.dictionary.startup(BootstrapScope.BOOTSTRAP_REASON_MAP[reason]);
+    return this.dictionary.startup();
   }
 
   async shutdown(data, reason) {
@@ -2765,10 +2785,10 @@ class LangpackBootstrapScope extends BootstrapScope {
   uninstall() {}
   async update() {}
 
-  startup(data, reason) {
+  startup(data) {
     // eslint-disable-next-line no-use-before-define
     this.langpack = new Langpack(data);
-    return this.langpack.startup(BootstrapScope.BOOTSTRAP_REASON_MAP[reason]);
+    return this.langpack.startup();
   }
 
   async shutdown(data, reason) {
@@ -2782,12 +2802,10 @@ class SitePermissionBootstrapScope extends BootstrapScope {
   install() {}
   uninstall() {}
 
-  startup(data, reason) {
+  startup(data) {
     // eslint-disable-next-line no-use-before-define
     this.sitepermission = new SitePermission(data);
-    return this.sitepermission.startup(
-      BootstrapScope.BOOTSTRAP_REASON_MAP[reason]
-    );
+    return this.sitepermission.startup();
   }
 
   async shutdown(data, reason) {
@@ -2809,6 +2827,15 @@ let pendingExtensions = new Map();
 export class Extension extends ExtensionData {
   /** @type {Map<string, Map<string, any>>} */
   persistentListeners;
+
+  /** @type {import("ExtensionShortcuts.sys.mjs").ExtensionShortcuts} */
+  shortcuts;
+
+  /** @type {TabManagerBase} */
+  tabManager;
+
+  /** @type {(options?: { ignoreDevToolsAttached?: boolean, disableResetIdleForTest?: boolean }) => Promise} */
+  terminateBackground;
 
   constructor(addonData, startupReason, updateReason) {
     super(addonData.resourceURI, addonData.isPrivileged);
@@ -3203,9 +3230,11 @@ export class Extension extends ExtensionData {
     };
   }
 
-  // Extended serialized data which is only needed in the extensions process,
-  // and is never deserialized in web content processes.
-  // Keep in sync with BrowserExtensionContent in ExtensionChild.sys.mjs
+  /**
+   * Extended serialized data which is only needed in the extensions process,
+   * and is never deserialized in web content processes.
+   * Keep in sync with @see {ExtensionChild}.
+   */
   serializeExtended() {
     return {
       backgroundScripts: this.backgroundScripts,
@@ -3461,7 +3490,7 @@ export class Extension extends ExtensionData {
       ignoreQuarantine: this.ignoreQuarantine,
       temporarilyInstalled: this.temporarilyInstalled,
       allowedOrigins: new MatchPatternSet([]),
-      localizeCallback() {},
+      localizeCallback: () => "",
       readyPromise,
     });
 

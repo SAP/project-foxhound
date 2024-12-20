@@ -295,67 +295,6 @@
     assert_false(invokee.matches(":modal"), "invokee :modal");
   }, "invoking (as close) already closed dialog is noop");
 
-  // invalid
-  [
-    "foo",
-    "foo-bar",
-    "auto",
-    "showpopover",
-    "hidepopover",
-    "togglepopover",
-    "showpicker",
-  ].forEach((action) => {
-    promise_test(async function (t) {
-      t.add_cleanup(resetState);
-      invokerbutton.setAttribute("invokeaction", action);
-      assert_false(invokee.open, "invokee.open");
-      assert_false(invokee.matches(":modal"), "invokee :modal");
-      await clickOn(invokerbutton);
-      assert_false(invokee.open, "invokee.open");
-      assert_false(invokee.matches(":modal"), "invokee :modal");
-    }, `invoking (as ${action}) on dialog does nothing`);
-
-    promise_test(async function (t) {
-      t.add_cleanup(resetState);
-      containedinvoker.setAttribute("invokeaction", action);
-      invokee.show();
-      assert_true(invokee.open, "invokee.open");
-      assert_false(invokee.matches(":modal"), "invokee :modal");
-      await clickOn(containedinvoker);
-      assert_true(invokee.open, "invokee.open");
-      assert_false(invokee.matches(":modal"), "invokee :modal");
-    }, `invoking (as ${action}) on open dialog does nothing`);
-
-    promise_test(async function (t) {
-      t.add_cleanup(resetState);
-      containedinvoker.setAttribute("invokeaction", action);
-      invokee.showModal();
-      assert_true(invokee.open, "invokee.open");
-      assert_true(invokee.matches(":modal"), "invokee :modal");
-      await clickOn(containedinvoker);
-      assert_true(invokee.open, "invokee.open");
-      assert_true(invokee.matches(":modal"), "invokee :modal");
-    }, `invoking (as ${action}) on open modal dialog does nothing`);
-
-    promise_test(async function (t) {
-      t.add_cleanup(resetState);
-      containedinvoker.setAttribute("invokeaction", action);
-      invokee.showModal();
-      assert_true(invokee.open, "invokee.open");
-      assert_true(invokee.matches(":modal"), "invokee :modal");
-      invokee.addEventListener(
-        "invoke",
-        (e) => {
-          containedinvoker.setAttribute("invokeaction", "");
-        },
-        { once: true },
-      );
-      await clickOn(containedinvoker);
-      assert_true(invokee.open, "invokee.open");
-      assert_true(invokee.matches(":modal"), "invokee :modal");
-    }, `invoking (as ${action}) on open modal while changing the attributer does nothing`);
-  });
-
   // Open Popovers using Dialog actions
   ["showmodal", "close", ""].forEach((action) => {
     ["manual", "auto"].forEach((popoverState) => {

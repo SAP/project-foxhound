@@ -3169,6 +3169,8 @@ void MacroAssembler::emitMegamorphicCachedSetSlot(
   passABIArg(scratch2);
   callWithABI<Fn, NativeObject::growSlotsPure>();
   storeCallPointerResult(scratch2);
+
+  MOZ_ASSERT(!save.has(scratch2));
   PopRegsInMask(save);
 
   branchIfFalseBool(scratch2, &cacheMiss);
@@ -7798,6 +7800,24 @@ void MacroAssembler::loadArgumentsObjectLength(Register obj, Register output,
   // Test if length has been overridden.
   branchTest32(Assembler::NonZero, output,
                Imm32(ArgumentsObject::LENGTH_OVERRIDDEN_BIT), fail);
+
+  // Shift out arguments length and return it.
+  rshift32(Imm32(ArgumentsObject::PACKED_BITS_COUNT), output);
+}
+
+void MacroAssembler::loadArgumentsObjectLength(Register obj, Register output) {
+  // Get initial length value.
+  unboxInt32(Address(obj, ArgumentsObject::getInitialLengthSlotOffset()),
+             output);
+
+#ifdef DEBUG
+  // Assert length hasn't been overridden.
+  Label ok;
+  branchTest32(Assembler::Zero, output,
+               Imm32(ArgumentsObject::LENGTH_OVERRIDDEN_BIT), &ok);
+  assumeUnreachable("arguments object length has been overridden");
+  bind(&ok);
+#endif
 
   // Shift out arguments length and return it.
   rshift32(Imm32(ArgumentsObject::PACKED_BITS_COUNT), output);

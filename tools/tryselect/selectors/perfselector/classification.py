@@ -31,13 +31,12 @@ class Platforms(ClassificationEnum):
 class Apps(ClassificationEnum):
     FIREFOX = {"value": "firefox", "index": 0}
     CHROME = {"value": "chrome", "index": 1}
-    CHROMIUM = {"value": "chromium", "index": 2}
-    GECKOVIEW = {"value": "geckoview", "index": 3}
-    FENIX = {"value": "fenix", "index": 4}
-    CHROME_M = {"value": "chrome-m", "index": 5}
-    SAFARI = {"value": "safari", "index": 6}
-    CHROMIUM_RELEASE = {"value": "custom-car", "index": 7}
-    CHROMIUM_RELEASE_M = {"value": "cstm-car-m", "index": 8}
+    GECKOVIEW = {"value": "geckoview", "index": 2}
+    FENIX = {"value": "fenix", "index": 3}
+    CHROME_M = {"value": "chrome-m", "index": 4}
+    SAFARI = {"value": "safari", "index": 5}
+    CHROMIUM_RELEASE = {"value": "custom-car", "index": 6}
+    CHROMIUM_RELEASE_M = {"value": "cstm-car-m", "index": 7}
 
 
 class Suites(ClassificationEnum):
@@ -64,10 +63,6 @@ enable (see build_category_matrix for more info).
 
 def check_for_android(android=False, **kwargs):
     return android
-
-
-def check_for_fenix(fenix=False, **kwargs):
-    return fenix or ("fenix" in kwargs.get("requested_apps", []))
 
 
 def check_for_chrome(chrome=False, **kwargs):
@@ -137,12 +132,6 @@ class ClassificationProvider:
                 "restriction": check_for_chrome,
                 "platforms": [Platforms.DESKTOP.value],
             },
-            Apps.CHROMIUM.value: {
-                "query": "'chromium",
-                "negation": "!chrom",
-                "restriction": check_for_chrome,
-                "platforms": [Platforms.DESKTOP.value],
-            },
             Apps.GECKOVIEW.value: {
                 "query": "'geckoview",
                 "negation": "!geckoview",
@@ -151,7 +140,6 @@ class ClassificationProvider:
             Apps.FENIX.value: {
                 "query": "'fenix",
                 "negation": "!fenix",
-                "restriction": check_for_fenix,
                 "platforms": [Platforms.ANDROID.value],
             },
             Apps.CHROME_M.value: {
@@ -207,7 +195,6 @@ class ClassificationProvider:
                 "apps": [  # XXX No live CaR tests
                     Apps.FIREFOX.value,
                     Apps.CHROME.value,
-                    Apps.CHROMIUM.value,
                     Apps.FENIX.value,
                     Apps.GECKOVIEW.value,
                     Apps.SAFARI.value,
@@ -304,7 +291,6 @@ class ClassificationProvider:
                     Suites.RAPTOR.value: [
                         Apps.FIREFOX.value,
                         Apps.CHROME.value,
-                        Apps.CHROMIUM.value,
                         Apps.FENIX.value,
                         Apps.GECKOVIEW.value,
                     ],
@@ -376,12 +362,32 @@ class ClassificationProvider:
                     Suites.RAPTOR.value: [
                         Apps.FIREFOX.value,
                         Apps.CHROME.value,
-                        Apps.CHROMIUM.value,
                         Apps.FENIX.value,
                         Apps.GECKOVIEW.value,
                     ],
                 },
                 "tasks": [],
                 "description": "A group of tests that monitor key graphics and media metrics to keep the browser fast",
+            },
+            "Pageload Lite": {
+                "query": {
+                    Suites.RAPTOR.value: ["'browsertime 'tp6-bench"],
+                },
+                "suites": [Suites.RAPTOR.value],
+                "platform-restrictions": [
+                    Platforms.DESKTOP.value,
+                    Platforms.LINUX.value,
+                    Platforms.MACOSX.value,
+                    Platforms.WINDOWS.value,
+                ],
+                "variant-restrictions": {Suites.RAPTOR.value: [Variants.FISSION.value]},
+                "app-restrictions": {
+                    Suites.RAPTOR.value: [Apps.FIREFOX.value],
+                },
+                "tasks": [],
+                "description": (
+                    "Similar to the Pageload category, but it provides a minimum set "
+                    "of pageload tests to run for performance testing."
+                ),
             },
         }

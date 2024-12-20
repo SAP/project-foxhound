@@ -689,7 +689,7 @@ PopupNotifications.prototype = {
    */
   suppressWhileOpen(panel) {
     this._hidePanel().catch(console.error);
-    panel.addEventListener("popuphidden", aEvent => {
+    panel.addEventListener("popuphidden", () => {
       this._update();
     });
   },
@@ -1369,7 +1369,7 @@ PopupNotifications.prototype = {
           true
         );
       }
-      this._popupshownListener = function (e) {
+      this._popupshownListener = function () {
         target.removeEventListener(
           "popupshown",
           this._popupshownListener,
@@ -1939,10 +1939,14 @@ PopupNotifications.prototype = {
     }
 
     if (type == "buttoncommand" || type == "secondarybuttoncommand") {
-      if (Services.focus.activeWindow != this.window) {
+      // TODO: Bug 1892756.
+      if (
+        Services.focus.activeWindow != this.window ||
+        notificationEl.matches(":-moz-window-inactive")
+      ) {
         Services.console.logStringMessage(
           "PopupNotifications._onButtonEvent: " +
-            "Button click happened before the window was focused"
+            "Button click happened before the window was focused / active"
         );
         this.window.focus();
         return;

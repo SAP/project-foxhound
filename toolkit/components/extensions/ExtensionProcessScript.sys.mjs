@@ -11,6 +11,7 @@
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -49,7 +50,7 @@ ChromeUtils.defineLazyGetter(lazy, "isContentScriptProcess", () => {
 });
 
 var extensions = new DefaultWeakMap(policy => {
-  return new lazy.ExtensionChild.BrowserExtensionContent(policy);
+  return new lazy.ExtensionChild(policy);
 });
 
 var pendingExtensions = new Map();
@@ -342,7 +343,7 @@ ExtensionManager = {
                   perms.delete(perm);
                 }
               }
-              policy.permissions = perms;
+              policy.permissions = Array.from(perms);
             }
           }
 

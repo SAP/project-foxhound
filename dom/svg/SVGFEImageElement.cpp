@@ -371,4 +371,21 @@ void SVGFEImageElement::Notify(imgIRequest* aRequest, int32_t aType,
   }
 }
 
+void SVGFEImageElement::DidAnimateAttribute(int32_t aNameSpaceID,
+                                            nsAtom* aAttribute) {
+  if ((aNameSpaceID == kNameSpaceID_None ||
+       aNameSpaceID == kNameSpaceID_XLink) &&
+      aAttribute == nsGkAtoms::href) {
+    bool hrefIsSet =
+        mStringAttributes[SVGFEImageElement::HREF].IsExplicitlySet() ||
+        mStringAttributes[SVGFEImageElement::XLINK_HREF].IsExplicitlySet();
+    if (hrefIsSet) {
+      LoadSVGImage(true, true);
+    } else {
+      CancelImageRequests(true);
+    }
+  }
+  SVGFEImageElementBase::DidAnimateAttribute(aNameSpaceID, aAttribute);
+}
+
 }  // namespace mozilla::dom

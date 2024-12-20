@@ -296,7 +296,7 @@ class ChromeActions {
     }
   }
 
-  download(data, sendResponse) {
+  download(data) {
     const { originalUrl, options } = data;
     const blobUrl = data.blobUrl || originalUrl;
     let { filename } = data;
@@ -361,7 +361,7 @@ class ChromeActions {
     actor.sendAsyncMessage("PDFJS:Parent:getNimbus");
     Services.obs.addObserver(
       {
-        observe(aSubject, aTopic, aData) {
+        observe(aSubject, aTopic) {
           if (aTopic === "pdfjs-getNimbus") {
             Services.obs.removeObserver(this, aTopic);
             sendResponse(aSubject && JSON.stringify(aSubject.wrappedJSObject));
@@ -545,7 +545,7 @@ class RangedChromeActions extends ChromeActions {
       }
     };
     var getXhr = function getXhr() {
-      var xhr = new XMLHttpRequest();
+      var xhr = new XMLHttpRequest({ mozAnon: false });
       xhr.addEventListener("readystatechange", xhr_onreadystatechange);
       return xhr;
     };
@@ -790,7 +790,7 @@ PdfStreamConverter.prototype = {
    */
 
   // nsIStreamConverter::convert
-  convert(aFromStream, aFromType, aToType, aCtxt) {
+  convert() {
     throw Components.Exception("", Cr.NS_ERROR_NOT_IMPLEMENTED);
   },
 
@@ -1063,7 +1063,7 @@ PdfStreamConverter.prototype = {
     // request(aRequest) below so we don't overwrite the original channel and
     // trigger an assertion.
     var proxy = {
-      onStartRequest(request) {
+      onStartRequest() {
         listener.onStartRequest(aRequest);
       },
       onDataAvailable(request, inputStream, offset, count) {

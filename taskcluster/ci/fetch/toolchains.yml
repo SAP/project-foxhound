@@ -311,7 +311,7 @@ mingw-w64:
     fetch:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: 95a2cf4b7260200c4a60f4f1d1127e72799a3541
+        revision: cd4cf9b279f8fb0815f8b9665d3cea60a30290bc
 
 mingw-w64-trunk:
     description: mingw-w64 master branch source code
@@ -362,11 +362,11 @@ clang-17:
         revision: 6009708b4367171ccdbf4b5905cb6a803753fe18
 
 clang-18:
-    description: clang 18.1.0-rc2 source code
+    description: clang 18.1.1 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: c6c86965d967886ca5a2ed8968c949cd42cdd49a
+        revision: dba2a75e9c7ef81fe84774ba5eee5e67e01d801a
 
 clang-trunk:
     description: clang main branch source code
@@ -380,13 +380,13 @@ clang-trunk:
 # We build stable rust from source so the resulting compiler acts as a nightly
 # rust compiler, allowing to use unstable features like -Zbuild-std and
 # sanitizers.
-rust-1.76.0:
-    description: Rust 1.76.0 source code
+rust-1.77.2:
+    description: Rust 1.77.2 source code
     fetch:
         type: git
         include-dot-git: true
         repo: https://github.com/rust-lang/rust/
-        revision: 07dca489ac2d933c78d3c5158e3f43beefeb02ce
+        revision: 25ef9e3d85d934b27d9dada2f9dd52b1dc63bb04
 
 wasi-sdk-11:
     description: wasi-sdk-11 source code
@@ -428,7 +428,7 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: b1951e4ccec48a2e97460a7ec40be35aa79e0037
+        revision: 96c647f0a63912b68b0bc2613cef77d9b3f305fd
 
 rust-minidump:
     description: rust-minidump 0.19.1 source code (for minidump-stackwalk)
@@ -668,3 +668,10 @@ libxml2:
         artifact-name: libxml2.tar.zst
         strip-components: 1
         add-prefix: libxml2/
+
+mozilla-pdf.js:
+    description: Mozilla pdf.js Github repo
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/pdf.js
+        revision: d64f334f98d4b7f1c2e09a731a63b68629c946f9

@@ -8,32 +8,26 @@ function checkSnapEventSupport(event_type) {
   }
 }
 
-// This function is deprecated. It tests a deprecated SnapEvent interface.
-function assertSnapEventDeprecated(evt, expected_ids) {
+function assertSnapEvent(evt, expected_ids) {
   assert_equals(evt.bubbles, false, "snap events don't bubble");
   assert_false(evt.cancelable, "snap events are not cancelable.");
-  const actual = Array.from(evt.snapTargets, el => el.id).join(",");
-  const expected = expected_ids.join(",");
-  assert_equals(actual, expected, "snap event supplied expected targets");
+  assert_equals(evt.snapTargetBlock, expected_ids.block,
+    "snap event supplied expected target in block axis");
+  assert_equals(evt.snapTargetInline, expected_ids.inline,
+    "snap event supplied expected target in inline axis");
 }
 
-// This function is deprecated. It tests a deprecated SnapEvent interface.
-// This function holds logic intended to be used by tests for scroll snap
-// events.
-// |test_data| should contain:
-// - |scroller|: the snap container being scrolled (or
-//               document.scrollingElement)
-// - |scrolling_function|: this function should trigger the desired snap event
-//                         when executed.
-// - |expected_snap_targets|: a list of element ids which the triggered snap
-//                            event should supply in SnapEvent.snapTargets.
-// - |expected_scroll_offsets|: the scroll offsets at which the snap container
-//                              should be after scrolling function has been
-//                              executed.
-// |event_type|: should be "snapchanged" or "snapchanging".
-async function test_snap_event_deprecated(test, test_data, event_type) {
+async function snap_test_setup(test, scroller, event_type) {
   checkSnapEventSupport(event_type);
-  await waitForScrollReset(test, test_data.scroller);
+  await waitForScrollReset(test, scroller);
+  await waitForCompositorCommit();
+  test.add_cleanup(async () => {
+    await waitForScrollReset(test, scroller);
+  });
+}
+
+async function test_snap_event(test, test_data, event_type) {
+  await snap_test_setup(test, test_data.scroller, event_type);
 
   let listener = test_data.scroller ==
     document.scrollingElement ? document : test_data.scroller;
@@ -42,7 +36,7 @@ async function test_snap_event_deprecated(test, test_data, event_type) {
   await test_data.scrolling_function();
   let evt = await event_promise;
 
-  assertSnapEventDeprecated(evt, test_data.expected_snap_targets);
+  assertSnapEvent(evt, test_data.expected_snap_targets);
   assert_approx_equals(test_data.scroller.scrollTop,
     test_data.expected_scroll_offsets.y, 1,
     "vertical scroll offset mismatch.");
@@ -52,7 +46,7 @@ async function test_snap_event_deprecated(test, test_data, event_type) {
 }
 
 async function test_snapchanged(test, test_data) {
-  await test_snap_event_deprecated(test, test_data, "snapchanged");
+  await test_snap_event(test, test_data, "snapchanged");
 }
 
 function waitForEventUntil(event_target, event_type, wait_until) {
@@ -78,6 +72,20 @@ function waitForEventsUntil(event_target, event_type, wait_until) {
     event_target.addEventListener(event_type, listener);
     wait_until.then(() => {
       event_target.removeEventListener(event_type, listener);
+      resolve(result);
+    });
+  });
+}
+
+function waitForOnSnapchanging(event_target) {
+  return new Promise(resolve => {
+    let result = null;
+    const listener = (evt) => {
+      result = evt;
+    };
+    event_target.onsnapchanging = listener;
+    waitForScrollendEventNoTimeout(event_target).then(() => {
+      event_target.onsnapchanging = null;
       resolve(result);
     });
   });

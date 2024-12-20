@@ -9,9 +9,10 @@ const {
   targetConfigurationSpec,
 } = require("resource://devtools/shared/specs/target-configuration.js");
 
-const {
-  SessionDataHelpers,
-} = require("resource://devtools/server/actors/watcher/SessionDataHelpers.jsm");
+const { SessionDataHelpers } = ChromeUtils.importESModule(
+  "resource://devtools/server/actors/watcher/SessionDataHelpers.sys.mjs",
+  { global: "contextual" }
+);
 const { isBrowsingContextPartOfContext } = ChromeUtils.importESModule(
   "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
   { global: "contextual" }
@@ -486,7 +487,10 @@ class TargetConfigurationActor extends Actor {
       "bf-cache-navigation-pageshow",
       this._onBfCacheNavigation
     );
-    this._restoreParentProcessConfiguration();
+    // Avoid trying to restore if the related context is already being destroyed
+    if (this._browsingContext && !this._browsingContext.isDiscarded) {
+      this._restoreParentProcessConfiguration();
+    }
     super.destroy();
   }
 }

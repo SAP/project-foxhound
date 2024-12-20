@@ -7,8 +7,10 @@ from taskgraph.transforms.base import TransformSequence
 # default worker types keyed by instance-size
 LINUX_WORKER_TYPES = {
     "large": "t-linux-large",
+    "large-noscratch": "t-linux-large-noscratch",
     "xlarge": "t-linux-xlarge",
-    "default": "t-linux-large",
+    "xlarge-noscratch": "t-linux-xlarge-noscratch",
+    "default": "t-linux-large-noscratch",
 }
 
 # windows worker types keyed by test-platform and virtualization
@@ -22,11 +24,6 @@ WINDOWS_WORKER_TYPES = {
         "virtual": "t-win10-64",
         "virtual-with-gpu": "t-win10-64-gpu-s",
         "hardware": "t-win10-64-1803-hw",
-    },
-    "windows10-64-ref-hw-2017": {
-        "virtual": "t-win10-64",
-        "virtual-with-gpu": "t-win10-64-gpu-s",
-        "hardware": "t-win10-64-ref-hw",
     },
     "windows11-64-2009-hw-ref-shippable": {
         "virtual": "win11-64-2009-hw-ref",
@@ -130,12 +127,8 @@ def set_worker_type(config, tasks):
         elif test_platform.startswith("win"):
             # figure out what platform the job needs to run on
             if task["virtualization"] == "hardware":
-                # some jobs like talos and reftest run on real h/w - those are all win10
-                if test_platform.startswith("windows10-64-ref-hw-2017"):
-                    win_worker_type_platform = WINDOWS_WORKER_TYPES[
-                        "windows10-64-ref-hw-2017"
-                    ]
-                elif test_platform.startswith("windows11-64-2009-hw-ref"):
+                # some jobs like talos and reftest run on real h/w
+                if test_platform.startswith("windows11-64-2009-hw-ref"):
                     win_worker_type_platform = WINDOWS_WORKER_TYPES[
                         "windows11-64-2009-hw-ref"
                     ]

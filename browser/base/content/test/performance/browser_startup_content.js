@@ -57,18 +57,11 @@ const known_scripts = {
   ]),
 };
 
-if (!Services.appinfo.sessionHistoryInParent) {
-  known_scripts.modules.add(
-    "resource:///modules/sessionstore/ContentSessionStore.sys.mjs"
-  );
-}
-
 // Items on this list *might* load when creating the process, as opposed to
 // items in the main list, which we expect will always load.
 const intermittently_loaded_scripts = {
   modules: new Set([
     "resource://gre/modules/nsAsyncShutdown.sys.mjs",
-    "resource://gre/modules/sessionstore/Utils.sys.mjs",
 
     // Translations code which may be preffed on.
     "resource://gre/actors/TranslationsChild.sys.mjs",
@@ -119,7 +112,8 @@ add_task(async function () {
   let mm = gBrowser.selectedBrowser.messageManager;
   let promise = BrowserTestUtils.waitForMessage(mm, "Test:LoadedScripts");
 
-  // Load a custom frame script to avoid using ContentTask which loads Task.jsm
+  // Load a custom frame script to avoid using SpecialPowers.spawn which may
+  // load other modules.
   mm.loadFrameScript(
     "data:text/javascript,(" +
       function () {

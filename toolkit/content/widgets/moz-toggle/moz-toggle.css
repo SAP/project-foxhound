@@ -37,7 +37,7 @@
   --toggle-background-color-pressed: var(--color-accent-primary);
   --toggle-background-color-pressed-hover: var(--color-accent-primary-hover);
   --toggle-background-color-pressed-active: var(--color-accent-primary-active);
-  --toggle-border-color: var(--border-interactive-color);
+  --toggle-border-color: var(--border-color-interactive);
   --toggle-border-color-hover: var(--toggle-border-color);
   --toggle-border-color-active: var(--toggle-border-color);
   --toggle-border-radius: var(--border-radius-circle);
@@ -47,7 +47,7 @@
   --toggle-dot-background-color: var(--toggle-border-color);
   --toggle-dot-background-color-hover: var(--toggle-dot-background-color);
   --toggle-dot-background-color-active: var(--toggle-dot-background-color);
-  --toggle-dot-background-color-on-pressed: var(--color-canvas);
+  --toggle-dot-background-color-on-pressed: var(--background-color-canvas);
   --toggle-dot-margin: 1px;
   --toggle-dot-height: calc(var(--toggle-height) - 2 * var(--toggle-dot-margin) - 2 * var(--toggle-border-width));
   --toggle-dot-width: var(--toggle-dot-height);
@@ -77,7 +77,7 @@
   border-color: var(--toggle-border-color);
 }
 
-.toggle-button:enabled:active {
+.toggle-button:enabled:hover:active {
   background: var(--toggle-background-color-active);
   border-color: var(--toggle-border-color);
 }
@@ -92,7 +92,7 @@
   border-color: transparent;
 }
 
-.toggle-button[aria-pressed="true"]:enabled:active {
+.toggle-button[aria-pressed="true"]:enabled:hover:active {
   background: var(--toggle-background-color-pressed-active);
   border-color: transparent;
 }
@@ -114,7 +114,7 @@
 }
 
 .toggle-button[aria-pressed="true"]:enabled:hover::before,
-.toggle-button[aria-pressed="true"]:enabled:active::before {
+.toggle-button[aria-pressed="true"]:enabled:hover:active::before {
   background-color: var(--toggle-dot-background-color-on-pressed);
 }
 
@@ -149,7 +149,7 @@
     border-color: var(--toggle-border-color-hover);
   }
 
-  .toggle-button:enabled:active {
+  .toggle-button:enabled:hover:active {
     border-color: var(--toggle-border-color-active);
   }
 
@@ -163,13 +163,13 @@
     border-color: var(--toggle-border-color-hover);
   }
 
-  .toggle-button[aria-pressed="true"]:enabled:active {
+  .toggle-button[aria-pressed="true"]:enabled:hover:active {
     background-color: var(--toggle-dot-background-color-active);
     border-color: var(--toggle-dot-background-color-hover);
   }
 
   .toggle-button:hover::before,
-  .toggle-button:active::before {
+  .toggle-button:hover:active::before {
     background-color: var(--toggle-dot-background-color-hover);
   }
 }
@@ -181,9 +181,9 @@
     --toggle-dot-background-color-active: var(--color-accent-primary-active);
     --toggle-dot-background-color-on-pressed: var(--button-background-color);
     --toggle-background-color-disabled: var(--button-background-color-disabled);
-    --toggle-border-color-hover: var(--border-interactive-color-hover);
-    --toggle-border-color-active: var(--border-interactive-color-active);
-    --toggle-border-color-disabled: var(--border-interactive-color-disabled);
+    --toggle-border-color-hover: var(--border-color-interactive-hover);
+    --toggle-border-color-active: var(--border-color-interactive-active);
+    --toggle-border-color-disabled: var(--border-color-interactive-disabled);
   }
 
   .toggle-button[aria-pressed="true"]:enabled::after {
@@ -197,7 +197,7 @@
     inset: -2px;
   }
 
-  .toggle-button[aria-pressed="true"]:enabled:active::after {
+  .toggle-button[aria-pressed="true"]:enabled:hover:active::after {
     border-color: var(--toggle-border-color-active);
   }
 }

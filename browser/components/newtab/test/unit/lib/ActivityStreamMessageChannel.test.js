@@ -1,7 +1,4 @@
-import {
-  actionCreators as ac,
-  actionTypes as at,
-} from "common/Actions.sys.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import {
   ActivityStreamMessageChannel,
   DEFAULT_OPTIONS,
@@ -16,7 +13,7 @@ const OPTIONS = [
 ];
 
 // Create an object containing details about a tab as expected within
-// the loaded tabs map in ActivityStreamMessageChannel.jsm.
+// the loaded tabs map in ActivityStreamMessageChannel.sys.mjs.
 function getTabDetails(portID, url = "about:newtab", extraArgs = {}) {
   let actor = {
     portID,

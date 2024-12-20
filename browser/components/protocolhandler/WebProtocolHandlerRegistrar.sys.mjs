@@ -543,7 +543,7 @@ WebProtocolHandlerRegistrar.prototype = {
         notificationId,
         {
           label: {
-            "l10n-id": "protocolhandler-mailto-handler-set-message",
+            "l10n-id": "protocolhandler-mailto-handler-set",
             "l10n-args": { url: aURI.host },
           },
           priority: osDefaultNotificationBox.PRIORITY_INFO_LOW,
@@ -576,7 +576,7 @@ WebProtocolHandlerRegistrar.prototype = {
                     true
                   );
                   newitem.messageL10nId =
-                    "protocolhandler-mailto-handler-confirm-message";
+                    "protocolhandler-mailto-handler-confirm";
                   newitem.removeChild(newitem.buttonContainer);
                   newitem.setAttribute("type", "success"); // from moz-message-bar.css
                   newitem.eventCallback = null; // disable show only once per day for success

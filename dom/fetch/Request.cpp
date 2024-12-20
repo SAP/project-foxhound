@@ -12,6 +12,7 @@
 #include "nsPIDOMWindow.h"
 
 #include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/FetchUtil.h"
@@ -77,18 +78,13 @@ SafeRefPtr<InternalRequest> Request::GetInternalRequest() {
 
 namespace {
 already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
-                                              const nsAString& aInput,
+                                              const nsACString& aInput,
                                               ErrorResult& aRv) {
   MOZ_ASSERT(aDocument);
   MOZ_ASSERT(NS_IsMainThread());
 
-  // Don't use NS_ConvertUTF16toUTF8 because that doesn't let us handle OOM.
-  nsAutoCString input;
-  if (!AppendUTF16toUTF8(aInput, input, fallible)) {
-    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return nullptr;
-  }
   // Taintfox: propagate taint
+  nsAutoCString input(aInput);
   input.AssignTaint(aInput.Taint());
 
   nsCOMPtr<nsIURI> resolvedURI;
@@ -99,9 +95,9 @@ already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
   }
   return resolvedURI.forget();
 }
-void GetRequestURLFromDocument(Document* aDocument, const nsAString& aInput,
-                               nsAString& aRequestURL, nsACString& aURLfragment,
-                               ErrorResult& aRv) {
+void GetRequestURLFromDocument(Document* aDocument, const nsACString& aInput,
+                               nsACString& aRequestURL,
+                               nsACString& aURLfragment, ErrorResult& aRv) {
   nsCOMPtr<nsIURI> resolvedURI = ParseURLFromDocument(aDocument, aInput, aRv);
   if (aRv.Failed()) {
     return;
@@ -111,7 +107,7 @@ void GetRequestURLFromDocument(Document* aDocument, const nsAString& aInput,
   nsAutoCString credentials;
   Unused << resolvedURI->GetUserPass(credentials);
   if (!credentials.IsEmpty()) {
-    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(NS_ConvertUTF16toUTF8(aInput));
+    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
   }
 
@@ -120,13 +116,10 @@ void GetRequestURLFromDocument(Document* aDocument, const nsAString& aInput,
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
-  nsAutoCString spec;
-  aRv = resolvedURIClone->GetSpec(spec);
+  aRv = resolvedURIClone->GetSpec(aRequestURL);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
-  CopyUTF8toUTF16(spec, aRequestURL);
-  aRequestURL.AssignTaint(spec.Taint());
 
   // Get the fragment from nsIURI.
   aRv = resolvedURI->GetRef(aURLfragment);
@@ -134,26 +127,21 @@ void GetRequestURLFromDocument(Document* aDocument, const nsAString& aInput,
     return;
   }
 }
-already_AddRefed<nsIURI> ParseURLFromChrome(const nsAString& aInput,
+already_AddRefed<nsIURI> ParseURLFromChrome(const nsACString& aInput,
                                             ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
-  // Don't use NS_ConvertUTF16toUTF8 because that doesn't let us handle OOM.
-  nsAutoCString input;
-  if (!AppendUTF16toUTF8(aInput, input, fallible)) {
-    aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-    return nullptr;
-  }
+
   // Taintfox: propagate taint
-  input.AssignTaint(aInput.Taint());
+  nsAutoCString input(aInput);
 
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), input);
   if (NS_FAILED(rv)) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(input);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
   return uri.forget();
 }
-void GetRequestURLFromChrome(const nsAString& aInput, nsAString& aRequestURL,
+void GetRequestURLFromChrome(const nsACString& aInput, nsACString& aRequestURL,
                              nsACString& aURLfragment, ErrorResult& aRv) {
   nsCOMPtr<nsIURI> uri = ParseURLFromChrome(aInput, aRv);
   if (aRv.Failed()) {
@@ -164,7 +152,7 @@ void GetRequestURLFromChrome(const nsAString& aInput, nsAString& aRequestURL,
   nsAutoCString credentials;
   Unused << uri->GetUserPass(credentials);
   if (!credentials.IsEmpty()) {
-    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(NS_ConvertUTF16toUTF8(aInput));
+    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
   }
 
@@ -173,13 +161,10 @@ void GetRequestURLFromChrome(const nsAString& aInput, nsAString& aRequestURL,
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
-  nsAutoCString spec;
-  aRv = uriClone->GetSpec(spec);
+  aRv = uriClone->GetSpec(aRequestURL);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
-  CopyUTF8toUTF16(spec, aRequestURL);
-  aRequestURL.AssignTaint(spec.Taint());
 
   // Get the fragment from nsIURI.
   aRv = uri->GetRef(aURLfragment);
@@ -188,55 +173,55 @@ void GetRequestURLFromChrome(const nsAString& aInput, nsAString& aRequestURL,
   }
 }
 already_AddRefed<URL> ParseURLFromWorker(nsIGlobalObject* aGlobal,
-                                         const nsAString& aInput,
+                                         const nsACString& aInput,
                                          ErrorResult& aRv) {
   WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
   MOZ_ASSERT(worker);
   worker->AssertIsOnWorkerThread();
 
-  NS_ConvertUTF8toUTF16 baseURL(worker->GetLocationInfo().mHref);
+  const auto& baseURL = worker->GetLocationInfo().mHref;
   RefPtr<URL> url = URL::Constructor(aGlobal, aInput, baseURL, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(NS_ConvertUTF16toUTF8(aInput));
+    aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
   return url.forget();
 }
-void GetRequestURLFromWorker(nsIGlobalObject* aGlobal, const nsAString& aInput,
-                             nsAString& aRequestURL, nsACString& aURLfragment,
+void GetRequestURLFromWorker(nsIGlobalObject* aGlobal, const nsACString& aInput,
+                             nsACString& aRequestURL, nsACString& aURLfragment,
                              ErrorResult& aRv) {
   RefPtr<URL> url = ParseURLFromWorker(aGlobal, aInput, aRv);
   if (aRv.Failed()) {
     return;
   }
-  nsString username;
+  nsCString username;
   url->GetUsername(username);
 
-  nsString password;
+  nsCString password;
   url->GetPassword(password);
 
   if (!username.IsEmpty() || !password.IsEmpty()) {
-    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(NS_ConvertUTF16toUTF8(aInput));
+    aRv.ThrowTypeError<MSG_URL_HAS_CREDENTIALS>(aInput);
     return;
   }
 
   // Get the fragment from URL.
-  nsAutoString fragment;
+  nsAutoCString fragment;
   url->GetHash(fragment);
 
   // Note: URL::GetHash() includes the "#" and we want the fragment with out
   // the hash symbol.
   if (!fragment.IsEmpty()) {
-    CopyUTF16toUTF8(Substring(fragment, 1), aURLfragment);
+    aURLfragment = Substring(fragment, 1);
   }
 
-  url->SetHash(u""_ns);
+  url->SetHash(""_ns);
   url->GetHref(aRequestURL);
 }
 
 class ReferrerSameOriginChecker final : public WorkerMainThreadRunnable {
  public:
   ReferrerSameOriginChecker(WorkerPrivate* aWorkerPrivate,
-                            const nsAString& aReferrerURL, nsresult& aResult)
+                            const nsACString& aReferrerURL, nsresult& aResult)
       : WorkerMainThreadRunnable(aWorkerPrivate,
                                  "Fetch :: Referrer same origin check"_ns),
         mReferrerURL(aReferrerURL),
@@ -247,8 +232,7 @@ class ReferrerSameOriginChecker final : public WorkerMainThreadRunnable {
   bool MainThreadRun() override {
     nsCOMPtr<nsIURI> uri;
     if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(uri), mReferrerURL))) {
-      nsCOMPtr<nsIPrincipal> principal = mWorkerPrivate->GetPrincipal();
-      if (principal) {
+      if (nsCOMPtr<nsIPrincipal> principal = mWorkerPrivate->GetPrincipal()) {
         mResult = principal->CheckMayLoad(uri,
                                           /* allowIfInheritsPrincipal */ false);
       }
@@ -257,7 +241,7 @@ class ReferrerSameOriginChecker final : public WorkerMainThreadRunnable {
   }
 
  private:
-  const nsString mReferrerURL;
+  const nsCString mReferrerURL;
   nsresult& mResult;
 };
 
@@ -265,19 +249,18 @@ class ReferrerSameOriginChecker final : public WorkerMainThreadRunnable {
 
 /*static*/
 SafeRefPtr<Request> Request::Constructor(const GlobalObject& aGlobal,
-                                         const RequestOrUSVString& aInput,
+                                         const RequestOrUTF8String& aInput,
                                          const RequestInit& aInit,
                                          ErrorResult& aRv) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  return Constructor(global, aGlobal.Context(), aInput, aInit, aRv);
+  return Constructor(global, aGlobal.Context(), aInput, aInit,
+                     aGlobal.CallerType(), aRv);
 }
 
 /*static*/
-SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
-                                         JSContext* aCx,
-                                         const RequestOrUSVString& aInput,
-                                         const RequestInit& aInit,
-                                         ErrorResult& aRv) {
+SafeRefPtr<Request> Request::Constructor(
+    nsIGlobalObject* aGlobal, JSContext* aCx, const RequestOrUTF8String& aInput,
+    const RequestInit& aInit, CallerType aCallerType, ErrorResult& aRv) {
   bool hasCopiedBody = false;
   SafeRefPtr<InternalRequest> request;
 
@@ -307,11 +290,10 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
     request = inputReq->GetInternalRequest();
     signal = inputReq->GetOrCreateSignal();
   } else {
-    // aInput is USVString.
+    // aInput is UTF8String.
     // We need to get url before we create a InternalRequest.
-    nsAutoString input;
-    input.Assign(aInput.GetAsUSVString());
-    nsAutoString requestURL;
+    const nsACString& input = aInput.GetAsUTF8String();
+    nsAutoCString requestURL;
     nsCString fragment;
     if (NS_IsMainThread()) {
       nsCOMPtr<nsPIDOMWindowInner> inner(do_QueryInterface(aGlobal));
@@ -328,8 +310,7 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
     if (aRv.Failed()) {
       return nullptr;
     }
-    request = MakeSafeRefPtr<InternalRequest>(NS_ConvertUTF16toUTF8(requestURL),
-                                              fragment);
+    request = MakeSafeRefPtr<InternalRequest>(requestURL, fragment);
   }
   request = request->GetRequestConstructorCopy(aGlobal, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -352,12 +333,17 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
   if (aInit.mCache.WasPassed()) {
     cache.emplace(aInit.mCache.Value());
   }
-  if (aInput.IsUSVString()) {
+  if (aInput.IsUTF8String()) {
     if (mode.isNothing()) {
       mode.emplace(RequestMode::Cors);
     }
     if (credentials.isNothing()) {
-      credentials.emplace(RequestCredentials::Same_origin);
+      if (aCallerType == CallerType::System &&
+          StaticPrefs::network_fetch_systemDefaultsToOmittingCredentials()) {
+        credentials.emplace(RequestCredentials::Omit);
+      } else {
+        credentials.emplace(RequestCredentials::Same_origin);
+      }
     }
     if (cache.isNothing()) {
       cache.emplace(RequestCache::Default);
@@ -369,16 +355,15 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
   }
 
   if (aInit.IsAnyMemberPresent()) {
-    request->SetReferrer(
-        NS_LITERAL_STRING_FROM_CSTRING(kFETCH_CLIENT_REFERRER_STR));
+    request->SetReferrer(nsLiteralCString(kFETCH_CLIENT_REFERRER_STR));
     request->SetReferrerPolicy(ReferrerPolicy::_empty);
   }
   if (aInit.mReferrer.WasPassed()) {
-    const nsString& referrer = aInit.mReferrer.Value();
+    const nsCString& referrer = aInit.mReferrer.Value();
     if (referrer.IsEmpty()) {
-      request->SetReferrer(u""_ns);
+      request->SetReferrer(""_ns);
     } else {
-      nsAutoString referrerURL;
+      nsAutoCString referrerURL;
       if (NS_IsMainThread()) {
         nsCOMPtr<nsPIDOMWindowInner> inner(do_QueryInterface(aGlobal));
         Document* doc = inner ? inner->GetExtantDoc() : nullptr;
@@ -391,14 +376,10 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
           uri = ParseURLFromChrome(referrer, aRv);
         }
         if (NS_WARN_IF(aRv.Failed())) {
-          aRv.ThrowTypeError<MSG_INVALID_REFERRER_URL>(
-              NS_ConvertUTF16toUTF8(referrer));
+          aRv.ThrowTypeError<MSG_INVALID_REFERRER_URL>(referrer);
           return nullptr;
         }
-        nsAutoCString spec;
-        uri->GetSpec(spec);
-        CopyUTF8toUTF16(spec, referrerURL);
-        referrerURL.AssignTaint(spec.Taint());
+        uri->GetSpec(referrerURL);
         if (!referrerURL.EqualsLiteral(kFETCH_CLIENT_REFERRER_STR)) {
           nsCOMPtr<nsIPrincipal> principal = aGlobal->PrincipalOrNull();
           if (principal) {
@@ -413,8 +394,7 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
       } else {
         RefPtr<URL> url = ParseURLFromWorker(aGlobal, referrer, aRv);
         if (NS_WARN_IF(aRv.Failed())) {
-          aRv.ThrowTypeError<MSG_INVALID_REFERRER_URL>(
-              NS_ConvertUTF16toUTF8(referrer));
+          aRv.ThrowTypeError<MSG_INVALID_REFERRER_URL>(referrer);
           return nullptr;
         }
         url->GetHref(referrerURL);
@@ -521,6 +501,10 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
 
   if (aInit.mIntegrity.WasPassed()) {
     request->SetIntegrity(aInit.mIntegrity.Value());
+  }
+
+  if (aInit.mKeepalive.WasPassed()) {
+    request->SetKeepalive(aInit.mKeepalive.Value());
   }
 
   if (aInit.mMozErrors.WasPassed() && aInit.mMozErrors.Value()) {

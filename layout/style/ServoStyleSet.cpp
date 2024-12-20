@@ -41,7 +41,9 @@
 #include "mozilla/dom/CSSNamespaceRule.h"
 #include "mozilla/dom/CSSPageRule.h"
 #include "mozilla/dom/CSSPropertyRule.h"
+#include "mozilla/dom/CSSScopeRule.h"
 #include "mozilla/dom/CSSSupportsRule.h"
+#include "mozilla/dom/CSSStartingStyleRule.h"
 #include "mozilla/dom/FontFaceSet.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ElementInlines.h"
@@ -1002,6 +1004,8 @@ void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
     CASE_FOR(LayerBlock, LayerBlock)
     CASE_FOR(LayerStatement, LayerStatement)
     CASE_FOR(Container, Container)
+    CASE_FOR(Scope, Scope)
+    CASE_FOR(StartingStyle, StartingStyle)
     // @namespace can only be inserted / removed when there are only other
     // @namespace and @import rules, and can't be mutated.
     case StyleCssRuleType::Namespace:
@@ -1394,6 +1398,13 @@ void ServoStyleSet::MaybeInvalidateRelativeSelectorClassDependency(
       mRawData.get(), &aElement, &aSnapshots);
 }
 
+void ServoStyleSet::MaybeInvalidateRelativeSelectorCustomStateDependency(
+    const Element& aElement, nsAtom* state,
+    const ServoElementSnapshotTable& aSnapshots) {
+  Servo_StyleSet_MaybeInvalidateRelativeSelectorCustomStateDependency(
+      mRawData.get(), &aElement, state, &aSnapshots);
+}
+
 void ServoStyleSet::MaybeInvalidateRelativeSelectorAttributeDependency(
     const Element& aElement, nsAtom* aAttribute,
     const ServoElementSnapshotTable& aSnapshots) {
@@ -1463,6 +1474,12 @@ bool ServoStyleSet::HasNthOfStateDependency(const Element& aElement,
                                             dom::ElementState aState) const {
   return Servo_StyleSet_HasNthOfStateDependency(mRawData.get(), &aElement,
                                                 aState.GetInternalValue());
+}
+
+bool ServoStyleSet::HasNthOfCustomStateDependency(const Element& aElement,
+                                                  nsAtom* aState) const {
+  return Servo_StyleSet_HasNthOfCustomStateDependency(mRawData.get(), &aElement,
+                                                      aState);
 }
 
 void ServoStyleSet::RestyleSiblingsForNthOf(const Element& aElement,

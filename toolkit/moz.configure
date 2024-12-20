@@ -205,10 +205,8 @@ def audio_backends_default(target):
         return ("oss",)
     elif target.os == "OpenBSD":
         return ("sndio",)
-    elif target.os == "OSX":
+    elif target.kernel == "Darwin":
         return ("audiounit",)
-    elif target.os == "iOS":
-        return None
     elif target.os == "NetBSD":
         return ("sunaudio",)
     elif target.os == "SunOS":
@@ -259,11 +257,7 @@ def imply_alsa(values, target):
 
 @depends("--enable-audio-backends", target)
 def imply_audiounit(values, target):
-    if (
-        any("audiounit" in value for value in values)
-        and target.os != "OSX"
-        and target.kernel != "Darwin"
-    ):
+    if any("audiounit" in value for value in values) and target.kernel != "Darwin":
         die("Cannot enable AudioUnit on %s", target.os)
     return any("audiounit" in value for value in values) or None
 
@@ -2783,20 +2777,6 @@ with only_when(compile_environment & wasm_sandboxing.hunspell):
     set_config("MOZ_WASI_EMULATED_CLOCK", True, when=wasi_emulated_clock)
 
 
-# new Notification Store implementation
-# ==============================================================
-
-
-@depends(milestone)
-def new_notification_store(milestone):
-    if milestone.is_nightly:
-        return True
-
-
-set_config("MOZ_NEW_NOTIFICATION_STORE", True, when=new_notification_store)
-set_define("MOZ_NEW_NOTIFICATION_STORE", True, when=new_notification_store)
-
-
 # Auxiliary files persistence on application close
 # ==============================================================
 
@@ -3053,6 +3033,10 @@ def oxidized_breakpad(target):
 
 set_config("MOZ_OXIDIZED_BREAKPAD", True, when=oxidized_breakpad)
 set_define("MOZ_OXIDIZED_BREAKPAD", True, when=oxidized_breakpad)
+
+# Environment variable to mock the crashreporter for testing
+option(env="MOZ_CRASHREPORTER_MOCK", help="Mock the crashreporter to test native GUIs")
+set_config("MOZ_CRASHREPORTER_MOCK", True, when="MOZ_CRASHREPORTER_MOCK")
 
 
 # Wine

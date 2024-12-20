@@ -87,9 +87,18 @@ macro_rules! expanded {
 #[allow(missing_docs)]
 pub mod longhands {
     % for style_struct in data.style_structs:
-    include!("${repr(os.path.join(OUT_DIR, 'longhands/{}.rs'.format(style_struct.name_lower)))[1:-1]}");
+    <% data.current_style_struct = style_struct %>
+    <%include file="/longhands/${style_struct.name_lower}.mako.rs" />
     % endfor
 }
+
+
+#[cfg(feature = "gecko")]
+#[allow(unsafe_code, missing_docs)]
+pub mod gecko {
+    <%include file="/gecko.mako.rs" />
+}
+
 
 macro_rules! unwrap_or_initial {
     ($prop: ident) => (unwrap_or_initial!($prop, $prop));
@@ -107,7 +116,7 @@ pub mod shorthands {
     use crate::values::specified;
 
     % for style_struct in data.style_structs:
-    include!("${repr(os.path.join(OUT_DIR, 'shorthands/{}.rs'.format(style_struct.name_lower)))[1:-1]}");
+    <%include file="/shorthands/${style_struct.name_lower}.mako.rs" />
     % endfor
 
     // We didn't define the 'all' shorthand using the regular helpers:shorthand
@@ -142,7 +151,7 @@ pub mod shorthands {
         data.declare_shorthand(
             "all",
             logical_longhands + other_longhands,
-            engines="gecko servo-2013 servo-2020",
+            engines="gecko servo",
             spec="https://drafts.csswg.org/css-cascade-3/#all-shorthand"
         )
         ALL_SHORTHAND_LEN = len(logical_longhands) + len(other_longhands);
@@ -505,8 +514,7 @@ impl NonCustomPropertyId {
                 }] = [
                     % for property in data.longhands + data.shorthands + data.all_aliases():
                         <%
-                            attrs = {"servo-2013": "servo_2013_pref", "servo-2020": "servo_2020_pref"}
-                            pref = getattr(property, attrs[engine])
+                            pref = getattr(property, "servo_pref")
                         %>
                         % if pref:
                             Some("${pref}"),
@@ -2482,7 +2490,7 @@ impl<'a> StyleBuilder<'a> {
     }
     % endif
 
-    % if not property.is_vector or property.simple_vector_bindings or engine in ["servo-2013", "servo-2020"]:
+    % if not property.is_vector or property.simple_vector_bindings or engine == "servo":
     /// Set the `${property.ident}` to the computed value `value`.
     #[allow(non_snake_case)]
     pub fn set_${property.ident}(
@@ -2736,7 +2744,13 @@ impl<'a> StyleBuilder<'a> {
         if matches!(line_height, computed::LineHeight::Normal) {
             self.add_flags(flag);
         }
-        device.calc_line_height(&font, writing_mode, None)
+        let lh = device.calc_line_height(&font, writing_mode, None);
+        if line_height_base == LineHeightBase::InheritedStyle {
+            // Apply our own zoom if our style source is the parent style.
+            computed::NonNegativeLength::new(self.get_box().clone_zoom().zoom(lh.px()))
+        } else {
+            lh
+        }
     }
 
     /// And access to inherited style structs.
@@ -2932,7 +2946,7 @@ const_assert!(std::mem::size_of::<longhands::${longhand.ident}::SpecifiedValue>(
 % endif
 % endfor
 
-% if engine in ["servo-2013", "servo-2020"]:
+% if engine == "servo":
 % for effect_name in ["repaint", "reflow_out_of_flow", "reflow", "rebuild_and_reflow_inline", "rebuild_and_reflow"]:
     macro_rules! restyle_damage_${effect_name} {
         ($old: ident, $new: ident, $damage: ident, [ $($effect:expr),* ]) => ({

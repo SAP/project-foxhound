@@ -2,14 +2,28 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-// Remove this import after BackupResource is referenced elsewhere.
-// eslint-disable-next-line no-unused-vars
-import { BackupResource } from "resource:///modules/backup/BackupResource.sys.mjs";
-
 /**
  * Classes exported here are registered as a resource that can be
  * backed up and restored in the BackupService.
  *
  * They must extend the BackupResource base class.
  */
-export {};
+import { AddonsBackupResource } from "resource:///modules/backup/AddonsBackupResource.sys.mjs";
+import { CookiesBackupResource } from "resource:///modules/backup/CookiesBackupResource.sys.mjs";
+import { CredentialsAndSecurityBackupResource } from "resource:///modules/backup/CredentialsAndSecurityBackupResource.sys.mjs";
+import { FormHistoryBackupResource } from "resource:///modules/backup/FormHistoryBackupResource.sys.mjs";
+import { MiscDataBackupResource } from "resource:///modules/backup/MiscDataBackupResource.sys.mjs";
+import { PlacesBackupResource } from "resource:///modules/backup/PlacesBackupResource.sys.mjs";
+import { PreferencesBackupResource } from "resource:///modules/backup/PreferencesBackupResource.sys.mjs";
+import { SessionStoreBackupResource } from "resource:///modules/backup/SessionStoreBackupResource.sys.mjs";
+
+export {
+  AddonsBackupResource,
+  CookiesBackupResource,
+  CredentialsAndSecurityBackupResource,
+  FormHistoryBackupResource,
+  MiscDataBackupResource,
+  PlacesBackupResource,
+  PreferencesBackupResource,
+  SessionStoreBackupResource,
+};

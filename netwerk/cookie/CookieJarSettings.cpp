@@ -4,9 +4,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozIThirdPartyUtil.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/net/CookieJarSettings.h"
@@ -15,6 +17,7 @@
 #include "mozilla/PermissionManager.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/Unused.h"
 #include "nsIPrincipal.h"
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
@@ -172,7 +175,8 @@ CookieJarSettings::CookieJarSettings(uint32_t aCookieBehavior,
       mIsOnContentBlockingAllowListUpdated(false),
       mState(aState),
       mToBeMerged(false),
-      mShouldResistFingerprinting(aShouldResistFingerprinting) {
+      mShouldResistFingerprinting(aShouldResistFingerprinting),
+      mTopLevelWindowContextId(0) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT_IF(
       mIsFirstPartyIsolated,
@@ -195,7 +199,7 @@ CookieJarSettings::InitWithURI(nsIURI* aURI, bool aIsPrivate) {
 
   mCookieBehavior = nsICookieManager::GetCookieBehavior(aIsPrivate);
 
-  SetPartitionKey(aURI);
+  SetPartitionKey(aURI, false);
   return NS_OK;
 }
 
@@ -408,6 +412,8 @@ void CookieJarSettings::Serialize(CookieJarSettingsArgs& aData) {
         CookiePermissionData(principalInfo, cookiePermission));
   }
 
+  aData.topLevelWindowContextId() = mTopLevelWindowContextId;
+
   mToBeMerged = false;
 }
 
@@ -450,6 +456,8 @@ void CookieJarSettings::Serialize(CookieJarSettingsArgs& aData) {
     cookieJarSettings->mFingerprintingRandomKey.emplace(
         aData.fingerprintingRandomizationKey().Clone());
   }
+
+  cookieJarSettings->mTopLevelWindowContextId = aData.topLevelWindowContextId();
 
   cookieJarSettings.forget(aCookieJarSettings);
 }
@@ -521,12 +529,23 @@ void CookieJarSettings::Merge(const CookieJarSettingsArgs& aData) {
   }
 }
 
-void CookieJarSettings::SetPartitionKey(nsIURI* aURI) {
+void CookieJarSettings::SetPartitionKey(nsIURI* aURI,
+                                        bool aForeignByAncestorContext) {
   MOZ_ASSERT(aURI);
 
   OriginAttributes attrs;
-  attrs.SetPartitionKey(aURI);
+  attrs.SetPartitionKey(aURI, aForeignByAncestorContext);
   mPartitionKey = std::move(attrs.mPartitionKey);
+}
+
+void CookieJarSettings::UpdatePartitionKeyForDocumentLoadedByChannel(
+    nsIChannel* aChannel) {
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  bool thirdParty = AntiTrackingUtils::IsThirdPartyChannel(aChannel);
+  bool foreignByAncestorContext =
+      thirdParty && !loadInfo->GetIsThirdPartyContextToTopWindow();
+  StoragePrincipalHelper::UpdatePartitionKeyWithForeignAncestorBit(
+      mPartitionKey, foreignByAncestorContext);
 }
 
 void CookieJarSettings::UpdateIsOnContentBlockingAllowList(

@@ -383,6 +383,36 @@ nsDisplayWrapList* nsDisplayListBuilder::MergeItems(
   return merged;
 }
 
+// FIXME(emilio): This whole business should ideally not be needed at all, but
+// there are a variety of hard-to-deal-with caret invalidation issues, like
+// bug 1888583, and caret changes are relatively uncommon, enough that it
+// probably isn't worth chasing all them down.
+void nsDisplayListBuilder::InvalidateCaretFramesIfNeeded() {
+  if (mPaintedCarets.IsEmpty()) {
+    return;
+  }
+  size_t i = mPaintedCarets.Length();
+  while (i--) {
+    nsCaret* caret = mPaintedCarets[i];
+    nsIFrame* oldCaret = caret->GetLastPaintedFrame();
+    nsRect caretRect;
+    nsIFrame* currentCaret = caret->GetPaintGeometry(&caretRect);
+    if (oldCaret == currentCaret) {
+      // Keep tracking this caret, it hasn't changed.
+      continue;
+    }
+    if (oldCaret) {
+      oldCaret->MarkNeedsDisplayItemRebuild();
+    }
+    if (currentCaret) {
+      currentCaret->MarkNeedsDisplayItemRebuild();
+    }
+    // If / when we paint this caret, we'll track it again.
+    caret->SetLastPaintedFrame(nullptr);
+    mPaintedCarets.RemoveElementAt(i);
+  }
+}
+
 void nsDisplayListBuilder::AutoCurrentActiveScrolledRootSetter::
     SetCurrentActiveScrolledRoot(
         const ActiveScrolledRoot* aActiveScrolledRoot) {
@@ -650,7 +680,6 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mCurrentContainerASR(nullptr),
       mCurrentFrame(aReferenceFrame),
       mCurrentReferenceFrame(aReferenceFrame),
-      mCaretFrame(nullptr),
       mScrollInfoItemsForHoisting(nullptr),
       mFirstClipChainToDestroy(nullptr),
       mTableBackgroundSet(nullptr),
@@ -718,21 +747,6 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mRetainingDisplayList && StaticPrefs::layout_display_list_retain_sc();
 }
 
-static PresShell* GetFocusedPresShell() {
-  nsPIDOMWindowOuter* focusedWnd =
-      nsFocusManager::GetFocusManager()->GetFocusedWindow();
-  if (!focusedWnd) {
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIDocShell> focusedDocShell = focusedWnd->GetDocShell();
-  if (!focusedDocShell) {
-    return nullptr;
-  }
-
-  return focusedDocShell->GetPresShell();
-}
-
 void nsDisplayListBuilder::BeginFrame() {
   nsCSSRendering::BeginFrameTreesLocked();
 
@@ -742,26 +756,6 @@ void nsDisplayListBuilder::BeginFrame() {
   mInTransform = false;
   mInFilter = false;
   mSyncDecodeImages = false;
-
-  if (!mBuildCaret) {
-    return;
-  }
-
-  RefPtr<PresShell> presShell = GetFocusedPresShell();
-  if (presShell) {
-    RefPtr<nsCaret> caret = presShell->GetCaret();
-    mCaretFrame = caret->GetPaintGeometry(&mCaretRect);
-
-    // The focused pres shell may not be in the document that we're
-    // painting, or be in a popup. Check if the display root for
-    // the caret matches the display root that we're painting, and
-    // only use it if it matches.
-    if (mCaretFrame &&
-        nsLayoutUtils::GetDisplayRootFrame(mCaretFrame) !=
-            nsLayoutUtils::GetDisplayRootFrame(mReferenceFrame)) {
-      mCaretFrame = nullptr;
-    }
-  }
 }
 
 void nsDisplayListBuilder::AddEffectUpdate(dom::RemoteBrowser* aBrowser,
@@ -801,7 +795,6 @@ void nsDisplayListBuilder::EndFrame() {
   FreeClipChains();
   FreeTemporaryItems();
   nsCSSRendering::EndFrameTreesLocked();
-  mCaretFrame = nullptr;
 }
 
 void nsDisplayListBuilder::MarkFrameForDisplay(nsIFrame* aFrame,
@@ -1141,12 +1134,32 @@ void nsDisplayListBuilder::EnterPresShell(const nsIFrame* aReferenceFrame,
     return;
   }
 
-  // Caret frames add visual area to their frame, but we don't update the
-  // overflow area. Use flags to make sure we build display items for that frame
-  // instead.
-  if (mCaretFrame && mCaretFrame->PresShell() == state->mPresShell) {
-    MarkFrameForDisplay(mCaretFrame, aReferenceFrame);
-  }
+  state->mCaretFrame = [&]() -> nsIFrame* {
+    RefPtr<nsCaret> caret = state->mPresShell->GetCaret();
+    nsIFrame* currentCaret = caret->GetPaintGeometry(&mCaretRect);
+    if (!currentCaret) {
+      return nullptr;
+    }
+
+    // Check if the display root for the caret matches the display root that
+    // we're painting, and only use it if it matches. Likely we only need this
+    // for carets inside popups.
+    if (nsLayoutUtils::GetDisplayRootFrame(currentCaret) !=
+        nsLayoutUtils::GetDisplayRootFrame(aReferenceFrame)) {
+      return nullptr;
+    }
+
+    // Caret frames add visual area to their frame, but we don't update the
+    // overflow area. Use flags to make sure we build display items for that
+    // frame instead.
+    MOZ_ASSERT(currentCaret->PresShell() == state->mPresShell);
+    MarkFrameForDisplay(currentCaret, aReferenceFrame);
+    caret->SetLastPaintedFrame(currentCaret);
+    if (!mPaintedCarets.Contains(caret)) {
+      mPaintedCarets.AppendElement(std::move(caret));
+    }
+    return currentCaret;
+  }();
 }
 
 // A non-blank paint is a paint that does not just contain the canvas
@@ -2534,9 +2547,7 @@ struct ZSortItem {
 };
 
 struct ZOrderComparator {
-  bool operator()(const ZSortItem& aLeft, const ZSortItem& aRight) const {
-    // Note that we can't just take the difference of the two
-    // z-indices here, because that might overflow a 32-bit int.
+  bool LessThan(const ZSortItem& aLeft, const ZSortItem& aRight) const {
     return aLeft.zIndex < aRight.zIndex;
   }
 };
@@ -2549,7 +2560,7 @@ struct ContentComparator {
   explicit ContentComparator(nsIContent* aCommonAncestor)
       : mCommonAncestor(aCommonAncestor) {}
 
-  bool operator()(nsDisplayItem* aLeft, nsDisplayItem* aRight) const {
+  bool LessThan(nsDisplayItem* aLeft, nsDisplayItem* aRight) const {
     // It's possible that the nsIContent for aItem1 or aItem2 is in a
     // subdocument of commonAncestor, because display items for subdocuments
     // have been mixed into the same list. Ensure that we're looking at content
@@ -2562,7 +2573,8 @@ struct ContentComparator {
       // Something weird going on
       return true;
     }
-    return nsContentUtils::CompareTreePosition<TreeKind::Flat>(
+    return content1 != content2 &&
+           nsContentUtils::CompareTreePosition<TreeKind::Flat>(
                content1, content2, mCommonAncestor) < 0;
   }
 };
@@ -4134,8 +4146,7 @@ bool nsDisplayCaret::CreateWebRenderCommands(
   nscolor caretColor;
   nsIFrame* frame =
       mCaret->GetPaintGeometry(&caretRect, &hookRect, &caretColor);
-  MOZ_ASSERT(frame == mFrame, "We're referring different frame");
-  if (!frame) {
+  if (NS_WARN_IF(!frame) || NS_WARN_IF(frame != mFrame)) {
     return true;
   }
 

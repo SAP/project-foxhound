@@ -22,6 +22,8 @@
 #include "mozilla/dom/CSSNamespaceRule.h"
 #include "mozilla/dom/CSSPageRule.h"
 #include "mozilla/dom/CSSPropertyRule.h"
+#include "mozilla/dom/CSSScopeRule.h"
+#include "mozilla/dom/CSSStartingStyleRule.h"
 #include "mozilla/dom/CSSStyleRule.h"
 #include "mozilla/dom/CSSSupportsRule.h"
 #include "mozilla/IntegerRange.h"
@@ -98,6 +100,8 @@ css::Rule* ServoCSSRuleList::GetRule(uint32_t aIndex) {
       CASE_RULE_UNLOCKED(LayerBlock, LayerBlock)
       CASE_RULE_UNLOCKED(LayerStatement, LayerStatement)
       CASE_RULE_UNLOCKED(Container, Container)
+      CASE_RULE_UNLOCKED(Scope, Scope)
+      CASE_RULE_UNLOCKED(StartingStyle, StartingStyle)
 #undef CASE_RULE_LOCKED
 #undef CASE_RULE_UNLOCKED
 #undef CASE_RULE_WITH_PREFIX
@@ -208,12 +212,21 @@ nsresult ServoCSSRuleList::InsertRule(const nsACString& aRule,
   }
   StyleCssRuleType type;
   uint32_t containingTypes = 0;
+  Maybe<StyleCssRuleType> parseRelativeRuleType;
   for (css::Rule* rule = mParentRule; rule; rule = rule->GetParentRule()) {
-    containingTypes |= (1 << uint32_t(rule->Type()));
+    const auto ruleType = rule->Type();
+    containingTypes |= (1 << uint32_t(ruleType));
+    if (parseRelativeRuleType.isNothing() &&
+        (ruleType == StyleCssRuleType::Style ||
+         ruleType == StyleCssRuleType::Scope)) {
+      // Only the closest applicable type to this rule matters.
+      parseRelativeRuleType = Some(ruleType);
+    }
   }
   nsresult rv = Servo_CssRules_InsertRule(
       mRawRules, mStyleSheet->RawContents(), &aRule, aIndex, containingTypes,
-      loader, allowImportRules, mStyleSheet, &type);
+      parseRelativeRuleType.ptrOr(nullptr), loader, allowImportRules,
+      mStyleSheet, &type);
   NS_ENSURE_SUCCESS(rv, rv);
   mRules.InsertElementAt(aIndex, uintptr_t(type));
   return rv;
@@ -276,6 +289,8 @@ void ServoCSSRuleList::SetRawContents(RefPtr<StyleLockedCssRules> aNewRules,
       RULE_CASE_UNLOCKED(LayerBlock, LayerBlock)
       RULE_CASE_UNLOCKED(LayerStatement, LayerStatement)
       RULE_CASE_UNLOCKED(Container, Container)
+      RULE_CASE_UNLOCKED(Scope, Scope)
+      RULE_CASE_UNLOCKED(StartingStyle, StartingStyle)
       case StyleCssRuleType::Keyframe:
         MOZ_ASSERT_UNREACHABLE("keyframe rule cannot be here");
         break;

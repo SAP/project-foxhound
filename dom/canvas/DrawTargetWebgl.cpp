@@ -21,6 +21,7 @@
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/RemoteTextureMap.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "skia/include/core/SkPixmap.h"
 #include "nsContentUtils.h"
 
@@ -324,6 +325,11 @@ void SharedContextWebgl::UnlinkGlyphCaches() {
 }
 
 void SharedContextWebgl::OnMemoryPressure() { mShouldClearCaches = true; }
+
+void SharedContextWebgl::ClearCaches() {
+  OnMemoryPressure();
+  ClearCachesIfNecessary();
+}
 
 // Clear out the entire list of texture handles from any source.
 void SharedContextWebgl::ClearAllTextures() {
@@ -852,10 +858,14 @@ bool DrawTargetWebgl::CanCreate(const IntSize& aSize, SurfaceFormat aFormat) {
     // In addition, allow acceleration up to this size even if the screen is
     // smaller. A lot content expects this size to work well. See Bug 999841
     static const int32_t kScreenPixels = 980 * 480;
-    IntSize screenSize = gfxPlatform::GetPlatform()->GetScreenSize();
-    if (aSize.width * aSize.height >
-        std::max(screenSize.width * screenSize.height, kScreenPixels)) {
-      return false;
+
+    if (RefPtr<widget::Screen> screen =
+            widget::ScreenManager::GetSingleton().GetPrimaryScreen()) {
+      LayoutDeviceIntSize screenSize = screen->GetRect().Size();
+      if (aSize.width * aSize.height >
+          std::max(screenSize.width * screenSize.height, kScreenPixels)) {
+        return false;
+      }
     }
   }
 

@@ -81,6 +81,9 @@ var gExceptionPaths = [
 
   // CSS files are referenced inside JS in an html template
   "chrome://browser/content/aboutlogins/components/",
+
+  // Strip on Share parameter lists
+  "chrome://global/content/antitracking/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -97,13 +100,6 @@ if (AppConstants.MOZ_BACKGROUNDTASKS) {
   // `BackgroundTask_*.sys.mjs` are loaded at runtime by `app --backgroundtask id ...`.
   gExceptionPaths.push("resource://gre/modules/backgroundtasks/");
   gExceptionPaths.push("resource://app/modules/backgroundtasks/");
-}
-
-if (AppConstants.NIGHTLY_BUILD) {
-  // This is nightly-only debug tool.
-  gExceptionPaths.push(
-    "chrome://browser/content/places/interactionsViewer.html"
-  );
 }
 
 // Each allowlist entry should have a comment indicating which file is
@@ -283,6 +279,9 @@ var allowlist = [
   // Bug 1875361
   { file: "chrome://global/content/ml/SummarizerModel.sys.mjs" },
 
+  // Bug 1886130
+  { file: "chrome://global/content/ml/ModelHub.sys.mjs" },
+
   // toolkit/xre/MacRunFromDmgUtils.mm
   { file: "resource://gre/localization/en-US/toolkit/global/run-from-dmg.ftl" },
 
@@ -292,6 +291,19 @@ var allowlist = [
   { file: "chrome://browser/content/screenshots/download.svg" },
   { file: "chrome://browser/content/screenshots/download-white.svg" },
 ];
+
+if (AppConstants.NIGHTLY_BUILD) {
+  allowlist.push(
+    ...[
+      // This is nightly-only debug tool.
+      { file: "chrome://browser/content/places/interactionsViewer.html" },
+
+      // A debug tool that is only available in Nightly builds, and is accessed
+      // directly by developers via the chrome URI (bug 1888491)
+      { file: "chrome://browser/content/backup/debug.html" },
+    ]
+  );
+}
 
 if (AppConstants.platform != "win") {
   // toolkit/mozapps/defaultagent/Notification.cpp

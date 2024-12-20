@@ -7,6 +7,8 @@
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Profiles")
 
+JAR_MANIFESTS += ["jar.mn"]
+
 SPHINX_TREES["docs"] = "docs"
 
 XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.toml"]
@@ -14,5 +16,13 @@ XPCSHELL_TESTS_MANIFESTS += ["tests/xpcshell/xpcshell.toml"]
 EXTRA_JS_MODULES.backup += [
     "BackupResources.sys.mjs",
     "BackupService.sys.mjs",
+    "resources/AddonsBackupResource.sys.mjs",
     "resources/BackupResource.sys.mjs",
+    "resources/CookiesBackupResource.sys.mjs",
+    "resources/CredentialsAndSecurityBackupResource.sys.mjs",
+    "resources/FormHistoryBackupResource.sys.mjs",
+    "resources/MiscDataBackupResource.sys.mjs",
+    "resources/PlacesBackupResource.sys.mjs",
+    "resources/PreferencesBackupResource.sys.mjs",
+    "resources/SessionStoreBackupResource.sys.mjs",
 ]

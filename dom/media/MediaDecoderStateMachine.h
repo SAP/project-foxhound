@@ -17,6 +17,7 @@
 #  include "MediaStatistics.h"
 #  include "MediaTimer.h"
 #  include "SeekJob.h"
+#  include "mozilla/Atomics.h"
 #  include "mozilla/Attributes.h"
 #  include "mozilla/ReentrantMonitor.h"
 #  include "mozilla/StateMirroring.h"
@@ -530,6 +531,9 @@ class MediaDecoderStateMachine
   // logic until the media loops back.
   bool mBypassingSkipToNextKeyFrameCheck = false;
 
+  // The total amount of time we've spent on the buffering state.
+  TimeDuration mTotalBufferingDuration;
+
  private:
   // Audio stream name
   Mirror<nsAutoString> mStreamName;
@@ -558,6 +562,8 @@ class MediaDecoderStateMachine
   // restricted like starting the sink or changing sink id. The flag is valid
   // after Initialization. TaskQueue thread only.
   bool mIsMediaSinkSuspended = false;
+
+  Atomic<bool> mShuttingDown;
 
  public:
   AbstractCanonical<PrincipalHandle>* CanonicalOutputPrincipal() {

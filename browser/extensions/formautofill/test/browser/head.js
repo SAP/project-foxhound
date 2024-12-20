@@ -535,25 +535,6 @@ async function runAndWaitForAutocompletePopupOpen(browser, taskFn) {
   await taskFn();
 
   await popupShown;
-  await BrowserTestUtils.waitForMutationCondition(
-    browser.autoCompletePopup.richlistbox,
-    { childList: true, subtree: true, attributes: true },
-    () => {
-      const listItemElems = getDisplayedPopupItems(browser);
-      return (
-        !![...listItemElems].length &&
-        [...listItemElems].every(item => {
-          return (
-            (item.getAttribute("originaltype") == "autofill-profile" ||
-              item.getAttribute("originaltype") == "autofill-insecureWarning" ||
-              item.getAttribute("originaltype") == "autofill-clear-button" ||
-              item.getAttribute("originaltype") == "autofill-footer") &&
-            item.hasAttribute("formautofillattached")
-          );
-        })
-      );
-    }
-  );
 }
 
 async function waitForPopupEnabled(browser) {
@@ -595,7 +576,7 @@ function waitPopupStateInChild(bc, messageName) {
 async function openPopupOn(browser, selector) {
   let childNotifiedPromise = waitPopupStateInChild(
     browser,
-    "FormAutoComplete:PopupOpened"
+    "AutoComplete:PopupOpened"
   );
   await SimpleTest.promiseFocus(browser);
 
@@ -613,7 +594,7 @@ async function openPopupOn(browser, selector) {
 async function openPopupOnSubframe(browser, frameBrowsingContext, selector) {
   let childNotifiedPromise = waitPopupStateInChild(
     frameBrowsingContext,
-    "FormAutoComplete:PopupOpened"
+    "AutoComplete:PopupOpened"
   );
 
   await SimpleTest.promiseFocus(browser);
@@ -637,7 +618,7 @@ async function closePopup(browser) {
 
   let childNotifiedPromise = waitPopupStateInChild(
     browser,
-    "FormAutoComplete:PopupClosed"
+    "AutoComplete:PopupClosed"
   );
   let popupClosePromise = BrowserTestUtils.waitForPopupEvent(
     browser.autoCompletePopup,
@@ -655,7 +636,7 @@ async function closePopup(browser) {
 async function closePopupForSubframe(browser, frameBrowsingContext) {
   let childNotifiedPromise = waitPopupStateInChild(
     browser,
-    "FormAutoComplete:PopupClosed"
+    "AutoComplete:PopupClosed"
   );
 
   let popupClosePromise = BrowserTestUtils.waitForPopupEvent(
@@ -850,14 +831,8 @@ async function expectWarningText(browser, expectedText) {
   const {
     autoCompletePopup: { richlistbox: itemsBox },
   } = browser;
-  let warningBox = itemsBox.querySelector(
-    ".autocomplete-richlistitem:last-child"
-  );
-
-  while (warningBox.collapsed) {
-    warningBox = warningBox.previousSibling;
-  }
-  warningBox = warningBox._warningTextBox;
+  let warningBox = itemsBox.querySelector(".ac-status");
+  ok(warningBox.parentNode.disabled, "Got warning box and is disabled");
 
   await BrowserTestUtils.waitForMutationCondition(
     warningBox,

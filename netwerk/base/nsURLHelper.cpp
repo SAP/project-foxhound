@@ -220,6 +220,11 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
   uint32_t traversal = 0;
   uint32_t special_ftp_len = 0;
 
+  MOZ_ASSERT(*path == '/', "We expect the path to begin with /");
+  if (*path != '/') {
+    return;
+  }
+
   /* Remember if this url is a special ftp one: */
   if (flags & NET_COALESCE_DOUBLE_SLASH_IS_ROOT) {
     /* some schemes (for example ftp) have the speciality that
@@ -250,7 +255,7 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
   fwdPtr = path;
 
   /* replace all %2E or %2e with . in the path */
-  /* but stop at lastchar if non null */
+  /* but stop at lastslash if non null */
   for (; (*fwdPtr != '\0') && (*fwdPtr != '?') && (*fwdPtr != '#') &&
          (*lastslash == '\0' || fwdPtr != lastslash);
        ++fwdPtr) {
@@ -345,6 +350,14 @@ void net_CoalesceDirs(netCoalesceFlags flags, char* path) {
   if ((urlPtr > (path + 1)) && (*(urlPtr - 1) == '.') &&
       (*(urlPtr - 2) == '/')) {
     urlPtr--;
+  }
+
+  // Before we start copying past ?#, we must make sure we don't overwrite
+  // the first / character.  If fwdPtr is also unchanged, just copy everything
+  // (this shouldn't happen unless we could get in here without a leading
+  // slash).
+  if (urlPtr == path && fwdPtr != path) {
+    urlPtr++;
   }
 
   // Copy remaining stuff past the #?;
@@ -1099,24 +1112,32 @@ bool net_GetDefaultStatusTextForCode(uint16_t aCode, nsACString& aOutText) {
   return true;
 }
 
-namespace mozilla {
-static auto MakeNameMatcher(const nsAString& aName) {
+static auto MakeNameMatcher(const nsACString& aName) {
   return [&aName](const auto& param) { return param.mKey.Equals(aName); };
 }
 
-bool URLParams::Has(const nsAString& aName) {
+static void AssignMaybeInvalidUTF8String(const nsACString& aSource,
+                                         nsACString& aDest) {
+  if (NS_FAILED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aSource, aDest))) {
+    MOZ_CRASH("Out of memory when converting URL params.");
+  }
+}
+
+namespace mozilla {
+
+bool URLParams::Has(const nsACString& aName) {
   return std::any_of(mParams.cbegin(), mParams.cend(), MakeNameMatcher(aName));
 }
 
-bool URLParams::Has(const nsAString& aName, const nsAString& aValue) {
+bool URLParams::Has(const nsACString& aName, const nsACString& aValue) {
   return std::any_of(
       mParams.cbegin(), mParams.cend(), [&aName, &aValue](const auto& param) {
         return param.mKey.Equals(aName) && param.mValue.Equals(aValue);
       });
 }
 
-void URLParams::Get(const nsAString& aName, nsString& aRetval) {
-  SetDOMStringToNull(aRetval);
+void URLParams::Get(const nsACString& aName, nsACString& aRetval) {
+  aRetval.SetIsVoid(true);
 
   const auto end = mParams.cend();
   const auto it = std::find_if(mParams.cbegin(), end, MakeNameMatcher(aName));
@@ -1125,7 +1146,7 @@ void URLParams::Get(const nsAString& aName, nsString& aRetval) {
   }
 }
 
-void URLParams::GetAll(const nsAString& aName, nsTArray<nsString>& aRetval) {
+void URLParams::GetAll(const nsACString& aName, nsTArray<nsCString>& aRetval) {
   aRetval.Clear();
 
   for (uint32_t i = 0, len = mParams.Length(); i < len; ++i) {
@@ -1135,7 +1156,7 @@ void URLParams::GetAll(const nsAString& aName, nsTArray<nsString>& aRetval) {
   }
 }
 
-void URLParams::Append(const nsAString& aName, const nsAString& aValue) {
+void URLParams::Append(const nsACString& aName, const nsACString& aValue) {
   Param* param = mParams.AppendElement();
   param->mKey = aName;
   param->mValue = aValue;
@@ -1148,7 +1169,7 @@ void URLParams::Append(const nsAString& aName, const nsAString& aValue) {
   MarkTaintOperation(param->mValue, "URLParams(value)", args);
 }
 
-void URLParams::Set(const nsAString& aName, const nsAString& aValue) {
+void URLParams::Set(const nsACString& aName, const nsACString& aValue) {
   Param* param = nullptr;
   for (uint32_t i = 0, len = mParams.Length(); i < len;) {
     if (!mParams[i].mKey.Equals(aName)) {
@@ -1173,36 +1194,27 @@ void URLParams::Set(const nsAString& aName, const nsAString& aValue) {
   param->mValue = aValue;
 }
 
-void URLParams::Delete(const nsAString& aName) {
+void URLParams::Delete(const nsACString& aName) {
   mParams.RemoveElementsBy(
       [&aName](const auto& param) { return param.mKey.Equals(aName); });
 }
 
-void URLParams::Delete(const nsAString& aName, const nsAString& aValue) {
+void URLParams::Delete(const nsACString& aName, const nsACString& aValue) {
   mParams.RemoveElementsBy([&aName, &aValue](const auto& param) {
     return param.mKey.Equals(aName) && param.mValue.Equals(aValue);
   });
 }
 
 /* static */
-void URLParams::ConvertString(const nsACString& aInput, nsAString& aOutput) {
-  if (NS_FAILED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aInput, aOutput))) {
-    MOZ_CRASH("Out of memory when converting URL params.");
-  }
-}
-
-/* static */
-void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
+void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
   const char* const end = aInput.EndReading();
   const char* const start = aInput.BeginReading();
-  nsAutoCString unescaped;
 
   for (const char* iter = start; iter != end;) {
     // replace '+' with U+0020
     if (*iter == '+') {
-      unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
-      unescaped.Append(' ');
-      ++iter;
+      aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
+      aOutput.Append(' ');
       continue;
     }
 
@@ -1225,12 +1237,12 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
       if (first != end && second != end && asciiHexDigit(*first) &&
           asciiHexDigit(*second)) {
         // Taintfox: this is an approximation as we compress the taint of 3 chars (e.g. %40) into just one
-        unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, first)), unescaped.Length());
-        unescaped.Append(hexDigit(*first) * 16 + hexDigit(*second));
+        aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, first)), aOutput.Length());
+        aOutput.Append(hexDigit(*first) * 16 + hexDigit(*second));
         iter = second + 1;
       } else {
-        unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
-        unescaped.Append('%');
+        aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
+        aOutput.Append('%');
         ++iter;
       }
 
@@ -1241,20 +1253,14 @@ void URLParams::DecodeString(const nsACString& aInput, nsAString& aOutput) {
     unescaped.Append(*iter);
     ++iter;
   }
-
-  // XXX It seems rather wasteful to first decode into a UTF-8 nsCString and
-  // then convert the whole string to UTF-16, at least if we exceed the inline
-  // storage size.
-  ConvertString(unescaped, aOutput);
-  aOutput.AssignTaint(unescaped.Taint());
+  AssignMaybeInvalidUTF8String(aOutput, aOutput);
 }
 
 /* static */
-bool URLParams::ParseNextInternal(const char*& aStart, const char* aEnd,
-                                const char* stringStart, const StringTaint& aTaint,
-                                bool aShouldDecode, nsAString* aOutputName,
-                                nsAString* aOutputValue)
-{
+bool URLParams::ParseNextInternal(const char*& aStart, const char* const aEnd,
+                                  const char* stringStart, const StringTaint& aTaint,
+                                  bool aShouldDecode, nsACString* aOutputName,
+                                  nsACString* aOutputValue) {
   nsDependentCSubstring string;
 
   const char* const iter = std::find(aStart, aEnd, '&');
@@ -1303,17 +1309,18 @@ bool URLParams::ParseNextInternal(const char*& aStart, const char* aEnd,
     return true;
   }
 
-  ConvertString(name, *aOutputName);
-  ConvertString(value, *aOutputValue);
+  AssignMaybeInvalidUTF8String(name, *aOutputName);
+  AssignMaybeInvalidUTF8String(value, *aOutputValue);
   return true;
 }
 
 /* static */
-bool URLParams::Extract(const nsACString& aInput, const nsAString& aName,
-                        nsAString& aValue) {
+bool URLParams::Extract(const nsACString& aInput, const nsACString& aName,
+                        nsACString& aValue) {
   aValue.SetIsVoid(true);
   return !URLParams::Parse(
-      aInput, true, [&aName, &aValue](const nsAString& name, nsString&& value) {
+      aInput, true,
+      [&aName, &aValue](const nsACString& name, nsCString&& value) {
         if (aName == name) {
           aValue = std::move(value);
           return false;
@@ -1326,16 +1333,14 @@ void URLParams::ParseInput(const nsACString& aInput) {
   // Remove all the existing data before parsing a new input.
   DeleteAll();
 
-  URLParams::Parse(aInput, true, [this](nsString&& name, nsString&& value) {
+  URLParams::Parse(aInput, true, [this](nsCString&& name, nsCString&& value) {
     mParams.AppendElement(Param{std::move(name), std::move(value)});
     return true;
   });
 }
 
-namespace {
-
-void SerializeString(const nsCString& aInput, nsAString& aValue) {
-  const unsigned char* p = (const unsigned char*)aInput.get();
+void URLParams::SerializeString(const nsACString& aInput, nsACString& aValue) {
+  const unsigned char* p = (const unsigned char*)aInput.BeginReading();
   const unsigned char* end = p + aInput.Length();
   size_t oi = 0;
   // Taintfox: Keeps track of position on where to insert
@@ -1367,9 +1372,7 @@ void SerializeString(const nsCString& aInput, nsAString& aValue) {
   }
 }
 
-}  // namespace
-
-void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
+void URLParams::Serialize(nsACString& aValue, bool aEncode) const {
   aValue.Truncate();
   bool first = true;
 
@@ -1383,9 +1386,9 @@ void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
     // XXX Actually, it's not necessary to build a new string object. Generally,
     // such cases could just convert each codepoint one-by-one.
     if (aEncode) {
-      SerializeString(NS_ConvertUTF16toUTF8(mParams[i].mKey), aValue);
+      SerializeString(mParams[i].mKey, aValue);
       aValue.Append('=');
-      SerializeString(NS_ConvertUTF16toUTF8(mParams[i].mValue), aValue);
+      SerializeString(mParams[i].mValue, aValue);
     } else {
       aValue.Append(mParams[i].mKey);
       aValue.Append('=');
@@ -1397,7 +1400,11 @@ void URLParams::Serialize(nsAString& aValue, bool aEncode) const {
 
 void URLParams::Sort() {
   mParams.StableSort([](const Param& lhs, const Param& rhs) {
-    return Compare(lhs.mKey, rhs.mKey);
+    // FIXME(emilio, bug 1888901): The URLSearchParams.sort() spec requires
+    // comparing by utf-16 code points... That's a bit unfortunate, maybe we
+    // can optimize the string conversions here?
+    return Compare(NS_ConvertUTF8toUTF16(lhs.mKey),
+                   NS_ConvertUTF8toUTF16(rhs.mKey));
   });
 }
 

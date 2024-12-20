@@ -15,11 +15,7 @@ module.exports = {
     {
       // TODO: Bug 1773467 - Move these to .mjs or figure out a generic way
       // to identify these as modules.
-      files: [
-        "content-src/**/*.js",
-        "test/schemas/**/*.js",
-        "test/unit/**/*.js",
-      ],
+      files: ["test/schemas/**/*.js", "test/unit/**/*.js"],
       parserOptions: {
         sourceType: "module",
       },
@@ -92,8 +88,6 @@ module.exports = {
     },
   ],
   rules: {
-    "fetch-options/no-fetch-credentials": "error",
-
     "react/jsx-boolean-value": ["error", "always"],
     "react/jsx-key": "error",
     "react/jsx-no-bind": [

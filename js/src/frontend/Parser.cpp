@@ -815,11 +815,18 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
   AddDeclaredNamePtr p = scope->lookupDeclaredNameForAdd(name);
 
   DeclarationKind declKind = DeclarationKind::PrivateName;
-  ClosedOver closedOver = ClosedOver::No;
+
+  // Our strategy for enabling debugger functionality is to mark names as closed
+  // over, even if they don't necessarily need to be, to ensure that they are
+  // included in the environment object. This allows us to easily look them up
+  // by name when needed, even if there is no corresponding property on an
+  // object, as is the case with getter, setters and private methods.
+  ClosedOver closedOver = ClosedOver::Yes;
   PrivateNameKind kind;
   switch (propType) {
     case PropertyType::Field:
       kind = PrivateNameKind::Field;
+      closedOver = ClosedOver::No;
       break;
     case PropertyType::FieldWithAccessor:
       // In this case, we create a new private field for the underlying storage,
@@ -835,11 +842,6 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
         // DeclarationKind::Synthetic.
         declKind = DeclarationKind::PrivateMethod;
       }
-
-      // Methods must be marked closed-over so that
-      // EmitterScope::lookupPrivate() works even if the method is used, but not
-      // within any method (from a computed property name, or debugger frame)
-      closedOver = ClosedOver::Yes;
       kind = PrivateNameKind::Method;
       break;
     case PropertyType::Getter:
@@ -849,7 +851,7 @@ bool GeneralParser<ParseHandler, Unit>::noteDeclaredPrivateName(
       kind = PrivateNameKind::Setter;
       break;
     default:
-      kind = PrivateNameKind::None;
+      MOZ_CRASH("Invalid Property Type for noteDeclarePrivateName");
   }
 
   if (p) {
@@ -8011,7 +8013,11 @@ GeneralParser<ParseHandler, Unit>::classDefinition(
   // position in order to provide it for the nodes created later.
   TokenPos namePos = pos();
 
-  bool isInClass = pc_->sc()->inClass();
+  auto isClass = [](ParseContext::Statement* stmt) {
+    return stmt->kind() == StatementKind::Class;
+  };
+
+  bool isInClass = pc_->sc()->inClass() || pc_->findInnermostStatement(isClass);
 
   // Push a ParseContext::ClassStatement to keep track of the constructor
   // funbox.
@@ -10957,6 +10963,12 @@ GeneralParser<ParseHandler, Unit>::memberPropertyAccess(
   if (handler_.isArgumentsName(lhs) && handler_.isLengthName(name)) {
     MOZ_ASSERT(pc_->numberOfArgumentsNames > 0);
     pc_->numberOfArgumentsNames--;
+    // Currently when resuming Generators don't get their argument length set
+    // in the interpreter frame (see InterpreterStack::resumeGeneratorCallFrame,
+    // and its call to initCallFrame).
+    if (pc_->isGeneratorOrAsync()) {
+      pc_->sc()->setIneligibleForArgumentsLength();
+    }
     return handler_.newArgumentsLength(lhs, name);
   }
 

@@ -799,8 +799,14 @@ JS_PUBLIC_API void js::StopDrainingJobQueue(JSContext* cx) {
   cx->internalJobQueue->interrupt();
 }
 
+JS_PUBLIC_API void js::RestartDrainingJobQueue(JSContext* cx) {
+  MOZ_ASSERT(cx->internalJobQueue.ref());
+  cx->internalJobQueue->uninterrupt();
+}
+
 JS_PUBLIC_API void js::RunJobs(JSContext* cx) {
   MOZ_ASSERT(cx->jobQueue);
+  MOZ_ASSERT(cx->isEvaluatingModule == 0);
   cx->jobQueue->runJobs(cx);
   JS::ClearKeptObjects(cx);
 }
@@ -887,7 +893,6 @@ void InternalJobQueue::runJobs(JSContext* cx) {
     draining_ = false;
 
     if (interrupted_) {
-      interrupted_ = false;
       break;
     }
 
@@ -969,6 +974,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
 #ifdef DEBUG
       inUnsafeCallWithABI(this, false),
       hasAutoUnsafeCallWithABI(this, false),
+      liveArraySortDataInstances(this, 0),
 #endif
 #ifdef JS_SIMULATOR
       simulator_(this, nullptr),
@@ -994,6 +1000,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
 #else
       regExpSearcherLastLimit(this, 0),
 #endif
+      isEvaluatingModule(this, 0),
       frontendCollectionPool_(this),
       suppressProfilerSampling(false),
       tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
@@ -1040,6 +1047,9 @@ JSContext::~JSContext() {
 
   /* Free the stuff hanging off of cx. */
   MOZ_ASSERT(!resolvingList);
+
+  // Ensure we didn't leak memory for the ArraySortData vector.
+  MOZ_ASSERT(liveArraySortDataInstances == 0);
 
   if (dtoaState) {
     DestroyDtoaState(dtoaState);
@@ -1188,6 +1198,13 @@ bool JSContext::getPendingExceptionStack(MutableHandleValue rval) {
 SavedFrame* JSContext::getPendingExceptionStack() {
   return unwrappedExceptionStack();
 }
+
+#ifdef DEBUG
+const JS::Value& JSContext::getPendingExceptionUnwrapped() {
+  MOZ_ASSERT(isExceptionPending());
+  return unwrappedException();
+}
+#endif
 
 bool JSContext::isClosingGenerator() {
   return isExceptionPending() &&

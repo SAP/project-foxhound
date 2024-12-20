@@ -136,6 +136,14 @@ search:
         branch: default
         pref: browser.urlbar.trending.maxResultsNoSearchMode
       description: The maximum number of trending results mode outside search mode.
+    newSearchConfigEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.search.newSearchConfig.enabled
+      description: >-
+        Whether search-config-v2 is enabled for the user. This will only take
+        effect when the user restarts.
 
 # `searchConfiguration` is for search experiment features for items that require
 # isEarlyStartup to be true. These items may require a reload of the search
@@ -256,6 +264,13 @@ urlbar:
         will be able to click the "Show less frequently" command for Pocket
         suggestions. If undefined or zero, the user will be able to click the
         command without any limit.
+    potentialExposureKeywords:
+      type: json
+      fallbackPref: browser.urlbar.potentialExposureKeywords
+      description: >-
+        An array of keyword strings that will trigger the
+        `urlbar-potential-exposure` ping when the user types one during a urlbar
+        session.
     quickSuggestAllowPositionInSuggestions:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.allowPositionInSuggestions
@@ -429,10 +444,9 @@ urlbar:
         * Remove the forcast text from the summary text.
     yelpMinKeywordLength:
       type: int
-      fallbackPref: browser.urlbar.yelp.minKeywordLength
       description: >-
-        If the length of user's query is less than this value plus
-        "yelp.showLessFrequentlyCount", Yelp suggestion never be shown.
+        The minimum prefix length of a Yelp keyword the user must type to
+        trigger the suggestion.
     yelpFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.yelp.featureGate
@@ -826,6 +840,13 @@ pocketNewtab:
         browser.newtabpage.activity-stream.discoverystream.sendToPocket.enabled
       description: >-
         Decides what to do when a logged out user click "Save to Pocket" from a Pocket card.
+    wallpapers:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabWallpapers.enabled
+      description: >-
+        Turns on and off wallpaper support.
     recsPersonalized:
       type: boolean
       fallbackPref: >-
@@ -927,27 +948,36 @@ saveToPocket:
   description: The save to Pocket feature
   owner: sdowne@getpocket.com
   hasExposure: false
-  isEarlyStartup: true
   variables:
     emailButton:
       type: boolean
-      fallbackPref: extensions.pocket.refresh.emailButton.enabled
+      setPref:
+        branch: user
+        pref: extensions.pocket.refresh.emailButton.enabled
       description: Just for the new Pocket panels, enables the email signup button.
     hideRecentSaves:
       type: boolean
-      fallbackPref: extensions.pocket.refresh.hideRecentSaves.enabled
+      setPref:
+        branch: user
+        pref: extensions.pocket.refresh.hideRecentSaves.enabled
       description: Hides the recently saved section in the home panel.
     bffRecentSaves:
       type: boolean
-      fallbackPref: "extensions.pocket.bffRecentSaves"
+      setPref:
+        branch: user
+        pref: extensions.pocket.bffRecentSaves
       description: Use the new BFF Proxy Service instead of the legacy Pocket Service for Recent Saves
     bffApi:
       type: string
-      fallbackPref: "extensions.pocket.bffApi"
+      setPref:
+        branch: user
+        pref: extensions.pocket.bffApi
       description: BFF Proxy Service domain
     oAuthConsumerKeyBff:
       type: string
-      fallbackPref: "extensions.pocket.oAuthConsumerKeyBff"
+      setPref:
+        branch: user
+        pref: extensions.pocket.oAuthConsumerKeyBff
       description: BFF Proxy Service OAuth Consumer Key
 
 password-autocomplete:
@@ -1379,9 +1409,6 @@ gleanInternalSdk:
       type: int
       description: >-
         Maximum number of pings that can be sent in a 60 second interval
-    enableEventTimestamps:
-      type: "boolean"
-      description: "Enables precise event timestamps for Glean events"
 
 majorRelease2022:
   description: Major Release 2022
@@ -1544,6 +1571,12 @@ dohPrefs:
       setPref:
         branch: default
         pref: "network.trr_ui.show_fallback_warning_option"
+    nativeHTTPSRecords:
+      description: Whether we can perform native DNS HTTPS lookups
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.dns.native_https_query"
 
 dooh:
   description: "DNS over Oblivious HTTP"
@@ -2296,7 +2329,6 @@ updatePrompt:
   exposureDescription: >-
     Exposure is sent at most once per browsing session when an update
     notification prompt is displayed.
-  isEarlyStartup: true
   variables:
     showReleaseNotesLink:
       type: boolean
@@ -2648,3 +2680,69 @@ httpsFirst:
       setPref:
         branch: default
         pref: dom.security.https_only_fire_http_request_background_timer_ms
+
+contentRelevancy:
+  description: >-
+    A feature for interest-based content relevance ranking and personalization
+    for Firefox.
+  owner: disco-team@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: Enable this feature
+      type: boolean
+      fallbackPref: toolkit.contentRelevancy.enabled
+    maxInputUrls:
+      description: The maximum number of input URLs for interest classification
+      type: int
+    minInputUrls:
+      description: The minimal number of input URLs for interest classification
+      type: int
+    timerInterval:
+      description: >-
+        The interval (in seconds) of the background update timer for the content
+        relevancy manager
+      type: int
+      setPref:
+        branch: user
+        pref: toolkit.contentRelevancy.timerInterval
+
+tabPreview:
+  description: Prefs to control Tab Previews
+  owner: dwalker@mozilla.com
+  hasExposure: false
+  variables:
+    tabPreviewsEnabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.tabs.cardPreview.enabled
+      description: >-
+        When true, users will see the new card preview when hovering a tab, instead of the standard tooltip
+
+backupService:
+  description: Prefs to control the profile backup service
+  owner: mconley@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.backup.enabled
+      description: >-
+        When true, the profile backup service will be initialized soon after
+        startup.
+
+pqcrypto:
+  description: Prefs that control the use of post-quantum cryptography.
+  owner: jschanck@mozilla.com
+  hasExposure: false
+  variables:
+    tlsEnableXyber:
+      type: boolean
+      setPref:
+        branch: default
+        pref: security.tls.enable_kyber
+      description: >-
+        Whether to enable Xyber768 for TLS.

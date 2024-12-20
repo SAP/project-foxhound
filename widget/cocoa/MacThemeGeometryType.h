@@ -7,11 +7,7 @@
 
 enum MacThemeGeometryType {
   eThemeGeometryTypeTitlebar = 1,
-  eThemeGeometryTypeToolbar,
-  eThemeGeometryTypeToolbox,
   eThemeGeometryTypeWindowButtons,
-  eThemeGeometryTypeMenu,
-  eThemeGeometryTypeTooltip,
 };
 
 #endif

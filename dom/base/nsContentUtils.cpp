@@ -1802,6 +1802,17 @@ bool nsContentUtils::IsAlphanumericOrSymbol(uint32_t aChar) {
          cat == nsUGenCategory::kSymbol;
 }
 
+// static
+bool nsContentUtils::IsHyphen(uint32_t aChar) {
+  // Characters treated as hyphens for the purpose of "emergency" breaking
+  // when the content would otherwise overflow.
+  return aChar == uint32_t('-') ||  // HYPHEN-MINUS
+         aChar == 0x2010 ||         // HYPHEN
+         aChar == 0x2012 ||         // FIGURE DASH
+         aChar == 0x2013 ||         // EN DASH
+         aChar == 0x058A;           // ARMENIAN HYPHEN
+}
+
 /* static */
 bool nsContentUtils::IsHTMLWhitespace(char16_t aChar) {
   return aChar == char16_t(0x0009) || aChar == char16_t(0x000A) ||
@@ -3040,6 +3051,15 @@ nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorHelper(
   return GetCommonAncestorInternal(
       aContent1, aContent2,
       [](nsIContent* aContent) { return aContent->GetFlattenedTreeParent(); });
+}
+
+/* static */
+nsIContent* nsContentUtils::GetCommonFlattenedTreeAncestorForSelection(
+    nsIContent* aContent1, nsIContent* aContent2) {
+  return GetCommonAncestorInternal(
+      aContent1, aContent2, [](nsIContent* aContent) {
+        return aContent->GetFlattenedTreeParentNodeForSelection();
+      });
 }
 
 /* static */
@@ -11418,7 +11438,7 @@ int32_t nsContentUtils::CompareTreePosition(const nsINode* aNode1,
   MOZ_ASSERT(aNode1, "aNode1 must not be null");
   MOZ_ASSERT(aNode2, "aNode2 must not be null");
 
-  if (MOZ_UNLIKELY(NS_WARN_IF(aNode1 == aNode2))) {
+  if (NS_WARN_IF(aNode1 == aNode2)) {
     return 0;
   }
 
@@ -11516,7 +11536,8 @@ nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
                                                         bool aIsClonable,
                                                         bool aDelegatesFocus) {
   RefPtr<Element> host = mozilla::dom::Element::FromNodeOrNull(aHost);
-  if (!host) {
+  if (!host || host->GetShadowRoot()) {
+    // https://html.spec.whatwg.org/#parsing-main-inhead:shadow-host
     return nullptr;
   }
 
@@ -11526,9 +11547,10 @@ nsIContent* nsContentUtils::AttachDeclarativeShadowRoot(nsIContent* aHost,
   init.mSlotAssignment = SlotAssignmentMode::Named;
   init.mClonable = aIsClonable;
 
-  RefPtr shadowRoot = host->AttachShadow(init, IgnoreErrors(),
-                                         Element::ShadowRootDeclarative::Yes);
+  RefPtr shadowRoot = host->AttachShadow(init, IgnoreErrors());
   if (shadowRoot) {
+    shadowRoot->SetIsDeclarative(
+        nsGenericHTMLFormControlElement::ShadowRootDeclarative::Yes);
     // https://html.spec.whatwg.org/#parsing-main-inhead:available-to-element-internals
     shadowRoot->SetAvailableToElementInternals();
   }

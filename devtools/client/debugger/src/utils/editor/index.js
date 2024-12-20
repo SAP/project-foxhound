@@ -11,6 +11,7 @@ import { createEditor } from "./create-editor";
 
 import { isWasm, lineToWasmOffset, wasmOffsetToLine } from "../wasm";
 import { createLocation } from "../location";
+import { features } from "../prefs";
 
 let editor;
 
@@ -65,12 +66,20 @@ export function toEditorLine(sourceId, lineOrOffset) {
     return wasmOffsetToLine(sourceId, lineOrOffset) || 0;
   }
 
+  if (features.codemirrorNext) {
+    return lineOrOffset;
+  }
+
   return lineOrOffset ? lineOrOffset - 1 : 1;
 }
 
 export function fromEditorLine(sourceId, line, sourceIsWasm) {
   if (sourceIsWasm) {
     return lineToWasmOffset(sourceId, line) || 0;
+  }
+
+  if (features.codemirrorNext) {
+    return line;
   }
 
   return line + 1;
@@ -88,7 +97,13 @@ export function toEditorPosition(location) {
 }
 
 export function toSourceLine(sourceId, line) {
-  return isWasm(sourceId) ? lineToWasmOffset(sourceId, line) : line + 1;
+  if (isWasm(sourceId)) {
+    return lineToWasmOffset(sourceId, line);
+  }
+  if (features.codemirrorNext) {
+    return line;
+  }
+  return line + 1;
 }
 
 export function scrollToPosition(codeMirror, line, column) {

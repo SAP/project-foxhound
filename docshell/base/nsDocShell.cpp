@@ -144,6 +144,7 @@
 #include "nsIScriptChannel.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptSecurityManager.h"
+#include "nsScriptSecurityManager.h"
 #include "nsIScrollableFrame.h"
 #include "nsIScrollObserver.h"
 #include "nsISupportsPrimitives.h"
@@ -332,7 +333,6 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
       mAppType(nsIDocShell::APP_TYPE_UNKNOWN),
       mLoadType(0),
       mFailedLoadType(0),
-      mMetaViewportOverride(nsIDocShell::META_VIEWPORT_OVERRIDE_NONE),
       mChannelToDisconnectOnPageHide(0),
       mCreatingDocument(false),
 #ifdef DEBUG
@@ -2376,37 +2376,6 @@ nsDocShell::ClearCachedUserAgent() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDocShell::GetMetaViewportOverride(
-    MetaViewportOverride* aMetaViewportOverride) {
-  NS_ENSURE_ARG_POINTER(aMetaViewportOverride);
-
-  *aMetaViewportOverride = mMetaViewportOverride;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetMetaViewportOverride(
-    MetaViewportOverride aMetaViewportOverride) {
-  // We don't have a way to verify this coming from Javascript, so this check is
-  // still needed.
-  if (!(aMetaViewportOverride == META_VIEWPORT_OVERRIDE_NONE ||
-        aMetaViewportOverride == META_VIEWPORT_OVERRIDE_ENABLED ||
-        aMetaViewportOverride == META_VIEWPORT_OVERRIDE_DISABLED)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  mMetaViewportOverride = aMetaViewportOverride;
-
-  // Inform our presShell that it needs to re-check its need for a viewport
-  // override.
-  if (RefPtr<PresShell> presShell = GetPresShell()) {
-    presShell->MaybeRecreateMobileViewportManager(true);
-  }
-
-  return NS_OK;
-}
-
 /* virtual */
 int32_t nsDocShell::ItemType() { return mItemType; }
 
@@ -2586,10 +2555,6 @@ nsresult nsDocShell::SetDocLoaderParent(nsDocLoader* aParent) {
       value = false;
     }
     SetAllowDNSPrefetch(mAllowDNSPrefetch && value);
-
-    // We don't need to inherit metaViewportOverride, because the viewport
-    // is only relevant for the outermost nsDocShell, not for any iframes
-    // like this that might be embedded within it.
   }
 
   nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
@@ -8689,24 +8654,18 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       }
     }
 
-    auto isLoadableViaInternet = [](nsIURI* uri) {
-      return (uri && (net::SchemeIsHTTP(uri) || net::SchemeIsHTTPS(uri)));
-    };
-
-    if (isLoadableViaInternet(principalURI) &&
-        isLoadableViaInternet(mCurrentURI) && isLoadableViaInternet(newURI)) {
-      nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-      if (!NS_SUCCEEDED(
-              ssm->CheckSameOriginURI(newURI, principalURI, false, false)) ||
-          !NS_SUCCEEDED(ssm->CheckSameOriginURI(mCurrentURI, principalURI,
-                                                false, false))) {
-        MOZ_LOG(gSHLog, LogLevel::Debug,
-                ("nsDocShell[%p]: possible violation of the same origin policy "
-                 "during same document navigation",
-                 this));
-        aSameDocument = false;
-        return NS_OK;
-      }
+    if (nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(principalURI,
+                                                             newURI) ||
+        nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(principalURI,
+                                                             mCurrentURI) ||
+        nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(mCurrentURI,
+                                                             newURI)) {
+      aSameDocument = false;
+      MOZ_LOG(gSHLog, LogLevel::Debug,
+              ("nsDocShell[%p]: possible violation of the same origin policy "
+               "during same document navigation",
+               this));
+      return NS_OK;
     }
   }
 

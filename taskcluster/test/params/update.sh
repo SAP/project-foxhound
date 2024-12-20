@@ -70,12 +70,16 @@ for f in $files; do
             task=gecko.v2.${repo}.latest.taskgraph.decision-${task}
             service=index
             ;;
-        desktop-nightly)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-desktop
+        nightly-all)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-all
             service=index
             ;;
-        ship-geckoview)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-ship-geckoview
+        android-nightly)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-android
+            service=index
+            ;;
+        desktop-nightly)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-desktop
             service=index
             ;;
         push*|promote*|ship*)

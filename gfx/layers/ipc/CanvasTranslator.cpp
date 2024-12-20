@@ -21,6 +21,7 @@
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureClient.h"
+#include "mozilla/layers/VideoBridgeParent.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
@@ -112,6 +113,8 @@ static bool CreateAndMapShmem(RefPtr<ipc::SharedMemoryBasic>& aShmem,
   return true;
 }
 
+StaticRefPtr<gfx::SharedContextWebgl> CanvasTranslator::sSharedContext;
+
 bool CanvasTranslator::EnsureSharedContextWebgl() {
   if (!mSharedContext || mSharedContext->IsContextLost()) {
     if (mSharedContext) {
@@ -121,7 +124,14 @@ bool CanvasTranslator::EnsureSharedContextWebgl() {
         mRemoteTextureOwner->ClearRecycledTextures();
       }
     }
-    mSharedContext = gfx::SharedContextWebgl::Create();
+    // Check if the global shared context is still valid. If not, instantiate
+    // a new one before we try to use it.
+    if (!sSharedContext || sSharedContext->IsContextLost()) {
+      sSharedContext = gfx::SharedContextWebgl::Create();
+    }
+    mSharedContext = sSharedContext;
+    // If we can't get a new context, then the only thing left to do is block
+    // new canvases.
     if (!mSharedContext || mSharedContext->IsContextLost()) {
       mSharedContext = nullptr;
       BlockCanvas();
@@ -129,6 +139,13 @@ bool CanvasTranslator::EnsureSharedContextWebgl() {
     }
   }
   return true;
+}
+
+void CanvasTranslator::Shutdown() {
+  if (sSharedContext) {
+    gfx::CanvasRenderThread::Dispatch(NS_NewRunnableFunction(
+        "CanvasTranslator::Shutdown", []() { sSharedContext = nullptr; }));
+  }
 }
 
 mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
@@ -1144,6 +1161,13 @@ void CanvasTranslator::ClearTextureInfo() {
   mTextureInfo.clear();
   mDrawTargets.Clear();
   mSharedContext = nullptr;
+  // If the global shared context's ref is the last ref left, then clear out
+  // any internal caches and textures from the context, but still keep it
+  // alive. This saves on startup costs while not contributing significantly
+  // to memory usage.
+  if (sSharedContext && sSharedContext->hasOneRef()) {
+    sSharedContext->ClearCaches();
+  }
   mBaseDT = nullptr;
   if (mReferenceTextureData) {
     mReferenceTextureData->Unlock();
@@ -1161,6 +1185,46 @@ void CanvasTranslator::ClearTextureInfo() {
 already_AddRefed<gfx::SourceSurface> CanvasTranslator::LookupExternalSurface(
     uint64_t aKey) {
   return mSharedSurfacesHolder->Get(wr::ToExternalImageId(aKey));
+}
+
+// Check if the surface descriptor describes a GPUVideo texture for which we
+// only have an opaque source/handle from SurfaceDescriptorRemoteDecoder to
+// derive the actual texture from.
+static bool SDIsNullRemoteDecoder(const SurfaceDescriptor& sd) {
+  return sd.type() == SurfaceDescriptor::TSurfaceDescriptorGPUVideo &&
+         sd.get_SurfaceDescriptorGPUVideo()
+                 .get_SurfaceDescriptorRemoteDecoder()
+                 .subdesc()
+                 .type() == RemoteDecoderVideoSubDescriptor::Tnull_t;
+}
+
+already_AddRefed<gfx::SourceSurface>
+CanvasTranslator::LookupSourceSurfaceFromSurfaceDescriptor(
+    const SurfaceDescriptor& aDesc) {
+  if (!SDIsNullRemoteDecoder(aDesc)) {
+    return nullptr;
+  }
+
+  const auto& sdrd = aDesc.get_SurfaceDescriptorGPUVideo()
+                         .get_SurfaceDescriptorRemoteDecoder();
+  RefPtr<VideoBridgeParent> parent =
+      VideoBridgeParent::GetSingleton(sdrd.source());
+  if (!parent) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    gfxCriticalNote << "TexUnpackSurface failed to get VideoBridgeParent";
+    return nullptr;
+  }
+  RefPtr<TextureHost> texture =
+      parent->LookupTexture(mContentId, sdrd.handle());
+  if (!texture) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    gfxCriticalNote << "TexUnpackSurface failed to get TextureHost";
+    return nullptr;
+  }
+
+  RefPtr<gfx::DataSourceSurface> surf = texture->GetAsSurface();
+
+  return surf.forget();
 }
 
 void CanvasTranslator::CheckpointReached() { CheckAndSignalWriter(); }

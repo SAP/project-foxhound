@@ -169,8 +169,7 @@ class StoreBuffer {
 
   struct WholeCellBuffer {
     UniquePtr<LifoAlloc> storage_;
-    ArenaCellSet* stringHead_ = nullptr;
-    ArenaCellSet* nonStringHead_ = nullptr;
+    ArenaCellSet* head_ = nullptr;
     const Cell* last_ = nullptr;
 
     WholeCellBuffer() = default;
@@ -180,11 +179,9 @@ class StoreBuffer {
 
     WholeCellBuffer(WholeCellBuffer&& other)
         : storage_(std::move(other.storage_)),
-          stringHead_(other.stringHead_),
-          nonStringHead_(other.nonStringHead_),
+          head_(other.head_),
           last_(other.last_) {
-      other.stringHead_ = nullptr;
-      other.nonStringHead_ = nullptr;
+      other.head_ = nullptr;
       other.last_ = nullptr;
     }
     WholeCellBuffer& operator=(WholeCellBuffer&& other) {
@@ -214,12 +211,19 @@ class StoreBuffer {
     }
 
     bool isEmpty() const {
-      MOZ_ASSERT_IF(!stringHead_ && !nonStringHead_,
-                    !storage_ || storage_->isEmpty());
-      return !stringHead_ && !nonStringHead_;
+      MOZ_ASSERT_IF(!head_, !storage_ || storage_->isEmpty());
+      return !head_;
     }
 
     const Cell** lastBufferedPtr() { return &last_; }
+
+    CellSweepSet releaseCellSweepSet() {
+      CellSweepSet set;
+      std::swap(storage_, set.storage_);
+      std::swap(head_, set.head_);
+      last_ = nullptr;
+      return set;
+    }
 
    private:
     ArenaCellSet* allocateCellSet(Arena* arena);
@@ -339,9 +343,10 @@ class StoreBuffer {
     bool operator==(const ValueEdge& other) const { return edge == other.edge; }
     bool operator!=(const ValueEdge& other) const { return edge != other.edge; }
 
+    bool isGCThing() const { return edge->isGCThing(); }
+
     Cell* deref() const {
-      return edge->isGCThing() ? static_cast<Cell*>(edge->toGCThing())
-                               : nullptr;
+      return isGCThing() ? static_cast<Cell*>(edge->toGCThing()) : nullptr;
     }
 
     bool maybeInRememberedSet(const Nursery& nursery) const {
@@ -449,10 +454,10 @@ class StoreBuffer {
       return edge != other.edge;
     }
 
+    bool isGCThing() const { return edge->isGCThing(); }
+
     Cell* deref() const {
-      return edge->isGCThing() ? static_cast<Cell*>(edge->toGCThing())
-                               : nullptr;
-      return nullptr;
+      return isGCThing() ? static_cast<Cell*>(edge->toGCThing()) : nullptr;
     }
 
     bool maybeInRememberedSet(const Nursery& nursery) const {
@@ -525,10 +530,6 @@ class StoreBuffer {
 #endif
 
  public:
-#ifdef DEBUG
-  bool markingNondeduplicatable;
-#endif
-
   explicit StoreBuffer(JSRuntime* rt);
 
   StoreBuffer(const StoreBuffer& other) = delete;
@@ -629,6 +630,10 @@ class StoreBuffer {
   }
   void traceGenericEntries(JSTracer* trc) { bufferGeneric.trace(trc, this); }
 
+  gc::CellSweepSet releaseCellSweepSet() {
+    return bufferWholeCell.releaseCellSweepSet();
+  }
+
   /* For use by our owned buffers and for testing. */
   void setAboutToOverflow(JS::GCReason);
 
@@ -639,6 +644,7 @@ class StoreBuffer {
 };
 
 // A set of cells in an arena used to implement the whole cell store buffer.
+// Also used to store a set of cells that need to be swept.
 class ArenaCellSet {
   friend class StoreBuffer;
 
@@ -693,7 +699,17 @@ class ArenaCellSet {
 
   WordT getWord(size_t wordIndex) const { return bits.getWord(wordIndex); }
 
-  void trace(TenuringTracer& mover);
+  void setWord(size_t wordIndex, WordT value) {
+    bits.setWord(wordIndex, value);
+  }
+
+  // Returns the list of ArenaCellSets that need to be swept.
+  ArenaCellSet* trace(TenuringTracer& mover);
+
+  // At the end of a minor GC, sweep through all tenured dependent strings that
+  // may point to nursery-allocated chars to update their pointers in case the
+  // base string moved its chars.
+  void sweepDependentStrings();
 
   // Sentinel object used for all empty sets.
   //

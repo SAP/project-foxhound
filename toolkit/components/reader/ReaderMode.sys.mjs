@@ -273,11 +273,11 @@ export var ReaderMode = {
       "READER_MODE_DOWNLOAD_RESULT"
     );
     return new Promise((resolve, reject) => {
-      let xhr = new XMLHttpRequest();
+      let xhr = new XMLHttpRequest({ mozAnon: false });
       xhr.open("GET", url, true);
       xhr.onerror = evt => reject(evt.error);
       xhr.responseType = docContentType === "text/plain" ? "text" : "document";
-      xhr.onload = evt => {
+      xhr.onload = () => {
         if (xhr.status !== 200) {
           reject("Reader mode XHR failed with status: " + xhr.status);
           histogram.add(DOWNLOAD_ERROR_XHR);

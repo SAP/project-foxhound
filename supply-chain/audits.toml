@@ -1329,7 +1329,7 @@ who = [
     "Erich Gubler <erichdongubler@gmail.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "0.7.0 -> 0.19.0@git:6040820099bc72b827a6a5f53d66dda3e301f944"
+delta = "0.7.0 -> 0.19.0@git:0c5bebca514eb06d9387f87666c1c658f3f673b4"
 importable = false
 
 [[audits.darling]]
@@ -1532,6 +1532,12 @@ delta = "1.7.0 -> 1.8.0"
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "1.8.0 -> 1.8.1"
+
+[[audits.embed-manifest]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "1.4.0"
+notes = "Necessary dependencies, all environment variable access is for build script vars set by cargo."
 
 [[audits.encoding_c]]
 who = "Henri Sivonen <hsivonen@hsivonen.fi>"
@@ -2387,6 +2393,12 @@ version = "0.5.4"
 notes = "I own this crate (I am contain-rs) and 0.5.4 passes miri. This code is very old and used by lots of people, so I'm pretty confident in it, even though it's in maintenance-mode and missing some nice-to-have APIs."
 
 [[audits.linked-hash-map]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.5.4 -> 0.5.6"
+notes = "New unsafe code has debug assertions and meets invariants. All other changes are formatting-related."
+
+[[audits.linked-hash-map]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-run"
 delta = "0.5.4 -> 0.5.6"
@@ -2671,7 +2683,7 @@ who = [
     "Erich Gubler <erichdongubler@gmail.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "0.14.0 -> 0.19.0@git:6040820099bc72b827a6a5f53d66dda3e301f944"
+delta = "0.14.0 -> 0.19.0@git:0c5bebca514eb06d9387f87666c1c658f3f673b4"
 importable = false
 
 [[audits.net2]]
@@ -3738,6 +3750,11 @@ who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.15.2 -> 0.16.0"
 
+[[audits.textwrap]]
+who = "Jan-Erik Rediger <jrediger@mozilla.com>"
+criteria = "safe-to-deploy"
+delta = "0.16.0 -> 0.16.1"
+
 [[audits.thin-vec]]
 who = "Aria Beingessner <a.beingessner@gmail.com>"
 criteria = "safe-to-deploy"
@@ -4485,7 +4502,7 @@ who = [
     "Erich Gubler <erichdongubler@gmail.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "0.18.0 -> 0.19.0@git:6040820099bc72b827a6a5f53d66dda3e301f944"
+delta = "0.18.0 -> 0.19.0@git:0c5bebca514eb06d9387f87666c1c658f3f673b4"
 importable = false
 
 [[audits.wgpu-hal]]
@@ -4539,7 +4556,7 @@ who = [
     "Erich Gubler <erichdongubler@gmail.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "0.18.0 -> 0.19.0@git:6040820099bc72b827a6a5f53d66dda3e301f944"
+delta = "0.18.0 -> 0.19.0@git:0c5bebca514eb06d9387f87666c1c658f3f673b4"
 importable = false
 
 [[audits.wgpu-types]]
@@ -4593,7 +4610,7 @@ who = [
     "Erich Gubler <erichdongubler@gmail.com>",
 ]
 criteria = "safe-to-deploy"
-delta = "0.18.0 -> 0.19.0@git:6040820099bc72b827a6a5f53d66dda3e301f944"
+delta = "0.18.0 -> 0.19.0@git:0c5bebca514eb06d9387f87666c1c658f3f673b4"
 importable = false
 
 [[audits.whatsys]]
@@ -4707,6 +4724,15 @@ notes = "This is custom derives for `ZeroVec` that is from zerovec crate. Althou
 who = "Makoto Kato <m_kato@ga2.so-net.ne.jp>"
 criteria = "safe-to-deploy"
 version = "0.10.1"
+
+[[audits.zip]]
+who = "Alex Franchuk <afranchuk@mozilla.com>"
+criteria = "safe-to-deploy"
+version = "0.6.4"
+notes = """
+No unsafe code nor unwarranted dependencies. Side-effectful std usage is only
+present where expected (zip archive reading/writing and unpacking)
+"""
 
 [[audits.zip]]
 who = "Mike Hommey <mh+mozilla@glandium.org>"
@@ -5107,6 +5133,24 @@ criteria = "safe-to-deploy"
 user-id = 1 # Alex Crichton (alexcrichton)
 start = "2020-06-03"
 end = "2024-05-05"
+
+[[trusted.wasm-encoder]]
+criteria = "safe-to-deploy"
+user-id = 73222 # wasmtime-publish
+start = "2024-02-15"
+end = "2025-03-11"
+
+[[trusted.wasm-smith]]
+criteria = "safe-to-deploy"
+user-id = 73222 # wasmtime-publish
+start = "2024-02-15"
+end = "2025-03-11"
+
+[[trusted.wast]]
+criteria = "safe-to-deploy"
+user-id = 73222 # wasmtime-publish
+start = "2024-02-15"
+end = "2025-03-11"
 
 [[trusted.winapi-util]]
 criteria = "safe-to-deploy"

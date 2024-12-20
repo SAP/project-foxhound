@@ -4,44 +4,45 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(MozPromise_h_)
-#  define MozPromise_h_
+#ifndef XPCOM_THREADS_MOZPROMISE_H_
+#define XPCOM_THREADS_MOZPROMISE_H_
 
-#  include <type_traits>
-#  include <utility>
+#include <type_traits>
+#include <utility>
 
-#  include "mozilla/ErrorNames.h"
-#  include "mozilla/Logging.h"
-#  include "mozilla/Maybe.h"
-#  include "mozilla/Monitor.h"
-#  include "mozilla/Mutex.h"
-#  include "mozilla/RefPtr.h"
-#  include "mozilla/UniquePtr.h"
-#  include "mozilla/Variant.h"
-#  include "nsIDirectTaskDispatcher.h"
-#  include "nsISerialEventTarget.h"
-#  include "nsTArray.h"
-#  include "nsThreadUtils.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/ErrorNames.h"
+#include "mozilla/Logging.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Monitor.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/Variant.h"
+#include "nsIDirectTaskDispatcher.h"
+#include "nsISerialEventTarget.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
-#  ifdef MOZ_WIDGET_ANDROID
-#    include "mozilla/jni/GeckoResultUtils.h"
-#  endif
+#ifdef MOZ_WIDGET_ANDROID
+#  include "mozilla/jni/GeckoResultUtils.h"
+#endif
 
-#  if MOZ_DIAGNOSTIC_ASSERT_ENABLED
-#    define PROMISE_DEBUG
-#  endif
+#if MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#  define PROMISE_DEBUG
+#endif
 
-#  ifdef PROMISE_DEBUG
-#    define PROMISE_ASSERT MOZ_RELEASE_ASSERT
-#  else
-#    define PROMISE_ASSERT(...) \
-      do {                      \
-      } while (0)
-#  endif
+#ifdef PROMISE_DEBUG
+#  define PROMISE_ASSERT MOZ_RELEASE_ASSERT
+#else
+#  define PROMISE_ASSERT(...) \
+    do {                      \
+    } while (0)
+#endif
 
-#  if DEBUG
-#    include "nsPrintfCString.h"
-#  endif
+#if DEBUG
+#  include "nsPrintfCString.h"
+#endif
 
 namespace mozilla {
 
@@ -51,8 +52,8 @@ class Promise;
 
 extern LazyLogModule gMozPromiseLog;
 
-#  define PROMISE_LOG(x, ...) \
-    MOZ_LOG(gMozPromiseLog, mozilla::LogLevel::Debug, (x, ##__VA_ARGS__))
+#define PROMISE_LOG(x, ...) \
+  MOZ_LOG(gMozPromiseLog, mozilla::LogLevel::Debug, (x, ##__VA_ARGS__))
 
 namespace detail {
 template <typename F>
@@ -235,10 +236,10 @@ class MozPromise : public MozPromiseBase {
         mMutex("MozPromise Mutex"),
         mHaveRequest(false),
         mIsCompletionPromise(aIsCompletionPromise)
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
         ,
         mMagic4(&mMutex)
-#  endif
+#endif
   {
     PROMISE_LOG("%s creating MozPromise (%p)", mCreationSite, this);
   }
@@ -501,12 +502,12 @@ class MozPromise : public MozPromiseBase {
       MOZ_ASSERT(aResponseTarget);
     }
 
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
     ~ThenValueBase() {
       mMagic1 = 0;
       mMagic2 = 0;
     }
-#  endif
+#endif
 
     void AssertIsDead() {
       PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic);
@@ -520,7 +521,7 @@ class MozPromise : public MozPromiseBase {
       if (MozPromiseBase* p = CompletionPromise()) {
         p->AssertIsDead();
       } else {
-#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
         if (MOZ_UNLIKELY(!Request::mDisconnected)) {
           MOZ_CRASH_UNSAFE_PRINTF(
               "MozPromise::ThenValue created from '%s' destroyed without being "
@@ -529,7 +530,7 @@ class MozPromise : public MozPromiseBase {
               mDispatchRv ? GetStaticErrorName(*mDispatchRv)
                           : "not dispatched");
         }
-#  endif
+#endif
       }
     }
 
@@ -620,23 +621,23 @@ class MozPromise : public MozPromiseBase {
     }
 
     void SetDispatchRv(nsresult aRv) {
-#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
       mDispatchRv = Some(aRv);
-#  endif
+#endif
     }
 
     nsCOMPtr<nsISerialEventTarget>
         mResponseTarget;  // May be released on any thread.
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
     uint32_t mMagic1 = sMagic;
-#  endif
+#endif
     const char* mCallSite;
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
     uint32_t mMagic2 = sMagic;
-#  endif
-#  ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#endif
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     Maybe<nsresult> mDispatchRv;
-#  endif
+#endif
   };
 
   /*
@@ -935,6 +936,98 @@ class MozPromise : public MozPromiseBase {
     RefPtr<typename PromiseType::Private> mCompletionPromise;
   };
 
+  template <typename ResolveFunction>
+  class MapValue final : public ThenValueBase {
+    friend class ThenCommand<MapValue>;
+    constexpr static const bool SupportChaining = true;
+    using ResolveValueT_ = std::invoke_result_t<ResolveFunction, ResolveValueT>;
+    using PromiseType = MozPromise<ResolveValueT_, RejectValueT, IsExclusive>;
+
+   public:
+    explicit MapValue(nsISerialEventTarget* aResponseTarget,
+                      ResolveFunction&& f, const char* aCallSite)
+        : ThenValueBase(aResponseTarget, aCallSite),
+          mResolveFunction(Some(std::forward<ResolveFunction>(f))) {}
+
+   protected:
+    void Disconnect() override {
+      ThenValueBase::Disconnect();
+      mResolveFunction.reset();
+    }
+
+    MozPromiseBase* CompletionPromise() const override {
+      return mCompletionPromise;
+    }
+
+    void DoResolveOrRejectInternal(ResolveOrRejectValue& aValue) override {
+      // Note that promise-chaining is always supported here; this function can
+      // only transform from MozPromise<A, B, k> to MozPromise<A2, B, k>.
+      auto value = MaybeMove(aValue);
+      typename PromiseType::ResolveOrRejectValue output;
+
+      if (value.IsResolve()) {
+        output.SetResolve((*mResolveFunction)(std::move(value.ResolveValue())));
+      } else {
+        output.SetReject(std::move(value.RejectValue()));
+      }
+
+      if (mCompletionPromise) {
+        mCompletionPromise->ResolveOrReject(std::move(output),
+                                            ThenValueBase::mCallSite);
+      }
+    }
+
+   private:
+    Maybe<ResolveFunction> mResolveFunction;
+    RefPtr<typename PromiseType::Private> mCompletionPromise;
+  };
+
+  template <typename RejectFunction>
+  class MapErrValue final : public ThenValueBase {
+    friend class ThenCommand<MapErrValue>;
+    constexpr static const bool SupportChaining = true;
+    using RejectValueT_ = std::invoke_result_t<RejectFunction, RejectValueT>;
+    using PromiseType = MozPromise<ResolveValueT, RejectValueT_, IsExclusive>;
+
+   public:
+    explicit MapErrValue(nsISerialEventTarget* aResponseTarget,
+                         RejectFunction&& f, const char* aCallSite)
+        : ThenValueBase(aResponseTarget, aCallSite),
+          mRejectFunction(Some(std::forward<RejectFunction>(f))) {}
+
+   protected:
+    void Disconnect() override {
+      ThenValueBase::Disconnect();
+      mRejectFunction.reset();
+    }
+
+    MozPromiseBase* CompletionPromise() const override {
+      return mCompletionPromise;
+    }
+
+    void DoResolveOrRejectInternal(ResolveOrRejectValue& aValue) override {
+      // Note that promise-chaining is always supported here; this function can
+      // only transform from MozPromise<A, B, k> to MozPromise<A, B2, k>.
+      auto value = MaybeMove(aValue);
+      typename PromiseType::ResolveOrRejectValue output;
+
+      if (value.IsResolve()) {
+        output.SetResolve(std::move(value.ResolveValue()));
+      } else {
+        output.SetReject((*mRejectFunction)(std::move(value.RejectValue())));
+      }
+
+      if (mCompletionPromise) {
+        mCompletionPromise->ResolveOrReject(std::move(output),
+                                            ThenValueBase::mCallSite);
+      }
+    }
+
+   private:
+    Maybe<RejectFunction> mRejectFunction;
+    RefPtr<typename PromiseType::Private> mCompletionPromise;
+  };
+
  public:
   void ThenInternal(already_AddRefed<ThenValueBase> aThenValue,
                     const char* aCallSite) {
@@ -957,17 +1050,21 @@ class MozPromise : public MozPromiseBase {
 
  protected:
   /*
-   * A command object to store all information needed to make a request to
-   * the promise. This allows us to delay the request until further use is
-   * known (whether it is ->Then() again for more promise chaining or ->Track()
-   * to terminate chaining and issue the request).
+   * A command object to store all information needed to make a request to the
+   * promise. This allows us to delay the request until further use is known
+   * (whether it is ->Then() again for more promise chaining or ->Track() to
+   * terminate chaining and issue the request).
    *
-   * This allows a unified syntax for promise chaining and disconnection
-   * and feels more like its JS counterpart.
+   * This allows a unified syntax for promise chaining and disconnection, and
+   * feels more like its JS counterpart.
+   *
+   * Note that a ThenCommand is always exclusive, even if its source or result
+   * promises are not. To attach multiple continuations, explicitly convert it
+   * to a promise first.
    */
   template <typename ThenValueType>
-  class ThenCommand {
-    // Allow Promise1::ThenCommand to access the private constructor,
+  class MOZ_TEMPORARY_CLASS ThenCommand {
+    // Allow Promise1::ThenCommand to access the private constructor
     // Promise2::ThenCommand(ThenCommand&&).
     template <typename, typename, bool>
     friend class MozPromise;
@@ -1016,6 +1113,20 @@ class MozPromise : public MozPromiseBase {
           std::forward<Ts>(aArgs)...);
     }
 
+    template <typename... Ts>
+    auto Map(Ts&&... aArgs) -> decltype(std::declval<PromiseType>().Map(
+        std::forward<Ts>(aArgs)...)) {
+      return static_cast<RefPtr<PromiseType>>(*this)->Map(
+          std::forward<Ts>(aArgs)...);
+    }
+
+    template <typename... Ts>
+    auto MapErr(Ts&&... aArgs) -> decltype(std::declval<PromiseType>().MapErr(
+        std::forward<Ts>(aArgs)...)) {
+      return static_cast<RefPtr<PromiseType>>(*this)->MapErr(
+          std::forward<Ts>(aArgs)...);
+    }
+
     void Track(MozPromiseRequestHolder<MozPromise>& aRequestHolder) {
       aRequestHolder.Track(do_AddRef(mThenValue));
       mReceiver->ThenInternal(mThenValue.forget(), mCallSite);
@@ -1050,6 +1161,27 @@ class MozPromise : public MozPromiseBase {
     RefPtr<ThenValueType> thenValue =
         new ThenValueType(aResponseTarget, std::move(aFunctions)..., aCallSite);
     return ReturnType(aCallSite, thenValue.forget(), this);
+  }
+
+  // Shorthand for a `Then` which simply forwards the reject-value, but performs
+  // some additional work with the resolve-value.
+  template <typename Function>
+  auto Map(nsISerialEventTarget* aResponseTarget, const char* aCallSite,
+           Function&& function) {
+    RefPtr<MapValue<Function>> thenValue = new MapValue<Function>(
+        aResponseTarget, std::forward<Function>(function), aCallSite);
+    return ThenCommand<MapValue<Function>>(aCallSite, thenValue.forget(), this);
+  }
+
+  // Shorthand for a `Then` which simply forwards the resolve-value, but
+  // performs some additional work with the reject-value.
+  template <typename Function>
+  auto MapErr(nsISerialEventTarget* aResponseTarget, const char* aCallSite,
+              Function&& function) {
+    RefPtr<MapErrValue<Function>> thenValue = new MapErrValue<Function>(
+        aResponseTarget, std::forward<Function>(function), aCallSite);
+    return ThenCommand<MapErrValue<Function>>(aCallSite, thenValue.forget(),
+                                              this);
   }
 
   void ChainTo(already_AddRefed<Private> aChainedPromise,
@@ -1088,7 +1220,7 @@ class MozPromise : public MozPromiseBase {
     }
   }
 
-#  ifdef MOZ_WIDGET_ANDROID
+#ifdef MOZ_WIDGET_ANDROID
   // Creates a C++ MozPromise from its Java counterpart, GeckoResult.
   [[nodiscard]] static RefPtr<MozPromise> FromGeckoResult(
       java::GeckoResult::Param aGeckoResult) {
@@ -1103,7 +1235,7 @@ class MozPromise : public MozPromiseBase {
     aGeckoResult->NativeThen(resolve, reject);
     return p;
   }
-#  endif
+#endif
 
   // Note we expose the function AssertIsDead() instead of IsDead() since
   // checking IsDead() is a data race in the situation where the request is not
@@ -1165,12 +1297,12 @@ class MozPromise : public MozPromiseBase {
       MOZ_ASSERT(mThenValues.IsEmpty());
       MOZ_ASSERT(mChainedPromises.IsEmpty());
     }
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
     mMagic1 = 0;
     mMagic2 = 0;
     mMagic3 = 0;
     mMagic4 = nullptr;
-#  endif
+#endif
   };
 
   const char* mCreationSite;  // For logging
@@ -1179,24 +1311,24 @@ class MozPromise : public MozPromiseBase {
   bool mUseSynchronousTaskDispatch = false;
   bool mUseDirectTaskDispatch = false;
   uint32_t mPriority = nsIRunnablePriority::PRIORITY_NORMAL;
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
   uint32_t mMagic1 = sMagic;
-#  endif
+#endif
   // Try shows we never have more than 3 elements when IsExclusive is false.
   // So '3' is a good value to avoid heap allocation in most cases.
   AutoTArray<RefPtr<ThenValueBase>, IsExclusive ? 1 : 3> mThenValues;
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
   uint32_t mMagic2 = sMagic;
-#  endif
+#endif
   nsTArray<RefPtr<Private>> mChainedPromises;
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
   uint32_t mMagic3 = sMagic;
-#  endif
+#endif
   bool mHaveRequest;
   const bool mIsCompletionPromise;
-#  ifdef PROMISE_DEBUG
+#ifdef PROMISE_DEBUG
   void* mMagic4;
-#  endif
+#endif
 };
 
 template <typename ResolveValueT, typename RejectValueT, bool IsExclusive>
@@ -1718,9 +1850,9 @@ static auto InvokeAsync(nsISerialEventTarget* aTarget, const char* aCallerName,
   return p;
 }
 
-#  undef PROMISE_LOG
-#  undef PROMISE_ASSERT
-#  undef PROMISE_DEBUG
+#undef PROMISE_LOG
+#undef PROMISE_ASSERT
+#undef PROMISE_DEBUG
 
 }  // namespace mozilla
 

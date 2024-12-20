@@ -7,10 +7,6 @@ const { PermissionTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/PermissionTestUtils.sys.mjs"
 );
 
-let useOldClearHistoryDialog = Services.prefs.getBoolPref(
-  "privacy.sanitize.useOldClearHistoryDialog"
-);
-
 async function testClearData(clearSiteData, clearCache) {
   PermissionTestUtils.add(
     TEST_QUOTA_USAGE_ORIGIN,
@@ -64,9 +60,7 @@ async function testClearData(clearSiteData, clearCache) {
   let doc = gBrowser.selectedBrowser.contentDocument;
   let clearSiteDataButton = doc.getElementById("clearSiteDataButton");
 
-  let url = useOldClearHistoryDialog
-    ? "chrome://browser/content/preferences/dialogs/clearSiteData.xhtml"
-    : "chrome://browser/content/sanitize_v2.xhtml";
+  let url = "chrome://browser/content/preferences/dialogs/clearSiteData.xhtml";
   let dialogOpened = promiseLoadSubDialog(url);
   clearSiteDataButton.doCommand();
   let dialogWin = await dialogOpened;
@@ -78,10 +72,8 @@ async function testClearData(clearSiteData, clearCache) {
   // since we've had cache intermittently changing under our feet.
   let [, convertedCacheUnit] = DownloadUtils.convertByteUnits(cacheUsage);
 
-  let cookiesCheckboxId = useOldClearHistoryDialog
-    ? "clearSiteData"
-    : "cookiesAndStorage";
-  let cacheCheckboxId = useOldClearHistoryDialog ? "clearCache" : "cache";
+  let cookiesCheckboxId = "clearSiteData";
+  let cacheCheckboxId = "clearCache";
   let clearSiteDataCheckbox =
     dialogWin.document.getElementById(cookiesCheckboxId);
   let clearCacheCheckbox = dialogWin.document.getElementById(cacheCheckboxId);
@@ -106,28 +98,13 @@ async function testClearData(clearSiteData, clearCache) {
   clearSiteDataCheckbox.checked = clearSiteData;
   clearCacheCheckbox.checked = clearCache;
 
-  if (!useOldClearHistoryDialog) {
-    // The new clear history dialog has a seperate checkbox for site settings
-    let siteSettingsCheckbox =
-      dialogWin.document.getElementById("siteSettings");
-    siteSettingsCheckbox.checked = clearSiteData;
-    // select clear everything to match the old dialog boxes behaviour for this test
-    let timespanSelection = dialogWin.document.getElementById(
-      "sanitizeDurationChoice"
-    );
-    timespanSelection.value = 0;
-  }
   // Some additional promises/assertions to wait for
   // when deleting site data.
   let acceptPromise;
   let updatePromise;
   let cookiesClearedPromise;
   if (clearSiteData) {
-    // the new clear history dialog does not have a extra prompt
-    // to clear site data after clicking clear
-    if (useOldClearHistoryDialog) {
-      acceptPromise = BrowserTestUtils.promiseAlertDialogOpen("accept");
-    }
+    acceptPromise = BrowserTestUtils.promiseAlertDialogOpen("accept");
     updatePromise = promiseSiteDataManagerSitesUpdated();
     cookiesClearedPromise = promiseCookiesCleared();
   }
@@ -137,7 +114,7 @@ async function testClearData(clearSiteData, clearCache) {
   let clearButton = dialogWin.document
     .querySelector("dialog")
     .getButton("accept");
-  if (!clearSiteData && !clearCache && useOldClearHistoryDialog) {
+  if (!clearSiteData && !clearCache) {
     // Simulate user input on one of the checkboxes to trigger the event listener for
     // disabling the clearButton.
     clearCacheCheckbox.doCommand();
@@ -158,7 +135,7 @@ async function testClearData(clearSiteData, clearCache) {
 
   // For site data we display an extra warning dialog, make sure
   // to accept it.
-  if (clearSiteData && useOldClearHistoryDialog) {
+  if (clearSiteData) {
     await acceptPromise;
   }
 
@@ -221,6 +198,12 @@ async function testClearData(clearSiteData, clearCache) {
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
   await SiteDataManager.removeAll();
 }
+
+add_setup(function () {
+  SpecialPowers.pushPrefEnv({
+    set: [["privacy.sanitize.useOldClearHistoryDialog", true]],
+  });
+});
 
 // Test opening the "Clear All Data" dialog and cancelling.
 add_task(async function () {

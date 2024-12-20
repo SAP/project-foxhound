@@ -229,7 +229,7 @@ SubDialog.prototype = {
       bubbles: true,
       detail: { dialog: this, abort: true },
     });
-    this._frame.contentWindow.close();
+    this._frame.contentWindow?.close();
     // It's possible that we're aborting this dialog before we've had a
     // chance to set up the contentWindow.close function override in
     // _onContentLoaded. If so, call this.close() directly to clean things
@@ -419,6 +419,11 @@ SubDialog.prototype = {
       );
     };
 
+    // Defining resizeDialog on the contentWindow object to resize dialogs when prompted
+    this._frame.contentWindow.resizeDialog = () => {
+      return this.resizeDialog();
+    };
+
     // Make window.close calls work like dialog closing.
     let oldClose = this._frame.contentWindow.close;
     this._frame.contentWindow.close = () => {
@@ -484,6 +489,33 @@ SubDialog.prototype = {
   },
 
   async resizeDialog() {
+    this.resizeHorizontally();
+    this.resizeVertically();
+
+    this._overlay.dispatchEvent(
+      new CustomEvent("dialogopen", {
+        bubbles: true,
+        detail: { dialog: this },
+      })
+    );
+    this._overlay.style.visibility = "inherit";
+    this._overlay.style.opacity = ""; // XXX: focus hack continued from _onContentLoaded
+
+    if (this._box.getAttribute("resizable") == "true") {
+      this._onResize = this._onResize.bind(this);
+      this._resizeObserver = new this._window.MutationObserver(this._onResize);
+      this._resizeObserver.observe(this._box, { attributes: true });
+    }
+
+    this._trapFocus();
+
+    this._resizeCallback?.({
+      title: this._titleElement,
+      frame: this._frame,
+    });
+  },
+
+  resizeHorizontally() {
     // Do this on load to wait for the CSS to load and apply before calculating the size.
     let docEl = this._frame.contentDocument.documentElement;
 
@@ -529,30 +561,6 @@ SubDialog.prototype = {
       boxMinWidth = `min(80vw, ${boxMinWidth})`;
     }
     this._box.style.minWidth = boxMinWidth;
-
-    this.resizeVertically();
-
-    this._overlay.dispatchEvent(
-      new CustomEvent("dialogopen", {
-        bubbles: true,
-        detail: { dialog: this },
-      })
-    );
-    this._overlay.style.visibility = "inherit";
-    this._overlay.style.opacity = ""; // XXX: focus hack continued from _onContentLoaded
-
-    if (this._box.getAttribute("resizable") == "true") {
-      this._onResize = this._onResize.bind(this);
-      this._resizeObserver = new this._window.MutationObserver(this._onResize);
-      this._resizeObserver.observe(this._box, { attributes: true });
-    }
-
-    this._trapFocus();
-
-    this._resizeCallback?.({
-      title: this._titleElement,
-      frame: this._frame,
-    });
   },
 
   resizeVertically() {

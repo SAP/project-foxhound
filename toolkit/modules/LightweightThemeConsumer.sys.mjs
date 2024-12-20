@@ -30,7 +30,7 @@ const toolkitVariableMap = [
     "--lwt-accent-color",
     {
       lwtProperty: "accentcolor",
-      processColor(rgbaChannels, element) {
+      processColor(rgbaChannels) {
         if (!rgbaChannels || rgbaChannels.a == 0) {
           return "white";
         }
@@ -44,7 +44,7 @@ const toolkitVariableMap = [
     "--lwt-text-color",
     {
       lwtProperty: "textcolor",
-      processColor(rgbaChannels, element) {
+      processColor(rgbaChannels) {
         if (!rgbaChannels) {
           rgbaChannels = { r: 0, g: 0, b: 0 };
         }
@@ -147,7 +147,7 @@ const toolkitVariableMap = [
     "--lwt-toolbar-field-highlight",
     {
       lwtProperty: "toolbar_field_highlight",
-      processColor(rgbaChannels, element) {
+      processColor(rgbaChannels) {
         if (!rgbaChannels) {
           return null;
         }
@@ -183,7 +183,26 @@ const toolkitVariableMap = [
     "--newtab-background-color-secondary",
     { lwtProperty: "ntp_card_background" },
   ],
-  ["--newtab-text-primary-color", { lwtProperty: "ntp_text" }],
+  [
+    "--newtab-text-primary-color",
+    {
+      lwtProperty: "ntp_text",
+      processColor(rgbaChannels, element) {
+        if (!rgbaChannels) {
+          element.removeAttribute("lwt-newtab-brighttext");
+          return null;
+        }
+
+        const { r, g, b } = rgbaChannels;
+        element.toggleAttribute(
+          "lwt-newtab-brighttext",
+          0.2125 * r + 0.7154 * g + 0.0721 * b > 110
+        );
+
+        return _rgbaToString(rgbaChannels);
+      },
+    },
+  ],
 ];
 
 export function LightweightThemeConsumer(aDocument) {
@@ -207,7 +226,7 @@ export function LightweightThemeConsumer(aDocument) {
 LightweightThemeConsumer.prototype = {
   _lastData: null,
 
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     if (aTopic != "lightweight-theme-styling-update") {
       return;
     }
@@ -292,29 +311,25 @@ LightweightThemeConsumer.prototype = {
     if (!theme) {
       theme = { id: DEFAULT_THEME_ID };
     }
-
-    let active = (this._active = Object.keys(theme).length);
+    let hasTheme = theme.id != DEFAULT_THEME_ID || useDarkTheme;
 
     let root = this._doc.documentElement;
-
-    if (active && theme.headerURL) {
+    if (hasTheme && theme.headerURL) {
       root.setAttribute("lwtheme-image", "true");
     } else {
       root.removeAttribute("lwtheme-image");
     }
 
-    let hasTheme = theme.id != DEFAULT_THEME_ID || useDarkTheme;
-
-    this._setExperiment(active, themeData.experiment, theme.experimental);
-    _setImage(this._win, root, active, "--lwt-header-image", theme.headerURL);
+    this._setExperiment(hasTheme, themeData.experiment, theme.experimental);
+    _setImage(this._win, root, hasTheme, "--lwt-header-image", theme.headerURL);
     _setImage(
       this._win,
       root,
-      active,
+      hasTheme,
       "--lwt-additional-images",
       theme.additionalBackgrounds
     );
-    _setProperties(root, active, theme, hasTheme);
+    _setProperties(root, hasTheme, theme);
 
     if (hasTheme) {
       if (updateGlobalThemeData) {
@@ -333,7 +348,7 @@ LightweightThemeConsumer.prototype = {
 
     _setDarkModeAttributes(this._doc, root, theme._processedColors, hasTheme);
 
-    let contentThemeData = _getContentProperties(this._doc, active, theme);
+    let contentThemeData = _getContentProperties(this._doc, hasTheme, theme);
     Services.ppmm.sharedData.set(`theme/${this._winId}`, contentThemeData);
     // We flush sharedData because contentThemeData can be responsible for
     // painting large background surfaces. If this data isn't delivered to the
@@ -344,7 +359,7 @@ LightweightThemeConsumer.prototype = {
     this._win.dispatchEvent(new CustomEvent("windowlwthemeupdate"));
   },
 
-  _setExperiment(active, experiment, properties) {
+  _setExperiment(hasTheme, experiment, properties) {
     const root = this._doc.documentElement;
     if (this._lastExperimentData) {
       const { stylesheet, usedVariables } = this._lastExperimentData;
@@ -360,7 +375,7 @@ LightweightThemeConsumer.prototype = {
 
     this._lastExperimentData = {};
 
-    if (!active || !experiment) {
+    if (!hasTheme || !experiment) {
       return;
     }
 
@@ -408,11 +423,11 @@ LightweightThemeConsumer.prototype = {
   },
 };
 
-function _getContentProperties(doc, active, data) {
-  if (!active) {
-    return {};
+function _getContentProperties(doc, hasTheme, data) {
+  let properties = { hasTheme };
+  if (!hasTheme) {
+    return properties;
   }
-  let properties = {};
   for (let property in data) {
     if (lazy.ThemeContentPropertyList.includes(property)) {
       properties[property] = _cssColorToRGBA(doc, data[property]);
@@ -453,8 +468,8 @@ function _setImage(aWin, aRoot, aActive, aVariableName, aURLs) {
   );
 }
 
-function _setProperty(elem, active, variableName, value) {
-  if (active && value) {
+function _setProperty(elem, hasTheme, variableName, value) {
+  if (hasTheme && value) {
     elem.style.setProperty(variableName, value);
   } else {
     elem.style.removeProperty(variableName);
@@ -645,7 +660,7 @@ function _determineIfColorPairIsDark(
   return !_isColorDark(color.r, color.g, color.b);
 }
 
-function _setProperties(root, active, themeData, hasTheme) {
+function _setProperties(root, hasTheme, themeData) {
   let propertyOverrides = new Map();
   let doc = root.ownerDocument;
 
@@ -687,7 +702,7 @@ function _setProperties(root, active, themeData, hasTheme) {
       // Add processed color to themeData.
       themeData._processedColors[lwtProperty] = val;
 
-      _setProperty(elem, active, cssVarName, val);
+      _setProperty(elem, hasTheme, cssVarName, val);
     }
   }
 }

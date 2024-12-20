@@ -133,6 +133,16 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   void AttachSurface() { mDetached = false; }
   void DetachSurface() { mDetached = true; }
 
+  void InvalidateDataSurface() {
+    if (mDataSourceSurface && mMayInvalidate) {
+      // This must be the only reference to the data left.
+      MOZ_ASSERT(mDataSourceSurface->hasOneRef());
+      mDataSourceSurface =
+          gfx::Factory::CopyDataSourceSurface(mDataSourceSurface);
+      mMayInvalidate = false;
+    }
+  }
+
   already_AddRefed<gfx::SourceSurface> ExtractSubrect(
       const gfx::IntRect& aRect) final {
     return mRecordedSurface->ExtractSubrect(aRect);
@@ -142,8 +152,8 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   void EnsureDataSurfaceOnMainThread() {
     // The data can only be retrieved on the main thread.
     if (!mDataSourceSurface && NS_IsMainThread()) {
-      mDataSourceSurface =
-          mCanvasChild->GetDataSurface(mTextureId, mRecordedSurface, mDetached);
+      mDataSourceSurface = mCanvasChild->GetDataSurface(
+          mTextureId, mRecordedSurface, mDetached, mMayInvalidate);
     }
   }
 
@@ -167,6 +177,7 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   RefPtr<CanvasDrawEventRecorder> mRecorder;
   RefPtr<gfx::DataSourceSurface> mDataSourceSurface;
   bool mDetached = false;
+  bool mMayInvalidate = false;
 };
 
 class CanvasDataShmemHolder {
@@ -420,6 +431,7 @@ already_AddRefed<gfx::DrawTargetRecording> CanvasChild::CreateDrawTarget(
       gfx::BackendType::SKIA, gfx::IntSize(1, 1), aFormat);
   RefPtr<gfx::DrawTargetRecording> dt = MakeAndAddRef<gfx::DrawTargetRecording>(
       mRecorder, aTextureId, aTextureOwnerId, dummyDt, aSize);
+  dt->SetOptimizeTransform(true);
 
   mTextureInfo.insert({aTextureId, {}});
 
@@ -483,7 +495,8 @@ int64_t CanvasChild::CreateCheckpoint() {
 }
 
 already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
-    int64_t aTextureId, const gfx::SourceSurface* aSurface, bool aDetached) {
+    int64_t aTextureId, const gfx::SourceSurface* aSurface, bool aDetached,
+    bool& aMayInvalidate) {
   NS_ASSERT_OWNINGTHREAD(CanvasChild);
   MOZ_ASSERT(aSurface);
 
@@ -527,6 +540,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
           gfx::Factory::CreateWrappingDataSourceSurface(
               shmemPtr, stride, ssSize, ssFormat, ReleaseDataShmemHolder,
               closure);
+      aMayInvalidate = true;
       return dataSurface.forget();
     }
   }
@@ -556,6 +570,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
   RefPtr<gfx::DataSourceSurface> dataSurface =
       gfx::Factory::CreateWrappingDataSourceSurface(
           data, stride, ssSize, ssFormat, ReleaseDataShmemHolder, closure);
+  aMayInvalidate = false;
   return dataSurface.forget();
 }
 
@@ -593,10 +608,14 @@ void CanvasChild::AttachSurface(const RefPtr<gfx::SourceSurface>& aSurface) {
   }
 }
 
-void CanvasChild::DetachSurface(const RefPtr<gfx::SourceSurface>& aSurface) {
+void CanvasChild::DetachSurface(const RefPtr<gfx::SourceSurface>& aSurface,
+                                bool aInvalidate) {
   if (auto* surface =
           static_cast<SourceSurfaceCanvasRecording*>(aSurface.get())) {
     surface->DetachSurface();
+    if (aInvalidate) {
+      surface->InvalidateDataSurface();
+    }
   }
 }
 

@@ -43,7 +43,7 @@ function promiseTimeout(delay) {
  * An Error subclass for which complete error messages are always passed
  * to extensions, rather than being interpreted as an unknown error.
  */
-class ExtensionError extends DOMException {
+export class ExtensionError extends DOMException {
   constructor(message) {
     super(message, "ExtensionError");
   }
@@ -67,7 +67,7 @@ function filterStack(error) {
  * only logged internally and raised to the worker script as
  * the generic unexpected error).
  */
-class WorkerExtensionError extends DOMException {
+export class WorkerExtensionError extends DOMException {
   constructor(message) {
     super(message, "Error");
   }
@@ -122,9 +122,9 @@ function getInnerWindowID(window) {
  * A set with a limited number of slots, which flushes older entries as
  * newer ones are added.
  *
- * @param {integer} limit
+ * @param {number} limit
  *        The maximum size to trim the set to after it grows too large.
- * @param {integer} [slop = limit * .25]
+ * @param {number} [slop = limit * .25]
  *        The number of extra entries to allow in the set after it
  *        reaches the size limit, before it is truncated to the limit.
  * @param {Iterable} [iterable]
@@ -345,5 +345,4 @@ export var ExtensionUtils = {
   DefaultWeakMap,
   ExtensionError,
   LimitedSet,
-  WorkerExtensionError,
 };

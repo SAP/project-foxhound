@@ -8,13 +8,33 @@
 //! Relative colors, color-mix, system colors, and other such things require better calc() support
 //! and integration.
 
-use crate::color::component::ColorComponent;
-use cssparser::color::{
-    clamp_floor_256_f32, clamp_unit_f32, parse_hash_color, PredefinedColorSpace, OPAQUE,
+use super::{
+    color_function::ColorFunction,
+    component::{ColorComponent, ColorComponentType},
+    AbsoluteColor,
 };
-use cssparser::{match_ignore_ascii_case, CowRcStr, Parser, Token};
+use crate::{
+    parser::ParserContext,
+    values::{
+        generics::calc::CalcUnits,
+        specified::{
+            angle::Angle as SpecifiedAngle, calc::Leaf as SpecifiedLeaf,
+            color::Color as SpecifiedColor,
+        },
+    },
+};
+use cssparser::{
+    color::{clamp_floor_256_f32, clamp_unit_f32, parse_hash_color, PredefinedColorSpace, OPAQUE},
+    match_ignore_ascii_case, CowRcStr, Parser, Token,
+};
 use std::str::FromStr;
 use style_traits::{ParseError, StyleParseErrorKind};
+
+/// Returns true if the relative color syntax pref is enabled.
+#[inline]
+pub fn rcs_enabled() -> bool {
+    static_prefs::pref!("layout.css.relative-color-syntax.enabled")
+}
 
 impl From<u8> for ColorComponent<u8> {
     #[inline]
@@ -29,56 +49,39 @@ impl From<u8> for ColorComponent<u8> {
 /// CSS escaping (if relevant) should be resolved before calling this function.
 /// (For example, the value of an `Ident` token is fine.)
 #[inline]
-pub fn parse_color_keyword<Output>(ident: &str) -> Result<Output, ()>
-where
-    Output: FromParsedColor,
-{
+pub fn parse_color_keyword(ident: &str) -> Result<SpecifiedColor, ()> {
     Ok(match_ignore_ascii_case! { ident,
-        "transparent" => Output::from_rgba(
-            0u8.into(),
-            0u8.into(),
-            0u8.into(),
-            ColorComponent::Value(NumberOrPercentage::Number { value: 0.0 }),
-        ),
-        "currentcolor" => Output::from_current_color(),
+        "transparent" => {
+            SpecifiedColor::from_absolute_color(AbsoluteColor::srgb_legacy(0u8, 0u8, 0u8, 0.0))
+        },
+        "currentcolor" => SpecifiedColor::CurrentColor,
         _ => {
             let (r, g, b) = cssparser::color::parse_named_color(ident)?;
-            Output::from_rgba(
-                r.into(),
-                g.into(),
-                b.into(),
-                ColorComponent::Value(NumberOrPercentage::Number { value: OPAQUE }),
-            )
+            SpecifiedColor::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, OPAQUE))
         },
     })
 }
 
 /// Parse a CSS color using the specified [`ColorParser`] and return a new color
 /// value on success.
-pub fn parse_color_with<'i, 't, P>(
-    color_parser: &P,
+pub fn parse_color_with<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     input: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<SpecifiedColor, ParseError<'i>> {
     let location = input.current_source_location();
     let token = input.next()?;
     match *token {
         Token::Hash(ref value) | Token::IDHash(ref value) => parse_hash_color(value.as_bytes())
             .map(|(r, g, b, a)| {
-                P::Output::from_rgba(
-                    r.into(),
-                    g.into(),
-                    b.into(),
-                    ColorComponent::Value(NumberOrPercentage::Number { value: a }),
-                )
+                SpecifiedColor::from_absolute_color(AbsoluteColor::srgb_legacy(r, g, b, a))
             }),
         Token::Ident(ref value) => parse_color_keyword(value),
         Token::Function(ref name) => {
             let name = name.clone();
             return input.parse_nested_block(|arguments| {
-                parse_color_function(color_parser, name, arguments)
+                Ok(SpecifiedColor::from_absolute_color(
+                    parse_color_function(color_parser, name, arguments)?.resolve_to_absolute(),
+                ))
             });
         },
         _ => Err(()),
@@ -88,22 +91,19 @@ where
 
 /// Parse one of the color functions: rgba(), lab(), color(), etc.
 #[inline]
-fn parse_color_function<'i, 't, P>(
-    color_parser: &P,
+fn parse_color_function<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     name: CowRcStr<'i>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorFunction, ParseError<'i>> {
     let color = match_ignore_ascii_case! { &name,
         "rgb" | "rgba" => parse_rgb(color_parser, arguments),
         "hsl" | "hsla" => parse_hsl(color_parser, arguments),
         "hwb" => parse_hwb(color_parser, arguments),
-        "lab" => parse_lab_like(color_parser, arguments, P::Output::from_lab),
-        "lch" => parse_lch_like(color_parser, arguments, P::Output::from_lch),
-        "oklab" => parse_lab_like(color_parser, arguments, P::Output::from_oklab),
-        "oklch" => parse_lch_like(color_parser, arguments, P::Output::from_oklch),
+        "lab" => parse_lab_like(color_parser, arguments, ColorFunction::Lab),
+        "lch" => parse_lch_like(color_parser, arguments, ColorFunction::Lch),
+        "oklab" => parse_lab_like(color_parser, arguments, ColorFunction::Oklab),
+        "oklch" => parse_lch_like(color_parser, arguments, ColorFunction::Oklch),
         "color" => parse_color_with_color_space(color_parser, arguments),
         _ => return Err(arguments.new_unexpected_token_error(Token::Ident(name))),
     }?;
@@ -113,13 +113,10 @@ where
     Ok(color)
 }
 
-fn parse_legacy_alpha<'i, 't, P>(
-    color_parser: &P,
+fn parse_legacy_alpha<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>> {
     if !arguments.is_exhausted() {
         arguments.expect_comma()?;
         color_parser.parse_number_or_percentage(arguments, false)
@@ -130,13 +127,10 @@ where
     }
 }
 
-fn parse_modern_alpha<'i, 't, P>(
-    color_parser: &P,
+fn parse_modern_alpha<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>> {
     if !arguments.is_exhausted() {
         arguments.expect_delim('/')?;
         color_parser.parse_number_or_percentage(arguments, true)
@@ -157,22 +151,45 @@ impl ColorComponent<NumberOrPercentage> {
     }
 }
 
-#[inline]
-fn parse_rgb<'i, 't, P>(
-    color_parser: &P,
+/// Parse the relative color syntax "from" syntax `from <color>`.
+fn parse_origin_color<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<Option<SpecifiedColor>, ParseError<'i>> {
+    if !rcs_enabled() {
+        return Ok(None);
+    }
+
+    // Not finding the from keyword is not an error, it just means we don't
+    // have an origin color.
+    if arguments
+        .try_parse(|p| p.expect_ident_matching("from"))
+        .is_err()
+    {
+        return Ok(None);
+    }
+
+    // We still fail if we can't parse the origin color.
+    parse_color_with(color_parser, arguments).map(|color| Some(color))
+}
+
+#[inline]
+fn parse_rgb<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
+    arguments: &mut Parser<'i, 't>,
+) -> Result<ColorFunction, ParseError<'i>> {
+    let origin_color = parse_origin_color(color_parser, arguments)?;
+
     let location = arguments.current_source_location();
 
     let maybe_red = color_parser.parse_number_or_percentage(arguments, true)?;
 
     // If the first component is not "none" and is followed by a comma, then we
-    // are parsing the legacy syntax.
-    let is_legacy_syntax =
-        !maybe_red.is_none() && arguments.try_parse(|p| p.expect_comma()).is_ok();
+    // are parsing the legacy syntax.  Legacy syntax also doesn't support an
+    // origin color.
+    let is_legacy_syntax = origin_color.is_none() &&
+        !maybe_red.is_none() &&
+        arguments.try_parse(|p| p.expect_comma()).is_ok();
 
     let (red, green, blue, alpha) = if is_legacy_syntax {
         let Ok(is_percentage) = maybe_red.is_percentage() else {
@@ -217,25 +234,26 @@ where
         (red, green, blue, alpha)
     };
 
-    Ok(P::Output::from_rgba(red, green, blue, alpha))
+    Ok(ColorFunction::Rgb(red, green, blue, alpha))
 }
 
 /// Parses hsl syntax.
 ///
 /// <https://drafts.csswg.org/css-color/#the-hsl-notation>
 #[inline]
-fn parse_hsl<'i, 't, P>(
-    color_parser: &P,
+fn parse_hsl<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorFunction, ParseError<'i>> {
+    let origin_color = parse_origin_color(color_parser, arguments)?;
+
     let hue = color_parser.parse_number_or_angle(arguments, true)?;
 
     // If the hue is not "none" and is followed by a comma, then we are parsing
-    // the legacy syntax.
-    let is_legacy_syntax = !hue.is_none() && arguments.try_parse(|p| p.expect_comma()).is_ok();
+    // the legacy syntax. Legacy syntax also doesn't support an origin color.
+    let is_legacy_syntax = origin_color.is_none() &&
+        !hue.is_none() &&
+        arguments.try_parse(|p| p.expect_comma()).is_ok();
 
     let (saturation, lightness, alpha) = if is_legacy_syntax {
         let saturation = color_parser
@@ -260,29 +278,28 @@ where
         )
     };
 
-    Ok(P::Output::from_hsl(hue, saturation, lightness, alpha))
+    Ok(ColorFunction::Hsl(hue, saturation, lightness, alpha))
 }
 
 /// Parses hwb syntax.
 ///
 /// <https://drafts.csswg.org/css-color/#the-hbw-notation>
 #[inline]
-fn parse_hwb<'i, 't, P>(
-    color_parser: &P,
+fn parse_hwb<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorFunction, ParseError<'i>> {
+    let _origin_color = parse_origin_color(color_parser, arguments)?;
+
     let (hue, whiteness, blackness, alpha) = parse_components(
         color_parser,
         arguments,
-        P::parse_number_or_angle,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
+        ColorParser::parse_number_or_angle,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
     )?;
 
-    Ok(P::Output::from_hwb(hue, whiteness, blackness, alpha))
+    Ok(ColorFunction::Hwb(hue, whiteness, blackness, alpha))
 }
 
 type IntoLabFn<Output> = fn(
@@ -293,20 +310,19 @@ type IntoLabFn<Output> = fn(
 ) -> Output;
 
 #[inline]
-fn parse_lab_like<'i, 't, P>(
-    color_parser: &P,
+fn parse_lab_like<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-    into_color: IntoLabFn<P::Output>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+    into_color: IntoLabFn<ColorFunction>,
+) -> Result<ColorFunction, ParseError<'i>> {
+    let _origin_color = parse_origin_color(color_parser, arguments)?;
+
     let (lightness, a, b, alpha) = parse_components(
         color_parser,
         arguments,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
     )?;
 
     Ok(into_color(lightness, a, b, alpha))
@@ -320,20 +336,19 @@ type IntoLchFn<Output> = fn(
 ) -> Output;
 
 #[inline]
-fn parse_lch_like<'i, 't, P>(
-    color_parser: &P,
+fn parse_lch_like<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-    into_color: IntoLchFn<P::Output>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+    into_color: IntoLchFn<ColorFunction>,
+) -> Result<ColorFunction, ParseError<'i>> {
+    let _origin_color = parse_origin_color(color_parser, arguments)?;
+
     let (lightness, chroma, hue, alpha) = parse_components(
         color_parser,
         arguments,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
-        P::parse_number_or_angle,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_angle,
     )?;
 
     Ok(into_color(lightness, chroma, hue, alpha))
@@ -341,13 +356,12 @@ where
 
 /// Parse the color() function.
 #[inline]
-fn parse_color_with_color_space<'i, 't, P>(
-    color_parser: &P,
+fn parse_color_with_color_space<'i, 't>(
+    color_parser: &ColorParser<'_, '_>,
     arguments: &mut Parser<'i, 't>,
-) -> Result<P::Output, ParseError<'i>>
-where
-    P: ColorParser<'i>,
-{
+) -> Result<ColorFunction, ParseError<'i>> {
+    let _origin_color = parse_origin_color(color_parser, arguments)?;
+
     let color_space = {
         let location = arguments.current_source_location();
 
@@ -359,18 +373,12 @@ where
     let (c1, c2, c3, alpha) = parse_components(
         color_parser,
         arguments,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
-        P::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
+        ColorParser::parse_number_or_percentage,
     )?;
 
-    Ok(P::Output::from_color_function(
-        color_space,
-        c1,
-        c2,
-        c3,
-        alpha,
-    ))
+    Ok(ColorFunction::Color(color_space, c1, c2, c3, alpha))
 }
 
 type ComponentParseResult<'i, R1, R2, R3> = Result<
@@ -384,18 +392,29 @@ type ComponentParseResult<'i, R1, R2, R3> = Result<
 >;
 
 /// Parse the color components and alpha with the modern [color-4] syntax.
-pub fn parse_components<'i, 't, P, F1, F2, F3, R1, R2, R3>(
-    color_parser: &P,
+pub fn parse_components<'a, 'b: 'a, 'i, 't, F1, F2, F3, R1, R2, R3>(
+    color_parser: &ColorParser<'a, 'b>,
     input: &mut Parser<'i, 't>,
     f1: F1,
     f2: F2,
     f3: F3,
 ) -> ComponentParseResult<'i, R1, R2, R3>
 where
-    P: ColorParser<'i>,
-    F1: FnOnce(&P, &mut Parser<'i, 't>, bool) -> Result<ColorComponent<R1>, ParseError<'i>>,
-    F2: FnOnce(&P, &mut Parser<'i, 't>, bool) -> Result<ColorComponent<R2>, ParseError<'i>>,
-    F3: FnOnce(&P, &mut Parser<'i, 't>, bool) -> Result<ColorComponent<R3>, ParseError<'i>>,
+    F1: FnOnce(
+        &ColorParser<'a, 'b>,
+        &mut Parser<'i, 't>,
+        bool,
+    ) -> Result<ColorComponent<R1>, ParseError<'i>>,
+    F2: FnOnce(
+        &ColorParser<'a, 'b>,
+        &mut Parser<'i, 't>,
+        bool,
+    ) -> Result<ColorComponent<R2>, ParseError<'i>>,
+    F3: FnOnce(
+        &ColorParser<'a, 'b>,
+        &mut Parser<'i, 't>,
+        bool,
+    ) -> Result<ColorComponent<R3>, ParseError<'i>>,
 {
     let r1 = f1(color_parser, input, true)?;
     let r2 = f2(color_parser, input, true)?;
@@ -407,6 +426,7 @@ where
 }
 
 /// Either a number or a percentage.
+#[derive(Clone, Copy, Debug)]
 pub enum NumberOrPercentage {
     /// `<number>`.
     Number {
@@ -432,7 +452,32 @@ impl NumberOrPercentage {
     }
 }
 
+impl ColorComponentType for NumberOrPercentage {
+    fn units() -> CalcUnits {
+        CalcUnits::PERCENTAGE
+    }
+
+    fn try_from_token(token: &Token) -> Result<Self, ()> {
+        Ok(match *token {
+            Token::Number { value, .. } => Self::Number { value },
+            Token::Percentage { unit_value, .. } => Self::Percentage { unit_value },
+            _ => {
+                return Err(());
+            },
+        })
+    }
+
+    fn try_from_leaf(leaf: &SpecifiedLeaf) -> Result<Self, ()> {
+        Ok(match *leaf {
+            SpecifiedLeaf::Percentage(unit_value) => Self::Percentage { unit_value },
+            SpecifiedLeaf::Number(value) => Self::Number { value },
+            _ => return Err(()),
+        })
+    }
+}
+
 /// Either an angle or a number.
+#[derive(Clone, Copy, Debug)]
 pub enum NumberOrAngle {
     /// `<number>`.
     Number {
@@ -457,45 +502,118 @@ impl NumberOrAngle {
     }
 }
 
-/// A trait that can be used to hook into how `cssparser` parses color
-/// components, with the intention of implementing more complicated behavior.
-///
-/// For example, this is used by Servo to support calc() in color.
-pub trait ColorParser<'i> {
-    /// The type that the parser will construct on a successful parse.
-    type Output: FromParsedColor;
+impl ColorComponentType for NumberOrAngle {
+    fn units() -> CalcUnits {
+        CalcUnits::ANGLE
+    }
 
-    /// Parse an `<angle>` or `<number>`.
-    ///
-    /// Returns the result in degrees.
-    fn parse_number_or_angle<'t>(
+    fn try_from_token(token: &Token) -> Result<Self, ()> {
+        Ok(match *token {
+            Token::Number { value, .. } => Self::Number { value },
+            Token::Dimension {
+                value, ref unit, ..
+            } => {
+                let degrees =
+                    SpecifiedAngle::parse_dimension(value, unit, /* from_calc = */ false)
+                        .map(|angle| angle.degrees())?;
+
+                NumberOrAngle::Angle { degrees }
+            },
+            _ => {
+                return Err(());
+            },
+        })
+    }
+
+    fn try_from_leaf(leaf: &SpecifiedLeaf) -> Result<Self, ()> {
+        Ok(match *leaf {
+            SpecifiedLeaf::Angle(angle) => Self::Angle {
+                degrees: angle.degrees(),
+            },
+            SpecifiedLeaf::Number(value) => Self::Number { value },
+            _ => return Err(()),
+        })
+    }
+}
+
+/// The raw f32 here is for <number>.
+impl ColorComponentType for f32 {
+    fn units() -> CalcUnits {
+        CalcUnits::empty()
+    }
+
+    fn try_from_token(token: &Token) -> Result<Self, ()> {
+        if let Token::Number { value, .. } = *token {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+
+    fn try_from_leaf(leaf: &SpecifiedLeaf) -> Result<Self, ()> {
+        if let SpecifiedLeaf::Number(value) = *leaf {
+            Ok(value)
+        } else {
+            Err(())
+        }
+    }
+}
+
+/// Used to parse the components of a color.
+pub struct ColorParser<'a, 'b: 'a> {
+    /// Parser context used for parsing the colors.
+    pub context: &'a ParserContext<'b>,
+}
+
+impl<'a, 'b: 'a> ColorParser<'a, 'b> {
+    /// Parse an `<number>` or `<angle>` value.
+    fn parse_number_or_angle<'i, 't>(
         &self,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
-    ) -> Result<ColorComponent<NumberOrAngle>, ParseError<'i>>;
+    ) -> Result<ColorComponent<NumberOrAngle>, ParseError<'i>> {
+        ColorComponent::parse(self.context, input, allow_none)
+    }
 
     /// Parse a `<percentage>` value.
-    ///
-    /// Returns the result in a number from 0.0 to 1.0.
-    fn parse_percentage<'t>(
+    fn parse_percentage<'i, 't>(
         &self,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
-    ) -> Result<ColorComponent<f32>, ParseError<'i>>;
+    ) -> Result<ColorComponent<f32>, ParseError<'i>> {
+        let location = input.current_source_location();
+
+        // We can use the [NumberOrPercentage] type here, because parsing it
+        // doesn't have any more overhead than just parsing a percentage on its
+        // own.
+        Ok(
+            match ColorComponent::<NumberOrPercentage>::parse(self.context, input, allow_none)? {
+                ColorComponent::None => ColorComponent::None,
+                ColorComponent::Value(NumberOrPercentage::Percentage { unit_value }) => {
+                    ColorComponent::Value(unit_value)
+                },
+                _ => return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError)),
+            },
+        )
+    }
 
     /// Parse a `<number>` value.
-    fn parse_number<'t>(
+    fn parse_number<'i, 't>(
         &self,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
-    ) -> Result<ColorComponent<f32>, ParseError<'i>>;
+    ) -> Result<ColorComponent<f32>, ParseError<'i>> {
+        ColorComponent::parse(self.context, input, allow_none)
+    }
 
-    /// Parse a `<number>` value or a `<percentage>` value.
-    fn parse_number_or_percentage<'t>(
+    /// Parse a `<number>` or `<percentage>` value.
+    fn parse_number_or_percentage<'i, 't>(
         &self,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
-    ) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>>;
+    ) -> Result<ColorComponent<NumberOrPercentage>, ParseError<'i>> {
+        ColorComponent::parse(self.context, input, allow_none)
+    }
 }
 
 /// This trait is used by the [`ColorParser`] to construct colors of any type.

@@ -226,7 +226,6 @@ void nsVideoFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                           nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsVideoFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aMetrics, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE(
       NS_FRAME_TRACE_CALLS,
@@ -375,14 +374,9 @@ nsIFrame::SizeComputationResult nsVideoFrame::ComputeSize(
 }
 
 nscoord nsVideoFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  // Bind the result variable to a RAII-based debug object - the variable
-  // therefore must match the function's return value.
-  DISPLAY_MIN_INLINE_SIZE(this, result);
   // This call handles size-containment
   nsSize size = GetIntrinsicSize().ToSize().valueOr(nsSize());
-  result = GetWritingMode().IsVertical() ? size.height : size.width;
-  return result;
+  return GetWritingMode().IsVertical() ? size.height : size.width;
 }
 
 nscoord nsVideoFrame::GetPrefISize(gfxContext* aRenderingContext) {

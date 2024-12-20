@@ -229,7 +229,7 @@ void ContentMediaAgent::EnableAction(uint64_t aBrowsingContextId,
   }
 
   LOG("Notify to enable action '%s' in BC %" PRId64,
-      ToMediaSessionActionStr(aAction), bc->Id());
+      GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
     Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
@@ -251,7 +251,7 @@ void ContentMediaAgent::DisableAction(uint64_t aBrowsingContextId,
   }
 
   LOG("Notify to disable action '%s' in BC %" PRId64,
-      ToMediaSessionActionStr(aAction), bc->Id());
+      GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
     Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
@@ -325,7 +325,7 @@ void ContentMediaController::HandleMediaKey(MediaControlKey aKey) {
   if (mReceivers.IsEmpty()) {
     return;
   }
-  LOG("Handle '%s' event, receiver num=%zu", ToMediaControlKeyStr(aKey),
+  LOG("Handle '%s' event, receiver num=%zu", GetEnumString(aKey).get(),
       mReceivers.Length());
   // We have default handlers for play, pause and stop.
   // https://w3c.github.io/mediasession/#ref-for-dom-mediasessionaction-play%E2%91%A3

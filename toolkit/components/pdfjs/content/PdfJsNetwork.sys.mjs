@@ -33,7 +33,7 @@ export class NetworkManager {
     this.getXhr =
       args.getXhr ||
       function NetworkManager_getXhr() {
-        return new XMLHttpRequest();
+        return new XMLHttpRequest({ mozAnon: false });
       };
 
     this.currXhrId = 0;
@@ -79,7 +79,7 @@ export class NetworkManager {
     xhr.responseType = "arraybuffer";
 
     if (args.onError) {
-      xhr.onerror = function (evt) {
+      xhr.onerror = function () {
         args.onError(xhr.status);
       };
     }
@@ -109,7 +109,7 @@ export class NetworkManager {
     }
   }
 
-  onStateChange(xhrId, evt) {
+  onStateChange(xhrId) {
     var pendingRequest = this.pendingRequests[xhrId];
     if (!pendingRequest) {
       // Maybe abortRequest was called...

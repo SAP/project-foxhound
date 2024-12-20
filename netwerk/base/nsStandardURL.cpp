@@ -641,6 +641,8 @@ nsresult nsStandardURL::NormalizeIPv4(const nsACString& host,
   return NS_OK;
 }
 
+nsIIDNService* nsStandardURL::GetIDNService() { return gIDN.get(); }
+
 nsresult nsStandardURL::NormalizeIDN(const nsCString& host, nsCString& result) {
   result.Truncate();
   mDisplayHost.Truncate();
@@ -1135,7 +1137,7 @@ nsresult nsStandardURL::BuildNormalizedSpec(const char* spec,
     }
   }
 
-  if (mDirectory.mLen > 1) {
+  if (mDirectory.mLen > 0) {
     netCoalesceFlags coalesceFlag = NET_COALESCE_NORMAL;
     if (SegmentIs(buf, mScheme, "ftp")) {
       coalesceFlag =

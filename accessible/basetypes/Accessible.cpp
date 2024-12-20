@@ -569,8 +569,7 @@ nsStaticAtom* Accessible::ComputedARIARole() const {
       roleMap->roleAtom != nsGkAtoms::form &&
       (roleMap->roleRule == kUseNativeRole || roleMap->IsOfType(eLandmark) ||
        roleMap->roleAtom == nsGkAtoms::alertdialog ||
-       roleMap->roleAtom == nsGkAtoms::feed ||
-       roleMap->roleAtom == nsGkAtoms::rowgroup)) {
+       roleMap->roleAtom == nsGkAtoms::feed)) {
     // Explicit ARIA role (e.g. specified via the role attribute) which does not
     // map to a unique Gecko role.
     return roleMap->roleAtom;
@@ -583,18 +582,10 @@ nsStaticAtom* Accessible::ComputedARIARole() const {
     // Landmark role from native markup; e.g. <main>, <nav>.
     return LandmarkRole();
   }
-  if (geckoRole == roles::GROUPING) {
-    // Gecko doesn't differentiate between group and rowgroup. It uses
-    // roles::GROUPING for both.
-    nsAtom* tag = TagName();
-    if (tag == nsGkAtoms::tbody || tag == nsGkAtoms::tfoot ||
-        tag == nsGkAtoms::thead) {
-      return nsGkAtoms::rowgroup;
-    }
-  }
   // Role from native markup or layout.
 #define ROLE(_geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)        \
+             msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType,  \
+             nameRule)                                                       \
   case roles::_geckoRole:                                                    \
     return ariaRole;
   switch (geckoRole) {

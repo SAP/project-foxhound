@@ -47,6 +47,7 @@
 #include "mozilla/dom/SimpleGestureEvent.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/StorageEvent.h"
+#include "mozilla/dom/TextEvent.h"
 #include "mozilla/dom/TimeEvent.h"
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/dom/TransitionEvent.h"
@@ -1141,9 +1142,8 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
           if (!postVisitor.mDOMEvent) {
             // This is tiny bit slow, but happens only once per event.
             // Similar code also in EventListenerManager.
-            nsCOMPtr<EventTarget> et = aEvent->mOriginalTarget;
-            RefPtr<Event> event =
-                EventDispatcher::CreateEvent(et, aPresContext, aEvent, u""_ns);
+            RefPtr<Event> event = EventDispatcher::CreateEvent(
+                aEvent->mOriginalTarget, aPresContext, aEvent, u""_ns);
             event.swap(postVisitor.mDOMEvent);
           }
           nsAutoString typeStr;
@@ -1151,12 +1151,11 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
           AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING(
               "EventDispatcher::Dispatch", OTHER, typeStr);
 
-          nsCOMPtr<nsIDocShell> docShell;
-          docShell = nsContentUtils::GetDocShellForEventTarget(aEvent->mTarget);
           MarkerInnerWindowId innerWindowId;
-          if (nsCOMPtr<nsPIDOMWindowInner> inner =
-                  do_QueryInterface(aEvent->mTarget->GetOwnerGlobal())) {
-            innerWindowId = MarkerInnerWindowId{inner->WindowID()};
+          if (nsIGlobalObject* global = aEvent->mTarget->GetOwnerGlobal()) {
+            if (nsPIDOMWindowInner* inner = global->GetAsInnerWindow()) {
+              innerWindowId = MarkerInnerWindowId{inner->WindowID()};
+            }
           }
 
           struct DOMEventMarker {
@@ -1206,7 +1205,7 @@ nsresult EventDispatcher::Dispatch(EventTarget* aTarget,
 
           auto startTime = TimeStamp::Now();
           profiler_add_marker("DOMEvent", geckoprofiler::category::DOM,
-                              {MarkerTiming::IntervalStart(),
+                              {MarkerTiming::IntervalStart(startTime),
                                MarkerInnerWindowId(innerWindowId)},
                               DOMEventMarker{}, typeStr, target, startTime,
                               aEvent->mTimeStamp);
@@ -1406,6 +1405,9 @@ nsresult EventDispatcher::DispatchDOMEvent(EventTarget* aTarget,
       case eEditorInputEventClass:
         return NS_NewDOMInputEvent(aOwner, aPresContext,
                                    aEvent->AsEditorInputEvent());
+      case eLegacyTextEventClass:
+        return NS_NewDOMTextEvent(aOwner, aPresContext,
+                                  aEvent->AsLegacyTextEvent());
       case eDragEventClass:
         return NS_NewDOMDragEvent(aOwner, aPresContext, aEvent->AsDragEvent());
       case eClipboardEventClass:
@@ -1450,9 +1452,14 @@ nsresult EventDispatcher::DispatchDOMEvent(EventTarget* aTarget,
   if (aEventType.LowerCaseEqualsLiteral("keyboardevent")) {
     return NS_NewDOMKeyboardEvent(aOwner, aPresContext, nullptr);
   }
-  if (aEventType.LowerCaseEqualsLiteral("compositionevent") ||
-      aEventType.LowerCaseEqualsLiteral("textevent")) {
+  if (aEventType.LowerCaseEqualsLiteral("compositionevent")) {
     return NS_NewDOMCompositionEvent(aOwner, aPresContext, nullptr);
+  }
+  if (aEventType.LowerCaseEqualsLiteral("textevent")) {
+    if (!StaticPrefs::dom_events_textevent_enabled()) {
+      return NS_NewDOMCompositionEvent(aOwner, aPresContext, nullptr);
+    }
+    return NS_NewDOMTextEvent(aOwner, aPresContext, nullptr);
   }
   if (aEventType.LowerCaseEqualsLiteral("mutationevent") ||
       aEventType.LowerCaseEqualsLiteral("mutationevents")) {

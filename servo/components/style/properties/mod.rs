@@ -17,12 +17,6 @@ pub use self::generated::*;
 #[deny(missing_docs)]
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/properties.rs"));
-
-    #[cfg(feature = "gecko")]
-    #[allow(unsafe_code, missing_docs)]
-    pub mod gecko {
-        include!(concat!(env!("OUT_DIR"), "/gecko_properties.rs"));
-    }
 }
 
 use crate::custom_properties::{self, ComputedCustomProperties};
@@ -1040,7 +1034,7 @@ impl<'a> PropertyDeclarationId<'a> {
     pub fn is_discrete_animatable(&self) -> bool {
         match self {
             Self::Longhand(longhand) => longhand.is_discrete_animatable(),
-            // TODO(bug 1846516): Refine this?
+            // TODO(bug 1885995): Refine this.
             Self::Custom(_) => true,
         }
     }

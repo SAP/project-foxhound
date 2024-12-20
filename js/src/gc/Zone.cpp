@@ -622,7 +622,7 @@ void Zone::fixupAfterMovingGC() {
 }
 
 void Zone::purgeAtomCache() {
-  atomCache().clearAndCompact();
+  atomCache_.ref().reset();
 
   // Also purge the dtoa caches so that subsequent lookups populate atom
   // cache too.
@@ -980,21 +980,4 @@ bool Zone::registerObjectWithWeakPointers(JSObject* obj) {
   MOZ_ASSERT(obj->getClass()->hasTrace());
   MOZ_ASSERT(!IsInsideNursery(obj));
   return objectsWithWeakPointers.ref().append(obj);
-}
-
-js::DependentScriptSet* Zone::getOrCreateDependentScriptSet(
-    JSContext* cx, js::InvalidatingFuse* fuse) {
-  for (auto& dss : fuseDependencies) {
-    if (dss.associatedFuse == fuse) {
-      return &dss;
-    }
-  }
-
-  if (!fuseDependencies.emplaceBack(cx, fuse)) {
-    return nullptr;
-  }
-
-  auto& dss = fuseDependencies.back();
-  MOZ_ASSERT(dss.associatedFuse == fuse);
-  return &dss;
 }

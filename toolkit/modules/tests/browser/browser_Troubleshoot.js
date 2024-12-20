@@ -1288,6 +1288,27 @@ const SNAPSHOT_SCHEMA = {
         },
       },
     },
+    contentAnalysis: {
+      type: "object",
+      properties: {
+        active: {
+          required: true,
+          type: "boolean",
+        },
+        connected: {
+          type: "boolean",
+        },
+        agentPath: {
+          type: "string",
+        },
+        failedSignatureVerification: {
+          type: "boolean",
+        },
+        requestCount: {
+          type: "number",
+        },
+      },
+    },
   },
 };
 
@@ -1346,9 +1367,9 @@ function validateObject_array(array, schema) {
   array.forEach(elt => validateObject(elt, schema.items));
 }
 
-function validateObject_string(str, schema) {}
-function validateObject_boolean(bool, schema) {}
-function validateObject_number(num, schema) {}
+function validateObject_string() {}
+function validateObject_boolean() {}
+function validateObject_number() {}
 
 function validationErr(msg, obj, schema) {
   return new Error(

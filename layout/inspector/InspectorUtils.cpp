@@ -415,6 +415,7 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::Media:
       case StyleCssRuleType::Supports:
       case StyleCssRuleType::LayerBlock:
+      case StyleCssRuleType::Property:
       case StyleCssRuleType::Container: {
         Unused << aResult.AppendElement(OwningNonNull(*rule), fallible);
         break;
@@ -425,7 +426,6 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::LayerStatement:
       case StyleCssRuleType::FontFace:
       case StyleCssRuleType::Page:
-      case StyleCssRuleType::Property:
       case StyleCssRuleType::Keyframes:
       case StyleCssRuleType::Keyframe:
       case StyleCssRuleType::Margin:
@@ -433,6 +433,8 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::CounterStyle:
       case StyleCssRuleType::FontFeatureValues:
       case StyleCssRuleType::FontPaletteValues:
+      case StyleCssRuleType::Scope:
+      case StyleCssRuleType::StartingStyle:
         break;
     }
 
@@ -1000,22 +1002,19 @@ void InspectorUtils::GetCSSRegisteredProperties(
 }
 
 /* static */
-void InspectorUtils::GetRuleBodyTextOffsets(
-    GlobalObject&, const nsACString& aInitialText,
-    Nullable<InspectorGetRuleBodyTextResult>& aResult) {
-  uint32_t resultStartOffset;
-  uint32_t resultEndOffset;
-
-  if (!Servo_GetRuleBodyTextOffsets(&aInitialText, &resultStartOffset,
-                                    &resultEndOffset)) {
-    aResult.SetNull();
-    return;
-  }
-
-  InspectorGetRuleBodyTextResult& offsets = aResult.SetValue();
-  offsets.mStartOffset = resultStartOffset;
-  offsets.mEndOffset = resultEndOffset;
+void InspectorUtils::GetRuleBodyText(GlobalObject&,
+                                     const nsACString& aInitialText,
+                                     nsACString& aBodyText) {
+  Servo_GetRuleBodyText(&aInitialText, &aBodyText);
 }
 
+/* static */
+void InspectorUtils::ReplaceBlockRuleBodyTextInStylesheet(
+    GlobalObject&, const nsACString& aStyleSheetText, uint32_t aLine,
+    uint32_t aColumn, const nsACString& aNewBodyText,
+    nsACString& aNewStyleSheetText) {
+  Servo_ReplaceBlockRuleBodyTextInStylesheetText(
+      &aStyleSheetText, aLine, aColumn, &aNewBodyText, &aNewStyleSheetText);
+}
 }  // namespace dom
 }  // namespace mozilla

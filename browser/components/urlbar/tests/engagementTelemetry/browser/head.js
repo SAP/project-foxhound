@@ -10,6 +10,7 @@ Services.scriptloader.loadSubScript(
 
 ChromeUtils.defineESModuleGetters(this, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 const lazy = {};
@@ -210,12 +211,7 @@ async function doTest(testFn) {
   await QuickSuggest.blockedSuggestions.clear();
   await QuickSuggest.blockedSuggestions._test_readyPromise;
   await updateTopSites(() => true);
-
-  try {
-    await BrowserTestUtils.withNewTab(gBrowser, testFn);
-  } catch (e) {
-    console.error(e);
-  }
+  await BrowserTestUtils.withNewTab(gBrowser, testFn);
 }
 
 async function initGroupTest() {

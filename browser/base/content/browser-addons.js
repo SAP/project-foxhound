@@ -525,7 +525,7 @@ var gXPInstallObserver = {
     Services.console.logMessage(consoleMsg);
   },
 
-  async observe(aSubject, aTopic, aData) {
+  async observe(aSubject, aTopic) {
     var installInfo = aSubject.wrappedJSObject;
     var browser = installInfo.browser;
 
@@ -914,9 +914,9 @@ var gXPInstallObserver = {
           let height = undefined;
 
           if (PopupNotifications.isPanelOpen) {
-            let rect = document
-              .getElementById("addon-progress-notification")
-              .getBoundingClientRect();
+            let rect = window.windowUtils.getBoundsWithoutFlushing(
+              document.getElementById("addon-progress-notification")
+            );
             height = rect.height;
           }
 
@@ -1009,7 +1009,7 @@ var gExtensionsNotifications = {
 
     let items = 0;
     if (lazy.AMBrowserExtensionsImport.canCompleteOrCancelInstalls) {
-      this._createAddonButton("webext-imported-addons", null, evt => {
+      this._createAddonButton("webext-imported-addons", null, () => {
         lazy.AMBrowserExtensionsImport.completeInstalls();
       });
       items++;
@@ -1022,7 +1022,7 @@ var gExtensionsNotifications = {
       this._createAddonButton(
         "webext-perms-update-menu-item",
         update.addon,
-        evt => {
+        () => {
           ExtensionsUI.showUpdate(gBrowser, update);
         }
       );
@@ -1032,7 +1032,7 @@ var gExtensionsNotifications = {
       if (++items > 4) {
         break;
       }
-      this._createAddonButton("webext-perms-sideload-menu-item", addon, evt => {
+      this._createAddonButton("webext-perms-sideload-menu-item", addon, () => {
         // We need to hide the main menu manually because the toolbarbutton is
         // removed immediately while processing this event, and PanelUI is
         // unable to identify which panel should be closed automatically.
@@ -1046,15 +1046,10 @@ var gExtensionsNotifications = {
 var BrowserAddonUI = {
   async promptRemoveExtension(addon) {
     let { name } = addon;
-    let [title, btnTitle, message] = await lazy.l10n.formatValues([
+    let [title, btnTitle] = await lazy.l10n.formatValues([
       { id: "addon-removal-title", args: { name } },
       { id: "addon-removal-button" },
-      { id: "addon-removal-message", args: { name } },
     ]);
-
-    if (Services.prefs.getBoolPref("prompts.windowPromptSubDialog", false)) {
-      message = null;
-    }
 
     let {
       BUTTON_TITLE_IS_STRING: titleString,
@@ -1082,7 +1077,7 @@ var BrowserAddonUI = {
     let result = confirmEx(
       window,
       title,
-      message,
+      null,
       btnFlags,
       btnTitle,
       /* button1 */ null,
@@ -1117,7 +1112,7 @@ var BrowserAddonUI = {
     win.openAbuseReport({ addonId, reportEntryPoint });
   },
 
-  async removeAddon(addonId, eventObject) {
+  async removeAddon(addonId) {
     let addon = addonId && (await AddonManager.getAddonByID(addonId));
     if (!addon || !(addon.permissions & AddonManager.PERM_CAN_UNINSTALL)) {
       return;
@@ -1136,7 +1131,7 @@ var BrowserAddonUI = {
     }
   },
 
-  async manageAddon(addonId, eventObject) {
+  async manageAddon(addonId) {
     let addon = addonId && (await AddonManager.getAddonByID(addonId));
     if (!addon) {
       return;
@@ -1798,7 +1793,7 @@ var gUnifiedExtensions = {
     }
   },
 
-  onWidgetAdded(aWidgetId, aArea, aPosition) {
+  onWidgetAdded(aWidgetId, aArea) {
     // When we pin a widget to the toolbar from a narrow window, the widget
     // will be overflowed directly. In this case, we do not want to change the
     // class name since it is going to be changed by `onWidgetOverflow()`
@@ -1813,7 +1808,7 @@ var gUnifiedExtensions = {
     this._updateWidgetClassName(aWidgetId, inPanel);
   },
 
-  onWidgetOverflow(aNode, aContainer) {
+  onWidgetOverflow(aNode) {
     // We register a CUI listener for each window so we make sure that we
     // handle the event for the right window here.
     if (window !== aNode.ownerGlobal) {
@@ -1823,7 +1818,7 @@ var gUnifiedExtensions = {
     this._updateWidgetClassName(aNode.getAttribute("widget-id"), true);
   },
 
-  onWidgetUnderflow(aNode, aContainer) {
+  onWidgetUnderflow(aNode) {
     // We register a CUI listener for each window so we make sure that we
     // handle the event for the right window here.
     if (window !== aNode.ownerGlobal) {

@@ -42,7 +42,7 @@ async function recordReflows(testPromise, win = window) {
   let reflows = [];
 
   let observer = {
-    reflow(start, end) {
+    reflow() {
       // Gather information about the current code path.
       reflows.push(new Error().stack);
 
@@ -50,7 +50,7 @@ async function recordReflows(testPromise, win = window) {
       dirtyFrame(win);
     },
 
-    reflowInterruptible(start, end) {
+    reflowInterruptible() {
       // Interruptible reflows are the reflows caused by the refresh
       // driver ticking. These are fine.
     },
@@ -99,11 +99,9 @@ async function recordReflows(testPromise, win = window) {
  *            // Sometimes, due to unpredictable timings, the reflow may be hit
  *            // less times.
  *            stack: [
- *              "select@chrome://global/content/bindings/textbox.xml",
- *              "focusAndSelectUrlBar@chrome://browser/content/browser.js",
- *              "openLinkIn@chrome://browser/content/utilityOverlay.js",
- *              "openUILinkIn@chrome://browser/content/utilityOverlay.js",
- *              "BrowserOpenTab@chrome://browser/content/browser.js",
+ *              "somefunction@chrome://somepackage/content/somefile.mjs",
+ *              "otherfunction@chrome://otherpackage/content/otherfile.js",
+ *              "morecode@resource://somewhereelse/SomeModule.sys.mjs",
  *            ],
  *            // We expect this particular reflow to happen up to 2 times.
  *            maxCount: 2,
@@ -113,10 +111,9 @@ async function recordReflows(testPromise, win = window) {
  *            // This reflow is caused by lorem ipsum. We expect this reflow
  *            // to only happen once, so we can omit the "maxCount" property.
  *            stack: [
- *              "get_scrollPosition@chrome://global/content/bindings/scrollbox.xml",
- *              "_fillTrailingGap@chrome://browser/content/tabbrowser.xml",
- *              "_handleNewTab@chrome://browser/content/tabbrowser.xml",
- *              "onxbltransitionend@chrome://browser/content/tabbrowser.xml",
+ *              "somefunction@chrome://somepackage/content/somefile.mjs",
+ *              "otherfunction@chrome://otherpackage/content/otherfile.js",
+ *              "morecode@resource://somewhereelse/SomeModule.sys.mjs",
  *            ],
  *          }
  *        ]
@@ -430,7 +427,7 @@ async function recordFrames(testPromise, win = window) {
 
   let frames = [];
 
-  let afterPaintListener = event => {
+  let afterPaintListener = () => {
     let width, height;
     canvas.width = width = win.innerWidth;
     canvas.height = height = win.innerHeight;

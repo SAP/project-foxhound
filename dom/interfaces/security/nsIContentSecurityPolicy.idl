@@ -91,7 +91,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    * Please note that upgrade-insecure-reqeusts also applies if the parent or
    * including document (context) makes use of the directive.
    */
-  readonly attribute bool upgradeInsecureRequests;
+  readonly attribute boolean upgradeInsecureRequests;
 
   /**
    * Returns whether this policy uses the directive block-all-mixed-content.
@@ -100,12 +100,12 @@ interface nsIContentSecurityPolicy : nsISerializable
    * will therefore block all mixed content without even trying to perform
    * an upgrade.
    */
-  readonly attribute bool blockAllMixedContent;
+  readonly attribute boolean blockAllMixedContent;
 
   /**
    * Returns whether this policy enforces the frame-ancestors directive.
    */
-  readonly attribute bool enforcesFrameAncestors;
+  readonly attribute boolean enforcesFrameAncestors;
 
   /**
    * Parse and install a CSP policy.
@@ -144,7 +144,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    *     (block the rules if false).
    */
   boolean getAllowsInline(in nsIContentSecurityPolicy_CSPDirective aDirective,
-                          in bool aHasUnsafeHash,
+                          in boolean aHasUnsafeHash,
                           in AString aNonce,
                           in boolean aParserCreated,
                           in Element aTriggeringElement,
@@ -241,7 +241,7 @@ interface nsIContentSecurityPolicy : nsISerializable
   [must_use] void setRequestContextWithDocument(in Document aDocument);
   [must_use] void setRequestContextWithPrincipal(in nsIPrincipal aRequestPrincipal,
                                                  in nsIURI aSelfURI,
-                                                 in AString aReferrer,
+                                                 in ACString aReferrer,
                                                  in unsigned long long aInnerWindowId);
 
   /**
@@ -249,7 +249,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    */
   [noscript, notxpcom, nostdcall] readonly attribute nsIPrincipal requestPrincipal;
   [noscript, notxpcom, nostdcall] readonly attribute nsIURI selfURI;
-  [noscript] readonly attribute AString referrer;
+  [noscript] readonly attribute ACString referrer;
   [noscript, notxpcom, nostdcall] readonly attribute unsigned long long innerWindowID;
 
   /**
@@ -328,7 +328,7 @@ interface nsIContentSecurityPolicy : nsISerializable
                    in nsILoadInfo     aLoadInfo,
                    in nsIURI          aContentLocation,
                    in nsIURI          aOriginalURIIfRedirect,
-                   in bool            aSendViolationReports);
+                   in boolean         aSendViolationReports);
 
 %{ C++
 // nsIObserver topic to fire when the policy encounters a violation.

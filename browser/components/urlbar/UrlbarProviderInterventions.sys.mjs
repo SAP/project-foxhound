@@ -703,7 +703,7 @@ class ProviderInterventions extends UrlbarProvider {
     }
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onLegacyEngagement(state, queryContext, details, controller) {
     let { result } = details;
 
     // `selType` is "tip" when the tip's main button is picked. Ignore clicks on
@@ -714,10 +714,8 @@ class ProviderInterventions extends UrlbarProvider {
       this.#pickResult(result, controller.browserWindow);
     }
 
-    if (["engagement", "abandonment"].includes(state)) {
-      for (let tip of this.tipsShownInCurrentEngagement) {
-        Services.telemetry.keyedScalarAdd("urlbar.tips", `${tip}-shown`, 1);
-      }
+    for (let tip of this.tipsShownInCurrentEngagement) {
+      Services.telemetry.keyedScalarAdd("urlbar.tips", `${tip}-shown`, 1);
     }
     this.tipsShownInCurrentEngagement.clear();
   }

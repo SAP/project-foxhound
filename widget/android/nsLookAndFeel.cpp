@@ -253,6 +253,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aColorScheme,
       break;
     case ColorID::Marktext:
     case ColorID::Mark:
+    case ColorID::MozAutofillBackground:
     case ColorID::SpellCheckerUnderline:
       aColor = GetStandinForNativeColor(aID, aColorScheme);
       break;
@@ -296,10 +297,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
 
     case IntID::CaretWidth:
       aResult = 1;
-      break;
-
-    case IntID::ShowCaretDuringSelection:
-      aResult = 0;
       break;
 
     case IntID::SelectTextfieldsOnKeyFocus:

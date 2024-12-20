@@ -2020,6 +2020,12 @@ bool nsIFrame::GetShapeBoxBorderRadii(nscoord aRadii[8]) const {
   }
 }
 
+nscoord nsIFrame::OneEmInAppUnits() const {
+  return StyleFont()
+      ->mFont.size.ScaledBy(nsLayoutUtils::FontSizeInflationFor(this))
+      .ToAppUnits();
+}
+
 ComputedStyle* nsIFrame::GetAdditionalComputedStyle(int32_t aIndex) const {
   MOZ_ASSERT(aIndex >= 0, "invalid index number");
   return nullptr;
@@ -2397,6 +2403,15 @@ already_AddRefed<ComputedStyle> nsIFrame::ComputeHighlightSelectionStyle(
   }
   return PresContext()->StyleSet()->ProbePseudoElementStyle(
       *element, PseudoStyleType::highlight, aHighlightName, Style());
+}
+
+already_AddRefed<ComputedStyle> nsIFrame::ComputeTargetTextStyle() const {
+  const Element* element = FindElementAncestorForMozSelection(GetContent());
+  if (!element) {
+    return nullptr;
+  }
+  return PresContext()->StyleSet()->ProbePseudoElementStyle(
+      *element, PseudoStyleType::targetText, nullptr, Style());
 }
 
 template <typename SizeOrMaxSize>
@@ -4042,6 +4057,13 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
     return;
   }
 
+  nsIFrame* child = aChild;
+  auto* placeholder = child->IsPlaceholderFrame()
+                          ? static_cast<nsPlaceholderFrame*>(child)
+                          : nullptr;
+  nsIFrame* childOrOutOfFlow =
+      placeholder ? placeholder->GetOutOfFlowFrame() : child;
+
   // If we're generating a display list for printing, include Link items for
   // frames that correspond to HTML link elements so that we can have active
   // links in saved PDF output. Note that the state of "within a link" is
@@ -4053,16 +4075,9 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
   Maybe<nsDisplayListBuilder::Linkifier> linkifier;
   if (StaticPrefs::print_save_as_pdf_links_enabled() &&
       aBuilder->IsForPrinting()) {
-    linkifier.emplace(aBuilder, aChild, aLists.Content());
-    linkifier->MaybeAppendLink(aBuilder, aChild);
+    linkifier.emplace(aBuilder, childOrOutOfFlow, aLists.Content());
+    linkifier->MaybeAppendLink(aBuilder, childOrOutOfFlow);
   }
-
-  nsIFrame* child = aChild;
-  auto* placeholder = child->IsPlaceholderFrame()
-                          ? static_cast<nsPlaceholderFrame*>(child)
-                          : nullptr;
-  nsIFrame* childOrOutOfFlow =
-      placeholder ? placeholder->GetOutOfFlowFrame() : child;
 
   nsIFrame* parent = childOrOutOfFlow->GetParent();
   const auto* parentDisplay = parent->StyleDisplay();
@@ -5123,7 +5138,9 @@ nsresult nsIFrame::PeekBackwardAndForward(nsSelectionAmount aAmountBack,
     return rv;
   }
   if (aAmountBack == eSelectWord) {
-    frameSelection->SetIsDoubleClickSelection(true);
+    frameSelection->SetClickSelectionType(ClickSelectionType::Double);
+  } else if (aAmountBack == eSelectParagraph) {
+    frameSelection->SetClickSelectionType(ClickSelectionType::Triple);
   }
 
   // maintain selection
@@ -5992,18 +6009,10 @@ void nsIFrame::MarkSubtreeDirty() {
 }
 
 /* virtual */
-nscoord nsIFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-  return result;
-}
+nscoord nsIFrame::GetMinISize(gfxContext* aRenderingContext) { return 0; }
 
 /* virtual */
-nscoord nsIFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-  return result;
-}
+nscoord nsIFrame::GetPrefISize(gfxContext* aRenderingContext) { return 0; }
 
 /* virtual */
 void nsIFrame::AddInlineMinISize(gfxContext* aRenderingContext,
@@ -6322,14 +6331,12 @@ static MinMaxSize ComputeTransferredMinMaxInlineSize(
 
   if (aMinMaxBSize.mMinSize > 0) {
     transferredISize.mMinSize = aAspectRatio.ComputeRatioDependentSize(
-        LogicalAxis::eLogicalAxisInline, aWM, aMinMaxBSize.mMinSize,
-        aBoxSizingAdjustment);
+        LogicalAxis::Inline, aWM, aMinMaxBSize.mMinSize, aBoxSizingAdjustment);
   }
 
   if (aMinMaxBSize.mMaxSize != NS_UNCONSTRAINEDSIZE) {
     transferredISize.mMaxSize = aAspectRatio.ComputeRatioDependentSize(
-        LogicalAxis::eLogicalAxisInline, aWM, aMinMaxBSize.mMaxSize,
-        aBoxSizingAdjustment);
+        LogicalAxis::Inline, aWM, aMinMaxBSize.mMaxSize, aBoxSizingAdjustment);
   }
 
   // Minimum size wins over maximum size.
@@ -6396,11 +6403,11 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   // indicates which axis (in this frame's own WM) corresponds to its
   // flex container's main axis.
   LogicalAxis flexMainAxis =
-      eLogicalAxisInline;  // (init to make valgrind happy)
+      LogicalAxis::Inline;  // (init to make valgrind happy)
   if (isFlexItem) {
     flexMainAxis = nsFlexContainerFrame::IsItemInlineAxisMainAxis(this)
-                       ? eLogicalAxisInline
-                       : eLogicalAxisBlock;
+                       ? LogicalAxis::Inline
+                       : LogicalAxis::Block;
   }
 
   const bool isOrthogonal = aWM.IsOrthogonalTo(alignCB->GetWritingMode());
@@ -6429,8 +6436,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     bool mayUseAspectRatio = aspectRatio && !isAutoBSize;
     if (!aFlags.contains(ComputeSizeFlag::ShrinkWrap) &&
         !StyleMargin()->HasInlineAxisAuto(aWM) &&
-        !alignCB->IsMasonry(isOrthogonal ? eLogicalAxisBlock
-                                         : eLogicalAxisInline)) {
+        !alignCB->IsMasonry(isOrthogonal ? LogicalAxis::Block
+                                         : LogicalAxis::Inline)) {
       auto inlineAxisAlignment =
           isOrthogonal ? StylePosition()->UsedAlignSelf(alignCB->Style())._0
                        : StylePosition()->UsedJustifySelf(alignCB->Style())._0;
@@ -6454,7 +6461,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
           aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
           styleBSize.AsLengthPercentage());
       result.ISize(aWM) = aspectRatio.ComputeRatioDependentSize(
-          LogicalAxis::eLogicalAxisInline, aWM, bSize, boxSizingAdjust);
+          LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
       aspectRatioUsage = AspectRatioUsage::ToComputeISize;
     }
 
@@ -6471,7 +6478,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
         aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
         styleBSize.AsLengthPercentage());
     result.ISize(aWM) = aspectRatio.ComputeRatioDependentSize(
-        LogicalAxis::eLogicalAxisInline, aWM, bSize, boxSizingAdjust);
+        LogicalAxis::Inline, aWM, bSize, boxSizingAdjust);
     aspectRatioUsage = AspectRatioUsage::ToComputeISize;
   }
 
@@ -6526,7 +6533,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   // flex container's main-axis.  (Those properties get applied later in
   // the flexbox algorithm.)
   const bool isFlexItemInlineAxisMainAxis =
-      isFlexItem && flexMainAxis == eLogicalAxisInline;
+      isFlexItem && flexMainAxis == LogicalAxis::Inline;
   // Grid items that are subgridded in inline-axis also ignore their min & max
   // sizing properties in that axis.
   const bool shouldIgnoreMinMaxISize =
@@ -6605,8 +6612,8 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   } else if (MOZ_UNLIKELY(isGridItem) && styleBSize.IsAuto() &&
              !aFlags.contains(ComputeSizeFlag::IsGridMeasuringReflow) &&
              !IsTrueOverflowContainer() &&
-             !alignCB->IsMasonry(isOrthogonal ? eLogicalAxisInline
-                                              : eLogicalAxisBlock)) {
+             !alignCB->IsMasonry(isOrthogonal ? LogicalAxis::Inline
+                                              : LogicalAxis::Block)) {
     auto cbSize = aCBSize.BSize(aWM);
     if (cbSize != NS_UNCONSTRAINEDSIZE) {
       // 'auto' block-size for grid-level box - fill the CB for 'stretch' /
@@ -6631,8 +6638,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
       // https://drafts.csswg.org/css-grid/#grid-item-sizing
       if (!stretch && mayUseAspectRatio) {
         result.BSize(aWM) = aspectRatio.ComputeRatioDependentSize(
-            LogicalAxis::eLogicalAxisBlock, aWM, result.ISize(aWM),
-            boxSizingAdjust);
+            LogicalAxis::Block, aWM, result.ISize(aWM), boxSizingAdjust);
         MOZ_ASSERT(aspectRatioUsage == AspectRatioUsage::None);
         aspectRatioUsage = AspectRatioUsage::ToComputeBSize;
       }
@@ -6654,8 +6660,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     // applied (so aspectRatioUsage flag is set as expected). That's why we
     // apply aspect-ratio unconditionally for auto block size here.
     result.BSize(aWM) = aspectRatio.ComputeRatioDependentSize(
-        LogicalAxis::eLogicalAxisBlock, aWM, result.ISize(aWM),
-        boxSizingAdjust);
+        LogicalAxis::Block, aWM, result.ISize(aWM), boxSizingAdjust);
     MOZ_ASSERT(aspectRatioUsage == AspectRatioUsage::None);
     aspectRatioUsage = AspectRatioUsage::ToComputeBSize;
   }
@@ -6665,7 +6670,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     // container's main-axis. (Those properties get applied later in the flexbox
     // algorithm.)
     const bool isFlexItemBlockAxisMainAxis =
-        isFlexItem && flexMainAxis == eLogicalAxisBlock;
+        isFlexItem && flexMainAxis == LogicalAxis::Block;
     // Grid items that are subgridded in block-axis also ignore their min & max
     // sizing properties in that axis.
     const bool shouldIgnoreMinMaxBSize =
@@ -6792,7 +6797,7 @@ Maybe<nscoord> nsIFrame::ComputeInlineSizeFromAspectRatio(
       aCBSize.BSize(aWM), aContentEdgeToBoxSizing.BSize(aWM),
       styleBSize.AsLengthPercentage());
   return Some(aspectRatio.ComputeRatioDependentSize(
-      LogicalAxis::eLogicalAxisInline, aWM, bSize, aContentEdgeToBoxSizing));
+      LogicalAxis::Inline, aWM, bSize, aContentEdgeToBoxSizing));
 }
 
 nsIFrame::ISizeComputationResult nsIFrame::ComputeISizeValue(
@@ -8563,6 +8568,12 @@ const nsFrameSelection* nsIFrame::GetConstFrameSelection() const {
 bool nsIFrame::IsFrameSelected() const {
   NS_ASSERTION(!GetContent() || GetContent()->IsMaybeSelected(),
                "use the public IsSelected() instead");
+  if (StaticPrefs::dom_shadowdom_selection_across_boundary_enabled()) {
+    if (const ShadowRoot* shadowRoot =
+            GetContent()->GetShadowRootForSelection()) {
+      return shadowRoot->IsSelected(0, shadowRoot->GetChildCount());
+    }
+  }
   return GetContent()->IsSelected(0, GetContent()->GetChildCount());
 }
 
@@ -8986,6 +8997,13 @@ nsresult nsIFrame::PeekOffsetForParagraph(PeekOffsetStruct* aPos) {
 
   if (reachedLimit) {  // no "stop frame" found
     aPos->mResultContent = frame->GetContent();
+    if (ShadowRoot* shadowRoot =
+            aPos->mResultContent->GetShadowRootForSelection()) {
+      // Even if there's no children for this node,
+      // the elements inside the shadow root is still
+      // selectable
+      aPos->mResultContent = shadowRoot;
+    }
     if (aPos->mDirection == eDirPrevious) {
       aPos->mContentOffset = 0;
     } else if (aPos->mResultContent) {
@@ -10701,21 +10719,27 @@ ComputedStyle* nsIFrame::DoGetParentComputedStyle(
 }
 
 void nsIFrame::GetLastLeaf(nsIFrame** aFrame) {
-  if (!aFrame || !*aFrame) return;
-  nsIFrame* child = *aFrame;
-  // if we are a block frame then go for the last line of 'this'
-  while (1) {
-    child = child->PrincipalChildList().FirstChild();
-    if (!child) return;  // nothing to do
-    nsIFrame* siblingFrame;
-    nsIContent* content;
-    // ignore anonymous elements, e.g. mozTableAdd* mozTableRemove*
-    // see bug 278197 comment #12 #13 for details
-    while ((siblingFrame = child->GetNextSibling()) &&
-           (content = siblingFrame->GetContent()) &&
-           !content->IsRootOfNativeAnonymousSubtree())
-      child = siblingFrame;
-    *aFrame = child;
+  if (!aFrame || !*aFrame) {
+    return;
+  }
+  for (nsIFrame* maybeLastLeaf = (*aFrame)->PrincipalChildList().LastChild();
+       maybeLastLeaf;) {
+    nsIFrame* lastChildNotInSubTree = nullptr;
+    for (nsIFrame* child = maybeLastLeaf; child;
+         child = child->GetPrevSibling()) {
+      nsIContent* content = child->GetContent();
+      // ignore anonymous elements, e.g. mozTableAdd* mozTableRemove*
+      // see bug 278197 comment #12 #13 for details
+      if (content && !content->IsRootOfNativeAnonymousSubtree()) {
+        lastChildNotInSubTree = child;
+        break;
+      }
+    }
+    if (!lastChildNotInSubTree) {
+      return;
+    }
+    *aFrame = lastChildNotInSubTree;
+    maybeLastLeaf = lastChildNotInSubTree->PrincipalChildList().LastChild();
   }
 }
 
@@ -10910,7 +10934,7 @@ void nsIFrame::UpdateStyleOfChildAnonBox(nsIFrame* aChildFrame,
   // Now that we've updated the style on aChildFrame, check whether it itself
   // has anon boxes to deal with.
   ServoRestyleState childrenState(*aChildFrame, aRestyleState, childHint,
-                                  ServoRestyleState::Type::InFlow);
+                                  ServoRestyleState::CanUseHandledHints::Yes);
   aChildFrame->UpdateStyleOfOwnedAnonBoxes(childrenState);
 
   // Assuming anon boxes don't have ::backdrop associated with them... if that
@@ -11657,1037 +11681,6 @@ void nsIFrame::VerifyDirtyBitSet(const nsFrameList& aFrameList) {
     NS_ASSERTION(f->HasAnyStateBits(NS_FRAME_IS_DIRTY), "dirty bit not set");
   }
 }
-
-// Start Display Reflow
-DR_cookie::DR_cookie(nsPresContext* aPresContext, nsIFrame* aFrame,
-                     const ReflowInput& aReflowInput, ReflowOutput& aMetrics,
-                     nsReflowStatus& aStatus)
-    : mPresContext(aPresContext),
-      mFrame(aFrame),
-      mReflowInput(aReflowInput),
-      mMetrics(aMetrics),
-      mStatus(aStatus) {
-  MOZ_COUNT_CTOR(DR_cookie);
-  mValue = nsIFrame::DisplayReflowEnter(aPresContext, mFrame, mReflowInput);
-}
-
-DR_cookie::~DR_cookie() {
-  MOZ_COUNT_DTOR(DR_cookie);
-  nsIFrame::DisplayReflowExit(mPresContext, mFrame, mMetrics, mStatus, mValue);
-}
-
-DR_layout_cookie::DR_layout_cookie(nsIFrame* aFrame) : mFrame(aFrame) {
-  MOZ_COUNT_CTOR(DR_layout_cookie);
-  mValue = nsIFrame::DisplayLayoutEnter(mFrame);
-}
-
-DR_layout_cookie::~DR_layout_cookie() {
-  MOZ_COUNT_DTOR(DR_layout_cookie);
-  nsIFrame::DisplayLayoutExit(mFrame, mValue);
-}
-
-DR_intrinsic_inline_size_cookie::DR_intrinsic_inline_size_cookie(
-    nsIFrame* aFrame, const char* aType, nscoord& aResult)
-    : mFrame(aFrame), mType(aType), mResult(aResult) {
-  MOZ_COUNT_CTOR(DR_intrinsic_inline_size_cookie);
-  mValue = nsIFrame::DisplayIntrinsicISizeEnter(mFrame, mType);
-}
-
-DR_intrinsic_inline_size_cookie::~DR_intrinsic_inline_size_cookie() {
-  MOZ_COUNT_DTOR(DR_intrinsic_inline_size_cookie);
-  nsIFrame::DisplayIntrinsicISizeExit(mFrame, mType, mResult, mValue);
-}
-
-DR_intrinsic_size_cookie::DR_intrinsic_size_cookie(nsIFrame* aFrame,
-                                                   const char* aType,
-                                                   nsSize& aResult)
-    : mFrame(aFrame), mType(aType), mResult(aResult) {
-  MOZ_COUNT_CTOR(DR_intrinsic_size_cookie);
-  mValue = nsIFrame::DisplayIntrinsicSizeEnter(mFrame, mType);
-}
-
-DR_intrinsic_size_cookie::~DR_intrinsic_size_cookie() {
-  MOZ_COUNT_DTOR(DR_intrinsic_size_cookie);
-  nsIFrame::DisplayIntrinsicSizeExit(mFrame, mType, mResult, mValue);
-}
-
-DR_init_constraints_cookie::DR_init_constraints_cookie(
-    nsIFrame* aFrame, ReflowInput* aState, nscoord aCBWidth, nscoord aCBHeight,
-    const mozilla::Maybe<mozilla::LogicalMargin> aBorder,
-    const mozilla::Maybe<mozilla::LogicalMargin> aPadding)
-    : mFrame(aFrame), mState(aState) {
-  MOZ_COUNT_CTOR(DR_init_constraints_cookie);
-  nsMargin border;
-  if (aBorder) {
-    border = aBorder->GetPhysicalMargin(aFrame->GetWritingMode());
-  }
-  nsMargin padding;
-  if (aPadding) {
-    padding = aPadding->GetPhysicalMargin(aFrame->GetWritingMode());
-  }
-  mValue = ReflowInput::DisplayInitConstraintsEnter(
-      mFrame, mState, aCBWidth, aCBHeight, aBorder ? &border : nullptr,
-      aPadding ? &padding : nullptr);
-}
-
-DR_init_constraints_cookie::~DR_init_constraints_cookie() {
-  MOZ_COUNT_DTOR(DR_init_constraints_cookie);
-  ReflowInput::DisplayInitConstraintsExit(mFrame, mState, mValue);
-}
-
-DR_init_offsets_cookie::DR_init_offsets_cookie(
-    nsIFrame* aFrame, SizeComputationInput* aState, nscoord aPercentBasis,
-    WritingMode aCBWritingMode,
-    const mozilla::Maybe<mozilla::LogicalMargin> aBorder,
-    const mozilla::Maybe<mozilla::LogicalMargin> aPadding)
-    : mFrame(aFrame), mState(aState) {
-  MOZ_COUNT_CTOR(DR_init_offsets_cookie);
-  nsMargin border;
-  if (aBorder) {
-    border = aBorder->GetPhysicalMargin(aFrame->GetWritingMode());
-  }
-  nsMargin padding;
-  if (aPadding) {
-    padding = aPadding->GetPhysicalMargin(aFrame->GetWritingMode());
-  }
-  mValue = SizeComputationInput::DisplayInitOffsetsEnter(
-      mFrame, mState, aPercentBasis, aCBWritingMode,
-      aBorder ? &border : nullptr, aPadding ? &padding : nullptr);
-}
-
-DR_init_offsets_cookie::~DR_init_offsets_cookie() {
-  MOZ_COUNT_DTOR(DR_init_offsets_cookie);
-  SizeComputationInput::DisplayInitOffsetsExit(mFrame, mState, mValue);
-}
-
-struct DR_Rule;
-
-struct DR_FrameTypeInfo {
-  DR_FrameTypeInfo(LayoutFrameType aFrameType, const char* aFrameNameAbbrev,
-                   const char* aFrameName);
-  ~DR_FrameTypeInfo();
-
-  LayoutFrameType mType;
-  char mNameAbbrev[16];
-  char mName[32];
-  nsTArray<DR_Rule*> mRules;
-
- private:
-  DR_FrameTypeInfo& operator=(const DR_FrameTypeInfo&) = delete;
-};
-
-struct DR_FrameTreeNode;
-struct DR_Rule;
-
-struct DR_State {
-  DR_State();
-  ~DR_State();
-  void Init();
-  void AddFrameTypeInfo(LayoutFrameType aFrameType,
-                        const char* aFrameNameAbbrev, const char* aFrameName);
-  DR_FrameTypeInfo* GetFrameTypeInfo(LayoutFrameType aFrameType);
-  DR_FrameTypeInfo* GetFrameTypeInfo(char* aFrameName);
-  void InitFrameTypeTable();
-  DR_FrameTreeNode* CreateTreeNode(nsIFrame* aFrame,
-                                   const ReflowInput* aReflowInput);
-  void FindMatchingRule(DR_FrameTreeNode& aNode);
-  bool RuleMatches(DR_Rule& aRule, DR_FrameTreeNode& aNode);
-  bool GetToken(FILE* aFile, char* aBuf, size_t aBufSize);
-  DR_Rule* ParseRule(FILE* aFile);
-  void ParseRulesFile();
-  void AddRule(nsTArray<DR_Rule*>& aRules, DR_Rule& aRule);
-  bool IsWhiteSpace(int c);
-  bool GetNumber(char* aBuf, int32_t& aNumber);
-  void PrettyUC(nscoord aSize, char* aBuf, int aBufSize);
-  void PrintMargin(const char* tag, const nsMargin* aMargin);
-  void DisplayFrameTypeInfo(nsIFrame* aFrame, int32_t aIndent);
-  void DeleteTreeNode(DR_FrameTreeNode& aNode);
-
-  bool mInited;
-  bool mActive;
-  int32_t mCount;
-  int32_t mAssert;
-  int32_t mIndent;
-  bool mIndentUndisplayedFrames;
-  bool mDisplayPixelErrors;
-  nsTArray<DR_Rule*> mWildRules;
-  nsTArray<DR_FrameTypeInfo> mFrameTypeTable;
-  // reflow specific state
-  nsTArray<DR_FrameTreeNode*> mFrameTreeLeaves;
-};
-
-static DR_State* DR_state;  // the one and only DR_State
-
-struct DR_RulePart {
-  explicit DR_RulePart(LayoutFrameType aFrameType)
-      : mFrameType(aFrameType), mNext(0) {}
-
-  void Destroy();
-
-  LayoutFrameType mFrameType;
-  DR_RulePart* mNext;
-};
-
-void DR_RulePart::Destroy() {
-  if (mNext) {
-    mNext->Destroy();
-  }
-  delete this;
-}
-
-struct DR_Rule {
-  DR_Rule() : mLength(0), mTarget(nullptr), mDisplay(false) {
-    MOZ_COUNT_CTOR(DR_Rule);
-  }
-  ~DR_Rule() {
-    if (mTarget) mTarget->Destroy();
-    MOZ_COUNT_DTOR(DR_Rule);
-  }
-  void AddPart(LayoutFrameType aFrameType);
-
-  uint32_t mLength;
-  DR_RulePart* mTarget;
-  bool mDisplay;
-};
-
-void DR_Rule::AddPart(LayoutFrameType aFrameType) {
-  DR_RulePart* newPart = new DR_RulePart(aFrameType);
-  newPart->mNext = mTarget;
-  mTarget = newPart;
-  mLength++;
-}
-
-DR_FrameTypeInfo::~DR_FrameTypeInfo() {
-  int32_t numElements;
-  numElements = mRules.Length();
-  for (int32_t i = numElements - 1; i >= 0; i--) {
-    delete mRules.ElementAt(i);
-  }
-}
-
-DR_FrameTypeInfo::DR_FrameTypeInfo(LayoutFrameType aFrameType,
-                                   const char* aFrameNameAbbrev,
-                                   const char* aFrameName) {
-  mType = aFrameType;
-  PL_strncpyz(mNameAbbrev, aFrameNameAbbrev, sizeof(mNameAbbrev));
-  PL_strncpyz(mName, aFrameName, sizeof(mName));
-}
-
-struct DR_FrameTreeNode {
-  DR_FrameTreeNode(nsIFrame* aFrame, DR_FrameTreeNode* aParent)
-      : mFrame(aFrame), mParent(aParent), mDisplay(0), mIndent(0) {
-    MOZ_COUNT_CTOR(DR_FrameTreeNode);
-  }
-
-  MOZ_COUNTED_DTOR(DR_FrameTreeNode)
-
-  nsIFrame* mFrame;
-  DR_FrameTreeNode* mParent;
-  bool mDisplay;
-  uint32_t mIndent;
-};
-
-// DR_State implementation
-
-DR_State::DR_State()
-    : mInited(false),
-      mActive(false),
-      mCount(0),
-      mAssert(-1),
-      mIndent(0),
-      mIndentUndisplayedFrames(false),
-      mDisplayPixelErrors(false) {
-  MOZ_COUNT_CTOR(DR_State);
-}
-
-void DR_State::Init() {
-  char* env = PR_GetEnv("GECKO_DISPLAY_REFLOW_ASSERT");
-  int32_t num;
-  if (env) {
-    if (GetNumber(env, num))
-      mAssert = num;
-    else
-      printf("GECKO_DISPLAY_REFLOW_ASSERT - invalid value = %s", env);
-  }
-
-  env = PR_GetEnv("GECKO_DISPLAY_REFLOW_INDENT_START");
-  if (env) {
-    if (GetNumber(env, num))
-      mIndent = num;
-    else
-      printf("GECKO_DISPLAY_REFLOW_INDENT_START - invalid value = %s", env);
-  }
-
-  env = PR_GetEnv("GECKO_DISPLAY_REFLOW_INDENT_UNDISPLAYED_FRAMES");
-  if (env) {
-    if (GetNumber(env, num))
-      mIndentUndisplayedFrames = num;
-    else
-      printf(
-          "GECKO_DISPLAY_REFLOW_INDENT_UNDISPLAYED_FRAMES - invalid value = %s",
-          env);
-  }
-
-  env = PR_GetEnv("GECKO_DISPLAY_REFLOW_FLAG_PIXEL_ERRORS");
-  if (env) {
-    if (GetNumber(env, num))
-      mDisplayPixelErrors = num;
-    else
-      printf("GECKO_DISPLAY_REFLOW_FLAG_PIXEL_ERRORS - invalid value = %s",
-             env);
-  }
-
-  InitFrameTypeTable();
-  ParseRulesFile();
-  mInited = true;
-}
-
-DR_State::~DR_State() {
-  MOZ_COUNT_DTOR(DR_State);
-  int32_t numElements, i;
-  numElements = mWildRules.Length();
-  for (i = numElements - 1; i >= 0; i--) {
-    delete mWildRules.ElementAt(i);
-  }
-  numElements = mFrameTreeLeaves.Length();
-  for (i = numElements - 1; i >= 0; i--) {
-    delete mFrameTreeLeaves.ElementAt(i);
-  }
-}
-
-bool DR_State::GetNumber(char* aBuf, int32_t& aNumber) {
-  if (sscanf(aBuf, "%d", &aNumber) > 0)
-    return true;
-  else
-    return false;
-}
-
-bool DR_State::IsWhiteSpace(int c) {
-  return (c == ' ') || (c == '\t') || (c == '\n') || (c == '\r');
-}
-
-bool DR_State::GetToken(FILE* aFile, char* aBuf, size_t aBufSize) {
-  bool haveToken = false;
-  aBuf[0] = 0;
-  // get the 1st non whitespace char
-  int c = -1;
-  for (c = getc(aFile); (c > 0) && IsWhiteSpace(c); c = getc(aFile)) {
-  }
-
-  if (c > 0) {
-    haveToken = true;
-    aBuf[0] = c;
-    // get everything up to the next whitespace char
-    size_t cX;
-    for (cX = 1; cX + 1 < aBufSize; cX++) {
-      c = getc(aFile);
-      if (c < 0) {  // EOF
-        ungetc(' ', aFile);
-        break;
-      } else {
-        if (IsWhiteSpace(c)) {
-          break;
-        } else {
-          aBuf[cX] = c;
-        }
-      }
-    }
-    aBuf[cX] = 0;
-  }
-  return haveToken;
-}
-
-DR_Rule* DR_State::ParseRule(FILE* aFile) {
-  char buf[128];
-  int32_t doDisplay;
-  DR_Rule* rule = nullptr;
-  while (GetToken(aFile, buf, sizeof(buf))) {
-    if (GetNumber(buf, doDisplay)) {
-      if (rule) {
-        rule->mDisplay = !!doDisplay;
-        break;
-      } else {
-        printf("unexpected token - %s \n", buf);
-      }
-    } else {
-      if (!rule) {
-        rule = new DR_Rule;
-      }
-      if (strcmp(buf, "*") == 0) {
-        rule->AddPart(LayoutFrameType::None);
-      } else {
-        DR_FrameTypeInfo* info = GetFrameTypeInfo(buf);
-        if (info) {
-          rule->AddPart(info->mType);
-        } else {
-          printf("invalid frame type - %s \n", buf);
-        }
-      }
-    }
-  }
-  return rule;
-}
-
-void DR_State::AddRule(nsTArray<DR_Rule*>& aRules, DR_Rule& aRule) {
-  int32_t numRules = aRules.Length();
-  for (int32_t ruleX = 0; ruleX < numRules; ruleX++) {
-    DR_Rule* rule = aRules.ElementAt(ruleX);
-    NS_ASSERTION(rule, "program error");
-    if (aRule.mLength > rule->mLength) {
-      aRules.InsertElementAt(ruleX, &aRule);
-      return;
-    }
-  }
-  aRules.AppendElement(&aRule);
-}
-
-static Maybe<bool> ShouldLogReflow(const char* processes) {
-  switch (processes[0]) {
-    case 'A':
-    case 'a':
-      return Some(true);
-    case 'P':
-    case 'p':
-      return Some(XRE_IsParentProcess());
-    case 'C':
-    case 'c':
-      return Some(XRE_IsContentProcess());
-    default:
-      return Nothing{};
-  }
-}
-
-void DR_State::ParseRulesFile() {
-  char* processes = PR_GetEnv("GECKO_DISPLAY_REFLOW_PROCESSES");
-  if (processes) {
-    Maybe<bool> enableLog = ShouldLogReflow(processes);
-    if (enableLog.isNothing()) {
-      MOZ_CRASH("GECKO_DISPLAY_REFLOW_PROCESSES: [a]ll [p]arent [c]ontent");
-    } else if (enableLog.value()) {
-      DR_Rule* rule = new DR_Rule;
-      rule->AddPart(LayoutFrameType::None);
-      rule->mDisplay = true;
-      AddRule(mWildRules, *rule);
-      mActive = true;
-    }
-    return;
-  }
-
-  char* path = PR_GetEnv("GECKO_DISPLAY_REFLOW_RULES_FILE");
-  if (path) {
-    FILE* inFile = fopen(path, "r");
-    if (!inFile) {
-      MOZ_CRASH(
-          "Failed to open the specified rules file; Try `--setpref "
-          "security.sandbox.content.level=2` if the sandbox is at cause");
-    }
-    for (DR_Rule* rule = ParseRule(inFile); rule; rule = ParseRule(inFile)) {
-      if (rule->mTarget) {
-        LayoutFrameType fType = rule->mTarget->mFrameType;
-        if (fType != LayoutFrameType::None) {
-          DR_FrameTypeInfo* info = GetFrameTypeInfo(fType);
-          AddRule(info->mRules, *rule);
-        } else {
-          AddRule(mWildRules, *rule);
-        }
-        mActive = true;
-      }
-    }
-
-    fclose(inFile);
-  }
-}
-
-void DR_State::AddFrameTypeInfo(LayoutFrameType aFrameType,
-                                const char* aFrameNameAbbrev,
-                                const char* aFrameName) {
-  mFrameTypeTable.EmplaceBack(aFrameType, aFrameNameAbbrev, aFrameName);
-}
-
-DR_FrameTypeInfo* DR_State::GetFrameTypeInfo(LayoutFrameType aFrameType) {
-  int32_t numEntries = mFrameTypeTable.Length();
-  NS_ASSERTION(numEntries != 0, "empty FrameTypeTable");
-  for (int32_t i = 0; i < numEntries; i++) {
-    DR_FrameTypeInfo& info = mFrameTypeTable.ElementAt(i);
-    if (info.mType == aFrameType) {
-      return &info;
-    }
-  }
-  return &mFrameTypeTable.ElementAt(numEntries -
-                                    1);  // return unknown frame type
-}
-
-DR_FrameTypeInfo* DR_State::GetFrameTypeInfo(char* aFrameName) {
-  int32_t numEntries = mFrameTypeTable.Length();
-  NS_ASSERTION(numEntries != 0, "empty FrameTypeTable");
-  for (int32_t i = 0; i < numEntries; i++) {
-    DR_FrameTypeInfo& info = mFrameTypeTable.ElementAt(i);
-    if ((strcmp(aFrameName, info.mName) == 0) ||
-        (strcmp(aFrameName, info.mNameAbbrev) == 0)) {
-      return &info;
-    }
-  }
-  return &mFrameTypeTable.ElementAt(numEntries -
-                                    1);  // return unknown frame type
-}
-
-void DR_State::InitFrameTypeTable() {
-  AddFrameTypeInfo(LayoutFrameType::Block, "block", "block");
-  AddFrameTypeInfo(LayoutFrameType::Br, "br", "br");
-  AddFrameTypeInfo(LayoutFrameType::ColorControl, "color", "colorControl");
-  AddFrameTypeInfo(LayoutFrameType::GfxButtonControl, "button",
-                   "gfxButtonControl");
-  AddFrameTypeInfo(LayoutFrameType::HTMLButtonControl, "HTMLbutton",
-                   "HTMLButtonControl");
-  AddFrameTypeInfo(LayoutFrameType::HTMLCanvas, "HTMLCanvas", "HTMLCanvas");
-  AddFrameTypeInfo(LayoutFrameType::SubDocument, "subdoc", "subDocument");
-  AddFrameTypeInfo(LayoutFrameType::Image, "img", "image");
-  AddFrameTypeInfo(LayoutFrameType::Inline, "inline", "inline");
-  AddFrameTypeInfo(LayoutFrameType::Letter, "letter", "letter");
-  AddFrameTypeInfo(LayoutFrameType::Line, "line", "line");
-  AddFrameTypeInfo(LayoutFrameType::ListControl, "select", "select");
-  AddFrameTypeInfo(LayoutFrameType::Page, "page", "page");
-  AddFrameTypeInfo(LayoutFrameType::Placeholder, "place", "placeholder");
-  AddFrameTypeInfo(LayoutFrameType::Canvas, "canvas", "canvas");
-  AddFrameTypeInfo(LayoutFrameType::Scroll, "scroll", "scroll");
-  AddFrameTypeInfo(LayoutFrameType::TableCell, "cell", "tableCell");
-  AddFrameTypeInfo(LayoutFrameType::TableCol, "col", "tableCol");
-  AddFrameTypeInfo(LayoutFrameType::TableColGroup, "colG", "tableColGroup");
-  AddFrameTypeInfo(LayoutFrameType::Table, "tbl", "table");
-  AddFrameTypeInfo(LayoutFrameType::TableWrapper, "tblW", "tableWrapper");
-  AddFrameTypeInfo(LayoutFrameType::TableRowGroup, "rowG", "tableRowGroup");
-  AddFrameTypeInfo(LayoutFrameType::TableRow, "row", "tableRow");
-  AddFrameTypeInfo(LayoutFrameType::TextInput, "textCtl", "textInput");
-  AddFrameTypeInfo(LayoutFrameType::Text, "text", "text");
-  AddFrameTypeInfo(LayoutFrameType::Viewport, "VP", "viewport");
-  AddFrameTypeInfo(LayoutFrameType::Slider, "Slider", "Slider");
-  AddFrameTypeInfo(LayoutFrameType::None, "unknown", "unknown");
-}
-
-void DR_State::DisplayFrameTypeInfo(nsIFrame* aFrame, int32_t aIndent) {
-  DR_FrameTypeInfo* frameTypeInfo = GetFrameTypeInfo(aFrame->Type());
-  if (frameTypeInfo) {
-    for (int32_t i = 0; i < aIndent; i++) {
-      printf(" ");
-    }
-    if (!strcmp(frameTypeInfo->mNameAbbrev, "unknown")) {
-      if (aFrame) {
-        nsAutoString name;
-        aFrame->GetFrameName(name);
-        printf("%s %p ", NS_LossyConvertUTF16toASCII(name).get(),
-               (void*)aFrame);
-      } else {
-        printf("%s %p ", frameTypeInfo->mNameAbbrev, (void*)aFrame);
-      }
-    } else {
-      printf("%s %p ", frameTypeInfo->mNameAbbrev, (void*)aFrame);
-    }
-  }
-}
-
-bool DR_State::RuleMatches(DR_Rule& aRule, DR_FrameTreeNode& aNode) {
-  NS_ASSERTION(aRule.mTarget, "program error");
-
-  DR_RulePart* rulePart;
-  DR_FrameTreeNode* parentNode;
-  for (rulePart = aRule.mTarget->mNext, parentNode = aNode.mParent;
-       rulePart && parentNode;
-       rulePart = rulePart->mNext, parentNode = parentNode->mParent) {
-    if (rulePart->mFrameType != LayoutFrameType::None) {
-      if (parentNode->mFrame) {
-        if (rulePart->mFrameType != parentNode->mFrame->Type()) {
-          return false;
-        }
-      } else
-        NS_ASSERTION(false, "program error");
-    }
-    // else wild card match
-  }
-  return true;
-}
-
-void DR_State::FindMatchingRule(DR_FrameTreeNode& aNode) {
-  if (!aNode.mFrame) {
-    NS_ASSERTION(false, "invalid DR_FrameTreeNode \n");
-    return;
-  }
-
-  bool matchingRule = false;
-
-  DR_FrameTypeInfo* info = GetFrameTypeInfo(aNode.mFrame->Type());
-  NS_ASSERTION(info, "program error");
-  int32_t numRules = info->mRules.Length();
-  for (int32_t ruleX = 0; ruleX < numRules; ruleX++) {
-    DR_Rule* rule = info->mRules.ElementAt(ruleX);
-    if (rule && RuleMatches(*rule, aNode)) {
-      aNode.mDisplay = rule->mDisplay;
-      matchingRule = true;
-      break;
-    }
-  }
-  if (!matchingRule) {
-    int32_t numWildRules = mWildRules.Length();
-    for (int32_t ruleX = 0; ruleX < numWildRules; ruleX++) {
-      DR_Rule* rule = mWildRules.ElementAt(ruleX);
-      if (rule && RuleMatches(*rule, aNode)) {
-        aNode.mDisplay = rule->mDisplay;
-        break;
-      }
-    }
-  }
-}
-
-DR_FrameTreeNode* DR_State::CreateTreeNode(nsIFrame* aFrame,
-                                           const ReflowInput* aReflowInput) {
-  // find the frame of the parent reflow input (usually just the parent of
-  // aFrame)
-  nsIFrame* parentFrame;
-  if (aReflowInput) {
-    const ReflowInput* parentRI = aReflowInput->mParentReflowInput;
-    parentFrame = (parentRI) ? parentRI->mFrame : nullptr;
-  } else {
-    parentFrame = aFrame->GetParent();
-  }
-
-  // find the parent tree node leaf
-  DR_FrameTreeNode* parentNode = nullptr;
-
-  DR_FrameTreeNode* lastLeaf = nullptr;
-  if (mFrameTreeLeaves.Length())
-    lastLeaf = mFrameTreeLeaves.ElementAt(mFrameTreeLeaves.Length() - 1);
-  if (lastLeaf) {
-    for (parentNode = lastLeaf;
-         parentNode && (parentNode->mFrame != parentFrame);
-         parentNode = parentNode->mParent) {
-    }
-  }
-  DR_FrameTreeNode* newNode = new DR_FrameTreeNode(aFrame, parentNode);
-  FindMatchingRule(*newNode);
-
-  newNode->mIndent = mIndent;
-  if (newNode->mDisplay || mIndentUndisplayedFrames) {
-    ++mIndent;
-  }
-
-  if (lastLeaf && (lastLeaf == parentNode)) {
-    mFrameTreeLeaves.RemoveLastElement();
-  }
-  mFrameTreeLeaves.AppendElement(newNode);
-  mCount++;
-
-  return newNode;
-}
-
-void DR_State::PrettyUC(nscoord aSize, char* aBuf, int aBufSize) {
-  if (NS_UNCONSTRAINEDSIZE == aSize) {
-    strcpy(aBuf, "UC");
-  } else {
-    if ((nscoord)0xdeadbeefU == aSize) {
-      strcpy(aBuf, "deadbeef");
-    } else {
-      snprintf(aBuf, aBufSize, "%d", aSize);
-    }
-  }
-}
-
-void DR_State::PrintMargin(const char* tag, const nsMargin* aMargin) {
-  if (aMargin) {
-    char t[16], r[16], b[16], l[16];
-    PrettyUC(aMargin->top, t, 16);
-    PrettyUC(aMargin->right, r, 16);
-    PrettyUC(aMargin->bottom, b, 16);
-    PrettyUC(aMargin->left, l, 16);
-    printf(" %s=%s,%s,%s,%s", tag, t, r, b, l);
-  } else {
-    // use %p here for consistency with other null-pointer printouts
-    printf(" %s=%p", tag, (void*)aMargin);
-  }
-}
-
-void DR_State::DeleteTreeNode(DR_FrameTreeNode& aNode) {
-  mFrameTreeLeaves.RemoveElement(&aNode);
-  int32_t numLeaves = mFrameTreeLeaves.Length();
-  if ((0 == numLeaves) ||
-      (aNode.mParent != mFrameTreeLeaves.ElementAt(numLeaves - 1))) {
-    mFrameTreeLeaves.AppendElement(aNode.mParent);
-  }
-
-  if (aNode.mDisplay || mIndentUndisplayedFrames) {
-    --mIndent;
-  }
-  // delete the tree node
-  delete &aNode;
-}
-
-static void CheckPixelError(nscoord aSize, int32_t aPixelToTwips) {
-  if (NS_UNCONSTRAINEDSIZE != aSize) {
-    if ((aSize % aPixelToTwips) > 0) {
-      printf("VALUE %d is not a whole pixel \n", aSize);
-    }
-  }
-}
-
-static void DisplayReflowEnterPrint(nsPresContext* aPresContext,
-                                    nsIFrame* aFrame,
-                                    const ReflowInput& aReflowInput,
-                                    DR_FrameTreeNode& aTreeNode,
-                                    bool aChanged) {
-  if (aTreeNode.mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, aTreeNode.mIndent);
-
-    char width[16];
-    char height[16];
-
-    DR_state->PrettyUC(aReflowInput.AvailableWidth(), width, 16);
-    DR_state->PrettyUC(aReflowInput.AvailableHeight(), height, 16);
-    printf("Reflow a=%s,%s ", width, height);
-
-    DR_state->PrettyUC(aReflowInput.ComputedWidth(), width, 16);
-    DR_state->PrettyUC(aReflowInput.ComputedHeight(), height, 16);
-    printf("c=%s,%s ", width, height);
-
-    if (aFrame->HasAnyStateBits(NS_FRAME_IS_DIRTY)) printf("dirty ");
-
-    if (aFrame->HasAnyStateBits(NS_FRAME_HAS_DIRTY_CHILDREN))
-      printf("dirty-children ");
-
-    if (aReflowInput.mFlags.mSpecialBSizeReflow) printf("special-bsize ");
-
-    if (aReflowInput.IsHResize()) printf("h-resize ");
-
-    if (aReflowInput.IsVResize()) printf("v-resize ");
-
-    nsIFrame* inFlow = aFrame->GetPrevInFlow();
-    if (inFlow) {
-      printf("pif=%p ", (void*)inFlow);
-    }
-    inFlow = aFrame->GetNextInFlow();
-    if (inFlow) {
-      printf("nif=%p ", (void*)inFlow);
-    }
-    if (aChanged)
-      printf("CHANGED \n");
-    else
-      printf("cnt=%d \n", DR_state->mCount);
-    if (DR_state->mDisplayPixelErrors) {
-      int32_t d2a = aPresContext->AppUnitsPerDevPixel();
-      CheckPixelError(aReflowInput.AvailableWidth(), d2a);
-      CheckPixelError(aReflowInput.AvailableHeight(), d2a);
-      CheckPixelError(aReflowInput.ComputedWidth(), d2a);
-      CheckPixelError(aReflowInput.ComputedHeight(), d2a);
-    }
-  }
-}
-
-void* nsIFrame::DisplayReflowEnter(nsPresContext* aPresContext,
-                                   nsIFrame* aFrame,
-                                   const ReflowInput& aReflowInput) {
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  NS_ASSERTION(aFrame, "invalid call");
-
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, &aReflowInput);
-  if (treeNode) {
-    DisplayReflowEnterPrint(aPresContext, aFrame, aReflowInput, *treeNode,
-                            false);
-  }
-  return treeNode;
-}
-
-void* nsIFrame::DisplayLayoutEnter(nsIFrame* aFrame) {
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  NS_ASSERTION(aFrame, "invalid call");
-
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, nullptr);
-  if (treeNode && treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    printf("XULLayout\n");
-  }
-  return treeNode;
-}
-
-void* nsIFrame::DisplayIntrinsicISizeEnter(nsIFrame* aFrame,
-                                           const char* aType) {
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  NS_ASSERTION(aFrame, "invalid call");
-
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, nullptr);
-  if (treeNode && treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    printf("Get%sISize\n", aType);
-  }
-  return treeNode;
-}
-
-void* nsIFrame::DisplayIntrinsicSizeEnter(nsIFrame* aFrame, const char* aType) {
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  NS_ASSERTION(aFrame, "invalid call");
-
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, nullptr);
-  if (treeNode && treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    printf("Get%sSize\n", aType);
-  }
-  return treeNode;
-}
-
-void nsIFrame::DisplayReflowExit(nsPresContext* aPresContext, nsIFrame* aFrame,
-                                 ReflowOutput& aMetrics,
-                                 const nsReflowStatus& aStatus,
-                                 void* aFrameTreeNode) {
-  if (!DR_state->mActive) return;
-
-  NS_ASSERTION(aFrame, "DisplayReflowExit - invalid call");
-  if (!aFrameTreeNode) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aFrameTreeNode;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-
-    char width[16];
-    char height[16];
-    char x[16];
-    char y[16];
-    DR_state->PrettyUC(aMetrics.Width(), width, 16);
-    DR_state->PrettyUC(aMetrics.Height(), height, 16);
-    printf("Reflow d=%s,%s", width, height);
-
-    if (!aStatus.IsEmpty()) {
-      printf(" status=%s", ToString(aStatus).c_str());
-    }
-    if (aFrame->HasOverflowAreas()) {
-      DR_state->PrettyUC(aMetrics.InkOverflow().x, x, 16);
-      DR_state->PrettyUC(aMetrics.InkOverflow().y, y, 16);
-      DR_state->PrettyUC(aMetrics.InkOverflow().width, width, 16);
-      DR_state->PrettyUC(aMetrics.InkOverflow().height, height, 16);
-      printf(" vis-o=(%s,%s) %s x %s", x, y, width, height);
-
-      nsRect storedOverflow = aFrame->InkOverflowRect();
-      DR_state->PrettyUC(storedOverflow.x, x, 16);
-      DR_state->PrettyUC(storedOverflow.y, y, 16);
-      DR_state->PrettyUC(storedOverflow.width, width, 16);
-      DR_state->PrettyUC(storedOverflow.height, height, 16);
-      printf(" vis-sto=(%s,%s) %s x %s", x, y, width, height);
-
-      DR_state->PrettyUC(aMetrics.ScrollableOverflow().x, x, 16);
-      DR_state->PrettyUC(aMetrics.ScrollableOverflow().y, y, 16);
-      DR_state->PrettyUC(aMetrics.ScrollableOverflow().width, width, 16);
-      DR_state->PrettyUC(aMetrics.ScrollableOverflow().height, height, 16);
-      printf(" scr-o=(%s,%s) %s x %s", x, y, width, height);
-
-      storedOverflow = aFrame->ScrollableOverflowRect();
-      DR_state->PrettyUC(storedOverflow.x, x, 16);
-      DR_state->PrettyUC(storedOverflow.y, y, 16);
-      DR_state->PrettyUC(storedOverflow.width, width, 16);
-      DR_state->PrettyUC(storedOverflow.height, height, 16);
-      printf(" scr-sto=(%s,%s) %s x %s", x, y, width, height);
-    }
-    printf("\n");
-    if (DR_state->mDisplayPixelErrors) {
-      int32_t d2a = aPresContext->AppUnitsPerDevPixel();
-      CheckPixelError(aMetrics.Width(), d2a);
-      CheckPixelError(aMetrics.Height(), d2a);
-    }
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-void nsIFrame::DisplayLayoutExit(nsIFrame* aFrame, void* aFrameTreeNode) {
-  if (!DR_state->mActive) return;
-
-  NS_ASSERTION(aFrame, "non-null frame required");
-  if (!aFrameTreeNode) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aFrameTreeNode;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    nsRect rect = aFrame->GetRect();
-    printf("XULLayout=%d,%d,%d,%d\n", rect.x, rect.y, rect.width, rect.height);
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-void nsIFrame::DisplayIntrinsicISizeExit(nsIFrame* aFrame, const char* aType,
-                                         nscoord aResult,
-                                         void* aFrameTreeNode) {
-  if (!DR_state->mActive) return;
-
-  NS_ASSERTION(aFrame, "non-null frame required");
-  if (!aFrameTreeNode) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aFrameTreeNode;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    char iSize[16];
-    DR_state->PrettyUC(aResult, iSize, 16);
-    printf("Get%sISize=%s\n", aType, iSize);
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-void nsIFrame::DisplayIntrinsicSizeExit(nsIFrame* aFrame, const char* aType,
-                                        nsSize aResult, void* aFrameTreeNode) {
-  if (!DR_state->mActive) return;
-
-  NS_ASSERTION(aFrame, "non-null frame required");
-  if (!aFrameTreeNode) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aFrameTreeNode;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-
-    char width[16];
-    char height[16];
-    DR_state->PrettyUC(aResult.width, width, 16);
-    DR_state->PrettyUC(aResult.height, height, 16);
-    printf("Get%sSize=%s,%s\n", aType, width, height);
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-/* static */
-void nsIFrame::DisplayReflowStartup() { DR_state = new DR_State(); }
-
-/* static */
-void nsIFrame::DisplayReflowShutdown() {
-  delete DR_state;
-  DR_state = nullptr;
-}
-
-void DR_cookie::Change() const {
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)mValue;
-  if (treeNode && treeNode->mDisplay) {
-    DisplayReflowEnterPrint(mPresContext, mFrame, mReflowInput, *treeNode,
-                            true);
-  }
-}
-
-/* static */
-void* ReflowInput::DisplayInitConstraintsEnter(nsIFrame* aFrame,
-                                               ReflowInput* aState,
-                                               nscoord aContainingBlockWidth,
-                                               nscoord aContainingBlockHeight,
-                                               const nsMargin* aBorder,
-                                               const nsMargin* aPadding) {
-  MOZ_ASSERT(aFrame, "non-null frame required");
-  MOZ_ASSERT(aState, "non-null state required");
-
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, aState);
-  if (treeNode && treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-
-    printf("InitConstraints parent=%p", (void*)aState->mParentReflowInput);
-
-    char width[16];
-    char height[16];
-
-    DR_state->PrettyUC(aContainingBlockWidth, width, 16);
-    DR_state->PrettyUC(aContainingBlockHeight, height, 16);
-    printf(" cb=%s,%s", width, height);
-
-    DR_state->PrettyUC(aState->AvailableWidth(), width, 16);
-    DR_state->PrettyUC(aState->AvailableHeight(), height, 16);
-    printf(" as=%s,%s", width, height);
-
-    DR_state->PrintMargin("b", aBorder);
-    DR_state->PrintMargin("p", aPadding);
-    putchar('\n');
-  }
-  return treeNode;
-}
-
-/* static */
-void ReflowInput::DisplayInitConstraintsExit(nsIFrame* aFrame,
-                                             ReflowInput* aState,
-                                             void* aValue) {
-  MOZ_ASSERT(aFrame, "non-null frame required");
-  MOZ_ASSERT(aState, "non-null state required");
-
-  if (!DR_state->mActive) return;
-  if (!aValue) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aValue;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    char cmiw[16], cw[16], cmxw[16], cmih[16], ch[16], cmxh[16];
-    DR_state->PrettyUC(aState->ComputedMinWidth(), cmiw, 16);
-    DR_state->PrettyUC(aState->ComputedWidth(), cw, 16);
-    DR_state->PrettyUC(aState->ComputedMaxWidth(), cmxw, 16);
-    DR_state->PrettyUC(aState->ComputedMinHeight(), cmih, 16);
-    DR_state->PrettyUC(aState->ComputedHeight(), ch, 16);
-    DR_state->PrettyUC(aState->ComputedMaxHeight(), cmxh, 16);
-    printf("InitConstraints= cw=(%s <= %s <= %s) ch=(%s <= %s <= %s)", cmiw, cw,
-           cmxw, cmih, ch, cmxh);
-    const nsMargin m = aState->ComputedPhysicalOffsets();
-    DR_state->PrintMargin("co", &m);
-    putchar('\n');
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-/* static */
-void* SizeComputationInput::DisplayInitOffsetsEnter(
-    nsIFrame* aFrame, SizeComputationInput* aState, nscoord aPercentBasis,
-    WritingMode aCBWritingMode, const nsMargin* aBorder,
-    const nsMargin* aPadding) {
-  MOZ_ASSERT(aFrame, "non-null frame required");
-  MOZ_ASSERT(aState, "non-null state required");
-
-  if (!DR_state->mInited) DR_state->Init();
-  if (!DR_state->mActive) return nullptr;
-
-  // aState is not necessarily a ReflowInput
-  DR_FrameTreeNode* treeNode = DR_state->CreateTreeNode(aFrame, nullptr);
-  if (treeNode && treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-
-    char pctBasisStr[16];
-    DR_state->PrettyUC(aPercentBasis, pctBasisStr, 16);
-    printf("InitOffsets pct_basis=%s", pctBasisStr);
-
-    DR_state->PrintMargin("b", aBorder);
-    DR_state->PrintMargin("p", aPadding);
-    putchar('\n');
-  }
-  return treeNode;
-}
-
-/* static */
-void SizeComputationInput::DisplayInitOffsetsExit(nsIFrame* aFrame,
-                                                  SizeComputationInput* aState,
-                                                  void* aValue) {
-  MOZ_ASSERT(aFrame, "non-null frame required");
-  MOZ_ASSERT(aState, "non-null state required");
-
-  if (!DR_state->mActive) return;
-  if (!aValue) return;
-
-  DR_FrameTreeNode* treeNode = (DR_FrameTreeNode*)aValue;
-  if (treeNode->mDisplay) {
-    DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
-    printf("InitOffsets=");
-    const auto m = aState->ComputedPhysicalMargin();
-    DR_state->PrintMargin("m", &m);
-    const auto p = aState->ComputedPhysicalPadding();
-    DR_state->PrintMargin("p", &p);
-    const auto bp = aState->ComputedPhysicalBorderPadding();
-    DR_state->PrintMargin("b+p", &bp);
-    putchar('\n');
-  }
-  DR_state->DeleteTreeNode(*treeNode);
-}
-
-// End Display Reflow
 
 // Validation of SideIsVertical.
 #  define CASE(side, result) \

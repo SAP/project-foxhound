@@ -33,12 +33,10 @@ treeherder:
         'Btime-Prof-1proc': 'Browsertime performance tests on Firefox with Gecko Profiling and without e10s'
         'Btime-live': 'Browsertime performance tests on Firefox'
         'Btime-live-fenix': 'Browsertime performance tests on Firefox'
-        'Btime-live-ChR': 'Browsertime performance tests on Firefox'
-        'Btime-live-Cr': 'Browsertime performance tests on Google Chromium'
+        'Btime-live-ChR': 'Browsertime performance tests on Google Chrome Release'
         'Btime-live-Saf': 'Browsertime performance tests on Safari'
         'Btime-ChR': 'Browsertime performance tests on Google Chrome Release'
         'Btime-nofis-ChR': 'Browsertime performance tests on Google Chrome Release without fission enabled'
-        'Btime-Cr': 'Browsertime performance tests on Google Chromium'
         'Btime-P': 'Browsertime power tests on Firefox/Geckoview'
         'Btime-P-fenix': 'Browsertime power tests on Fenix'
         'Btime-P-refbrow': 'Browsertime power tests on reference browser'
@@ -78,6 +76,8 @@ treeherder:
         'M-gli-cf': 'Mochitests confirm failure with WebGL over IPC'
         'M-nofis': 'Mochitests without fission enabled'
         'M-nofis-cf': 'Mochitests confirm failure without fission enabled'
+        'M-nofis-ship': "Mochitests without fission and with SHIP (session history in parent) enabled (Android-specific)"
+        'M-nofis-ship-cf': "Mochitests confirm failure without fission and with SHIP (session history in parent) enabled (Android-specific)"
         'M-spi': 'Mochitests with socket process'
         'M-spi-cf': 'Mochitests confirm failure with socket process'
         'M-spi-nofis': 'Mochitests with socket process without fission enabled'
@@ -104,8 +104,6 @@ treeherder:
         'M-f-swr': 'Mochitest failures software webrender'
         'M-f-cf': 'Mochitest failures w/confirm failure'
         'M-f-swr-cf': 'Mochitest failures software webrender w/confirm failure'
-        'M-dt-no-eft-nofis': 'DevTools Mochitests with EFT disabled without fission enabled'
-        'M-dt-no-eft-nofis-cf': 'DevTools Mochitests confirm failure with EFT disabled without fission enabled'
         'M-msix': 'Mochitests from MSIX builds'
         'M-msix-cf': 'Mochitests confirm failure from MSIX builds'
         'MSI': 'Repack installers into MSIs'
@@ -117,6 +115,8 @@ treeherder:
         'R-cf': 'Reftests confirm failure'
         'R-nofis': 'Reftests without fission enabled'
         'R-nofis-cf': 'Reftests confirm failure without fission enabled'
+        'R-nofis-ship': 'Reftests without fission and with SHIP (session history in parent) enabled (Android specific)'
+        'R-nofis-ship-cf': 'Reftests confirm failure without fission and with SHIP (session history in parent) enabled (Android specific)'
         'R-swr': 'Reftests with software webrender enabled'
         'R-swr-cf': 'Reftests confirm failure with software webrender enabled'
         'R-swr-nofis': 'Reftests with software webrender enabled without fission enabled'
@@ -133,7 +133,6 @@ treeherder:
         'Rap-live': 'Raptor performance tests on Firefox with live sites'
         'Rap-Prof': 'Raptor performance tests on Firefox with Gecko Profiling'
         'Rap-ChR': 'Raptor performance tests on Google Chrome Release'
-        'Rap-Cr': 'Raptor performance tests on Google Chromium'
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
         'T': 'Talos performance tests'
         'T-gli': 'Talos performance tests with WebGL over IPC'
@@ -162,6 +161,8 @@ treeherder:
         'X-condprof-cf': 'Xpcshell tests confirm failure with a conditioned profile'
         'X-nofis': 'Xpcshell tests without fission enabled'
         'X-nofis-cf': 'Xpcshell tests confirm failure without fission enabled'
+        'X-nofis-ship': 'Xpcshell tests without fission and with SHIP (session history in parent) enabled (Android specific)'
+        'X-nofis-ship-cf': 'Xpcshell tests confirm failure without fission and with SHIP (session history in parent) enabled (Android specific)'
         'X-spi-nw': 'Xpcshell tests with networking on socket process'
         'X-spi-nw-cf': 'Xpcshell tests confirm failure with networking on socket process'
         'X-spi-nw-nofis': 'Xpcshell tests with networking on socket process without fission enabled'
@@ -242,6 +243,161 @@ treeherder:
         'wc': 'webcompat'
         'Boot': 'Bootstrap'
         'Attr-L10n': 'Build Attribution'
+        'android-l10n': 'Import strings from android-l10n repo'
+
+        # The below symbols are from firefox-android (fenix/focus/android-components)
+        'buildconfig': 'Make sure the content of .buildconfig.yml matches what gradle knows about its projects'
+        'compare-locales': 'Validate strings.xml with compare-locales'
+        'detekt': 'detekt linter'
+        'ktlint': 'ktlint linter'
+        'lint': 'gradle lint linter'
+
+        'focus': 'Focus general tasks no matter the variant'
+        'focus-beta': 'Focus beta-related tasks'
+        'focus-debug': 'Focus builds made for testing'
+        'focus-nightly': 'Focus nightly-related tasks'
+        'focus-release': 'Focus production-related tasks'
+
+        'fenix': 'Fenix general tasks no matter the variant'
+        'fenix-beta': 'Fenix beta-related tasks'
+        'fenix-debug': 'Fenix builds made for testing'
+        'fenix-nightly': 'Fenix nightly-related tasks'
+        'fenix-nightlySim': 'Nightly-related tasks that run on each github push'
+        'fenix-release': 'Fenix production-related tasks'
+
+        # This list is based on mobile/android/android-components/.buildconfig.yml except the exceptions down below
+        'browser-domains': 'browser-domains'
+        'browser-engine-gecko': 'browser-engine-gecko'
+        'browser-engine-system': 'browser-engine-system'
+        'browser-errorpages': 'browser-errorpages'
+        'browser-icons': 'browser-icons'
+        'browser-menu': 'browser-menu'
+        'browser-menu2': 'browser-menu2'
+        'browser-session-storage': 'browser-session-storage'
+        'browser-state': 'browser-state'
+        'browser-storage-sync': 'browser-storage-sync'
+        'browser-tabstray': 'browser-tabstray'
+        'browser-thumbnails': 'browser-thumbnails'
+        'browser-toolbar': 'browser-toolbar'
+        'compose-awesomebar': 'compose-engine'
+        'compose-browser-toolbar': 'awesomebar-browser-toolbar'
+        'compose-engine': 'compose-engine'
+        'compose-tabstray': 'compose-tabstray'
+        'concept-awesomebar': 'concept-awesomebar'
+        'concept-base': 'concept-base'
+        'compose-cfr': 'compose-cfr'
+        'concept-engine': 'concept-engine'
+        'concept-fetch': 'concept-fetch'
+        'concept-menu': 'concept-menu'
+        'concept-push': 'concept-push'
+        'concept-storage': 'concept-storage'
+        'concept-sync': 'concept-sync'
+        'concept-tabstray': 'concept-tabstray'
+        'concept-toolbar': 'concept-toolbar'
+        'feature-accounts-push': 'feature-accounts-push'
+        'feature-accounts': 'feature-accounts'
+        'feature-addons': 'feature-addons'
+        'feature-app-links': 'feature-app-links'
+        'feature-autofill': 'feature-autofill'
+        'feature-awesomebar': 'feature-awesomebar'
+        'feature-containers': 'feature-containers'
+        'feature-contextmenu': 'feature-contextmenu'
+        'feature-customtabs': 'feature-customtabs'
+        'feature-downloads': 'feature-downloads'
+        'feature-findinpage': 'feature-findinpage'
+        'feature-fxsuggest': 'feature-fxsuggest'
+        'feature-intent': 'feature-intent'
+        'feature-logins': 'feature-logins'
+        'feature-media': 'feature-media'
+        'feature-privatemode': 'feature-privatemode'
+        'feature-prompts': 'feature-prompts'
+        'feature-push': 'feature-push'
+        'feature-pwa': 'feature-pwa'
+        'feature-qr': 'feature-qr'
+        'feature-readerview': 'feature-readerview'
+        'feature-recentlyclosed': 'feature-recentlyclosed'
+        'feature-search': 'feature-search'
+        'feature-serviceworker': 'feature-serviceworker'
+        'feature-session': 'feature-session'
+        'feature-share': 'feature-share'
+        'feature-sitepermissions': 'feature-sitepermissions'
+        'feature-syncedtabs': 'feature-syncedtabs'
+        'feature-tab-collections': 'feature-tab-collections'
+        'feature-tabs': 'feature-tabs'
+        'feature-toolbar': 'feature-toolbar'
+        'feature-top-sites': 'feature-top-sites'
+        'feature-webauthn': 'feature-webauthn'
+        'feature-webcompat': 'feature-webcompat'
+        'feature-webnotifications': 'feature-webnotifications'
+        'lib-crash': 'lib-crash'
+        'lib-auth': 'lib-auth'
+        'lib-crash-sentry': 'lib-crash-sentry'
+        'lib-crash-sentry-legacy': 'lib-crash-sentry-legacy'
+        'lib-dataprotect': 'lib-dataprotect'
+        'lib-fetch-okhttp': 'lib-fetch-okhttp'
+        'lib-jexl': 'lib-jexl'
+        'lib-publicsuffixlist': 'lib-publicsuffixlist'
+        'lib-push-firebase': 'lib-push-firebase'
+        'lib-state': 'lib-state'
+        'samples-compose-browser': 'samples-compose-browser'
+        'samples-crash': 'samples-crash'
+        'samples-dataprotect': 'samples-dataprotect'
+        'samples-firefox-accounts': 'samples-firefox-accounts'
+        'samples-glean-library': 'samples-glean-library'
+        'samples-glean': 'samples-glean'
+        'samples-sync-logins': 'samples-sync-logins'
+        'samples-sync': 'samples-sync'
+        'samples-toolbar': 'samples-toolbar'
+        'service-contile': 'service-contile'
+        'service-digitalassetlinks': 'service-digitalassetlinks'
+        'service-experiments': 'service-experiments'
+        'service-firefox-accounts': 'service-firefox-accounts'
+        'service-fretboard': 'service-fretboard'
+        'service-glean': 'service-glean'
+        'service-location': 'service-location'
+        'service-nimbus': 'service-nimbus'
+        'service-pocket': 'service-pocket'
+        'service-sync-autofill': 'service-sync-autofill'
+        'service-sync-logins': 'service-sync-logins'
+        'support-android-test': 'support-android-test'
+        'support-base': 'support-base'
+        'support-images': 'support-images'
+        'support-ktx': 'support-ktx'
+        'support-license': 'support-license'
+        'support-locale': 'support-locale'
+        'support-migration': 'support-migration'
+        'support-remotesettings': 'support-remotesettings'
+        'support-rusthttp': 'support-rusthttp'
+        'support-rusterrors': 'support-rusterrors'
+        'support-rustlog': 'support-rustlog'
+        'support-sync-telemetry': 'support-sync-telemetry'
+        'support-test-appservices': 'support-test-appservices'
+        'support-test-fakes': 'support-test-fakes'
+        'support-test-libstate': 'support-test-libstate'
+        'support-test': 'support-test'
+        'support-utils': 'support-utils'
+        'support-webextensions': 'support-webextensions'
+        'tooling-detekt': 'tooling-detekt'
+        'tooling-fetch-tests': 'tooling-fetch-tests'
+        'tooling-lint': 'tooling-lint'
+        'ui-autocomplete': 'ui-autocomplete'
+        'ui-colors': 'ui-colors'
+        'ui-fonts': 'ui-fonts'
+        'ui-icons': 'ui-icons'
+        'ui-tabcounter': 'ui-tabcounter'
+        'ui-widgets': 'ui-widgets'
+
+        # These ones are too long to fit in 25 chars
+        'lib-fetch-httpurlconnecti': 'lib-fetch-httpurlconnection'
+        'feature-webcompat-reporte': 'feature-webcompat-reporter'
+
+        # Groups aren't generated off buildconfig.yml:
+        'samples-browser': 'samples-browser'
+        'samples-browser-gecko': 'samples-browser-gecko'
+        'samples-browser-system': 'samples-browser-system'
+
+        # forPerformanceTest: Builds made for Raptor and other performance tests
+        'Rap-P': 'Raptor power tests'
 
 index:
     products:
@@ -285,6 +441,7 @@ release-promotion:
         - 'devedition'
         - 'fennec'
         - 'firefox'
+        - 'firefox-android'
     rebuild-kinds:
         - docker-image
         - fetch
@@ -345,6 +502,15 @@ release-promotion:
             is-rc: true
             target-tasks-method: ship_desktop
             partial-updates: true
+        promote_android:
+            product: firefox-android
+            target-tasks-method: promote_android
+        push_android:
+            product: firefox-android
+            target-tasks-method: push_android
+        ship_android:
+            product: firefox-android
+            target-tasks-method: ship_android
 
 
 merge-automation:
@@ -357,6 +523,8 @@ merge-automation:
                 - filename: "browser/config/version.txt"
                   new-suffix: ''
                 - filename: "browser/config/version_display.txt"
+                  new-suffix: 'b1'
+                - filename: "mobile/android/version.txt"
                   new-suffix: 'b1'
             replacements:
                 - - browser/config/mozconfigs/linux32/l10n-mozconfig
@@ -399,6 +567,8 @@ merge-automation:
             version-files:
                 - filename: "browser/config/version_display.txt"
                   new-suffix: ''
+                - filename: "mobile/android/version.txt"
+                  new-suffix: ''
             replacements: []
             merge-old-head: true
             base-tag: 'FIREFOX_RELEASE_{major_version}_BASE'
@@ -427,6 +597,9 @@ merge-automation:
                   version-bump: "major"
                   new-suffix: 'a1'
                 - filename: "browser/config/version_display.txt"
+                  version-bump: "major"
+                  new-suffix: 'a1'
+                - filename: "mobile/android/version.txt"
                   version-bump: "major"
                   new-suffix: 'a1'
             replacements:
@@ -511,6 +684,11 @@ taskgraph:
 
 workers:
     aliases:
+        b-linux-gcp-aarch64:
+            provisioner: '{trust-domain}-{level}'
+            implementation: generic-worker
+            os: linux
+            worker-type: '{alias}'
         b-linux.*:
             provisioner: '{trust-domain}-{level}'
             implementation: docker-worker
@@ -575,6 +753,14 @@ workers:
                 by-release-level:
                     production: '{trust-domain}-3-beetmover'
                     staging: '{trust-domain}-1-beetmover'
+        beetmover-android:
+            provisioner: scriptworker-k8s
+            implementation: scriptworker-beetmover
+            os: scriptworker
+            worker-type:
+                by-release-level:
+                    production: '{trust-domain}-3-beetmover'
+                    staging: '{trust-domain}-1-beetmover'
         shipit:
             provisioner: scriptworker-k8s
             implementation: shipit
@@ -609,6 +795,11 @@ workers:
                 by-release-level:
                     production: signing-mac-v1
                     staging: depsigning-mac-v1
+        push-apk:
+            provisioner: scriptworker-k8s
+            implementation: scriptworker-pushapk
+            os: scriptworker
+            worker-type: '{trust-domain}-{level}-pushapk'
         tree:
             provisioner: scriptworker-k8s
             implementation: treescript
@@ -635,11 +826,16 @@ workers:
             implementation: docker-worker
             os: linux
             worker-type: '{alias}-gcp'
+        t-linux(-large|-xlarge|-xlarge-source)-noscratch:
+            provisioner: '{trust-domain}-t'
+            implementation: docker-worker
+            os: linux
+            worker-type: '{alias}-gcp'
         t-linux-kvm:
             provisioner: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: 't-linux-kvm-gcp'
+            worker-type: 't-linux-kvm-noscratch-gcp'
         t-linux-talos:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -682,7 +878,7 @@ workers:
                     default: '{trust-domain}-t'
             implementation: docker-worker
             os: linux
-            worker-type: 't-linux-xlarge-gcp'
+            worker-type: 't-linux-xlarge-noscratch-gcp'
         b-osx-1015:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -704,7 +900,7 @@ workers:
             implementation: generic-worker
             os: windows
             worker-type: '{alias}'
-        t-win10-64(-hw|-ref-hw|-1803-hw):
+        t-win10-64(-hw|-1803-hw):
             provisioner: releng-hardware
             implementation: generic-worker
             os: windows
@@ -756,20 +952,11 @@ workers:
             worker-type: misc-gcp
 
 
-mac-notarization:
-    mac-entitlements:
-        by-platform:
-            macosx64.*:
-                by-release-level:
-                    production: security/mac/hardenedruntime/v1/production/browser.xml
-                    default: security/mac/hardenedruntime/v1/developer/browser.xml
-            default: ''
+mac-signing:
     mac-requirements:
         by-platform:
             macosx64.*: build/package/mac_osx/requirements.plist
             default: ''
-
-mac-signing:
     hardened-sign-config:
         by-hardened-signing-type:
             production:
@@ -790,9 +977,10 @@ mac-signing:
                 - deep: false
                   runtime: true
                   force: true
-                  # These files are signed wihtout entitlements
+                  # These files are signed without entitlements
                   globs:
                       - "/Contents/MacOS/crashreporter.app"
+                      - "/Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework"
                       - "/Contents/MacOS/updater.app"
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/XUL"
@@ -801,6 +989,7 @@ mac-signing:
                       - "/Contents/MacOS/nmhproxy"
                       - "/Contents/MacOS/*.dylib"
                       - "/Contents/Resources/gmp-clearkey/*/*.dylib"
+                      - "/Contents/Frameworks/ChannelPrefs.framework"
 
                 - deep: false
                   runtime: true
@@ -836,11 +1025,13 @@ mac-signing:
                   entitlements: security/mac/hardenedruntime/v2/developer/utility.xml
                   globs:
                       - "/Contents/MacOS/crashreporter.app"
+                      - "/Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework"
                       - "/Contents/MacOS/updater.app"
                       - "/Contents/Library/LaunchServices/org.mozilla.updater"
                       - "/Contents/MacOS/pingsender"
                       - "/Contents/MacOS/minidump-analyzer"
                       - "/Contents/MacOS/nmhproxy"
+                      - "/Contents/Frameworks/ChannelPrefs.framework"
 
                 - deep: false
                   runtime: true

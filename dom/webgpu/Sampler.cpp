@@ -22,13 +22,21 @@ Sampler::Sampler(Device* const aParent, RawId aId)
 Sampler::~Sampler() { Cleanup(); }
 
 void Sampler::Cleanup() {
-  if (mValid && mParent) {
-    mValid = false;
-    auto bridge = mParent->GetBridge();
-    if (bridge && bridge->IsOpen()) {
-      bridge->SendSamplerDrop(mId);
-    }
+  if (!mValid) {
+    return;
   }
+
+  mValid = false;
+  auto bridge = mParent->GetBridge();
+  if (!bridge) {
+    return;
+  }
+
+  if (bridge->CanSend()) {
+    bridge->SendSamplerDrop(mId);
+  }
+
+  wgpu_client_free_sampler_id(bridge->GetClient(), mId);
 }
 
 }  // namespace mozilla::webgpu

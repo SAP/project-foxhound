@@ -21,8 +21,7 @@ job-defaults:
         symbol: Bpgo(run)
         kind: build
         tier: 1
-    run-on-projects: ['release']
-    use-system-python: false
+    use-python: default
 
 jobs:
     linux-shippable/opt:
@@ -81,6 +80,7 @@ jobs:
             cwd: '{checkout}'
             command: >
                 ./taskcluster/scripts/misc/run-profileserver.sh
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
@@ -118,10 +118,12 @@ jobs:
                 - android/android_common.py
                 - android/android-x86_64-profile-generation.py
                 - android/android_pgo.py
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
                 - linux64-minidump-stackwalk
+                - linux64-hostutils
                 - android-sdk-linux
                 - android-system-image-x86_64-linux
                 - android-avd-x86_64-linux
@@ -158,10 +160,12 @@ jobs:
                 - android/android_common.py
                 - android/android-x86_64-profile-generation.py
                 - android/android_pgo.py
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
                 - linux64-minidump-stackwalk
+                - linux64-hostutils
                 - android-sdk-linux
                 - android-system-image-x86_64-linux
                 - android-avd-x86_64-linux
@@ -199,10 +203,12 @@ jobs:
                 - android/android_common.py
                 - android/android-aarch64-profile-generation.py
                 - android/android_pgo.py
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
                 - linux64-minidump-stackwalk
+                - linux64-hostutils
                 - android-sdk-linux
                 - android31-system-image-x86_64-linux
                 - android31-avd-x86_64-linux
@@ -231,6 +237,7 @@ jobs:
             sparse-profile: profile-generate
             cwd: '{checkout}'
             command: ./taskcluster/scripts/misc/run-profileserver.sh
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - win64-clang-toolchain
@@ -260,6 +267,37 @@ jobs:
             sparse-profile: profile-generate
             cwd: '{checkout}'
             command: ./taskcluster/scripts/misc/run-profileserver.sh
+        run-on-projects: ['release']
+        fetches:
+            toolchain:
+                - win64-clang-toolchain
+                - win32-minidump-stackwalk
+
+    win64-nightlyasrelease/opt:
+        description: "Win64 Nightly-as-release Profile Generation"
+        shipping-phase: build
+        shipping-product: firefox
+        index:
+            product: firefox
+            job-name: win64-nightlyasrelease-profile
+        treeherder:
+            platform: win64-nightlyasrelease/opt
+        worker-type: b-win2022
+        worker:
+            chain-of-trust: true
+            max-run-time: 2400
+            env:
+                UPLOAD_PATH: "artifacts"
+            artifacts:
+                - type: directory
+                  name: public/build
+                  path: build/src/artifacts/
+        run:
+            using: run-task
+            sparse-profile: profile-generate
+            cwd: '{checkout}'
+            command: ./taskcluster/scripts/misc/run-profileserver.sh
+        run-on-projects: [trunk-only]
         fetches:
             toolchain:
                 - win64-clang-toolchain
@@ -289,6 +327,7 @@ jobs:
             sparse-profile: profile-generate
             cwd: '{checkout}'
             command: ./taskcluster/scripts/misc/run-profileserver-macos.sh
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - macosx64-clang
@@ -318,6 +357,7 @@ jobs:
             sparse-profile: profile-generate
             cwd: '{checkout}'
             command: ./taskcluster/scripts/misc/run-profileserver-macos.sh
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - macosx64-clang

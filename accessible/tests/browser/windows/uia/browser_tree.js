@@ -13,24 +13,6 @@ async function testIsControl(pyVar, isControl) {
   }
 }
 
-/**
- * Define a global Python variable and assign it to a given Python expression.
- */
-function definePyVar(varName, expression) {
-  return runPython(`
-    global ${varName}
-    ${varName} = ${expression}
-  `);
-}
-
-/**
- * Get the UIA element with the given id and assign it to a global Python
- * variable using the id as the variable name.
- */
-function assignPyVarToUiaWithId(id) {
-  return definePyVar(id, `findUiaByDomId(doc, "${id}")`);
-}
-
 addUiaTask(
   `
 <p id="p">paragraph</p>
@@ -46,7 +28,7 @@ addUiaTask(
 <div id="editable" contenteditable>editable</div>
 <table id="table"><tr><th>th</th></tr></table>
   `,
-  async function (browser, docAcc) {
+  async function () {
     await definePyVar("doc", `getDocUia()`);
     await assignPyVarToUiaWithId("p");
     await testIsControl("p", false);

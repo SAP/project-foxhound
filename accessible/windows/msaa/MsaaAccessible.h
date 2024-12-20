@@ -31,7 +31,7 @@ class MsaaAccessible : public ia2Accessible,
  public:
   static MsaaAccessible* Create(Accessible* aAcc);
 
-  Accessible* Acc() { return mAcc; }
+  Accessible* Acc() const { return mAcc; }
   AccessibleWrap* LocalAcc();
 
   uint32_t GetExistingID() const { return mID; }
@@ -145,6 +145,10 @@ class MsaaAccessible : public ia2Accessible,
                                            VARIANT* pVarResult,
                                            EXCEPINFO* pExcepInfo,
                                            UINT* puArgErr) override;
+
+  // UIA's IInvokeProvider has a method called Invoke too, but it's fine because
+  // it accepts very different parameters.
+  using uiaRawElmProvider::Invoke;
 
  protected:
   explicit MsaaAccessible(Accessible* aAcc);

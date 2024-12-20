@@ -38,6 +38,8 @@ search-input-box2 =
     .placeholder = Find in Settings
 
 managed-notice = Your browser is being managed by your organization.
+managed-notice-info-icon =
+    .alt = Information
 
 category-list =
     .aria-label = Categories
@@ -853,8 +855,15 @@ sync-mobile-promo = Download { -brand-short-name } for <img data-l10n-name="andr
 
 ## Firefox account - Signed in
 
-sync-profile-picture =
+sync-profile-picture-with-alt =
     .tooltiptext = Change profile picture
+    .alt = Change profile picture
+
+sync-profile-picture-account-problem =
+    .alt = Account profile picture
+
+fxa-login-rejected-warning =
+    .alt = Warning
 
 sync-sign-out =
     .label = Sign Out…
@@ -1585,8 +1594,6 @@ preferences-doh-checkbox-warn =
     .accesskey = W
 
 preferences-doh-select-resolver = Choose provider:
-
-preferences-doh-exceptions-description = { -brand-short-name } won’t use secure DNS on these sites
 
 preferences-doh-manage-exceptions =
     .label = Manage Exceptions…

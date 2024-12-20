@@ -1066,6 +1066,14 @@ already_AddRefed<nsIScreen> Element::GetScreen() {
   return nullptr;
 }
 
+double Element::CurrentCSSZoom() {
+  nsIFrame* f = GetPrimaryFrame(FlushType::Frames);
+  if (!f) {
+    return 1.0;
+  }
+  return f->Style()->EffectiveZoom().ToFloat();
+}
+
 already_AddRefed<DOMRect> Element::GetBoundingClientRect() {
   RefPtr<DOMRect> rect = new DOMRect(ToSupports(OwnerDoc()));
 
@@ -1244,15 +1252,14 @@ bool Element::CanAttachShadowDOM() const {
   return true;
 }
 
-// https://dom.spec.whatwg.org/commit-snapshots/1eadf0a4a271acc92013d1c0de8c730ac96204f9/#dom-element-attachshadow
-already_AddRefed<ShadowRoot> Element::AttachShadow(
-    const ShadowRootInit& aInit, ErrorResult& aError,
-    ShadowRootDeclarative aNewShadowIsDeclarative) {
+// https://dom.spec.whatwg.org/#dom-element-attachshadow
+already_AddRefed<ShadowRoot> Element::AttachShadow(const ShadowRootInit& aInit,
+                                                   ErrorResult& aError) {
   /**
    * Step 1, 2, and 3.
    */
   if (!CanAttachShadowDOM()) {
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    aError.ThrowNotSupportedError("Unable to attach ShadowDOM");
     return nullptr;
   }
 
@@ -1260,21 +1267,27 @@ already_AddRefed<ShadowRoot> Element::AttachShadow(
    * 4. If element is a shadow host, then:
    */
   if (RefPtr<ShadowRoot> root = GetShadowRoot()) {
-    /*
-     * 1. If element’s shadow root’s declarative is false, then throw an
-     *    "NotSupportedError" DOMException.
+    /**
+     *  1. Let currentShadowRoot be element’s shadow root.
+     *
+     *  2. If any of the following are true:
+     *      currentShadowRoot’s declarative is false; or
+     *      currentShadowRoot’s mode is not mode,
+     *  then throw a "NotSupportedError" DOMException.
      */
-    if (!root->IsDeclarative()) {
-      aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    if (!root->IsDeclarative() || root->Mode() != aInit.mMode) {
+      aError.ThrowNotSupportedError(
+          "Unable to re-attach to existing ShadowDOM");
       return nullptr;
     }
-    // https://github.com/whatwg/dom/issues/1235
-    root->SetIsDeclarative(aNewShadowIsDeclarative);
-    /*
-     * 2. Otherwise, remove all of element’s shadow root’s children, in tree
-     *    order, and return.
+    /**
+     * 3. Otherwise:
+     *      1. Remove all of currentShadowRoot’s children, in tree order.
+     *      2. Set currentShadowRoot’s declarative to false.
+     *      3. Return.
      */
     root->ReplaceChildren(nullptr, aError);
+    root->SetIsDeclarative(ShadowRootDeclarative::No);
     return root.forget();
   }
 
@@ -1284,14 +1297,12 @@ already_AddRefed<ShadowRoot> Element::AttachShadow(
 
   return AttachShadowWithoutNameChecks(
       aInit.mMode, DelegatesFocus(aInit.mDelegatesFocus), aInit.mSlotAssignment,
-      ShadowRootClonable(aInit.mClonable),
-      ShadowRootDeclarative(aNewShadowIsDeclarative));
+      ShadowRootClonable(aInit.mClonable));
 }
 
 already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
     ShadowRootMode aMode, DelegatesFocus aDelegatesFocus,
-    SlotAssignmentMode aSlotAssignment, ShadowRootClonable aClonable,
-    ShadowRootDeclarative aDeclarative) {
+    SlotAssignmentMode aSlotAssignment, ShadowRootClonable aClonable) {
   nsAutoScriptBlocker scriptBlocker;
 
   auto* nim = mNodeInfo->NodeInfoManager();
@@ -1315,9 +1326,9 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
    *    context object's node document, host is context object,
    *    and mode is init's mode.
    */
-  RefPtr<ShadowRoot> shadowRoot =
-      new (nim) ShadowRoot(this, aMode, aDelegatesFocus, aSlotAssignment,
-                           aClonable, aDeclarative, nodeInfo.forget());
+  RefPtr<ShadowRoot> shadowRoot = new (nim)
+      ShadowRoot(this, aMode, aDelegatesFocus, aSlotAssignment, aClonable,
+                 ShadowRootDeclarative::No, nodeInfo.forget());
 
   if (NodeOrAncestorHasDirAuto()) {
     shadowRoot->SetAncestorHasDirAuto();
@@ -1347,6 +1358,22 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
     dispatcher->PostDOMEvent();
   }
 
+  const LinkedList<AbstractRange>* ranges =
+      GetExistingClosestCommonInclusiveAncestorRanges();
+  if (ranges) {
+    for (const AbstractRange* range : *ranges) {
+      if (range->MayCrossShadowBoundary()) {
+        MOZ_ASSERT(range->IsDynamicRange());
+        StaticRange* crossBoundaryRange =
+            range->AsDynamicRange()->GetCrossShadowBoundaryRange();
+        MOZ_ASSERT(crossBoundaryRange);
+        // We may have previously selected this node before it
+        // becomes a shadow host, so we need to reset the values
+        // in RangeBoundaries to accommodate the change.
+        crossBoundaryRange->NotifyNodeBecomesShadowHost(this);
+      }
+    }
+  }
   /**
    * 10. Return shadow.
    */
@@ -1474,13 +1501,7 @@ void Element::GetAttribute(const nsAString& aName, DOMString& aReturn) {
       SetTaintSourceGetAttr(aName, aReturn);
     }
   } else {
-    if (IsXULElement()) {
-      // XXX should be SetDOMStringToNull(aReturn);
-      // See bug 232598
-      // aReturn is already empty
-    } else {
-      aReturn.SetNull();
-    }
+    aReturn.SetNull();
   }
 }
 
@@ -1944,9 +1965,7 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   // This has to be here, rather than in nsGenericHTMLElement::BindToTree,
   //  because it has to happen after updating the parent pointer, but before
   //  recursively binding the kids.
-  if (IsHTMLElement()) {
-    SetDirOnBind(this, nsIContent::FromNode(aParent));
-  }
+  SetDirOnBind(this, nsIContent::FromNode(aParent));
 
   UpdateEditableState(false);
 
@@ -2159,9 +2178,7 @@ void Element::UnbindFromTree(UnbindContext& aContext) {
   // This has to be here, rather than in nsGenericHTMLElement::UnbindFromTree,
   //  because it has to happen after unsetting the parent pointer, but before
   //  recursively unbinding the kids.
-  if (IsHTMLElement()) {
-    ResetDir(this);
-  }
+  ResetDir(this);
 
   for (nsIContent* child = GetFirstChild(); child;
        child = child->GetNextSibling()) {

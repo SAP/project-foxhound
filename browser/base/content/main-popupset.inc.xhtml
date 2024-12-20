@@ -100,7 +100,7 @@
               oncommand="FullScreen.setAutohide();"/>
     <menuitem contexttype="fullscreen"
               data-lazy-l10n-id="full-screen-exit"
-              oncommand="BrowserFullScreen();"/>
+              oncommand="BrowserCommands.fullScreen();"/>
   </menupopup>
 
   <!-- bug 415444/582485: event.stopPropagation is here for the cloned version
@@ -109,7 +109,7 @@
   -->
   <menupopup id="backForwardMenu"
              onpopupshowing="return FillHistoryMenu(event.target);"
-             oncommand="gotoHistoryIndex(event); event.stopPropagation();"/>
+             oncommand="BrowserCommands.gotoHistoryIndex(event); event.stopPropagation();"/>
   <tooltip id="aHTMLTooltip" page="true"/>
   <tooltip id="remoteBrowserTooltip"/>
 
@@ -262,6 +262,9 @@
               data-l10n-id="sidebar-menu-synced-tabs"
               class="sync-ui-item"
               oncommand="SidebarUI.show('viewTabsSidebar');"/>
+    <menuitem id="sidebar-switcher-megalist"
+              data-l10n-id="sidebar-menu-megalist"
+              oncommand="SidebarUI.show('viewMegalistSidebar');"/>
     <menuseparator/>
     <!-- Extension toolbarbuttons go here. -->
     <menuseparator id="sidebar-extensions-separator"/>
@@ -360,7 +363,7 @@
               oncommand="FullScreen.setAutohide();"/>
     <menuitem contexttype="fullscreen"
               data-lazy-l10n-id="full-screen-exit"
-              oncommand="BrowserFullScreen();"/>
+              oncommand="BrowserCommands.fullScreen();"/>
   </menupopup>
 
   <menupopup id="blockedPopupOptions"
@@ -412,7 +415,20 @@
     <hbox id="ctrlTab-showAll-container" pack="center"/>
   </panel>
 
-  <html:tab-preview id="tabbrowser-tab-preview" hidden="true" />
+  <!-- TODO: create lazily? -->
+  <panel id="tab-preview-panel"
+         type="arrow"
+         orient="vertical"
+         noautofocus="true"
+         norolluponanchor="true"
+         rolluponmousewheel="true"
+         consumeoutsideclicks="false">
+    <html:div class="tab-preview-text-container">
+      <html:div class="tab-preview-title"></html:div>
+      <html:div class="tab-preview-uri"></html:div>
+    </html:div>
+    <html:div class="tab-preview-thumbnail-container"></html:div>
+  </panel>
 
   <html:template id="pageActionPanelTemplate">
     <panel id="pageActionPanel"
@@ -624,7 +640,7 @@
               oncommand="gUnifiedExtensions.reportExtension(this.parentElement)" />
   </menupopup>
 
-  <menupopup id="translations-panel-settings-menupopup"
+  <menupopup id="full-page-translations-panel-settings-menupopup"
              onpopupshown="FullPageTranslationsPanel.handleSettingsPopupShownEvent()"
              onpopuphidden="FullPageTranslationsPanel.handleSettingsPopupHiddenEvent()">
     <menuitem class="always-offer-translations-menuitem"

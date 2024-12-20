@@ -54,7 +54,7 @@ class WithCommonStyles extends MozLitElement {
       font: message-box;
       font-size: var(--font-size-root);
       appearance: none;
-      background-color: var(--color-canvas);
+      background-color: var(--background-color-canvas);
       color: var(--text-color);
       -moz-box-layout: flex;
     }
@@ -113,6 +113,7 @@ export default {
         title: "On this page",
       },
     },
+    options: { showPanel: true },
   },
 };
 

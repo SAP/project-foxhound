@@ -20,6 +20,8 @@ vendoring:
     - 0001-disable-aaudio-before-android-31.patch
     - 0002-disable-crash-reporter-death-test.patch
     - 0003-Only-build-duplex_collection_change_no_unregister-wh.patch
+    - 0004-audiounit-ios-compile-fixes.patch
+    - 0005-aaudio-timing-fix.patch
   skip-vendoring-steps:
     - update-moz-build
   exclude:

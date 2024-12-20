@@ -3,7 +3,7 @@
  */
 
 /* eslint "mozilla/no-aArgs": 1 */
-/* eslint "no-unused-vars": [2, {"args": "none", "varsIgnorePattern": "^(Cc|Ci|Cr|Cu|EXPORTED_SYMBOLS)$"}] */
+/* eslint "no-unused-vars": [2, {"argsIgnorePattern": "^_", "varsIgnorePattern": "^(Cc|Ci|Cr|Cu|EXPORTED_SYMBOLS)$"}] */
 /* eslint "semi": [2, "always"] */
 /* eslint "valid-jsdoc": [2, {requireReturn: false}] */
 
@@ -422,6 +422,35 @@ export var AddonTestUtils = {
         Cu.reportError(e);
       }
     });
+  },
+
+  getXPIExports() {
+    return ChromeUtils.importESModule(
+      "resource://gre/modules/addons/XPIExports.sys.mjs"
+    ).XPIExports;
+  },
+
+  getWeakSignatureInstallPrefName() {
+    return this.getXPIExports().XPIInstall.getWeakSignatureInstallPrefName();
+  },
+
+  setWeakSignatureInstallAllowed(allowed) {
+    const prefName = this.getWeakSignatureInstallPrefName();
+    let cleanupCalled = false;
+    const cleanup = () => {
+      if (cleanupCalled) {
+        return;
+      }
+      this.testScope.info(
+        `=== clear ${prefName} pref value set by this test file ===`
+      );
+      Services.prefs.clearUserPref(prefName);
+      cleanupCalled = true;
+    };
+    this.testScope.registerCleanupFunction(cleanup);
+    this.testScope.info(`=== set ${prefName} pref value to ${allowed} ===`);
+    Services.prefs.setBoolPref(prefName, allowed);
+    return cleanup;
   },
 
   /**

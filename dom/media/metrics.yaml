@@ -117,7 +117,24 @@ media.playback:
       first_frame_loaded_time:
         description:
           How long (in milliseconds) does the our media pipeline take to load
-          the first video frame.
+          the first video frame from "the creation of MDSM" to "the first frame
+          loaded".
+        type: quantity
+      metadata_loaded_time:
+        description:
+          How long (in milliseconds) does the our media pipeline take to load
+          the metadata, which happens before finishing loading the first frame.
+        type: quantity
+      total_waiting_data_time:
+        description:
+          How long (in milliseconds) does the our media pipeline has been in a
+          state of waiting video data due to lacking of data before the first
+          frame is loaded.
+        type: quantity
+      buffering_time:
+        description:
+          How long (in milliseconds) does the our media pipeline has been spent
+          on the buffering state before the first frame is loaded.
         type: quantity
       playback_type:
         description:
@@ -139,4 +156,13 @@ media.playback:
       key_system:
         description: The key system used for the EME playback if exists
         type: string
+      hls_decoder:
+        description:
+          This value will only be set on Android. It tells that whether playback
+          is performed by the HLS decoder, which utilizes the external player to
+          play video.
+        type: boolean
+      is_hardware_decoding:
+        description: True if the first frame is decoded by a hardware decoder.
+        type: boolean
     expires: never

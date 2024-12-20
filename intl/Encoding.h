@@ -447,9 +447,11 @@ class Encoding final {
     nsACString* out = &aOut;
     if (bytes == out) {
       nsAutoCString temp(aBytes);
+      // Tainting information should stay the same when input and output are the same
       return mozilla_encoding_decode_to_nscstring_without_bom_handling(
           this, &temp, out);
     }
+    aOut.AssignTaint(aBytes.Taint());
     return mozilla_encoding_decode_to_nscstring_without_bom_handling(
         this, bytes, out);
   }

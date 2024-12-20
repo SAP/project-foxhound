@@ -282,6 +282,7 @@ Structure:
             installDay: <number>, // days since UNIX epoch, 0 on failure
             updateDay: <number>, // days since UNIX epoch, 0 on failure
             signedState: <integer>, // whether the add-on is signed by AMO, only present for extensions
+            signedTypes: <string>, // JSON-stringified array of signature types found (see nsIAppSignatureInfo's SignatureAlgorithm enum)
             isSystem: <bool>, // true if this is a System Add-on
             isWebExtension: <bool>, // true if this is a WebExtension
             multiprocessCompatible: <bool>, // true if this add-on does *not* require e10s shims
@@ -474,6 +475,10 @@ The following is a partial list of `collected preferences <https://searchfox.org
 - ``dom.popup_allowed_events``: Which events should allow popups. Only exposed with about:config.
 
 - ``intl.ime.use_composition_events_for_insert_text``: Whether a set of composition events is fired when user inserts text without keyboard events nor composing state of a composition (only on Linux and macOS).
+
+- ``xpinstall.signatures.required``: Whether XPI files cryptographic signatures are being verified and enforced.
+
+- ``xpinstall.signatures.weakSignaturesTemporarilyAllowed``: Whether new XPI files only signed with weak signature algorithms are still allowed to be installed
 
 attribution
 ~~~~~~~~~~~

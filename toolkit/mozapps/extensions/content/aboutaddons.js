@@ -322,12 +322,12 @@ function checkForUpdate(addon) {
             onDownloadFailed: failed,
             onInstallCancelled: failed,
             onInstallFailed: failed,
-            onInstallEnded: (...args) => {
+            onInstallEnded: () => {
               detachUpdateHandler(install);
               install.removeListener(updateListener);
               resolve({ installed: true, pending: false, found: true });
             },
-            onInstallPostponed: (...args) => {
+            onInstallPostponed: () => {
               detachUpdateHandler(install);
               install.removeListener(updateListener);
               resolve({ installed: false, pending: true, found: true });
@@ -375,7 +375,7 @@ const OPTIONS_TYPE_MAP = {
 
 // Check if an add-on has the provided options type, accounting for the pref
 // to disable inline options.
-function getOptionsType(addon, type) {
+function getOptionsType(addon) {
   return OPTIONS_TYPE_MAP[addon.optionsType];
 }
 
@@ -1064,7 +1064,7 @@ class AddonPageOptions extends HTMLElement {
     }
   }
 
-  async checkForUpdates(e) {
+  async checkForUpdates() {
     let message = document.getElementById("updates-message");
     message.state = "updating";
     message.hidden = false;
@@ -2096,11 +2096,11 @@ class AddonDetails extends HTMLElement {
     }
   }
 
-  onDisabled(addon) {
+  onDisabled() {
     this.extensionShutdown();
   }
 
-  onEnabled(addon) {
+  onEnabled() {
     this.extensionStartup();
   }
 
@@ -2451,45 +2451,27 @@ class AddonCard extends HTMLElement {
 
   async setAddonPermission(permission, type, action) {
     let { addon } = this;
-    let origins = [],
-      permissions = [];
+    let perms = { origins: [], permissions: [] };
+
     if (!["add", "remove"].includes(action)) {
       throw new Error("invalid action for permission change");
     }
-    if (type == "permission") {
-      if (
-        action == "add" &&
-        !addon.optionalPermissions.permissions.includes(permission)
-      ) {
-        throw new Error("permission missing from manifest");
-      }
-      permissions = [permission];
-    } else if (type == "origin") {
-      if (action === "add") {
-        let { origins } = addon.optionalPermissions;
-        let patternSet = new MatchPatternSet(origins, { ignorePath: true });
-        if (!patternSet.subsumes(new MatchPattern(permission))) {
-          throw new Error("origin missing from manifest");
-        }
-      }
-      origins = [permission];
 
-      // If this is one of the "all sites" permissions
-      if (Extension.isAllSitesPermission(permission)) {
-        // Grant/revoke ALL "all sites" optional permissions from the manifest.
-        origins = addon.optionalPermissions.origins.filter(perm =>
-          Extension.isAllSitesPermission(perm)
-        );
-      }
+    if (type === "permission") {
+      perms.permissions = [permission];
+    } else if (type === "origin") {
+      perms.origins = [permission];
     } else {
       throw new Error("unknown permission type changed");
     }
-    let policy = WebExtensionPolicy.getByID(addon.id);
-    ExtensionPermissions[action](
-      addon.id,
-      { origins, permissions },
-      policy?.extension
+
+    let normalized = ExtensionPermissions.normalizeOptional(
+      perms,
+      addon.optionalPermissions
     );
+
+    let policy = WebExtensionPolicy.getByID(addon.id);
+    ExtensionPermissions[action](addon.id, normalized, policy?.extension);
   }
 
   async handleEvent(e) {
@@ -2968,18 +2950,18 @@ class AddonCard extends HTMLElement {
     this.sendEvent("update-postponed");
   }
 
-  onDisabled(addon) {
+  onDisabled() {
     if (!this.reloading) {
       this.update();
     }
   }
 
-  onEnabled(addon) {
+  onEnabled() {
     this.reloading = false;
     this.update();
   }
 
-  onInstalled(addon) {
+  onInstalled() {
     // When a temporary addon is reloaded, onInstalled is triggered instead of
     // onEnabled.
     this.reloading = false;

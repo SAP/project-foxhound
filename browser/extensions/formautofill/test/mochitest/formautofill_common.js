@@ -80,8 +80,9 @@ function clickOnElement(selector) {
   SimpleTest.executeSoon(() => element.click());
 }
 
-// The equivalent helper function to getAdaptedProfiles in FormAutofillHandler.jsm that
-// transforms the given profile to expected filled profile.
+// The equivalent helper function to getAdaptedProfiles in
+// FormAutofillSection.sys.mjs that transforms the given profile to expected
+// filled profile.
 function _getAdaptedProfile(profile) {
   const adaptedProfile = Object.assign({}, profile);
 
@@ -270,12 +271,18 @@ async function onStorageChanged(type) {
   });
 }
 
-function checkMenuEntries(expectedValues, isFormAutofillResult = true) {
+function makeAddressLabel({ primary, secondary, status }) {
+  return JSON.stringify({
+    primary,
+    secondary,
+    status,
+    ariaLabel: primary + " " + secondary + " " + status,
+  });
+}
+
+function checkMenuEntries(expectedValues, extraRows = 1) {
   let actualValues = getMenuEntries();
-  // Expect one more item would appear at the bottom as the footer if the result is from form autofill.
-  let expectedLength = isFormAutofillResult
-    ? expectedValues.length + 1
-    : expectedValues.length;
+  let expectedLength = expectedValues.length + extraRows;
 
   is(actualValues.length, expectedLength, " Checking length of expected menu");
   for (let i = 0; i < expectedValues.length; i++) {

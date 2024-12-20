@@ -77,6 +77,7 @@ aab:
                 - linux64-minidump-stackwalk
                 - linux64-fix-stacks
                 - linux64-jdk
+                - linux64-hostutils
     replace:
         target: "geckoview-test_runner.aab"
 
@@ -297,7 +298,7 @@ webrender-dcomp-compositing:
 webrender-sw:
     description: "{description} with software webrender enabled"
     component: "Core::Graphics: WebRender"
-    expiration: "2024-09-01"
+    expiration: "never"
     suffix: "swr"
     mozinfo: "swgl"
     merge:
@@ -316,27 +317,6 @@ webgl-ipc:
             extra-options:
                 - "--setpref=webgl.out-of-process=true"
                 - "--setpref=security.sandbox.content.headless=true"
-
-devtools-no-eft:
-    description: "{description} with DevTools EFT disabled"
-    component: "DevTools::Framework"
-    expiration: "2024-03-01"
-    suffix: "dt-no-eft"
-    when:
-        $eval: '
-                "linux" in task["test-platform"]
-                && "opt" in task["test-platform"]
-                && "mochitest-devtools-chrome" == task["try-name"]
-                && !(
-                        "asan" in task["test-platform"]
-                        || "tsan" in task["test-platform"]
-                        || "ccov" in task["test-platform"]
-                    )
-                '
-    merge:
-        mozharness:
-            extra-options:
-                - "--setpref=devtools.every-frame-target.enabled=false"
 
 wmf-media-engine:
     description: "{description} with Windows Media Foundation media engine enabled"

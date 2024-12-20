@@ -2,10 +2,6 @@ let { HttpServer } = ChromeUtils.importESModule(
   "resource://testing-common/httpd.sys.mjs"
 );
 
-let authPromptModalType = Services.prefs.getIntPref(
-  "prompts.modalType.httpAuth"
-);
-
 let server = new HttpServer();
 server.registerPathHandler("/file.html", fileHandler);
 server.start(-1);
@@ -57,7 +53,7 @@ function getResult() {
   return credentialQueue.shift();
 }
 
-async function doInit(aMode) {
+async function doInit() {
   await SpecialPowers.pushPrefEnv({
     set: [["privacy.partition.network_state", false]],
   });

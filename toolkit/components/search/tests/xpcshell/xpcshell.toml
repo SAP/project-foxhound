@@ -78,7 +78,16 @@ support-files = [
 
 ["test_appDefaultEngine.js"]
 
+["test_appProvided_engine.js"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
+support-files = [
+  "../../schema/search-config-v2-schema.json",
+]
+
 ["test_appProvided_icons.js"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
+
+["test_appProvided_icons_updates.js"]
 prefs = ["browser.search.newSearchConfig.enabled=true"]
 
 ["test_async.js"]
@@ -127,6 +136,8 @@ tags = "remotesettings searchmain"
 ["test_engine_selector_engine_orders.js"]
 
 ["test_engine_selector_environment.js"]
+
+["test_engine_selector_subvariants.js"]
 
 ["test_engine_selector_variants.js"]
 
@@ -253,6 +264,10 @@ support-files = [
 ["test_searchTermFromResult.js"]
 
 ["test_searchUrlDomain.js"]
+
+["test_search_config_v2_nimbus.js"]
+prefs = ["browser.search.newSearchConfig.enabled=false"]
+skip-if = ["appname == 'thunderbird'"] # Test relies on normandy.
 
 ["test_selectedEngine.js"]
 

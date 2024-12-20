@@ -459,6 +459,15 @@ typedef enum JSGCParamKey {
    * Default: ParallelMarkingThresholdMB
    */
   JSGC_PARALLEL_MARKING_THRESHOLD_MB = 50,
+
+  /**
+   * Whether the semispace nursery is enabled.
+   *
+   * Pref: javascript.options.mem.gc_experimental_semispace_nursery
+   * Default: SemispaceNurseryEnabled
+   */
+  JSGC_SEMISPACE_NURSERY_ENABLED = 51,
+
 } JSGCParamKey;
 
 /*
@@ -1342,6 +1351,11 @@ namespace gc {
  * malloc memory.
  */
 extern JS_PUBLIC_API JSObject* NewMemoryInfoObject(JSContext* cx);
+
+/*
+ * Return whether |obj| is a dead nursery object during a minor GC.
+ */
+JS_PUBLIC_API bool IsDeadNurseryObject(JSObject* obj);
 
 /*
  * Run the finalizer of a nursery-allocated JSObject that is known to be dead.

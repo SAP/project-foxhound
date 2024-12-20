@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  actionCreators as ac,
-  actionTypes as at,
-} from "common/Actions.sys.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { connect } from "react-redux";
 import React from "react";
 import { SimpleHashRouter } from "./SimpleHashRouter";
@@ -445,9 +442,9 @@ export class CollapseToggle extends React.PureComponent {
 
   setBodyClass() {
     if (this.renderAdmin && !this.state.collapsed) {
-      global.document.body.classList.add("no-scroll");
+      globalThis.document.body.classList.add("no-scroll");
     } else {
-      global.document.body.classList.remove("no-scroll");
+      globalThis.document.body.classList.remove("no-scroll");
     }
   }
 
@@ -460,7 +457,7 @@ export class CollapseToggle extends React.PureComponent {
   }
 
   componentWillUnmount() {
-    global.document.body.classList.remove("no-scroll");
+    globalThis.document.body.classList.remove("no-scroll");
   }
 
   render() {

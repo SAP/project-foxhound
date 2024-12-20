@@ -2,10 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// eslint-disable-next-line mozilla/reject-import-system-module-from-non-system
-import { MESSAGE_TYPE_HASH as msg } from "../modules/ActorConstants.sys.mjs";
-// eslint-disable-next-line mozilla/reject-import-system-module-from-non-system
-import { actionCreators as ac } from "../../newtab/common/Actions.sys.mjs";
+import { MESSAGE_TYPE_HASH as msg } from "../modules/ActorConstants.mjs";
+import { actionCreators as ac } from "../../newtab/common/Actions.mjs";
 
 export const ASRouterUtils = {
   addListener(listener) {

@@ -18,13 +18,13 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 // eslint-disable-next-line mozilla/use-static-import
 const { MESSAGE_TYPE_HASH: msg } = ChromeUtils.importESModule(
-  "resource:///modules/asrouter/ActorConstants.sys.mjs"
+  "resource:///modules/asrouter/ActorConstants.mjs"
 );
 
 import {
   actionTypes as at,
   actionUtils as au,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 import { Prefs } from "resource://activity-stream/lib/ActivityStreamPrefs.sys.mjs";
 import { classifySite } from "resource://activity-stream/lib/SiteClassifier.sys.mjs";
 
@@ -454,8 +454,7 @@ export class TelemetryFeed {
         event = await this.applyCFRPolicy(event);
         break;
       case "badge_user_event":
-      case "whats-new-panel_user_event":
-        event = await this.applyWhatsNewPolicy(event);
+        event = await this.applyToolbarBadgePolicy(event);
         break;
       case "infobar_user_event":
         event = await this.applyInfoBarPolicy(event);
@@ -509,12 +508,12 @@ export class TelemetryFeed {
    * Per Bug 1482134, all the metrics for What's New panel use client_id in
    * all the release channels
    */
-  async applyWhatsNewPolicy(ping) {
+  async applyToolbarBadgePolicy(ping) {
     ping.client_id = await this.telemetryClientId;
     ping.browser_session_id = lazy.browserSessionId;
     // Attach page info to `event_context` if there is a session associated with this ping
     delete ping.action;
-    return { ping, pingType: "whats-new-panel" };
+    return { ping, pingType: "toolbar-badge" };
   }
 
   async applyInfoBarPolicy(ping) {
@@ -715,8 +714,16 @@ export class TelemetryFeed {
     const session = this.sessions.get(au.getPortIdOfSender(action));
     switch (action.data?.event) {
       case "CLICK": {
-        const { card_type, topic, recommendation_id, tile_id, shim, feature } =
-          action.data.value ?? {};
+        const {
+          card_type,
+          topic,
+          recommendation_id,
+          tile_id,
+          shim,
+          fetchTimestamp,
+          firstVisibleTimestamp,
+          feature,
+        } = action.data.value ?? {};
         if (
           action.data.source === "POPULAR_TOPICS" ||
           card_type === "topics_widget"
@@ -740,6 +747,14 @@ export class TelemetryFeed {
           });
           if (shim) {
             Glean.pocket.shim.set(shim);
+            if (fetchTimestamp) {
+              Glean.pocket.fetchTimestamp.set(fetchTimestamp * 1000);
+            }
+            if (firstVisibleTimestamp) {
+              Glean.pocket.newtabCreationTimestamp.set(
+                firstVisibleTimestamp * 1000
+              );
+            }
             GleanPings.spoc.submit("click");
           }
         }
@@ -755,6 +770,16 @@ export class TelemetryFeed {
         });
         if (action.data.value?.shim) {
           Glean.pocket.shim.set(action.data.value.shim);
+          if (action.data.value.fetchTimestamp) {
+            Glean.pocket.fetchTimestamp.set(
+              action.data.value.fetchTimestamp * 1000
+            );
+          }
+          if (action.data.value.newtabCreationTimestamp) {
+            Glean.pocket.newtabCreationTimestamp.set(
+              action.data.value.newtabCreationTimestamp * 1000
+            );
+          }
           GleanPings.spoc.submit("save");
         }
         break;
@@ -976,6 +1001,14 @@ export class TelemetryFeed {
       });
       if (tile.shim) {
         Glean.pocket.shim.set(tile.shim);
+        if (tile.fetchTimestamp) {
+          Glean.pocket.fetchTimestamp.set(tile.fetchTimestamp * 1000);
+        }
+        if (data.firstVisibleTimestamp) {
+          Glean.pocket.newtabCreationTimestamp.set(
+            data.firstVisibleTimestamp * 1000
+          );
+        }
         GleanPings.spoc.submit("impression");
       }
     });

@@ -40,7 +40,7 @@ function updateTabsPanel() {
   return promiseTabsUpdated;
 }
 
-// This is the mock we use for SyncedTabs.jsm - tests may override various
+// This is the mock we use for SyncedTabs.sys.mjs - tests may override various
 // functions.
 let mockedInternal = {
   get isConfiguredToSyncTabs() {
@@ -378,7 +378,7 @@ add_task(async function () {
   // There is a single node saying there's no tabs for the client.
   node = node.nextElementSibling;
   is(node.nodeName, "label", "node is a label");
-  is(node.getAttribute("itemtype"), "", "node is neither a tab nor a client");
+  is(node.getAttribute("itemtype"), null, "node is neither a tab nor a client");
 
   node = node.nextElementSibling;
   is(node, null, "no more siblings");
@@ -514,7 +514,7 @@ add_task(async function () {
     return promise;
   }
 
-  showMoreButton = checkTabsPage(25, "Show More Tabs");
+  showMoreButton = checkTabsPage(25, "Show more tabs");
   await clickShowMoreButton();
 
   checkTabsPage(77, null);

@@ -2331,16 +2331,16 @@ class MediaDecoderStateMachine::NextFrameSeekingState
     }
 
     // Otherwise, we need to do the seek operation asynchronously for a special
-    // case (bug504613.ogv) which has no data at all, the 1st seekToNextFrame()
-    // operation reaches the end of the media. If we did the seek operation
-    // synchronously, we immediately resolve the SeekPromise in mSeekJob and
-    // then switch to the CompletedState which dispatches an "ended" event.
-    // However, the ThenValue of the SeekPromise has not yet been set, so the
-    // promise resolving is postponed and then the JS developer receives the
-    // "ended" event before the seek promise is resolved.
-    // An asynchronous seek operation helps to solve this issue since while the
-    // seek is actually performed, the ThenValue of SeekPromise has already
-    // been set so that it won't be postponed.
+    // case (video with no data)which has no data at all, the 1st
+    // seekToNextFrame() operation reaches the end of the media. If we did the
+    // seek operation synchronously, we immediately resolve the SeekPromise in
+    // mSeekJob and then switch to the CompletedState which dispatches an
+    // "ended" event. However, the ThenValue of the SeekPromise has not yet been
+    // set, so the promise resolving is postponed and then the JS developer
+    // receives the "ended" event before the seek promise is resolved. An
+    // asynchronous seek operation helps to solve this issue since while the
+    // seek is actually performed, the ThenValue of SeekPromise has already been
+    // set so that it won't be postponed.
     RefPtr<Runnable> r = mAsyncSeekTask = new AysncNextFrameSeekTask(this);
     nsresult rv = OwnerThread()->Dispatch(r.forget());
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
@@ -3377,6 +3377,7 @@ void MediaDecoderStateMachine::BufferingState::Step() {
   }
 
   SLOG("Buffered for %.3lfs", (now - mBufferingStart).ToSeconds());
+  mMaster->mTotalBufferingDuration += (now - mBufferingStart);
   SetDecodingState();
 }
 
@@ -3471,13 +3472,15 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
       mIsMSE(aDecoder->IsMSE()),
       mShouldResistFingerprinting(aDecoder->ShouldResistFingerprinting()),
       mSeamlessLoopingAllowed(false),
+      mTotalBufferingDuration(TimeDuration::Zero()),
       INIT_MIRROR(mStreamName, nsAutoString()),
       INIT_MIRROR(mSinkDevice, nullptr),
       INIT_MIRROR(mOutputCaptureState, MediaDecoder::OutputCaptureState::None),
       INIT_MIRROR(mOutputDummyTrack, nullptr),
       INIT_MIRROR(mOutputTracks, nsTArray<RefPtr<ProcessedMediaTrack>>()),
       INIT_MIRROR(mOutputPrincipal, PRINCIPAL_HANDLE_NONE),
-      INIT_CANONICAL(mCanonicalOutputPrincipal, PRINCIPAL_HANDLE_NONE) {
+      INIT_CANONICAL(mCanonicalOutputPrincipal, PRINCIPAL_HANDLE_NONE),
+      mShuttingDown(false) {
   MOZ_COUNT_CTOR(MediaDecoderStateMachine);
   NS_ASSERTION(NS_IsMainThread(), "Should be on main thread.");
 
@@ -3812,6 +3815,7 @@ void MediaDecoderStateMachine::VolumeChanged() {
 RefPtr<ShutdownPromise> MediaDecoderStateMachine::Shutdown() {
   AUTO_PROFILER_LABEL("MediaDecoderStateMachine::Shutdown", MEDIA_PLAYBACK);
   MOZ_ASSERT(OnTaskQueue());
+  mShuttingDown = true;
   return mStateObj->HandleShutdown();
 }
 
@@ -4694,10 +4698,15 @@ void MediaDecoderStateMachine::GetDebugInfo(
   aInfo.mVideoCompleted = mVideoCompleted;
   mStateObj->GetDebugInfo(aInfo.mStateObj);
   mMediaSink->GetDebugInfo(aInfo.mMediaSink);
+  aInfo.mTotalBufferingTimeMs = mTotalBufferingDuration.ToMilliseconds();
 }
 
 RefPtr<GenericPromise> MediaDecoderStateMachine::RequestDebugInfo(
     dom::MediaDecoderStateMachineDebugInfo& aInfo) {
+  if (mShuttingDown) {
+    return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
+  }
+
   RefPtr<GenericPromise::Private> p = new GenericPromise::Private(__func__);
   RefPtr<MediaDecoderStateMachine> self = this;
   nsresult rv = OwnerThread()->Dispatch(
@@ -4707,7 +4716,7 @@ RefPtr<GenericPromise> MediaDecoderStateMachine::RequestDebugInfo(
                                p->Resolve(true, __func__);
                              }),
       AbstractThread::TailDispatch);
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
   Unused << rv;
   return p;
 }

@@ -71,6 +71,16 @@ add_setup(async function () {
   await promise;
 
   registerCleanupFunction(async () => {
+    // Manually unload the pref so that we can check if we should wait for the
+    // the categories map to be un-initialized.
+    await SpecialPowers.popPrefEnv();
+    if (
+      !Services.prefs.getBoolPref(
+        "browser.search.serpEventTelemetryCategorization.enabled"
+      )
+    ) {
+      await waitForDomainToCategoriesUninit();
+    }
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
     resetTelemetry();
   });
@@ -103,6 +113,7 @@ add_task(async function test_load_serp_and_categorize() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "0",
       num_ads_visible: "2",
     },
@@ -143,6 +154,7 @@ add_task(async function test_load_serp_and_categorize_and_click_organic() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "0",
       num_ads_visible: "2",
     },
@@ -181,6 +193,7 @@ add_task(async function test_load_serp_and_categorize_and_click_sponsored() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "1",
       num_ads_visible: "2",
     },

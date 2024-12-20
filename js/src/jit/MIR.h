@@ -1890,6 +1890,7 @@ class MTest : public MAryControlInstruction<1, 2>, public TestPolicy::Data {
   MDefinition* foldsConstant(TempAllocator& alloc);
   MDefinition* foldsTypes(TempAllocator& alloc);
   MDefinition* foldsNeedlessControlFlow(TempAllocator& alloc);
+  MDefinition* foldsRedundantTest(TempAllocator& alloc);
   MDefinition* foldsTo(TempAllocator& alloc) override;
 
 #ifdef DEBUG
@@ -2309,7 +2310,7 @@ class WrappedFunction : public TempObject {
     return nativeFun_->nativeUnchecked();
   }
   bool hasJitInfo() const {
-    return flags_.isBuiltinNative() && nativeFun_->jitInfoUnchecked();
+    return flags_.canHaveJitInfo() && nativeFun_->jitInfoUnchecked();
   }
   const JSJitInfo* jitInfo() const {
     MOZ_ASSERT(hasJitInfo());

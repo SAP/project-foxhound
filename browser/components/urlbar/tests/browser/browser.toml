@@ -4,7 +4,11 @@ support-files = [
   "head.js",
   "head-common.js",
 ]
-
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # long running manifest
+  "os == 'linux' && os_version == '18.04' && tsan", # long running manifest
+  "win11_2009 && asan", # long running manifest
+]
 prefs = [
   "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
   "browser.urlbar.trending.featureGate=false",
@@ -280,6 +284,8 @@ support-files = [
 
 ["browser_keyword_select_and_type.js"]
 
+["browser_less_common_selection_manipulations.js"]
+
 ["browser_loadRace.js"]
 
 ["browser_locationBarCommand.js"]
@@ -398,9 +404,6 @@ https_first_disabled = true
 
 ["browser_revert.js"]
 
-["browser_search_continuation.js"]
-support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
-
 ["browser_searchFunction.js"]
 
 ["browser_searchHistoryLimit.js"]
@@ -489,6 +492,9 @@ support-files = [
 ]
 
 ["browser_search_bookmarks_from_bookmarks_menu.js"]
+
+["browser_search_continuation.js"]
+support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
 
 ["browser_search_history_from_history_panel.js"]
 

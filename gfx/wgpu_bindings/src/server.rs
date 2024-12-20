@@ -337,29 +337,38 @@ impl ShaderModuleCompilationMessage {
     fn set_error(&mut self, error: &CreateShaderModuleError, source: &str) {
         // The WebGPU spec says that if the message doesn't point to a particular position in
         // the source, the line number, position, offset and lengths should be zero.
-        self.line_number = 0;
-        self.line_pos = 0;
-        self.utf16_offset = 0;
-        self.utf16_length = 0;
+        let line_number;
+        let line_pos;
+        let utf16_offset;
+        let utf16_length;
 
         if let Some(location) = error.location(source) {
-            self.line_number = location.line_number as u64;
-            self.line_pos = location.line_position as u64;
-
+            let len_utf16 = |s: &str| s.chars().map(|c| c.len_utf16() as u64).sum();
             let start = location.offset as usize;
             let end = start + location.length as usize;
-            self.utf16_offset = source[0..start].chars().map(|c| c.len_utf16() as u64).sum();
-            self.utf16_length = source[start..end]
-                .chars()
-                .map(|c| c.len_utf16() as u64)
-                .sum();
+            utf16_offset = len_utf16(&source[0..start]);
+            utf16_length = len_utf16(&source[start..end]);
+
+            line_number = location.line_number as u64;
+            // Naga reports a `line_pos` using UTF-8 bytes, so we cannot use it.
+            let line_start = source[0..start].rfind('\n').map(|pos| pos + 1).unwrap_or(0);
+            line_pos = len_utf16(&source[line_start..start]) + 1;
+        } else {
+            line_number = 0;
+            line_pos = 0;
+            utf16_offset = 0;
+            utf16_length = 0;
         }
 
-        let error_string = error.to_string();
+        let message = nsString::from(&error.to_string());
 
-        if !error_string.is_empty() {
-            self.message = nsString::from(&error_string[..]);
-        }
+        *self = Self {
+            line_number,
+            line_pos,
+            utf16_offset,
+            utf16_length,
+            message,
+        };
     }
 }
 

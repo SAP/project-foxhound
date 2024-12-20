@@ -10,7 +10,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
-  E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   HiddenFrame: "resource://gre/modules/HiddenFrame.sys.mjs",
 });
 
@@ -542,19 +541,8 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
         this.#backgroundBrowsers.set(browser, resolve);
 
         let principal = Services.scriptSecurityManager.getSystemPrincipal();
-        let oa = lazy.E10SUtils.predictOriginAttributes({
-          browser,
-        });
         let loadURIOptions = {
           triggeringPrincipal: principal,
-          remoteType: lazy.E10SUtils.getRemoteTypeForURI(
-            url,
-            true,
-            false,
-            lazy.E10SUtils.DEFAULT_REMOTE_TYPE,
-            null,
-            oa
-          ),
         };
         browser.fixupAndLoadURIString(url, loadURIOptions);
 
@@ -573,10 +561,8 @@ export const PageDataService = new (class PageDataService extends EventEmitter {
    *   The notification's subject.
    * @param {string} topic
    *   The notification topic.
-   * @param {string} data
-   *   The data associated with the notification.
    */
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "idle":
         lazy.logConsole.debug("User went idle");

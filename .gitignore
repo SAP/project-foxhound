@@ -141,7 +141,7 @@ parser/html/java/translator.jar
 .settings/
 
 # Ignore the files and directory that JetBrains IDEs create.
-/.idea/
+**/.idea/
 *.iml
 
 # Android Monitor in Android Studio creates a captures/ directory.
@@ -213,6 +213,19 @@ testing/web-platform/products/
 # Android Gradle artifacts.
 mobile/android/gradle/.gradle
 
+# Android build cache
+mobile/android/**/.build-cache
+mobile/android/**/.gradle
+mobile/android/**/build
+mobile/android/**/bin
+mobile/android/**/generated
+
+# Android local.properties
+mobile/android/**/local.properties
+
+# Android - Web extensions: manifest.json files are generated
+mobile/android/**/manifest.json
+
 # XCode project cruft
 /*.xcodeproj/
 
@@ -249,6 +262,7 @@ testing/talos/talos/fis/tp5n
 testing/talos/talos/tests/tp5n.zip
 testing/talos/talos/tests/tp5n.tar.gz
 testing/talos/talos/tests/tp5n
+testing/talos/talos/tests/pdfpaint/pdfs
 testing/talos/talos/tests/devtools/damp.manifest.develop
 testing/talos/talos/startup_test/startup_about_home_paint/startup_about_home_paint.manifest.develop
 testing/talos/talos/webextensions/
@@ -328,6 +342,9 @@ browser/components/storybook/storybook-static/
 browser/components/storybook/.storybook/chrome-map.js
 browser/components/storybook/custom-elements.json
 
+# Ignore design-system node_modules
+toolkit/themes/shared/design-system/node_modules/
+
 # Ignore jscodeshift installed by mach esmify on windows
 tools/esmify/jscodeshift
 tools/esmify/jscodeshift.cmd
@@ -347,3 +364,6 @@ docs/mots/index.rst
 
 # Ignore generated directory with .class files for GeckoView annotation processor
 mobile/android/annotations/bin/
+
+# Ignore generated log files under media/libvpx
+media/libvpx/config/**/config.log

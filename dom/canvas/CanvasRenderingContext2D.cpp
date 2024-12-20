@@ -682,6 +682,8 @@ class AdjustedTarget {
 
   CompositionOp UsedOperation() const { return mUsedOperation; }
 
+  bool UseOptimizeShadow() const { return mOptimizeShadow; }
+
   ShadowOptions ShadowParams() const {
     const ContextState& state = mCtx->CurrentState();
     return ShadowOptions(ToDeviceColor(state.shadowColor), state.shadowOffset,
@@ -3463,7 +3465,9 @@ void CanvasRenderingContext2D::ArcTo(double aX1, double aY1, double aX2,
     return aError.ThrowIndexSizeError("Negative radius");
   }
 
-  EnsureWritablePath();
+  if (!EnsureWritablePath()) {
+    return;
+  }
 
   // Current point in user space!
   Point p0 = mPathBuilder->CurrentPoint();
@@ -3535,7 +3539,9 @@ void CanvasRenderingContext2D::Arc(double aX, double aY, double aR,
     return;
   }
 
-  EnsureWritablePath();
+  if (!EnsureWritablePath()) {
+    return;
+  }
 
   EnsureActivePath();
 
@@ -3545,7 +3551,9 @@ void CanvasRenderingContext2D::Arc(double aX, double aY, double aR,
 
 void CanvasRenderingContext2D::Rect(double aX, double aY, double aW,
                                     double aH) {
-  EnsureWritablePath();
+  if (!EnsureWritablePath()) {
+    return;
+  }
 
   if (!std::isfinite(aX) || !std::isfinite(aY) || !std::isfinite(aW) ||
       !std::isfinite(aH)) {
@@ -3741,7 +3749,9 @@ void CanvasRenderingContext2D::RoundRect(
     const UnrestrictedDoubleOrDOMPointInitOrUnrestrictedDoubleOrDOMPointInitSequence&
         aRadii,
     ErrorResult& aError) {
-  EnsureWritablePath();
+  if (!EnsureWritablePath()) {
+    return;
+  }
 
   PathBuilder* builder = mPathBuilder;
   Maybe<Matrix> transform = Nothing();
@@ -3759,7 +3769,9 @@ void CanvasRenderingContext2D::Ellipse(double aX, double aY, double aRadiusX,
     return aError.ThrowIndexSizeError("Negative radius");
   }
 
-  EnsureWritablePath();
+  if (!EnsureWritablePath()) {
+    return;
+  }
 
   ArcToBezier(this, Point(aX, aY), Size(aRadiusX, aRadiusY), aStartAngle,
               aEndAngle, aAnticlockwise, aRotation);
@@ -3780,10 +3792,14 @@ void CanvasRenderingContext2D::FlushPathTransform() {
   mPathTransformDirty = false;
 }
 
-void CanvasRenderingContext2D::EnsureWritablePath() {
+bool CanvasRenderingContext2D::EnsureWritablePath() {
   EnsureTarget();
+
   // NOTE: IsTargetValid() may be false here (mTarget == sErrorTarget) but we
   // go ahead and create a path anyway since callers depend on that.
+  if (NS_WARN_IF(!mTarget)) {
+    return false;
+  }
 
   FillRule fillRule = CurrentState().fillRule;
 
@@ -3792,7 +3808,7 @@ void CanvasRenderingContext2D::EnsureWritablePath() {
   }
 
   if (mPathBuilder) {
-    return;
+    return true;
   }
 
   if (!mPath) {
@@ -3800,6 +3816,7 @@ void CanvasRenderingContext2D::EnsureWritablePath() {
   } else {
     mPathBuilder = mPath->CopyToBuilder(fillRule);
   }
+  return true;
 }
 
 void CanvasRenderingContext2D::EnsureUserSpacePath(
@@ -5344,6 +5361,40 @@ static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
       .PostTranslate(shiftLeftTopToOrigin);
 }
 
+static Maybe<layers::SurfaceDescriptor>
+MaybeGetSurfaceDescriptorForRemoteCanvas(
+    const SurfaceFromElementResult& aResult) {
+  if (!StaticPrefs::gfx_canvas_remote_use_draw_image_fast_path()) {
+    return Nothing();
+  }
+
+  if (!aResult.mLayersImage) {
+    return Nothing();
+  }
+
+  Maybe<layers::SurfaceDescriptor> sd;
+  sd = aResult.mLayersImage->GetDesc();
+  if (sd.isNothing() ||
+      sd.ref().type() !=
+          layers::SurfaceDescriptor::TSurfaceDescriptorGPUVideo) {
+    return Nothing();
+  }
+
+  const auto& sdv = sd.ref().get_SurfaceDescriptorGPUVideo();
+  const auto& sdvType = sdv.type();
+  if (sdvType ==
+      layers::SurfaceDescriptorGPUVideo::TSurfaceDescriptorRemoteDecoder) {
+    const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
+    const auto& subdesc = sdrd.subdesc();
+    const auto& subdescType = subdesc.type();
+    if (subdescType == layers::RemoteDecoderVideoSubDescriptor::Tnull_t) {
+      return sd;
+    }
+  }
+
+  return Nothing();
+}
+
 // drawImage(in HTMLImageElement image, in float dx, in float dy);
 //   -- render image from 0,0 at dx,dy top-left coords
 // drawImage(in HTMLImageElement image, in float dx, in float dy, in float dw,
@@ -5455,6 +5506,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
   }
 
   DirectDrawInfo drawInfo;
+  Maybe<layers::SurfaceDescriptor> surfaceDescriptor;
+  SurfaceFromElementResult res;
 
   if (!srcSurf) {
     // The canvas spec says that drawImage should draw the first frame
@@ -5463,7 +5516,6 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
                         nsLayoutUtils::SFE_NO_RASTERIZING_VECTORS |
                         nsLayoutUtils::SFE_ALLOW_UNCROPPED_UNSCALED;
 
-    SurfaceFromElementResult res;
     if (offscreenCanvas) {
       res = nsLayoutUtils::SurfaceFromOffscreenCanvas(offscreenCanvas, sfeFlags,
                                                       mTarget);
@@ -5472,12 +5524,34 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     } else {
       res = CanvasRenderingContext2D::CachedSurfaceFromElement(element);
       if (!res.mSourceSurface) {
-        res = nsLayoutUtils::SurfaceFromElement(element, sfeFlags, mTarget);
+        HTMLVideoElement* video = HTMLVideoElement::FromNodeOrNull(element);
+        if (video && mBufferProvider->IsAccelerated() &&
+            mTarget->IsRecording() &&
+            !(!NeedToApplyFilter() && NeedToDrawShadow())) {
+          res = nsLayoutUtils::SurfaceFromElement(
+              video, sfeFlags, mTarget, /* aOptimizeSourceSurface */ false);
+          surfaceDescriptor = MaybeGetSurfaceDescriptorForRemoteCanvas(res);
+          if (surfaceDescriptor.isNothing() && res.mLayersImage) {
+            if ((res.mSourceSurface = res.mLayersImage->GetAsSourceSurface())) {
+              RefPtr<SourceSurface> opt =
+                  mTarget->OptimizeSourceSurface(res.mSourceSurface);
+              if (opt) {
+                res.mSourceSurface = opt;
+              }
+            }
+          }
+        } else {
+          res = nsLayoutUtils::SurfaceFromElement(element, sfeFlags, mTarget);
+        }
       }
     }
 
-    srcSurf = res.GetSourceSurface();
-    if (!srcSurf && !res.mDrawInfo.mImgContainer) {
+    if (surfaceDescriptor.isNothing()) {
+      srcSurf = res.GetSourceSurface();
+    }
+
+    if (!srcSurf && surfaceDescriptor.isNothing() &&
+        !res.mDrawInfo.mImgContainer) {
       // https://html.spec.whatwg.org/#check-the-usability-of-the-image-argument:
       //
       // Only throw if the request is broken and the element is an
@@ -5597,10 +5671,10 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     return;
   }
 
-  if (srcSurf) {
+  if (srcSurf || surfaceDescriptor.isSome()) {
     gfx::Rect sourceRect(aSx, aSy, aSw, aSh);
-    if ((element && element == mCanvasElement) ||
-        (offscreenCanvas && offscreenCanvas == mOffscreenCanvas)) {
+    if (srcSurf && ((element && element == mCanvasElement) ||
+                    (offscreenCanvas && offscreenCanvas == mOffscreenCanvas))) {
       // srcSurf is a snapshot of mTarget. If we draw to mTarget now, we'll
       // trigger a COW copy of the whole canvas into srcSurf. That's a huge
       // waste if sourceRect doesn't cover the whole canvas.
@@ -5641,10 +5715,24 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       destRect.y = 0;
     }
 
-    tempTarget.DrawSurface(
-        srcSurf, destRect, sourceRect,
-        DrawSurfaceOptions(samplingFilter, SamplingBounds::UNBOUNDED),
-        DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
+    if (srcSurf) {
+      MOZ_ASSERT(surfaceDescriptor.isNothing());
+
+      tempTarget.DrawSurface(
+          srcSurf, destRect, sourceRect,
+          DrawSurfaceOptions(samplingFilter, SamplingBounds::UNBOUNDED),
+          DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
+    } else if (surfaceDescriptor.isSome()) {
+      MOZ_ASSERT(!tempTarget.UseOptimizeShadow());
+      MOZ_ASSERT(res.mLayersImage);
+
+      mTarget->DrawSurfaceDescriptor(
+          surfaceDescriptor.ref(), res.mLayersImage, destRect, sourceRect,
+          DrawSurfaceOptions(samplingFilter, SamplingBounds::UNBOUNDED),
+          DrawOptions(CurrentState().globalAlpha, op, antialiasMode));
+    } else {
+      MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    }
 
     if (rotationDeg != VideoRotation::kDegree_0) {
       tempTarget->SetTransform(currentTransform);

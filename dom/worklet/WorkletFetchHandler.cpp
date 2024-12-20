@@ -458,11 +458,8 @@ nsresult WorkletFetchHandler::StartFetch(JSContext* aCx, nsIURI* aURI,
     return NS_ERROR_FAILURE;
   }
 
-  RequestOrUSVString requestInput;
-
-  nsAutoString url;
-  CopyUTF8toUTF16(spec, url);
-  requestInput.SetAsUSVString().ShareOrDependUpon(url);
+  RequestOrUTF8String requestInput;
+  requestInput.SetAsUTF8String().ShareOrDependUpon(spec);
 
   RootedDictionary<RequestInit> requestInit(aCx);
   requestInit.mCredentials.Construct(mCredentials);
@@ -472,30 +469,33 @@ nsresult WorkletFetchHandler::StartFetch(JSContext* aCx, nsIURI* aURI,
   requestInit.mMode.Construct(RequestMode::Cors);
 
   if (aReferrer) {
-    nsAutoString referrer;
-    res = aReferrer->GetSpec(spec);
+    res = aReferrer->GetSpec(requestInit.mReferrer.Construct());
     if (NS_WARN_IF(NS_FAILED(res))) {
       return NS_ERROR_FAILURE;
     }
-
-    CopyUTF8toUTF16(spec, referrer);
-    requestInit.mReferrer.Construct(referrer);
   }
 
   nsCOMPtr<nsIGlobalObject> global =
       do_QueryInterface(mWorklet->GetParentObject());
   MOZ_ASSERT(global);
 
+  // Note: added to infer a default credentials mode in the Request setup,
+  // but we always pass an explicit credentials value in requestInit, so
+  // this has no effect right now. Bug 1887862 covers fixing worklets to behave
+  // the same as "normal" fetch calls.
+  nsIPrincipal* p = global->PrincipalOrNull();
+  CallerType callerType = (p && p->IsSystemPrincipal() ? CallerType::System
+                                                       : CallerType::NonSystem);
   IgnoredErrorResult rv;
-  SafeRefPtr<Request> request =
-      Request::Constructor(global, aCx, requestInput, requestInit, rv);
+  SafeRefPtr<Request> request = Request::Constructor(
+      global, aCx, requestInput, requestInit, callerType, rv);
   if (rv.Failed()) {
     return NS_ERROR_FAILURE;
   }
 
   request->OverrideContentPolicyType(mWorklet->Impl()->ContentPolicyType());
 
-  RequestOrUSVString finalRequestInput;
+  RequestOrUTF8String finalRequestInput;
   finalRequestInput.SetAsRequest() = request.unsafeGetRawPtr();
 
   RefPtr<Promise> fetchPromise = FetchRequest(

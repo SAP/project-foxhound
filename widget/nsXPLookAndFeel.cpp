@@ -128,7 +128,6 @@ static const char sIntPrefs[][45] = {
     "ui.caretBlinkTime",
     "ui.caretBlinkCount",
     "ui.caretWidth",
-    "ui.caretVisibleWithSelection",
     "ui.selectTextfieldsOnKeyFocus",
     "ui.submenuDelay",
     "ui.menusCanOverlapOSBar",
@@ -152,6 +151,7 @@ static const char sIntPrefs[][45] = {
     "ui.windowsAccentColorInTitlebar",
     "ui.macBigSurTheme",
     "ui.macRTL",
+    "ui.macTitlebarHeight",
     "ui.alertNotificationOrigin",
     "ui.scrollToClick",
     "ui.IMERawInputUnderlineStyle",
@@ -167,6 +167,7 @@ static const char sIntPrefs[][45] = {
     "ui.scrollbarFadeDuration",
     "ui.contextMenuOffsetVertical",
     "ui.contextMenuOffsetHorizontal",
+    "ui.tooltipOffsetVertical",
     "ui.GtkCSDAvailable",
     "ui.GtkCSDMinimizeButton",
     "ui.GtkCSDMaximizeButton",
@@ -186,7 +187,6 @@ static const char sIntPrefs[][45] = {
     "ui.titlebarRadius",
     "ui.titlebarButtonSpacing",
     "ui.dynamicRange",
-    "ui.videoDynamicRange",
     "ui.panelAnimations",
     "ui.hideCursorWhileTyping",
     "ui.gtkThemeFamily",
@@ -711,6 +711,7 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID,
       // Seems to be the default color (hardcoded because of bug 1065998)
       COLOR(MozNativehyperlinktext, 0x00, 0x66, 0xCC)
       COLOR(MozNativevisitedhyperlinktext, 0x55, 0x1A, 0x8B)
+      COLOR(MozAutofillBackground, 0xff, 0xfc, 0xc8)
     default:
       break;
   }
@@ -854,6 +855,11 @@ Maybe<nscolor> nsXPLookAndFeel::GenericDarkColor(ColorID aID) {
     case ColorID::Activecaption:
     case ColorID::Inactivecaption:
       color = NS_RGB(28, 27, 34);
+      break;
+    case ColorID::MozAutofillBackground:
+      // This is the light version of this color, but darkened to have good
+      // contrast with our white-ish FieldText.
+      color = NS_RGB(0x72, 0x6c, 0x00);
       break;
     default:
       return Nothing();

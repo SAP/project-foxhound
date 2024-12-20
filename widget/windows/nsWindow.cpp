@@ -78,6 +78,7 @@
 #include <limits>
 
 #include "mozilla/widget/WinMessages.h"
+#include "nsLookAndFeel.h"
 #include "nsWindow.h"
 #include "nsWindowTaskbarConcealer.h"
 #include "nsAppRunner.h"
@@ -181,11 +182,13 @@
 #  endif
 #  include "mozilla/a11y/Compatibility.h"
 #  include "oleidl.h"
+#  include <uiautomation.h>
 #  include <winuser.h>
 #  include "nsAccessibilityService.h"
 #  include "mozilla/a11y/DocAccessible.h"
 #  include "mozilla/a11y/LazyInstantiator.h"
 #  include "mozilla/a11y/Platform.h"
+#  include "mozilla/StaticPrefs_accessibility.h"
 #  if !defined(WINABLEAPI)
 #    include <winable.h>
 #  endif  // !defined(WINABLEAPI)
@@ -1335,8 +1338,6 @@ DWORD nsWindow::WindowExStyle() {
       }
       return extendedStyle;
     }
-    case WindowType::Sheet:
-      MOZ_FALLTHROUGH_ASSERT("Sheets are macOS specific");
     case WindowType::Dialog:
     case WindowType::TopLevel:
     case WindowType::Invisible:
@@ -1582,13 +1583,6 @@ void nsWindow::Show(bool bState) {
   // Set the status now so that anyone asking during ShowWindow or
   // SetWindowPos would get the correct answer.
   mIsVisible = bState;
-
-  // We may have cached an out of date visible state. This can happen
-  // when session restore sets the full screen mode.
-  if (mIsVisible)
-    mOldStyle |= WS_VISIBLE;
-  else
-    mOldStyle &= ~WS_VISIBLE;
 
   if (mWnd) {
     if (bState) {
@@ -2041,13 +2035,6 @@ void nsWindow::Resize(double aX, double aY, double aWidth, double aHeight,
   }
 
   if (aRepaint) Invalidate();
-}
-
-mozilla::Maybe<bool> nsWindow::IsResizingNativeWidget() {
-  if (mResizeState == RESIZING) {
-    return Some(true);
-  }
-  return Some(false);
 }
 
 /**************************************************************
@@ -3070,34 +3057,85 @@ void nsWindow::HideWindowChrome(bool aShouldHide) {
 
   if (mHideChrome == aShouldHide) return;
 
-  DWORD_PTR style, exStyle;
-  mHideChrome = aShouldHide;
-  if (aShouldHide) {
-    DWORD_PTR tempStyle = ::GetWindowLongPtrW(hwnd, GWL_STYLE);
-    DWORD_PTR tempExStyle = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-
-    style = tempStyle & ~(WS_CAPTION | WS_THICKFRAME);
-    exStyle = tempExStyle & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE |
-                              WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
-
-    mOldStyle = tempStyle;
-    mOldExStyle = tempExStyle;
-  } else {
-    if (!mOldStyle || !mOldExStyle) {
-      mOldStyle = ::GetWindowLongPtrW(hwnd, GWL_STYLE);
-      mOldExStyle = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+  // Data manipulation: styles + ex-styles, and bitmasking operations thereupon.
+  struct Styles {
+    LONG_PTR style, ex;
+    constexpr Styles operator|(Styles const& that) const {
+      return Styles{.style = style | that.style, .ex = ex | that.ex};
+    }
+    constexpr Styles operator&(Styles const& that) const {
+      return Styles{.style = style & that.style, .ex = ex & that.ex};
+    }
+    constexpr Styles operator~() const {
+      return Styles{.style = ~style, .ex = ~ex};
     }
 
-    style = mOldStyle;
-    exStyle = mOldExStyle;
+    // Compute a style-set which matches `zero` where the bits of `this` are 0
+    // and `one` where the bits of `this` are 1.
+    constexpr Styles merge(Styles zero, Styles one) const {
+      Styles const& mask = *this;
+      return (~mask & zero) | (mask & one);
+    }
+
+    // The dual of `merge`, above: returns a pair [zero, one] satisfying
+    // `a.merge(a.split(b)...) == b`. (Or its equivalent in valid C++.)
+    constexpr std::tuple<Styles, Styles> split(Styles data) const {
+      Styles const& mask = *this;
+      return {~mask & data, mask & data};
+    }
+  };
+
+  // Get styles from an HWND.
+  constexpr auto const GetStyles = [](HWND hwnd) {
+    return Styles{.style = ::GetWindowLongPtrW(hwnd, GWL_STYLE),
+                  .ex = ::GetWindowLongPtrW(hwnd, GWL_EXSTYLE)};
+  };
+  constexpr auto const SetStyles = [](HWND hwnd, Styles styles) {
+    VERIFY_WINDOW_STYLE(styles.style);
+    ::SetWindowLongPtrW(hwnd, GWL_STYLE, styles.style);
+    ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, styles.ex);
+  };
+
+  // Get styles from *this.
+  auto const GetCachedStyles = [&]() {
+    return mOldStyles.map([](auto const& m) {
+      return Styles{.style = m.style, .ex = m.exStyle};
+    });
+  };
+  auto const SetCachedStyles = [&](Styles styles) {
+    using WStyles = nsWindow::WindowStyles;
+    mOldStyles = Some(WStyles{.style = styles.style, .exStyle = styles.ex});
+  };
+
+  // The mask describing the "chrome" which this function is supposed to remove
+  // (or restore, as the case may be). Other style-flags will be left untouched.
+  constexpr static const Styles kChromeMask{
+      .style = WS_CAPTION | WS_THICKFRAME,
+      .ex = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE |
+            WS_EX_STATICEDGE};
+
+  // The desired style-flagset for fullscreen windows. (This happens to be all
+  // zeroes, but we don't need to rely on that.)
+  constexpr static const Styles kFullscreenChrome{.style = 0, .ex = 0};
+
+  auto const [chromeless, currentChrome] = kChromeMask.split(GetStyles(hwnd));
+  Styles newChrome{}, oldChrome{};
+
+  mHideChrome = aShouldHide;
+  if (aShouldHide) {
+    newChrome = kFullscreenChrome;
+    oldChrome = currentChrome;
+  } else {
+    // if there's nothing to "restore" it to, just use what's there now
+    oldChrome = GetCachedStyles().refOr(currentChrome);
+    newChrome = oldChrome;
     if (mFutureMarginsToUse) {
       SetNonClientMargins(mFutureMarginsOnceChromeShows);
     }
   }
 
-  VERIFY_WINDOW_STYLE(style);
-  ::SetWindowLongPtrW(hwnd, GWL_STYLE, style);
-  ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle);
+  SetCachedStyles(oldChrome);
+  SetStyles(hwnd, kChromeMask.merge(chromeless, newChrome));
 }
 
 /**************************************************************
@@ -4941,10 +4979,12 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
 
     case WM_SETTINGCHANGE: {
       if (wParam == SPI_SETCLIENTAREAANIMATION ||
-          wParam == SPI_SETKEYBOARDDELAY || wParam == SPI_SETMOUSEVANISH) {
+          wParam == SPI_SETKEYBOARDDELAY || wParam == SPI_SETMOUSEVANISH ||
+          wParam == MOZ_SPI_SETCURSORSIZE) {
         // These need to update LookAndFeel cached values.
         // They affect reduced motion settings / caret blink count / show
-        // pointer while typing, so no need to invalidate style / layout.
+        // pointer while typing / tooltip offset, so no need to invalidate style
+        // / layout.
         NotifyThemeChanged(widget::ThemeChangeKind::MediaQueriesOnly);
         break;
       }
@@ -5884,6 +5924,20 @@ bool nsWindow::ProcessMessageInternal(UINT msg, WPARAM& wParam, LPARAM& lParam,
           *aRetValue = LresultFromObject(IID_IAccessible, wParam, root);
           a11y::LazyInstantiator::EnableBlindAggregation(mWnd);
           result = true;
+        }
+      } else if (objId == UiaRootObjectId &&
+                 StaticPrefs::accessibility_uia_enable()) {
+        if (a11y::LocalAccessible* acc = GetAccessible()) {
+          RefPtr<IAccessible> ia;
+          acc->GetNativeInterface(getter_AddRefs(ia));
+          MOZ_ASSERT(ia);
+          RefPtr<IRawElementProviderSimple> uia;
+          ia->QueryInterface(IID_IRawElementProviderSimple,
+                             getter_AddRefs(uia));
+          if (uia) {
+            *aRetValue = UiaReturnRawElementProvider(mWnd, wParam, lParam, uia);
+            result = true;
+          }
         }
       }
     } break;

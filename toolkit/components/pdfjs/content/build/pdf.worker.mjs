@@ -744,24 +744,6 @@ function getModificationDate(date = new Date()) {
   const buffer = [date.getUTCFullYear().toString(), (date.getUTCMonth() + 1).toString().padStart(2, "0"), date.getUTCDate().toString().padStart(2, "0"), date.getUTCHours().toString().padStart(2, "0"), date.getUTCMinutes().toString().padStart(2, "0"), date.getUTCSeconds().toString().padStart(2, "0")];
   return buffer.join("");
 }
-class PromiseCapability {
-  #settled = false;
-  constructor() {
-    this.promise = new Promise((resolve, reject) => {
-      this.resolve = data => {
-        this.#settled = true;
-        resolve(data);
-      };
-      this.reject = reason => {
-        this.#settled = true;
-        reject(reason);
-      };
-    });
-  }
-  get settled() {
-    return this.#settled;
-  }
-}
 let NormalizeRegex = null;
 let NormalizationMap = null;
 function normalizeUnicode(str) {
@@ -775,6 +757,17 @@ function getUuid() {
   return crypto.randomUUID();
 }
 const AnnotationPrefix = "pdfjs_internal_id_";
+const FontRenderOps = {
+  BEZIER_CURVE_TO: 0,
+  MOVE_TO: 1,
+  LINE_TO: 2,
+  QUADRATIC_CURVE_TO: 3,
+  RESTORE: 4,
+  SAVE: 5,
+  SCALE: 6,
+  TRANSFORM: 7,
+  TRANSLATE: 8
+};
 
 ;// CONCATENATED MODULE: ./src/core/primitives.js
 
@@ -1789,7 +1782,7 @@ class ChunkedStreamManager {
     this._promisesByRequest = new Map();
     this.progressiveDataLength = 0;
     this.aborted = false;
-    this._loadedStreamCapability = new PromiseCapability();
+    this._loadedStreamCapability = Promise.withResolvers();
   }
   sendRequest(begin, end) {
     const rangeReader = this.pdfNetworkStream.getRangeReader(begin, end);
@@ -1852,7 +1845,7 @@ class ChunkedStreamManager {
     if (chunksNeeded.size === 0) {
       return Promise.resolve();
     }
-    const capability = new PromiseCapability();
+    const capability = Promise.withResolvers();
     this._promisesByRequest.set(requestId, capability);
     const chunksToRequest = [];
     for (const chunk of chunksNeeded) {
@@ -5075,6 +5068,18 @@ function decodeTextRegion(huffman, refinement, width, height, defaultPixelValue,
         symbolHeight += rdh;
         symbolBitmap = decodeRefinement(symbolWidth, symbolHeight, refinementTemplateIndex, symbolBitmap, (rdw >> 1) + rdx, (rdh >> 1) + rdy, false, refinementAt, decodingContext);
       }
+      let increment = 0;
+      if (!transposed) {
+        if (referenceCorner > 1) {
+          currentS += symbolWidth - 1;
+        } else {
+          increment = symbolWidth - 1;
+        }
+      } else if (!(referenceCorner & 1)) {
+        currentS += symbolHeight - 1;
+      } else {
+        increment = symbolHeight - 1;
+      }
       const offsetT = t - (referenceCorner & 1 ? 0 : symbolHeight - 1);
       const offsetS = currentS - (referenceCorner & 2 ? symbolWidth - 1 : 0);
       let s2, t2, symbolRow;
@@ -5101,7 +5106,6 @@ function decodeTextRegion(huffman, refinement, width, height, defaultPixelValue,
               throw new Jbig2Error(`operator ${combinationOperator} is not supported`);
           }
         }
-        currentS += symbolHeight - 1;
       } else {
         for (t2 = 0; t2 < symbolHeight; t2++) {
           row = bitmap[offsetT + t2];
@@ -5124,14 +5128,13 @@ function decodeTextRegion(huffman, refinement, width, height, defaultPixelValue,
               throw new Jbig2Error(`operator ${combinationOperator} is not supported`);
           }
         }
-        currentS += symbolWidth - 1;
       }
       i++;
       const deltaS = huffman ? huffmanTables.tableDeltaS.decode(huffmanInput) : decodeInteger(contextCache, "IADS", decoder);
       if (deltaS === null) {
         break;
       }
-      currentS += deltaS + dsOffset;
+      currentS += increment + deltaS + dsOffset;
     } while (true);
   }
   return bitmap;
@@ -18702,22 +18705,13 @@ function lookupCmap(ranges, unicode) {
 }
 function compileGlyf(code, cmds, font) {
   function moveTo(x, y) {
-    cmds.push({
-      cmd: "moveTo",
-      args: [x, y]
-    });
+    cmds.add(FontRenderOps.MOVE_TO, [x, y]);
   }
   function lineTo(x, y) {
-    cmds.push({
-      cmd: "lineTo",
-      args: [x, y]
-    });
+    cmds.add(FontRenderOps.LINE_TO, [x, y]);
   }
   function quadraticCurveTo(xa, ya, x, y) {
-    cmds.push({
-      cmd: "quadraticCurveTo",
-      args: [xa, ya, x, y]
-    });
+    cmds.add(FontRenderOps.QUADRATIC_CURVE_TO, [xa, ya, x, y]);
   }
   let i = 0;
   const numberOfContours = getInt16(code, i);
@@ -18774,17 +18768,11 @@ function compileGlyf(code, cmds, font) {
       }
       const subglyph = font.glyphs[glyphIndex];
       if (subglyph) {
-        cmds.push({
-          cmd: "save"
-        }, {
-          cmd: "transform",
-          args: [scaleX, scale01, scale10, scaleY, x, y]
-        });
+        cmds.add(FontRenderOps.SAVE);
+        cmds.add(FontRenderOps.TRANSFORM, [scaleX, scale01, scale10, scaleY, x, y]);
         if (!(flags & 0x02)) {}
         compileGlyf(subglyph, cmds, font);
-        cmds.push({
-          cmd: "restore"
-        });
+        cmds.add(FontRenderOps.RESTORE);
       }
     } while (flags & 0x20);
   } else {
@@ -18874,22 +18862,13 @@ function compileGlyf(code, cmds, font) {
 }
 function compileCharString(charStringCode, cmds, font, glyphId) {
   function moveTo(x, y) {
-    cmds.push({
-      cmd: "moveTo",
-      args: [x, y]
-    });
+    cmds.add(FontRenderOps.MOVE_TO, [x, y]);
   }
   function lineTo(x, y) {
-    cmds.push({
-      cmd: "lineTo",
-      args: [x, y]
-    });
+    cmds.add(FontRenderOps.LINE_TO, [x, y]);
   }
   function bezierCurveTo(x1, y1, x2, y2, x, y) {
-    cmds.push({
-      cmd: "bezierCurveTo",
-      args: [x1, y1, x2, y2, x, y]
-    });
+    cmds.add(FontRenderOps.BEZIER_CURVE_TO, [x1, y1, x2, y2, x, y]);
   }
   const stack = [];
   let x = 0,
@@ -19059,17 +19038,11 @@ function compileCharString(charStringCode, cmds, font, glyphId) {
             const bchar = stack.pop();
             y = stack.pop();
             x = stack.pop();
-            cmds.push({
-              cmd: "save"
-            }, {
-              cmd: "translate",
-              args: [x, y]
-            });
+            cmds.add(FontRenderOps.SAVE);
+            cmds.add(FontRenderOps.TRANSLATE, [x, y]);
             let cmap = lookupCmap(font.cmap, String.fromCharCode(font.glyphNameMap[StandardEncoding[achar]]));
             compileCharString(font.glyphs[cmap.glyphId], cmds, font, cmap.glyphId);
-            cmds.push({
-              cmd: "restore"
-            });
+            cmds.add(FontRenderOps.RESTORE);
             cmap = lookupCmap(font.cmap, String.fromCharCode(font.glyphNameMap[StandardEncoding[bchar]]));
             compileCharString(font.glyphs[cmap.glyphId], cmds, font, cmap.glyphId);
           }
@@ -19236,6 +19209,22 @@ function compileCharString(charStringCode, cmds, font, glyphId) {
   parse(charStringCode);
 }
 const NOOP = [];
+class Commands {
+  cmds = [];
+  add(cmd, args) {
+    if (args) {
+      if (args.some(arg => typeof arg !== "number")) {
+        warn(`Commands.add - "${cmd}" has at least one non-number arg: "${args}".`);
+        const newArgs = args.map(arg => typeof arg === "number" ? arg : 0);
+        this.cmds.push(cmd, ...newArgs);
+      } else {
+        this.cmds.push(cmd, ...args);
+      }
+    } else {
+      this.cmds.push(cmd);
+    }
+  }
+}
 class CompiledFont {
   constructor(fontMatrix) {
     if (this.constructor === CompiledFont) {
@@ -19253,8 +19242,7 @@ class CompiledFont {
     let fn = this.compiledGlyphs[glyphId];
     if (!fn) {
       try {
-        fn = this.compileGlyph(this.glyphs[glyphId], glyphId);
-        this.compiledGlyphs[glyphId] = fn;
+        fn = this.compiledGlyphs[glyphId] = this.compileGlyph(this.glyphs[glyphId], glyphId);
       } catch (ex) {
         this.compiledGlyphs[glyphId] = NOOP;
         if (this.compiledCharCodeToGlyphId[charCode] === undefined) {
@@ -19282,20 +19270,13 @@ class CompiledFont {
         warn("Invalid fd index for glyph index.");
       }
     }
-    const cmds = [{
-      cmd: "save"
-    }, {
-      cmd: "transform",
-      args: fontMatrix.slice()
-    }, {
-      cmd: "scale",
-      args: ["size", "-size"]
-    }];
+    const cmds = new Commands();
+    cmds.add(FontRenderOps.SAVE);
+    cmds.add(FontRenderOps.TRANSFORM, fontMatrix.slice());
+    cmds.add(FontRenderOps.SCALE);
     this.compileGlyphImpl(code, cmds, glyphId);
-    cmds.push({
-      cmd: "restore"
-    });
-    return cmds;
+    cmds.add(FontRenderOps.RESTORE);
+    return cmds.cmds;
   }
   compileGlyphImpl() {
     unreachable("Children classes should implement this.");
@@ -25941,13 +25922,17 @@ class Font {
           charCodeToGlyphId[mapping.charCode] = mapping.glyphId;
         }
         forcePostTable = true;
-      } else {
+      } else if (cmapPlatformId === 3 && cmapEncodingId === 0) {
         for (const mapping of cmapMappings) {
           let charCode = mapping.charCode;
-          if (cmapPlatformId === 3 && charCode >= 0xf000 && charCode <= 0xf0ff) {
+          if (charCode >= 0xf000 && charCode <= 0xf0ff) {
             charCode &= 0xff;
           }
           charCodeToGlyphId[charCode] = mapping.glyphId;
+        }
+      } else {
+        for (const mapping of cmapMappings) {
+          charCodeToGlyphId[mapping.charCode] = mapping.glyphId;
         }
       }
       if (properties.glyphNames && (baseEncoding.length || this.differences.length)) {
@@ -27080,7 +27065,13 @@ class MeshShading extends BaseShading {
     }
   }
   getIR() {
-    return ["Mesh", this.shadingType, this.coords, this.colors, this.figures, this.bounds, this.bbox, this.background];
+    const {
+      bounds
+    } = this;
+    if (bounds[2] - bounds[0] === 0 || bounds[3] - bounds[1] === 0) {
+      throw new FormatError(`Invalid MeshShading bounds: [${bounds}].`);
+    }
+    return ["Mesh", this.shadingType, this.coords, this.colors, this.figures, bounds, this.bbox, this.background];
   }
 }
 class DummyShading extends BaseShading {
@@ -31794,7 +31785,10 @@ class PartialEvaluator {
     if (font.cacheKey && this.fontCache.has(font.cacheKey)) {
       return this.fontCache.get(font.cacheKey);
     }
-    const fontCapability = new PromiseCapability();
+    const {
+      promise,
+      resolve
+    } = Promise.withResolvers();
     let preEvaluatedFont;
     try {
       preEvaluatedFont = this.preEvaluateFont(font);
@@ -31831,14 +31825,14 @@ class PartialEvaluator {
     }
     assert(fontID?.startsWith("f"), 'The "fontID" must be (correctly) defined.');
     if (fontRefIsRef) {
-      this.fontCache.put(fontRef, fontCapability.promise);
+      this.fontCache.put(fontRef, promise);
     } else {
       font.cacheKey = `cacheKey_${fontID}`;
-      this.fontCache.put(font.cacheKey, fontCapability.promise);
+      this.fontCache.put(font.cacheKey, promise);
     }
     font.loadedName = `${this.idFactory.getDocId()}_${fontID}`;
     this.translateFont(preEvaluatedFont).then(translatedFont => {
-      fontCapability.resolve(new TranslatedFont({
+      resolve(new TranslatedFont({
         loadedName: font.loadedName,
         font: translatedFont,
         dict: font,
@@ -31846,14 +31840,14 @@ class PartialEvaluator {
       }));
     }).catch(reason => {
       warn(`loadFont - translateFont failed: "${reason}".`);
-      fontCapability.resolve(new TranslatedFont({
+      resolve(new TranslatedFont({
         loadedName: font.loadedName,
         font: new ErrorFont(reason instanceof Error ? reason.message : reason),
         dict: font,
         evaluatorOptions: this.options
       }));
     });
-    return fontCapability.promise;
+    return promise;
   }
   buildPath(operatorList, fn, args, parsingText = false) {
     const lastIndex = operatorList.length - 1;
@@ -31937,19 +31931,33 @@ class PartialEvaluator {
     localShadingPatternCache
   }) {
     let id = localShadingPatternCache.get(shading);
-    if (!id) {
-      var shadingFill = Pattern.parseShading(shading, this.xref, resources, this._pdfFunctionFactory, localColorSpaceCache);
-      const patternIR = shadingFill.getIR();
-      id = `pattern_${this.idFactory.createObjId()}`;
-      if (this.parsingType3Font) {
-        id = `${this.idFactory.getDocId()}_type3_${id}`;
+    if (id) {
+      return id;
+    }
+    let patternIR;
+    try {
+      const shadingFill = Pattern.parseShading(shading, this.xref, resources, this._pdfFunctionFactory, localColorSpaceCache);
+      patternIR = shadingFill.getIR();
+    } catch (reason) {
+      if (reason instanceof AbortException) {
+        return null;
       }
-      localShadingPatternCache.set(shading, id);
-      if (this.parsingType3Font) {
-        this.handler.send("commonobj", [id, "Pattern", patternIR]);
-      } else {
-        this.handler.send("obj", [id, this.pageIndex, "Pattern", patternIR]);
+      if (this.options.ignoreErrors) {
+        warn(`parseShading - ignoring shading: "${reason}".`);
+        localShadingPatternCache.set(shading, null);
+        return null;
       }
+      throw reason;
+    }
+    id = `pattern_${this.idFactory.createObjId()}`;
+    if (this.parsingType3Font) {
+      id = `${this.idFactory.getDocId()}_type3_${id}`;
+    }
+    localShadingPatternCache.set(shading, id);
+    if (this.parsingType3Font) {
+      this.handler.send("commonobj", [id, "Pattern", patternIR]);
+    } else {
+      this.handler.send("obj", [id, this.pageIndex, "Pattern", patternIR]);
     }
     return id;
   }
@@ -31975,14 +31983,16 @@ class PartialEvaluator {
           return this.handleTilingType(fn, color, resources, pattern, dict, operatorList, task, localTilingPatternCache);
         } else if (typeNum === PatternType.SHADING) {
           const shading = dict.get("Shading");
-          const matrix = dict.getArray("Matrix");
           const objId = this.parseShading({
             shading,
             resources,
             localColorSpaceCache,
             localShadingPatternCache
           });
-          operatorList.addOp(fn, ["Shading", objId, matrix]);
+          if (objId) {
+            const matrix = dict.getArray("Matrix");
+            operatorList.addOp(fn, ["Shading", objId, matrix]);
+          }
           return undefined;
         }
         throw new FormatError(`Unknown PatternType: ${typeNum}`);
@@ -32393,6 +32403,9 @@ class PartialEvaluator {
               localColorSpaceCache,
               localShadingPatternCache
             });
+            if (!patternId) {
+              continue;
+            }
             args = [patternId];
             fn = OPS.shadingFill;
             break;
@@ -33998,6 +34011,10 @@ class PartialEvaluator {
         systemFontInfo = getFontSubstitution(this.systemFontCache, this.idFactory, this.options.standardFontDataUrl, fontName.name, standardFontName);
       }
     }
+    let fontMatrix = dict.getArray("FontMatrix");
+    if (!Array.isArray(fontMatrix) || fontMatrix.length !== 6 || fontMatrix.some(x => typeof x !== "number")) {
+      fontMatrix = FONT_IDENTITY_MATRIX;
+    }
     const properties = {
       type,
       name: fontName.name,
@@ -34010,7 +34027,7 @@ class PartialEvaluator {
       loadedName: baseDict.loadedName,
       composite,
       fixedPitch: false,
-      fontMatrix: dict.getArray("FontMatrix") || FONT_IDENTITY_MATRIX,
+      fontMatrix,
       firstChar,
       lastChar,
       toUnicode,
@@ -35327,7 +35344,8 @@ function pickPlatformItem(dict) {
   return null;
 }
 class FileSpec {
-  constructor(root, xref) {
+  #contentAvailable = false;
+  constructor(root, xref, skipContent = false) {
     if (!(root instanceof Dict)) {
       return;
     }
@@ -35340,10 +35358,12 @@ class FileSpec {
     if (root.has("RF")) {
       warn("Related file specifications are not supported");
     }
-    this.contentAvailable = true;
-    if (!root.has("EF")) {
-      this.contentAvailable = false;
-      warn("Non-embedded file specifications are not supported");
+    if (!skipContent) {
+      if (root.has("EF")) {
+        this.#contentAvailable = true;
+      } else {
+        warn("Non-embedded file specifications are not supported");
+      }
     }
   }
   get filename() {
@@ -35354,7 +35374,7 @@ class FileSpec {
     return this._filename;
   }
   get content() {
-    if (!this.contentAvailable) {
+    if (!this.#contentAvailable) {
       return null;
     }
     if (!this.contentRef && this.root) {
@@ -38563,7 +38583,7 @@ class Catalog {
         continue;
       }
       if (!outlineDict.has("Title")) {
-        throw new FormatError("Invalid outline item encountered.");
+        warn("Invalid outline item encountered.");
       }
       const data = {
         url: null,
@@ -38592,7 +38612,7 @@ class Catalog {
         unsafeUrl: data.unsafeUrl,
         newWindow: data.newWindow,
         setOCGState: data.setOCGState,
-        title: stringToPDFString(title),
+        title: typeof title === "string" ? stringToPDFString(title) : "",
         color: rgbColor,
         count: Number.isInteger(count) ? count : undefined,
         bold: !!(flags & 2),
@@ -39598,7 +39618,11 @@ class Catalog {
         case "GoToR":
           const urlDict = action.get("F");
           if (urlDict instanceof Dict) {
-            url = urlDict.get("F") || null;
+            const fs = new FileSpec(urlDict, null, true);
+            const {
+              filename
+            } = fs.serializable;
+            url = filename;
           } else if (typeof urlDict === "string") {
             url = urlDict;
           }
@@ -51360,7 +51384,7 @@ class AnnotationBorderStyle {
     }
   }
   setDashArray(dashArray, forceStyle = false) {
-    if (Array.isArray(dashArray) && dashArray.length > 0) {
+    if (Array.isArray(dashArray)) {
       let isValid = true;
       let allZeros = true;
       for (const element of dashArray) {
@@ -51372,7 +51396,7 @@ class AnnotationBorderStyle {
           allZeros = false;
         }
       }
-      if (isValid && !allZeros) {
+      if (dashArray.length === 0 || isValid && !allZeros) {
         this.dashArray = dashArray;
         if (forceStyle) {
           this.setStyle(Name.get("D"));
@@ -56282,7 +56306,7 @@ class MessageHandler {
   }
   sendWithPromise(actionName, data, transfers) {
     const callbackId = this.callbackId++;
-    const capability = new PromiseCapability();
+    const capability = Promise.withResolvers();
     this.callbackCapabilities[callbackId] = capability;
     try {
       this.comObj.postMessage({
@@ -56304,7 +56328,7 @@ class MessageHandler {
       comObj = this.comObj;
     return new ReadableStream({
       start: controller => {
-        const startCapability = new PromiseCapability();
+        const startCapability = Promise.withResolvers();
         this.streamControllers[streamId] = {
           controller,
           startCall: startCapability,
@@ -56323,7 +56347,7 @@ class MessageHandler {
         return startCapability.promise;
       },
       pull: controller => {
-        const pullCapability = new PromiseCapability();
+        const pullCapability = Promise.withResolvers();
         this.streamControllers[streamId].pullCall = pullCapability;
         comObj.postMessage({
           sourceName,
@@ -56336,7 +56360,7 @@ class MessageHandler {
       },
       cancel: reason => {
         assert(reason instanceof Error, "cancel must have a valid reason");
-        const cancelCapability = new PromiseCapability();
+        const cancelCapability = Promise.withResolvers();
         this.streamControllers[streamId].cancelCall = cancelCapability;
         this.streamControllers[streamId].isClosed = true;
         comObj.postMessage({
@@ -56365,7 +56389,7 @@ class MessageHandler {
         const lastDesiredSize = this.desiredSize;
         this.desiredSize -= size;
         if (lastDesiredSize > 0 && this.desiredSize <= 0) {
-          this.sinkCapability = new PromiseCapability();
+          this.sinkCapability = Promise.withResolvers();
           this.ready = this.sinkCapability.promise;
         }
         comObj.postMessage({
@@ -56403,7 +56427,7 @@ class MessageHandler {
           reason: wrapReason(reason)
         });
       },
-      sinkCapability: new PromiseCapability(),
+      sinkCapability: Promise.withResolvers(),
       onPull: null,
       onCancel: null,
       isCancelled: false,
@@ -56681,7 +56705,7 @@ class WorkerTask {
   constructor(name) {
     this.name = name;
     this.terminated = false;
-    this._capability = new PromiseCapability();
+    this._capability = Promise.withResolvers();
   }
   get finished() {
     return this._capability.promise;
@@ -56725,7 +56749,7 @@ class WorkerMessageHandler {
       docId,
       apiVersion
     } = docParams;
-    const workerVersion = "4.1.342";
+    const workerVersion = "4.1.379";
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
     }
@@ -56785,7 +56809,7 @@ class WorkerMessageHandler {
         password,
         rangeChunkSize
       };
-      const pdfManagerCapability = new PromiseCapability();
+      const pdfManagerCapability = Promise.withResolvers();
       let newPdfManager;
       if (data) {
         try {
@@ -57287,8 +57311,8 @@ if (typeof window === "undefined" && !isNodeJS && typeof self !== "undefined" &&
 
 ;// CONCATENATED MODULE: ./src/pdf.worker.js
 
-const pdfjsVersion = "4.1.342";
-const pdfjsBuild = "e384df6f1";
+const pdfjsVersion = "4.1.379";
+const pdfjsBuild = "017e49244";
 
 var __webpack_exports__WorkerMessageHandler = __webpack_exports__.WorkerMessageHandler;
 export { __webpack_exports__WorkerMessageHandler as WorkerMessageHandler };

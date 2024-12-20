@@ -772,7 +772,7 @@ function checkSyncNowButtons(syncing, tooltip = null) {
   for (const syncButton of syncButtons) {
     is(
       syncButton.getAttribute("syncstatus"),
-      syncing ? "active" : "",
+      syncing ? "active" : null,
       "button active has the right value"
     );
     if (tooltip) {
@@ -894,7 +894,7 @@ function checkItemsVisibilities(itemsIds, expectedShownItemId) {
 
 function promiseObserver(topic) {
   return new Promise(resolve => {
-    let obs = (aSubject, aTopic, aData) => {
+    let obs = (aSubject, aTopic) => {
       Services.obs.removeObserver(obs, aTopic);
       resolve(aSubject);
     };

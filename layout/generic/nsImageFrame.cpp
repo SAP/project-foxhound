@@ -1476,8 +1476,6 @@ nscoord nsImageFrame::GetContinuationOffset() const {
 nscoord nsImageFrame::GetMinISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the block-size,
   // min-block-size, and max-block-size properties.
-  DebugOnly<nscoord> result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
   EnsureIntrinsicSizeAndRatio();
   const auto& iSize = GetWritingMode().IsVertical() ? mIntrinsicSize.height
                                                     : mIntrinsicSize.width;
@@ -1487,8 +1485,6 @@ nscoord nsImageFrame::GetMinISize(gfxContext* aRenderingContext) {
 nscoord nsImageFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the block-size,
   // min-block-size, and max-block-size properties.
-  DebugOnly<nscoord> result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
   EnsureIntrinsicSizeAndRatio();
   const auto& iSize = GetWritingMode().IsVertical() ? mIntrinsicSize.height
                                                     : mIntrinsicSize.width;
@@ -1526,7 +1522,6 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                           nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsImageFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aMetrics, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE(
       NS_FRAME_TRACE_CALLS,

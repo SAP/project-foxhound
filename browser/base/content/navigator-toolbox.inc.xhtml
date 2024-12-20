@@ -491,13 +491,6 @@
                      tooltiptext="Ion"
                      onmousedown="switchToTabHavingURI('about:ion', true);"
                      onkeypress="switchToTabHavingURI('about:ion', true);"/>
-      <toolbarbutton id="whats-new-menu-button"
-                     class="toolbarbutton-1"
-                     delegatesanchor="true"
-                     hidden="true"
-                     badged="true"
-                     onmousedown="PanelUI.showSubView('PanelUI-whatsNew', this, event);"
-                     onkeypress="PanelUI.showSubView('PanelUI-whatsNew', this, event);"/>
       <toolbarbutton id="PanelUI-menu-button"
                      class="toolbarbutton-1"
                      delegatesanchor="true"
@@ -708,7 +701,7 @@
                    ondragenter="homeButtonObserver.onDragOver(event)"
                    ondrop="homeButtonObserver.onDrop(event)"
                    key="goHome"
-                   onclick="BrowserHome(event);"
+                   onclick="BrowserCommands.home(event);"
                    cui-areatype="toolbar"/>
 
     <toolbarbutton id="library-button" class="toolbarbutton-1 chromeclass-toolbar-additional subviewbutton-nav"

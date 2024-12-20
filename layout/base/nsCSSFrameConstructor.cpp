@@ -4985,9 +4985,8 @@ nsCSSFrameConstructor::FindSVGData(const Element& aElement,
   return data;
 }
 
-void nsCSSFrameConstructor::InsertPageBreakItem(
-    nsIContent* aContent, FrameConstructionItemList& aItems,
-    InsertPageBreakLocation location) {
+void nsCSSFrameConstructor::AppendPageBreakItem(
+    nsIContent* aContent, FrameConstructionItemList& aItems) {
   RefPtr<ComputedStyle> pseudoStyle =
       mPresShell->StyleSet()->ResolveNonInheritingAnonymousBoxStyle(
           PseudoStyleType::pageBreak);
@@ -4997,13 +4996,8 @@ void nsCSSFrameConstructor::InsertPageBreakItem(
 
   static constexpr FrameConstructionData sPageBreakData(NS_NewPageBreakFrame,
                                                         FCDATA_SKIP_FRAMESET);
-  if (location == InsertPageBreakLocation::eBefore) {
-    aItems.PrependItem(this, &sPageBreakData, aContent, pseudoStyle.forget(),
-                       true);
-  } else {
-    aItems.AppendItem(this, &sPageBreakData, aContent, pseudoStyle.forget(),
-                      true);
-  }
+  aItems.AppendItem(this, &sPageBreakData, aContent, pseudoStyle.forget(),
+                    true);
 }
 
 bool nsCSSFrameConstructor::ShouldCreateItemsForChild(
@@ -6012,7 +6006,7 @@ nsIFrame* nsCSSFrameConstructor::GetInsertionPrevSibling(
 
   // Find the frame that precedes the insertion point.
   FlattenedChildIterator iter(aInsertion->mContainer);
-  if (iter.ShadowDOMInvolved() || !aChild->IsRootOfNativeAnonymousSubtree()) {
+  if (!aChild->IsRootOfNativeAnonymousSubtree()) {
     // The check for IsRootOfNativeAnonymousSubtree() is because editor is
     // severely broken and calls us directly for native anonymous
     // nodes that it creates.
@@ -8390,7 +8384,7 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
   }
 
   // TODO(emilio): We technically can find the right insertion point nowadays
-  // using StyleChildrenIterator rather than FlattenedTreeIterator. But we'd
+  // using StyleChildrenIterator rather than FlattenedChildIterator. But we'd
   // need to tweak the setup to insert into replaced elements to filter which
   // anonymous roots can be allowed, and which can't.
   //

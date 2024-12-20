@@ -27,9 +27,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   BuiltInThemes: "resource:///modules/BuiltInThemes.sys.mjs",
+  ContentRelevancyManager:
+    "resource://gre/modules/ContentRelevancyManager.sys.mjs",
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
-  Corroborate: "resource://gre/modules/Corroborate.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   Discovery: "resource:///modules/Discovery.sys.mjs",
@@ -80,8 +81,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   SaveToPocket: "chrome://pocket/content/SaveToPocket.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
-  SearchSERPDomainToCategoriesMap:
-    "resource:///modules/SearchSERPTelemetry.sys.mjs",
+  SearchSERPCategorization: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
@@ -223,6 +223,22 @@ let JSPROCESSACTORS = {
  * available at https://firefox-source-docs.mozilla.org/dom/ipc/jsactors.html
  */
 let JSWINDOWACTORS = {
+  Megalist: {
+    parent: {
+      esModuleURI: "resource://gre/actors/MegalistParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/MegalistChild.sys.mjs",
+      events: {
+        DOMContentLoaded: {},
+      },
+    },
+    includeChrome: true,
+    matches: ["chrome://global/content/megalist/megalist.html"],
+    allFrames: true,
+    enablePreference: "browser.megalist.enabled",
+  },
+
   AboutLogins: {
     parent: {
       esModuleURI: "resource:///actors/AboutLoginsParent.sys.mjs",
@@ -2111,7 +2127,7 @@ BrowserGlue.prototype = {
 
       () => lazy.BrowserUsageTelemetry.uninit(),
       () => lazy.SearchSERPTelemetry.uninit(),
-      () => lazy.SearchSERPDomainToCategoriesMap.uninit(),
+      () => lazy.SearchSERPCategorization.uninit(),
       () => lazy.Interactions.uninit(),
       () => lazy.PageDataService.uninit(),
       () => lazy.PageThumbs.uninit(),
@@ -2341,7 +2357,7 @@ BrowserGlue.prototype = {
       _badgeIcon();
     }
 
-    lazy.RemoteSettings(STUDY_ADDON_COLLECTION_KEY).on("sync", async event => {
+    lazy.RemoteSettings(STUDY_ADDON_COLLECTION_KEY).on("sync", async () => {
       Services.prefs.setBoolPref(PREF_ION_NEW_STUDIES_AVAILABLE, true);
     });
 
@@ -2436,7 +2452,7 @@ BrowserGlue.prototype = {
     lazy.Sanitizer.onStartup();
     this._maybeShowRestoreSessionInfoBar();
     this._scheduleStartupIdleTasks();
-    this._lateTasksIdleObserver = (idleService, topic, data) => {
+    this._lateTasksIdleObserver = (idleService, topic) => {
       if (topic == "idle") {
         idleService.removeIdleObserver(
           this._lateTasksIdleObserver,
@@ -2662,7 +2678,19 @@ BrowserGlue.prototype = {
             AppConstants.platform == "win") &&
           Services.prefs.getBoolPref("browser.firefoxbridge.enabled", false),
         task: async () => {
-          await lazy.FirefoxBridgeExtensionUtils.ensureRegistered();
+          let profileService = Cc[
+            "@mozilla.org/toolkit/profile-service;1"
+          ].getService(Ci.nsIToolkitProfileService);
+          if (
+            profileService.defaultProfile &&
+            profileService.currentProfile == profileService.defaultProfile
+          ) {
+            await lazy.FirefoxBridgeExtensionUtils.ensureRegistered();
+          } else {
+            lazy.log.debug(
+              "FirefoxBridgeExtensionUtils failed to register due to non-default current profile."
+            );
+          }
         },
       },
 
@@ -3082,9 +3110,16 @@ BrowserGlue.prototype = {
       },
 
       {
-        name: "SearchSERPDomainToCategoriesMap.init",
+        name: "SearchSERPCategorization.init",
         task: () => {
-          lazy.SearchSERPDomainToCategoriesMap.init().catch(console.error);
+          lazy.SearchSERPCategorization.init();
+        },
+      },
+
+      {
+        name: "ContentRelevancyManager.init",
+        task: () => {
+          lazy.ContentRelevancyManager.init();
         },
       },
 
@@ -3191,12 +3226,6 @@ BrowserGlue.prototype = {
 
       function RemoteSecuritySettingsInit() {
         lazy.RemoteSecuritySettings.init();
-      },
-
-      function CorroborateInit() {
-        if (Services.prefs.getBoolPref("corroborator.enabled", false)) {
-          lazy.Corroborate.init().catch(console.error);
-        }
       },
 
       function BrowserUsageTelemetryReportProfileCount() {
@@ -3699,7 +3728,7 @@ BrowserGlue.prototype = {
       "account-connection-connected",
     ]);
 
-    let clickCallback = (subject, topic, data) => {
+    let clickCallback = (subject, topic) => {
       if (topic != "alertclickcallback") {
         return;
       }
@@ -3740,7 +3769,7 @@ BrowserGlue.prototype = {
   _migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 143;
+    const UI_VERSION = 144;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     if (!Services.prefs.prefHasUserValue("browser.migration.version")) {
@@ -4374,6 +4403,23 @@ BrowserGlue.prototype = {
       }
     }
 
+    if (currentUIVersion < 144) {
+      // TerminatorTelemetry was removed in bug 1879136. Before it was removed,
+      // the ShutdownDuration.json file would be written to disk at shutdown
+      // so that the next launch of the browser could read it in and send
+      // shutdown performance measurements.
+      //
+      // Unfortunately, this mechanism and its measurements were fairly
+      // unreliable, so they were removed.
+      for (const filename of [
+        "ShutdownDuration.json",
+        "ShutdownDuration.json.tmp",
+      ]) {
+        const filePath = PathUtils.join(PathUtils.profileDir, filename);
+        IOUtils.remove(filePath, { ignoreAbsent: true }).catch(console.error);
+      }
+    }
+
     // Update the migration version.
     Services.prefs.setIntPref("browser.migration.version", UI_VERSION);
   },
@@ -4462,14 +4508,6 @@ BrowserGlue.prototype = {
 
       // Check the default branch as enterprise policies can set prefs there.
       const defaultPrefs = Services.prefs.getDefaultBranch("");
-      if (
-        !defaultPrefs.getBoolPref(
-          "browser.messaging-system.whatsNewPanel.enabled",
-          true
-        )
-      ) {
-        return "no-whatsNew";
-      }
       if (!defaultPrefs.getBoolPref("browser.aboutwelcome.enabled", true)) {
         return "no-welcome";
       }
@@ -4712,7 +4750,7 @@ BrowserGlue.prototype = {
       }
       const title = await lazy.accountsL10n.formatValue(titleL10nId);
 
-      const clickCallback = (obsSubject, obsTopic, obsData) => {
+      const clickCallback = (obsSubject, obsTopic) => {
         if (obsTopic == "alertclickcallback") {
           win.gBrowser.selectedTab = firstTab;
         }
@@ -4751,7 +4789,7 @@ BrowserGlue.prototype = {
       tab = win.gBrowser.addWebTab(url);
     }
     tab.attention = true;
-    let clickCallback = (subject, topic, data) => {
+    let clickCallback = (subject, topic) => {
       if (topic != "alertclickcallback") {
         return;
       }
@@ -4780,7 +4818,7 @@ BrowserGlue.prototype = {
         : { id: "account-connection-connected-with-noname" },
     ]);
 
-    let clickCallback = async (subject, topic, data) => {
+    let clickCallback = async (subject, topic) => {
       if (topic != "alertclickcallback") {
         return;
       }
@@ -4815,7 +4853,7 @@ BrowserGlue.prototype = {
       "account-connection-disconnected",
     ]);
 
-    let clickCallback = (subject, topic, data) => {
+    let clickCallback = (subject, topic) => {
       if (topic != "alertclickcallback") {
         return;
       }
@@ -4870,7 +4908,7 @@ BrowserGlue.prototype = {
     const TOGGLE_ENABLED_PREF =
       "media.videocontrols.picture-in-picture.video-toggle.enabled";
 
-    const observe = (subject, topic, data) => {
+    const observe = (subject, topic) => {
       const enabled = Services.prefs.getBoolPref(TOGGLE_ENABLED_PREF, false);
       Services.telemetry.scalarSet("pictureinpicture.toggle_enabled", enabled);
 
@@ -6475,11 +6513,11 @@ export var AboutHomeStartupCache = {
 
   /** nsICacheEntryOpenCallback **/
 
-  onCacheEntryCheck(aEntry) {
+  onCacheEntryCheck() {
     return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
   },
 
-  onCacheEntryAvailable(aEntry, aNew, aResult) {
+  onCacheEntryAvailable(aEntry) {
     this.log.trace("Cache entry is available.");
 
     this._cacheEntry = aEntry;

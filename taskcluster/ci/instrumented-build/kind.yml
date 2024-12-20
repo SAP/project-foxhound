@@ -26,7 +26,7 @@ job-defaults:
         env:
             PERFHERDER_EXTRA_OPTIONS: instrumented
             MACH_BUILD_PYTHON_NATIVE_PACKAGE_SOURCE: system
-    use-system-python: false
+    use-python: default
     run:
         using: mozharness
         actions: [get-secrets, build]
@@ -39,7 +39,6 @@ job-defaults:
     fetches:
         toolchain:
             - linux64-sccache
-    run-on-projects: ['release']
 
 jobs:
     linux-shippable/opt:
@@ -87,6 +86,7 @@ jobs:
                 - builds/releng_base_linux_64_builds.py
             mozconfig-variant: profile-generate
             tooltool-downloads: public
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
@@ -97,6 +97,40 @@ jobs:
                 - linux64-nasm
                 - linux64-node
                 - linux64-pkgconf
+                - sysroot-x86_64-linux-gnu
+                - sysroot-wasm32-wasi
+
+    linux64-aarch64-shippable/opt:
+        description: "Linux AArch64 (a.k.a. ARM64) Instrumented"
+        index:
+            product: firefox
+            job-name: instrumented-linux64-aarch64
+        shipping-product: firefox
+        treeherder:
+            platform: linux64-aarch64-shippable/opt
+        worker-type: b-linux-gcp
+        run:
+            config:
+                - builds/releng_base_firefox.py
+                - builds/releng_base_linux_64_builds.py
+            mozconfig-variant: profile-generate
+            extra-config:
+                extra_mozconfig_content:
+                    - ac_add_options --target=aarch64
+                    - unset MOZ_STDCXX_COMPAT
+            tooltool-downloads: public
+        run-on-projects: ['mozilla-central']
+        fetches:
+            toolchain:
+                - linux64-clang
+                - linux64-rust
+                - linux64-rust-size
+                - linux64-cbindgen
+                - linux64-dump_syms
+                - linux64-nasm
+                - linux64-node
+                - linux64-pkgconf
+                - sysroot-aarch64-linux-gnu
                 - sysroot-x86_64-linux-gnu
                 - sysroot-wasm32-wasi
 
@@ -120,6 +154,7 @@ jobs:
             script: "mozharness/scripts/fx_desktop_build.py"
             secrets: true
             mozconfig-variant: profile-generate
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
@@ -157,6 +192,7 @@ jobs:
             mozconfig-variant: profile-generate
             extra-config:
                 mozconfig_platform: macosx64-aarch64
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang
@@ -210,9 +246,11 @@ jobs:
                 - builds/releng_base_android_64_builds.py
             custom-build-variant-cfg: x86-profile-generate
             tooltool-downloads: internal
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - android-gradle-dependencies
+                - android-gradle-python-envs
                 - android-ndk-linux
                 - android-sdk-linux
                 - linux64-jdk
@@ -264,9 +302,11 @@ jobs:
                 - builds/releng_base_android_64_builds.py
             custom-build-variant-cfg: x86_64-profile-generate
             tooltool-downloads: internal
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - android-gradle-dependencies
+                - android-gradle-python-envs
                 - android-ndk-linux
                 - android-sdk-linux
                 - linux64-jdk
@@ -318,9 +358,11 @@ jobs:
                 - builds/releng_base_android_64_builds.py
             custom-build-variant-cfg: aarch64-profile-generate
             tooltool-downloads: internal
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - android-gradle-dependencies
+                - android-gradle-python-envs
                 - android-ndk-linux
                 - android-sdk-linux
                 - linux64-jdk
@@ -352,6 +394,47 @@ jobs:
             extra-config:
                 stage_platform: win32
                 mozconfig_platform: win32
+        run-on-projects: ['release']
+        fetches:
+            toolchain:
+                - linux64-clang
+                - linux64-rust-cross
+                - linux64-rust-size
+                - linux64-nasm
+                - linux64-node
+                - linux64-cbindgen
+                - linux64-dump_syms
+                - linux64-wine
+                - linux64-winchecksec
+                - nsis
+                - sysroot-x86_64-linux-gnu
+                - sysroot-wasm32-wasi
+                - vs
+                - windows-rs
+            fetch:
+                - upx-3.95-win
+
+    win64-nightlyasrelease/opt:
+        description: "Win64 Shippable PGO Instrumented"
+        index:
+            product: firefox
+            job-name: instrumented-nightlyasrelease-win64
+        shipping-product: firefox
+        treeherder:
+            platform: win64-nightlyasrelease/opt
+        worker-type: b-linux-gcp
+        run:
+            options: [append-env-variables-from-configs]
+            mozconfig-variant: profile-generate
+            config:
+                - builds/releng_base_firefox.py
+                - builds/releng_base_linux_64_builds.py
+            extra-config:
+                stage_platform: win64
+                mozconfig_platform: win64
+                extra_mozconfig_content:
+                    - ac_add_options --as-milestone=release
+        run-on-projects: [trunk-only]
         fetches:
             toolchain:
                 - linux64-clang
@@ -389,6 +472,7 @@ jobs:
             extra-config:
                 stage_platform: win64
                 mozconfig_platform: win64
+        run-on-projects: ['release']
         fetches:
             toolchain:
                 - linux64-clang

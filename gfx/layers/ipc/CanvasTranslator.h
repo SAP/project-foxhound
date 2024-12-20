@@ -219,6 +219,9 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   already_AddRefed<gfx::SourceSurface> LookupExternalSurface(
       uint64_t aKey) final;
 
+  already_AddRefed<gfx::SourceSurface> LookupSourceSurfaceFromSurfaceDescriptor(
+      const SurfaceDescriptor& aDesc) final;
+
   /**
    * Gets the cached DataSourceSurface, if it exists, associated with a
    * SourceSurface from another process.
@@ -273,6 +276,8 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void NextBuffer();
 
   void GetDataSurface(uint64_t aSurfaceRef);
+
+  static void Shutdown();
 
  private:
   ~CanvasTranslator();
@@ -333,6 +338,7 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> mDevice;
 #endif
+  static StaticRefPtr<gfx::SharedContextWebgl> sSharedContext;
   RefPtr<gfx::SharedContextWebgl> mSharedContext;
   RefPtr<RemoteTextureOwnerClient> mRemoteTextureOwner;
 

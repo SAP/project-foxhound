@@ -935,7 +935,7 @@ class EventChecker {
     return this.checkAddonEvent("onInstalled", addon);
   }
 
-  onUninstalling(addon, requiresRestart) {
+  onUninstalling(addon) {
     return this.checkAddonEvent("onUninstalling", addon);
   }
 
@@ -1033,7 +1033,7 @@ class EventChecker {
     });
   }
 
-  onInstallEnded(install, newAddon) {
+  onInstallEnded(install) {
     return this.checkInstall("onInstallEnded", install, {
       state: "STATE_INSTALLED",
       error: 0,
@@ -1220,4 +1220,11 @@ async function installBuiltinExtension(extensionData, waitForStartup = true) {
     await wrapper.awaitStartup();
   }
   return wrapper;
+}
+
+function useAMOStageCert() {
+  // NOTE: add_task internally calls add_test which mutate the add_task properties object,
+  // and so we should not reuse the same object as add_task options passed to multiple
+  // add_task calls.
+  return { pref_set: [["xpinstall.signatures.dev-root", true]] };
 }

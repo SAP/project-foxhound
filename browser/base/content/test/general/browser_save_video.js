@@ -14,7 +14,7 @@ add_task(async function () {
   let loadPromise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
   BrowserTestUtils.startLoadingURIString(
     gBrowser,
-    "https://example.com/browser/browser/base/content/test/general/web_video.html"
+    "http://mochi.test:8888/browser/browser/base/content/test/general/web_video.html"
   );
   await loadPromise;
 
@@ -52,7 +52,7 @@ add_task(async function () {
 
       is(
         fileName,
-        "web-video1-expectedName.ogv",
+        "web-video1-expectedName.webm",
         "Video file name is correctly retrieved from Content-Disposition http header"
       );
       resolve();

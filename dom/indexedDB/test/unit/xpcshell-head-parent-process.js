@@ -56,7 +56,11 @@ if (!this.runTest) {
     if (testSteps.constructor.name === "AsyncFunction") {
       // Do run our existing cleanup function that would normally be called by
       // the generator's call to finishTest().
-      registerCleanupFunction(resetTesting);
+      registerCleanupFunction(function () {
+        if (SpecialPowers.isMainProcess()) {
+          resetTesting();
+        }
+      });
 
       add_task(testSteps);
 
@@ -644,7 +648,7 @@ var SpecialPowers = {
   clearUserPref(prefName) {
     Services.prefs.clearUserPref(prefName);
   },
-  // Copied (and slightly adjusted) from testing/specialpowers/content/SpecialPowersAPI.jsm
+  // Copied (and slightly adjusted) from testing/specialpowers/api.js
   exactGC(callback) {
     let count = 0;
 

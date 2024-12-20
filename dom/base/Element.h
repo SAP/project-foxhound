@@ -260,7 +260,8 @@ class Element : public FragmentOrElement {
 #ifdef MOZILLA_INTERNAL_API
   explicit Element(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : FragmentOrElement(std::move(aNodeInfo)),
-        mState(ElementState::READONLY | ElementState::DEFINED) {
+        mState(ElementState::READONLY | ElementState::DEFINED |
+               ElementState::LTR) {
     MOZ_ASSERT(mNodeInfo->NodeType() == ELEMENT_NODE,
                "Bad NodeType in aNodeInfo");
     SetIsElement();
@@ -1371,10 +1372,8 @@ class Element : public FragmentOrElement {
   enum class ShadowRootDeclarative : bool { No, Yes };
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  already_AddRefed<ShadowRoot> AttachShadow(
-      const ShadowRootInit& aInit, ErrorResult& aError,
-      ShadowRootDeclarative aNewShadowIsDeclarative =
-          ShadowRootDeclarative::No);
+  already_AddRefed<ShadowRoot> AttachShadow(const ShadowRootInit& aInit,
+                                            ErrorResult& aError);
   bool CanAttachShadowDOM() const;
 
   enum class DelegatesFocus : bool { No, Yes };
@@ -1383,8 +1382,7 @@ class Element : public FragmentOrElement {
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
       ShadowRootMode aMode, DelegatesFocus = DelegatesFocus::No,
       SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named,
-      ShadowRootClonable aClonable = ShadowRootClonable::No,
-      ShadowRootDeclarative aDeclarative = ShadowRootDeclarative::No);
+      ShadowRootClonable aClonable = ShadowRootClonable::No);
 
   // Attach UA Shadow Root if it is not attached.
   enum class NotifyUAWidgetSetup : bool { No, Yes };
@@ -1517,6 +1515,8 @@ class Element : public FragmentOrElement {
   MOZ_CAN_RUN_SCRIPT double ClientWidthDouble() {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Width());
   }
+
+  MOZ_CAN_RUN_SCRIPT double CurrentCSSZoom();
 
   // This function will return the block size of first line box, no matter if
   // the box is 'block' or 'inline'. The return unit is pixel. If the element
