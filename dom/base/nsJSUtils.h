@@ -132,6 +132,8 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   CheckedInt<size_t> bufLen(JS::GetStringLength(s));
 
   if (XPCStringConvert::MaybeAssignUTF8StringChars(s, bufLen.value(), dest)) {
+    // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+    dest.AssignTaint(JS_GetStringTaint(s));
     return true;
   }
 
@@ -171,6 +173,10 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 
   MOZ_ASSERT(read == JS::GetStringLength(s));
   handle.Finish(written, kAllowShrinking);
+
+  // TaintFox: copy taint when converting between JavaScript and Gecko strings.
+  dest.AssignTaint(JS_GetStringTaint(s));
+
   return true;
 }
 
