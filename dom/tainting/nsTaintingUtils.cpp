@@ -83,6 +83,19 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
   return TaintOperation(name);
 }
 
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsCString> &args)
+{
+  if (cx && JS::CurrentGlobalOrNull(cx)) {
+    JS::RootedValue argval(cx);
+
+    if (mozilla::dom::ToJSValue(cx, args, &argval)) {
+      return JS_GetTaintOperationFullArgs(cx, name, argval);
+    }
+  }
+
+  return TaintOperation(name);
+}
+
 static void DescribeElement(const nsINode* node, nsAString& aInput)
 {
   aInput.Truncate();
@@ -209,7 +222,44 @@ nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsS
   return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name, args);
 }
 
+static nsresult MarkTaintOperation(JSContext *cx, nsACString &str, const char* name, const nsTArray<nsString> &args)
+{
+  if (str.isTainted()) {
+    auto op = GetTaintOperation(cx, name, args);
+    op.set_native();
+    str.Taint().extend(op);
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintOperation(nsACString &str, const char* name, const nsTArray<nsString> &args)
+{
+  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name, args);
+}
+
+static nsresult MarkTaintOperation(JSContext *cx, nsCString &str, const char* name, const nsTArray<nsCString> &args)
+{
+  if (str.isTainted()) {
+    auto op = GetTaintOperation(cx, name, args);
+    op.set_native();
+    str.Taint().extend(op);
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintOperation(nsCString &str, const char* name, const nsTArray<nsCString> &args)
+{
+  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name, args);
+}
+
 static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
+  operation.setSource();
+  operation.set_native();
+  str.Taint().overlay(0, str.Length(), operation);
+  return NS_OK;
+}
+
+static nsresult MarkTaintSource(nsACString &str, TaintOperation operation) {
   operation.setSource();
   operation.set_native();
   str.Taint().overlay(0, str.Length(), operation);
@@ -257,6 +307,14 @@ nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, con
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name)
+{
+  if (isSourceActive(name)) {
+    return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
+  }
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(nsACString &str, const char* name)
 {
   if (isSourceActive(name)) {
     return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));

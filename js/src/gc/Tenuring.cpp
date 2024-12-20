@@ -969,14 +969,6 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
   // 3. It is deduplicatable:
   //    The JSString NON_DEDUP_BIT flag is unset.
   // 4. It matches an entry in stringDeDupSet.
-<<<<<<< HEAD
-  // 5. It is not tainted!
-  //    Deduplicating strings will differing taint information can lead to inaccurate results!
-
-  if (src->length() < MAX_DEDUPLICATABLE_STRING_LENGTH && src->isLinear() &&
-      src->isDeduplicatable() && stringDeDupSet.isSome()  &&
-      !src->taint().hasTaint()) {
-=======
   // 5. It is moved to the tenured heap.
   // 6. It is not tainted!
   //    Deduplicating strings will differing taint information can lead to inaccurate results!
@@ -986,7 +978,6 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
       src->isDeduplicatable() && stringDeDupSet.isSome() &&
       !src->taint().hasTaint()) {
     src->clearBitsOnTenure();
->>>>>>> 4c9a3f8e2db68ae0a8fcf6bbf0574e3c0549ff49
     auto p = stringDeDupSet->lookupForAdd(src);
     if (p) {
       // Deduplicate to the looked-up string!

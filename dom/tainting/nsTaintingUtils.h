@@ -26,10 +26,13 @@ nsresult MarkTaintOperation(nsAString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* node);
 nsresult MarkTaintOperation(nsACString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
+nsresult MarkTaintOperation(nsACString &str, const char* name, const nsTArray<nsString> &arg);
+nsresult MarkTaintOperation(nsCString &str, const char* name, const nsTArray<nsCString> &arg);
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name);
 
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(nsAString &str, const char* name);
+nsresult MarkTaintSource(nsACString &str, const char* name);
 
 // TaintFox: Add taint source information to a string
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg);

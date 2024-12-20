@@ -1161,7 +1161,7 @@ void URLParams::Append(const nsACString& aName, const nsACString& aValue) {
   param->mKey = aName;
   param->mValue = aValue;
 
-  nsTArray<nsString> args;
+  nsTArray<nsCString> args;
   args.AppendElement(param->mKey);
   args.AppendElement(param->mValue);
 
@@ -1249,8 +1249,8 @@ void URLParams::DecodeString(const nsACString& aInput, nsACString& aOutput) {
       continue;
     }
     // Taintfox: append single char taint
-    unescaped.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), unescaped.Length());
-    unescaped.Append(*iter);
+    aOutput.Taint().concat(aInput.Taint().safeSubTaint(std::distance(start, iter)), aOutput.Length());
+    aOutput.Append(*iter);
     ++iter;
   }
   AssignMaybeInvalidUTF8String(aOutput, aOutput);

@@ -508,7 +508,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   }
 
   // Taintfox: Sink: Add fetch sink here...
-  nsAutoString url;
+  nsAutoCString url;
   request->GetUrl(url);
   ReportTaintSink(url, "fetch.url");
 
