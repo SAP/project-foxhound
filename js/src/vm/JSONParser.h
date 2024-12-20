@@ -64,10 +64,10 @@ class MOZ_STACK_CLASS JSONTokenizer {
   CharPtr current;
   const CharPtr begin, end;
 
-  // TaintFox: Reference to the taint information associated with the input string. Can be nullptr
+  // TaintFox: Copy of the taint information associated with the input string. Can be empty
   // since this class may have been constructed from raw character ranges that were never
   // associated with a string instance.
-  const StringTaint& taint;
+  const SafeStringTaint mTaint;
 
   ParserT* parser = nullptr;
 
@@ -77,7 +77,7 @@ class MOZ_STACK_CLASS JSONTokenizer {
         current(current),
         begin(begin),
         end(end),
-        taint(taint),
+        mTaint(taint),
         parser(parser) {
     MOZ_ASSERT(current <= end);
     MOZ_ASSERT(parser);
@@ -93,7 +93,7 @@ class MOZ_STACK_CLASS JSONTokenizer {
 
   JSONTokenizer(JSONTokenizer<CharT, ParserT, StringBuilderT>&& other) noexcept
       : JSONTokenizer(other.sourceStart, other.current, other.begin, other.end,
-                      other.taint, other.parser) {}
+                      other.mTaint, other.parser) {}
 
   JSONTokenizer(const JSONTokenizer<CharT, ParserT, StringBuilderT>& other) =
       delete;
