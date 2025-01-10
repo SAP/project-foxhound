@@ -85,9 +85,32 @@ TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool i
 // This is mainly useful for tracing tainted arguments through the code.
 void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
 
-// Write the taint report to file
-void MaybeSpewStringTaint(JSContext* cx, JSString* str);
-// Write a message to the file
+// Write the taint information to a StructuredSpewer
+// To enable this, set the 
+//     ac_add_options --enable-jitspew
+// flag in the .mozconfig build file
+// and the environment variable
+//     SPEW=TaintFlowSpewer,AtStartup
+#ifdef JS_STRUCTURED_SPEW
+void MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location);
+#endif
+
+// Write taint information from a string to file
+// This can be set by the TAINT_FILE environment variable or defaults to taint_output in the current directory
+// One file is produced per taint report call
+// Writing to file is enable by the compilation flag
+//    ac_add_options --enable-taintspew
+#ifdef JS_TAINTSPEW
+void WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location);
+#endif
+
+// Write a string and its taint information to JSON
+void PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::JSONPrinter& json);
+
+// Write a simple version of an object to JSON
+void PrintJsonObject(JSContext* cx, JSObject* obj, js::JSONPrinter& json);
+
+// Write a message to stderr and the spewer if enabled
 void MaybeSpewMessage(JSContext* cx, JSString* str);
 
 // Print a message to stdout.

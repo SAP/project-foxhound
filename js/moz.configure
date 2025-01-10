@@ -480,6 +480,13 @@ def ion_perf(value, target):
 
 set_define("JS_ION_PERF", ion_perf)
 
+option(
+    "--enable-taintspew",
+    help="Enable writing taint flow information to file"
+)
+
+set_define("JS_TAINTSPEW", depends_if("--enable-taintspew")(lambda _: True))
+set_config("JS_TAINTSPEW", depends_if("--enable-taintspew")(lambda _: True))
 
 option(
     "--enable-jitspew",
@@ -493,16 +500,6 @@ set_config("JS_JITSPEW", depends_if("--enable-jitspew")(lambda _: True))
 # Also enable the structured spewer
 set_define("JS_STRUCTURED_SPEW", depends_if("--enable-jitspew")(lambda _: True))
 set_config("JS_STRUCTURED_SPEW", depends_if("--enable-jitspew")(lambda _: True))
-
-option(
-    "--enable-taintspew",
-    default=False,
-    help="{Enable|Disable} the taint flow spew variable",
-)
-
-# Also enable the structured spewer for tainting
-set_define("JS_STRUCTURED_SPEW", depends_if("--enable-taintspew")(lambda _: True))
-set_config("JS_STRUCTURED_SPEW", depends_if("--enable-taintspew")(lambda _: True))
 
 @depends("--enable-jit", "--enable-jitspew", simulator, target, moz_debug)
 def jit_disasm_arm(jit_enabled, spew, simulator, target, debug):

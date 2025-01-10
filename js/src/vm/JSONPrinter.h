@@ -94,6 +94,9 @@ class JSONPrinter {
   // to its saw-OOM state.
   void outOfMemory() { out_.reportOutOfMemory(); }
 
+  // Flush the output
+  void flush() { out_.flush(); }
+
  protected:
   void beginInline();
   void endInline();

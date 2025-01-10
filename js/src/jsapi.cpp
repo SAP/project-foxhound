@@ -5025,19 +5025,30 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
       "        pl = parent.location.href;\n"
       "    } catch (e) {\n"
       "        pl = 'different origin';\n"
-      "    }\n"
+      "    }\n"  
+      "    var timestamp = -1;\n"
+      "    try {\n"
+      "        timestamp = Date.now();\n"
+      "    } catch (e) {\n"
+      "        timestamp = -2;\n"
+      "    }\n"  
       "    var e = document.createEvent('CustomEvent');\n"
-      "    e.initCustomEvent('__taintreport', true, false, {\n"
+      "    var info = {\n"
       "        subframe: t !== window,\n"
       "        loc: location.href,\n"
       "        parentloc: pl,\n"
       "        referrer: document.referrer,\n"
       "        str: str,\n"
       "        sink: sink,\n"
-      "        stack: stack\n"
-      "    });\n"
+      "        stack: stack,\n"
+      "        timestamp: timestamp\n"
+      "    }\n"
+      "    e.initCustomEvent('__taintreport', true, false, info);\n"
       "    t.dispatchEvent(e);\n"
-      "}";
+      "    return info;\n"
+      "} else {\n"
+      "    return undefined;\n"
+      "}\n";
     CompileOptions options(cx);
     options.setFile("taint_reporting.js");
 
@@ -5069,11 +5080,14 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
     arguments[2].setUndefined();
   }
 
-  RootedValue rval(cx);
-  JS_CallFunction(cx, nullptr, report, arguments, &rval);
+  RootedValue retVal(cx);
+  JS_CallFunction(cx, nullptr, report, arguments, &retVal);
   MOZ_ASSERT(!cx->isExceptionPending());
 
-  MaybeSpewStringTaint(cx, str);
+// Enable this with ac_add_options --enable-taintspew
+#if defined(JS_TAINTSPEW)
+  WriteTaintToFile(cx, str, retVal);
+#endif
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,
