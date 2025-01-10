@@ -20,6 +20,7 @@
 #include "vm/JSAtomUtils.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
+#include "vm/JSONPrinter.h"
 #include "vm/StringType.h"
 
 using namespace JS;
@@ -372,59 +373,184 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   }
 }
 
-void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str) {
-#ifdef JS_STRUCTURED_SPEW
+#if defined(JS_STRUCTURED_SPEW)
+
+void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location) {
+  // Use the standard spew framework to create a single spew file
+  AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
+  if (spew) {
+    // Dump the string and taint flow itself
+    PrintJsonTaint(cx, str, location, *spew);
+    spew->flush();
+  }
+}
+
+#endif
+
+#if defined(JS_TAINTSPEW)
+
+// Choose a sensible default directory.
+//
+// The preference here is to use the current working directory,
+// except on Android.
+#  ifndef DEFAULT_TAINT_DIRECTORY
+#    if defined(_WIN32)
+#      define DEFAULT_TAINT_DIRECTORY "."
+#    elif defined(__ANDROID__)
+#      define DEFAULT_TAINT_DIRECTORY "/sdcard/Download"
+#    else
+#      define DEFAULT_TAINT_DIRECTORY "."
+#    endif
+#  endif
+
+void JS::WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location) {
+  // Don't use the standard spewer here, as we can't easily set the filename
+  static int counter = 0;
+
+  char filename[2048] = {0};
+  if (getenv("TAINT_FILE")) {
+      SprintfLiteral(filename, "%s", getenv("TAINT_FILE"));
+  } else {
+      SprintfLiteral(filename, "%s/taint_output", DEFAULT_TAINT_DIRECTORY);
+  }
+
+  char suffix_path[2048] = {0};
+  SprintfLiteral(suffix_path, "%s.%d.%u.json", filename, getpid(), counter++);
+  
+  Fprinter output;
+  if (!output.init(suffix_path)) {
+    SEprinter p;
+    p.put("Error opening taint output file: ");
+    p.put(suffix_path);
+    p.put("\n");
+    p.flush();
+    return;
+  }
+
+  JSONPrinter json(output);
+  json.beginObject();
+  PrintJsonTaint(cx, str, location, json);
+
+  json.endObject();
+
+  output.flush();
+  output.finish();
+}
+
+#endif
+
+void JS::PrintJsonObject(JSContext* cx, JSObject* obj, js::JSONPrinter& json) {
+  // This code is adapted from JSObject::dumpFields, which was too verbose for our needs
+  if (obj && obj->is<NativeObject>()) {
+    const auto* nobj = &obj->as<NativeObject>();
+
+    if (PropMap* map = nobj->shape()->propMap()) {
+      Vector<PropMap*, 8, SystemAllocPolicy> maps;
+      while (true) {
+        if (!maps.append(map)) {
+          json.property("error", "*oom in JSObject::dumpFields*");
+          break;
+        }
+        if (!map->hasPrevious()) {
+          break;
+        }
+        map = map->asLinked()->previous();
+      }
+
+      for (size_t i = maps.length(); i > 0; i--) {
+        size_t index = i - 1;
+        PropMap* map = maps[index];
+        uint32_t len = (index == 0) ? obj->shape()->asNative().propMapLength()
+                                    : PropMap::Capacity;
+        for (uint32_t j = 0; j < len; j++) {
+          if (!map->hasKey(j)) {
+            MOZ_ASSERT(map->isDictionary());
+            continue;
+          }
+
+          JS::UniqueChars propChars = map->getPropertyNameAt(j);
+          if (!propChars) {
+            json.property("error", "*oom in PropMap::getPropertyNameAt*");
+            continue;
+          }
+
+          PropertyInfoWithKey prop = map->getPropertyInfoWithKey(j);
+          if (prop.isDataProperty()) {
+            const Value& val = nobj->getSlot(prop.slot());
+            if (val.isDouble()) {
+              double d = val.toDouble();
+              // JSONPrinter::floatProperty appears to ignore the precision argument
+              json.floatProperty(propChars.get(), d, 10);
+            } else if (val.isString()) {
+              JSString *str = val.toString();
+              JSLinearString* linear = str->ensureLinear(cx);
+              if (linear) {
+                json.property(propChars.get(), linear);
+              } else {
+                json.property(propChars.get(), "Non-linear String!");
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::JSONPrinter& json) {
   if (!str || !str->taint()) {
     return;
   }
 
-  AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
-  if (spew) {
-    JSLinearString* linear = str->ensureLinear(cx);
-    if (linear) {
-      spew->property("str", linear);
-    } else {
-      spew->property("str", "Non-linear String!");
-    }
-
-    spew->beginListProperty("taint");
-    for (const TaintRange& range : str->taint()) {
-      spew->beginObject();
-      spew->property("begin", range.begin());
-      spew->property("end", range.end());
-
-      spew->beginListProperty("flow");
-      for (TaintNode& node : range.flow()) {
-        const TaintOperation& op = node.operation();
-        spew->beginObject();
-        spew->property("operation", op.name());
-        spew->boolProperty("builtin", op.is_native());
-        spew->boolProperty("source", op.isSource());
-
-        const TaintLocation& loc = op.location();
-        spew->beginObjectProperty("location");
-        spew->property("filename", loc.filename().c_str(), loc.filename().size());
-        spew->property("line", loc.line());
-        spew->property("pos", loc.pos());
-        spew->property("scriptline", loc.scriptStartLine());
-        spew->property("scripthash", JS::convertDigestToHexString(loc.scriptHash()).c_str());
-        spew->endObject(); // Location
-
-        spew->beginListProperty("arguments");
-        for (auto& arg : op.arguments()) {
-          spew->string(arg.c_str(), arg.size());
-        }
-        spew->endList();
-
-        spew->endObject(); // Operation
-      }
-      spew->endList(); // flow
-      spew->endObject(); // range
-    }
-    spew->endList();
-
+  // Dump additional information from the taintreport
+  if (location.isObject()) {
+    JSObject* obj = ToObject(cx, location);
+    PrintJsonObject(cx, obj, json);
   }
-#endif
+
+  JSLinearString* linear = str->ensureLinear(cx);
+  if (linear) {
+    json.property("string", linear);
+  } else {
+    json.property("string", "Non-linear String!");
+  }
+
+  json.beginListProperty("taint");
+  for (const TaintRange& range : str->taint()) {
+    json.beginObject();
+    json.property("begin", range.begin());
+    json.property("end", range.end());
+
+    json.beginListProperty("flow");
+    for (TaintNode& node : range.flow()) {
+      const TaintOperation& op = node.operation();
+      json.beginObject();
+      json.property("operation", op.name());
+      json.boolProperty("builtin", op.is_native());
+      json.boolProperty("source", op.isSource());
+
+      const TaintLocation& loc = op.location();
+      json.beginObjectProperty("location");
+      json.property("filename", loc.filename().c_str(), loc.filename().size());
+      json.property("line", loc.line());
+      json.property("pos", loc.pos());
+      json.property("scriptline", loc.scriptStartLine());
+      json.property("scripthash", JS::convertDigestToHexString(loc.scriptHash()).c_str());
+      json.endObject(); // Location
+
+      json.beginListProperty("arguments");
+      for (auto& arg : op.arguments()) {
+        json.string(arg.c_str(), arg.size());
+      }
+      json.endList();
+
+      json.endObject(); // Operation
+    }
+    json.endList(); // flow
+    json.endObject(); // range
+  }
+  json.endList();
+
 }
 
 void JS::MaybeSpewMessage(JSContext* cx, JSString* str) {
@@ -449,7 +575,7 @@ void JS::MaybeSpewMessage(JSContext* cx, JSString* str) {
 #endif
 }
 
-// Print a message to stdout.
+// Print a warning message to stdout and the JS console
 void JS::TaintFoxReport(JSContext* cx, const char* msg)
 {
   JS_ReportWarningUTF8(cx, "%s", msg);
