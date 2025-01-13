@@ -23,6 +23,8 @@ jobs:
         taintspew: [ 'false', 'true' ]
         jitspew:   [ 'false', 'true' ]
 
+    name: SpiderMonkey (taintspew: ${{ matrix.taintspew }}, jitspew: ${{ matrix.jitspew }})
+
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
@@ -61,7 +63,7 @@ jobs:
         if: ${{ matrix.jitspew == 'true' }}
         run: echo "ac_add_options --enable-jitspew" >> .mozconfig
 
-      - name: Enable Taint Spew
+      - name: Enable TaintSpew
         if: ${{ matrix.taintspew == 'true' }}
         run: echo "ac_add_options --enable-taintspew" >> .mozconfig
 
