@@ -5088,6 +5088,11 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
 #if defined(JS_TAINTSPEW)
   WriteTaintToFile(cx, str, retVal);
 #endif
+
+// Enable with ac_add_options --enable-jitspew
+#if defined (JS_JITSPEW)
+  MaybeSpewStringTaint(cx, str, retval);
+#endif
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,
