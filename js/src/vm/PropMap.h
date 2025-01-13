@@ -513,7 +513,7 @@ class PropMap : public gc::TenuredCellWithFlags {
 
   uint32_t approximateEntryCount() const;
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW)|| defined(JS_TAINTSPEW)
   void dump() const;
   void dump(js::GenericPrinter& out) const;
   void dump(js::JSONPrinter& json) const;
@@ -737,7 +737,7 @@ class SharedPropMap : public PropMap {
                                             Handle<SharedPropMap*> map,
                                             uint32_t length);
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW)|| defined(JS_TAINTSPEW)
   void dumpOwnFields(js::JSONPrinter& json) const;
 #endif
 };
@@ -850,7 +850,7 @@ class LinkedPropMap final : public PropMap {
     return data_.propInfos[index];
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW)|| defined(JS_TAINTSPEW)
   void dumpOwnFields(js::JSONPrinter& json) const;
 #endif
 };
@@ -1058,7 +1058,7 @@ class DictionaryPropMap final : public PropMap {
                   offsetof(LinkedPropMap, data_));
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW)|| defined(JS_TAINTSPEW)
   void dumpOwnFields(js::JSONPrinter& json) const;
 #endif
 };

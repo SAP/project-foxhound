@@ -100,7 +100,7 @@ class Symbol
     return mallocSizeOf(this);
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
   void dump() const;  // Debugger-friendly stderr dump.
   void dump(js::GenericPrinter& out) const;
   void dump(js::JSONPrinter& json) const;

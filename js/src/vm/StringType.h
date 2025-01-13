@@ -33,7 +33,6 @@
 #include "js/UniquePtr.h"
 #include "util/Text.h"
 
-#define TAINT_DEBUG
 
 class JSDependentString;
 class JSExtensibleString;
@@ -815,7 +814,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     return kind;
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dump() const;
   void dump(js::GenericPrinter& out) const;
   void dump(js::JSONPrinter& json) const;
@@ -964,7 +963,7 @@ class JSRope : public JSString {
   void traceChildren(JSTracer* trc);
 
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 
@@ -1152,7 +1151,7 @@ class JSLinearString : public JSString {
   inline void finalize(JS::GCContext* gcx);
   inline size_t allocSize() const;
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 
@@ -1203,7 +1202,7 @@ class JSDependentString : public JSLinearString {
     setNonInlineChars(chars + offset);
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 
@@ -1232,7 +1231,7 @@ class JSExtensibleString : public JSLinearString {
     return d.s.u3.capacity;
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 };
@@ -1259,7 +1258,7 @@ class JSInlineString : public JSLinearString {
   template <typename CharT>
   static bool lengthFits(size_t length);
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 
@@ -1405,7 +1404,7 @@ class JSExternalString : public JSLinearString {
   // kind.
   inline void finalize(JS::GCContext* gcx);
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
 };
@@ -1472,7 +1471,7 @@ class JSAtom : public JSLinearString {
   template <typename CharT>
   static bool lengthFitsInline(size_t length);
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dump(js::GenericPrinter& out);
   void dump();
 #endif
