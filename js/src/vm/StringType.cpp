@@ -271,7 +271,7 @@ mozilla::Maybe<std::tuple<size_t, size_t>> JSString::encodeUTF8Partial(
   return mozilla::Some(std::make_tuple(totalRead, totalWritten));
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 template <typename CharT>
 /*static */
 void JSString::dumpCharsNoQuote(const CharT* s, size_t n,
@@ -742,7 +742,7 @@ bool JSRope::hash(uint32_t* outHash) const {
   return true;
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 void JSRope::dumpOwnRepresentationFields(js::JSONPrinter& json) const {
   json.beginObjectProperty("leftChild");
   leftChild()->dumpRepresentationFields(json);
@@ -1214,7 +1214,7 @@ template JSString* js::ConcatStrings<NoGC>(JSContext* cx, JSString* const& left,
                                            JSString* const& right,
                                            gc::Heap heap);
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 void JSDependentString::dumpOwnRepresentationFields(
     js::JSONPrinter& json) const {
   json.property("baseOffset", baseOffset());
@@ -1662,7 +1662,7 @@ bool JS::SourceText<char16_t>::initMaybeBorrowed(
   return initImpl(fc, chars, length, taint, ownership);
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 void JSAtom::dump(js::GenericPrinter& out) {
   out.printf("JSAtom* (%p) = ", (void*)this);
   this->JSString::dump(out);
@@ -2262,7 +2262,7 @@ template JSString* NewMaybeExternalString(
 
 } /* namespace js */
 
-#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(TAINT_DEBUG)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
 void JSExtensibleString::dumpOwnRepresentationFields(
     js::JSONPrinter& json) const {
   json.property("capacity", capacity());
@@ -2660,22 +2660,22 @@ void JSString::sweepAfterMinorGC(JS::GCContext* gcx, JSString* str) {
   }
 
   if (IsInsideNursery(str) && !IsForwarded(str) && str->isTainted()) {
-#ifdef TAINT_DEBUG_NURSERY
+#ifdef JS_TAINTSPEW_NURSERY
     printf("-----------------------------------------------------\n");
     printf("Str: %p\n", str);
     str->dumpRepresentationHeader();
 #endif
     auto* ptr = reinterpret_cast<uint8_t*>(str) + offsetOfTaint();
-#ifdef TAINT_DEBUG_NURSERY
+#ifdef JS_TAINTSPEW_NURSERY
     printf("Ptr: %p\n", ptr);
     printf("Before: %p\n", *reinterpret_cast<void**>(ptr));
 #endif
     str->clearTaint();
-#ifdef TAINT_DEBUG_NURSERY
+#ifdef JS_TAINTSPEW_NURSERY
     printf("After Clear: %p\n", *reinterpret_cast<void**>(ptr));
 #endif
     AlwaysPoison(ptr, 0x7A, sizeof(StringTaint), MemCheckKind::MakeNoAccess);
-#ifdef TAINT_DEBUG_NURSERY
+#ifdef JS_TAINTSPEW_NURSERY
     printf("After Poison: %p\n", *reinterpret_cast<void**>(ptr));
     printf("-----------------------------------------------------\n");
 #endif

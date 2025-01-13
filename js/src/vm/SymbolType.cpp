@@ -76,7 +76,7 @@ Symbol* Symbol::for_(JSContext* cx, HandleString description) {
   return sym;
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 void Symbol::dump() const {
   js::Fprinter out(stderr);
   dump(out);
@@ -177,7 +177,7 @@ void Symbol::dumpPropertyName(js::GenericPrinter& out) const {
     out.printf("<Invalid Symbol code=%u>", unsigned(code_));
   }
 }
-#endif  // defined(DEBUG) || defined(JS_JITSPEW)
+#endif  // defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 
 bool js::SymbolDescriptiveString(JSContext* cx, Symbol* sym,
                                  MutableHandleValue result) {

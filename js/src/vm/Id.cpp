@@ -51,7 +51,7 @@ bool JS::PropertyKey::isWellKnownSymbol(JS::SymbolCode code) const {
   return JS::PropertyKey::isNonIntAtom(&str->asAtom());
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 
 void JS::PropertyKey::dump() const {
   js::Fprinter out(stderr);
@@ -115,4 +115,4 @@ void JS::PropertyKey::dumpStringContent(js::GenericPrinter& out) const {
   }
 }
 
-#endif /* defined(DEBUG) || defined(JS_JITSPEW) */
+#endif /* defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW) */

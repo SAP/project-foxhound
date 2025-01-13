@@ -209,7 +209,7 @@ class PropertyKey {
     return reinterpret_cast<JSLinearString*>(toString());
   }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
   void dump() const;
   void dump(js::GenericPrinter& out) const;
   void dump(js::JSONPrinter& json) const;

@@ -91,7 +91,7 @@ void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS:
 // flag in the .mozconfig build file
 // and the environment variable
 //     SPEW=TaintFlowSpewer,AtStartup
-#ifdef JS_STRUCTURED_SPEW
+#ifdef JS_JITSPEW
 void MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location);
 #endif
 
@@ -104,11 +104,13 @@ void MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location);
 void WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location);
 #endif
 
+#if defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 // Write a string and its taint information to JSON
 void PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::JSONPrinter& json);
 
 // Write a simple version of an object to JSON
 void PrintJsonObject(JSContext* cx, JSObject* obj, js::JSONPrinter& json);
+#endif
 
 // Write a message to stderr and the spewer if enabled
 void MaybeSpewMessage(JSContext* cx, JSString* str);

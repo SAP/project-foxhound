@@ -3,6 +3,8 @@
  */
 #include "jstaint.h"
 
+#include "mozilla/Sprintf.h"
+
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
@@ -16,6 +18,7 @@
 #include "js/CharacterEncoding.h"
 #include "js/ErrorReport.h"
 #include "js/UniquePtr.h"
+#include "util/GetPidProvider.h"  // getpid()
 #include "vm/FrameIter.h"
 #include "vm/JSAtomUtils.h"
 #include "vm/JSContext.h"
@@ -373,8 +376,7 @@ void JS::MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const
   }
 }
 
-#if defined(JS_STRUCTURED_SPEW)
-
+#if defined(JS_JITSPEW)
 void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location) {
   // Use the standard spew framework to create a single spew file
   AutoStructuredSpewer spew(cx, SpewChannel::TaintFlowSpewer, cx->currentScript());
@@ -384,7 +386,6 @@ void JS::MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location
     spew->flush();
   }
 }
-
 #endif
 
 #if defined(JS_TAINTSPEW)
@@ -430,15 +431,14 @@ void JS::WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location) {
   JSONPrinter json(output);
   json.beginObject();
   PrintJsonTaint(cx, str, location, json);
-
   json.endObject();
 
   output.flush();
   output.finish();
 }
-
 #endif
 
+#if defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 void JS::PrintJsonObject(JSContext* cx, JSObject* obj, js::JSONPrinter& json) {
   // This code is adapted from JSObject::dumpFields, which was too verbose for our needs
   if (obj && obj->is<NativeObject>()) {
@@ -552,6 +552,7 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::
   json.endList();
 
 }
+#endif
 
 void JS::MaybeSpewMessage(JSContext* cx, JSString* str) {
   // First print message to stderr
