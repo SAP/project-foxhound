@@ -20,7 +20,8 @@ jobs:
   build:
     strategy:
       matrix:
-        mozconfig: [ "Base", "JitSpew", "TaintSpew" ]  
+        taintspew: [ "false", "true" ]
+        jitspew:   [ "false", "true" ]
 
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -57,11 +58,11 @@ jobs:
           cp taintfox_mozconfig_spidermonkey .mozconfig
 
       - name: Enable JitSpew
-        if: ${{ matrix.mozconfig }} == "JitSpew"
+        if: ${{ matrix.jitspew == "true" }}
         run: echo "ac_add_options --enable-jitspew" >> .mozconfig
 
       - name: Enable Taint Spew
-        if: ${{ matrix.mozconfig }} == "TaintSpew"
+        if: ${{ matrix.taintspew == "true" }}
         run: echo "ac_add_options --enable-taintspew" >> .mozconfig
 
       # Build
@@ -83,7 +84,7 @@ jobs:
 
       - name: Upload Report
         uses: actions/upload-artifact@v4  # upload test results
-        if:  (${{ matrix.mozconfig }} == "Base") && (success() || failure()) # run this step even if previous step failed
+        if:  ${{ matrix.taintspew == "false" &&  matrix.jitspew == "false" && (success() || failure()) }} # run this step even if previous step failed
         with:
           name: test-results
           path: build/jstest_output.xml
