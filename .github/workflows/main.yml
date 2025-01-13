@@ -58,11 +58,11 @@ jobs:
 
       - name: Enable JitSpew
         if: ${{ matrix.mozconfig }} == "JitSpew"
-        echo "ac_add_options --enable-jitspew" >> .mozconfig
+        run: echo "ac_add_options --enable-jitspew" >> .mozconfig
 
       - name: Enable Taint Spew
         if: ${{ matrix.mozconfig }} == "TaintSpew"
-        echo "ac_add_options --enable-taintspew" >> .mozconfig
+        run: echo "ac_add_options --enable-taintspew" >> .mozconfig
 
       # Build
       - name: Build
