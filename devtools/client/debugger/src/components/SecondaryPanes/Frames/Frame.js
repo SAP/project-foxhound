@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component, memo } from "react";
-import PropTypes from "prop-types";
+import React, { Component, memo } from "devtools/client/shared/vendor/react";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
 import AccessibleImage from "../../shared/AccessibleImage";
-import { formatDisplayName } from "../../../utils/pause/frames";
+import { formatDisplayName } from "../../../utils/pause/frames/index";
 import { getFilename, getFileURL } from "../../../utils/source";
 import FrameIndent from "./FrameIndent";
-const classnames = require("devtools/client/shared/classnames.js");
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 function FrameTitle({ frame, options = {}, l10n }) {
   const displayName = formatDisplayName(frame, options, l10n);

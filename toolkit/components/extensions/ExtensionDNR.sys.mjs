@@ -145,7 +145,7 @@ class RuleCondition {
   }
 }
 
-class Rule {
+export class Rule {
   constructor(rule) {
     this.id = rule.id;
     this.priority = rule.priority;
@@ -579,7 +579,6 @@ class CompiledUrlFilter {
 class RequestDataForUrlFilter {
   /**
    * @param {string} requestURIspec - The URL to match against.
-   * @returns {object} An object to p
    */
   constructor(requestURIspec) {
     // "^" is appended, see CompiledUrlFilter's #initializeUrlFilter.
@@ -634,6 +633,25 @@ class ModifyHeadersBase {
     this.channel = channel;
   }
 
+  /**
+   * @param {MatchedRule} matchedRule
+   * @returns {object[]}
+   */
+  headerActionsFor(matchedRule) {
+    throw new Error("Not implemented.");
+  }
+
+  /**
+   * @param {MatchedRule} matchedrule
+   * @param {string} name
+   * @param {string} value
+   * @param {boolean} merge
+   */
+  setHeaderImpl(matchedrule, name, value, merge) {
+    throw new Error("Not implemented.");
+  }
+
+  /** @param {MatchedRule[]} matchedRules */
   applyModifyHeaders(matchedRules) {
     for (const matchedRule of matchedRules) {
       for (const headerAction of this.headerActionsFor(matchedRule)) {
@@ -714,6 +732,7 @@ class ModifyRequestHeaders extends ModifyHeadersBase {
     }
   }
 
+  /** @param {MatchedRule} matchedRule */
   headerActionsFor(matchedRule) {
     return matchedRule.rule.action.requestHeaders;
   }
@@ -1015,7 +1034,7 @@ class RuleValidator {
       rule.action.redirect ?? {};
     const hasExtensionPath = extensionPath != null;
     const hasRegexSubstitution = regexSubstitution != null;
-    const redirectKeyCount =
+    const redirectKeyCount = // @ts-ignore trivial/noisy
       !!url + !!hasExtensionPath + !!transform + !!hasRegexSubstitution;
     if (redirectKeyCount !== 1) {
       if (redirectKeyCount === 0) {
@@ -1189,7 +1208,7 @@ class RuleValidator {
   }
 }
 
-class RuleQuotaCounter {
+export class RuleQuotaCounter {
   constructor(isStaticRulesets) {
     this.isStaticRulesets = isStaticRulesets;
     this.ruleLimitName = isStaticRulesets
@@ -1266,6 +1285,10 @@ function compareRule(ruleA, ruleB, rulesetA, rulesetB) {
 }
 
 class MatchedRule {
+  /**
+   * @param {Rule} rule
+   * @param {Ruleset} ruleset
+   */
   constructor(rule, ruleset) {
     this.rule = rule;
     this.ruleset = ruleset;
@@ -1673,6 +1696,7 @@ class RequestEvaluator {
     return matchedRules;
   }
 
+  /** @param {Ruleset} ruleset */
   #collectMatchInRuleset(ruleset) {
     for (let rule of ruleset.rules) {
       if (!this.#matchesRuleCondition(rule.condition)) {

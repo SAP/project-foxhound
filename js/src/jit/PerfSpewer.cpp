@@ -158,19 +158,9 @@ static void WriteJitDumpDebugEntry(uint64_t addr, const char* filename,
                                    uint32_t lineno,
                                    JS::LimitedColumnNumberOneOrigin colno,
                                    AutoLockPerfSpewer& lock) {
-  JitDumpDebugEntry entry = {addr, lineno, colno.zeroOriginValue()};
+  JitDumpDebugEntry entry = {addr, lineno, colno.oneOriginValue()};
   WriteToJitDumpFile(&entry, sizeof(entry), lock);
   WriteToJitDumpFile(filename, strlen(filename) + 1, lock);
-}
-
-static bool FileExists(const char* filename) {
-  // We don't currently dump external resources to disk.
-  if (strncmp(filename, "http", 4) == 0) {
-    return false;
-  }
-
-  struct stat buf = {};
-  return stat(filename, &buf) == 0;
 }
 
 static void writeJitDumpHeader(AutoLockPerfSpewer& lock) {
@@ -829,7 +819,7 @@ void PerfSpewer::saveJitCodeSourceInfo(JSScript* script, JitCode* code,
   }
 
 #ifdef JS_ION_PERF
-  bool perfProfiling = IsPerfProfiling() && FileExists(filename);
+  bool perfProfiling = IsPerfProfiling();
 
   if (perfProfiling) {
     JitDumpDebugRecord debug_record = {};
@@ -894,11 +884,11 @@ static UniqueChars GetFunctionDesc(const char* tierName, JSContext* cx,
   if (stubName) {
     return JS_smprintf("%s: %s : %s (%s:%u:%u)", tierName, stubName,
                        funName ? funName.get() : "*", script->filename(),
-                       script->lineno(), script->column().zeroOriginValue());
+                       script->lineno(), script->column().oneOriginValue());
   }
   return JS_smprintf("%s: %s (%s:%u:%u)", tierName,
                      funName ? funName.get() : "*", script->filename(),
-                     script->lineno(), script->column().zeroOriginValue());
+                     script->lineno(), script->column().oneOriginValue());
 }
 
 void PerfSpewer::saveDebugInfo(JSScript* script, JitCode* code,
@@ -947,7 +937,7 @@ void IonICPerfSpewer::saveJitCodeSourceInfo(JSScript* script, JitCode* code,
     return;
   }
 
-  if (!IsPerfProfiling() || !FileExists(filename)) {
+  if (!IsPerfProfiling()) {
     return;
   }
 

@@ -8,9 +8,9 @@ use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::ScreenColorGamut;
 use crate::media_queries::{Device, MediaType};
+use crate::queries::condition::KleeneValue;
 use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
 use crate::queries::values::Orientation;
-use crate::queries::condition::KleeneValue;
 use crate::values::computed::{CSSPixelLength, Context, Ratio, Resolution};
 use crate::values::AtomString;
 use app_units::Au;
@@ -551,10 +551,6 @@ fn eval_moz_print_preview(context: &Context) -> bool {
     is_print_preview
 }
 
-fn eval_moz_non_native_content_theme(context: &Context) -> bool {
-    unsafe { bindings::Gecko_MediaFeatures_ShouldAvoidNativeTheme(context.device().document()) }
-}
-
 fn eval_moz_is_resource_document(context: &Context) -> bool {
     unsafe { bindings::Gecko_MediaFeatures_IsResourceDocument(context.device().document()) }
 }
@@ -583,6 +579,28 @@ fn eval_moz_platform(_: &Context, query_value: Option<Platform>) -> bool {
     };
 
     unsafe { bindings::Gecko_MediaFeatures_MatchesPlatform(query_value) }
+}
+
+/// Allows front-end CSS to discern gtk theme via media queries.
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+pub enum GtkThemeFamily {
+    /// Unknown theme family.
+    Unknown = 0,
+    /// Adwaita, the default GTK theme.
+    Adwaita,
+    /// Breeze, the default KDE theme.
+    Breeze,
+    /// Yaru, the default Ubuntu theme.
+    Yaru,
+}
+
+fn eval_gtk_theme_family(_: &Context, query_value: Option<GtkThemeFamily>) -> bool {
+    let family = unsafe { bindings::Gecko_MediaFeatures_GtkThemeFamily() };
+    match query_value {
+        Some(v) => v == family,
+        None => return family != GtkThemeFamily::Unknown,
+    }
 }
 
 /// Values for the scripting media feature.
@@ -615,10 +633,10 @@ fn eval_moz_overlay_scrollbars(context: &Context) -> bool {
 }
 
 fn eval_moz_bool_pref(_: &Context, pref: Option<&AtomString>) -> KleeneValue {
-    let Some(pref) = pref else { return KleeneValue::False };
-    KleeneValue::from(unsafe {
-        bindings::Gecko_ComputeBoolPrefMediaQuery(pref.as_ptr())
-    })
+    let Some(pref) = pref else {
+        return KleeneValue::False;
+    };
+    KleeneValue::from(unsafe { bindings::Gecko_ComputeBoolPrefMediaQuery(pref.as_ptr()) })
 }
 
 fn get_lnf_int(int_id: i32) -> i32 {
@@ -921,15 +939,15 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 59] = [
         FeatureFlags::CHROME_AND_UA_ONLY,
     ),
     feature!(
-        atom!("-moz-print-preview"),
+        atom!("-moz-gtk-theme-family"),
         AllowsRanges::No,
-        Evaluator::BoolInteger(eval_moz_print_preview),
+        keyword_evaluator!(eval_gtk_theme_family, GtkThemeFamily),
         FeatureFlags::CHROME_AND_UA_ONLY,
     ),
     feature!(
-        atom!("-moz-non-native-content-theme"),
+        atom!("-moz-print-preview"),
         AllowsRanges::No,
-        Evaluator::BoolInteger(eval_moz_non_native_content_theme),
+        Evaluator::BoolInteger(eval_moz_print_preview),
         FeatureFlags::CHROME_AND_UA_ONLY,
     ),
     feature!(

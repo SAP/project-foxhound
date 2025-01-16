@@ -72,8 +72,8 @@ class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
  public:
   const auto& GetDevice() const { return mParent; };
 
-  void EndComputePass(ffi::WGPUComputePass& aPass, ErrorResult& aRv);
-  void EndRenderPass(ffi::WGPURenderPass& aPass, ErrorResult& aRv);
+  void EndComputePass(ffi::WGPUComputePass& aPass);
+  void EndRenderPass(ffi::WGPURenderPass& aPass);
 
   void CopyBufferToBuffer(const Buffer& aSource, BufferAddress aSourceOffset,
                           const Buffer& aDestination,
@@ -88,6 +88,8 @@ class CommandEncoder final : public ObjectBase, public ChildOf<Device> {
   void CopyTextureToTexture(const dom::GPUImageCopyTexture& aSource,
                             const dom::GPUImageCopyTexture& aDestination,
                             const dom::GPUExtent3D& aCopySize);
+  void ClearBuffer(const Buffer& aBuffer, const uint64_t aOffset,
+                   const dom::Optional<uint64_t>& aSize);
 
   void PushDebugGroup(const nsAString& aString);
   void PopDebugGroup();

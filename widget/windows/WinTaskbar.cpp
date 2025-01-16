@@ -8,34 +8,37 @@
 #include "nsIWinTaskbar.h"
 #include "WinTaskbar.h"
 #include "TaskbarPreview.h"
-#include <nsITaskbarPreviewController.h>
+#include "nsITaskbarPreviewController.h"
 
 #include "mozilla/RefPtr.h"
+#include "mozilla/widget/JumpListBuilder.h"
 #include <nsError.h>
 #include <nsCOMPtr.h>
 #include <nsIWidget.h>
 #include <nsIBaseWindow.h>
 #include <nsServiceManagerUtils.h>
 #include "nsIXULAppInfo.h"
-#include "nsIJumpListBuilder.h"
+#include "nsILegacyJumpListBuilder.h"
 #include "nsUXThemeData.h"
 #include "nsWindow.h"
 #include "WinUtils.h"
 #include "TaskbarTabPreview.h"
 #include "TaskbarWindowPreview.h"
-#include "JumpListBuilder.h"
+#include "LegacyJumpListBuilder.h"
 #include "nsWidgetsCID.h"
 #include "nsPIDOMWindow.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "mozilla/Preferences.h"
 #include "nsAppRunner.h"
 #include "nsXREDirProvider.h"
+#include "mozilla/widget/WinRegistry.h"
 #include <io.h>
 #include <propvarutil.h>
 #include <propkey.h>
 #include <shellapi.h>
 
-static NS_DEFINE_CID(kJumpListBuilderCID, NS_WIN_JUMPLISTBUILDER_CID);
+static NS_DEFINE_CID(kLegacyJumpListBuilderCID,
+                     NS_WIN_LEGACYJUMPLISTBUILDER_CID);
 
 namespace {
 
@@ -208,8 +211,7 @@ bool WinTaskbar::GenerateAppUserModelID(nsAString& aAppUserModelId,
                                         bool aPrivateBrowsing) {
   // If marked as such in prefs, use a hash of the profile path for the id
   // instead of the install path hash setup by the installer.
-  bool useProfile = Preferences::GetBool("taskbar.grouping.useprofile", false);
-  if (useProfile) {
+  if (Preferences::GetBool("taskbar.grouping.useprofile", false)) {
     nsCOMPtr<nsIFile> profileDir;
     NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
                            getter_AddRefs(profileDir));
@@ -247,15 +249,12 @@ bool WinTaskbar::GenerateAppUserModelID(nsAString& aAppUserModelId,
       if (!slash) return false;
       *slash = '\0';  // no trailing slash
 
-      // The hash is short, but users may customize this, so use a respectable
-      // string buffer.
-      wchar_t buf[256];
-      if (WinUtils::GetRegistryKey(HKEY_LOCAL_MACHINE, regKey.get(), path, buf,
-                                   sizeof buf)) {
-        aAppUserModelId.Assign(buf);
-      } else if (WinUtils::GetRegistryKey(HKEY_CURRENT_USER, regKey.get(), path,
-                                          buf, sizeof buf)) {
-        aAppUserModelId.Assign(buf);
+      nsDependentString pathStr(path);
+      for (auto* rootKey : {HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER}) {
+        if (auto aumid = WinRegistry::GetString(rootKey, regKey, pathStr)) {
+          aAppUserModelId = std::move(*aumid);
+          break;
+        }
       }
     }
   }
@@ -407,14 +406,14 @@ WinTaskbar::GetOverlayIconController(
 }
 
 NS_IMETHODIMP
-WinTaskbar::CreateJumpListBuilder(bool aPrivateBrowsing,
-                                  nsIJumpListBuilder** aJumpListBuilder) {
+WinTaskbar::CreateLegacyJumpListBuilder(
+    bool aPrivateBrowsing, nsILegacyJumpListBuilder** aJumpListBuilder) {
   nsresult rv;
 
-  if (JumpListBuilder::sBuildingList) return NS_ERROR_ALREADY_INITIALIZED;
+  if (LegacyJumpListBuilder::sBuildingList) return NS_ERROR_ALREADY_INITIALIZED;
 
-  nsCOMPtr<nsIJumpListBuilder> builder =
-      do_CreateInstance(kJumpListBuilderCID, &rv);
+  nsCOMPtr<nsILegacyJumpListBuilder> builder =
+      do_CreateInstance(kLegacyJumpListBuilderCID, &rv);
   if (NS_FAILED(rv)) return NS_ERROR_UNEXPECTED;
 
   NS_IF_ADDREF(*aJumpListBuilder = builder);
@@ -423,6 +422,21 @@ WinTaskbar::CreateJumpListBuilder(bool aPrivateBrowsing,
   GenerateAppUserModelID(aumid, aPrivateBrowsing);
   builder->SetAppUserModelID(aumid);
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WinTaskbar::CreateJumpListBuilder(bool aPrivateBrowsing,
+                                  nsIJumpListBuilder** aJumpListBuilder) {
+  nsAutoString aumid;
+  GenerateAppUserModelID(aumid, aPrivateBrowsing);
+
+  nsCOMPtr<nsIJumpListBuilder> builder = new JumpListBuilder(aumid);
+  if (!builder) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  NS_IF_ADDREF(*aJumpListBuilder = builder);
   return NS_OK;
 }
 

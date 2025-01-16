@@ -37,8 +37,8 @@ if CONFIG["ENABLE_TESTS"]:
 TEST_DIRS += ["tests", "dap/ffi-gtest"]
 
 XPCSHELL_TESTS_MANIFESTS += [
-    "dap/tests/xpcshell/xpcshell.ini",
-    "tests/unit/xpcshell.ini",
+    "dap/tests/xpcshell/xpcshell.toml",
+    "tests/unit/xpcshell.toml",
 ]
 BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
@@ -140,8 +140,8 @@ TESTING_JS_MODULES += [
 ]
 
 PYTHON_UNITTEST_MANIFESTS += [
-    "tests/integration/tests/python.ini",
-    "tests/python/python.ini",
+    "tests/integration/tests/python.toml",
+    "tests/python/python.toml",
 ]
 
 # Generate histogram files.

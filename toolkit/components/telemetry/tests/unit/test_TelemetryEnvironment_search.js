@@ -69,7 +69,9 @@ add_task(async function setup() {
   // The attribution functionality only exists in Firefox.
   if (AppConstants.MOZ_BUILD_APP == "browser") {
     TelemetryEnvironmentTesting.spoofAttributionData();
-    registerCleanupFunction(TelemetryEnvironmentTesting.cleanupAttributionData);
+    registerCleanupFunction(async function () {
+      await TelemetryEnvironmentTesting.cleanupAttributionData;
+    });
   }
 
   await TelemetryEnvironmentTesting.spoofProfileReset();
@@ -182,7 +184,7 @@ async function checkDefaultSearch(privateOn, reInitSearchService) {
   });
 
   // Register a new change listener and then wait for the search engine change to be notified.
-  let deferred = PromiseUtils.defer();
+  let deferred = Promise.withResolvers();
   TelemetryEnvironment.registerChangeListener(
     "testWatch_SearchDefault",
     deferred.resolve
@@ -333,7 +335,7 @@ add_task(async function test_defaultSearchEngine() {
 
   // Watch the test preference.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
-  let deferred = PromiseUtils.defer();
+  let deferred = Promise.withResolvers();
   TelemetryEnvironment.registerChangeListener(
     "testSearchEngine_pref",
     deferred.resolve

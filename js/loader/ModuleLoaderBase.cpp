@@ -94,13 +94,6 @@ void ModuleLoaderBase::EnsureModuleHooksInitialized() {
   JS::SetScriptPrivateReferenceHooks(rt, HostAddRefTopLevelScript,
                                      HostReleaseTopLevelScript);
   JS::SetModuleDynamicImportHook(rt, HostImportModuleDynamically);
-
-  JS::ImportAssertionVector assertions;
-  // ImportAssertionVector has inline storage for one element so this cannot
-  // fail.
-  MOZ_ALWAYS_TRUE(assertions.reserve(1));
-  assertions.infallibleAppend(JS::ImportAssertion::Type);
-  JS::SetSupportedImportAssertions(rt, assertions);
 }
 
 // 8.1.3.8.1 HostResolveImportedModule(referencingModule, moduleRequest)
@@ -331,8 +324,8 @@ bool ModuleLoaderBase::HostImportModuleDynamically(
 
   // Create a new top-level load request.
   nsCOMPtr<nsIURI> uri = result.unwrap();
-  RefPtr<ModuleLoadRequest> request = loader->CreateDynamicImport(
-      aCx, uri, script, aReferencingPrivate, specifierString, aPromise);
+  RefPtr<ModuleLoadRequest> request =
+      loader->CreateDynamicImport(aCx, uri, script, specifierString, aPromise);
 
   if (!request) {
     // Throws TypeError if CreateDynamicImport returns nullptr.
@@ -381,9 +374,6 @@ LoadedScript* ModuleLoaderBase::GetLoadedScriptOrNull(
   }
 
   auto* script = static_cast<LoadedScript*>(aReferencingPrivate.toPrivate());
-  if (script->IsEventScript()) {
-    return nullptr;
-  }
 
   MOZ_ASSERT_IF(
       script->IsModuleScript(),
@@ -391,6 +381,14 @@ LoadedScript* ModuleLoaderBase::GetLoadedScriptOrNull(
           aReferencingPrivate);
 
   return script;
+}
+
+JS::Value PrivateFromLoadedScript(LoadedScript* aScript) {
+  if (!aScript) {
+    return JS::UndefinedValue();
+  }
+
+  return JS::PrivateValue(aScript);
 }
 
 nsresult ModuleLoaderBase::StartModuleLoad(ModuleLoadRequest* aRequest) {
@@ -404,7 +402,7 @@ nsresult ModuleLoaderBase::RestartModuleLoad(ModuleLoadRequest* aRequest) {
 nsresult ModuleLoaderBase::StartOrRestartModuleLoad(ModuleLoadRequest* aRequest,
                                                     RestartRequest aRestart) {
   MOZ_ASSERT(aRequest->mLoader == this);
-  MOZ_ASSERT(aRequest->IsFetching());
+  MOZ_ASSERT(aRequest->IsFetching() || aRequest->IsPendingFetchingError());
 
   aRequest->SetUnknownDataType();
 
@@ -470,7 +468,7 @@ nsresult ModuleLoaderBase::GetFetchedModuleURLs(nsTArray<nsCString>& aURLs) {
 void ModuleLoaderBase::SetModuleFetchStarted(ModuleLoadRequest* aRequest) {
   // Update the module map to indicate that a module is currently being fetched.
 
-  MOZ_ASSERT(aRequest->IsFetching());
+  MOZ_ASSERT(aRequest->IsFetching() || aRequest->IsPendingFetchingError());
   MOZ_ASSERT(!ModuleMapContainsURL(aRequest->mURI));
 
   mFetchingModules.InsertOrUpdate(aRequest->mURI, nullptr);
@@ -633,9 +631,13 @@ nsresult ModuleLoaderBase::CreateModuleScript(ModuleLoadRequest* aRequest) {
       }
     }
 
+    MOZ_ASSERT(aRequest->mLoadedScript->IsModuleScript());
+    MOZ_ASSERT(aRequest->mLoadedScript->GetFetchOptions() ==
+               aRequest->mFetchOptions);
+    MOZ_ASSERT(aRequest->mLoadedScript->GetURI() == aRequest->mURI);
+    aRequest->mLoadedScript->SetBaseURL(aRequest->mBaseURL);
     RefPtr<ModuleScript> moduleScript =
-        new ModuleScript(aRequest->ReferrerPolicy(), aRequest->mFetchOptions,
-                         aRequest->mBaseURL);
+        aRequest->mLoadedScript->AsModuleScript();
     aRequest->mModuleScript = moduleScript;
 
     if (!module) {
@@ -724,63 +726,15 @@ nsresult ModuleLoaderBase::HandleResolveFailure(
   return NS_OK;
 }
 
-// Helper for getting import maps pref across main thread and workers
-bool ImportMapsEnabled() {
-  if (NS_IsMainThread()) {
-    return mozilla::StaticPrefs::dom_importMaps_enabled();
-  }
-  return false;
-}
-
 ResolveResult ModuleLoaderBase::ResolveModuleSpecifier(
     LoadedScript* aScript, const nsAString& aSpecifier) {
-  // If import map is enabled, forward to the updated 'Resolve a module
-  // specifier' algorithm defined in Import maps spec.
-  //
-  // Once import map is enabled by default,
-  // ModuleLoaderBase::ResolveModuleSpecifier should be replaced by
-  // ImportMap::ResolveModuleSpecifier.
-  if (ImportMapsEnabled()) {
-    return ImportMap::ResolveModuleSpecifier(mImportMap.get(), mLoader, aScript,
-                                             aSpecifier);
-  }
-
-  // The following module specifiers are allowed by the spec:
-  //  - a valid absolute URL
-  //  - a valid relative URL that starts with "/", "./" or "../"
-  //
-  // Bareword module specifiers are handled in Import maps.
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aSpecifier);
-  if (NS_SUCCEEDED(rv)) {
-    return WrapNotNull(uri);
-  }
-
-  if (rv != NS_ERROR_MALFORMED_URI) {
-    return Err(ResolveError::Failure);
-  }
-
-  if (!StringBeginsWith(aSpecifier, u"/"_ns) &&
-      !StringBeginsWith(aSpecifier, u"./"_ns) &&
-      !StringBeginsWith(aSpecifier, u"../"_ns)) {
-    return Err(ResolveError::FailureMayBeBare);
-  }
-
-  // Get the document's base URL if we don't have a referencing script here.
-  nsCOMPtr<nsIURI> baseURL;
-  if (aScript) {
-    baseURL = aScript->BaseURL();
-  } else {
-    baseURL = GetBaseURI();
-  }
-
-  rv = NS_NewURI(getter_AddRefs(uri), aSpecifier, nullptr, baseURL);
-  if (NS_SUCCEEDED(rv)) {
-    return WrapNotNull(uri);
-  }
-
-  return Err(ResolveError::Failure);
+  // Import Maps are not supported on workers/worklets.
+  // See https://github.com/WICG/import-maps/issues/2
+  MOZ_ASSERT_IF(!NS_IsMainThread(), mImportMap == nullptr);
+  // Forward to the updated 'Resolve a module specifier' algorithm defined in
+  // the Import Maps spec.
+  return ImportMap::ResolveModuleSpecifier(mImportMap.get(), mLoader, aScript,
+                                           aSpecifier);
 }
 
 nsresult ModuleLoaderBase::ResolveRequestedModules(
@@ -1000,8 +954,8 @@ void ModuleLoaderBase::FinishDynamicImport(
                               JSMSG_DYNAMIC_IMPORT_FAILED, url.get());
   }
 
-  JS::Rooted<JS::Value> referencingScript(aCx,
-                                          aRequest->mDynamicReferencingPrivate);
+  JS::Rooted<JS::Value> referencingScript(
+      aCx, PrivateFromLoadedScript(aRequest->mDynamicReferencingScript));
   JS::Rooted<JSString*> specifier(aCx, aRequest->mDynamicSpecifier);
   JS::Rooted<JSObject*> promise(aCx, aRequest->mDynamicPromise);
 
@@ -1344,7 +1298,8 @@ UniquePtr<ImportMap> ModuleLoaderBase::ParseImportMap(
 
   MOZ_ASSERT(aRequest->IsTextSource());
   MaybeSourceText maybeSource;
-  nsresult rv = aRequest->GetScriptSource(jsapi.cx(), &maybeSource);
+  nsresult rv = aRequest->GetScriptSource(jsapi.cx(), &maybeSource,
+                                          aRequest->mLoadContext.get());
   if (NS_FAILED(rv)) {
     return nullptr;
   }

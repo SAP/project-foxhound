@@ -8,6 +8,8 @@
 #define widget_windows_filedialog_WinFileDialogCommands_h__
 
 #include "ipc/EnumSerializer.h"
+#include "mozilla/Logging.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/ipc/MessageLink.h"
 #include "mozilla/widget/filedialog/WinFileDialogCommandsDefn.h"
 
@@ -16,6 +18,8 @@ struct IFileDialog;
 struct IFileOpenDialog;
 
 namespace mozilla::widget::filedialog {
+
+extern LazyLogModule sLogFileDialog;
 
 enum class FileDialogType : uint8_t { Open, Save };
 
@@ -41,7 +45,20 @@ namespace detail {
 // Log the error. If it's a notable error, kill the child process.
 void LogProcessingError(LogModule* aModule, ipc::IProtocol* aCaller,
                         ipc::HasResultCodes::Result aCode, const char* aReason);
+
 }  // namespace detail
+
+template <typename R>
+using Promise = MozPromise<R, HRESULT, true>;
+
+// Show a file-picker on another thread in the current process.
+RefPtr<Promise<Maybe<Results>>> SpawnFilePicker(HWND parent,
+                                                FileDialogType type,
+                                                nsTArray<Command> commands);
+
+// Show a folder-picker on another thread in the current process.
+RefPtr<Promise<Maybe<nsString>>> SpawnFolderPicker(HWND parent,
+                                                   nsTArray<Command> commands);
 
 }  // namespace mozilla::widget::filedialog
 

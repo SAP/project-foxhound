@@ -149,7 +149,6 @@ const mozilla::PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(
     const mozilla::dom::Document*);
 
 bool Gecko_IsTableBorderNonzero(const mozilla::dom::Element* element);
-bool Gecko_IsBrowserFrame(const mozilla::dom::Element* element);
 bool Gecko_IsSelectListBox(const mozilla::dom::Element* element);
 
 // Attributes.
@@ -221,14 +220,6 @@ bool Gecko_StyleViewTimelinesEquals(
     const nsStyleAutoArray<mozilla::StyleViewTimeline>*,
     const nsStyleAutoArray<mozilla::StyleViewTimeline>*);
 
-void Gecko_CopyAnimationNames(
-    nsStyleAutoArray<mozilla::StyleAnimation>* aDest,
-    const nsStyleAutoArray<mozilla::StyleAnimation>* aSrc);
-
-// This function takes an already addrefed nsAtom
-void Gecko_SetAnimationName(mozilla::StyleAnimation* aStyleAnimation,
-                            nsAtom* aAtom);
-
 void Gecko_UpdateAnimations(const mozilla::dom::Element* aElementOrPseudo,
                             const mozilla::ComputedStyle* aOldComputedValues,
                             const mozilla::ComputedStyle* aComputedValues,
@@ -259,11 +250,13 @@ double Gecko_GetPositionInSegment(const mozilla::AnimationPropertySegment*,
 
 // Get servo's AnimationValue for |aProperty| from the cached base style
 // |aBaseStyles|.
-// |aBaseStyles| is nsRefPtrHashtable<nsUint32HashKey, StyleAnimationValue>.
+// |aBaseStyles| is nsRefPtrHashtable<nsGenericHashKey<AnimatedPropertyID>,
+// StyleAnimationValue>.
 // We use RawServoAnimationValueTableBorrowed to avoid exposing
 // nsRefPtrHashtable in FFI.
 const mozilla::StyleAnimationValue* Gecko_AnimationGetBaseStyle(
-    const RawServoAnimationValueTable* aBaseStyles, nsCSSPropertyID aProperty);
+    const RawServoAnimationValueTable* aBaseStyles,
+    const mozilla::AnimatedPropertyID* aProperty);
 
 void Gecko_StyleTransition_SetUnsupportedProperty(
     mozilla::StyleTransition* aTransition, nsAtom* aAtom);
@@ -449,7 +442,8 @@ mozilla::Keyframe* Gecko_GetOrCreateFinalKeyframe(
 // its mProperty member set to |aProperty| and all other members initialized to
 // their default values.
 mozilla::PropertyValuePair* Gecko_AppendPropertyValuePair(
-    nsTArray<mozilla::PropertyValuePair>*, nsCSSPropertyID aProperty);
+    nsTArray<mozilla::PropertyValuePair>*,
+    const mozilla::AnimatedPropertyID* aProperty);
 
 void Gecko_ResetFilters(nsStyleEffects* effects, size_t new_len);
 
@@ -617,7 +611,6 @@ int32_t Gecko_GetNumStyleThreads();
 mozilla::StyleDisplayMode Gecko_MediaFeatures_GetDisplayMode(
     const mozilla::dom::Document*);
 
-bool Gecko_MediaFeatures_ShouldAvoidNativeTheme(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_UseOverlayScrollbars(const mozilla::dom::Document*);
 int32_t Gecko_MediaFeatures_GetColorDepth(const mozilla::dom::Document*);
 int32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
@@ -655,6 +648,7 @@ float Gecko_MediaFeatures_GetDevicePixelRatio(const mozilla::dom::Document*);
 
 bool Gecko_MediaFeatures_IsResourceDocument(const mozilla::dom::Document*);
 bool Gecko_MediaFeatures_MatchesPlatform(mozilla::StylePlatform);
+mozilla::StyleGtkThemeFamily Gecko_MediaFeatures_GtkThemeFamily();
 
 void Gecko_GetSafeAreaInsets(const nsPresContext*, float*, float*, float*,
                              float*);

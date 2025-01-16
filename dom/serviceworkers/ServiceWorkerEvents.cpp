@@ -113,7 +113,7 @@ CancelChannelRunnable::Run() {
 FetchEvent::FetchEvent(EventTarget* aOwner)
     : ExtendableEvent(aOwner),
       mPreventDefaultLineNumber(0),
-      mPreventDefaultColumnNumber(0),
+      mPreventDefaultColumnNumber(1),
       mWaitToRespond(false) {}
 
 FetchEvent::~FetchEvent() = default;
@@ -381,7 +381,7 @@ class StartResponse final : public Runnable {
     rv = NS_NewURI(getter_AddRefs(uri), url);
     NS_ENSURE_SUCCESS(rv, false);
     int16_t decision = nsIContentPolicy::ACCEPT;
-    rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, ""_ns, &decision);
+    rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, &decision);
     NS_ENSURE_SUCCESS(rv, false);
     return decision == nsIContentPolicy::ACCEPT;
   }
@@ -772,7 +772,7 @@ void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
   // a file:// string here because service workers require http/https.
   nsCString spec;
   uint32_t line = 0;
-  uint32_t column = 0;
+  uint32_t column = 1;
   nsJSUtils::GetCallingLocation(aCx, spec, &line, &column);
 
   SafeRefPtr<InternalRequest> ir = mRequest->GetInternalRequest();
@@ -866,7 +866,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
       : mWorkerPrivate(aWorkerPrivate),
         mScope(mWorkerPrivate->ServiceWorkerScope()),
         mLine(0),
-        mColumn(0) {
+        mColumn(1) {
     mWorkerPrivate->AssertIsOnWorkerThread();
 
     // Save the location of the waitUntil() call itself as a fallback

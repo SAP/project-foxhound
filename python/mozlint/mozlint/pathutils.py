@@ -180,6 +180,9 @@ def filterpaths(root, paths, include, exclude=None, extensions=None):
         # First handle include/exclude directives
         # that exist (i.e don't have globs)
         for inc in include:
+            if inc.isfile:
+                keep.add(inc)
+
             # Only excludes that are subdirectories of the include
             # path matter.
             excs = [e for e in excludepaths if inc.contains(e)]

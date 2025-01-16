@@ -8,7 +8,9 @@ UNIFIED_SOURCES += [
     '../FFmpegAudioDecoder.cpp',
     '../FFmpegDataDecoder.cpp',
     '../FFmpegDecoderModule.cpp',
+    '../FFmpegEncoderModule.cpp',
     '../FFmpegVideoDecoder.cpp',
+    '../FFmpegVideoEncoder.cpp',
 ]
 LOCAL_INCLUDES += [
     '..',
@@ -27,3 +29,7 @@ if CONFIG['CC_TYPE'] == 'gcc':
   ]
 
 FINAL_LIBRARY = 'xul'
+
+LOCAL_INCLUDES += [
+  "/media/libyuv/libyuv/include",
+]

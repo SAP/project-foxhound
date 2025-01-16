@@ -44,29 +44,27 @@ impl crate::TypeInner {
             Ti::Matrix {
                 columns,
                 rows,
-                width,
+                scalar,
             } => {
                 format!(
                     "mat{}x{}<{}>",
                     columns as u32,
                     rows as u32,
-                    crate::Scalar::float(width).to_wgsl(),
+                    scalar.to_wgsl(),
                 )
             }
             Ti::Atomic(scalar) => {
                 format!("atomic<{}>", scalar.to_wgsl())
             }
             Ti::Pointer { base, .. } => {
-                let base = &gctx.types[base];
-                let name = base.name.as_deref().unwrap_or("unknown");
+                let name = base.to_wgsl(gctx);
                 format!("ptr<{name}>")
             }
             Ti::ValuePointer { scalar, .. } => {
                 format!("ptr<{}>", scalar.to_wgsl())
             }
             Ti::Array { base, size, .. } => {
-                let member_type = &gctx.types[base];
-                let base = member_type.name.as_deref().unwrap_or("unknown");
+                let base = base.to_wgsl(gctx);
                 match size {
                     crate::ArraySize::Constant(size) => format!("array<{base}, {size}>"),
                     crate::ArraySize::Dynamic => format!("array<{base}>"),
@@ -142,6 +140,8 @@ impl crate::Scalar {
             crate::ScalarKind::Uint => "u",
             crate::ScalarKind::Float => "f",
             crate::ScalarKind::Bool => return "bool".to_string(),
+            crate::ScalarKind::AbstractInt => return "{AbstractInt}".to_string(),
+            crate::ScalarKind::AbstractFloat => return "{AbstractFloat}".to_string(),
         };
         format!("{}{}", prefix, self.width * 8)
     }
@@ -238,7 +238,7 @@ mod tests {
         let mat = crate::TypeInner::Matrix {
             rows: crate::VectorSize::Quad,
             columns: crate::VectorSize::Bi,
-            width: 8,
+            scalar: crate::Scalar::F64,
         };
         assert_eq!(mat.to_wgsl(&gctx), "mat2x4<f64>");
 

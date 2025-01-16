@@ -67,6 +67,14 @@ using namespace sandbox::bpf_dsl;
 #  define PR_SET_PTRACER 0x59616d61
 #endif
 
+// Linux 5.17+
+#ifndef PR_SET_VMA
+#  define PR_SET_VMA 0x53564d41
+#endif
+#ifndef PR_SET_VMA_ANON_NAME
+#  define PR_SET_VMA_ANON_NAME 0
+#endif
+
 // The headers define O_LARGEFILE as 0 on x86_64, but we need the
 // actual value because it shows up in file flags.
 #define O_LARGEFILE_REAL 00100000
@@ -712,11 +720,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
   }
 
   virtual ResultExpr PrctlPolicy() const {
-    // Note: this will probably need PR_SET_VMA if/when it's used on
-    // Android without being overridden by an allow-all policy, and
-    // the constant will need to be defined locally.
     Arg<int> op(0);
+    Arg<int> arg2(1);
     return Switch(op)
+        .CASES((PR_SET_VMA),  // Tagging of anonymous memory mappings
+               If(arg2 == PR_SET_VMA_ANON_NAME, Allow()).Else(InvalidSyscall()))
         .CASES((PR_GET_SECCOMP,   // BroadcastSetThreadSandbox, etc.
                 PR_SET_NAME,      // Thread creation
                 PR_SET_DUMPABLE,  // Crash reporting
@@ -882,8 +890,11 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
       // In the absence of a broker we still need to handle the
       // fstat-equivalent subset of fstatat; see bug 1673770.
       switch (sysno) {
-      CASES_FOR_fstatat:
-        return Trap(StatAtTrap, nullptr);
+        // statx may be used for fstat (bug 1867673)
+        case __NR_statx:
+          return Error(ENOSYS);
+        CASES_FOR_fstatat:
+          return Trap(StatAtTrap, nullptr);
       }
     }
 
@@ -1454,10 +1465,14 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
         // FIXME(bug 1510861) are we using any hints that aren't allowed
         // in SandboxPolicyCommon now?
       case __NR_madvise:
-        // libc's realloc uses mremap (Bug 1286119); wasm does too (bug
-        // 1342385).
-      case __NR_mremap:
         return Allow();
+
+        // wasm uses mremap (always with zero flags)
+      case __NR_mremap: {
+        Arg<int> flags(3);
+        return If(flags == 0, Allow())
+            .Else(SandboxPolicyCommon::EvaluateSyscall(sysno));
+      }
 
         // Bug 1462640: Mesa libEGL uses mincore to test whether values
         // are pointers, for reasons.
@@ -1995,7 +2010,10 @@ class SocketProcessSandboxPolicy final : public SandboxPolicyCommon {
 
   ResultExpr PrctlPolicy() const override {
     Arg<int> op(0);
+    Arg<int> arg2(1);
     return Switch(op)
+        .CASES((PR_SET_VMA),  // Tagging of anonymous memory mappings
+               If(arg2 == PR_SET_VMA_ANON_NAME, Allow()).Else(InvalidSyscall()))
         .CASES((PR_SET_NAME,      // Thread creation
                 PR_SET_DUMPABLE,  // Crash reporting
                 PR_SET_PTRACER),  // Debug-mode crash handling
@@ -2086,7 +2104,10 @@ class UtilitySandboxPolicy : public SandboxPolicyCommon {
 
   ResultExpr PrctlPolicy() const override {
     Arg<int> op(0);
+    Arg<int> arg2(1);
     return Switch(op)
+        .CASES((PR_SET_VMA),  // Tagging of anonymous memory mappings
+               If(arg2 == PR_SET_VMA_ANON_NAME, Allow()).Else(InvalidSyscall()))
         .CASES((PR_SET_NAME,        // Thread creation
                 PR_SET_DUMPABLE,    // Crash reporting
                 PR_SET_PTRACER,     // Debug-mode crash handling

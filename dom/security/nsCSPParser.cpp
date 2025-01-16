@@ -174,7 +174,7 @@ void nsCSPParser::logWarningErrorToConsole(uint32_t aSeverityFlag,
                             u""_ns,          // aSourceName
                             u""_ns,          // aSourceLine
                             0,               // aLineNumber
-                            0,               // aColumnNumber
+                            1,               // aColumnNumber
                             aSeverityFlag);  // aFlags
 }
 
@@ -447,28 +447,12 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
-  if (StaticPrefs::security_csp_wasm_unsafe_eval_enabled() &&
-      CSP_IsKeyword(mCurToken, CSP_WASM_UNSAFE_EVAL)) {
+  if (CSP_IsKeyword(mCurToken, CSP_WASM_UNSAFE_EVAL)) {
     mHasAnyUnsafeEval = true;
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
-  if (StaticPrefs::security_csp_unsafe_hashes_enabled() &&
-      CSP_IsKeyword(mCurToken, CSP_UNSAFE_HASHES)) {
-    return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
-  }
-
-  if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_ALLOW_REDIRECTS)) {
-    if (!CSP_IsDirective(mCurDir[0],
-                         nsIContentSecurityPolicy::NAVIGATE_TO_DIRECTIVE)) {
-      // Only allow 'unsafe-allow-redirects' within navigate-to.
-      AutoTArray<nsString, 2> params = {u"unsafe-allow-redirects"_ns,
-                                        u"navigate-to"_ns};
-      logWarningErrorToConsole(nsIScriptError::warningFlag,
-                               "IgnoringSourceWithinDirective", params);
-      return nullptr;
-    }
-
+  if (CSP_IsKeyword(mCurToken, CSP_UNSAFE_HASHES)) {
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
@@ -860,32 +844,6 @@ nsCSPDirective* nsCSPParser::directiveName() {
     AutoTArray<nsString, 1> params = {mCurToken};
     logWarningErrorToConsole(nsIScriptError::warningFlag,
                              "notSupportingDirective", params);
-    return nullptr;
-  }
-
-  // script-src-attr and script-scr-elem might have been disabled.
-  // Similarly style-src-{attr, elem}.
-  if (((directive == nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE ||
-        directive == nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) &&
-       !StaticPrefs::security_csp_script_src_attr_elem_enabled()) ||
-      ((directive == nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE ||
-        directive == nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE) &&
-       !StaticPrefs::security_csp_style_src_attr_elem_enabled())) {
-    AutoTArray<nsString, 1> params = {mCurToken};
-    logWarningErrorToConsole(nsIScriptError::warningFlag,
-                             "notSupportingDirective", params);
-    return nullptr;
-  }
-
-  // Bug 1529068: Implement navigate-to directive.
-  // Once all corner cases are resolved we can remove that special
-  // if-handling here and let the parser just fall through to
-  // return new nsCSPDirective.
-  if (directive == nsIContentSecurityPolicy::NAVIGATE_TO_DIRECTIVE &&
-      !StaticPrefs::security_csp_enableNavigateTo()) {
-    AutoTArray<nsString, 1> params = {mCurToken};
-    logWarningErrorToConsole(nsIScriptError::warningFlag,
-                             "couldNotProcessUnknownDirective", params);
     return nullptr;
   }
 

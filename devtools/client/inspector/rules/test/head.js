@@ -255,7 +255,7 @@ var addProperty = async function (
   ruleIndex,
   name,
   value,
-  { commitValueWith = "VK_RETURN", blurNewProperty = true } = {}
+  { commitValueWith = "VK_TAB", blurNewProperty = true } = {}
 ) {
   info("Adding new property " + name + ":" + value + " to rule " + ruleIndex);
 
@@ -299,8 +299,14 @@ var addProperty = async function (
 
   info("Adding name " + name);
   editor.input.value = name;
+  is(
+    editor.input.getAttribute("aria-label"),
+    "New property name",
+    "New property name input has expected aria-label"
+  );
+
   const onNameAdded = view.once("ruleview-changed");
-  EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
+  EventUtils.synthesizeKey("VK_TAB", {}, view.styleWindow);
   await onNameAdded;
 
   // Focus has moved to the value inplace-editor automatically.
@@ -324,6 +330,17 @@ var addProperty = async function (
   // triggers a ruleview-changed event (see bug 1209295).
   const onPreview = view.once("ruleview-changed");
   editor.input.value = value;
+
+  ok(
+    !!editor.input.getAttribute("aria-labelledby"),
+    "The value input has an aria-labelledby attribute…"
+  );
+  is(
+    editor.input.getAttribute("aria-labelledby"),
+    textProp.editor.nameSpan.id,
+    "…which references the property name input"
+  );
+
   view.debounce.flush();
   await onPreview;
 
@@ -362,6 +379,13 @@ var renameProperty = async function (view, textProp, name) {
   EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
   info("Wait for property name.");
   await onNameDone;
+
+  if (
+    !Services.prefs.getBoolPref("devtools.inspector.rule-view.focusNextOnEnter")
+  ) {
+    return;
+  }
+
   // Renaming the property auto-advances the focus to the value input. Exiting without
   // committing will still fire a change event. @see TextPropertyEditor._onValueDone().
   // Wait for that event too before proceeding.
@@ -389,7 +413,7 @@ var removeProperty = async function (view, textProp, blurNewProperty = true) {
   const onModifications = view.once("ruleview-changed");
   info("Deleting the property name now");
   EventUtils.synthesizeKey("VK_DELETE", {}, view.styleWindow);
-  EventUtils.synthesizeKey("VK_RETURN", {}, view.styleWindow);
+  EventUtils.synthesizeKey("VK_TAB", {}, view.styleWindow);
   await onModifications;
 
   if (blurNewProperty) {

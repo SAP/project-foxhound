@@ -2412,8 +2412,6 @@ Maybe<nsNativeThemeCocoa::WidgetInfo> nsNativeThemeCocoa::ComputeWidgetInfo(
 
     case StyleAppearance::Treeheader:
       // do nothing, taken care of by individual header cells
-    case StyleAppearance::Treeheadersortarrow:
-      // do nothing, taken care of by treeview header
     case StyleAppearance::Treeline:
       // do nothing, these lines don't exist on macos
       break;
@@ -3099,7 +3097,6 @@ nsNativeThemeCocoa::WidgetStateChanged(nsIFrame* aFrame,
     case StyleAppearance::Tooltip:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::Tabpanel:
-    case StyleAppearance::Dialog:
     case StyleAppearance::Menupopup:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::ProgressBar:
@@ -3165,7 +3162,6 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
       [[fallthrough]];
 
     case StyleAppearance::Listbox:
-    case StyleAppearance::Dialog:
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowTitlebar:
     case StyleAppearance::Menupopup:
@@ -3176,6 +3172,7 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::MozMacHelpButton:
     case StyleAppearance::MozMacDisclosureButtonOpen:
     case StyleAppearance::MozMacDisclosureButtonClosed:
+    case StyleAppearance::MozMacUnifiedToolbarWindow:
     case StyleAppearance::Button:
     case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Spinner:
@@ -3202,7 +3199,6 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext,
     case StyleAppearance::Treeview:
     case StyleAppearance::Treeheader:
     case StyleAppearance::Treeheadercell:
-    case StyleAppearance::Treeheadersortarrow:
     case StyleAppearance::Treeitem:
     case StyleAppearance::Treeline:
 
@@ -3262,7 +3258,6 @@ bool nsNativeThemeCocoa::ThemeNeedsComboboxDropmarker() { return false; }
 bool nsNativeThemeCocoa::WidgetAppearanceDependsOnWindowFocus(
     StyleAppearance aAppearance) {
   switch (aAppearance) {
-    case StyleAppearance::Dialog:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::Menupopup:
     case StyleAppearance::Tooltip:
@@ -3312,10 +3307,12 @@ nsITheme::Transparency nsNativeThemeCocoa::GetWidgetTransparency(
   switch (aAppearance) {
     case StyleAppearance::Menupopup:
     case StyleAppearance::Tooltip:
-    case StyleAppearance::Dialog:
     case StyleAppearance::Toolbar:
       return eTransparent;
-
+    case StyleAppearance::MozMacUnifiedToolbarWindow:
+      // We want these to be treated as opaque by Gecko. We ensure there's an
+      // appropriate OS-level clear color to make sure that's the case.
+      return eOpaque;
     case StyleAppearance::Statusbar:
       // Knowing that scrollbars and statusbars are opaque improves
       // performance, because we create layers for them.

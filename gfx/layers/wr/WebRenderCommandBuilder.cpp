@@ -108,7 +108,7 @@ struct BlobItemData {
   // We need to keep a list of all the external surfaces used by the blob image.
   // We do this on a per-display item basis so that the lists remains correct
   // during invalidations.
-  std::vector<RefPtr<SourceSurface>> mExternalSurfaces;
+  DrawEventRecorderPrivate::ExternalSurfacesHolder mExternalSurfaces;
 
   BlobItemData(DIGroup* aGroup, nsDisplayItem* aItem)
       : mInvisible(false), mUsed(false), mGroup(aGroup) {
@@ -183,18 +183,18 @@ static void DestroyBlobGroupDataProperty(nsTArray<BlobItemData*>* aArray) {
 
 static void TakeExternalSurfaces(
     WebRenderDrawEventRecorder* aRecorder,
-    std::vector<RefPtr<SourceSurface>>& aExternalSurfaces,
+    DrawEventRecorderPrivate::ExternalSurfacesHolder& aExternalSurfaces,
     RenderRootStateManager* aManager, wr::IpcResourceUpdateQueue& aResources) {
   aRecorder->TakeExternalSurfaces(aExternalSurfaces);
 
-  for (auto& surface : aExternalSurfaces) {
+  for (auto& entry : aExternalSurfaces) {
     // While we don't use the image key with the surface, because the blob image
     // renderer doesn't have easy access to the resource set, we still want to
     // ensure one is generated. That will ensure the surface remains alive until
     // at least the last epoch which the blob image could be used in.
     wr::ImageKey key;
     DebugOnly<nsresult> rv =
-        SharedSurfacesChild::Share(surface, aManager, aResources, key);
+        SharedSurfacesChild::Share(entry.mSurface, aManager, aResources, key);
     MOZ_ASSERT(rv.value != NS_ERROR_NOT_IMPLEMENTED);
   }
 }
@@ -902,7 +902,7 @@ static BlobItemData* GetBlobItemDataForGroup(nsDisplayItem* aItem,
                                              DIGroup* aGroup) {
   BlobItemData* data = GetBlobItemData(aItem);
   if (data) {
-    MOZ_RELEASE_ASSERT(data->mGroup->mDisplayItems.Contains(data));
+    MOZ_ASSERT(data->mGroup->mDisplayItems.Contains(data));
     if (data->mGroup != aGroup) {
       GP("group don't match %p %p\n", data->mGroup, aGroup);
       data->ClearFrame();
@@ -2210,6 +2210,20 @@ void WebRenderCommandBuilder::PopOverrideForASR(
   mClipManager.PopOverrideForASR(aASR);
 }
 
+static wr::WrRotation ToWrRotation(VideoRotation aRotation) {
+  switch (aRotation) {
+    case VideoRotation::kDegree_0:
+      return wr::WrRotation::Degree0;
+    case VideoRotation::kDegree_90:
+      return wr::WrRotation::Degree90;
+    case VideoRotation::kDegree_180:
+      return wr::WrRotation::Degree180;
+    case VideoRotation::kDegree_270:
+      return wr::WrRotation::Degree270;
+  }
+  return wr::WrRotation::Degree0;
+}
+
 Maybe<wr::ImageKey> WebRenderCommandBuilder::CreateImageKey(
     nsDisplayItem* aItem, ImageContainer* aContainer,
     mozilla::wr::DisplayListBuilder& aBuilder,
@@ -2229,8 +2243,9 @@ Maybe<wr::ImageKey> WebRenderCommandBuilder::CreateImageKey(
     // We appear to be using the image bridge for a lot (most/all?) of
     // layers-free image handling and that breaks frame consistency.
     imageData->CreateAsyncImageWebRenderCommands(
-        aBuilder, aContainer, aSc, rect, scBounds, aContainer->GetRotation(),
-        aRendering, wr::MixBlendMode::Normal, !aItem->BackfaceIsHidden());
+        aBuilder, aContainer, aSc, rect, scBounds,
+        ToWrRotation(aContainer->GetRotation()), aRendering,
+        wr::MixBlendMode::Normal, !aItem->BackfaceIsHidden());
     return Nothing();
   }
 

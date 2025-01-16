@@ -390,12 +390,10 @@ class HostCompileFlags(BaseCompileFlags):
         BaseCompileFlags.__init__(self, context)
 
     def _optimize_flags(self):
-        optimize_flags = []
-        if self._context.config.substs.get("CROSS_COMPILE"):
-            optimize_flags += self._context.config.substs.get("HOST_OPTIMIZE_FLAGS")
-        elif self._context.config.substs.get("MOZ_OPTIMIZE"):
-            optimize_flags += self._context.config.substs.get("MOZ_OPTIMIZE_FLAGS")
-        return optimize_flags
+        # We don't use MOZ_OPTIMIZE here because we don't want
+        # --disable-optimize to make in-tree host tools slow. Doing so can
+        # potentially make build times significantly worse.
+        return self._context.config.substs.get("HOST_OPTIMIZE_FLAGS") or []
 
 
 class AsmFlags(BaseCompileFlags):
@@ -423,7 +421,7 @@ class AsmFlags(BaseCompileFlags):
                     debug_flags += ["-F", "dwarf"]
             elif (
                 self._context.config.substs.get("OS_ARCH") == "WINNT"
-                and self._context.config.substs.get("CPU_ARCH") == "aarch64"
+                and self._context.config.substs.get("TARGET_CPU") == "aarch64"
             ):
                 # armasm64 accepts a paucity of options compared to ml/ml64.
                 pass
@@ -2181,7 +2179,7 @@ VARIABLES = {
         """Names of example WebIDL interfaces to build as part of the build.
 
         Names in this list correspond to WebIDL interface names defined in
-        WebIDL files included in the build from one of the \*WEBIDL_FILES
+        WebIDL files included in the build from one of the *WEBIDL_FILES
         variables.
         """,
     ),
@@ -2210,16 +2208,10 @@ VARIABLES = {
         """List of manifest files defining firefox-ui-functional tests.
         """,
     ),
-    "MARIONETTE_LAYOUT_MANIFESTS": (
+    "MARIONETTE_MANIFESTS": (
         ManifestparserManifestList,
         list,
-        """List of manifest files defining marionette-layout tests.
-        """,
-    ),
-    "MARIONETTE_UNIT_MANIFESTS": (
-        ManifestparserManifestList,
-        list,
-        """List of manifest files defining marionette-unit tests.
+        """List of manifest files defining marionette tests.
         """,
     ),
     "METRO_CHROME_MANIFESTS": (

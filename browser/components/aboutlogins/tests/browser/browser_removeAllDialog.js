@@ -32,7 +32,7 @@ async function activateLoginItemEdit(browser) {
   });
   function getLoginItemEditButton() {
     let loginItem = window.document.querySelector("login-item");
-    return loginItem.shadowRoot.querySelector(".edit-button");
+    return loginItem.shadowRoot.querySelector("edit-button");
   }
   await BrowserTestUtils.synthesizeMouseAtCenter(
     getLoginItemEditButton,
@@ -41,10 +41,10 @@ async function activateLoginItemEdit(browser) {
   );
   await SpecialPowers.spawn(browser, [], async () => {
     let loginItem = content.document.querySelector("login-item");
-    loginItem.shadowRoot
-      .querySelector(".edit-button")
-      .shadowRoot.querySelector("button")
-      .click();
+    let editButton = loginItem.shadowRoot
+      .querySelector("edit-button")
+      .shadowRoot.querySelector("button");
+    editButton.click();
     await ContentTaskUtils.waitForCondition(
       () => loginItem.dataset.editing,
       "Waiting for login-item to enter edit mode"
@@ -57,7 +57,7 @@ async function activateCreateNewLogin(browser) {
   await SimpleTest.promiseFocus(browser);
   function getCreateNewLoginButton() {
     let loginList = window.document.querySelector("login-list");
-    return loginList.shadowRoot.querySelector(".create-login-button");
+    return loginList.shadowRoot.querySelector("create-login-button");
   }
   await BrowserTestUtils.synthesizeMouseAtCenter(
     getCreateNewLoginButton,
@@ -119,17 +119,17 @@ add_task(async function test_remove_all_dialog_l10n() {
     ]);
     Assert.equal(
       title.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-title",
+      "about-logins-confirm-remove-all-dialog-title2",
       "Title contents should match l10n-id attribute set on element"
     );
     Assert.equal(
       message.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-message",
+      "about-logins-confirm-remove-all-dialog-message2",
       "Message contents should match l10n-id attribute set on element"
     );
     Assert.equal(
       label.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-checkbox-label",
+      "about-logins-confirm-remove-all-dialog-checkbox-label2",
       "Label contents should match l10n-id attribute set on outer element"
     );
     Assert.equal(
@@ -272,7 +272,7 @@ add_task(async function test_remove_all_dialog_remove_logins() {
     );
     Assert.equal(
       title.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-title",
+      "about-logins-confirm-remove-all-dialog-title2",
       "Title contents should match l10n-id attribute set on element"
     );
     Assert.equal(
@@ -282,7 +282,7 @@ add_task(async function test_remove_all_dialog_remove_logins() {
     );
     Assert.equal(
       message.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-message",
+      "about-logins-confirm-remove-all-dialog-message2",
       "Message contents should match l10n-id attribute set on element"
     );
     Assert.equal(
@@ -292,7 +292,7 @@ add_task(async function test_remove_all_dialog_remove_logins() {
     );
     Assert.equal(
       label.dataset.l10nId,
-      "about-logins-confirm-remove-all-dialog-checkbox-label",
+      "about-logins-confirm-remove-all-dialog-checkbox-label2",
       "Label contents should match l10n-id attribute set on outer element"
     );
     Assert.equal(

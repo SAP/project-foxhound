@@ -393,30 +393,6 @@ nsTableColFrame* nsTableColGroupFrame::GetNextColumn(nsIFrame* aChildFrame) {
 
 int32_t nsTableColGroupFrame::GetSpan() { return StyleTable()->mXSpan; }
 
-void nsTableColGroupFrame::SetContinuousBCBorderWidth(LogicalSide aForSide,
-                                                      BCPixelSize aPixelValue) {
-  switch (aForSide) {
-    case eLogicalSideBStart:
-      mBStartContBorderWidth = aPixelValue;
-      return;
-    case eLogicalSideBEnd:
-      mBEndContBorderWidth = aPixelValue;
-      return;
-    default:
-      NS_ERROR("invalid side arg");
-  }
-}
-
-void nsTableColGroupFrame::GetContinuousBCBorderWidth(WritingMode aWM,
-                                                      LogicalMargin& aBorder) {
-  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
-  nsTableColFrame* col =
-      GetTableFrame()->GetColFrame(mStartColIndex + mColCount - 1);
-  col->GetContinuousBCBorderWidth(aWM, aBorder);
-  aBorder.BStart(aWM) = BC_BORDER_END_HALF_COORD(d2a, mBStartContBorderWidth);
-  aBorder.BEnd(aWM) = BC_BORDER_START_HALF_COORD(d2a, mBEndContBorderWidth);
-}
-
 /* ----- global methods ----- */
 
 nsTableColGroupFrame* NS_NewTableColGroupFrame(PresShell* aPresShell,

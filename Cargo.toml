@@ -51,7 +51,9 @@ resolver = "2"
 
 [workspace.dependencies]
 # Shared across multiple UniFFI consumers.
-uniffi = "0.24.3"
+uniffi = "0.25.3"
+# Shared across multiple application-services consumers.
+rusqlite = "0.30.0"
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
 # a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
@@ -108,8 +110,11 @@ oslog = { path = "build/rust/oslog" }
 # Override terminal_size with a dummy crate that returns a fixed 80x25 terminal size.
 terminal_size = { path = "build/rust/terminal_size" }
 
-# Patch bitflags 2.0 to 1.0 while not too many crates use 2.0 features
+# Patch bitflags 1.0 to 2.0
 bitflags = { path = "build/rust/bitflags" }
+
+# Patch memmap2 0.5.x to 0.8.0
+memmap2 = { path = "build/rust/memmap2" }
 
 # Patch cfg-if 0.1 to 1.0
 cfg-if = { path = "build/rust/cfg-if" }
@@ -137,12 +142,11 @@ wasi = { path = "build/rust/wasi" }
 # else we do use requires backtrace, so dummy it out for now.
 backtrace = { path = "build/rust/backtrace" }
 
-# Patch bindgen 0.63, 0.64 and 0.66 to 0.68
+# Patch bindgen 0.63 and 0.64 to 0.69
 bindgen_0_63 = { package = "bindgen", path = "build/rust/bindgen-0.63" }
 bindgen_0_64 = { package = "bindgen", path = "build/rust/bindgen-0.64" }
-bindgen = { path = "build/rust/bindgen" }
 
-# Patch nix 0.24 to 0.26
+# Patch nix 0.26 to 0.27
 nix = { path = "build/rust/nix" }
 
 # Patch indexmap 2.0 to 1.0
@@ -187,35 +191,24 @@ chardetng_c = { git = "https://github.com/hsivonen/chardetng_c", rev = "ed8a4c6f
 coremidi = { git = "https://github.com/chris-zen/coremidi.git", rev = "fc68464b5445caf111e41f643a2e69ccce0b4f83" }
 cose = { git = "https://github.com/franziskuskiefer/cose-rust", rev = "43c22248d136c8b38fe42ea709d08da6355cf04b" }
 firefox-on-glean = { path = "toolkit/components/glean/api" }
-icu_testdata = { path = "intl/icu_testdata" }
+icu_capi = { path = "intl/icu_capi" }
+icu_segmenter_data = { path = "intl/icu_segmenter_data" }
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
-midir = { git = "https://github.com/mozilla/midir.git", rev = "519e651241e867af3391db08f9ae6400bc023e18" }
-# Avoid the dependency on chrono and include Android support
-minidump-writer = { git = "https://github.com/rust-minidump/minidump-writer.git", rev = "491eb330e78e310c32927e5cc3bd2350af1e93f8" }
-# Bump some dependencies
-minidump-common = { git = "https://github.com/rust-minidump/rust-minidump", rev = "6ae42a7f992e8a88ebee661bc77bcedb95cd671f" }
-# warp 0.3.3 + https://github.com/seanmonstar/warp/pull/1007
-warp = { git = "https://github.com/glandium/warp", rev = "4af45fae95bc98b0eba1ef0db17e1dac471bb23d" }
+midir = { git = "https://github.com/mozilla/midir.git", rev = "85156e360a37d851734118104619f86bd18e94c6" }
+# warp 0.3.6 + https://github.com/seanmonstar/warp/pull/1069
+warp = { git = "https://github.com/seanmonstar/warp", rev = "9d081461ae1167eb321585ce424f4fef6cf0092b" }
 # Allow webrender to have a versioned dependency on the older crate on crates.io
 # in order to build standalone.
 malloc_size_of_derive = { path = "xpcom/rust/malloc_size_of_derive" }
 
 # application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-suggest = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "c82bccfa500813f273f4db0ead64fc73bfa2b34c" }
-
-# ICU4X 1.2 with synstructure 0.13.x / syn 2.x. When updating to next version, this should be removed.
-diplomat = { git = "https://github.com/rust-diplomat/diplomat", rev = "8d125999893fedfdf30595e97334c21ec4b18da9" }
-diplomat-runtime = { git = "https://github.com/rust-diplomat/diplomat", rev = "8d125999893fedfdf30595e97334c21ec4b18da9" }
-icu_provider_macros = { git = "https://github.com/unicode-org/icu4x", rev = "14e9a3a9857be74582abe2dfa7ab799c5eaac873" }
-yoke-derive = { git = "https://github.com/unicode-org/icu4x", rev = "14e9a3a9857be74582abe2dfa7ab799c5eaac873" }
-zerofrom-derive = { git = "https://github.com/unicode-org/icu4x", rev = "14e9a3a9857be74582abe2dfa7ab799c5eaac873" }
-zerovec-derive = { git = "https://github.com/unicode-org/icu4x", rev = "14e9a3a9857be74582abe2dfa7ab799c5eaac873" }
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+suggest = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+tabs = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "63a6260c14847c21c5a1fa3003efaf0114a3e4e5" }
 
 # Patch mio 0.6 to use winapi 0.3 and miow 0.3, getting rid of winapi 0.2.
 # There is not going to be new version of mio 0.6, mio now being >= 0.7.11.
@@ -223,8 +216,8 @@ zerovec-derive = { git = "https://github.com/unicode-org/icu4x", rev = "14e9a3a9
 path = "third_party/rust/mio-0.6.23"
 
 [patch."https://github.com/mozilla/uniffi-rs.git"]
-uniffi = "=0.24.3"
-uniffi_bindgen = "=0.24.3"
-uniffi_build = "=0.24.3"
-uniffi_macros = "=0.24.3"
+uniffi = "=0.25.3"
+uniffi_bindgen = "=0.25.3"
+uniffi_build = "=0.25.3"
+uniffi_macros = "=0.25.3"
 weedle2 = "=4.0.0"

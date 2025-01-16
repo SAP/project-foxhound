@@ -282,6 +282,7 @@ where
                 })?;
                 continue;
             };
+
             match fields {
                 SuggestRecord::AmpWikipedia => {
                     self.ingest_suggestions_from_record(
@@ -328,6 +329,16 @@ where
                         record,
                         |dao, record_id, suggestions| {
                             dao.insert_pocket_suggestions(record_id, suggestions)
+                        },
+                    )?;
+                }
+                SuggestRecord::Yelp => {
+                    self.ingest_suggestions_from_record(
+                        writer,
+                        record,
+                        |dao, record_id, suggestions| match suggestions.first() {
+                            Some(suggestion) => dao.insert_yelp_suggestions(record_id, suggestion),
+                            None => Ok(()),
                         },
                     )?;
                 }
@@ -838,7 +849,7 @@ mod tests {
 
     /// Tests re-ingesting suggestions from an updated attachment.
     #[test]
-    fn reingest_suggestions() -> anyhow::Result<()> {
+    fn reingest_amp_suggestions() -> anyhow::Result<()> {
         before_each();
 
         // Ingest suggestions from the initial snapshot.
@@ -1210,6 +1221,253 @@ mod tests {
         Ok(())
     }
 
+    /// Tests re-ingesting AMO suggestions from an updated attachment.
+    #[test]
+    fn reingest_amo_suggestions() -> anyhow::Result<()> {
+        before_each();
+
+        // Ingest suggestions from the initial snapshot.
+        let initial_snapshot = Snapshot::with_records(json!([{
+            "id": "data-1",
+            "type": "amo-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-1.json",
+                "mimetype": "application/json",
+                "location": "data-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
+            "id": "data-2",
+            "type": "amo-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-2.json",
+                "mimetype": "application/json",
+                "location": "data-2.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-1.json",
+            json!({
+                "description": "First suggestion",
+                "url": "https://example.org/amo-suggestion-1",
+                "guid": "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                "keywords": ["relay", "spam", "masking email", "alias"],
+                "title": "AMO suggestion",
+                "icon": "https://example.org/amo-suggestion-1/icon.png",
+                "rating": "4.9",
+                "number_of_ratings": 800,
+                "score": 0.25
+            }),
+        )?
+        .with_data(
+            "data-2.json",
+            json!([{
+                "description": "Second suggestion",
+                "url": "https://example.org/amo-suggestion-2",
+                "guid": "{6d24e3b8-1400-4d37-9440-c798f9b79b1a}",
+                "keywords": ["dark mode", "dark theme", "night mode"],
+                "title": "Another AMO suggestion",
+                "icon": "https://example.org/amo-suggestion-2/icon.png",
+                "rating": "4.6",
+                "number_of_ratings": 750,
+                "score": 0.25
+            }, {
+                "description": "Third suggestion",
+                "url": "https://example.org/amo-suggestion-3",
+                "guid": "{1e9d493b-0498-48bb-9b9a-8b45a44df146}",
+                "keywords": ["grammar", "spelling", "edit"],
+                "title": "Yet another AMO suggestion",
+                "icon": "https://example.org/amo-suggestion-3/icon.png",
+                "rating": "4.8",
+                "number_of_ratings": 900,
+                "score": 0.25
+            }]),
+        )?;
+
+        let store = unique_test_store(SnapshotSettingsClient::with_snapshot(initial_snapshot));
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        store.dbs()?.reader.read(|dao| {
+            assert_eq!(dao.get_meta(LAST_INGEST_META_KEY)?, Some(15u64));
+
+            expect![[r#"
+                [
+                    Amo {
+                        title: "AMO suggestion",
+                        url: "https://example.org/amo-suggestion-1",
+                        icon_url: "https://example.org/amo-suggestion-1/icon.png",
+                        description: "First suggestion",
+                        rating: Some(
+                            "4.9",
+                        ),
+                        number_of_ratings: 800,
+                        guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                        score: 0.25,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "masking e".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            expect![[r#"
+                [
+                    Amo {
+                        title: "Another AMO suggestion",
+                        url: "https://example.org/amo-suggestion-2",
+                        icon_url: "https://example.org/amo-suggestion-2/icon.png",
+                        description: "Second suggestion",
+                        rating: Some(
+                            "4.6",
+                        ),
+                        number_of_ratings: 750,
+                        guid: "{6d24e3b8-1400-4d37-9440-c798f9b79b1a}",
+                        score: 0.25,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "night".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            Ok(())
+        })?;
+
+        // Update the snapshot with new suggestions: update the second, drop the
+        // third, and add the fourth.
+        *store.settings_client.snapshot.borrow_mut() = Snapshot::with_records(json!([{
+            "id": "data-2",
+            "type": "amo-suggestions",
+            "last_modified": 30,
+            "attachment": {
+                "filename": "data-2-1.json",
+                "mimetype": "application/json",
+                "location": "data-2-1.json",
+                "hash": "",
+                "size": 0,
+            },
+        }]))?
+        .with_data(
+            "data-2-1.json",
+            json!([{
+                "description": "Updated second suggestion",
+                "url": "https://example.org/amo-suggestion-2",
+                "guid": "{6d24e3b8-1400-4d37-9440-c798f9b79b1a}",
+                "keywords": ["dark mode", "night mode"],
+                "title": "Another AMO suggestion",
+                "icon": "https://example.org/amo-suggestion-2/icon.png",
+                "rating": "4.7",
+                "number_of_ratings": 775,
+                "score": 0.25
+            }, {
+                "description": "Fourth suggestion",
+                "url": "https://example.org/amo-suggestion-4",
+                "guid": "{1ea82ebd-a1ba-4f57-b8bb-3824ead837bd}",
+                "keywords": ["image search", "visual search"],
+                "title": "New AMO suggestion",
+                "icon": "https://example.org/amo-suggestion-4/icon.png",
+                "rating": "5.0",
+                "number_of_ratings": 100,
+                "score": 0.25
+            }]),
+        )?;
+
+        store.ingest(SuggestIngestionConstraints::default())?;
+
+        store.dbs()?.reader.read(|dao| {
+            assert_eq!(dao.get_meta(LAST_INGEST_META_KEY)?, Some(30u64));
+
+            expect![[r#"
+                [
+                    Amo {
+                        title: "AMO suggestion",
+                        url: "https://example.org/amo-suggestion-1",
+                        icon_url: "https://example.org/amo-suggestion-1/icon.png",
+                        description: "First suggestion",
+                        rating: Some(
+                            "4.9",
+                        ),
+                        number_of_ratings: 800,
+                        guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                        score: 0.25,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "masking e".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            expect![[r#"
+                []
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "dark t".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            expect![[r#"
+                [
+                    Amo {
+                        title: "Another AMO suggestion",
+                        url: "https://example.org/amo-suggestion-2",
+                        icon_url: "https://example.org/amo-suggestion-2/icon.png",
+                        description: "Updated second suggestion",
+                        rating: Some(
+                            "4.7",
+                        ),
+                        number_of_ratings: 775,
+                        guid: "{6d24e3b8-1400-4d37-9440-c798f9b79b1a}",
+                        score: 0.25,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "night".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            expect![[r#"
+                [
+                    Amo {
+                        title: "New AMO suggestion",
+                        url: "https://example.org/amo-suggestion-4",
+                        icon_url: "https://example.org/amo-suggestion-4/icon.png",
+                        description: "Fourth suggestion",
+                        rating: Some(
+                            "5.0",
+                        ),
+                        number_of_ratings: 100,
+                        guid: "{1ea82ebd-a1ba-4f57-b8bb-3824ead837bd}",
+                        score: 0.25,
+                    },
+                ]
+            "#]]
+            .assert_debug_eq(&dao.fetch_suggestions(&SuggestionQuery {
+                keyword: "image search".into(),
+                providers: vec![SuggestionProvider::Amo],
+                limit: None,
+            })?);
+
+            Ok(())
+        })?;
+
+        Ok(())
+    }
+
     /// Tests ingesting tombstones for previously-ingested suggestions and
     /// icons.
     #[test]
@@ -1458,6 +1716,17 @@ mod tests {
                 "size": 0,
             },
         }, {
+            "id": "data-4",
+            "type": "yelp-suggestions",
+            "last_modified": 15,
+            "attachment": {
+                "filename": "data-4.json",
+                "mimetype": "application/json",
+                "location": "data-4.json",
+                "hash": "",
+                "size": 0,
+            },
+        }, {
             "id": "icon-2",
             "type": "icon",
             "last_modified": 20,
@@ -1566,6 +1835,20 @@ mod tests {
                 },
             ]),
         )?
+        .with_data(
+            "data-4.json",
+            json!({
+                "subjects": ["ramen", "spicy ramen", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789", "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789Z"],
+                "preModifiers": ["best", "super best", "same_modifier"],
+                "postModifiers": ["delivery", "super delivery", "same_modifier"],
+                "locationSigns": [
+                    { "keyword": "in", "needLocation": true },
+                    { "keyword": "near", "needLocation": true },
+                    { "keyword": "near by", "needLocation": false },
+                    { "keyword": "near me", "needLocation": false },
+                ]
+            }),
+        )?
         .with_icon("icon-2.png", "i-am-an-icon".as_bytes().into())
         .with_icon("icon-3.png", "also-an-icon".as_bytes().into());
 
@@ -1583,6 +1866,7 @@ mod tests {
                         SuggestionProvider::Wikipedia,
                         SuggestionProvider::Amo,
                         SuggestionProvider::Pocket,
+                        SuggestionProvider::Yelp,
                     ],
                     limit: None,
                 },
@@ -1599,6 +1883,7 @@ mod tests {
                         SuggestionProvider::Wikipedia,
                         SuggestionProvider::Amo,
                         SuggestionProvider::Pocket,
+                        SuggestionProvider::Yelp,
                     ],
                     limit: None,
                 },
@@ -1639,6 +1924,62 @@ mod tests {
                 "multimatch; all providers",
                 SuggestionQuery {
                     keyword: "multimatch".into(),
+                    providers: vec![
+                        SuggestionProvider::Amp,
+                        SuggestionProvider::Wikipedia,
+                        SuggestionProvider::Amo,
+                        SuggestionProvider::Pocket,
+                    ],
+                    limit: None,
+                },
+                expect![[r#"
+                    [
+                        Wikipedia {
+                            title: "Multimatch",
+                            url: "https://wikipedia.org/Multimatch",
+                            icon: Some(
+                                [
+                                    97,
+                                    108,
+                                    115,
+                                    111,
+                                    45,
+                                    97,
+                                    110,
+                                    45,
+                                    105,
+                                    99,
+                                    111,
+                                    110,
+                                ],
+                            ),
+                            full_keyword: "multimatch",
+                        },
+                        Amo {
+                            title: "Firefox Multimatch",
+                            url: "https://addons.mozilla.org/en-US/firefox/addon/multimatch",
+                            icon_url: "https://addons.mozilla.org/user-media/addon_icons/2633/2633704-64.png?modified=2c11a80b",
+                            description: "amo suggestion multi-match",
+                            rating: Some(
+                                "4.9",
+                            ),
+                            number_of_ratings: 888,
+                            guid: "{b9db16a4-6edc-47ec-a1f4-b86292ed211d}",
+                            score: 0.25,
+                        },
+                        Pocket {
+                            title: "Multimatching",
+                            url: "https://getpocket.com/collections/multimatch",
+                            score: 0.25,
+                            is_top_pick: true,
+                        },
+                    ]
+                "#]],
+            ),
+            (
+                "MultiMatch; all providers, mixed case",
+                SuggestionQuery {
+                    keyword: "MultiMatch".into(),
                     providers: vec![
                         SuggestionProvider::Amp,
                         SuggestionProvider::Wikipedia,
@@ -2090,6 +2431,340 @@ mod tests {
                 []
                 "#]],
             ),
+            (
+                "keyword = `best spicy ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best spicy ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=best+spicy+ramen+delivery&find_loc=tokyo",
+                        title: "best spicy ramen delivery in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `BeSt SpIcY rAmEn DeLiVeRy In ToKyO`; Yelp only",
+                SuggestionQuery {
+                    keyword: "BeSt SpIcY rAmEn DeLiVeRy In ToKyO".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=BeSt+SpIcY+rAmEn+DeLiVeRy&find_loc=ToKyO",
+                        title: "BeSt SpIcY rAmEn DeLiVeRy In ToKyO",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `best ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=best+ramen+delivery&find_loc=tokyo",
+                        title: "best ramen delivery in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `best invalid_ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best invalid_ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `best delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `super best ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "super best ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=super+best+ramen+delivery&find_loc=tokyo",
+                        title: "super best ramen delivery in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `invalid_best ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "invalid_best ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `ramen delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen+delivery&find_loc=tokyo",
+                        title: "ramen delivery in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen super delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen super delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen+super+delivery&find_loc=tokyo",
+                        title: "ramen super delivery in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen invalid_delivery in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen invalid_delivery in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `ramen in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                        title: "ramen in tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen near tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen near tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=tokyo",
+                        title: "ramen near tokyo",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen invalid_in tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen invalid_in tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `ramen in San Francisco`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen in San Francisco".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen&find_loc=San+Francisco",
+                        title: "ramen in San Francisco",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen in`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen in".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen",
+                        title: "ramen in",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen near by`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen near by".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen+near+by",
+                        title: "ramen near by",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen near me`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen near me".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen+near+me",
+                        title: "ramen near me",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = `ramen near by tokyo`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen near by tokyo".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `ramen`; Yelp only",
+                SuggestionQuery {
+                    keyword: "ramen".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=ramen",
+                        title: "ramen",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = maximum chars; Yelp only",
+                SuggestionQuery {
+                    keyword: "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                [
+                    Yelp {
+                        url: "https://www.yelp.com/search?find_desc=012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                        title: "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+                    },
+                ]
+                "#]],
+            ),
+            (
+                "keyword = over chars; Yelp only",
+                SuggestionQuery {
+                    keyword: "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789Z".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `best delivery`; Yelp only",
+                SuggestionQuery {
+                    keyword: "best delivery".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `same_modifier same_modifier`; Yelp only",
+                SuggestionQuery {
+                    keyword: "same_modifier same_modifier".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
+            (
+                "keyword = `same_modifier `; Yelp only",
+                SuggestionQuery {
+                    keyword: "same_modifier ".into(),
+                    providers: vec![SuggestionProvider::Yelp],
+                    limit: None,
+                },
+                expect![[r#"
+                []
+                "#]],
+            ),
         ];
         for (what, query, expect) in table {
             expect.assert_debug_eq(
@@ -2180,10 +2855,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                         },
                     ),
@@ -2248,10 +2923,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                         },
                     ),
@@ -2354,10 +3029,10 @@ mod tests {
                     UnparsableRecords(
                         {
                             "clippy-2": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                             "fancy-new-suggestions-1": UnparsableRecord {
-                                schema_version: 8,
+                                schema_version: 10,
                             },
                         },
                     ),

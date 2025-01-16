@@ -371,10 +371,17 @@ static MOZ_ALWAYS_INLINE bool MaybeEnterInterpreterTrampoline(JSContext* cx,
     auto p = jitRuntime->getInterpreterEntryMap()->lookup(script);
     if (p) {
       codeRaw = p->value().raw();
-    } else if (js::jit::JitCode* code =
-                   jitRuntime->generateEntryTrampolineForScript(cx, script)) {
+    } else {
+      js::jit::JitCode* code =
+          jitRuntime->generateEntryTrampolineForScript(cx, script);
+      if (!code) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+
       js::jit::EntryTrampoline entry(cx, code);
       if (!jitRuntime->getInterpreterEntryMap()->put(script, entry)) {
+        ReportOutOfMemory(cx);
         return false;
       }
       codeRaw = code->raw();
@@ -510,7 +517,7 @@ MOZ_ALWAYS_INLINE bool CallJSNativeConstructor(JSContext* cx, Native native,
   MOZ_ASSERT(args.rval().isObject());
   MOZ_ASSERT_IF(!JS_IsNativeFunction(callee, obj_construct) &&
                     !callee->is<BoundFunctionObject>() &&
-                    !cx->insideDebuggerEvaluationWithOnNativeCallHook,
+                    !cx->realm()->debuggerObservesNativeCall(),
                 args.rval() != ObjectValue(*callee));
 
   return true;
@@ -3038,7 +3045,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       if (!isFunction || !maybeFun->isInterpreted() ||
           (construct && !maybeFun->isConstructor()) ||
           (!construct && maybeFun->isClassConstructor()) ||
-          cx->insideDebuggerEvaluationWithOnNativeCallHook) {
+          cx->realm()->debuggerObservesNativeCall()) {
         if (construct) {
           CallReason reason = op == JSOp::NewContent ? CallReason::CallContent
                                                      : CallReason::Call;
@@ -4481,7 +4488,6 @@ JSObject* js::BindVarOperation(JSContext* cx, JSObject* envChain) {
 
 JSObject* js::ImportMetaOperation(JSContext* cx, HandleScript script) {
   RootedObject module(cx, GetModuleObjectForScript(script));
-  MOZ_ASSERT(module);
   return GetOrCreateModuleMetaObject(cx, module);
 }
 

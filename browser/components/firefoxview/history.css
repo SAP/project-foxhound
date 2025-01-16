@@ -5,13 +5,16 @@
 .history-sort-options:not([hidden]) {
   display: flex;
   gap: 24px;
-  margin-block-start: 35px;
 }
 
 .history-sort-option {
   display: flex;
   align-items: center;
   gap: 8px;
+
+  & label {
+    white-space: nowrap;
+  }
 }
 
 .show-all-history-footer {

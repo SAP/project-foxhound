@@ -98,10 +98,6 @@ bool Gecko_MediaFeatures_IsResourceDocument(const Document* aDocument) {
   return aDocument->IsResourceDoc();
 }
 
-bool Gecko_MediaFeatures_ShouldAvoidNativeTheme(const Document* aDocument) {
-  return aDocument->ShouldAvoidNativeTheme();
-}
-
 bool Gecko_MediaFeatures_UseOverlayScrollbars(const Document* aDocument) {
   nsPresContext* pc = aDocument->GetPresContext();
   return pc && pc->UseOverlayScrollbars();
@@ -402,4 +398,10 @@ PointerCapabilities Gecko_MediaFeatures_AllPointerCapabilities(
     const Document* aDocument) {
   return GetPointerCapabilities(aDocument,
                                 LookAndFeel::IntID::AllPointerCapabilities);
+}
+
+StyleGtkThemeFamily Gecko_MediaFeatures_GtkThemeFamily() {
+  static_assert(int32_t(StyleGtkThemeFamily::Unknown) == 0);
+  return StyleGtkThemeFamily(
+      LookAndFeel::GetInt(LookAndFeel::IntID::GTKThemeFamily));
 }

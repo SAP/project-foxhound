@@ -1305,12 +1305,6 @@ def _subtreeUsesShmem(p):
 
 
 class Protocol(ipdl.ast.Protocol):
-    def managerInterfaceType(self, ptr=False):
-        return Type("mozilla::ipc::IProtocol", ptr=ptr)
-
-    def openedProtocolInterfaceType(self, ptr=False):
-        return Type("mozilla::ipc::IToplevelProtocol", ptr=ptr)
-
     def _ipdlmgrtype(self):
         assert 1 == len(self.decl.type.managers)
         for mgr in self.decl.type.managers:
@@ -3625,11 +3619,12 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 hasAsyncReturns = True
                 break
 
-        inherits = []
         if ptype.isToplevel():
-            inherits.append(Inherit(p.openedProtocolInterfaceType(), viz="public"))
+            inherits = [Inherit(Type("mozilla::ipc::IToplevelProtocol"))]
+        elif ptype.isRefcounted():
+            inherits = [Inherit(Type("mozilla::ipc::IRefCountedProtocol"))]
         else:
-            inherits.append(Inherit(p.managerInterfaceType(), viz="public"))
+            inherits = [Inherit(Type("mozilla::ipc::IProtocol"))]
 
         if ptype.isToplevel() and self.side == "parent":
             self.hdrfile.addthings(
@@ -3812,11 +3807,12 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 )
             ]
         else:
-            ctor.memberinits = [
-                ExprMemberInit(
-                    ExprVar("mozilla::ipc::IProtocol"), [_protocolId(ptype), side]
-                )
-            ]
+            baseCtor = (
+                ExprVar("mozilla::ipc::IRefCountedProtocol")
+                if ptype.isRefcounted()
+                else ExprVar("mozilla::ipc::IProtocol")
+            )
+            ctor.memberinits = [ExprMemberInit(baseCtor, [_protocolId(ptype), side])]
 
         ctor.addcode("MOZ_COUNT_CTOR(${clsname});\n", clsname=self.clsname)
         self.cls.addstmts([ctor, Whitespace.NL])
@@ -3829,20 +3825,46 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
         self.cls.addstmts([dtor, Whitespace.NL])
 
-        if ptype.isRefcounted():
-            if not ptype.isToplevel():
-                self.cls.addcode(
-                    """
-                    NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
-                    """
-                )
-            self.cls.addstmt(Label.PROTECTED)
-            self.cls.addcode(
-                """
-                void ActorAlloc() final { AddRef(); }
-                void ActorDealloc() final { Release(); }
-                """
+        # ActorAlloc() and ActorDealloc()
+        actoralloc = MethodDefn(MethodDecl("ActorAlloc", methodspec=MethodSpec.FINAL))
+        actordealloc = MethodDefn(
+            MethodDecl("ActorDealloc", methodspec=MethodSpec.FINAL)
+        )
+
+        # Assert process type in ActorAlloc
+        procattr = p.procAttribute(self.side)
+        if procattr not in ("any", None):
+            if procattr == "anychild":
+                procattr_assertion = "!XRE_IsParentProcess()"
+            elif procattr == "anydom":
+                procattr_assertion = "XRE_IsParentProcess() || XRE_IsContentProcess()"
+            elif procattr == "compositor":
+                procattr_assertion = "XRE_IsParentProcess() || XRE_IsGPUProcess()"
+            else:
+                procattr_assertion = "XRE_Is%sProcess()" % procattr
+            actoralloc.addcode(
+                "MOZ_RELEASE_ASSERT(${assertion}, ${message});\n",
+                assertion=procattr_assertion,
+                message=ExprLiteral.String("Invalid process for `%s'" % self.clsname),
             )
+
+        if ptype.isRefcounted():
+            # Perform AddRef/Release in ActorAlloc/ActorDealloc if refcounted.
+            actoralloc.addcode("AddRef();\n")
+            actordealloc.addcode("Release();\n")
+        elif not ptype.isToplevel():
+            # If we're a managed actor with [ManualDealloc], use DeallocManagee
+            # to invoke the relevant Dealloc method.
+            actordealloc.addcode(
+                """
+                if (Manager()) {
+                    Manager()->DeallocManagee(${protocolId}, this);
+                }
+                """,
+                protocolId=_protocolId(ptype),
+            )
+
+        self.cls.addstmts([Label.PROTECTED, actoralloc, actordealloc])
 
         self.cls.addstmt(Label.PUBLIC)
         if ptype.hasOtherPid():

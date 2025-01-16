@@ -213,6 +213,12 @@ skip-if = [
 ["test_ext_contentscript_permission.html"]
 skip-if = ["tsan"] # Times out on TSan, bug 1612707
 
+["test_ext_contentscript_securecontext.html"]
+skip-if = [
+  "http3",
+  "http2",
+]
+
 ["test_ext_cookies.html"]
 skip-if = [
   "os == 'android'", # Bug 1845615
@@ -478,7 +484,6 @@ skip-if = [
 ]
 
 ["test_ext_unlimitedStorage.html"]
-skip-if = ["os == 'android'"] # Bug 1845911 (GeckoView doesn't yet account for persistent-storage to be granted for extension requesting unlimitedStorage permission)
 
 ["test_ext_web_accessible_incognito.html"]
 skip-if = ["os == 'android'"] # bug 1397615, bug 1513544

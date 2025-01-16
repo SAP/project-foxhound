@@ -60,6 +60,8 @@
 #include "nsISharePicker.h"
 #include "nsIURIMutator.h"
 #include "nsIWebProgressListener.h"
+#include "nsScriptSecurityManager.h"
+#include "nsIOService.h"
 
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
@@ -92,7 +94,6 @@ WindowGlobalParent::WindowGlobalParent(
     uint64_t aOuterWindowId, FieldValues&& aInit)
     : WindowContext(aBrowsingContext, aInnerWindowId, aOuterWindowId,
                     std::move(aInit)),
-      mIsInitialDocument(false),
       mSandboxFlags(0),
       mDocumentHasLoaded(false),
       mDocumentHasUserInteracted(false),
@@ -119,7 +120,7 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::CreateDisconnected(
                              aInit.context().mOuterWindowId, std::move(fields));
   wgp->mDocumentPrincipal = aInit.principal();
   wgp->mDocumentURI = aInit.documentURI();
-  wgp->mIsInitialDocument = aInit.isInitialDocument();
+  wgp->mIsInitialDocument = Some(aInit.isInitialDocument());
   wgp->mBlockAllMixedContent = aInit.blockAllMixedContent();
   wgp->mUpgradeInsecureRequests = aInit.upgradeInsecureRequests();
   wgp->mSandboxFlags = aInit.sandboxFlags();
@@ -382,7 +383,46 @@ mozilla::ipc::IPCResult WindowGlobalParent::RecvInternalLoad(
 
 IPCResult WindowGlobalParent::RecvUpdateDocumentURI(nsIURI* aURI) {
   // XXX(nika): Assert that the URI change was one which makes sense (either
-  // about:blank -> a real URI, or a legal push/popstate URI change?)
+  // about:blank -> a real URI, or a legal push/popstate URI change):
+  if (StaticPrefs::dom_security_setdocumenturi()) {
+    nsAutoCString scheme;
+    if (NS_FAILED(aURI->GetScheme(scheme))) {
+      return IPC_FAIL(this, "Setting DocumentURI without scheme.");
+    }
+
+    nsCOMPtr<nsIIOService> ios = do_GetIOService();
+    if (!ios) {
+      return IPC_FAIL(this, "Cannot get IOService");
+    }
+    nsCOMPtr<nsIProtocolHandler> handler;
+    ios->GetProtocolHandler(scheme.get(), getter_AddRefs(handler));
+    if (!handler) {
+      return IPC_FAIL(this, "Setting DocumentURI with unknown protocol.");
+    }
+
+    auto isLoadableViaInternet = [](nsIURI* uri) {
+      return (uri && (net::SchemeIsHTTP(uri) || net::SchemeIsHTTPS(uri)));
+    };
+
+    if (isLoadableViaInternet(aURI)) {
+      nsCOMPtr<nsIURI> principalURI = mDocumentPrincipal->GetURI();
+      if (mDocumentPrincipal->GetIsNullPrincipal()) {
+        nsCOMPtr<nsIPrincipal> precursor =
+            mDocumentPrincipal->GetPrecursorPrincipal();
+        if (precursor) {
+          principalURI = precursor->GetURI();
+        }
+      }
+
+      if (isLoadableViaInternet(principalURI) &&
+          !nsScriptSecurityManager::SecurityCompareURIs(principalURI, aURI)) {
+        return IPC_FAIL(this,
+                        "Setting DocumentURI with a different Origin than "
+                        "principal URI");
+      }
+    }
+  }
+
   mDocumentURI = aURI;
   return IPC_OK();
 }
@@ -621,6 +661,23 @@ bool WindowGlobalParent::IsCurrentGlobal() {
   return CanSend() && BrowsingContext()->GetCurrentWindowGlobal() == this;
 }
 
+bool WindowGlobalParent::IsActiveInTab() {
+  if (!CanSend()) {
+    return false;
+  }
+
+  CanonicalBrowsingContext* bc = BrowsingContext();
+  if (!bc || bc->GetCurrentWindowGlobal() != this) {
+    return false;
+  }
+
+  // We check the top BC so we don't need to worry about getting a stale value.
+  // That may not be necessary.
+  MOZ_ASSERT(bc->Top()->IsInBFCache() == bc->IsInBFCache(),
+             "BFCache bit out of sync?");
+  return bc->AncestorsAreCurrent() && !bc->Top()->IsInBFCache();
+}
+
 namespace {
 
 class ShareHandler final : public PromiseNativeHandler {
@@ -731,7 +788,7 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
                                        public nsITimerCallback {
  public:
   CheckPermitUnloadRequest(WindowGlobalParent* aWGP, bool aHasInProcessBlocker,
-                           nsIContentViewer::PermitUnloadAction aAction,
+                           nsIDocumentViewer::PermitUnloadAction aAction,
                            std::function<void(bool)>&& aResolver)
       : mResolver(std::move(aResolver)),
         mWGP(aWGP),
@@ -817,10 +874,10 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
 
     auto action = mAction;
     if (StaticPrefs::dom_disable_beforeunload()) {
-      action = nsIContentViewer::eDontPromptAndUnload;
+      action = nsIDocumentViewer::eDontPromptAndUnload;
     }
-    if (action != nsIContentViewer::ePrompt) {
-      SendReply(action == nsIContentViewer::eDontPromptAndUnload);
+    if (action != nsIDocumentViewer::ePrompt) {
+      SendReply(action == nsIDocumentViewer::eDontPromptAndUnload);
       return;
     }
 
@@ -889,7 +946,7 @@ class CheckPermitUnloadRequest final : public PromiseNativeHandler,
 
   uint32_t mPendingRequests = 0;
 
-  nsIContentViewer::PermitUnloadAction mAction;
+  nsIDocumentViewer::PermitUnloadAction mAction;
 
   State mState = State::UNINITIALIZED;
 
@@ -925,7 +982,7 @@ already_AddRefed<Promise> WindowGlobalParent::PermitUnload(
 
   auto request = MakeRefPtr<CheckPermitUnloadRequest>(
       this, /* aHasInProcessBlocker */ false,
-      nsIContentViewer::PermitUnloadAction(aAction),
+      nsIDocumentViewer::PermitUnloadAction(aAction),
       [promise](bool aAllow) { promise->MaybeResolve(aAllow); });
   request->Run(/* aIgnoreProcess */ nullptr, aTimeout);
 
@@ -935,7 +992,7 @@ already_AddRefed<Promise> WindowGlobalParent::PermitUnload(
 void WindowGlobalParent::PermitUnload(std::function<void(bool)>&& aResolver) {
   RefPtr<CheckPermitUnloadRequest> request = new CheckPermitUnloadRequest(
       this, /* aHasInProcessBlocker */ false,
-      nsIContentViewer::PermitUnloadAction::ePrompt, std::move(aResolver));
+      nsIDocumentViewer::PermitUnloadAction::ePrompt, std::move(aResolver));
   request->Run();
 }
 

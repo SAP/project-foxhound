@@ -124,7 +124,7 @@ void StreamList::NoteClosedAll() {
 
 void StreamList::CloseAll() {
   NS_ASSERT_OWNINGTHREAD(StreamList);
-  if (mStreamControl) {
+  if (mStreamControl && mStreamControl->CanSend()) {
     auto* streamControl = std::exchange(mStreamControl, nullptr);
 
     streamControl->CloseAll();
@@ -132,6 +132,17 @@ void StreamList::CloseAll() {
     mStreamControl = std::exchange(streamControl, nullptr);
 
     mStreamControl->Shutdown();
+  } else {
+    // We cannot interact with the child, let's just clear our lists of
+    // streams to unblock shutdown.
+    if (NS_WARN_IF(mStreamControl)) {
+      // TODO: Check if this case is actually possible. We might see a late
+      // delivery of the CSCP::ActorDestroy? What would that mean for CanSend?
+      mStreamControl->LostIPCCleanup(SafeRefPtrFromThis());
+      mStreamControl = nullptr;
+    } else {
+      NoteClosedAll();
+    }
   }
 }
 
@@ -143,6 +154,31 @@ void StreamList::Cancel() {
 bool StreamList::MatchesCacheId(CacheId aCacheId) const {
   NS_ASSERT_OWNINGTHREAD(StreamList);
   return aCacheId == mCacheId;
+}
+
+void StreamList::DoStringify(nsACString& aData) {
+  aData.Append("StreamList "_ns + kStringifyStartInstance +
+               //
+               "List:"_ns +
+               IntToCString(static_cast<uint64_t>(mList.Length())) +
+               kStringifyDelimiter +
+               //
+               "Activated:"_ns + IntToCString(mActivated) + ")"_ns +
+               kStringifyDelimiter +
+               //
+               "Manager:"_ns + IntToCString(static_cast<bool>(mManager)));
+  if (mManager) {
+    aData.Append(" "_ns);
+    mManager->Stringify(aData);
+  }
+  aData.Append(kStringifyDelimiter +
+               //
+               "Context:"_ns + IntToCString(static_cast<bool>(mContext)));
+  if (mContext) {
+    aData.Append(" "_ns);
+    mContext->Stringify(aData);
+  }
+  aData.Append(kStringifyEndInstance);
 }
 
 StreamList::~StreamList() {

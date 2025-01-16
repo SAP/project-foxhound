@@ -36,6 +36,7 @@
 #  include "builtin/intl/NumberFormat.h"
 #  include "builtin/intl/PluralRules.h"
 #  include "builtin/intl/RelativeTimeFormat.h"
+#  include "builtin/intl/Segmenter.h"
 #endif
 #include "builtin/MapObject.h"
 #include "builtin/Object.h"
@@ -2340,10 +2341,21 @@ static const JSFunctionSpec intrinsic_functions[] = {
           CallNonGenericSelfhostedMethod<Is<PluralRulesObject>>, 2, 0),
     JS_FN("intl_CallRelativeTimeFormatMethodIfWrapped",
           CallNonGenericSelfhostedMethod<Is<RelativeTimeFormatObject>>, 2, 0),
+    JS_FN("intl_CallSegmentIteratorMethodIfWrapped",
+          CallNonGenericSelfhostedMethod<Is<SegmentIteratorObject>>, 2, 0),
+    JS_FN("intl_CallSegmenterMethodIfWrapped",
+          CallNonGenericSelfhostedMethod<Is<SegmenterObject>>, 2, 0),
+    JS_FN("intl_CallSegmentsMethodIfWrapped",
+          CallNonGenericSelfhostedMethod<Is<SegmentsObject>>, 2, 0),
     JS_FN("intl_Collator", intl_Collator, 2, 0),
     JS_FN("intl_CompareStrings", intl_CompareStrings, 3, 0),
     JS_FN("intl_ComputeDisplayName", intl_ComputeDisplayName, 6, 0),
     JS_FN("intl_CreateDateTimeFormat", intl_CreateDateTimeFormat, 4, 0),
+    JS_FN("intl_CreateSegmentIterator", intl_CreateSegmentIterator, 1, 0),
+    JS_FN("intl_CreateSegmentsObject", intl_CreateSegmentsObject, 2, 0),
+    JS_FN("intl_FindNextSegmentBoundaries", intl_FindNextSegmentBoundaries, 1,
+          0),
+    JS_FN("intl_FindSegmentBoundaries", intl_FindSegmentBoundaries, 2, 0),
     JS_FN("intl_FormatDateTime", intl_FormatDateTime, 2, 0),
     JS_FN("intl_FormatDateTimeRange", intl_FormatDateTimeRange, 4, 0),
     JS_FN("intl_FormatList", intl_FormatList, 3, 0),
@@ -2373,6 +2385,15 @@ static const JSFunctionSpec intrinsic_functions[] = {
     JS_INLINABLE_FN("intl_GuardToRelativeTimeFormat",
                     intrinsic_GuardToBuiltin<RelativeTimeFormatObject>, 1, 0,
                     IntlGuardToRelativeTimeFormat),
+    JS_INLINABLE_FN("intl_GuardToSegmentIterator",
+                    intrinsic_GuardToBuiltin<SegmentIteratorObject>, 1, 0,
+                    IntlGuardToSegmentIterator),
+    JS_INLINABLE_FN("intl_GuardToSegmenter",
+                    intrinsic_GuardToBuiltin<SegmenterObject>, 1, 0,
+                    IntlGuardToSegmenter),
+    JS_INLINABLE_FN("intl_GuardToSegments",
+                    intrinsic_GuardToBuiltin<SegmentsObject>, 1, 0,
+                    IntlGuardToSegments),
     JS_FN("intl_IsRuntimeDefaultLocale", intrinsic_IsRuntimeDefaultLocale, 1,
           0),
     JS_FN("intl_IsValidTimeZoneName", intl_IsValidTimeZoneName, 1, 0),

@@ -77,14 +77,12 @@ nsComboboxControlFrame::RedisplayTextEvent::Run() {
 // drop-down mode.
 
 nsComboboxControlFrame* NS_NewComboboxControlFrame(PresShell* aPresShell,
-                                                   ComputedStyle* aStyle,
-                                                   nsFrameState aStateFlags) {
+                                                   ComputedStyle* aStyle) {
   nsComboboxControlFrame* it = new (aPresShell)
       nsComboboxControlFrame(aStyle, aPresShell->GetPresContext());
 
   if (it) {
-    // set the state flags (if any are provided)
-    it->AddStateBits(aStateFlags);
+    it->AddStateBits(NS_BLOCK_STATIC_BFC);
   }
 
   return it;
@@ -744,11 +742,6 @@ class nsComboboxDisplayFrame final : public nsBlockFrame {
     return MakeFrameName(u"ComboboxDisplay"_ns, aResult);
   }
 #endif
-
-  bool IsFrameOfType(uint32_t aFlags) const final {
-    return nsBlockFrame::IsFrameOfType(aFlags &
-                                       ~(nsIFrame::eReplacedContainsBlock));
-  }
 
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
               const ReflowInput& aReflowInput, nsReflowStatus& aStatus) final;

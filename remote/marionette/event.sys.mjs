@@ -13,10 +13,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /** Provides functionality for creating and sending DOM events. */
 export const event = {};
 
-ChromeUtils.defineLazyGetter(lazy, "dblclickTimer", () => {
-  return Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-});
-
 const _eventUtils = new WeakMap();
 
 function _getEventUtils(win) {
@@ -35,9 +31,6 @@ function _getEventUtils(win) {
   }
   return _eventUtils.get(win);
 }
-
-//  Max interval between two clicks that should result in a dblclick (in ms)
-const DBLCLICK_INTERVAL = 640;
 
 event.MouseEvents = {
   click: 0,
@@ -64,33 +57,6 @@ event.MouseButton = {
   },
   isSecondary(button) {
     return button === 2;
-  },
-};
-
-event.DoubleClickTracker = {
-  firstClick: false,
-  isClicked() {
-    return event.DoubleClickTracker.firstClick;
-  },
-  setClick() {
-    if (!event.DoubleClickTracker.firstClick) {
-      event.DoubleClickTracker.firstClick = true;
-      event.DoubleClickTracker.startTimer();
-    }
-  },
-  resetClick() {
-    event.DoubleClickTracker.firstClick = false;
-    event.DoubleClickTracker.cancelTimer();
-  },
-  startTimer() {
-    lazy.dblclickTimer.initWithCallback(
-      event.DoubleClickTracker.resetClick,
-      DBLCLICK_INTERVAL,
-      Ci.nsITimer.TYPE_ONE_SHOT
-    );
-  },
-  cancelTimer() {
-    lazy.dblclickTimer.cancel();
   },
 };
 
@@ -261,8 +227,9 @@ event.sendKeys = function (keyString, win) {
     modifiers[modifier] = false;
   }
 
-  for (let i = 0; i < keyString.length; i++) {
-    let keyValue = keyString.charAt(i);
+  for (let keyValue of keyString) {
+    // keyValue will contain enough to represent the UTF-16 encoding of a single abstract character
+    // i.e. either a single scalar value, or a surrogate pair
     if (modifiers.shiftKey) {
       keyValue = lazy.keyData.getShiftedKey(keyValue);
     }

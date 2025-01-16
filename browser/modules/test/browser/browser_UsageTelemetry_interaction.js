@@ -76,6 +76,7 @@ add_task(async function toolbarButtons() {
       CustomizableUI.createWidget({
         // In CSS identifiers cannot start with a number but CustomizableUI accepts that.
         id: "12foo",
+        label: "12foo",
         onCreated: resolve,
         defaultArea: "nav-bar",
       });
@@ -94,9 +95,17 @@ add_task(async function toolbarButtons() {
       });
     }
 
+    // We intentionally turn off a11y_checks for these click events, because the
+    // test is checking the telemetry functionality and the following 3 clicks
+    // are targeting disabled controls to test the changes in scalars (for more
+    // refer to the bug 1864576 comment 2 and bug 1854999 comment 4):
+    AccessibilityUtils.setEnv({
+      mustBeEnabled: false,
+    });
     click("stop-reload-button");
     click("back-button");
     click("back-button");
+    AccessibilityUtils.resetEnv();
 
     // Make sure the all tabs panel is in the document.
     gTabsPanel.initElements();
@@ -709,26 +718,6 @@ add_task(async function preferences() {
       {},
       gBrowser.selectedBrowser.browsingContext
     );
-    await BrowserTestUtils.waitForCondition(() =>
-      gBrowser.selectedBrowser.contentDocument.getElementById(
-        "searchBarShownRadio"
-      )
-    );
-
-    await BrowserTestUtils.synthesizeMouseAtCenter(
-      "#searchBarShownRadio",
-      {},
-      gBrowser.selectedBrowser.browsingContext
-    );
-
-    gBrowser.selectedBrowser.contentDocument
-      .getElementById("openLocationBarPrivacyPreferences")
-      .scrollIntoView();
-    await BrowserTestUtils.synthesizeMouseAtCenter(
-      "#openLocationBarPrivacyPreferences",
-      {},
-      gBrowser.selectedBrowser.browsingContext
-    );
 
     await BrowserTestUtils.synthesizeMouseAtCenter(
       "#category-privacy",
@@ -759,10 +748,6 @@ add_task(async function preferences() {
       },
       preferences_panePrivacy: {
         contentBlockingLearnMore: 1,
-      },
-      preferences_paneSearch: {
-        searchBarShownRadio: 1,
-        openLocationBarPrivacyPreferences: 1,
       },
     });
   });

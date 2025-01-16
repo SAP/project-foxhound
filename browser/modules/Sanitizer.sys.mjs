@@ -3,6 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
@@ -14,6 +15,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrincipalsCollector: "resource://gre/modules/PrincipalsCollector.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "useOldClearHistoryDialog",
+  "privacy.sanitize.useOldClearHistoryDialog",
+  false
+);
 
 var logConsole;
 function log(msg) {
@@ -51,6 +59,7 @@ export var Sanitizer = {
    */
   PREF_CPD_BRANCH: "privacy.cpd.",
   PREF_SHUTDOWN_BRANCH: "privacy.clearOnShutdown.",
+  PREF_SHUTDOWN_V2_BRANCH: "privacy.clearOnShutdown_v2.",
 
   /**
    * The fallback timestamp used when no argument is given to
@@ -78,6 +87,21 @@ export var Sanitizer = {
   TIMESPAN_24HOURS: 6,
 
   /**
+   * Mapping time span constants to get total time in ms from the selected
+   * time spans
+   */
+  timeSpanMsMap: {
+    TIMESPAN_5MIN: 300000, // 5*60*1000
+    TIMESPAN_HOUR: 3600000, // 60*60*1000
+    TIMESPAN_2HOURS: 7200000, // 2*60*60*1000
+    TIMESPAN_4HOURS: 14400000, // 4*60*60*1000
+    TIMESPAN_24HOURS: 86400000, // 24*60*60*1000
+    get TIMESPAN_TODAY() {
+      return Date.now() - new Date().setHours(0, 0, 0, 0);
+    }, // time spent today
+  },
+
+  /**
    * Whether we should sanitize on shutdown.
    * When this is set, a pending sanitization should also be added and removed
    * when shutdown sanitization is complete. This allows to retry incomplete
@@ -96,9 +120,13 @@ export var Sanitizer = {
    *
    * @param parentWindow the browser window to use as parent for the created
    *        dialog.
+   * @param {string} mode - flag to let the dialog know if it is opened
+   *        using the clear on shutdown (clearOnShutdown) settings option
+   *        in about:preferences or in a clear site data context (clearSiteData)
+   *
    * @throws if parentWindow is undefined or doesn't have a gDialogBox.
    */
-  showUI(parentWindow) {
+  showUI(parentWindow, mode) {
     // Treat the hidden window as not being a parent window:
     if (
       parentWindow?.document.documentURI ==
@@ -106,17 +134,23 @@ export var Sanitizer = {
     ) {
       parentWindow = null;
     }
+
+    let dialogFile = lazy.useOldClearHistoryDialog
+      ? "sanitize.xhtml"
+      : "sanitize_v2.xhtml";
+
     if (parentWindow?.gDialogBox) {
-      parentWindow.gDialogBox.open("chrome://browser/content/sanitize.xhtml", {
+      parentWindow.gDialogBox.open(`chrome://browser/content/${dialogFile}`, {
         inBrowserWindow: true,
+        mode,
       });
     } else {
       Services.ww.openWindow(
         parentWindow,
-        "chrome://browser/content/sanitize.xhtml",
+        `chrome://browser/content/${dialogFile}`,
         "Sanitize",
         "chrome,titlebar,dialog,centerscreen,modal",
-        { needNativeUI: true }
+        { needNativeUI: true, mode }
       );
     }
   },
@@ -714,6 +748,137 @@ export var Sanitizer = {
     pluginData: {
       async clear(range) {},
     },
+
+    // Combine History and Form Data clearing for the
+    // new clear history dialog box.
+    historyFormDataAndDownloads: {
+      async clear(range, { progress }) {
+        progress.step = "getAllPrincipals";
+        let principals = await gPrincipalsCollector.getAllPrincipals(progress);
+        let refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_HISTORY", refObj);
+        progress.step = "clearing browsing history";
+        await clearData(
+          range,
+          Ci.nsIClearDataService.CLEAR_HISTORY |
+            Ci.nsIClearDataService.CLEAR_SESSION_HISTORY |
+            Ci.nsIClearDataService.CLEAR_CONTENT_BLOCKING_RECORDS
+        );
+
+        // storageAccessAPI permissions record every site that the user
+        // interacted with and thus mirror history quite closely. It makes
+        // sense to clear them when we clear history. However, since their absence
+        // indicates that we can purge cookies and site data for tracking origins without
+        // user interaction, we need to ensure that we only delete those permissions that
+        // do not have any existing storage.
+        progress.step = "clearing user interaction";
+        await new Promise(resolve => {
+          Services.clearData.deleteUserInteractionForClearingHistory(
+            principals,
+            range ? range[0] : 0,
+            resolve
+          );
+        });
+        TelemetryStopwatch.finish("FX_SANITIZE_HISTORY", refObj);
+
+        // Clear form data
+        let seenException;
+        refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_FORMDATA", refObj);
+        try {
+          // Clear undo history of all search bars.
+          for (let currentWindow of Services.wm.getEnumerator(
+            "navigator:browser"
+          )) {
+            let currentDocument = currentWindow.document;
+
+            // searchBar may not exist if it's in the customize mode.
+            let searchBar = currentDocument.getElementById("searchbar");
+            if (searchBar) {
+              let input = searchBar.textbox;
+              input.value = "";
+              input.editor?.clearUndoRedo();
+            }
+
+            let tabBrowser = currentWindow.gBrowser;
+            if (!tabBrowser) {
+              // No tab browser? This means that it's too early during startup (typically,
+              // Session Restore hasn't completed yet). Since we don't have find
+              // bars at that stage and since Session Restore will not restore
+              // find bars further down during startup, we have nothing to clear.
+              continue;
+            }
+            for (let tab of tabBrowser.tabs) {
+              if (tabBrowser.isFindBarInitialized(tab)) {
+                tabBrowser.getCachedFindBar(tab).clear();
+              }
+            }
+            // Clear any saved find value
+            tabBrowser._lastFindValue = "";
+          }
+        } catch (ex) {
+          seenException = ex;
+        }
+
+        try {
+          let change = { op: "remove" };
+          if (range) {
+            [change.firstUsedStart, change.firstUsedEnd] = range;
+          }
+          await lazy.FormHistory.update(change).catch(e => {
+            seenException = new Error("Error " + e.result + ": " + e.message);
+          });
+        } catch (ex) {
+          seenException = ex;
+        }
+
+        TelemetryStopwatch.finish("FX_SANITIZE_FORMDATA", refObj);
+        if (seenException) {
+          throw seenException;
+        }
+
+        // clear Downloads
+        refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_DOWNLOADS", refObj);
+        await clearData(range, Ci.nsIClearDataService.CLEAR_DOWNLOADS);
+        TelemetryStopwatch.finish("FX_SANITIZE_DOWNLOADS", refObj);
+      },
+    },
+
+    cookiesAndStorage: {
+      async clear(range, { progress }, clearHonoringExceptions) {
+        let refObj = {};
+        TelemetryStopwatch.start("FX_SANITIZE_COOKIES_2", refObj);
+        // This is true if called by sanitizeOnShutdown.
+        // On shutdown we clear by principal to be able to honor the users exceptions
+        if (clearHonoringExceptions) {
+          progress.step = "getAllPrincipals";
+          let principalsForShutdownClearing =
+            await gPrincipalsCollector.getAllPrincipals(progress);
+          await maybeSanitizeSessionPrincipals(
+            progress,
+            principalsForShutdownClearing,
+            Ci.nsIClearDataService.CLEAR_COOKIES |
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
+              Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
+              Ci.nsIClearDataService.CLEAR_AUTH_CACHE
+          );
+        } else {
+          // Not on shutdown
+          await clearData(
+            range,
+            Ci.nsIClearDataService.CLEAR_COOKIES |
+              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
+              Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
+              Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
+              Ci.nsIClearDataService.CLEAR_AUTH_CACHE
+          );
+        }
+        await clearData(range, Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES);
+        TelemetryStopwatch.finish("FX_SANITIZE_COOKIES_2", refObj);
+      },
+    },
   },
 };
 
@@ -825,46 +990,68 @@ async function sanitizeInternal(items, aItemsToClear, options) {
 
 async function sanitizeOnShutdown(progress) {
   log("Sanitizing on shutdown");
-  progress.sanitizationPrefs = {
-    privacy_sanitize_sanitizeOnShutdown: Services.prefs.getBoolPref(
-      "privacy.sanitize.sanitizeOnShutdown"
-    ),
-    privacy_clearOnShutdown_cookies: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.cookies"
-    ),
-    privacy_clearOnShutdown_history: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.history"
-    ),
-    privacy_clearOnShutdown_formdata: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.formdata"
-    ),
-    privacy_clearOnShutdown_downloads: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.downloads"
-    ),
-    privacy_clearOnShutdown_cache: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.cache"
-    ),
-    privacy_clearOnShutdown_sessions: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.sessions"
-    ),
-    privacy_clearOnShutdown_offlineApps: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.offlineApps"
-    ),
-    privacy_clearOnShutdown_siteSettings: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.siteSettings"
-    ),
-    privacy_clearOnShutdown_openWindows: Services.prefs.getBoolPref(
-      "privacy.clearOnShutdown.openWindows"
-    ),
-  };
+  if (lazy.useOldClearHistoryDialog) {
+    progress.sanitizationPrefs = {
+      privacy_sanitize_sanitizeOnShutdown: Services.prefs.getBoolPref(
+        "privacy.sanitize.sanitizeOnShutdown"
+      ),
+      privacy_clearOnShutdown_cookies: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.cookies"
+      ),
+      privacy_clearOnShutdown_history: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.history"
+      ),
+      privacy_clearOnShutdown_formdata: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.formdata"
+      ),
+      privacy_clearOnShutdown_downloads: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.downloads"
+      ),
+      privacy_clearOnShutdown_cache: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.cache"
+      ),
+      privacy_clearOnShutdown_sessions: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.sessions"
+      ),
+      privacy_clearOnShutdown_offlineApps: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.offlineApps"
+      ),
+      privacy_clearOnShutdown_siteSettings: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.siteSettings"
+      ),
+      privacy_clearOnShutdown_openWindows: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown.openWindows"
+      ),
+    };
+  } else {
+    progress.sanitizationPrefs = {
+      privacy_sanitize_sanitizeOnShutdown: Services.prefs.getBoolPref(
+        "privacy.sanitize.sanitizeOnShutdown"
+      ),
+      privacy_clearOnShutdown_v2_cookiesAndStorage: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown_v2.cookiesAndStorage"
+      ),
+      privacy_clearOnShutdown_v2_historyFormDataAndDownloads:
+        Services.prefs.getBoolPref(
+          "privacy.clearOnShutdown_v2.historyFormDataAndDownloads"
+        ),
+      privacy_clearOnShutdown_v2_cache: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown_v2.cache"
+      ),
+      privacy_clearOnShutdown_v2_siteSettings: Services.prefs.getBoolPref(
+        "privacy.clearOnShutdown_v2.siteSettings"
+      ),
+    };
+  }
 
   let needsSyncSavePrefs = false;
   if (Sanitizer.shouldSanitizeOnShutdown) {
     // Need to sanitize upon shutdown
     progress.advancement = "shutdown-cleaner";
-    let itemsToClear = getItemsToClearFromPrefBranch(
-      Sanitizer.PREF_SHUTDOWN_BRANCH
-    );
+    let shutdownBranch = lazy.useOldClearHistoryDialog
+      ? Sanitizer.PREF_SHUTDOWN_BRANCH
+      : Sanitizer.PREF_SHUTDOWN_V2_BRANCH;
+    let itemsToClear = getItemsToClearFromPrefBranch(shutdownBranch);
     await Sanitizer.sanitize(itemsToClear, { progress });
 
     // We didn't crash during shutdown sanitization, so annotate it to avoid

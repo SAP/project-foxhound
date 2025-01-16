@@ -50,7 +50,6 @@ import java.lang.Boolean;
 import java.lang.CharSequence;
 import java.lang.Class;
 import java.lang.Comparable;
-import java.lang.Deprecated;
 import java.lang.Double;
 import java.lang.Exception;
 import java.lang.Float;
@@ -85,7 +84,6 @@ import org.mozilla.geckoview.CompositorController;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ContentBlockingController;
 import org.mozilla.geckoview.CrashHandler;
-import org.mozilla.geckoview.DeprecationSchedule;
 import org.mozilla.geckoview.ExperimentDelegate;
 import org.mozilla.geckoview.GeckoDisplay;
 import org.mozilla.geckoview.GeckoResult;
@@ -539,6 +537,7 @@ package org.mozilla.geckoview {
     method public int getCookieBehavior();
     method public int getCookieBehaviorPrivateMode();
     method public boolean getCookiePurging();
+    method @NonNull public Boolean getEmailTrackerBlockingPrivateBrowsingEnabled();
     method public int getEnhancedTrackingProtectionLevel();
     method @NonNull public String[] getQueryParameterStrippingAllowList();
     method public boolean getQueryParameterStrippingEnabled();
@@ -558,6 +557,7 @@ package org.mozilla.geckoview {
     method @NonNull public ContentBlocking.Settings setCookieBehavior(int);
     method @NonNull public ContentBlocking.Settings setCookieBehaviorPrivateMode(int);
     method @NonNull public ContentBlocking.Settings setCookiePurging(boolean);
+    method @NonNull public ContentBlocking.Settings setEmailTrackerBlockingPrivateBrowsing(boolean);
     method @NonNull public ContentBlocking.Settings setEnhancedTrackingProtectionLevel(int);
     method @NonNull public ContentBlocking.Settings setQueryParameterStrippingAllowList(@NonNull String...);
     method @NonNull public ContentBlocking.Settings setQueryParameterStrippingEnabled(boolean);
@@ -582,6 +582,7 @@ package org.mozilla.geckoview {
     method @NonNull public ContentBlocking.Settings.Builder cookieBehavior(int);
     method @NonNull public ContentBlocking.Settings.Builder cookieBehaviorPrivateMode(int);
     method @NonNull public ContentBlocking.Settings.Builder cookiePurging(boolean);
+    method @NonNull public ContentBlocking.Settings.Builder emailTrackerBlockingPrivateMode(boolean);
     method @NonNull public ContentBlocking.Settings.Builder enhancedTrackingProtectionLevel(int);
     method @NonNull public ContentBlocking.Settings.Builder queryParameterStrippingAllowList(@NonNull String...);
     method @NonNull public ContentBlocking.Settings.Builder queryParameterStrippingEnabled(boolean);
@@ -870,6 +871,8 @@ package org.mozilla.geckoview {
     method public boolean getForceEnableAccessibility();
     method public boolean getForceUserScalableEnabled();
     method public int getGlMsaaLevel();
+    method public boolean getGlobalPrivacyControl();
+    method public boolean getGlobalPrivacyControlPrivateMode();
     method public boolean getInputAutoZoomEnabled();
     method public boolean getJavaScriptEnabled();
     method @Nullable public String[] getLocales();
@@ -899,6 +902,7 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings setForceEnableAccessibility(boolean);
     method @NonNull public GeckoRuntimeSettings setForceUserScalableEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setGlMsaaLevel(int);
+    method @NonNull public GeckoRuntimeSettings setGlobalPrivacyControl(boolean);
     method @NonNull public GeckoRuntimeSettings setInputAutoZoomEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setJavaScriptEnabled(boolean);
     method public void setLocales(@Nullable String[]);
@@ -942,6 +946,7 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings.Builder fontSizeFactor(float);
     method @NonNull public GeckoRuntimeSettings.Builder forceUserScalableEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder glMsaaLevel(int);
+    method @NonNull public GeckoRuntimeSettings.Builder globalPrivacyControlEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder inputAutoZoomEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder javaScriptEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder locales(@Nullable String[]);
@@ -1023,14 +1028,16 @@ package org.mozilla.geckoview {
     method @UiThread public void releaseDisplay(@NonNull GeckoDisplay);
     method @AnyThread public void reload();
     method @AnyThread public void reload(int);
+    method @AnyThread @NonNull public GeckoResult<String> reportBackInStock(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<GeckoSession.ReviewAnalysis> requestAnalysis(@NonNull String);
-    method @AnyThread @NonNull public GeckoResult<String> requestAnalysisCreationStatus(@NonNull String);
+    method @AnyThread @NonNull public GeckoResult<GeckoSession.AnalysisStatusResponse> requestAnalysisStatus(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<String> requestCreateAnalysis(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<List<GeckoSession.Recommendation>> requestRecommendations(@NonNull String);
     method @AnyThread public void restoreState(@NonNull GeckoSession.SessionState);
     method @AnyThread @NonNull public GeckoResult<InputStream> saveAsPdf();
     method @AnyThread @NonNull public GeckoResult<Boolean> sendClickAttributionEvent(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<Boolean> sendImpressionAttributionEvent(@NonNull String);
+    method @AnyThread @NonNull public GeckoResult<Boolean> sendPlacementAttributionEvent(@NonNull String);
     method @AnyThread public void setActive(boolean);
     method @UiThread public void setAutofillDelegate(@Nullable Autofill.Delegate);
     method @AnyThread public void setContentBlockingDelegate(@Nullable ContentBlocking.Delegate);
@@ -1074,6 +1081,19 @@ package org.mozilla.geckoview {
     field @Nullable protected GeckoSession.Window mWindow;
   }
 
+  @AnyThread public static class GeckoSession.AnalysisStatusResponse {
+    ctor protected AnalysisStatusResponse(@NonNull GeckoSession.AnalysisStatusResponse.Builder);
+    field @NonNull public final Double progress;
+    field @NonNull public final String status;
+  }
+
+  public static class GeckoSession.AnalysisStatusResponse.Builder {
+    ctor public Builder(@NonNull String);
+    method @AnyThread @NonNull public GeckoSession.AnalysisStatusResponse build();
+    method @AnyThread @NonNull public GeckoSession.AnalysisStatusResponse.Builder progress(@NonNull Double);
+    method @AnyThread @NonNull public GeckoSession.AnalysisStatusResponse.Builder status(@NonNull String);
+  }
+
   @Retention(value=RetentionPolicy.SOURCE) public static interface GeckoSession.ClipboardPermissionType {
   }
 
@@ -1088,7 +1108,6 @@ package org.mozilla.geckoview {
     method @UiThread default public void onFirstContentfulPaint(@NonNull GeckoSession);
     method @UiThread default public void onFocusRequest(@NonNull GeckoSession);
     method @UiThread default public void onFullScreen(@NonNull GeckoSession, boolean);
-    method @AnyThread @Deprecated @DeprecationSchedule(version=122,id="session-nimbus") @Nullable default public JSONObject onGetNimbusFeature(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onKill(@NonNull GeckoSession);
     method @UiThread default public void onMetaViewportFitChange(@NonNull GeckoSession, @NonNull String);
     method @UiThread default public void onPaintStatusReset(@NonNull GeckoSession);
@@ -2260,12 +2279,14 @@ package org.mozilla.geckoview {
     method @AnyThread @NonNull public static GeckoResult<Long> checkPairDownloadSize(@NonNull TranslationsController.SessionTranslation.TranslationPair);
     method @AnyThread @NonNull public static GeckoResult<String> getLanguageSetting(@NonNull String);
     method @AnyThread @NonNull public static GeckoResult<Map<String,String>> getLanguageSettings();
+    method @AnyThread @NonNull public static GeckoResult<List<String>> getNeverTranslateSiteList();
     method @AnyThread @NonNull public static GeckoResult<Boolean> isTranslationsEngineSupported();
     method @AnyThread @NonNull public static GeckoResult<List<TranslationsController.RuntimeTranslation.LanguageModel>> listModelDownloadStates();
     method @AnyThread @NonNull public static GeckoResult<TranslationsController.RuntimeTranslation.TranslationSupport> listSupportedLanguages();
     method @AnyThread @NonNull public static GeckoResult<Void> manageLanguageModel(@NonNull TranslationsController.RuntimeTranslation.ModelManagementOptions);
     method @AnyThread @NonNull public static GeckoResult<List<String>> preferredLanguages();
     method @AnyThread @NonNull public static GeckoResult<Void> setLanguageSettings(@NonNull String, @NonNull String);
+    method @AnyThread @NonNull public static GeckoResult<Void> setNeverTranslateSpecifiedSite(@NonNull Boolean, @NonNull String);
     field public static final String ALL = "all";
     field public static final String ALWAYS = "always";
     field public static final String CACHE = "cache";
@@ -2359,6 +2380,25 @@ package org.mozilla.geckoview {
     field @Nullable public final String error;
     field @NonNull public final Boolean isEngineReady;
     field @Nullable public final TranslationsController.SessionTranslation.TranslationPair requestedTranslationPair;
+  }
+
+  public static class TranslationsController.TranslationsException extends Exception {
+    ctor public TranslationsException(int);
+    field public static final int ERROR_COULD_NOT_LOAD_LANGUAGES = -5;
+    field public static final int ERROR_COULD_NOT_RESTORE = -4;
+    field public static final int ERROR_COULD_NOT_TRANSLATE = -3;
+    field public static final int ERROR_ENGINE_NOT_SUPPORTED = -2;
+    field public static final int ERROR_LANGUAGE_NOT_SUPPORTED = -6;
+    field public static final int ERROR_MODEL_COULD_NOT_DELETE = -8;
+    field public static final int ERROR_MODEL_COULD_NOT_DOWNLOAD = -9;
+    field public static final int ERROR_MODEL_COULD_NOT_RETRIEVE = -7;
+    field public static final int ERROR_MODEL_DOWNLOAD_REQUIRED = -11;
+    field public static final int ERROR_MODEL_LANGUAGE_REQUIRED = -10;
+    field public static final int ERROR_UNKNOWN = -1;
+    field public final int code;
+  }
+
+  @Retention(value=RetentionPolicy.SOURCE) public static interface TranslationsController.TranslationsException.Code {
   }
 
   public class WebExtension {
@@ -2579,6 +2619,7 @@ package org.mozilla.geckoview {
     field public static final int ERROR_SIGNEDSTATE_REQUIRED = -5;
     field public static final int ERROR_UNEXPECTED_ADDON_TYPE = -6;
     field public static final int ERROR_UNEXPECTED_ADDON_VERSION = -9;
+    field public static final int ERROR_UNSUPPORTED_ADDON_TYPE = -12;
     field public static final int ERROR_USER_CANCELED = -100;
   }
 
@@ -2698,6 +2739,7 @@ package org.mozilla.geckoview {
     method @AnyThread public void enableExtensionProcessSpawning();
     method @AnyThread @NonNull public GeckoResult<WebExtension> ensureBuiltIn(@NonNull String, @Nullable String);
     method @Nullable @UiThread public WebExtensionController.PromptDelegate getPromptDelegate();
+    method @AnyThread @NonNull public GeckoResult<WebExtension> install(@NonNull String, @Nullable String);
     method @AnyThread @NonNull public GeckoResult<WebExtension> install(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<WebExtension> installBuiltIn(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<List<WebExtension>> list();
@@ -2709,6 +2751,8 @@ package org.mozilla.geckoview {
     method @AnyThread public void setTabActive(@NonNull GeckoSession, boolean);
     method @AnyThread @NonNull public GeckoResult<Void> uninstall(@NonNull WebExtension);
     method @AnyThread @NonNull public GeckoResult<WebExtension> update(@NonNull WebExtension);
+    field public static final String INSTALLATION_METHOD_FROM_FILE = "install-from-file";
+    field public static final String INSTALLATION_METHOD_MANAGER = "manager";
   }
 
   public static interface WebExtensionController.AddonManagerDelegate {
@@ -2739,6 +2783,9 @@ package org.mozilla.geckoview {
 
   public static interface WebExtensionController.ExtensionProcessDelegate {
     method @UiThread default public void onDisabledProcessSpawning();
+  }
+
+  @Retention(value=RetentionPolicy.SOURCE) public static interface WebExtensionController.InstallationMethod {
   }
 
   @UiThread public static interface WebExtensionController.PromptDelegate {

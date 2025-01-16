@@ -80,7 +80,7 @@ void nsDisplayMathMLError::Paint(nsDisplayListBuilder* aBuilder,
 static bool IsForeignChild(const nsIFrame* aFrame) {
   // This counts nsMathMLmathBlockFrame as a foreign child, because it
   // uses block reflow
-  return !(aFrame->IsFrameOfType(nsIFrame::eMathML)) || aFrame->IsBlockFrame();
+  return !aFrame->IsMathMLFrame() || aFrame->IsBlockFrame();
 }
 
 NS_DECLARE_FRAME_PROPERTY_DELETABLE(HTMLReflowOutputProperty, ReflowOutput)
@@ -1444,7 +1444,7 @@ nsContainerFrame* NS_NewMathMLmathBlockFrame(PresShell* aPresShell,
                                              ComputedStyle* aStyle) {
   auto newFrame = new (aPresShell)
       nsMathMLmathBlockFrame(aStyle, aPresShell->GetPresContext());
-  newFrame->AddStateBits(NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS);
+  newFrame->AddStateBits(NS_BLOCK_STATIC_BFC);
   return newFrame;
 }
 

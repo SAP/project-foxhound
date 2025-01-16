@@ -77,7 +77,6 @@ export class UrlbarView {
     this.document = this.panel.ownerDocument;
     this.window = this.document.defaultView;
 
-    this.#mainContainer = this.panel.querySelector(".urlbarView-body-inner");
     this.#rows = this.panel.querySelector(".urlbarView-results");
     this.resultMenu = this.panel.querySelector(".urlbarView-result-menu");
     this.#resultMenuCommands = new WeakMap();
@@ -770,7 +769,7 @@ export class UrlbarView {
       );
     }
 
-    if (!this.selectedElement && !this.oneOffSearchButtons.selectedButton) {
+    if (!this.#selectedElement && !this.oneOffSearchButtons.selectedButton) {
       if (firstResult.heuristic) {
         // Select the heuristic result.  The heuristic may not be the first
         // result added, which is why we do this check here when each result is
@@ -820,10 +819,10 @@ export class UrlbarView {
 
     // If we update the selected element, a new unique ID is generated for it.
     // We need to ensure that aria-activedescendant reflects this new ID.
-    if (this.selectedElement && !this.oneOffSearchButtons.selectedButton) {
+    if (this.#selectedElement && !this.oneOffSearchButtons.selectedButton) {
       let aadID = this.input.inputField.getAttribute("aria-activedescendant");
       if (aadID && !this.document.getElementById(aadID)) {
-        this.#setAccessibleFocus(this.selectedElement);
+        this.#setAccessibleFocus(this.#selectedElement);
       }
     }
 
@@ -866,13 +865,13 @@ export class UrlbarView {
       return;
     }
 
+    let updateSelection = rowToRemove == this.#getSelectedRow();
     rowToRemove.remove();
     this.#updateIndices();
 
-    if (rowToRemove != this.#getSelectedRow()) {
+    if (!updateSelection) {
       return;
     }
-
     // Select the row at the same index, if possible.
     let newSelectionIndex = index;
     if (index >= this.#queryContext.results.length) {
@@ -1040,7 +1039,6 @@ export class UrlbarView {
   #blobUrlsByResultUrl = null;
   #inputWidthOnLastClose = 0;
   #l10nCache;
-  #mainContainer;
   #mousedownSelectedElement;
   #openPanelInstance;
   #oneOffSearchButtons;
@@ -1052,8 +1050,21 @@ export class UrlbarView {
   #resultMenuResult;
   #resultMenuCommands;
   #rows;
-  #selectedElement;
+  #rawSelectedElement;
   #zeroPrefixStopwatchInstance = null;
+
+  /**
+   * #rawSelectedElement may be disconnected from the DOM (e.g. it was remove()d)
+   * but we want a connected #selectedElement usually. We don't use a WeakRef
+   * because it would depend too much on GC timing.
+   *
+   * @returns {DOMElement} the selected element.
+   */
+  get #selectedElement() {
+    return this.#rawSelectedElement?.isConnected
+      ? this.#rawSelectedElement
+      : null;
+  }
 
   #createElement(name) {
     return this.document.createElementNS("http://www.w3.org/1999/xhtml", name);
@@ -1622,7 +1633,8 @@ export class UrlbarView {
       !lazy.ObjectUtils.deepEqual(
         oldResult.payload.buttons,
         result.payload.buttons
-      );
+      ) ||
+      result.testForceNewContent;
 
     if (needsNewContent) {
       while (item.lastChild) {
@@ -1815,6 +1827,17 @@ export class UrlbarView {
             });
           };
           title.toggleAttribute("is-url", true);
+
+          let label = { id: "urlbar-result-action-visit-from-clipboard" };
+          this.#l10nCache.ensure(label).then(() => {
+            let { value } = this.#l10nCache.get(label);
+
+            // We don't have to unset these attributes because, excluding heuristic results,
+            // we never reuse results from different providers. Thus clipboard results can
+            // only be reused by other clipboard results.
+            title.setAttribute("aria-label", `${value}, ${title.innerText}`);
+            action.setAttribute("aria-hidden", "true");
+          });
           break;
         }
       // fall-through
@@ -2353,7 +2376,7 @@ export class UrlbarView {
     }
 
     this.#setAccessibleFocus(setAccessibleFocus && element);
-    this.#selectedElement = element;
+    this.#rawSelectedElement = element;
 
     if (updateInput) {
       let urlOverride = null;
@@ -3017,21 +3040,6 @@ export class UrlbarView {
     }
 
     commands = [];
-    if (
-      result.source == lazy.UrlbarUtils.RESULT_SOURCE.HISTORY &&
-      !result.autofill
-    ) {
-      commands.push(
-        {
-          name: RESULT_MENU_COMMANDS.DISMISS,
-          l10n: { id: "urlbar-result-menu-remove-from-history" },
-        },
-        {
-          name: RESULT_MENU_COMMANDS.HELP,
-          l10n: { id: "urlbar-result-menu-learn-more" },
-        }
-      );
-    }
     if (result.payload.isBlockable) {
       commands.push({
         name: RESULT_MENU_COMMANDS.DISMISS,
@@ -3041,7 +3049,9 @@ export class UrlbarView {
     if (result.payload.helpUrl) {
       commands.push({
         name: RESULT_MENU_COMMANDS.HELP,
-        l10n: result.payload.helpL10n,
+        l10n: result.payload.helpL10n || {
+          id: "urlbar-result-menu-learn-more",
+        },
       });
     }
     let rv = commands.length ? commands : null;
@@ -3208,7 +3218,7 @@ export class UrlbarView {
       }
 
       // Update result favicons.
-      let iconOverride = localSearchMode?.icon || engine?.iconURI?.spec;
+      let iconOverride = localSearchMode?.icon || engine?.getIconURL();
       if (!iconOverride && (localSearchMode || engine)) {
         // For one-offs without an icon, do not allow restyled URL results to
         // use their own icons.

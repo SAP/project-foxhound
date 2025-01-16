@@ -143,7 +143,13 @@ void WebRenderImageHost::PushPendingRemoteTexture(
       // Clear when RemoteTextureOwner is different.
       mPendingRemoteTextureWrappers.clear();
       mWaitingReadyCallback = false;
+      mWaitForRemoteTextureOwner = true;
     }
+  }
+
+  // Check if waiting for remote texture owner is allowed.
+  if (!(aFlags & TextureFlags::WAIT_FOR_REMOTE_TEXTURE_OWNER)) {
+    mWaitForRemoteTextureOwner = false;
   }
 
   RefPtr<TextureHost> texture =
@@ -159,12 +165,8 @@ void WebRenderImageHost::UseRemoteTexture() {
     return;
   }
 
-  const bool useAsyncRemoteTexture =
-      gfx::gfxVars::UseCanvasRenderThread() &&
-      StaticPrefs::webgl_out_of_process_async_present() &&
-      !gfx::gfxVars::WebglOopAsyncPresentForceSync();
-  const bool useReadyCallback = GetAsyncRef() && useAsyncRemoteTexture &&
-                                mRemoteTextureOwnerIdOfPushCallback.isNothing();
+  const bool useReadyCallback =
+      GetAsyncRef() && mRemoteTextureOwnerIdOfPushCallback.isNothing();
   CompositableTextureHostRef texture;
 
   if (useReadyCallback) {
@@ -204,9 +206,8 @@ void WebRenderImageHost::UseRemoteTexture() {
     while (!mPendingRemoteTextureWrappers.empty()) {
       auto* wrapper =
           mPendingRemoteTextureWrappers.front()->AsRemoteTextureHostWrapper();
-      mWaitingReadyCallback =
-          RemoteTextureMap::Get()->GetRemoteTextureForDisplayList(
-              wrapper, readyCallback);
+      mWaitingReadyCallback = RemoteTextureMap::Get()->GetRemoteTexture(
+          wrapper, readyCallback, mWaitForRemoteTextureOwner);
       MOZ_ASSERT_IF(mWaitingReadyCallback, !wrapper->IsReadyForRendering());
       if (!wrapper->IsReadyForRendering()) {
         break;
@@ -221,12 +222,14 @@ void WebRenderImageHost::UseRemoteTexture() {
     MOZ_ASSERT(mPendingRemoteTextureWrappers.empty());
 
     std::function<void(const RemoteTextureInfo&)> function;
-    RemoteTextureMap::Get()->GetRemoteTextureForDisplayList(
-        wrapper, std::move(function));
+    RemoteTextureMap::Get()->GetRemoteTexture(wrapper, std::move(function),
+                                              mWaitForRemoteTextureOwner);
+    mWaitForRemoteTextureOwner = false;
   }
 
   if (!texture ||
-      !texture->AsRemoteTextureHostWrapper()->IsReadyForRendering()) {
+      (GetAsyncRef() &&
+       !texture->AsRemoteTextureHostWrapper()->IsReadyForRendering())) {
     return;
   }
 

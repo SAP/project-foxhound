@@ -170,6 +170,7 @@ let ShellServiceInternal = {
   getDefaultPDFHandler() {
     const knownBrowserPrefixes = [
       "AppXq0fevzme2pys62n3e0fbqa7peapykr8v", // Edge before Blink, per https://stackoverflow.com/a/32724723.
+      "AppXd4nrz8ff68srnhf9t5a8sbjyar1cr723", // Another pre-Blink Edge identifier. See Bug 1858729.
       "Brave", // For "BraveFile".
       "Chrome", // For "ChromeHTML".
       "Firefox", // For "FirefoxHTML-*" or "FirefoxPDF-*".  Need to take from other installations of Firefox!
@@ -253,7 +254,7 @@ let ShellServiceInternal = {
         }
       }
       try {
-        this.defaultAgent.setDefaultBrowserUserChoice(
+        await this.defaultAgent.setDefaultBrowserUserChoiceAsync(
           aumi,
           extraFileExtensions
         );
@@ -314,7 +315,7 @@ let ShellServiceInternal = {
   },
 
   // override nsIShellService.setDefaultBrowser() on the ShellService proxy.
-  setDefaultBrowser(forAllUsers) {
+  async setDefaultBrowser(forAllUsers) {
     // On Windows, our best chance is to set UserChoice, so try that first.
     if (
       AppConstants.platform == "win" &&
@@ -322,24 +323,26 @@ let ShellServiceInternal = {
         "setDefaultBrowserUserChoice"
       )
     ) {
-      // nsWindowsShellService::SetDefaultBrowser() kicks off several
-      // operations, but doesn't wait for their result. So we don't need to
-      // await the result of setAsDefaultUserChoice() here, either, we just need
-      // to fall back in case it fails.
-      this.setAsDefaultUserChoice().catch(err => {
-        console.error(err);
-        this.shellService.setDefaultBrowser(forAllUsers);
-      });
-      return;
+      try {
+        await this.setAsDefaultUserChoice();
+        return;
+      } catch (err) {
+        lazy.log.warn(
+          "Error thrown during setAsDefaultUserChoice. Full exception:",
+          err
+        );
+
+        // intentionally fall through to setting via the non-user choice pathway on error
+      }
     }
 
     this.shellService.setDefaultBrowser(forAllUsers);
   },
 
-  setAsDefault() {
+  async setAsDefault() {
     let setAsDefaultError = false;
     try {
-      ShellService.setDefaultBrowser(false);
+      await ShellService.setDefaultBrowser(false);
     } catch (ex) {
       setAsDefaultError = true;
       console.error(ex);

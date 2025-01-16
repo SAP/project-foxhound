@@ -39,6 +39,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/SegmentedVector.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/StorageAccessAPIHelper.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -54,6 +55,8 @@
 #include "mozilla/dom/TreeOrderedArray.h"
 #include "mozilla/dom/ViewportMetaData.h"
 #include "mozilla/dom/LargestContentfulPaint.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/dom/WakeLockBinding.h"
 #include "mozilla/glean/GleanMetrics.h"
 #include "nsAtom.h"
 #include "nsCOMArray.h"
@@ -68,8 +71,8 @@
 #include "nsHashKeys.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsIContentViewer.h"
 #include "nsID.h"
+#include "nsIDocumentViewer.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsILoadGroup.h"
@@ -277,6 +280,7 @@ class Touch;
 class TouchList;
 class TreeWalker;
 enum class ViewportFitType : uint8_t;
+class WakeLockSentinel;
 class WindowContext;
 class WindowGlobalChild;
 class WindowProxyHolder;
@@ -414,7 +418,7 @@ class ExternalResourceMap {
   struct ExternalResource {
     ~ExternalResource();
     RefPtr<Document> mDocument;
-    nsCOMPtr<nsIContentViewer> mViewer;
+    nsCOMPtr<nsIDocumentViewer> mViewer;
     nsCOMPtr<nsILoadGroup> mLoadGroup;
   };
 
@@ -443,10 +447,10 @@ class ExternalResourceMap {
     nsresult StartLoad(nsIURI* aURI, nsIReferrerInfo* aReferrerInfo,
                        nsINode* aRequestingNode);
     /**
-     * Set up an nsIContentViewer based on aRequest.  This is guaranteed to
+     * Set up an nsIDocumentViewer based on aRequest.  This is guaranteed to
      * put null in *aViewer and *aLoadGroup on all failures.
      */
-    nsresult SetupViewer(nsIRequest* aRequest, nsIContentViewer** aViewer,
+    nsresult SetupViewer(nsIRequest* aRequest, nsIDocumentViewer** aViewer,
                          nsILoadGroup** aLoadGroup);
 
    private:
@@ -505,7 +509,7 @@ class ExternalResourceMap {
    * function makes sure to remove the pending load for aURI, if any, from our
    * hashtable, and to notify its observers, if any.
    */
-  nsresult AddExternalResource(nsIURI* aURI, nsIContentViewer* aViewer,
+  nsresult AddExternalResource(nsIURI* aURI, nsIDocumentViewer* aViewer,
                                nsILoadGroup* aLoadGroup,
                                Document* aDisplayDocument);
 
@@ -992,6 +996,12 @@ class Document : public nsINode,
    * Ask this document whether it's the initial document in its window.
    */
   bool IsInitialDocument() const { return mIsInitialDocumentInWindow; }
+
+  /**
+   * Ask this document whether it has ever been a initial document in its
+   * window.
+   */
+  bool IsEverInitialDocument() const { return mIsEverInitialDocumentInWindow; }
 
   /**
    * Tell this document that it's the initial document in its window.  See
@@ -1489,7 +1499,7 @@ class Document : public nsINode,
 
   bool HasThirdPartyChannel();
 
-  bool ShouldIncludeInTelemetry(bool aAllowExtensionURIs);
+  bool ShouldIncludeInTelemetry() const;
 
   void AddMediaElementWithMSE();
   void RemoveMediaElementWithMSE();
@@ -1644,6 +1654,7 @@ class Document : public nsINode,
   void StyleSheetApplicableStateChanged(StyleSheet&);
   void PostStyleSheetApplicableStateChangeEvent(StyleSheet&);
   void PostStyleSheetRemovedEvent(StyleSheet&);
+  void PostCustomPropertyRegistered(const dom::PropertyDefinition&);
 
   enum additionalSheetType {
     eAgentSheet,
@@ -1900,7 +1911,7 @@ class Document : public nsINode,
    * in the in-process document tree. Returns nullptr if the document isn't
    * fullscreen.
    */
-  Document* GetFullscreenRoot();
+  Document* GetFullscreenRoot() const { return mFullscreenRoot; }
 
   size_t CountFullscreenElements() const;
 
@@ -1908,7 +1919,7 @@ class Document : public nsINode,
    * Sets the fullscreen root to aRoot. This stores a weak reference to aRoot
    * in this document.
    */
-  void SetFullscreenRoot(Document* aRoot);
+  void SetFullscreenRoot(Document* aRoot) { mFullscreenRoot = aRoot; }
 
   /**
    * Synchronously cleans up the fullscreen state on the given document.
@@ -2868,14 +2879,14 @@ class Document : public nsINode,
    * and replace the cloned resources).
    *
    * @param aCloneContainer The container for the clone document.
-   * @param aContentViewer The viewer for the clone document. Must be the viewer
-   *                       of aCloneContainer, but callers must have a reference
-   *                       to it already and ensure it's not null.
+   * @param aDocumentViewer The viewer for the clone document. Must be the
+   *                        viewer of aCloneContainer, but callers must have a
+   *                        reference to it already and ensure it's not null.
    * @param aPrintSettings The print settings for this clone.
    * @param aOutHasInProcessPrintCallbacks Self-descriptive.
    */
   already_AddRefed<Document> CreateStaticClone(
-      nsIDocShell* aCloneContainer, nsIContentViewer* aContentViewer,
+      nsIDocShell* aCloneContainer, nsIDocumentViewer* aDocumentViewer,
       nsIPrintSettings* aPrintSettings, bool* aOutHasInProcessPrintCallbacks);
 
   /**
@@ -2959,7 +2970,8 @@ class Document : public nsINode,
                                   const nsAString& aNonce,
                                   const nsAString& aIntegrity,
                                   css::StylePreloadKind,
-                                  uint64_t aEarlyHintPreloaderId);
+                                  uint64_t aEarlyHintPreloaderId,
+                                  const nsAString& aFetchPriority);
 
   /**
    * Called by the chrome registry to load style sheets.
@@ -3045,6 +3057,7 @@ class Document : public nsINode,
 
   DocumentTimeline* Timeline();
   LinkedList<DocumentTimeline>& Timelines() { return mTimelines; }
+  void UpdateHiddenByContentVisibilityForAnimations();
 
   SVGSVGElement* GetSVGRootElement() const;
 
@@ -3477,9 +3490,9 @@ class Document : public nsINode,
 
   // QuerySelector and QuerySelectorAll already defined on nsINode
 
-  XPathExpression* CreateExpression(const nsAString& aExpression,
-                                    XPathNSResolver* aResolver,
-                                    ErrorResult& rv);
+  UniquePtr<XPathExpression> CreateExpression(const nsAString& aExpression,
+                                              XPathNSResolver* aResolver,
+                                              ErrorResult& rv);
   nsINode* CreateNSResolver(nsINode& aNodeResolver);
   already_AddRefed<XPathResult> Evaluate(
       JSContext* aCx, const nsAString& aExpression, nsINode& aContextNode,
@@ -3548,6 +3561,10 @@ class Document : public nsINode,
 
   // https://drafts.csswg.org/cssom-view/#evaluate-media-queries-and-report-changes
   void EvaluateMediaQueriesAndReportChanges(bool aRecurse);
+
+  nsTHashSet<RefPtr<WakeLockSentinel>>& ActiveWakeLocks(WakeLockType aType);
+
+  void UnlockAllWakeLocks(WakeLockType aType);
 
   // ParentNode
   nsIHTMLCollection* Children();
@@ -3642,7 +3659,8 @@ class Document : public nsINode,
   // keyboard shortcuts, etc). This is used to decide whether we should
   // permit autoplay audible media. This also gesture activates all other
   // content documents in this tab.
-  void NotifyUserGestureActivation();
+  void NotifyUserGestureActivation(
+      UserActivation::Modifiers aModifiers = UserActivation::Modifiers::None());
 
   // This function is used for mochitest only.
   void ClearUserGestureActivation();
@@ -3662,6 +3680,9 @@ class Document : public nsINode,
   // Return true if HasValidTransientUserGestureActivation() would return true,
   // and consume the activation.
   bool ConsumeTransientUserGestureActivation();
+
+  bool GetTransientUserGestureActivationModifiers(
+      UserActivation::Modifiers* aModifiers);
 
   BrowsingContext* GetBrowsingContext() const;
 
@@ -3722,13 +3743,6 @@ class Document : public nsINode,
   DOMIntersectionObserver* GetLazyLoadObserver() { return mLazyLoadObserver; }
   DOMIntersectionObserver& EnsureLazyLoadObserver();
 
-  DOMIntersectionObserver* GetContentVisibilityObserver() const {
-    return mContentVisibilityObserver;
-  }
-  DOMIntersectionObserver& EnsureContentVisibilityObserver();
-  void ObserveForContentVisibility(Element&);
-  void UnobserveForContentVisibility(Element&);
-
   ResizeObserver* GetLastRememberedSizeObserver() {
     return mLastRememberedSizeObserver;
   }
@@ -3775,7 +3789,12 @@ class Document : public nsINode,
    * Returns whether there is any ResizeObserver that has skipped observations.
    */
   bool HasAnySkippedResizeObservations() const;
-  MOZ_CAN_RUN_SCRIPT void NotifyResizeObservers();
+  /**
+   * Determine proximity to viewport for content-visibility: auto elements and
+   * notify resize observers.
+   */
+  MOZ_CAN_RUN_SCRIPT void
+  DetermineProximityToViewportAndNotifyResizeObservers();
 
   // Getter for PermissionDelegateHandler. Performs lazy initialization.
   PermissionDelegateHandler* GetPermissionDelegateHandler();
@@ -3789,7 +3808,8 @@ class Document : public nsINode,
   void SetNotifyFetchSuccess(bool aShouldNotify);
 
   // When this is set, removing a form or a password field from DOM
-  // sends a Chrome-only event. This is now only used by the password manager.
+  // sends a Chrome-only event. This is now only used by the password manager
+  // and formautofill.
   void SetNotifyFormOrPasswordRemoved(bool aShouldNotify);
 
   // This function is used by HTMLFormElement and HTMLInputElement to determin
@@ -3872,6 +3892,9 @@ class Document : public nsINode,
    * Returns whether the document allows localization.
    */
   bool AllowsL10n() const;
+
+  void SetAllowDeclarativeShadowRoots(bool aAllowDeclarativeShadowRoots);
+  bool AllowsDeclarativeShadowRoots() const;
 
  protected:
   RefPtr<DocumentL10n> mDocumentL10n;
@@ -3989,8 +4012,6 @@ class Document : public nsINode,
 
   mozilla::dom::FeaturePolicy* FeaturePolicy() const;
 
-  bool ImportMapsEnabled() const;
-
   /**
    * Find the (non-anonymous) content in this document for aFrame. It will
    * be aFrame's content node if that content is in this document and not
@@ -4087,6 +4108,7 @@ class Document : public nsINode,
   class HighlightRegistry& HighlightRegistry();
 
   bool ShouldResistFingerprinting(RFPTarget aTarget) const;
+  bool IsInPrivateBrowsing() const;
 
   const Maybe<RFPTarget>& GetOverriddenFingerprintingSettings() const {
     return mOverriddenFingerprintingSettings;
@@ -4100,6 +4122,8 @@ class Document : public nsINode,
   void RecordFontFingerprinting();
 
   bool MayHaveDOMActivateListeners() const;
+
+  void DropStyleSet();
 
  protected:
   // Returns the WindowContext for the document that we will contribute
@@ -4326,21 +4350,35 @@ class Document : public nsINode,
     explicit AutoRunningExecCommandMarker(const AutoRunningExecCommandMarker&) =
         delete;
     // Guaranteeing the document's lifetime with `MOZ_CAN_RUN_SCRIPT`.
-    MOZ_CAN_RUN_SCRIPT explicit AutoRunningExecCommandMarker(
-        Document& aDocument)
-        : mDocument(aDocument),
-          mHasBeenRunning(aDocument.mIsRunningExecCommand) {
-      aDocument.mIsRunningExecCommand = true;
-    }
+    MOZ_CAN_RUN_SCRIPT AutoRunningExecCommandMarker(Document& aDocument,
+                                                    nsIPrincipal* aPrincipal);
     ~AutoRunningExecCommandMarker() {
-      if (!mHasBeenRunning) {
-        mDocument.mIsRunningExecCommand = false;
+      if (mTreatAsUserInput) {
+        mDocument.mIsRunningExecCommandByChromeOrAddon =
+            mHasBeenRunningByChromeOrAddon;
+      } else {
+        mDocument.mIsRunningExecCommandByContent = mHasBeenRunningByContent;
       }
+    }
+
+    [[nodiscard]] bool IsSafeToRun() const {
+      // We don't allow nested calls of execCommand even if the caller is chrome
+      // script.
+      if (mTreatAsUserInput) {
+        return !mHasBeenRunningByChromeOrAddon && !mHasBeenRunningByContent;
+      }
+      // If current call is by content, we should ignore whether nested with a
+      // call by addon (or chrome script) because the caller wants to emulate
+      // user input for making it undoable.  So, we should treat the first
+      // call as user input.
+      return !mHasBeenRunningByContent;
     }
 
    private:
     Document& mDocument;
-    bool mHasBeenRunning;
+    bool mTreatAsUserInput;
+    bool mHasBeenRunningByContent;
+    bool mHasBeenRunningByChromeOrAddon;
   };
 
   // Mapping table from HTML command name to internal command.
@@ -4557,6 +4595,11 @@ class Document : public nsINode,
   // document in it.
   bool mIsInitialDocumentInWindow : 1;
 
+  // True if this document has ever been the initial document for a window. This
+  // is useful to determine if a document that was the initial document at one
+  // point, and became non-initial later.
+  bool mIsEverInitialDocumentInWindow : 1;
+
   bool mIgnoreDocGroupMismatches : 1;
 
   // True if we're loaded as data and therefor has any dangerous stuff, such
@@ -4697,8 +4740,6 @@ class Document : public nsINode,
   // True if the document has been detached from its content viewer.
   bool mIsGoingAway : 1;
 
-  bool mInXBLUpdate : 1;
-
   // Whether we have filled our style set with all the stylesheets.
   bool mStyleSetFilled : 1;
 
@@ -4798,8 +4839,12 @@ class Document : public nsINode,
   // also record this as a `CountedUnknownProperty`.
   bool mHasWarnedAboutZoom : 1;
 
-  // While we're handling an execCommand call, set to true.
-  bool mIsRunningExecCommand : 1;
+  // While we're handling an execCommand call by web app, set
+  // to true.
+  bool mIsRunningExecCommandByContent : 1;
+  // While we're handling an execCommand call by an addon (or chrome script),
+  // set to true.
+  bool mIsRunningExecCommandByChromeOrAddon : 1;
 
   // True if we should change the readystate to complete after we fire
   // DOMContentLoaded. This happens when we abort a load and
@@ -4834,8 +4879,13 @@ class Document : public nsINode,
   // Whether we should resist fingerprinting.
   bool mShouldResistFingerprinting : 1;
 
+  // Whether we are in private browsing mode.
+  bool mIsInPrivateBrowsing : 1;
+
   // Whether we're cloning the contents of an SVG use element.
   bool mCloningForSVGUse : 1;
+
+  bool mAllowDeclarativeShadowRoots : 1;
 
   // The fingerprinting protections overrides for this document. The value will
   // override the default enabled fingerprinting protections for this document.
@@ -5103,8 +5153,8 @@ class Document : public nsINode,
 
   nsTArray<net::EarlyHintConnectArgs> mEarlyHints;
 
-  nsRevocableEventPtr<nsRunnableMethod<Document, void, false>>
-      mPendingTitleChangeEvent;
+  class TitleChangeEvent;
+  nsRevocableEventPtr<TitleChangeEvent> mPendingTitleChangeEvent;
 
   RefPtr<nsDOMNavigationTiming> mTiming;
 
@@ -5133,10 +5183,6 @@ class Document : public nsINode,
 
   RefPtr<DOMIntersectionObserver> mLazyLoadObserver;
 
-  // Used for detecting when `content-visibility: auto` elements are near
-  // or far from the viewport.
-  RefPtr<DOMIntersectionObserver> mContentVisibilityObserver;
-
   // ResizeObserver for storing and removing the last remembered size.
   // @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
   RefPtr<ResizeObserver> mLastRememberedSizeObserver;
@@ -5146,7 +5192,7 @@ class Document : public nsINode,
 
   // The root of the doc tree in which this document is in. This is only
   // non-null when this document is in fullscreen mode.
-  nsWeakPtr mFullscreenRoot;
+  WeakPtr<Document> mFullscreenRoot;
 
   RefPtr<DOMImplementation> mDOMImplementation;
 
@@ -5189,6 +5235,10 @@ class Document : public nsINode,
   // 1)  We have no script global object.
   // 2)  We haven't had Destroy() called on us yet.
   nsCOMPtr<nsILayoutHistoryState> mLayoutHistoryState;
+
+  // Mapping of wake lock types to sets of wake locks sentinels
+  // https://w3c.github.io/screen-wake-lock/#internal-slots
+  nsTHashMap<WakeLockType, nsTHashSet<RefPtr<WakeLockSentinel>>> mActiveLocks;
 
   // The parsed viewport metadata of the last modified <meta name=viewport>
   // element.
@@ -5355,6 +5405,9 @@ class Document : public nsINode,
   void LoadEventFired();
 
   RadioGroupContainer& OwnedRadioGroupContainer();
+
+  static already_AddRefed<Document> ParseHTMLUnsafe(GlobalObject& aGlobal,
+                                                    const nsAString& aHTML);
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Document, NS_IDOCUMENT_IID)

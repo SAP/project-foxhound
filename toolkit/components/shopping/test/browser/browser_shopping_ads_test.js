@@ -29,7 +29,7 @@ function recommendedAdVisible(sidebar) {
         content.document.querySelector("shopping-container").wrappedJSObject;
       return (
         shoppingContainer?.recommendedAdEl &&
-        ContentTaskUtils.is_visible(shoppingContainer?.recommendedAdEl)
+        ContentTaskUtils.isVisible(shoppingContainer?.recommendedAdEl)
       );
     });
   });
@@ -55,12 +55,12 @@ add_task(async function test_ad_attribution() {
     let sidebar = gBrowser.getPanel(browser).querySelector("shopping-sidebar");
     Assert.ok(sidebar, "Sidebar should exist");
     Assert.ok(
-      BrowserTestUtils.is_visible(sidebar),
+      BrowserTestUtils.isVisible(sidebar),
       "Sidebar should be visible."
     );
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "Shopping Button should be visible on a product page"
     );
 
@@ -68,14 +68,22 @@ add_task(async function test_ad_attribution() {
     await promiseSidebarUpdated(sidebar, PRODUCT_TEST_URL);
     await recommendedAdVisible(sidebar);
 
-    let impressionEvent = recommendedAdsEventListener("AdImpression", sidebar);
-
     info("Verifying product info for initial product.");
     await verifyProductInfo(sidebar, {
       productURL: PRODUCT_TEST_URL,
       adjustedRating: "4.1",
       letterGrade: "B",
     });
+
+    // Test placement was recorded by telemetry
+    info("Verifying ad placement event.");
+    await Services.fog.testFlushAllChildren();
+    var adsPlacementEvents = Glean.shopping.surfaceAdsPlacement.testGetValue();
+    Assert.equal(adsPlacementEvents.length, 1, "should have recorded an event");
+    Assert.equal(adsPlacementEvents[0].category, "shopping");
+    Assert.equal(adsPlacementEvents[0].name, "surface_ads_placement");
+
+    let impressionEvent = recommendedAdsEventListener("AdImpression", sidebar);
 
     info("Waiting for ad impression event.");
     await impressionEvent;

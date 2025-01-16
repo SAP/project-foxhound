@@ -43,8 +43,10 @@ class AccessibleCaretEventHub;
 class ErrorResult;
 class HTMLEditor;
 class PostContentIterator;
+enum class CaretAssociationHint;
 enum class TableSelectionMode : uint32_t;
 struct AutoPrepareFocusRange;
+struct PrimaryFrameData;
 namespace dom {
 class DocGroup;
 }  // namespace dom
@@ -254,8 +256,12 @@ class Selection final : public nsSupportsWeakReference,
   void AdjustAnchorFocusForMultiRange(nsDirection aDirection);
 
   nsIFrame* GetPrimaryFrameForAnchorNode() const;
-  nsIFrame* GetPrimaryFrameForFocusNode(bool aVisual,
-                                        int32_t* aOffsetUsed = nullptr) const;
+
+  /**
+   * Get primary frame and some other data for putting caret or extending
+   * selection at the focus point.
+   */
+  PrimaryFrameData GetPrimaryFrameForCaretAtFocusNode(bool aVisual) const;
 
   UniquePtr<SelectionDetails> LookUpSelection(
       nsIContent* aContent, uint32_t aContentOffset, uint32_t aContentLength,
@@ -724,14 +730,6 @@ class Selection final : public nsSupportsWeakReference,
   void AddRangeAndSelectFramesAndNotifyListenersInternal(nsRange& aRange,
                                                          Document* aDocument,
                                                          ErrorResult&);
-
-  // This is helper method for GetPrimaryFrameForFocusNode.
-  // If aVisual is true, this returns caret frame.
-  // If false, this returns primary frame.
-  nsIFrame* GetPrimaryOrCaretFrameForNodeOffset(nsIContent* aContent,
-                                                uint32_t aOffset,
-                                                int32_t* aOffsetUsed,
-                                                bool aVisual) const;
 
   // Get the cached value for nsTextFrame::GetPointFromOffset.
   nsresult GetCachedFrameOffset(nsIFrame* aFrame, int32_t inOffset,

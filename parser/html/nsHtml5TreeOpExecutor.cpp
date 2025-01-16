@@ -1233,7 +1233,8 @@ void nsHtml5TreeOpExecutor::PreloadStyle(
     const nsAString& aURL, const nsAString& aCharset,
     const nsAString& aCrossOrigin, const nsAString& aMedia,
     const nsAString& aReferrerPolicy, const nsAString& aNonce,
-    const nsAString& aIntegrity, bool aLinkPreload) {
+    const nsAString& aIntegrity, bool aLinkPreload,
+    const nsAString& aFetchPriority) {
   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYetAndMediaApplies(aURL, aMedia);
   if (!uri) {
     return;
@@ -1254,7 +1255,7 @@ void nsHtml5TreeOpExecutor::PreloadStyle(
       GetPreloadReferrerPolicy(aReferrerPolicy), aNonce, aIntegrity,
       aLinkPreload ? css::StylePreloadKind::FromLinkRelPreloadElement
                    : css::StylePreloadKind::FromParser,
-      0);
+      0, aFetchPriority);
 }
 
 void nsHtml5TreeOpExecutor::PreloadImage(
@@ -1285,25 +1286,29 @@ void nsHtml5TreeOpExecutor::PreloadPictureSource(const nsAString& aSrcset,
 void nsHtml5TreeOpExecutor::PreloadFont(const nsAString& aURL,
                                         const nsAString& aCrossOrigin,
                                         const nsAString& aMedia,
-                                        const nsAString& aReferrerPolicy) {
+                                        const nsAString& aReferrerPolicy,
+                                        const nsAString& aFetchPriority) {
   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYetAndMediaApplies(aURL, aMedia);
   if (!uri) {
     return;
   }
 
-  mDocument->Preloads().PreloadFont(uri, aCrossOrigin, aReferrerPolicy, 0);
+  mDocument->Preloads().PreloadFont(uri, aCrossOrigin, aReferrerPolicy, 0,
+                                    aFetchPriority);
 }
 
 void nsHtml5TreeOpExecutor::PreloadFetch(const nsAString& aURL,
                                          const nsAString& aCrossOrigin,
                                          const nsAString& aMedia,
-                                         const nsAString& aReferrerPolicy) {
+                                         const nsAString& aReferrerPolicy,
+                                         const nsAString& aFetchPriority) {
   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYetAndMediaApplies(aURL, aMedia);
   if (!uri) {
     return;
   }
 
-  mDocument->Preloads().PreloadFetch(uri, aCrossOrigin, aReferrerPolicy, 0);
+  mDocument->Preloads().PreloadFetch(uri, aCrossOrigin, aReferrerPolicy, 0,
+                                     aFetchPriority);
 }
 
 void nsHtml5TreeOpExecutor::PreloadOpenPicture() {

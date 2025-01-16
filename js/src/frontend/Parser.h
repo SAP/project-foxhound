@@ -1101,7 +1101,7 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
 
   NameNodeResult moduleExportName();
 
-  bool assertClause(ListNodeType assertionsSet);
+  bool withClause(ListNodeType attributesSet);
 
   BinaryNodeResult importDeclaration();
   NodeResult importDeclarationOrImportExpr(YieldHandling yieldHandling);
@@ -1291,6 +1291,11 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
                                   DefaultHandling defaultHandling);
 
   struct ClassInitializedMembers {
+#ifdef ENABLE_DECORATORS
+    // Whether a non-static field has decorators or not.
+    bool hasInstanceDecorators = false;
+#endif
+
     // The number of instance class fields.
     size_t instanceFields = 0;
 
@@ -1345,6 +1350,9 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
       TokenPos propNamePos);
 
 #ifdef ENABLE_DECORATORS
+  FunctionNodeResult synthesizeAddInitializerFunction(
+      TaggedParserAtomIndex initializers, YieldHandling yieldHandling);
+
   ClassMethodResult synthesizeAccessor(
       Node propName, TokenPos propNamePos, TaggedParserAtomIndex propAtom,
       TaggedParserAtomIndex privateStateNameAtom, bool isStatic,

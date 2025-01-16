@@ -177,6 +177,7 @@ class CCGCScheduler {
 
   js::SliceBudget CreateGCSliceBudget(mozilla::TimeDuration aDuration,
                                       bool isIdle, bool isExtended) {
+    mInterruptRequested = false;
     auto budget = js::SliceBudget(aDuration, &mInterruptRequested);
     budget.idle = isIdle;
     budget.extended = isExtended;
@@ -189,6 +190,10 @@ class CCGCScheduler {
    * StaticPrefs::javascript_options_gc_delay_interslice()
    */
   void EnsureGCRunner(TimeDuration aDelay);
+
+  // If GCRunner isn't active, this calls EnsureGCRunner(0). Otherwise the timer
+  // is reset.
+  void EnsureOrResetGCRunner();
 
   void EnsureCCRunner(TimeDuration aDelay, TimeDuration aBudget);
 

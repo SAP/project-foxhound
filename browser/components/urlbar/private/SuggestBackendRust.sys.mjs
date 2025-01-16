@@ -97,21 +97,22 @@ export class SuggestBackendRust extends BaseFeature {
       return [];
     }
 
-    searchString = searchString.toLocaleLowerCase();
-
     // Build the list of Rust providers to query. Each provider is identified by
     // an integer value defined on the `SuggestionProvider` object. Here we
     // convert the Rust suggestion types of our registered features to their
     // corresponding provider integer values.
     let providers = [];
-    for (let type of lazy.QuickSuggest.registeredRustSuggestionTypes) {
-      let key = type.toUpperCase();
-      this.logger.debug("Adding provider to query:" + key);
-      if (!lazy.SuggestionProvider.hasOwnProperty(key)) {
-        this.logger.error(`SuggestionProvider["${key}"] is not defined!`);
-        continue;
+    for (let [type, feature] of lazy.QuickSuggest
+      .featuresByRustSuggestionType) {
+      if (feature.isEnabled && feature.isRustSuggestionTypeEnabled(type)) {
+        let key = type.toUpperCase();
+        this.logger.debug("Adding provider to query:" + key);
+        if (!lazy.SuggestionProvider.hasOwnProperty(key)) {
+          this.logger.error(`SuggestionProvider["${key}"] is not defined!`);
+          continue;
+        }
+        providers.push(lazy.SuggestionProvider[key]);
       }
-      providers.push(lazy.SuggestionProvider[key]);
     }
 
     let suggestions = await this.#store.query(

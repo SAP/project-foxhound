@@ -84,6 +84,7 @@
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/SessionStorageManager.h"
 #include "mozilla/dom/URLClassifierChild.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WorkerDebugger.h"
 #include "mozilla/dom/WorkerDebuggerManager.h"
@@ -180,9 +181,9 @@
 #include "nsDocShellLoadState.h"
 #include "nsHashPropertyBag.h"
 #include "nsIConsoleListener.h"
-#include "nsIContentViewer.h"
 #include "nsICycleCollectorListener.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsIDocumentViewer.h"
 #include "nsIDragService.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryInfoDumper.h"
@@ -194,7 +195,6 @@
 #include "nsJSEnvironment.h"
 #include "nsJSUtils.h"
 #include "nsMemoryInfoDumper.h"
-#include "nsPluginHost.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleSheetService.h"
 #include "nsThreadManager.h"
@@ -965,7 +965,8 @@ static nsresult GetCreateWindowParams(nsIOpenWindowInfo* aOpenWindowInfo,
 nsresult ContentChild::ProvideWindowCommon(
     NotNull<BrowserChild*> aTabOpener, nsIOpenWindowInfo* aOpenWindowInfo,
     uint32_t aChromeFlags, bool aCalledFromJS, nsIURI* aURI,
-    const nsAString& aName, const nsACString& aFeatures, bool aForceNoOpener,
+    const nsAString& aName, const nsACString& aFeatures,
+    const UserActivation::Modifiers& aModifiers, bool aForceNoOpener,
     bool aForceNoReferrer, bool aIsPopupRequested,
     nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
     BrowsingContext** aReturn) {
@@ -1033,8 +1034,8 @@ nsresult ContentChild::ProvideWindowCommon(
       MOZ_DIAGNOSTIC_ASSERT(!nsContentUtils::IsSpecialName(name));
 
       Unused << SendCreateWindowInDifferentProcess(
-          aTabOpener, parent, aChromeFlags, aCalledFromJS, aURI, features, name,
-          triggeringPrincipal, csp, referrerInfo,
+          aTabOpener, parent, aChromeFlags, aCalledFromJS, aURI, features,
+          aModifiers, name, triggeringPrincipal, csp, referrerInfo,
           aOpenWindowInfo->GetOriginAttributes());
 
       // We return NS_ERROR_ABORT, so that the caller knows that we've abandoned
@@ -1236,7 +1237,7 @@ nsresult ContentChild::ProvideWindowCommon(
   SendCreateWindow(aTabOpener, parent, newChild, aChromeFlags, aCalledFromJS,
                    aOpenWindowInfo->GetIsForPrinting(),
                    aOpenWindowInfo->GetIsForWindowDotPrint(), aURI, features,
-                   triggeringPrincipal, csp, referrerInfo,
+                   aModifiers, triggeringPrincipal, csp, referrerInfo,
                    aOpenWindowInfo->GetOriginAttributes(), std::move(resolve),
                    std::move(reject));
 
@@ -1807,7 +1808,7 @@ mozilla::ipc::IPCResult ContentChild::RecvConstructBrowser(
   if (!aWindowInit.isInitialDocument() ||
       !NS_IsAboutBlank(aWindowInit.documentURI())) {
     return IPC_FAIL(this,
-                    "Logic in CreateContentViewerForActor currently requires "
+                    "Logic in CreateDocumentViewerForActor currently requires "
                     "actors to be initial about:blank documents");
   }
 
@@ -1913,13 +1914,8 @@ bool ContentChild::DeallocPHeapSnapshotTempFileHelperChild(
   return true;
 }
 
-PTestShellChild* ContentChild::AllocPTestShellChild() {
-  return new TestShellChild();
-}
-
-bool ContentChild::DeallocPTestShellChild(PTestShellChild* shell) {
-  delete shell;
-  return true;
+already_AddRefed<PTestShellChild> ContentChild::AllocPTestShellChild() {
+  return MakeAndAddRef<TestShellChild>();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPTestShellConstructor(
@@ -2011,17 +2007,6 @@ bool ContentChild::DeallocPBenchmarkStorageChild(
   delete aActor;
   return true;
 }
-
-#ifdef MOZ_WEBSPEECH
-PSpeechSynthesisChild* ContentChild::AllocPSpeechSynthesisChild() {
-  MOZ_CRASH("No one should be allocating PSpeechSynthesisChild actors");
-}
-
-bool ContentChild::DeallocPSpeechSynthesisChild(PSpeechSynthesisChild* aActor) {
-  delete aActor;
-  return true;
-}
-#endif
 
 #ifdef MOZ_WEBRTC
 PWebrtcGlobalChild* ContentChild::AllocPWebrtcGlobalChild() {
@@ -3139,10 +3124,10 @@ bool ContentChild::DeallocPContentPermissionRequestChild(
   return true;
 }
 
-PWebBrowserPersistDocumentChild*
+already_AddRefed<PWebBrowserPersistDocumentChild>
 ContentChild::AllocPWebBrowserPersistDocumentChild(
     PBrowserChild* aBrowser, const MaybeDiscarded<BrowsingContext>& aContext) {
-  return new WebBrowserPersistDocumentChild();
+  return MakeAndAddRef<WebBrowserPersistDocumentChild>();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvPWebBrowserPersistDocumentConstructor(
@@ -3165,12 +3150,6 @@ mozilla::ipc::IPCResult ContentChild::RecvPWebBrowserPersistDocumentConstructor(
     static_cast<WebBrowserPersistDocumentChild*>(aActor)->Start(foundDoc);
   }
   return IPC_OK();
-}
-
-bool ContentChild::DeallocPWebBrowserPersistDocumentChild(
-    PWebBrowserPersistDocumentChild* aActor) {
-  delete aActor;
-  return true;
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvInvokeDragSession(
@@ -4446,7 +4425,7 @@ mozilla::ipc::IPCResult ContentChild::RecvDispatchBeforeUnloadToSubtree(
     const MaybeDiscarded<BrowsingContext>& aStartingAt,
     DispatchBeforeUnloadToSubtreeResolver&& aResolver) {
   if (aStartingAt.IsNullOrDiscarded()) {
-    aResolver(nsIContentViewer::eAllowNavigation);
+    aResolver(nsIDocumentViewer::eAllowNavigation);
   } else {
     DispatchBeforeUnloadToSubtree(aStartingAt.get(), std::move(aResolver));
   }
@@ -4475,23 +4454,23 @@ mozilla::ipc::IPCResult ContentChild::RecvInitNextGenLocalStorageEnabled(
 
   aStartingAt->PreOrderWalk([&](dom::BrowsingContext* aBC) {
     if (aBC->GetDocShell()) {
-      nsCOMPtr<nsIContentViewer> contentViewer;
-      aBC->GetDocShell()->GetContentViewer(getter_AddRefs(contentViewer));
-      if (contentViewer &&
-          contentViewer->DispatchBeforeUnload() ==
-              nsIContentViewer::eRequestBlockNavigation &&
+      nsCOMPtr<nsIDocumentViewer> viewer;
+      aBC->GetDocShell()->GetDocViewer(getter_AddRefs(viewer));
+      if (viewer &&
+          viewer->DispatchBeforeUnload() ==
+              nsIDocumentViewer::eRequestBlockNavigation &&
           !resolved) {
         // Send our response as soon as we find any blocker, so that we can show
         // the permit unload prompt as soon as possible, without giving
         // subsequent handlers a chance to delay it.
-        aResolver(nsIContentViewer::eRequestBlockNavigation);
+        aResolver(nsIDocumentViewer::eRequestBlockNavigation);
         resolved = true;
       }
     }
   });
 
   if (!resolved) {
-    aResolver(nsIContentViewer::eAllowNavigation);
+    aResolver(nsIDocumentViewer::eAllowNavigation);
   }
 }
 

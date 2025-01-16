@@ -18,13 +18,13 @@
     <panelview id="protections-popup-mainView"
                class="PanelUI-subView"
                role="document"
-               showheader="true">
+               mainview-with-header="true"
+               has-custom-header="true">
       <vbox id="protections-popup-mainView-panel-header-section">
         <box id="protections-popup-mainView-panel-header"
              class="panel-header panel-header-with-additional-element panel-header-with-info-button"
              onclick="gProtectionsHandler.onHeaderClicked(event);">
-          <html:h1 id="protections-popup-main-header-label"
-                 role="heading" aria-level="1">
+          <html:h1 id="protections-popup-main-header-label">
             <html:span id="protections-popup-mainView-panel-header-span"/>
           </html:h1>
           <toolbarbutton id="protections-popup-info-button" class="panel-info-button"
@@ -68,6 +68,7 @@
                      command="cmd_reportBrokenSite"
                      class="subviewbutton subviewbutton-nav"
                      data-l10n-id="protections-panel-report-broken-site"
+                     hidden="true"
                      closemenu="none"/>
 
         <!-- Tracking Protection Section -->
@@ -160,8 +161,8 @@
                          class="subviewbutton"
                          flex="1"
                          oncommand="gProtectionsHandler.openProtections(true); gProtectionsHandler.recordClick('milestone_message');">
-            <description id="protections-popup-milestones-text" flex="1"
-                         role="heading" aria-level="2"/>
+            <label id="protections-popup-milestones-text" flex="1"
+                   role="heading" aria-level="2"/>
             <image id="protections-popup-milestones-illustration"/>
           </toolbarbutton>
         </hbox>

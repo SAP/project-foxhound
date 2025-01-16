@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 
@@ -32,17 +31,6 @@ export class FormAutofillSection {
 
     this.handler = handler;
     this.filledRecordGUID = null;
-
-    ChromeUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
-      const brandShortName =
-        FormAutofillUtils.brandBundle.GetStringFromName("brandShortName");
-      // The string name for Mac is changed because the value needed updating.
-      const platform = AppConstants.platform.replace("macosx", "macos");
-      return FormAutofillUtils.stringBundle.formatStringFromName(
-        `useCreditCardPasswordPrompt.${platform}`,
-        [brandShortName]
-      );
-    });
 
     ChromeUtils.defineLazyGetter(this, "log", () =>
       FormAutofill.defineLogGetter(this, "FormAutofillHandler")
@@ -186,28 +174,26 @@ export class FormAutofillSection {
       this._cacheValue.matchingSelectOption = new WeakMap();
     }
 
-    for (let fieldName in profile) {
-      let fieldDetail = this.getFieldDetailByName(fieldName);
-      if (!fieldDetail) {
-        continue;
-      }
+    for (const fieldName in profile) {
+      const fieldDetail = this.getFieldDetailByName(fieldName);
+      const element = fieldDetail?.element;
 
-      let element = fieldDetail.element;
       if (!HTMLSelectElement.isInstance(element)) {
         continue;
       }
 
-      let cache = this._cacheValue.matchingSelectOption.get(element) || {};
-      let value = profile[fieldName];
+      const cache = this._cacheValue.matchingSelectOption.get(element) || {};
+      const value = profile[fieldName];
       if (cache[value] && cache[value].deref()) {
         continue;
       }
 
-      let option = FormAutofillUtils.findSelectOption(
+      const option = FormAutofillUtils.findSelectOption(
         element,
         profile,
         fieldName
       );
+
       if (option) {
         cache[value] = new WeakRef(option);
         this._cacheValue.matchingSelectOption.set(element, cache);
@@ -216,9 +202,14 @@ export class FormAutofillSection {
           delete cache[value];
           this._cacheValue.matchingSelectOption.set(element, cache);
         }
-        // Delete the field so the phishing hint won't treat it as a "also fill"
-        // field.
-        delete profile[fieldName];
+        // Skip removing cc-type since this is needed for displaying the icon for credit card network
+        // TODO(Bug 1874339): Cleanup transformation and normalization of data to not remove any
+        // fields and be more consistent
+        if (!["cc-type"].includes(fieldName)) {
+          // Delete the field so the phishing hint won't treat it as a "also fill"
+          // field.
+          delete profile[fieldName];
+        }
       }
     }
   }
@@ -250,15 +241,16 @@ export class FormAutofillSection {
             // If this is an expiration field and our previous
             // adaptations haven't resulted in a string that is
             // short enough to satisfy the field length, and the
-            // field is constrained to a length of 5, then we
+            // field is constrained to a length of 4 or 5, then we
             // assume it is intended to hold an expiration of the
-            // form "MM/YY".
-            if (key == "cc-exp" && maxLength == 5) {
+            // form "MMYY" or "MM/YY".
+            if (key == "cc-exp" && (maxLength == 4 || maxLength == 5)) {
               const month2Digits = (
                 "0" + profile["cc-exp-month"].toString()
               ).slice(-2);
               const year2Digits = profile["cc-exp-year"].toString().slice(-2);
-              profile[key] = `${month2Digits}/${year2Digits}`;
+              const separator = maxLength == 5 ? "/" : "";
+              profile[key] = `${month2Digits}${separator}${year2Digits}`;
             } else if (key == "cc-number") {
               // We want to show the last four digits of credit card so that
               // the masked credit card previews correctly and appears correctly
@@ -897,7 +889,10 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
       this._handlePageHide.bind(this)
     );
     this.log.debug("Credit card subframe is pagehideing", this.handler.form);
-    this.handler.onFormSubmitted();
+
+    const formSubmissionReason =
+      FormAutofillUtils.FORM_SUBMISSION_REASON.IFRAME_PAGEHIDE;
+    this.handler.onFormSubmitted(formSubmissionReason);
   }
 
   /**
@@ -1272,12 +1267,16 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
    * @override
    */
   async prepareFillingProfile(profile) {
-    // Prompt the OS login dialog to get the decrypted credit
-    // card number.
+    // Prompt the OS login dialog to get the decrypted credit card number.
     if (profile["cc-number-encrypted"]) {
+      const promptMessage = FormAutofillUtils.reauthOSPromptMessage(
+        "autofill-use-payment-method-os-prompt-macos",
+        "autofill-use-payment-method-os-prompt-windows",
+        "autofill-use-payment-method-os-prompt-other"
+      );
       let decrypted = await this._decrypt(
         profile["cc-number-encrypted"],
-        this.reauthPasswordPromptMessage
+        promptMessage
       );
 
       if (!decrypted) {

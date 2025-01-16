@@ -162,6 +162,7 @@ function getWatcherSupportedTargets(type) {
     [Targets.TYPES.WORKER]:
       type == SESSION_TYPES.BROWSER_ELEMENT ||
       type == SESSION_TYPES.WEBEXTENSION,
+    [Targets.TYPES.SERVICE_WORKER]: type == SESSION_TYPES.BROWSER_ELEMENT,
   };
 }
 
@@ -201,7 +202,8 @@ function getWatcherSupportedResources(type) {
     [Resources.TYPES.THREAD_STATE]: true,
     [Resources.TYPES.SERVER_SENT_EVENT]: true,
     [Resources.TYPES.WEBSOCKET]: true,
-    [Resources.TYPES.TRACING_STATE]: true,
+    [Resources.TYPES.JSTRACER_TRACE]: true,
+    [Resources.TYPES.JSTRACER_STATE]: true,
     [Resources.TYPES.LAST_PRIVATE_CONTEXT_EXIT]: true,
   };
 }
@@ -212,4 +214,5 @@ module.exports = {
   createWebExtensionSessionContext,
   createContentProcessSessionContext,
   createWorkerSessionContext,
+  SESSION_TYPES,
 };

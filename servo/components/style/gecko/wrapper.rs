@@ -52,9 +52,11 @@ use crate::gecko_bindings::structs::{nsINode as RawGeckoNode, Element as RawGeck
 use crate::global_style_data::GLOBAL_STYLE_DATA;
 use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::media_queries::Device;
-use crate::properties::animated_properties::{AnimationValue, AnimationValueMap};
-use crate::properties::{ComputedValues, LonghandId};
-use crate::properties::{Importance, PropertyDeclaration, PropertyDeclarationBlock};
+use crate::properties::{
+    animated_properties::{AnimationValue, AnimationValueMap},
+    ComputedValues, Importance, OwnedPropertyDeclarationId, PropertyDeclaration,
+    PropertyDeclarationBlock, PropertyDeclarationId, PropertyDeclarationIdSet,
+};
 use crate::rule_tree::CascadeLevel as ServoCascadeLevel;
 use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
@@ -304,7 +306,8 @@ impl<'ln> GeckoNode<'ln> {
 
     #[inline]
     fn set_selector_flags(&self, flags: u32) {
-        self.selector_flags_atomic().fetch_or(flags, Ordering::Relaxed);
+        self.selector_flags_atomic()
+            .fetch_or(flags, Ordering::Relaxed);
     }
 
     #[inline]
@@ -396,6 +399,45 @@ impl<'ln> GeckoNode<'ln> {
     #[inline]
     fn contains_non_whitespace_content(&self) -> bool {
         unsafe { Gecko_IsSignificantChild(self.0, false) }
+    }
+
+    /// Returns the previous sibling of this node that is an element.
+    #[inline]
+    pub fn prev_sibling_element(&self) -> Option<GeckoElement> {
+        let mut prev = self.prev_sibling();
+        while let Some(p) = prev {
+            if let Some(e) = p.as_element() {
+                return Some(e);
+            }
+            prev = p.prev_sibling();
+        }
+        None
+    }
+
+    /// Returns the next sibling of this node that is an element.
+    #[inline]
+    pub fn next_sibling_element(&self) -> Option<GeckoElement> {
+        let mut next = self.next_sibling();
+        while let Some(n) = next {
+            if let Some(e) = n.as_element() {
+                return Some(e);
+            }
+            next = n.next_sibling();
+        }
+        None
+    }
+
+    /// Returns last child sibling of this node that is an element.
+    #[inline]
+    pub fn last_child_element(&self) -> Option<GeckoElement<'ln>> {
+        let last = match self.last_child() {
+            Some(n) => n,
+            None => return None,
+        };
+        if let Some(e) = last.as_element() {
+            return Some(e);
+        }
+        None
     }
 }
 
@@ -798,20 +840,7 @@ impl<'le> GeckoElement<'le> {
         return self.flags() & NODE_IS_NATIVE_ANONYMOUS_ROOT != 0;
     }
 
-    /// Returns true if this node is the shadow root of an use-element shadow tree.
-    #[inline]
-    fn is_root_of_use_element_shadow_tree(&self) -> bool {
-        if !self.as_node().is_in_shadow_tree() {
-            return false;
-        }
-        if !self.parent_node_is_shadow_root() {
-            return false;
-        }
-        let host = self.containing_shadow_host().unwrap();
-        host.is_svg_element() && host.local_name() == &**local_name!("use")
-    }
-
-    fn css_transitions_info(&self) -> FxHashMap<LonghandId, Arc<AnimationValue>> {
+    fn css_transitions_info(&self) -> FxHashMap<OwnedPropertyDeclarationId, Arc<AnimationValue>> {
         use crate::gecko_bindings::bindings::Gecko_ElementTransitions_EndValueAt;
         use crate::gecko_bindings::bindings::Gecko_ElementTransitions_Length;
 
@@ -823,21 +852,21 @@ impl<'le> GeckoElement<'le> {
                 unsafe { Arc::from_raw_addrefed(Gecko_ElementTransitions_EndValueAt(self.0, i)) };
             let property = end_value.id();
             debug_assert!(!property.is_logical());
-            map.insert(property, end_value);
+            map.insert(property.to_owned(), end_value);
         }
         map
     }
 
     fn needs_transitions_update_per_property(
         &self,
-        longhand_id: LonghandId,
+        property_declaration_id: PropertyDeclarationId,
         combined_duration_seconds: f32,
         before_change_style: &ComputedValues,
         after_change_style: &ComputedValues,
-        existing_transitions: &FxHashMap<LonghandId, Arc<AnimationValue>>,
+        existing_transitions: &FxHashMap<OwnedPropertyDeclarationId, Arc<AnimationValue>>,
     ) -> bool {
         use crate::values::animated::{Animate, Procedure};
-        debug_assert!(!longhand_id.is_logical());
+        debug_assert!(!property_declaration_id.is_logical());
 
         // If there is an existing transition, update only if the end value
         // differs.
@@ -845,15 +874,17 @@ impl<'le> GeckoElement<'le> {
         // If the end value has not changed, we should leave the currently
         // running transition as-is since we don't want to interrupt its timing
         // function.
-        if let Some(ref existing) = existing_transitions.get(&longhand_id) {
+        if let Some(ref existing) = existing_transitions.get(&property_declaration_id.to_owned()) {
             let after_value =
-                AnimationValue::from_computed_values(longhand_id, after_change_style).unwrap();
+                AnimationValue::from_computed_values(property_declaration_id, after_change_style)
+                    .unwrap();
 
             return ***existing != after_value;
         }
 
-        let from = AnimationValue::from_computed_values(longhand_id, before_change_style);
-        let to = AnimationValue::from_computed_values(longhand_id, after_change_style);
+        let from =
+            AnimationValue::from_computed_values(property_declaration_id, before_change_style);
+        let to = AnimationValue::from_computed_values(property_declaration_id, after_change_style);
 
         debug_assert_eq!(to.is_some(), from.is_some());
 
@@ -930,8 +961,6 @@ fn get_animation_rule(
     element: &GeckoElement,
     cascade_level: CascadeLevel,
 ) -> Option<Arc<Locked<PropertyDeclarationBlock>>> {
-    use crate::properties::longhands::ANIMATABLE_PROPERTY_COUNT;
-
     // There's a very rough correlation between the number of effects
     // (animations) on an element and the number of properties it is likely to
     // animate, so we use that as an initial guess for the size of the
@@ -939,7 +968,7 @@ fn get_animation_rule(
     let effect_count = unsafe { Gecko_GetAnimationEffectCount(element.0) };
     // Also, we should try to reuse the PDB, to avoid creating extra rule nodes.
     let mut animation_values = AnimationValueMap::with_capacity_and_hasher(
-        effect_count.min(ANIMATABLE_PROPERTY_COUNT),
+        effect_count.min(crate::properties::property_counts::ANIMATABLE),
         Default::default(),
     );
     if unsafe { Gecko_GetAnimationRule(element.0, cascade_level, &mut animation_values) } {
@@ -1250,9 +1279,7 @@ impl<'le> TElement for GeckoElement<'le> {
         F: FnMut(&AtomIdent),
     {
         for attr in self.attrs() {
-            unsafe {
-                AtomIdent::with(attr.mName.name(), |a| callback(a))
-            }
+            unsafe { AtomIdent::with(attr.mName.name(), |a| callback(a)) }
         }
     }
 
@@ -1366,7 +1393,10 @@ impl<'le> TElement for GeckoElement<'le> {
             return None;
         }
 
-        PseudoElement::from_pseudo_type(unsafe { bindings::Gecko_GetImplementedPseudo(self.0) }, None)
+        PseudoElement::from_pseudo_type(
+            unsafe { bindings::Gecko_GetImplementedPseudo(self.0) },
+            None,
+        )
     }
 
     #[inline]
@@ -1515,8 +1545,6 @@ impl<'le> TElement for GeckoElement<'le> {
         before_change_style: &ComputedValues,
         after_change_style: &ComputedValues,
     ) -> bool {
-        use crate::properties::LonghandIdSet;
-
         let after_change_ui_style = after_change_style.get_ui();
         let existing_transitions = self.css_transitions_info();
 
@@ -1525,11 +1553,13 @@ impl<'le> TElement for GeckoElement<'le> {
             return !existing_transitions.is_empty();
         }
 
-        let mut transitions_to_keep = LonghandIdSet::new();
+        let mut transitions_to_keep = PropertyDeclarationIdSet::default();
         for transition_property in after_change_style.transition_properties() {
-            let physical_longhand = transition_property
-                .longhand_id
-                .to_physical(after_change_style.writing_mode);
+            let physical_longhand = PropertyDeclarationId::Longhand(
+                transition_property
+                    .longhand_id
+                    .to_physical(after_change_style.writing_mode),
+            );
             transitions_to_keep.insert(physical_longhand);
             if self.needs_transitions_update_per_property(
                 physical_longhand,
@@ -1548,7 +1578,7 @@ impl<'le> TElement for GeckoElement<'le> {
         // a matching transition-property value.
         existing_transitions
             .keys()
-            .any(|property| !transitions_to_keep.contains(*property))
+            .any(|property| !transitions_to_keep.contains(property.as_borrowed()))
     }
 
     /// Whether there is an ElementData container.
@@ -1889,7 +1919,8 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         // Handle flags that apply to the element.
         let self_flags = flags.for_self();
         if !self_flags.is_empty() {
-            self.as_node().set_selector_flags(selector_flags_to_node_flags(flags))
+            self.as_node()
+                .set_selector_flags(selector_flags_to_node_flags(flags))
         }
 
         // Handle flags that apply to the parent.
@@ -2016,7 +2047,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
             // TODO: This applying only to HTML elements is weird.
-            NonTSPseudoClass::Dir(ref dir) => self.is_html_element() && self.state().intersects(dir.element_state()),
+            NonTSPseudoClass::Dir(ref dir) => {
+                self.is_html_element() && self.state().intersects(dir.element_state())
+            },
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
@@ -2065,11 +2098,9 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 true
             },
             NonTSPseudoClass::MozNativeAnonymous => !self.matches_user_and_content_rules(),
-            NonTSPseudoClass::MozUseShadowTreeRoot => self.is_root_of_use_element_shadow_tree(),
             NonTSPseudoClass::MozTableBorderNonzero => unsafe {
                 bindings::Gecko_IsTableBorderNonzero(self.0)
             },
-            NonTSPseudoClass::MozBrowserFrame => unsafe { bindings::Gecko_IsBrowserFrame(self.0) },
             NonTSPseudoClass::MozSelectListBox => unsafe {
                 bindings::Gecko_IsSelectListBox(self.0)
             },

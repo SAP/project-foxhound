@@ -261,10 +261,10 @@ void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
     return;
   }
 
-  nsTArray<const StyleLockedStyleRule*> rawRuleList;
+  AutoTArray<const StyleLockedStyleRule*, 8> rawRuleList;
   Servo_ComputedValues_GetStyleRuleList(computedStyle, &rawRuleList);
 
-  AutoTArray<ServoStyleRuleMap*, 1> maps;
+  AutoTArray<ServoStyleRuleMap*, 8> maps;
   {
     ServoStyleSet* styleSet = presShell->StyleSet();
     ServoStyleRuleMap* map = styleSet->StyleRuleMap();
@@ -274,6 +274,14 @@ void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
   // Now shadow DOM stuff...
   if (auto* shadow = aElement.GetShadowRoot()) {
     maps.AppendElement(&shadow->ServoStyleRuleMap());
+  }
+
+  // Now NAC:
+  for (auto* el = aElement.GetClosestNativeAnonymousSubtreeRootParentOrHost();
+       el; el = el->GetClosestNativeAnonymousSubtreeRootParentOrHost()) {
+    if (auto* shadow = el->GetShadowRoot()) {
+      maps.AppendElement(&shadow->ServoStyleRuleMap());
+    }
   }
 
   for (auto* shadow = aElement.GetContainingShadow(); shadow;
@@ -302,11 +310,17 @@ void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
       aResult.AppendElement(rule);
     } else {
 #ifdef DEBUG
+      aElement.Dump();
+      printf_stderr("\n\n----\n\n");
+      computedStyle->DumpMatchedRules();
       nsAutoCString str;
-      fprintf(stderr, "%s\n", str.get());
       Servo_StyleRule_Debug(rawRule, &str);
+      printf_stderr("\n\n----\n\n");
+      printf_stderr("%s\n", str.get());
       MOZ_CRASH_UNSAFE_PRINTF(
-          "We should be able to map a raw rule to a rule: %s\n", str.get());
+          "We should be able to map raw rule %p to a rule in one of the %zu "
+          "maps: %s\n",
+          rawRule, maps.Length(), str.get());
 #endif
     }
   }
@@ -361,8 +375,10 @@ void InspectorUtils::GetAllStyleSheetCSSStyleRules(
 
 /* static */
 bool InspectorUtils::IsInheritedProperty(GlobalObject& aGlobalObject,
+                                         Document& aDocument,
                                          const nsACString& aPropertyName) {
-  return Servo_Property_IsInherited(&aPropertyName);
+  return Servo_Property_IsInherited(aDocument.EnsureStyleSet().RawData(),
+                                    &aPropertyName);
 }
 
 /* static */
@@ -861,12 +877,19 @@ void InspectorUtils::GetCSSRegisteredProperties(
     GlobalObject& aGlobalObject, Document& aDocument,
     nsTArray<InspectorCSSPropertyDefinition>& aResult) {
   nsTArray<StylePropDef> result;
-  Servo_GetRegisteredCustomProperties(aDocument.EnsureStyleSet().RawData(),
-                                      &result);
+
+  ServoStyleSet& styleSet = aDocument.EnsureStyleSet();
+  // Update the rules before looking up @property rules.
+  styleSet.UpdateStylistIfNeeded();
+
+  Servo_GetRegisteredCustomProperties(styleSet.RawData(), &result);
   for (const auto& propDef : result) {
     InspectorCSSPropertyDefinition& property = *aResult.AppendElement();
 
-    propDef.name.AsAtom()->ToUTF8String(property.mName);
+    // Servo does not include the "--" prefix in the property definition name.
+    // Add it back as it's easier for DevTools to handle them _with_ "--".
+    property.mName.AssignLiteral("--");
+    property.mName.Append(nsAtomCString(propDef.name.AsAtom()));
     property.mSyntax.Append(propDef.syntax);
     property.mInherits = propDef.inherits;
     if (propDef.has_initial_value) {

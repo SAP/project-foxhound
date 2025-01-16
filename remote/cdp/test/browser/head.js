@@ -19,21 +19,12 @@ const { Stream } = ChromeUtils.importESModule(
   "chrome://remote/content/cdp/StreamRegistry.sys.mjs"
 );
 
+const { getTimeoutMultiplier } = ChromeUtils.importESModule(
+  "chrome://remote/content/shared/AppInfo.sys.mjs"
+);
+
 const TIMEOUT_MULTIPLIER = getTimeoutMultiplier();
 const TIMEOUT_EVENTS = 1000 * TIMEOUT_MULTIPLIER;
-
-function getTimeoutMultiplier() {
-  if (
-    AppConstants.DEBUG ||
-    AppConstants.MOZ_CODE_COVERAGE ||
-    AppConstants.ASAN ||
-    AppConstants.TSAN
-  ) {
-    return 4;
-  }
-
-  return 1;
-}
 
 /*
 add_task() is overriden to setup and teardown a test environment
@@ -131,7 +122,7 @@ function createTestDocument() {
   // when using document's JS Objects.
   const webNavigation = browser.docShell.QueryInterface(Ci.nsIWebNavigation);
   const system = Services.scriptSecurityManager.getSystemPrincipal();
-  webNavigation.createAboutBlankContentViewer(system, system);
+  webNavigation.createAboutBlankDocumentViewer(system, system);
 
   return webNavigation.document;
 }

@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtils.sys.mjs";
-
-import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const NOTIFICATION_EVENT_DISMISSED = "dismissed";
@@ -247,6 +245,7 @@ export function PopupNotifications(tabbrowser, panel, iconBox, options = {}) {
   // panel itself has a listener in the bubble phase and this listener
   // needs to be called after that, so use bubble phase here.
   this.panel.addEventListener("popuphidden", this);
+  this.panel.addEventListener("popuppositioned", this);
   this.panel.classList.add("popup-notification-panel", "panel-no-padding");
 
   // This listener will be attached to the chrome window whenever a notification
@@ -815,6 +814,7 @@ PopupNotifications.prototype = {
         this._onPopupHidden(aEvent);
         break;
       case "activate":
+      case "popuppositioned":
         if (this.isPanelOpen) {
           for (let elt of this.panel.children) {
             elt.notification.timeShown = Math.max(
@@ -923,7 +923,7 @@ PopupNotifications.prototype = {
     if (this._ignoreDismissal) {
       return this._ignoreDismissal.promise;
     }
-    let deferred = PromiseUtils.defer();
+    let deferred = Promise.withResolvers();
     this._ignoreDismissal = deferred;
     this.panel.hidePopup();
     return deferred.promise;

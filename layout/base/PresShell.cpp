@@ -19,6 +19,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/CaretAssociationHint.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/DisplayPortUtils.h"
 #include "mozilla/EventDispatcher.h"
@@ -71,6 +72,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/UserActivation.h"
@@ -2193,8 +2195,6 @@ void PresShell::NotifyDestroyingFrame(nsIFrame* aFrame) {
       mPendingScrollAnchorAdjustment.Remove(scrollableFrame);
       mPendingScrollResnap.Remove(scrollableFrame);
     }
-
-    mContentVisibilityAutoFrames.Remove(aFrame);
   }
 }
 
@@ -2409,7 +2409,7 @@ PresShell::CompleteMove(bool aForward, bool aExtend) {
   frameSelection->HandleClick(
       MOZ_KnownLive(pos.mResultContent) /* bug 1636889 */, pos.mContentOffset,
       pos.mContentOffset, focusMode,
-      aForward ? CARET_ASSOCIATE_AFTER : CARET_ASSOCIATE_BEFORE);
+      aForward ? CaretAssociationHint::After : CaretAssociationHint::Before);
   if (limiter) {
     // HandleClick resets ancestorLimiter, so set it again.
     frameSelection->SetAncestorLimiter(limiter);
@@ -2427,17 +2427,26 @@ PresShell::CompleteMove(bool aForward, bool aExtend) {
 // end implementations nsISelectionController
 
 nsIFrame* PresShell::GetRootScrollFrame() const {
+  if (!mFrameConstructor) {
+    return nullptr;
+  }
   nsIFrame* rootFrame = mFrameConstructor->GetRootFrame();
   // Ensure root frame is a viewport frame
-  if (!rootFrame || !rootFrame->IsViewportFrame()) return nullptr;
+  if (!rootFrame || !rootFrame->IsViewportFrame()) {
+    return nullptr;
+  }
   nsIFrame* theFrame = rootFrame->PrincipalChildList().FirstChild();
-  if (!theFrame || !theFrame->IsScrollFrame()) return nullptr;
+  if (!theFrame || !theFrame->IsScrollFrame()) {
+    return nullptr;
+  }
   return theFrame;
 }
 
 nsIScrollableFrame* PresShell::GetRootScrollFrameAsScrollable() const {
   nsIFrame* frame = GetRootScrollFrame();
-  if (!frame) return nullptr;
+  if (!frame) {
+    return nullptr;
+  }
   nsIScrollableFrame* scrollableFrame = do_QueryFrame(frame);
   NS_ASSERTION(scrollableFrame,
                "All scroll frames must implement nsIScrollableFrame");
@@ -3267,8 +3276,8 @@ static void AccumulateFrameBounds(nsIFrame* aContainerFrame, nsIFrame* aFrame,
     nsIFrame* prevFrame = aFrame;
     nsIFrame* f = aFrame;
 
-    while (f && f->IsFrameOfType(nsIFrame::eLineParticipant) &&
-           !f->IsTransformed() && !f->IsAbsPosContainingBlock()) {
+    while (f && f->IsLineParticipant() && !f->IsTransformed() &&
+           !f->IsAbsPosContainingBlock()) {
       prevFrame = f;
       f = prevFrame->GetParent();
     }
@@ -3318,6 +3327,13 @@ static bool ComputeNeedToScroll(WhenToScroll aWhenToScroll, nscoord aLineSize,
       // The caller wants the frame as visible as possible
       return true;
     case WhenToScroll::IfNotVisible:
+      if (aLineSize > (aRectMax - aRectMin)) {
+        // If the line size is greater than the size of the rect
+        // to scroll into view, do not use the line size to determine
+        // if we need to scroll.
+        aLineSize = 0;
+      }
+
       // Scroll only if no part of the frame is visible in this view.
       return aRectMax - aLineSize <= aViewMin ||
              aRectMin + aLineSize >= aViewMax;
@@ -5361,16 +5377,35 @@ void PresShell::AddCanvasBackgroundColorItem(nsDisplayListBuilder* aBuilder,
 }
 
 bool PresShell::IsTransparentContainerElement() const {
+  if (mDocument->IsInitialDocument()) {
+    switch (StaticPrefs::layout_css_initial_document_transparency()) {
+      case 3:
+        return true;
+      case 2:
+        if (!mDocument->IsTopLevelContentDocument()) {
+          return true;
+        }
+        [[fallthrough]];
+      case 1:
+        if (mDocument->IsLikelyContentInaccessibleTopLevelAboutBlank()) {
+          return true;
+        }
+        [[fallthrough]];
+      default:
+        break;
+    }
+  }
+
   nsPresContext* pc = GetPresContext();
   if (!pc->IsRootContentDocumentCrossProcess()) {
-    if (pc->IsChrome()) {
+    if (mDocument->IsInChromeDocShell()) {
       return true;
     }
     // Frames are transparent except if their used embedder color-scheme is
     // mismatched, in which case we use an opaque background to avoid
     // black-on-black or white-on-white text, see
     // https://github.com/w3c/csswg-drafts/issues/4772
-    if (BrowsingContext* bc = pc->Document()->GetBrowsingContext()) {
+    if (BrowsingContext* bc = mDocument->GetBrowsingContext()) {
       switch (bc->GetEmbedderColorSchemes().mUsed) {
         case dom::PrefersColorSchemeOverride::Light:
           return pc->DefaultBackgroundColorScheme() == ColorScheme::Light;
@@ -5381,11 +5416,6 @@ bool PresShell::IsTransparentContainerElement() const {
           break;
       }
     }
-    return true;
-  }
-
-  if (mDocument->IsInitialDocument() &&
-      mDocument->IsLikelyContentInaccessibleTopLevelAboutBlank()) {
     return true;
   }
 
@@ -5823,6 +5853,16 @@ void PresShell::ProcessSynthMouseMoveEvent(bool aFromScroll) {
   NS_ASSERTION(view->GetWidget(), "view should have a widget here");
   WidgetMouseEvent event(true, eMouseMove, view->GetWidget(),
                          WidgetMouseEvent::eSynthesized);
+
+  // If the last cursor location was set by a synthesized mouse event for tests,
+  // running test should expect a restyle or a DOM mutation under the cursor may
+  // cause mouse boundary events in a remote process if the cursor is over a
+  // remote content.  Therefore, the events should not be ignored by
+  // PresShell::HandleEvent in the remote process.  So we need to mark the
+  // synthesized eMouseMove as "synthesized for tests".
+  event.mFlags.mIsSynthesizedForTests =
+      mMouseLocationWasSetBySynthesizedMouseEventForTests;
+
   event.mRefPoint =
       LayoutDeviceIntPoint::FromAppUnitsToNearest(refpoint, viewAPD);
   event.mButtons = PresShell::sMouseButtons;
@@ -6866,16 +6906,35 @@ nsresult PresShell::HandleEvent(nsIFrame* aFrameForPresShell,
                                 bool aDontRetargetEvents,
                                 nsEventStatus* aEventStatus) {
   MOZ_ASSERT(aGUIEvent);
-  // If it's synthesized in the parent process and our mouse location was set
-  // by a mouse event which was synthesized for tests because the test does not
-  // want to change `:hover` state with the synthesized mouse event for native
-  // mouse cursor position.
-  if (aGUIEvent->mMessage == eMouseMove &&
-      aGUIEvent->CameFromAnotherProcess() && XRE_IsContentProcess() &&
+  // Running tests must not expect that some mouse boundary events are fired
+  // when something occurs in the parent process, e.g., when a popup is
+  // opened/closed at the last mouse cursor position in the parent process (the
+  // position may be different from the position which stored in this process).
+  // Therefore, let's ignore synthesized mouse events coming form another
+  // process if and only if they are not caused by the API.
+  if (aGUIEvent->CameFromAnotherProcess() && XRE_IsContentProcess() &&
       !aGUIEvent->mFlags.mIsSynthesizedForTests &&
-      MouseLocationWasSetBySynthesizedMouseEventForTests() &&
-      aGUIEvent->AsMouseEvent()->mReason == WidgetMouseEvent::eSynthesized) {
-    return NS_OK;
+      MouseLocationWasSetBySynthesizedMouseEventForTests()) {
+    switch (aGUIEvent->mMessage) {
+      // Synthesized eMouseMove will case mouse boundary events like mouseover,
+      // mouseout, and :hover state is changed at dispatching the events.
+      case eMouseMove:
+      // eMouseExitFromWidget comes from the parent process if the cursor
+      // crosses a puppet widget boundary.  Then, the event will be handled as a
+      // synthesized eMouseMove in this process and may cause unexpected
+      // `mouseout` and `mouseleave`.
+      case eMouseExitFromWidget:
+      // eMouseEnterIntoWidget causes updating the hover state under the event
+      // position which may be different from the last cursor position
+      // synthesized in this process.
+      case eMouseEnterIntoWidget:
+        if (!aGUIEvent->AsMouseEvent()->IsReal()) {
+          return NS_OK;
+        }
+        break;
+      default:
+        break;
+    }
   }
 
   // Here we are granting some delays to ensure that user input events are
@@ -9460,22 +9519,44 @@ void PresShell::DidDoReflow(bool aInterruptible) {
     return;
   }
 
-  nsAutoScriptBlocker scriptBlocker;
-  AutoAssertNoFlush noReentrantFlush(*this);
-  if (nsCOMPtr<nsIDocShell> docShell = mPresContext->GetDocShell()) {
-    DOMHighResTimeStamp now = GetPerformanceNowUnclamped();
-    docShell->NotifyReflowObservers(aInterruptible, mLastReflowStart, now);
+  {
+    nsAutoScriptBlocker scriptBlocker;
+    AutoAssertNoFlush noReentrantFlush(*this);
+    if (nsCOMPtr<nsIDocShell> docShell = mPresContext->GetDocShell()) {
+      DOMHighResTimeStamp now = GetPerformanceNowUnclamped();
+      docShell->NotifyReflowObservers(aInterruptible, mLastReflowStart, now);
+    }
+
+    if (StaticPrefs::layout_reflow_synthMouseMove()) {
+      SynthesizeMouseMove(false);
+    }
+
+    mPresContext->NotifyMissingFonts();
   }
 
-  if (!mPresContext->HasPendingInterrupt()) {
-    mPresContext->RefreshDriver()->EnsureResizeObserverUpdateHappens();
+  if (mIsDestroying) {
+    return;
   }
 
-  if (StaticPrefs::layout_reflow_synthMouseMove()) {
-    SynthesizeMouseMove(false);
+  if (mDirtyRoots.IsEmpty()) {
+    // We only unsuppress painting if we're out of reflows.  It's pointless to
+    // do so if reflows are still pending, since reflows are just going to
+    // thrash the frames around some more.  By waiting we avoid an overeager
+    // "jitter" effect.
+    if (mShouldUnsuppressPainting) {
+      mShouldUnsuppressPainting = false;
+      UnsuppressAndInvalidate();
+    }
+  } else {
+    // If any new reflow commands were enqueued during the reflow, schedule
+    // another reflow event to process them.  Note that we want to do this
+    // after DidDoReflow(), since that method can change whether there are
+    // dirty roots around by flushing, and there's no point in posting a
+    // reflow event just to have the flush revoke it.
+    MaybeScheduleReflow();
+    // And record that we might need flushing
+    SetNeedLayoutFlush();
   }
-
-  mPresContext->NotifyMissingFonts();
 }
 
 DOMHighResTimeStamp PresShell::GetPerformanceNowUnclamped() {
@@ -9838,41 +9919,17 @@ bool PresShell::ProcessReflowCommands(bool aInterruptible) {
     DidDoReflow(aInterruptible);
   }
 
-  // DidDoReflow might have killed us
-  if (!mIsDestroying) {
 #ifdef DEBUG
-    if (VerifyReflowFlags::DumpCommands & gVerifyReflowFlags) {
-      printf("\nPresShell::ProcessReflowCommands() finished: this=%p\n",
-             (void*)this);
-    }
-    DoVerifyReflow();
+  if (VerifyReflowFlags::DumpCommands & gVerifyReflowFlags) {
+    printf("\nPresShell::ProcessReflowCommands() finished: this=%p\n",
+           (void*)this);
+  }
+  DoVerifyReflow();
 #endif
 
-    // If any new reflow commands were enqueued during the reflow, schedule
-    // another reflow event to process them.  Note that we want to do this
-    // after DidDoReflow(), since that method can change whether there are
-    // dirty roots around by flushing, and there's no point in posting a
-    // reflow event just to have the flush revoke it.
-    if (!mDirtyRoots.IsEmpty()) {
-      MaybeScheduleReflow();
-      // And record that we might need flushing
-      SetNeedLayoutFlush();
-    }
-  }
-
-  if (!mIsDestroying && mShouldUnsuppressPainting && mDirtyRoots.IsEmpty()) {
-    // We only unlock if we're out of reflows.  It's pointless
-    // to unlock if reflows are still pending, since reflows
-    // are just going to thrash the frames around some more.  By
-    // waiting we avoid an overeager "jitter" effect.
-    mShouldUnsuppressPainting = false;
-    UnsuppressAndInvalidate();
-  }
-
-  if (mDocument->GetRootElement()) {
+  {
     TimeDuration elapsed = TimeStamp::Now() - timerStart;
     int32_t intElapsed = int32_t(elapsed.ToMilliseconds());
-
     if (intElapsed > NS_LONG_REFLOW_TIME_MS) {
       Telemetry::Accumulate(Telemetry::LONG_REFLOW_INTERRUPTIBLE,
                             aInterruptible ? 1 : 0);
@@ -11163,9 +11220,9 @@ void PresShell::MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty) {
 }
 
 static void AppendSubtree(nsIDocShell* aDocShell,
-                          nsTArray<nsCOMPtr<nsIContentViewer>>& aArray) {
-  if (nsCOMPtr<nsIContentViewer> cv = aDocShell->GetContentViewer()) {
-    aArray.AppendElement(cv);
+                          nsTArray<nsCOMPtr<nsIDocumentViewer>>& aArray) {
+  if (nsCOMPtr<nsIDocumentViewer> viewer = aDocShell->GetDocViewer()) {
+    aArray.AppendElement(viewer);
   }
 
   int32_t n = aDocShell->GetInProcessChildCount();
@@ -11193,11 +11250,11 @@ void PresShell::MaybeReflowForInflationScreenSizeChange() {
     return;
   }
   if (nsCOMPtr<nsIDocShell> docShell = pc->GetDocShell()) {
-    nsTArray<nsCOMPtr<nsIContentViewer>> array;
+    nsTArray<nsCOMPtr<nsIDocumentViewer>> array;
     AppendSubtree(docShell, array);
     for (uint32_t i = 0, iEnd = array.Length(); i < iEnd; ++i) {
-      nsCOMPtr<nsIContentViewer> cv = array[i];
-      if (RefPtr<PresShell> descendantPresShell = cv->GetPresShell()) {
+      nsCOMPtr<nsIDocumentViewer> viewer = array[i];
+      if (RefPtr<PresShell> descendantPresShell = viewer->GetPresShell()) {
         nsIFrame* rootFrame = descendantPresShell->GetRootFrame();
         if (rootFrame) {
           descendantPresShell->FrameNeedsReflow(
@@ -11452,7 +11509,7 @@ bool PresShell::DetermineFontSizeInflationState() {
     nsPresContext* topContext =
         mPresContext->GetInProcessRootContentDocumentPresContext();
     LayoutDeviceIntSize result;
-    if (!nsLayoutUtils::GetContentViewerSize(topContext, result)) {
+    if (!nsLayoutUtils::GetDocumentViewerSize(topContext, result)) {
       return false;
     }
     displaySize = Some(result);
@@ -11557,10 +11614,7 @@ void PresShell::SyncWindowProperties(bool aSync) {
     auto* canvas = GetCanvasFrame();
     widget::TransparencyMode mode = nsLayoutUtils::GetFrameTransparency(
         canvas ? canvas : rootFrame, rootFrame);
-    StyleWindowShadow shadow = rootFrame->StyleUIReset()->mWindowShadow;
-    nsCOMPtr<nsIWidget> viewWidget = view->GetWidget();
-    viewWidget->SetTransparencyMode(mode);
-    windowWidget->SetWindowShadowStyle(shadow);
+    windowWidget->SetTransparencyMode(mode);
 
     // For macOS, apply color scheme overrides to the top level window widget.
     if (auto scheme = pc->GetOverriddenOrEmbedderColorScheme()) {
@@ -11947,6 +12001,10 @@ void PresShell::UpdateRelevancyOfContentVisibilityAutoFrames() {
     frame->UpdateIsRelevantContent(mContentVisibilityRelevancyToUpdate);
   }
 
+  if (nsPresContext* presContext = GetPresContext()) {
+    presContext->UpdateHiddenByContentVisibilityForAnimationsIfNeeded();
+  }
+
   mContentVisibilityRelevancyToUpdate.clear();
 }
 
@@ -11960,6 +12018,65 @@ void PresShell::ScheduleContentRelevancyUpdate(ContentRelevancyReason aReason) {
   SetNeedLayoutFlush();
   if (nsPresContext* presContext = GetPresContext()) {
     presContext->RefreshDriver()->EnsureContentRelevancyUpdateHappens();
+  }
+}
+
+PresShell::ProximityToViewportResult PresShell::DetermineProximityToViewport() {
+  ProximityToViewportResult result;
+  if (mContentVisibilityAutoFrames.IsEmpty()) {
+    return result;
+  }
+
+  auto margin = LengthPercentage::FromPercentage(
+      StaticPrefs::layout_css_content_visibility_relevant_content_margin() /
+      100.0f);
+
+  auto rootMargin = StyleRect<LengthPercentage>::WithAllSides(margin);
+
+  auto input = DOMIntersectionObserver::ComputeInput(
+      *mDocument, /* aRoot = */ nullptr, &rootMargin);
+
+  for (nsIFrame* frame : mContentVisibilityAutoFrames) {
+    auto* element = frame->GetContent()->AsElement();
+    result.mAnyScrollIntoViewFlag |=
+        element->TemporarilyVisibleForScrolledIntoViewDescendant();
+
+    // 14.2.3.1
+    Maybe<bool> oldVisibility = element->GetVisibleForContentVisibility();
+    bool checkForInitialDetermination =
+        oldVisibility.isNothing() &&
+        (element->GetContentRelevancy().isNothing() ||
+         element->GetContentRelevancy()->isEmpty());
+
+    // 14.2.3.2
+    bool intersects =
+        DOMIntersectionObserver::Intersect(
+            input, *element,
+            DOMIntersectionObserver::IsForProximityToViewport::Yes)
+            .Intersects();
+    element->SetVisibleForContentVisibility(intersects);
+    if (oldVisibility.isNothing() || *oldVisibility != intersects) {
+      frame->UpdateIsRelevantContent(ContentRelevancyReason::Visible);
+    }
+
+    // 14.2.3.3
+    if (checkForInitialDetermination && intersects) {
+      result.mHadInitialDetermination = true;
+    }
+  }
+  if (nsPresContext* presContext = GetPresContext()) {
+    presContext->UpdateHiddenByContentVisibilityForAnimationsIfNeeded();
+  }
+
+  return result;
+}
+
+void PresShell::ClearTemporarilyVisibleForScrolledIntoViewDescendantFlags()
+    const {
+  for (nsIFrame* frame : mContentVisibilityAutoFrames) {
+    frame->GetContent()
+        ->AsElement()
+        ->SetTemporarilyVisibleForScrolledIntoViewDescendant(false);
   }
 }
 

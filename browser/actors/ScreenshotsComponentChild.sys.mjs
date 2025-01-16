@@ -15,6 +15,15 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
   #scrollTask;
   #overlay;
 
+  static OVERLAY_EVENTS = [
+    "click",
+    "pointerdown",
+    "pointermove",
+    "pointerup",
+    "keyup",
+    "keydown",
+  ];
+
   get overlay() {
     return this.#overlay;
   }
@@ -41,10 +50,16 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
 
   handleEvent(event) {
     switch (event.type) {
+      case "click":
+      case "pointerdown":
+      case "pointermove":
+      case "pointerup":
+      case "keyup":
       case "keydown":
-        if (event.key === "Escape") {
-          this.requestCancelScreenshot("escape");
+        if (!this.overlay?.initialized) {
+          return;
         }
+        this.overlay.handleEvent(event);
         break;
       case "beforeunload":
         this.requestCancelScreenshot("navigation");
@@ -191,6 +206,13 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     });
   }
 
+  addOverlayEventListeners() {
+    let chromeEventHandler = this.docShell.chromeEventHandler;
+    for (let event of ScreenshotsComponentChild.OVERLAY_EVENTS) {
+      chromeEventHandler.addEventListener(event, this, true);
+    }
+  }
+
   /**
    * Wait until the document is ready and then show the screenshots overlay
    *
@@ -208,24 +230,33 @@ export class ScreenshotsComponentChild extends JSWindowActorChild {
     let overlay =
       this.overlay ||
       (this.#overlay = new lazy.ScreenshotsOverlay(this.document));
-    this.document.addEventListener("keydown", this);
     this.document.ownerGlobal.addEventListener("beforeunload", this);
     this.contentWindow.addEventListener("resize", this);
     this.contentWindow.addEventListener("scroll", this);
     this.contentWindow.addEventListener("visibilitychange", this);
+    this.addOverlayEventListeners();
+
     overlay.initialize();
     return true;
+  }
+
+  removeOverlayEventListeners() {
+    let chromeEventHandler = this.docShell.chromeEventHandler;
+    for (let event of ScreenshotsComponentChild.OVERLAY_EVENTS) {
+      chromeEventHandler.removeEventListener(event, this, true);
+    }
   }
 
   /**
    * Removes event listeners and the screenshots overlay.
    */
   endScreenshotsOverlay(options = {}) {
-    this.document.removeEventListener("keydown", this);
     this.document.ownerGlobal.removeEventListener("beforeunload", this);
     this.contentWindow.removeEventListener("resize", this);
     this.contentWindow.removeEventListener("scroll", this);
     this.contentWindow.removeEventListener("visibilitychange", this);
+    this.removeOverlayEventListeners();
+
     this.overlay?.tearDown(options);
     this.#resizeTask?.disarm();
     this.#scrollTask?.disarm();

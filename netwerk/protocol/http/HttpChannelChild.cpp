@@ -816,6 +816,7 @@ void HttpChannelChild::DoOnDataAvailable(nsIRequest* aRequest,
 
 void HttpChannelChild::SendOnDataFinished(const nsresult& aChannelStatus) {
   LOG(("HttpChannelChild::SendOnDataFinished [this=%p]\n", this));
+
   if (mCanceled) return;
 
   // we need to ensure we OnDataFinished only after all the progress
@@ -857,10 +858,7 @@ class RecordStopRequestDelta final {
 
  private:
   ~RecordStopRequestDelta() {
-    MOZ_ASSERT_IF(StaticPrefs::network_send_OnDataFinished(),
-                  !mOnDataFinishedTime.IsNull());
-    MOZ_ASSERT(!mOnStopRequestTime.IsNull());
-    if (mOnDataFinishedTime.IsNull()) {
+    if (mOnDataFinishedTime.IsNull() || mOnStopRequestTime.IsNull()) {
       return;
     }
 
@@ -1169,7 +1167,8 @@ void HttpChannelChild::CollectOMTTelemetry() {
   nsAutoCString key(
       NS_CP_ContentTypeName(mLoadInfo->InternalContentPolicyType()));
 
-  Telemetry::AccumulateCategoricalKeyed(key, mOMTResult);
+  Telemetry::AccumulateCategoricalKeyed(
+      key, static_cast<LABELS_HTTP_CHILD_OMT_STATS>(mOMTResult));
 }
 
 void HttpChannelChild::CollectMixedContentTelemetry() {
@@ -2479,6 +2478,8 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
 
   openArgs.classicScriptHintCharset() = mClassicScriptHintCharset;
 
+  openArgs.isUserAgentHeaderModified() = LoadIsUserAgentHeaderModified();
+
   RefPtr<Document> doc;
   mLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
 
@@ -2561,6 +2562,11 @@ HttpChannelChild::SetRequestHeader(const nsACString& aHeader,
   RequestHeaderTuple* tuple = mClientSetRequestHeaders.AppendElement();
   if (!tuple) return NS_ERROR_OUT_OF_MEMORY;
 
+  // Mark that the User-Agent header has been modified.
+  if (nsHttp::ResolveAtom(aHeader) == nsHttp::User_Agent) {
+    StoreIsUserAgentHeaderModified(true);
+  }
+
   tuple->mHeader = aHeader;
   tuple->mValue = aValue;
   tuple->mMerge = aMerge;
@@ -2576,6 +2582,11 @@ HttpChannelChild::SetEmptyRequestHeader(const nsACString& aHeader) {
 
   RequestHeaderTuple* tuple = mClientSetRequestHeaders.AppendElement();
   if (!tuple) return NS_ERROR_OUT_OF_MEMORY;
+
+  // Mark that the User-Agent header has been modified.
+  if (nsHttp::ResolveAtom(aHeader) == nsHttp::User_Agent) {
+    StoreIsUserAgentHeaderModified(true);
+  }
 
   tuple->mHeader = aHeader;
   tuple->mMerge = false;

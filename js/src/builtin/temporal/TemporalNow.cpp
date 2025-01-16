@@ -40,7 +40,6 @@
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/Value.h"
 #include "vm/DateTime.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
@@ -221,7 +220,7 @@ static bool SystemDateTime(JSContext* cx, Handle<TimeZoneValue> timeZone,
     return false;
   }
 
-  // SystemDateTime, step 5.
+  // SystemDateTime, steps 5-6.
   return GetPlainDateTimeFor(cx, timeZone, instant, dateTime);
 }
 

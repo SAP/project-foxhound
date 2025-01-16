@@ -120,7 +120,8 @@ void CacheRegisterAllocator::saveIonLiveRegisters(MacroAssembler& masm,
   // Step 2. Figure out the size of our live regs.  This is consistent with
   // the fact that we're using storeRegsInMask to generate the save code and
   // PopRegsInMask to generate the restore code.
-  size_t sizeOfLiveRegsInBytes = masm.PushRegsInMaskSizeInBytes(liveRegs);
+  size_t sizeOfLiveRegsInBytes =
+      MacroAssembler::PushRegsInMaskSizeInBytes(liveRegs);
 
   MOZ_ASSERT(sizeOfLiveRegsInBytes > 0);
 
@@ -1156,7 +1157,8 @@ bool IonCacheIRCompiler::emitCallNativeGetterResult(
   masm.passABIArg(argJSContext);
   masm.passABIArg(argUintN);
   masm.passABIArg(argVp);
-  masm.callWithABI(DynamicFunction<JSNative>(target->native()), MoveOp::GENERAL,
+  masm.callWithABI(DynamicFunction<JSNative>(target->native()),
+                   ABIType::General,
                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   // Test for failure.
@@ -1275,7 +1277,7 @@ bool IonCacheIRCompiler::emitProxyGetResult(ObjOperandId objId,
   masm.passABIArg(argId);
   masm.passABIArg(argVp);
   masm.callWithABI<Fn, ProxyGetProperty>(
-      MoveOp::GENERAL, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
+      ABIType::General, CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   // Test for failure.
   masm.branchIfFalseBool(ReturnReg, masm.exceptionLabel());
@@ -1534,11 +1536,7 @@ bool IonCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
-  masm.boundsCheck32PowerOfTwo(scratch1, StaticStrings::UNIT_STATIC_LIMIT,
-                               &vmCall);
-  masm.movePtr(ImmPtr(&cx_->staticStrings().unitStaticTable), scratch2);
-  masm.loadPtr(BaseIndex(scratch2, scratch1, ScalePointer), scratch2);
-
+  masm.lookupStaticString(scratch1, scratch2, cx_->staticStrings(), &vmCall);
   masm.jump(&done);
 
   if (handleOOB) {
@@ -1642,7 +1640,8 @@ bool IonCacheIRCompiler::emitCallNativeSetter(ObjOperandId receiverId,
   masm.passABIArg(argJSContext);
   masm.passABIArg(argUintN);
   masm.passABIArg(argVp);
-  masm.callWithABI(DynamicFunction<JSNative>(target->native()), MoveOp::GENERAL,
+  masm.callWithABI(DynamicFunction<JSNative>(target->native()),
+                   ABIType::General,
                    CheckUnsafeCallWithABI::DontCheckHasExitFrame);
 
   // Test for failure.

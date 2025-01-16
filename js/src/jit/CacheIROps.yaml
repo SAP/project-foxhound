@@ -272,6 +272,14 @@
     obj: ObjId
     kind: GuardClassKindImm
 
+# Guard on a realm fuse.
+- name: GuardFuse
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    fuseWord: RealmFuseIndexImm
+
 # Guard on an arbitrary JSClass.
 - name: GuardAnyClass
   shared: false
@@ -1021,6 +1029,13 @@
     obj: ObjId
     sep: StringId
 
+- name: ObjectKeysResult
+  shared: true
+  transpile: true
+  cost_estimate: 6
+  args:
+    obj: ObjId
+
 - name: PackedArrayPopResult
   shared: true
   transpile: true
@@ -1246,7 +1261,23 @@
   args:
     code: Int32Id
 
+- name: StringIncludesResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
 - name: StringIndexOfResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+    searchStr: StringId
+
+- name: StringLastIndexOfResult
   shared: true
   transpile: true
   cost_estimate: 5
@@ -1278,6 +1309,27 @@
     str: StringId
 
 - name: StringToUpperCaseResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+
+- name: StringTrimResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+
+- name: StringTrimStartResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    str: StringId
+
+- name: StringTrimEndResult
   shared: true
   transpile: true
   cost_estimate: 5

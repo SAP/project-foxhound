@@ -2,19 +2,24 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { button, div, label, input, span } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
-import { CloseButton } from "./Button";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import {
+  button,
+  div,
+  label,
+  input,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
+import { CloseButton } from "./Button/index";
 
 import AccessibleImage from "./AccessibleImage";
-import actions from "../../actions";
-import "./SearchInput.css";
-import { getSearchOptions } from "../../selectors";
+import actions from "../../actions/index";
+import { getSearchOptions } from "../../selectors/index";
 
-const classnames = require("devtools/client/shared/classnames.js");
-const SearchModifiers = require("devtools/client/shared/components/SearchModifiers");
+const classnames = require("resource://devtools/client/shared/classnames.js");
+const SearchModifiers = require("resource://devtools/client/shared/components/SearchModifiers.js");
 
 const arrowBtn = (onClick, type, className, tooltip) => {
   const props = {

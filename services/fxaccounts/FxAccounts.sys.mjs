@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
-
 import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { clearTimeout, setTimeout } from "resource://gre/modules/Timer.sys.mjs";
@@ -45,6 +43,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FxAccountsConfig: "resource://gre/modules/FxAccountsConfig.sys.mjs",
   FxAccountsDevice: "resource://gre/modules/FxAccountsDevice.sys.mjs",
   FxAccountsKeys: "resource://gre/modules/FxAccountsKeys.sys.mjs",
+  FxAccountsOAuth: "resource://gre/modules/FxAccountsOAuth.sys.mjs",
   FxAccountsProfile: "resource://gre/modules/FxAccountsProfile.sys.mjs",
   FxAccountsTelemetry: "resource://gre/modules/FxAccountsTelemetry.sys.mjs",
 });
@@ -829,12 +828,32 @@ FxAccountsInternal.prototype = {
     return this._device;
   },
 
+  _oauth: null,
+  get oauth() {
+    if (!this._oauth) {
+      this._oauth = new lazy.FxAccountsOAuth(this.fxAccountsClient);
+    }
+    return this._oauth;
+  },
+
   _telemetry: null,
   get telemetry() {
     if (!this._telemetry) {
       this._telemetry = new lazy.FxAccountsTelemetry(this);
     }
     return this._telemetry;
+  },
+
+  beginOAuthFlow(scopes) {
+    return this.oauth.beginOAuthFlow(scopes);
+  },
+
+  completeOAuthFlow(sessionToken, code, state) {
+    return this.oauth.completeOAuthFlow(sessionToken, code, state);
+  },
+
+  setScopedKeys(scopedKeys) {
+    return this.keys.setScopedKeys(scopedKeys);
   },
 
   // A hook-point for tests who may want a mocked AccountState or mocked storage.
@@ -1024,7 +1043,10 @@ FxAccountsInternal.prototype = {
     return this.startPollEmailStatus(state, data.sessionToken, "push");
   },
 
-  _destroyOAuthToken(tokenData) {
+  /** Destroyes an OAuth Token by sending a request to the FxA server
+   * @param { Object } tokenData: The token's data, with `tokenData.token` being the token itself
+   **/
+  destroyOAuthToken(tokenData) {
     return this.fxAccountsClient.oauthDestroy(
       FX_OAUTH_CLIENT_ID,
       tokenData.token
@@ -1038,7 +1060,7 @@ FxAccountsInternal.prototype = {
     // let's just destroy them all in parallel...
     let promises = [];
     for (let tokenInfo of Object.values(tokenInfos)) {
-      promises.push(this._destroyOAuthToken(tokenInfo));
+      promises.push(this.destroyOAuthToken(tokenInfo));
     }
     return Promise.all(promises);
   },
@@ -1190,7 +1212,7 @@ FxAccountsInternal.prototype = {
 
     this.pollStartDate = Date.now();
     if (!currentState.whenVerifiedDeferred) {
-      currentState.whenVerifiedDeferred = PromiseUtils.defer();
+      currentState.whenVerifiedDeferred = Promise.withResolvers();
       // This deferred might not end up with any handlers (eg, if sync
       // is yet to start up.)  This might cause "A promise chain failed to
       // handle a rejection" messages, so add an error handler directly
@@ -1412,9 +1434,21 @@ FxAccountsInternal.prototype = {
       let existing = currentState.removeCachedToken(options.token);
       if (existing) {
         // background destroy.
-        this._destroyOAuthToken(existing).catch(err => {
+        this.destroyOAuthToken(existing).catch(err => {
           log.warn("FxA failed to revoke a cached token", err);
         });
+      }
+    });
+  },
+
+  /** Sets the user to be verified in the account state,
+   * This prevents any polling for the user's verification state from the FxA server
+   **/
+  setUserVerified() {
+    return this.withCurrentAccountState(async currentState => {
+      const userData = await currentState.getUserAccountData();
+      if (!userData.verified) {
+        await currentState.updateAccountData({ verified: true });
       }
     });
   },

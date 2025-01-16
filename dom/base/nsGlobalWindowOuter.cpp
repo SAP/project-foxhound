@@ -50,6 +50,7 @@
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/dom/WindowFeatures.h"  // WindowFeatures
 #include "mozilla/dom/WindowProxyHolder.h"
@@ -156,7 +157,7 @@
 #include "nsDOMWindowUtils.h"
 #include "nsIWindowWatcher.h"
 #include "nsPIWindowWatcher.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsIScriptError.h"
 #include "nsISHistory.h"
 #include "nsIControllers.h"
@@ -1793,9 +1794,9 @@ void nsGlobalWindowOuter::SetInitialPrincipal(
   // Use the subject (or system) principal as the storage principal too until
   // the new window finishes navigating and gets a real storage principal.
   nsDocShell::Cast(GetDocShell())
-      ->CreateAboutBlankContentViewer(aNewWindowPrincipal, aNewWindowPrincipal,
-                                      aCSP, nullptr,
-                                      /* aIsInitialDocument */ true, aCOEP);
+      ->CreateAboutBlankDocumentViewer(aNewWindowPrincipal, aNewWindowPrincipal,
+                                       aCSP, nullptr,
+                                       /* aIsInitialDocument */ true, aCOEP);
 
   if (mDoc) {
     MOZ_ASSERT(mDoc->IsInitialDocument(),
@@ -2685,15 +2686,6 @@ void nsGlobalWindowOuter::DetachFromDocShell(bool aIsBeingDiscarded) {
   // later. Meanwhile, keep our weak reference to the script object
   // so that it can be retrieved later (until it is finalized by the JS GC).
 
-  if (mDoc && DocGroup::TryToLoadIframesInBackground()) {
-    DocGroup* docGroup = GetDocGroup();
-    RefPtr<nsIDocShell> docShell = GetDocShell();
-    RefPtr<nsDocShell> dShell = nsDocShell::Cast(docShell);
-    if (dShell) {
-      docGroup->TryFlushIframePostMessages(dShell->GetOuterWindowID());
-    }
-  }
-
   // Call FreeInnerObjects on all inner windows, not just the current
   // one, since some could be held by WindowStateHolder objects that
   // are GC-owned.
@@ -2822,11 +2814,11 @@ bool nsGlobalWindowOuter::AreDialogsEnabled() {
 
   // Dialogs are blocked if the content viewer is hidden
   if (mDocShell) {
-    nsCOMPtr<nsIContentViewer> cv;
-    mDocShell->GetContentViewer(getter_AddRefs(cv));
+    nsCOMPtr<nsIDocumentViewer> viewer;
+    mDocShell->GetDocViewer(getter_AddRefs(viewer));
 
     bool isHidden;
-    cv->GetIsHidden(&isHidden);
+    viewer->GetIsHidden(&isHidden);
     if (isHidden) {
       return false;
     }
@@ -3128,26 +3120,17 @@ nsPIDOMWindowOuter* nsGlobalWindowOuter::GetInProcessScriptableParentOrNull() {
   return (nsGlobalWindowOuter::Cast(parent) == this) ? nullptr : parent;
 }
 
-/**
- * nsPIDOMWindow::GetParent (when called from C++) is just a wrapper around
- * GetRealParent.
- */
 already_AddRefed<nsPIDOMWindowOuter> nsGlobalWindowOuter::GetInProcessParent() {
   if (!mDocShell) {
     return nullptr;
   }
 
-  nsCOMPtr<nsIDocShell> parent;
-  mDocShell->GetSameTypeInProcessParentIgnoreBrowserBoundaries(
-      getter_AddRefs(parent));
-
-  if (parent) {
-    nsCOMPtr<nsPIDOMWindowOuter> win = parent->GetWindow();
-    return win.forget();
+  if (auto* parentBC = GetBrowsingContext()->GetParent()) {
+    if (auto* parent = parentBC->GetDOMWindow()) {
+      return do_AddRef(parent);
+    }
   }
-
-  nsCOMPtr<nsPIDOMWindowOuter> win(this);
-  return win.forget();
+  return do_AddRef(this);
 }
 
 static nsresult GetTopImpl(nsGlobalWindowOuter* aWin, nsIURI* aURIBeingLoaded,
@@ -5073,7 +5056,7 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
   nsAutoSyncOperation sync(docToPrint, SyncOperationBehavior::eAllowInput);
   AutoModalState modalState(*this);
 
-  nsCOMPtr<nsIContentViewer> cv;
+  nsCOMPtr<nsIDocumentViewer> viewer;
   RefPtr<BrowsingContext> bc;
   bool hasPrintCallbacks = false;
   if (docToPrint->IsStaticDocument()) {
@@ -5098,8 +5081,8 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
           "docshell");
       return nullptr;
     }
-    docShell->GetContentViewer(getter_AddRefs(cv));
-    MOZ_DIAGNOSTIC_ASSERT(cv);
+    docShell->GetDocViewer(getter_AddRefs(viewer));
+    MOZ_DIAGNOSTIC_ASSERT(viewer);
   } else {
     if (aDocShellToCloneInto) {
       // Ensure the content viewer is created if needed.
@@ -5136,9 +5119,9 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
     Unused << bc->Top()->SetIsPrinting(true);
     nsCOMPtr<nsIDocShell> cloneDocShell = bc->GetDocShell();
     MOZ_DIAGNOSTIC_ASSERT(cloneDocShell);
-    cloneDocShell->GetContentViewer(getter_AddRefs(cv));
-    MOZ_DIAGNOSTIC_ASSERT(cv);
-    if (!cv) {
+    cloneDocShell->GetDocViewer(getter_AddRefs(viewer));
+    MOZ_DIAGNOSTIC_ASSERT(viewer);
+    if (!viewer) {
       aError.ThrowNotSupportedError("Didn't end up with a content viewer");
       return nullptr;
     }
@@ -5156,7 +5139,7 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
       MOZ_DIAGNOSTIC_ASSERT(bc->Group() == sourceBC->Group());
     }
 
-    if (RefPtr<Document> doc = cv->GetDocument()) {
+    if (RefPtr<Document> doc = viewer->GetDocument()) {
       if (doc->IsShowing()) {
         // We're going to drop this document on the floor, in the SetDocument
         // call below. Make sure to run OnPageHide() to keep state consistent
@@ -5169,14 +5152,14 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
 
     nsAutoScriptBlocker blockScripts;
     RefPtr<Document> clone = docToPrint->CreateStaticClone(
-        cloneDocShell, cv, ps, &hasPrintCallbacks);
+        cloneDocShell, viewer, ps, &hasPrintCallbacks);
     if (!clone) {
       aError.ThrowNotSupportedError("Clone operation for printing failed");
       return nullptr;
     }
   }
 
-  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint = do_QueryInterface(cv);
+  nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint = do_QueryInterface(viewer);
   if (!webBrowserPrint) {
     aError.ThrowNotSupportedError(
         "Content viewer didn't implement nsIWebBrowserPrint");
@@ -5398,13 +5381,13 @@ void nsGlobalWindowOuter::SizeToContentOuter(
 
   // The content viewer does a check to make sure that it's a content
   // viewer for a toplevel docshell.
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  if (!cv) {
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  mDocShell->GetDocViewer(getter_AddRefs(viewer));
+  if (!viewer) {
     return aError.Throw(NS_ERROR_FAILURE);
   }
 
-  auto contentSize = cv->GetContentSize(
+  auto contentSize = viewer->GetContentSize(
       aConstraints.mMaxWidth, aConstraints.mMaxHeight, aConstraints.mPrefWidth);
   if (!contentSize) {
     return aError.Throw(NS_ERROR_FAILURE);
@@ -5419,12 +5402,12 @@ void nsGlobalWindowOuter::SizeToContentOuter(
 
   // Don't use DevToCSSIntPixelsForBaseWindow() nor
   // CSSToDevIntPixelsForBaseWindow() here because contentSize is comes from
-  // nsIContentViewer::GetContentSize() and it's computed with nsPresContext so
+  // nsIDocumentViewer::GetContentSize() and it's computed with nsPresContext so
   // that we need to work with nsPresContext here too.
-  RefPtr<nsPresContext> presContext = cv->GetPresContext();
+  RefPtr<nsPresContext> presContext = viewer->GetPresContext();
   MOZ_ASSERT(
       presContext,
-      "Should be non-nullptr if nsIContentViewer::GetContentSize() succeeded");
+      "Should be non-nullptr if nsIDocumentViewer::GetContentSize() succeeded");
   CSSIntSize cssSize = *contentSize;
   CheckSecurityWidthAndHeight(&cssSize.width, &cssSize.height, aCallerType);
 
@@ -5927,11 +5910,11 @@ bool nsGlobalWindowOuter::CanClose() {
     return true;
   }
 
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  if (cv) {
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  mDocShell->GetDocViewer(getter_AddRefs(viewer));
+  if (viewer) {
     bool canClose;
-    nsresult rv = cv->PermitUnload(&canClose);
+    nsresult rv = viewer->PermitUnload(&canClose);
     if (NS_SUCCEEDED(rv) && !canClose) return false;
   }
 
@@ -6623,8 +6606,8 @@ nsresult nsGlobalWindowOuter::GetInterfaceInternal(const nsIID& aIID,
 #ifdef NS_PRINTING
   else if (aIID.Equals(NS_GET_IID(nsIWebBrowserPrint))) {
     if (mDocShell) {
-      nsCOMPtr<nsIContentViewer> viewer;
-      mDocShell->GetContentViewer(getter_AddRefs(viewer));
+      nsCOMPtr<nsIDocumentViewer> viewer;
+      mDocShell->GetDocViewer(getter_AddRefs(viewer));
       if (viewer) {
         nsCOMPtr<nsIWebBrowserPrint> webBrowserPrint(do_QueryInterface(viewer));
         webBrowserPrint.forget(aSink);
@@ -6826,6 +6809,9 @@ nsresult nsGlobalWindowOuter::OpenInternal(
 
   if (NS_FAILED(rv)) return rv;
 
+  UserActivation::Modifiers modifiers;
+  mBrowsingContext->GetUserActivationModifiersForPopup(&modifiers);
+
   PopupBlocker::PopupControlState abuseLevel =
       PopupBlocker::GetPopupControlState();
   if (checkForPopup) {
@@ -6894,7 +6880,7 @@ nsresult nsGlobalWindowOuter::OpenInternal(
     if (!aCalledNoScript) {
       // We asserted at the top of this function that aNavigate is true for
       // !aCalledNoScript.
-      rv = pwwatch->OpenWindow2(this, url, name, options,
+      rv = pwwatch->OpenWindow2(this, url, name, options, modifiers,
                                 /* aCalledFromScript = */ true, aDialog,
                                 aNavigate, argv, isPopupSpamWindow,
                                 forceNoOpener, forceNoReferrer, wwPrintKind,
@@ -6914,7 +6900,7 @@ nsresult nsGlobalWindowOuter::OpenInternal(
         nojsapi.emplace();
       }
 
-      rv = pwwatch->OpenWindow2(this, url, name, options,
+      rv = pwwatch->OpenWindow2(this, url, name, options, modifiers,
                                 /* aCalledFromScript = */ false, aDialog,
                                 aNavigate, aExtraArgument, isPopupSpamWindow,
                                 forceNoOpener, forceNoReferrer, wwPrintKind,
@@ -6969,8 +6955,14 @@ void nsGlobalWindowOuter::MaybeAllowStorageForOpenedWindow(nsIURI* aURI) {
       aURI, doc->NodePrincipal()->OriginAttributesRef());
 
   // We don't care when the asynchronous work finishes here.
-  Unused << StorageAccessAPIHelper::AllowAccessFor(
-      principal, GetBrowsingContext(), ContentBlockingNotifier::eOpener);
+  // Without e10s or fission enabled this is run in the parent process.
+  if (XRE_IsParentProcess()) {
+    Unused << StorageAccessAPIHelper::AllowAccessForOnParentProcess(
+        principal, GetBrowsingContext(), ContentBlockingNotifier::eOpener);
+  } else {
+    Unused << StorageAccessAPIHelper::AllowAccessForOnChildProcess(
+        principal, GetBrowsingContext(), ContentBlockingNotifier::eOpener);
+  }
 }
 
 //*****************************************************************************

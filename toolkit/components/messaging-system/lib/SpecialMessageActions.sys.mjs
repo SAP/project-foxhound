@@ -97,8 +97,8 @@ export const SpecialMessageActions = {
    *
    *  @param {Window} window Reference to a window object
    */
-  setDefaultBrowser(window) {
-    window.getShellService().setAsDefault();
+  async setDefaultBrowser(window) {
+    await window.getShellService().setAsDefault();
   },
 
   /**
@@ -155,11 +155,6 @@ export const SpecialMessageActions = {
             "browser.newtabpage.activity-stream.section.highlights.includeDownloads",
             "browser.newtabpage.activity-stream.section.highlights.includeBookmarks",
           ],
-        ],
-        [
-          // controls the snippets section
-          "browser.newtabpage.activity-stream.feeds.snippets",
-          layout.snippets,
         ],
         [
           // controls the topstories section
@@ -442,10 +437,10 @@ export const SpecialMessageActions = {
         break;
       case "PIN_AND_DEFAULT":
         await this.pinFirefoxToTaskbar(window, action.data?.privatePin);
-        this.setDefaultBrowser(window);
+        await this.setDefaultBrowser(window);
         break;
       case "SET_DEFAULT_BROWSER":
-        this.setDefaultBrowser(window);
+        await this.setDefaultBrowser(window);
         break;
       case "SET_DEFAULT_PDF_HANDLER":
         this.setDefaultPDFHandler(
@@ -478,7 +473,7 @@ export const SpecialMessageActions = {
         }
         const data = action.data;
         const url = await lazy.FxAccounts.config.promiseConnectAccountURI(
-          (data && data.entrypoint) || "snippets",
+          data && data.entrypoint,
           (data && data.extraParams) || {}
         );
         // Use location provided; if not specified, replace the current tab.
@@ -558,6 +553,10 @@ export const SpecialMessageActions = {
         break;
       case "RELOAD_BROWSER":
         browser.reload();
+        break;
+      case "FOCUS_URLBAR":
+        window.gURLBar.focus();
+        window.gURLBar.select();
         break;
     }
     return undefined;

@@ -89,19 +89,17 @@ union PackedTypeCode {
     MOZ_ASSERT_IF(tc != AbstractTypeRefCode, typeDef == nullptr);
     MOZ_ASSERT_IF(tc == AbstractTypeRefCode, typeDef != nullptr);
 #if defined(JS_64BIT) && defined(DEBUG)
-    // Double check that `typeDef` points inside the "canonical" 48-bit
-    // address space by checking that the lower 48 bits sign extend back to
-    // the original.  This is necessary since we will only store the lowest 48
-    // bits of it, as noted above.  There's no equivalent check on 32 bit
+    // Double check that `typeDef` only has 48 significant bits, with the top
+    // 16 being zero.  This is necessary since we will only store the lowest
+    // 48 bits of it, as noted above.  There's no equivalent check on 32 bit
     // targets since we can store the whole pointer.
-    int64_t w = int64_t(typeDef);
-    w <<= (64 - TypeDefBits);
-    w >>= (64 - TypeDefBits);
-    MOZ_ASSERT(w == int64_t(typeDef));
+    static_assert(sizeof(int64_t) == sizeof(uintptr_t));
+    uint64_t w = (uint64_t)(uintptr_t)typeDef;
+    MOZ_ASSERT((w >> TypeDefBits) == 0);
 #endif
     PackedTypeCode ptc = {};
     ptc.typeCode_ = PackedRepr(tc);
-    ptc.typeDef_ = (uintptr_t)typeDef;
+    ptc.typeDef_ = (uint64_t)(uintptr_t)typeDef;
     ptc.nullable_ = isNullable;
     return ptc;
   }
@@ -112,11 +110,11 @@ union PackedTypeCode {
 
   static PackedTypeCode pack(TypeCode tc) { return pack(tc, nullptr, false); }
 
-  bool isValid() const { return typeCode_ != NoTypeCode; }
+  constexpr bool isValid() const { return typeCode_ != NoTypeCode; }
 
   PackedRepr bits() const { return bits_; }
 
-  TypeCode typeCode() const {
+  constexpr TypeCode typeCode() const {
     MOZ_ASSERT(isValid());
     return TypeCode(typeCode_);
   }
@@ -134,7 +132,7 @@ union PackedTypeCode {
   // what ValType needs, so that this decoding step is not necessary, but that
   // moves complexity elsewhere, and the perf gain here would be only about 1%
   // for baseline compilation throughput.
-  TypeCode typeCodeAbstracted() const {
+  constexpr TypeCode typeCodeAbstracted() const {
     TypeCode tc = typeCode();
     return tc < LowestPrimitiveTypeCode ? AbstractReferenceTypeCode : tc;
   }
@@ -149,17 +147,10 @@ union PackedTypeCode {
 
   const TypeDef* typeDef() const {
     MOZ_ASSERT(isValid());
-#if defined(JS_64BIT)
-    // Reconstitute the pointer by sign-extending the lowest TypeDefBits bits.
-    static_assert(sizeof(int64_t) == sizeof(uintptr_t));
-    int64_t w = int64_t(typeDef_);
-    w <<= (64 - TypeDefBits);
-    w >>= (64 - TypeDefBits);
-    return (const TypeDef*)(uintptr_t)w;
-#else
-    // The pointer is stored exactly in the lowest 32 bits of `typeDef_`.
+    // On a 64-bit target, this reconstitutes the pointer by zero-extending
+    // the lowest TypeDefBits bits of `typeDef_`.  On a 32-bit target, the
+    // pointer is stored exactly in the lowest 32 bits of `typeDef_`.
     return (const TypeDef*)(uintptr_t)typeDef_;
-#endif
   }
 
   bool isNullable() const {
@@ -311,7 +302,7 @@ enum class TableRepr { Ref, Func };
 
 // An enum that describes the different type hierarchies.
 
-enum class RefTypeHierarchy { Func, Extern, Any };
+enum class RefTypeHierarchy { Func, Extern, Exn, Any };
 
 // The RefType carries more information about types t for which t.isRefType()
 // is true.
@@ -321,6 +312,7 @@ class RefType {
   enum Kind {
     Func = uint8_t(TypeCode::FuncRef),
     Extern = uint8_t(TypeCode::ExternRef),
+    Exn = uint8_t(TypeCode::ExnRef),
     Any = uint8_t(TypeCode::AnyRef),
     NoFunc = uint8_t(TypeCode::NullFuncRef),
     NoExtern = uint8_t(TypeCode::NullExternRef),
@@ -373,6 +365,7 @@ class RefType {
     switch (ptc_.typeCode()) {
       case TypeCode::FuncRef:
       case TypeCode::ExternRef:
+      case TypeCode::ExnRef:
       case TypeCode::AnyRef:
       case TypeCode::EqRef:
       case TypeCode::I31Ref:
@@ -391,6 +384,7 @@ class RefType {
 
   static RefType func() { return RefType(Func, true); }
   static RefType extern_() { return RefType(Extern, true); }
+  static RefType exn() { return RefType(Exn, true); }
   static RefType any() { return RefType(Any, true); }
   static RefType nofunc() { return RefType(NoFunc, true); }
   static RefType noextern() { return RefType(NoExtern, true); }
@@ -473,6 +467,7 @@ class FieldTypeTraits {
 #endif
       case TypeCode::FuncRef:
       case TypeCode::ExternRef:
+      case TypeCode::ExnRef:
 #ifdef ENABLE_WASM_GC
       case TypeCode::AnyRef:
       case TypeCode::EqRef:
@@ -550,6 +545,7 @@ class ValTypeTraits {
 #endif
       case TypeCode::FuncRef:
       case TypeCode::ExternRef:
+      case TypeCode::ExnRef:
 #ifdef ENABLE_WASM_GC
       case TypeCode::AnyRef:
       case TypeCode::EqRef:
@@ -634,6 +630,11 @@ class PackedType : public T {
   inline void AddRef() const;
   inline void Release() const;
 
+  static constexpr PackedType i32() { return PackedType(PackedType::I32); }
+  static constexpr PackedType f32() { return PackedType(PackedType::F32); }
+  static constexpr PackedType i64() { return PackedType(PackedType::I64); }
+  static constexpr PackedType f64() { return PackedType(PackedType::F64); }
+
   static PackedType fromMIRType(jit::MIRType mty) {
     switch (mty) {
       case jit::MIRType::Int32:
@@ -715,6 +716,8 @@ class PackedType : public T {
 
   bool isExternRef() const { return tc_.typeCode() == TypeCode::ExternRef; }
 
+  bool isExnRef() const { return tc_.typeCode() == TypeCode::ExnRef; }
+
   bool isAnyRef() const { return tc_.typeCode() == TypeCode::AnyRef; }
 
   bool isNoFunc() const { return tc_.typeCode() == TypeCode::NullFuncRef; }
@@ -741,9 +744,9 @@ class PackedType : public T {
   // Returns whether the type has a representation in JS.
   bool isExposable() const {
 #if defined(ENABLE_WASM_SIMD)
-    return kind() != Kind::V128;
+    return kind() != Kind::V128 && !isExnRef();
 #else
-    return true;
+    return !isExnRef();
 #endif
   }
 
@@ -830,7 +833,7 @@ class PackedType : public T {
   // as a pointer.  At the JS/wasm boundary, an AnyRef can be represented as a
   // JS::Value, and the type translation may have to be handled specially and on
   // a case-by-case basis.
-  jit::MIRType toMIRType() const {
+  constexpr jit::MIRType toMIRType() const {
     switch (tc_.typeCodeAbstracted()) {
       case TypeCode::I32:
         return jit::MIRType::Int32;

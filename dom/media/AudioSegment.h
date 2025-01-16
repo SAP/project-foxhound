@@ -7,7 +7,6 @@
 #define MOZILLA_AUDIOSEGMENT_H_
 
 #include <speex/speex_resampler.h>
-#include "MediaTrackGraph.h"
 #include "MediaSegment.h"
 #include "AudioSampleFormat.h"
 #include "AudioChannelFormat.h"
@@ -299,6 +298,9 @@ struct AudioChunk {
 
   const PrincipalHandle& GetPrincipalHandle() const { return mPrincipalHandle; }
 
+  // aOutputChannels must contain pointers to channel data of length mDuration.
+  void DownMixTo(Span<AudioDataValue* const> aOutputChannels) const;
+
   TrackTime mDuration = 0;             // in frames within the buffer
   RefPtr<ThreadSharedObject> mBuffer;  // the buffer object whose lifetime is
                                        // managed; null means data is all zeroes
@@ -337,65 +339,6 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   // function finds a chunk with more channels, `aResampler` is destroyed and a
   // new resampler is created, and `aResamplerChannelCount` is updated with the
   // new channel count value.
-  template <typename T>
-  void Resample(nsAutoRef<SpeexResamplerState>& aResampler,
-                uint32_t* aResamplerChannelCount, uint32_t aInRate,
-                uint32_t aOutRate) {
-    mDuration = 0;
-
-    for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
-      AutoTArray<nsTArray<T>, GUESS_AUDIO_CHANNELS> output;
-      AutoTArray<const T*, GUESS_AUDIO_CHANNELS> bufferPtrs;
-      AudioChunk& c = *ci;
-      // If this chunk is null, don't bother resampling, just alter its duration
-      if (c.IsNull()) {
-        c.mDuration = (c.mDuration * aOutRate) / aInRate;
-        mDuration += c.mDuration;
-        continue;
-      }
-      uint32_t channels = c.mChannelData.Length();
-      // This might introduce a discontinuity, but a channel count change in the
-      // middle of a stream is not that common. This also initializes the
-      // resampler as late as possible.
-      if (channels != *aResamplerChannelCount) {
-        SpeexResamplerState* state =
-            speex_resampler_init(channels, aInRate, aOutRate,
-                                 SPEEX_RESAMPLER_QUALITY_DEFAULT, nullptr);
-        MOZ_ASSERT(state);
-        aResampler.own(state);
-        *aResamplerChannelCount = channels;
-      }
-      output.SetLength(channels);
-      bufferPtrs.SetLength(channels);
-      uint32_t inFrames = c.mDuration;
-      // Round up to allocate; the last frame may not be used.
-      NS_ASSERTION((UINT64_MAX - aInRate + 1) / c.mDuration >= aOutRate,
-                   "Dropping samples");
-      uint32_t outSize =
-          (static_cast<uint64_t>(c.mDuration) * aOutRate + aInRate - 1) /
-          aInRate;
-      for (uint32_t i = 0; i < channels; i++) {
-        T* out = output[i].AppendElements(outSize);
-        uint32_t outFrames = outSize;
-
-        const T* in = static_cast<const T*>(c.mChannelData[i]);
-        dom::WebAudioUtils::SpeexResamplerProcess(aResampler.get(), i, in,
-                                                  &inFrames, out, &outFrames);
-        MOZ_ASSERT(inFrames == c.mDuration);
-
-        bufferPtrs[i] = out;
-        output[i].SetLength(outFrames);
-      }
-      MOZ_ASSERT(channels > 0);
-      c.mDuration = output[0].Length();
-      c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(std::move(output));
-      for (uint32_t i = 0; i < channels; i++) {
-        c.mChannelData[i] = bufferPtrs[i];
-      }
-      mDuration += c.mDuration;
-    }
-  }
-
   void ResampleChunks(nsAutoRef<SpeexResamplerState>& aResampler,
                       uint32_t* aResamplerChannelCount, uint32_t aInRate,
                       uint32_t aOutRate);
@@ -464,11 +407,6 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
     chunk = AppendChunk(aChunk.mDuration);
   }
   void ApplyVolume(float aVolume);
-  // Mix the segment into a mixer, interleaved. This is useful to output a
-  // segment to a system audio callback. It up or down mixes to aChannelCount
-  // channels.
-  void WriteTo(AudioMixer& aMixer, uint32_t aChannelCount,
-               uint32_t aSampleRate);
   // Mix the segment into a mixer, keeping it planar, up or down mixing to
   // aChannelCount channels.
   void Mix(AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
@@ -509,6 +447,12 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
       }
     }
   }
+
+ private:
+  template <typename T>
+  void Resample(nsAutoRef<SpeexResamplerState>& aResampler,
+                uint32_t* aResamplerChannelCount, uint32_t aInRate,
+                uint32_t aOutRate);
 };
 
 template <typename SrcT>

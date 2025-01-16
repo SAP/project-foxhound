@@ -23,7 +23,7 @@
 #include "nsEditingSession.h"
 #include "nsError.h"                      // for NS_ERROR_FAILURE, NS_OK, etc
 #include "nsIChannel.h"                   // for nsIChannel
-#include "nsIContentViewer.h"             // for nsIContentViewer
+#include "nsIDocumentViewer.h"            // for nsIDocumentViewer
 #include "nsIControllers.h"               // for nsIControllers
 #include "nsID.h"                         // for NS_GET_IID, etc
 #include "nsHTMLDocument.h"               // for nsHTMLDocument
@@ -369,14 +369,14 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   NS_ENSURE_TRUE(fs, NS_ERROR_FAILURE);
   AutoHideSelectionChanges hideSelectionChanges(fs);
 
-  nsCOMPtr<nsIContentViewer> contentViewer;
-  nsresult rv = docShell->GetContentViewer(getter_AddRefs(contentViewer));
-  if (NS_FAILED(rv) || NS_WARN_IF(!contentViewer)) {
-    NS_WARNING("nsDocShell::GetContentViewer() failed");
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  nsresult rv = docShell->GetDocViewer(getter_AddRefs(viewer));
+  if (NS_FAILED(rv) || NS_WARN_IF(!viewer)) {
+    NS_WARNING("nsDocShell::GetDocViewer() failed");
     return rv;
   }
 
-  const RefPtr<Document> doc = contentViewer->GetDocument();
+  const RefPtr<Document> doc = viewer->GetDocument();
   if (NS_WARN_IF(!doc)) {
     return NS_ERROR_FAILURE;
   }
@@ -410,8 +410,8 @@ nsresult nsEditingSession::SetupEditorOnWindow(nsPIDOMWindowOuter& aWindow) {
   rv = htmlEditor->SetContentsMIMEType(mimeType);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  MOZ_ASSERT(docShell->HasContentViewer());
-  MOZ_ASSERT(contentViewer->GetDocument());
+  MOZ_ASSERT(docShell->HasDocumentViewer());
+  MOZ_ASSERT(viewer->GetDocument());
 
   MOZ_DIAGNOSTIC_ASSERT(commandsUpdater == mComposerCommandsUpdater);
   if (MOZ_UNLIKELY(commandsUpdater != mComposerCommandsUpdater)) {

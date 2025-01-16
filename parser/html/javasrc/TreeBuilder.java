@@ -434,6 +434,8 @@ public abstract class TreeBuilder<T> implements TokenHandler,
 
     private boolean forceNoQuirks = false;
 
+    private boolean allowDeclarativeShadowRoots = false;
+
     // [NOCPP[
 
     private boolean reportingDoctype = true;
@@ -2573,6 +2575,20 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             startTagTemplateInHead(elementName, attributes);
                             attributes = null; // CPP
                             break starttagloop;
+                        case HR:
+                            if (isCurrent("option")) {
+                                pop();
+                            }
+                            if (isCurrent("optgroup")) {
+                                pop();
+                            }
+                            appendVoidElementToCurrent(elementName, attributes);
+                            selfClosing = false;
+                            // [NOCPP[
+                            voidElement = true;
+                            // ]NOCPP]
+                            attributes = null; // CPP
+                            break starttagloop;
                         default:
                             errStrayStartTag(name);
                             break starttagloop;
@@ -2942,6 +2958,20 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         return ("http://www.w3.org/1999/xhtml" == ns)
                 || (stackNode.isHtmlIntegrationPoint())
                 || (("http://www.w3.org/1998/Math/MathML" == ns) && (stackNode.getGroup() == MI_MO_MN_MS_MTEXT));
+    }
+
+    private T getDeclarativeShadowRoot(T currentNode, T templateNode, HtmlAttributes attributes) {
+        if (!isAllowDeclarativeShadowRoots()) {
+            return null;
+        }
+
+        String shadowRootMode = attributes.getValue(AttributeName.SHADOWROOTMODE);
+        if (shadowRootMode == null) {
+            return null;
+        }
+
+        boolean shadowRootDelegatesFocus = attributes.contains(AttributeName.SHADOWROOTDELEGATESFOCUS);
+        return getShadowRootFromHost(currentNode, templateNode, shadowRootMode, shadowRootDelegatesFocus);
     }
 
     /**
@@ -5288,9 +5318,17 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         T elt = createElement("http://www.w3.org/1999/xhtml", elementName.getName(), attributes, currentNode
                 // CPPONLY: , htmlCreator(elementName.getHtmlCreator())
                 );
-        appendElement(elt, currentNode);
         if (ElementName.TEMPLATE == elementName) {
-            elt = getDocumentFragmentForTemplate(elt);
+            T root = getDeclarativeShadowRoot(currentNode, elt, attributes);
+            if (root != null) {
+                setDocumentFragmentForTemplate(elt, root);
+                elt = root;
+            } else {
+                appendElement(elt, currentNode);
+                elt = getDocumentFragmentForTemplate(elt);
+            }
+        } else {
+            appendElement(elt, currentNode);
         }
         StackNode<T> node = createStackNode(elementName, elt
                 // [NOCPP[
@@ -5377,6 +5415,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         return template;
     }
 
+    void setDocumentFragmentForTemplate(T template, T fragment) {
+    }
+
+    T getShadowRootFromHost(T host, T template, String shadowRootMode, boolean shadowRootDelegatesFocus) {
+        return null;
+    }
+
     T getFormPointerForContext(T context) {
         return null;
     }
@@ -5457,6 +5502,25 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         push(node);
     }
 
+    private void appendVoidElementToCurrent(
+            ElementName elementName, HtmlAttributes attributes)
+            throws SAXException {
+        @Local String popName = elementName.getName();
+        // [NOCPP[
+        checkAttributes(attributes, "http://www.w3.org/1999/xhtml");
+        if (!elementName.isInterned()) {
+            popName = checkPopName(popName);
+        }
+        // ]NOCPP]
+        T currentNode = nodeFromStackWithBlinkCompat(currentPtr);
+        T elt = createElement("http://www.w3.org/1999/xhtml", popName, attributes, currentNode
+                // CPPONLY: , htmlCreator(elementName.getHtmlCreator())
+                );
+        appendElement(elt, currentNode);
+        elementPushed("http://www.w3.org/1999/xhtml", popName, elt);
+        elementPopped("http://www.w3.org/1999/xhtml", popName, elt);
+    }
+
     private void appendVoidElementToCurrentMayFoster(
             ElementName elementName, HtmlAttributes attributes, T form) throws SAXException {
         @Local String name = elementName.getName();
@@ -5476,6 +5540,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
         } else {
             T currentNode = nodeFromStackWithBlinkCompat(currentPtr);
             elt = createElement("http://www.w3.org/1999/xhtml", name,
+
                     attributes, formOwner, currentNode
                     // CPPONLY: , htmlCreator(elementName.getHtmlCreator())
                     );
@@ -5858,6 +5923,14 @@ public abstract class TreeBuilder<T> implements TokenHandler,
     // Redundant method retained because previously public.
     public void setIsSrcdocDocument(boolean isSrcdocDocument) {
         this.setForceNoQuirks(isSrcdocDocument);
+    }
+
+    public boolean isAllowDeclarativeShadowRoots() {
+        return allowDeclarativeShadowRoots;
+    }
+
+    public void setAllowDeclarativeShadowRoots(boolean allow) {
+        allowDeclarativeShadowRoots = allow;
     }
 
     // [NOCPP[

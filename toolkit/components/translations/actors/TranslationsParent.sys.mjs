@@ -49,6 +49,10 @@ if (AppConstants.ENABLE_WEBDRIVER) {
   lazy.RemoteAgent = { running: false };
 }
 
+XPCOMUtils.defineLazyServiceGetters(lazy, {
+  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+});
+
 ChromeUtils.defineESModuleGetters(lazy, {
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
@@ -450,10 +454,14 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {LangTags} detectedLanguages
    */
   maybeOfferTranslations(detectedLanguages) {
+    if (!this.browsingContext.currentWindowGlobal) {
+      return;
+    }
     if (!lazy.automaticallyPopupPref) {
       return;
     }
-    if (!this.browsingContext.currentWindowGlobal) {
+    if (lazy.BrowserHandler.kiosk) {
+      // Pop-ups should not be shown in kiosk mode.
       return;
     }
     const { documentURI } = this.browsingContext.currentWindowGlobal;
@@ -534,7 +542,7 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     // Only offer the translation if it's still the current page.
-    var isCurrentPage = false;
+    let isCurrentPage = false;
     if (AppConstants.platform !== "android") {
       isCurrentPage =
         documentURI.spec ===
@@ -576,7 +584,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * use the feature. This function also respects mocks and simulating unsupported
    * engines.
    *
-   * @type {Promise<boolean>}
+   * @type {boolean}
    */
   static getIsTranslationsEngineSupported() {
     if (lazy.simulateUnsupportedEnginePref) {
@@ -588,43 +596,19 @@ export class TranslationsParent extends JSWindowActorParent {
       );
 
       // The user is manually testing unsupported engines.
-      return Promise.resolve(false);
+      return false;
     }
 
     if (TranslationsParent.#isTranslationsEngineMocked) {
       // A mocked translations engine is always supported.
-      return Promise.resolve(true);
+      return true;
     }
 
     if (TranslationsParent.#isTranslationsEngineSupported === null) {
       TranslationsParent.#isTranslationsEngineSupported = detectSimdSupport();
-
-      TranslationsParent.#isTranslationsEngineSupported.then(
-        isSupported => () => {
-          // Use the non-lazy console.log so that the user is always informed as to why
-          // the translations engine is not working.
-          if (!isSupported) {
-            console.log(
-              "Translations: The translations engine is not supported on your device as " +
-                "it does not support Wasm SIMD operations."
-            );
-          }
-        }
-      );
     }
 
     return TranslationsParent.#isTranslationsEngineSupported;
-  }
-
-  /**
-   * Invokes the provided callback after retrieving whether the translations engine is supported.
-   * @param {function(boolean)} callback - The callback which takes a boolean argument that will
-   *                                       be true if the engine is supported and false otherwise.
-   */
-  static onIsTranslationsEngineSupported(callback) {
-    TranslationsParent.getIsTranslationsEngineSupported().then(isSupported =>
-      callback(isSupported)
-    );
   }
 
   /**
@@ -635,7 +619,14 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {string} scheme - The URI spec
    * @returns {boolean}
    */
-  static isRestrictedPage(scheme) {
+  static isRestrictedPage(gBrowser) {
+    const contentType = gBrowser.selectedBrowser.documentContentType;
+    const scheme = gBrowser.currentURI.scheme;
+
+    if (contentType === "application/pdf") {
+      return true;
+    }
+
     // Keep this logic up to date with TranslationsChild.prototype.#isRestrictedPage.
     switch (scheme) {
       case "https":
@@ -1428,6 +1419,38 @@ export class TranslationsParent extends JSWindowActorParent {
   /** @type {Promise<WasmRecord> | null} */
   static #bergamotWasmRecord = null;
 
+  /** @type {boolean} */
+  static #lookForLocalWasmBuild = true;
+
+  /**
+   * This is used to load a local copy of the Bergamot translations engine, if it exists.
+   * From a local build of Firefox:
+   *
+   * 1. Run the python script:
+   *   ./toolkit/components/translations/bergamot-translator/build-bergamot.py --debug
+   *
+   * 2. Uncomment the .wasm file in: toolkit/components/translations/jar.mn
+   * 3. Run: ./mach build
+   * 4. Run: ./mach run
+   */
+  static async #maybeFetchLocalBergamotWasmArrayBuffer() {
+    if (TranslationsParent.#lookForLocalWasmBuild) {
+      // Attempt to get a local copy of the translator. Most likely this will be a 404.
+      try {
+        const response = await fetch(
+          "chrome://global/content/translations/bergamot-translator-worker.wasm"
+        );
+        const arrayBuffer = response.arrayBuffer();
+        lazy.console.log(`Using a local copy of Bergamot.`);
+        return arrayBuffer;
+      } catch {
+        // Only attempt to fetch once, if it fails don't try again.
+        TranslationsParent.#lookForLocalWasmBuild = false;
+      }
+    }
+    return null;
+  }
+
   /**
    * Bergamot is the translation engine that has been compiled to wasm. It is shipped
    * to the user via Remote Settings.
@@ -1440,6 +1463,13 @@ export class TranslationsParent extends JSWindowActorParent {
   static async #getBergamotWasmArrayBuffer() {
     const start = Date.now();
     const client = TranslationsParent.#getTranslationsWasmRemoteClient();
+
+    const localCopy =
+      await TranslationsParent.#maybeFetchLocalBergamotWasmArrayBuffer();
+    if (localCopy) {
+      return localCopy;
+    }
+
     if (!TranslationsParent.#bergamotWasmRecord) {
       // Place the records into a promise to prevent any races.
       TranslationsParent.#bergamotWasmRecord = (async () => {
@@ -1788,6 +1818,89 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     return results;
+  }
+
+  /**
+   * Gets the expected download size that will occur (if any) if translate is called on two given languages for display purposes.
+   *
+   * @param {string} fromLanguage
+   * @param {string} toLanguage
+   * @param {boolean} withQualityEstimation
+   * @returns {Promise<long>} Size in bytes of the expected download. A result of 0 indicates no download is expected for the request.
+   */
+  static async getExpectedTranslationDownloadSize(
+    fromLanguage,
+    toLanguage,
+    withQualityEstimation = false
+  ) {
+    const directSize = await this.#getModelDownloadSize(
+      fromLanguage,
+      toLanguage,
+      withQualityEstimation
+    );
+
+    // If a direct model is not found, then check pivots.
+    if (directSize.downloadSize == 0 && !directSize.modelFound) {
+      const indirectFrom = await TranslationsParent.#getModelDownloadSize(
+        fromLanguage,
+        PIVOT_LANGUAGE,
+        withQualityEstimation
+      );
+
+      const indirectTo = await TranslationsParent.#getModelDownloadSize(
+        PIVOT_LANGUAGE,
+        toLanguage,
+        withQualityEstimation
+      );
+
+      // Note, will also return 0 due to the models not being available as well.
+      return (
+        parseInt(indirectFrom.downloadSize) + parseInt(indirectTo.downloadSize)
+      );
+    }
+    return directSize.downloadSize;
+  }
+
+  /**
+   * Determines the language model download size for a specified translation for display purposes.
+   *
+   * @param {string} fromLanguage
+   * @param {string} toLanguage
+   * @param {boolean} withQualityEstimation
+   * @returns {Promise<{downloadSize: long, modelFound: boolean}> Download size is the size in bytes of the estimated download for display purposes. Model found indicates a model was found.
+   * e.g., a result of {size: 0, modelFound: false} indicates no bytes to download, because a model wasn't located.
+   */
+  static async #getModelDownloadSize(
+    fromLanguage,
+    toLanguage,
+    withQualityEstimation = false
+  ) {
+    const client = TranslationsParent.#getTranslationModelsRemoteClient();
+    const records = [
+      ...(await TranslationsParent.#getTranslationModelRecords()).values(),
+    ];
+
+    let downloadSize = 0;
+    let modelFound = false;
+
+    await Promise.all(
+      records.map(async record => {
+        if (record.fileType === "qualityModel" && !withQualityEstimation) {
+          return;
+        }
+
+        if (record.fromLang !== fromLanguage || record.toLang !== toLanguage) {
+          return;
+        }
+
+        modelFound = true;
+        const isDownloaded = await client.attachments.isDownloaded(record);
+        if (!isDownloaded) {
+          downloadSize += parseInt(record.attachment.size);
+        }
+      })
+    );
+    return { downloadSize, modelFound };
   }
 
   /**
@@ -2391,20 +2504,79 @@ export class TranslationsParent extends JSWindowActorParent {
    *  False if never-translate was disabled for this site.
    */
   setNeverTranslateSitePermissions(neverTranslate) {
-    const perms = Services.perms;
     const { documentPrincipal } = this.browsingContext.currentWindowGlobal;
+    return TranslationsParent.#setNeverTranslateSiteByPrincipal(
+      neverTranslate,
+      documentPrincipal
+    );
+  }
+
+  /**
+   * Sets the never-translate site permissions by creating a principal from the URL origin
+   * and setting or unsetting the DENY_ACTION on the permission.
+   *
+   * @param {string} neverTranslate - The never translate setting to use.
+   * @param {string} urlOrigin - The url origin to set the permission for.
+   * @returns {boolean}
+   *  True if never-translate was enabled for this origin.
+   *  False if never-translate was disabled for this origin.
+   */
+  static setNeverTranslateSiteByOrigin(neverTranslate, urlOrigin) {
+    const principal =
+      Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+        urlOrigin
+      );
+    return TranslationsParent.#setNeverTranslateSiteByPrincipal(
+      neverTranslate,
+      principal
+    );
+  }
+
+  /**
+   * Sets the never-translate site permissions by adding DENY_ACTION to
+   * the specified site principal.
+   *
+   * @param {string} neverTranslate - The never translate setting.
+   * @param {string} principal - The principal that should have the permission attached.
+   * @returns {boolean}
+   *  True if never-translate was enabled for this principal.
+   *  False if never-translate was disabled for this principal.
+   */
+  static #setNeverTranslateSiteByPrincipal(neverTranslate, principal) {
+    const perms = Services.perms;
 
     if (!neverTranslate) {
-      perms.removeFromPrincipal(documentPrincipal, TRANSLATIONS_PERMISSION);
+      perms.removeFromPrincipal(principal, TRANSLATIONS_PERMISSION);
       return false;
     }
 
     perms.addFromPrincipal(
-      documentPrincipal,
+      principal,
       TRANSLATIONS_PERMISSION,
       perms.DENY_ACTION
     );
     return true;
+  }
+
+  /**
+   * Creates a list of URLs that have a translations permission set on the resource.
+   * These are the sites to never translate.
+   *
+   * @returns {Array<string>} String array with the URL of the sites that have the never translate permission.
+   */
+  static listNeverTranslateSites() {
+    const neverTranslateSites = [];
+    for (const perm of Services.perms.getAllByTypes([
+      TRANSLATIONS_PERMISSION,
+    ])) {
+      if (perm.capability === Services.perms.DENY_ACTION) {
+        neverTranslateSites.push(perm.principal.origin);
+      }
+    }
+    let stripProtocol = s => s?.replace(/^\w+:/, "") || "";
+    return neverTranslateSites.sort((a, b) => {
+      return stripProtocol(a).localeCompare(stripProtocol(b));
+    });
   }
 
   /**
@@ -2442,24 +2614,32 @@ export class TranslationsParent extends JSWindowActorParent {
 }
 
 /**
- * WebAssembly modules must be instantiated from a Worker, since it's considered
- * unsafe eval.
+ * Validate some simple Wasm that uses a SIMD operation.
  */
 function detectSimdSupport() {
-  return new Promise(resolve => {
-    lazy.console.log("Loading wasm simd detector worker.");
+  return WebAssembly.validate(
+    new Uint8Array(
+      // ```
+      // ;; Detect SIMD support.
+      // ;; Compile by running: wat2wasm --enable-all simd-detect.wat
+      //
+      // (module
+      //   (func (result v128)
+      //     i32.const 0
+      //     i8x16.splat
+      //     i8x16.popcnt
+      //   )
+      // )
+      // ```
 
-    const worker = new Worker(
-      "chrome://global/content/translations/simd-detect-worker.js"
-    );
-
-    // This should pretty much immediately resolve, so it does not need Firefox shutdown
-    // detection.
-    worker.addEventListener("message", ({ data }) => {
-      resolve(data.isSimdSupported);
-      worker.terminate();
-    });
-  });
+      // prettier-ignore
+      [
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00,
+        0x01, 0x7b, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x0a, 0x01, 0x08, 0x00, 0x41, 0x00,
+        0xfd, 0x0f, 0xfd, 0x62, 0x0b
+      ]
+    )
+  );
 }
 
 /**
@@ -2517,10 +2697,7 @@ class TranslationsLanguageState {
       new CustomEvent("TranslationsParent:LanguageState", {
         bubbles: true,
         detail: {
-          detectedLanguages: this.#detectedLanguages,
-          requestedTranslationPair: this.#requestedTranslationPair,
-          error: this.#error,
-          isEngineReady: this.#isEngineReady,
+          actor: this.#actor,
         },
       })
     );
@@ -2538,6 +2715,10 @@ class TranslationsLanguageState {
   }
 
   set requestedTranslationPair(requestedTranslationPair) {
+    if (this.#requestedTranslationPair === requestedTranslationPair) {
+      return;
+    }
+
     this.#error = null;
     this.#isEngineReady = false;
     this.#requestedTranslationPair = requestedTranslationPair;
@@ -2555,6 +2736,10 @@ class TranslationsLanguageState {
   }
 
   set detectedLanguages(detectedLanguages) {
+    if (this.#detectedLanguages === detectedLanguages) {
+      return;
+    }
+
     this.#detectedLanguages = detectedLanguages;
     this.dispatch();
   }
@@ -2571,6 +2756,10 @@ class TranslationsLanguageState {
   }
 
   set locationChangeId(locationChangeId) {
+    if (this.#locationChangeId === locationChangeId) {
+      return;
+    }
+
     this.#locationChangeId = locationChangeId;
 
     // When the location changes remove the previous error.
@@ -2587,6 +2776,9 @@ class TranslationsLanguageState {
   }
 
   set error(error) {
+    if (this.#error === error) {
+      return;
+    }
     this.#error = error;
     // Setting an error invalidates the requested translation pair.
     this.#requestedTranslationPair = null;
@@ -2603,6 +2795,9 @@ class TranslationsLanguageState {
   }
 
   set isEngineReady(isEngineReady) {
+    if (this.#isEngineReady === isEngineReady) {
+      return;
+    }
     this.#isEngineReady = isEngineReady;
     this.dispatch();
   }

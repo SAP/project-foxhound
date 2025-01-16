@@ -10,6 +10,7 @@ new ones):
 - **xpcshell** a classical xpcshell test, turned into a performance test
 - **browsertime** a browsertime script, which runs a full browser and controls
   it via a Selenium client.
+- **mochitest** a classical mochitest test, turned into a performance test
 
 In order to qualify as performance tests, both flavors require metadata.
 
@@ -31,9 +32,9 @@ This is the list of fields:
 
 Tests are registered using tests manifests and the **PERFTESTS_MANIFESTS**
 variable in `moz.build` files - it's good practice to name this file
-`perftest.ini`.
+`perftest.toml`.
 
-Example of such a file: https://searchfox.org/mozilla-central/source/testing/performance/perftest.ini
+Example of such a file: https://searchfox.org/mozilla-central/source/testing/performance/perftest.toml
 
 
 xpcshell
@@ -48,7 +49,7 @@ Here's an example of such a metrics call::
 
     # compute some speed metrics
     let speed = 12345;
-    info("perfMetrics", { speed });
+    info("perfMetrics", JSON.stringify({ speed }));
 
 
 Mochitest
@@ -71,7 +72,7 @@ Note that the ``perfMetadata`` variable can exist in any ``<script>...</script>`
           perfherder_metrics: [
             { name: "Registration", unit: "ms" },
           ],
-          manifest: "perftest.ini",
+          manifest: "perftest.toml",
           manifest_flavor: "plain",
           extra_args: [
             "headless",
@@ -86,7 +87,7 @@ Here's an example of a call that will produce metrics::
 
     # compute some speed metrics
     let speed = 12345;
-    info("perfMetrics", { speed });
+    info("perfMetrics", JSON.stringify({ speed }));
 
 Existing Mochitest unit tests can be modified with these to be compatible with mozperftest, but note that some issues exist when doing this:
 

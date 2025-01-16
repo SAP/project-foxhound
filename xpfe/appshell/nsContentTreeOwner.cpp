@@ -42,6 +42,7 @@
 #include "mozilla/Try.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/UserActivation.h"
 
 using namespace mozilla;
 
@@ -513,8 +514,10 @@ NS_IMETHODIMP
 nsContentTreeOwner::ProvideWindow(
     nsIOpenWindowInfo* aOpenWindowInfo, uint32_t aChromeFlags,
     bool aCalledFromJS, nsIURI* aURI, const nsAString& aName,
-    const nsACString& aFeatures, bool aForceNoOpener, bool aForceNoReferrer,
-    bool aIsPopupRequested, nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
+    const nsACString& aFeatures,
+    const mozilla::dom::UserActivation::Modifiers& aModifiers,
+    bool aForceNoOpener, bool aForceNoReferrer, bool aIsPopupRequested,
+    nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
     dom::BrowsingContext** aReturn) {
   NS_ENSURE_ARG_POINTER(aOpenWindowInfo);
 
@@ -536,10 +539,11 @@ nsContentTreeOwner::ProvideWindow(
 #endif
 
   int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
-      parent->GetDOMWindow(), aChromeFlags, aCalledFromJS,
+      parent->GetDOMWindow(), aChromeFlags, aModifiers, aCalledFromJS,
       aOpenWindowInfo->GetIsForPrinting());
 
   if (openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB &&
+      openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB_BACKGROUND &&
       openLocation != nsIBrowserDOMWindow::OPEN_CURRENTWINDOW &&
       openLocation != nsIBrowserDOMWindow::OPEN_PRINT_BROWSER) {
     // Just open a window normally

@@ -18,6 +18,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Policy.h"
+#include "gc/SweepingAPI.h"
 #include "gc/ZoneAllocator.h"
 #include "irregexp/RegExpTypes.h"
 #include "jit/JitCode.h"
@@ -41,10 +42,10 @@ using RootedRegExpShared = JS::Rooted<RegExpShared*>;
 using HandleRegExpShared = JS::Handle<RegExpShared*>;
 using MutableHandleRegExpShared = JS::MutableHandle<RegExpShared*>;
 
-enum RegExpRunStatus : int32_t {
-  RegExpRunStatus_Error = -1,
-  RegExpRunStatus_Success = 1,
-  RegExpRunStatus_Success_NotFound = 0,
+enum class RegExpRunStatus : int32_t {
+  Error = -1,
+  Success = 1,
+  Success_NotFound = 0,
 };
 
 inline bool IsNativeRegExpEnabled() {
@@ -289,7 +290,7 @@ class RegExpZone {
    * The set of all RegExpShareds in the zone. On every GC, every RegExpShared
    * that was not marked is deleted and removed from the set.
    */
-  using Set = JS::WeakCache<
+  using Set = WeakCache<
       JS::GCHashSet<WeakHeapPtr<RegExpShared*>, Key, ZoneAllocPolicy>>;
   Set set_;
 

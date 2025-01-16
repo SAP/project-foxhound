@@ -221,10 +221,10 @@ async function assertResult(expected) {
 
   if (gURLBar.value) {
     Assert.ok(gURLBar.hasAttribute("usertyping"));
-    Assert.ok(BrowserTestUtils.is_visible(gURLBar.goButton));
+    Assert.ok(BrowserTestUtils.isVisible(gURLBar.goButton));
   } else {
     Assert.ok(!gURLBar.hasAttribute("usertyping"));
-    Assert.ok(BrowserTestUtils.is_hidden(gURLBar.goButton));
+    Assert.ok(BrowserTestUtils.isHidden(gURLBar.goButton));
   }
 }
 

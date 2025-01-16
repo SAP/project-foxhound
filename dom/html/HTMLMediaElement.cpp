@@ -763,6 +763,7 @@ class HTMLMediaElement::MediaStreamRenderer
       return;
     }
 
+    LOG(LogLevel::Info, ("MediaStreamRenderer=%p Start", this));
     mRendering = true;
 
     if (!mGraphTimeDummy) {
@@ -788,6 +789,7 @@ class HTMLMediaElement::MediaStreamRenderer
       return;
     }
 
+    LOG(LogLevel::Info, ("MediaStreamRenderer=%p Stop", this));
     mRendering = false;
 
     if (!mGraphTimeDummy) {
@@ -799,6 +801,9 @@ class HTMLMediaElement::MediaStreamRenderer
         t->AsAudioStreamTrack()->RemoveAudioOutput(mAudioOutputKey);
       }
     }
+    // There is no longer an audio output that needs the device so the
+    // device may not start.  Ensure the promise is resolved.
+    ResolveAudioDevicePromiseIfExists(__func__);
 
     if (mVideoTrack) {
       mVideoTrack->AsVideoStreamTrack()->RemoveVideoOutput(mVideoContainer);
@@ -821,16 +826,18 @@ class HTMLMediaElement::MediaStreamRenderer
     }
   }
 
-  RefPtr<GenericPromise::AllPromiseType> SetAudioOutputDevice(
-      AudioDeviceInfo* aSink) {
+  RefPtr<GenericPromise> SetAudioOutputDevice(AudioDeviceInfo* aSink) {
     MOZ_ASSERT(aSink);
     MOZ_ASSERT(mAudioOutputSink != aSink);
+    LOG(LogLevel::Info,
+        ("MediaStreamRenderer=%p SetAudioOutputDevice name=%s\n", this,
+         NS_ConvertUTF16toUTF8(aSink->Name()).get()));
 
     mAudioOutputSink = aSink;
 
     if (!mRendering) {
-      return GenericPromise::AllPromiseType::CreateAndResolve(nsTArray<bool>(),
-                                                              __func__);
+      MOZ_ASSERT(mSetAudioDevicePromise.IsEmpty());
+      return GenericPromise::CreateAndResolve(true, __func__);
     }
 
     nsTArray<RefPtr<GenericPromise>> promises;
@@ -843,11 +850,39 @@ class HTMLMediaElement::MediaStreamRenderer
     }
     if (!promises.Length()) {
       // Not active track, save it for later
-      return GenericPromise::AllPromiseType::CreateAndResolve(nsTArray<bool>(),
-                                                              __func__);
+      MOZ_ASSERT(mSetAudioDevicePromise.IsEmpty());
+      return GenericPromise::CreateAndResolve(true, __func__);
     }
 
-    return GenericPromise::All(GetCurrentSerialEventTarget(), promises);
+    // Resolve any existing promise for a previous device so that promises
+    // resolve in order of setSinkId() invocation.
+    ResolveAudioDevicePromiseIfExists(__func__);
+
+    RefPtr promise = mSetAudioDevicePromise.Ensure(__func__);
+    GenericPromise::AllSettled(GetCurrentSerialEventTarget(), promises)
+        ->Then(GetMainThreadSerialEventTarget(), __func__,
+               [self = RefPtr{this},
+                this](const GenericPromise::AllSettledPromiseType::
+                          ResolveOrRejectValue& aValue) {
+                 // This handler should have been disconnected if
+                 // mSetAudioDevicePromise has been settled.
+                 MOZ_ASSERT(!mSetAudioDevicePromise.IsEmpty());
+                 mDeviceStartedRequest.Complete();
+                 // The AudioStreamTrack::AddAudioOutput() promise is rejected
+                 // either when the graph no longer needs the device, in which
+                 // case this handler would have already been disconnected, or
+                 // the graph is force shutdown.
+                 // mSetAudioDevicePromise is resolved regardless of whether
+                 // the AddAudioOutput() promises resolve or reject because
+                 // the underlying device has been changed.
+                 LOG(LogLevel::Info,
+                     ("MediaStreamRenderer=%p SetAudioOutputDevice settled",
+                      this));
+                 mSetAudioDevicePromise.Resolve(true, __func__);
+               })
+        ->Track(mDeviceStartedRequest);
+
+    return promise;
   }
 
   void AddTrack(AudioStreamTrack* aTrack) {
@@ -883,6 +918,12 @@ class HTMLMediaElement::MediaStreamRenderer
       aTrack->RemoveAudioOutput(mAudioOutputKey);
     }
     mAudioTracks.RemoveElement(aTrack);
+
+    if (mAudioTracks.IsEmpty()) {
+      // There is no longer an audio output that needs the device so the
+      // device may not start.  Ensure the promise is resolved.
+      ResolveAudioDevicePromiseIfExists(__func__);
+    }
   }
   void RemoveTrack(VideoStreamTrack* aTrack) {
     MOZ_DIAGNOSTIC_ASSERT(mVideoTrack == aTrack);
@@ -943,6 +984,16 @@ class HTMLMediaElement::MediaStreamRenderer
         graph->CreateSourceTrack(MediaSegment::AUDIO));
   }
 
+  void ResolveAudioDevicePromiseIfExists(const char* aMethodName) {
+    if (mSetAudioDevicePromise.IsEmpty()) {
+      return;
+    }
+    LOG(LogLevel::Info,
+        ("MediaStreamRenderer=%p resolve audio device promise", this));
+    mSetAudioDevicePromise.Resolve(true, aMethodName);
+    mDeviceStartedRequest.Disconnect();
+  }
+
   // True when all tracks are being rendered, i.e., when the media element is
   // playing.
   bool mRendering = false;
@@ -955,6 +1006,13 @@ class HTMLMediaElement::MediaStreamRenderer
 
   // The sink device for all audio tracks.
   RefPtr<AudioDeviceInfo> mAudioOutputSink;
+  // The promise returned from SetAudioOutputDevice() when an output is
+  // active.
+  MozPromiseHolder<GenericPromise> mSetAudioDevicePromise;
+  // Request tracking the promise to indicate when the device passed to
+  // SetAudioOutputDevice() is running.
+  MozPromiseRequestHolder<GenericPromise::AllSettledPromiseType>
+      mDeviceStartedRequest;
 
   // WatchManager for mGraphTime.
   WatchManager<MediaStreamRenderer> mWatchManager;
@@ -3844,16 +3902,31 @@ already_AddRefed<DOMMediaStream> HTMLMediaElement::CaptureStreamInternal(
   LogVisibility(CallerAPI::CAPTURE_STREAM);
   MarkAsTainted();
 
-  if (mTracksCaptured.Ref() &&
-      aGraph != mTracksCaptured.Ref()->mTrack->Graph()) {
-    return nullptr;
-  }
-
-  if (!mTracksCaptured.Ref()) {
+  if (mTracksCaptured.Ref()) {
+    // Already have an output stream.  Check whether the graph rate matches if
+    // specified.
+    if (aGraph && aGraph != mTracksCaptured.Ref()->mTrack->Graph()) {
+      return nullptr;
+    }
+  } else {
     // This is the first output stream, or there are no tracks. If the former,
     // start capturing all tracks. If the latter, they will be added later.
+    MediaTrackGraph* graph = aGraph;
+    if (!graph) {
+      nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow();
+      if (!window) {
+        return nullptr;
+      }
+
+      MediaTrackGraph::GraphDriverType graphDriverType =
+          HasAudio() ? MediaTrackGraph::AUDIO_THREAD_DRIVER
+                     : MediaTrackGraph::SYSTEM_THREAD_DRIVER;
+      graph = MediaTrackGraph::GetInstance(
+          graphDriverType, window, MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
+          MediaTrackGraph::DEFAULT_OUTPUT_DEVICE);
+    }
     mTracksCaptured = MakeRefPtr<SharedDummyTrack>(
-        aGraph->CreateSourceTrack(MediaSegment::AUDIO));
+        graph->CreateSourceTrack(MediaSegment::AUDIO));
     UpdateOutputTrackSources();
   }
 
@@ -3952,28 +4025,14 @@ RefPtr<GenericNonExclusivePromise> HTMLMediaElement::GetAllowedToPlayPromise() {
 
 already_AddRefed<DOMMediaStream> HTMLMediaElement::MozCaptureStream(
     ErrorResult& aRv) {
-  MediaTrackGraph::GraphDriverType graphDriverType =
-      HasAudio() ? MediaTrackGraph::AUDIO_THREAD_DRIVER
-                 : MediaTrackGraph::SYSTEM_THREAD_DRIVER;
-
-  nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow();
-  if (!window) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
   if (!CanBeCaptured(StreamCaptureType::CAPTURE_ALL_TRACKS)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
-      graphDriverType, window, MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
-      MediaTrackGraph::DEFAULT_OUTPUT_DEVICE);
-
   RefPtr<DOMMediaStream> stream =
       CaptureStreamInternal(StreamCaptureBehavior::CONTINUE_WHEN_ENDED,
-                            StreamCaptureType::CAPTURE_ALL_TRACKS, graph);
+                            StreamCaptureType::CAPTURE_ALL_TRACKS, nullptr);
   if (!stream) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -3984,28 +4043,14 @@ already_AddRefed<DOMMediaStream> HTMLMediaElement::MozCaptureStream(
 
 already_AddRefed<DOMMediaStream> HTMLMediaElement::MozCaptureStreamUntilEnded(
     ErrorResult& aRv) {
-  MediaTrackGraph::GraphDriverType graphDriverType =
-      HasAudio() ? MediaTrackGraph::AUDIO_THREAD_DRIVER
-                 : MediaTrackGraph::SYSTEM_THREAD_DRIVER;
-
-  nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow();
-  if (!window) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
   if (!CanBeCaptured(StreamCaptureType::CAPTURE_ALL_TRACKS)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
-      graphDriverType, window, MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE,
-      MediaTrackGraph::DEFAULT_OUTPUT_DEVICE);
-
   RefPtr<DOMMediaStream> stream =
       CaptureStreamInternal(StreamCaptureBehavior::FINISH_WHEN_ENDED,
-                            StreamCaptureType::CAPTURE_ALL_TRACKS, graph);
+                            StreamCaptureType::CAPTURE_ALL_TRACKS, nullptr);
   if (!stream) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -7544,6 +7589,8 @@ bool HasDebuggerOrTabsPrivilege(JSContext* aCx, JSObject* aObj) {
 
 already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
                                                       ErrorResult& aRv) {
+  LOG(LogLevel::Info,
+      ("%p, setSinkId(%s)", this, NS_ConvertUTF16toUTF8(aSinkId).get()));
   nsCOMPtr<nsPIDOMWindowInner> win = OwnerDoc()->GetInnerWindow();
   if (!win) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
@@ -7596,8 +7643,8 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
               RefPtr<SinkInfoPromise> p =
                   mMediaStreamRenderer->SetAudioOutputDevice(aInfo)->Then(
                       AbstractMainThread(), __func__,
-                      [aInfo](const GenericPromise::AllPromiseType::
-                                  ResolveOrRejectValue& aValue) {
+                      [aInfo](
+                          const GenericPromise::ResolveOrRejectValue& aValue) {
                         if (aValue.IsResolve()) {
                           return SinkInfoPromise::CreateAndResolve(aInfo,
                                                                    __func__);
@@ -7618,6 +7665,8 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
              [promise, self = RefPtr<HTMLMediaElement>(this), this,
               sinkId](const SinkInfoPromise::ResolveOrRejectValue& aValue) {
                if (aValue.IsResolve()) {
+                 LOG(LogLevel::Info, ("%p, set sinkid=%s", this,
+                                      NS_ConvertUTF16toUTF8(sinkId).get()));
                  mSink = std::pair(sinkId, aValue.ResolveValue());
                  promise->MaybeResolveWithUndefined();
                } else {

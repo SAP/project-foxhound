@@ -311,16 +311,6 @@ void nsTableCellFrame::DecorateForSelection(DrawTarget* aDrawTarget,
   }
 }
 
-ImgDrawResult nsTableCellFrame::PaintBackground(gfxContext& aRenderingContext,
-                                                const nsRect& aDirtyRect,
-                                                nsPoint aPt, uint32_t aFlags) {
-  nsRect rect(aPt, GetSize());
-  nsCSSRendering::PaintBGParams params =
-      nsCSSRendering::PaintBGParams::ForAllLayers(*PresContext(), aDirtyRect,
-                                                  rect, this, aFlags);
-  return nsCSSRendering::PaintStyleImageLayer(params, aRenderingContext);
-}
-
 void nsTableCellFrame::ProcessBorders(nsTableFrame* aFrame,
                                       nsDisplayListBuilder* aBuilder,
                                       const nsDisplayListSet& aLists) {
@@ -976,32 +966,6 @@ nsMargin nsBCTableCellFrame::GetBorderOverflow() {
   return halfBorder.GetPhysicalMargin(wm);
 }
 
-ImgDrawResult nsBCTableCellFrame::PaintBackground(gfxContext& aRenderingContext,
-                                                  const nsRect& aDirtyRect,
-                                                  nsPoint aPt,
-                                                  uint32_t aFlags) {
-  // make border-width reflect the half of the border-collapse
-  // assigned border that's inside the cell
-  WritingMode wm = GetWritingMode();
-  nsMargin borderWidth = GetBorderWidth(wm).GetPhysicalMargin(wm);
-
-  nsStyleBorder myBorder(*StyleBorder());
-
-  const auto a2d = PresContext()->AppUnitsPerDevPixel();
-  for (const auto side : mozilla::AllPhysicalSides()) {
-    myBorder.SetBorderWidth(side, borderWidth.Side(side), a2d);
-  }
-
-  // bypassing nsCSSRendering::PaintBackground is safe because this kind
-  // of frame cannot be used for the root element
-  nsRect rect(aPt, GetSize());
-  nsCSSRendering::PaintBGParams params =
-      nsCSSRendering::PaintBGParams::ForAllLayers(*PresContext(), aDirtyRect,
-                                                  rect, this, aFlags);
-  return nsCSSRendering::PaintStyleImageLayerWithSC(params, aRenderingContext,
-                                                    Style(), myBorder);
-}
-
 namespace mozilla {
 
 class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
@@ -1044,11 +1008,24 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     }
 
     nsRect bgRect = GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
+    nsRect bgRectInsideBorder = bgRect;
+
+    // If we're doing collapsed borders, and this element forms a new stacking
+    // context or has position:relative (which paints as though it did), inset
+    // the background rect so that we don't overpaint the inset part of our
+    // borders.
+    nsTableFrame* tableFrame = GetTableFrame();
+    if (tableFrame->IsBorderCollapse() &&
+        (IsStackingContext() ||
+         StyleDisplay()->mPosition == StylePositionProperty::Relative)) {
+      bgRectInsideBorder.Deflate(GetUsedBorder());
+    }
 
     // display background if we need to.
     const AppendedBackgroundType result =
         nsDisplayBackgroundImage::AppendBackgroundItemsToTop(
-            aBuilder, this, bgRect, aLists.BorderBackground());
+            aBuilder, this, bgRectInsideBorder, aLists.BorderBackground(), true,
+            bgRect);
     if (result == AppendedBackgroundType::None) {
       aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
                                                    aLists.BorderBackground());
@@ -1061,7 +1038,6 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     }
 
     // display borders if we need to
-    nsTableFrame* tableFrame = GetTableFrame();
     ProcessBorders(tableFrame, aBuilder, aLists);
 
     // and display the selection border if we need to

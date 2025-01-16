@@ -56,6 +56,7 @@
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
 #include "vm/Time.h"
+#include "vm/Warnings.h"
 
 #include "vm/Compartment-inl.h"  // For js::UnwrapAndTypeCheckThis
 #include "vm/GeckoProfiler-inl.h"
@@ -865,12 +866,6 @@ static bool ParseDigitsNOrLess(size_t n, size_t* result, const CharT* s,
   return false;
 }
 
-static int DaysInMonth(int year, int month) {
-  bool leap = IsLeapYear(year);
-  int result = int(DayFromMonth(month, leap) - DayFromMonth(month - 1, leap));
-  return result;
-}
-
 /*
  * Parse a string according to the formats specified in the standard:
  *
@@ -1036,9 +1031,8 @@ done_date:
 
 done:
   if (year > 275943  // ceil(1e8/365) + 1970
-      || (month == 0 || month > 12) ||
-      (day == 0 || day > size_t(DaysInMonth(year, month))) || hour > 24 ||
-      ((hour == 24) && (min > 0 || sec > 0 || msec > 0)) || min > 59 ||
+      || month == 0 || month > 12 || day == 0 || day > 31 || hour > 24 ||
+      (hour == 24 && (min > 0 || sec > 0 || msec > 0)) || min > 59 ||
       sec > 59 || tzHour > 23 || tzMin > 59) {
     return false;
   }
@@ -1093,12 +1087,67 @@ bool IsPrefixOfKeyword(const CharT* s, size_t len, const char* keyword) {
   return len == 0;
 }
 
-static constexpr const char* const months_names[] = {
-    "january", "february", "march",     "april",   "may",      "june",
-    "july",    "august",   "september", "october", "november", "december",
+template <typename CharT>
+bool MatchesKeyword(const CharT* s, size_t len, const char* keyword) {
+  while (len > 0) {
+    MOZ_ASSERT(IsAsciiAlpha(*s));
+    MOZ_ASSERT(IsAsciiLowercaseAlpha(*keyword) || *keyword == '\0');
+
+    if (unicode::ToLowerCase(static_cast<Latin1Char>(*s)) != *keyword) {
+      return false;
+    }
+
+    ++s, ++keyword;
+    --len;
+  }
+
+  return *keyword == '\0';
+}
+
+static constexpr const char* const month_prefixes[] = {
+    "jan", "feb", "mar", "apr", "may", "jun",
+    "jul", "aug", "sep", "oct", "nov", "dec",
 };
-// The shortest month is "may".
-static constexpr size_t ShortestMonthNameLength = 3;
+
+/**
+ * Given a string s of length >= 3, checks if it begins,
+ * case-insensitive, with the given lower case prefix.
+ */
+template <typename CharT>
+bool StartsWithMonthPrefix(const CharT* s, const char* prefix) {
+  MOZ_ASSERT(strlen(prefix) == 3);
+
+  for (size_t i = 0; i < 3; ++i) {
+    MOZ_ASSERT(IsAsciiAlpha(*s));
+    MOZ_ASSERT(IsAsciiLowercaseAlpha(*prefix));
+
+    if (unicode::ToLowerCase(static_cast<Latin1Char>(*s)) != *prefix) {
+      return false;
+    }
+
+    ++s, ++prefix;
+  }
+
+  return true;
+}
+
+template <typename CharT>
+bool IsMonthName(const CharT* s, size_t len, int* mon) {
+  // Month abbreviations < 3 chars are not accepted.
+  if (len < 3) {
+    return false;
+  }
+
+  for (size_t m = 0; m < std::size(month_prefixes); ++m) {
+    if (StartsWithMonthPrefix(s, month_prefixes[m])) {
+      // Use numeric value.
+      *mon = m + 1;
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /*
  * Try to parse the following date formats:
@@ -1130,7 +1179,7 @@ static bool TryParseDashedDatePrefix(const CharT* s, size_t length,
   }
   ++i;
 
-  size_t mon = 0;
+  int mon = 0;
   if (*monOut == -1) {
     // If month wasn't already set by ParseDate, it must be in the middle of
     // this format, let's look for it
@@ -1141,20 +1190,7 @@ static bool TryParseDashedDatePrefix(const CharT* s, size_t length,
       }
     }
 
-    if (i - start < ShortestMonthNameLength) {
-      return false;
-    }
-
-    for (size_t m = 0; m < std::size(months_names); ++m) {
-      // If the field isn't a prefix of the month (an exact match is *not*
-      // required), try the next one.
-      if (IsPrefixOfKeyword(s + start, i - start, months_names[m])) {
-        // Use numeric value.
-        mon = m + 1;
-        break;
-      }
-    }
-    if (mon == 0) {
+    if (!IsMonthName(s + start, i - start, &mon)) {
       return false;
     }
 
@@ -1293,32 +1329,15 @@ struct CharsAndAction {
   int action;
 };
 
+static constexpr const char* const days_of_week[] = {
+    "monday", "tuesday",  "wednesday", "thursday",
+    "friday", "saturday", "sunday"};
+
 static constexpr CharsAndAction keywords[] = {
     // clang-format off
   // AM/PM
   { "am", -1 },
   { "pm", -2 },
-  // Days of week.
-  { "monday", 0 },
-  { "tuesday", 0 },
-  { "wednesday", 0 },
-  { "thursday", 0 },
-  { "friday", 0 },
-  { "saturday", 0 },
-  { "sunday", 0 },
-  // Months.
-  { "january", 1 },
-  { "february", 2 },
-  { "march", 3 },
-  { "april", 4, },
-  { "may", 5 },
-  { "june", 6 },
-  { "july", 7 },
-  { "august", 8 },
-  { "september", 9 },
-  { "october", 10 },
-  { "november", 11 },
-  { "december", 12 },
   // Time zone abbreviations.
   { "gmt", 10000 + 0 },
   { "z", 10000 + 0 },
@@ -1380,25 +1399,23 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
       }
     }
 
-    if (index - start < ShortestMonthNameLength) {
-      // If it's too short, it's definitely not a month name, ignore it
-      continue;
+    if (index >= length) {
+      return false;
     }
 
-    for (size_t m = 0; m < std::size(months_names); m++) {
-      // If the field isn't a prefix of the month (an exact match is *not*
-      // required), try the next one.
-      if (IsPrefixOfKeyword(s + start, index - start, months_names[m])) {
-        // Use numeric value.
-        mon = m + 1;
-        seenMonthName = true;
+    if (IsMonthName(s + start, index - start, &mon)) {
+      seenMonthName = true;
+      // If the next digit is a number, we need to break so it
+      // gets parsed as mday
+      if (IsAsciiDigit(s[index])) {
         break;
       }
+    } else {
+      // Reject numbers directly after letters e.g. foo2
+      if (IsAsciiDigit(s[index]) && IsAsciiAlpha(s[index - 1])) {
+        return false;
+      }
     }
-  }
-
-  if (index >= length) {
-    return false;
   }
 
   int year = -1;
@@ -1650,24 +1667,71 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
         return false;
       }
 
+      // Completely ignore days of the week, and don't derive any semantics
+      // from them.
+      bool isLateWeekday = false;
+      for (const char* weekday : days_of_week) {
+        if (IsPrefixOfKeyword(s + start, index - start, weekday)) {
+          isLateWeekday = true;
+          seenLateWeekday = true;
+          break;
+        }
+      }
+      if (isLateWeekday) {
+        prevc = 0;
+        continue;
+      }
+
+      // Record a month if it is a month name. Note that some numbers are
+      // initially treated as months; if a numeric field has already been
+      // interpreted as a month, store that value to the actually appropriate
+      // date component and set the month here.
+      int tryMonth;
+      if (IsMonthName(s + start, index - start, &tryMonth)) {
+        if (seenMonthName) {
+          // Overwrite the previous month name
+          mon = tryMonth;
+          prevc = 0;
+          continue;
+        }
+
+        seenMonthName = true;
+
+        if (mon < 0) {
+          mon = tryMonth;
+        } else if (mday < 0) {
+          mday = mon;
+          mon = tryMonth;
+        } else if (year < 0) {
+          if (mday > 0) {
+            // If the date is of the form f l month, then when month is
+            // reached we have f in mon and l in mday. In order to be
+            // consistent with the f month l and month f l forms, we need to
+            // swap so that f is in mday and l is in year.
+            year = mday;
+            mday = mon;
+          } else {
+            year = mon;
+          }
+          mon = tryMonth;
+        } else {
+          return false;
+        }
+
+        prevc = 0;
+        continue;
+      }
+
       size_t k = std::size(keywords);
       while (k-- > 0) {
         const CharsAndAction& keyword = keywords[k];
 
-        // If the field isn't a prefix of the keyword (an exact match is *not*
-        // required), try the next one.
-        if (!IsPrefixOfKeyword(s + start, index - start, keyword.chars)) {
+        // If the field doesn't match the keyword, try the next one.
+        if (!MatchesKeyword(s + start, index - start, keyword.chars)) {
           continue;
         }
 
         int action = keyword.action;
-
-        // Completely ignore days of the week, and don't derive any semantics
-        // from them.
-        if (action == 0) {
-          seenLateWeekday = true;
-          break;
-        }
 
         if (action == 10000) {
           seenGmtAbbr = true;
@@ -1692,50 +1756,13 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
           break;
         }
 
-        // Record a month if none has been seen before.  (Note that some numbers
-        // are initially treated as months; if a numeric field has already been
-        // interpreted as a month, store that value to the actually appropriate
-        // date component and set the month here.
-        if (action <= 12) {
-          if (seenMonthName) {
-            // Overwrite the previous month name
-            mon = action;
-            break;
-          }
-
-          seenMonthName = true;
-
-          if (mon < 0) {
-            mon = action;
-          } else if (mday < 0) {
-            mday = mon;
-            mon = action;
-          } else if (year < 0) {
-            if (mday > 0) {
-              // If the date is of the form f l month, then when month is
-              // reached we have f in mon and l in mday. In order to be
-              // consistent with the f month l and month f l forms, we need to
-              // swap so that f is in mday and l is in year.
-              year = mday;
-              mday = mon;
-            } else {
-              year = mon;
-            }
-            mon = action;
-          } else {
-            return false;
-          }
-
-          break;
-        }
-
         // Finally, record a time zone offset.
         MOZ_ASSERT(action >= 10000);
         tzOffset = action - 10000;
         break;
       }
 
-      if (k == size_t(-1) && (!seenMonthName || mday != -1)) {
+      if (k == size_t(-1)) {
         return false;
       }
 
@@ -1745,6 +1772,26 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
 
     // Any other character fails to parse.
     return false;
+  }
+
+  // Handle cases where the input is a single number. Single numbers >= 1000
+  // are handled by the spec (ParseISOStyleDate), so we don't need to account
+  // for that here.
+  if (mon != -1 && year < 0 && mday < 0) {
+    // Reject 13-31 for Chrome parity
+    if (mon >= 13 && mon <= 31) {
+      return false;
+    }
+
+    mday = 1;
+    if (mon >= 1 && mon <= 12) {
+      // 1-12 is parsed as a month with the year defaulted to 2001
+      // (again, for Chrome parity)
+      year = 2001;
+    } else {
+      year = FixupNonFullYear(mon);
+      mon = 1;
+    }
   }
 
   if (year < 0 || mon < 0 || mday < 0) {
@@ -1864,6 +1911,16 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, JSLinearString* s,
   // JSRuntime::setUseCounter out of AutoCheckCannotGC's scope.
   if (countLateWeekday) {
     cx->runtime()->setUseCounter(cx->global(), JSUseCounter::LATE_WEEKDAY);
+
+    if (!cx->realm()->warnedAboutDateLateWeekday) {
+      if (!WarnNumberASCII(cx, JSMSG_DEPRECATED_LATE_WEEKDAY)) {
+        // Proceed as if nothing happened if warning fails
+        if (cx->isExceptionPending()) {
+          cx->clearPendingException();
+        }
+      }
+      cx->realm()->warnedAboutDateLateWeekday = true;
+    }
   }
 
   return success;
@@ -3954,4 +4011,11 @@ JS_PUBLIC_API bool js::DateGetMsecSinceEpoch(JSContext* cx, HandleObject obj,
 
   *msecsSinceEpoch = unboxed.toNumber();
   return true;
+}
+
+JS_PUBLIC_API bool JS::IsISOStyleDate(JSContext* cx,
+                                      const JS::Latin1Chars& str) {
+  ClippedTime result;
+  return ParseISOStyleDate(ForceUTC(cx->realm()), str.begin().get(),
+                           str.length(), &result);
 }

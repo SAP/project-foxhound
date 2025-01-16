@@ -14,6 +14,8 @@
 #include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 
+#define QM_TEST_FAIL [](nsresult) { FAIL(); }
+
 namespace mozilla::dom::quota::test {
 
 class QuotaManagerDependencyFixture : public testing::Test {
@@ -22,10 +24,9 @@ class QuotaManagerDependencyFixture : public testing::Test {
   static void ShutdownFixture();
 
   static void InitializeStorage();
-  static void StorageInitialized(bool* aResult = nullptr);
-  static void IsStorageInitialized(bool* aResult);
-  static void AssertStorageIsInitialized();
-  static void AssertStorageIsNotInitialized();
+  static void StorageInitialized(bool* aResult);
+  static void AssertStorageInitialized();
+  static void AssertStorageNotInitialized();
   static void ShutdownStorage();
 
   static void ClearStoragesForOrigin(const OriginMetadata& aOriginMetadata);
@@ -126,6 +127,8 @@ class QuotaManagerDependencyFixture : public testing::Test {
   static ClientMetadata GetOtherTestClientMetadata();
 
  private:
+  static void EnsureQuotaManager();
+
   static nsCOMPtr<nsISerialEventTarget> sBackgroundTarget;
 };
 

@@ -131,6 +131,17 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
   var rect = aTree.getCoordsForCellItem(rowID, aTree.columns[0], "text");
   var x = rect.x + rect.width / 2;
   var y = rect.y + rect.height / 2;
+  if (aTree.id == "bookmarks-view" || aTree.id == "historyTree") {
+    // We are purposefully keeping the main <tree> element unlabeled, because in
+    // this specific case, the on-screen label for either "Bookmarks" or
+    // "History" sidebar is positioned closely to the tree, visually and in DOM.
+    // We want to avoid making a screen reader user to listen to a redundant
+    // announcement, therefore no accessible name is provided to the container
+    // and we account for this in a11y-checks:
+    AccessibilityUtils.setEnv({
+      labelRule: false,
+    });
+  }
   // Simulate the click.
   EventUtils.synthesizeMouse(
     aTree.body,
@@ -139,6 +150,7 @@ function synthesizeClickOnSelectedTreeCell(aTree, aOptions) {
     aOptions || {},
     aTree.ownerGlobal
   );
+  AccessibilityUtils.resetEnv();
 }
 
 /**
@@ -525,6 +537,31 @@ async function createAndRemoveDefaultFolder() {
   is(defaultGUID, tempFolder[0].guid, "check default guid");
 
   await PlacesUtils.bookmarks.remove(tempFolder);
+}
+
+async function showLibraryColumn(library, columnName) {
+  const viewMenu = library.document.getElementById("viewMenu");
+  const viewMenuPopup = library.document.getElementById("viewMenuPopup");
+  const onViewMenuPopup = new Promise(resolve => {
+    viewMenuPopup.addEventListener("popupshown", () => resolve(), {
+      once: true,
+    });
+  });
+  EventUtils.synthesizeMouseAtCenter(viewMenu, {}, library);
+  await onViewMenuPopup;
+
+  const viewColumns = library.document.getElementById("viewColumns");
+  const viewColumnsPopup = viewColumns.querySelector("menupopup");
+  const onViewColumnsPopup = new Promise(resolve => {
+    viewColumnsPopup.addEventListener("popupshown", () => resolve(), {
+      once: true,
+    });
+  });
+  EventUtils.synthesizeMouseAtCenter(viewColumns, {}, library);
+  await onViewColumnsPopup;
+
+  const columnMenu = library.document.getElementById(`menucol_${columnName}`);
+  EventUtils.synthesizeMouseAtCenter(columnMenu, {}, library);
 }
 
 registerCleanupFunction(async () => {

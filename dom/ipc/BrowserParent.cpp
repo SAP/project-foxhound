@@ -1455,7 +1455,7 @@ void BrowserParent::SendRealMouseEvent(WidgetMouseEvent& aEvent) {
     }
   }
 
-  aEvent.mRefPoint = TransformParentToChild(aEvent.mRefPoint);
+  aEvent.mRefPoint = TransformParentToChild(aEvent);
 
   if (nsCOMPtr<nsIWidget> widget = GetWidget()) {
     // When we mouseenter the remote target, the remote target's cursor should
@@ -2228,11 +2228,10 @@ void BrowserParent::SendRealTouchMoveEvent(
   MOZ_ASSERT(!ret || aEvent.HasBeenPostedToRemoteProcess());
 }
 
-bool BrowserParent::SendHandleTap(TapType aType,
-                                  const LayoutDevicePoint& aPoint,
-                                  Modifiers aModifiers,
-                                  const ScrollableLayerGuid& aGuid,
-                                  uint64_t aInputBlockId) {
+bool BrowserParent::SendHandleTap(
+    TapType aType, const LayoutDevicePoint& aPoint, Modifiers aModifiers,
+    const ScrollableLayerGuid& aGuid, uint64_t aInputBlockId,
+    const Maybe<DoubleTapToZoomMetrics>& aDoubleTapToZoomMetrics) {
   if (mIsDestroyed || !mIsReadyToHandleInputEvents) {
     return false;
   }
@@ -2248,12 +2247,12 @@ bool BrowserParent::SendHandleTap(TapType aType,
     }
   }
   return Manager()->IsInputPriorityEventEnabled()
-             ? PBrowserParent::SendHandleTap(aType,
-                                             TransformParentToChild(aPoint),
-                                             aModifiers, aGuid, aInputBlockId)
+             ? PBrowserParent::SendHandleTap(
+                   aType, TransformParentToChild(aPoint), aModifiers, aGuid,
+                   aInputBlockId, aDoubleTapToZoomMetrics)
              : PBrowserParent::SendNormalPriorityHandleTap(
                    aType, TransformParentToChild(aPoint), aModifiers, aGuid,
-                   aInputBlockId);
+                   aInputBlockId, aDoubleTapToZoomMetrics);
 }
 
 mozilla::ipc::IPCResult BrowserParent::RecvSyncMessage(
@@ -2580,6 +2579,19 @@ LayoutDevicePoint BrowserParent::TransformPoint(
     const LayoutDevicePoint& aPoint,
     const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix) {
   return aMatrix.TransformPoint(aPoint);
+}
+
+LayoutDeviceIntPoint BrowserParent::TransformParentToChild(
+    const WidgetMouseEvent& aEvent) {
+  MOZ_ASSERT(aEvent.mWidget);
+
+  nsCOMPtr<nsIWidget> widget = GetWidget();
+  if (widget && widget != aEvent.mWidget) {
+    return TransformParentToChild(
+        aEvent.mRefPoint +
+        nsLayoutUtils::WidgetToWidgetOffset(aEvent.mWidget, widget));
+  }
+  return TransformParentToChild(aEvent.mRefPoint);
 }
 
 LayoutDeviceIntPoint BrowserParent::TransformParentToChild(
@@ -3237,13 +3249,8 @@ bool BrowserParent::SendInsertText(const nsString& aStringToInsert) {
              : PBrowserParent::SendNormalPriorityInsertText(aStringToInsert);
 }
 
-bool BrowserParent::SendPasteTransferable(
-    IPCTransferableData&& aTransferableData, const bool& aIsPrivateData,
-    nsIPrincipal* aRequestingPrincipal,
-    const nsContentPolicyType& aContentPolicyType) {
-  return PBrowserParent::SendPasteTransferable(
-      std::move(aTransferableData), aIsPrivateData, aRequestingPrincipal,
-      aContentPolicyType);
+bool BrowserParent::SendPasteTransferable(IPCTransferable&& aTransferable) {
+  return PBrowserParent::SendPasteTransferable(std::move(aTransferable));
 }
 
 /* static */
@@ -3859,7 +3866,8 @@ bool BrowserParent::AsyncPanZoomEnabled() const {
 void BrowserParent::StartPersistence(
     CanonicalBrowsingContext* aContext,
     nsIWebBrowserPersistDocumentReceiver* aRecv, ErrorResult& aRv) {
-  auto* actor = new WebBrowserPersistDocumentParent();
+  RefPtr<WebBrowserPersistDocumentParent> actor =
+      new WebBrowserPersistDocumentParent();
   actor->SetOnReady(aRecv);
   bool ok = Manager()->SendPWebBrowserPersistDocumentConstructor(actor, this,
                                                                  aContext);

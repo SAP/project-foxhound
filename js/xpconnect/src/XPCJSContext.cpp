@@ -48,9 +48,11 @@
 #include "js/WasmFeatures.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WindowBinding.h"
+#include "mozilla/dom/WakeLockBinding.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
@@ -747,6 +749,9 @@ bool XPCJSContext::InterruptCallback(JSContext* cx) {
     if (Preferences::GetBool("dom.global_stop_script", true)) {
       xpc::Scriptability::Get(global).Block();
     }
+    if (nsCOMPtr<Document> doc = win->GetExtantDoc()) {
+      doc->UnlockAllWakeLocks(WakeLockType::Screen);
+    }
     return false;
   }
 
@@ -781,9 +786,9 @@ static mozilla::Atomic<bool> sWellFormedUnicodeStringsEnabled(true);
 static mozilla::Atomic<bool> sArrayGroupingEnabled(false);
 #ifdef NIGHTLY_BUILD
 static mozilla::Atomic<bool> sNewSetMethodsEnabled(false);
-static mozilla::Atomic<bool> sArrayBufferTransferEnabled(false);
 static mozilla::Atomic<bool> sSymbolsAsWeakMapKeysEnabled(false);
 #endif
+static mozilla::Atomic<bool> sArrayBufferTransferEnabled(false);
 
 static JS::WeakRefSpecifier GetWeakRefsEnabled() {
   if (!sWeakRefsEnabled) {
@@ -809,9 +814,9 @@ void xpc::SetPrefableRealmOptions(JS::RealmOptions& options) {
       .setShadowRealmsEnabled(sShadowRealmsEnabled)
       .setWellFormedUnicodeStringsEnabled(sWellFormedUnicodeStringsEnabled)
       .setArrayGroupingEnabled(sArrayGroupingEnabled)
+      .setArrayBufferTransferEnabled(sArrayBufferTransferEnabled)
 #ifdef NIGHTLY_BUILD
       .setNewSetMethodsEnabled(sNewSetMethodsEnabled)
-      .setArrayBufferTransferEnabled(sArrayBufferTransferEnabled)
       .setSymbolsAsWeakMapKeysEnabled(sSymbolsAsWeakMapKeysEnabled)
 #endif
       ;
@@ -821,8 +826,11 @@ void xpc::SetPrefableCompileOptions(JS::PrefableCompileOptions& options) {
   options
       .setSourcePragmas(StaticPrefs::javascript_options_source_pragmas())
 #ifdef NIGHTLY_BUILD
-      .setImportAssertions(
-          StaticPrefs::javascript_options_experimental_import_assertions())
+      .setImportAttributes(
+          StaticPrefs::javascript_options_experimental_import_attributes())
+      .setImportAttributesAssertSyntax(
+          StaticPrefs::
+              javascript_options_experimental_import_attributes_assert_syntax())
 #endif
       .setAsmJS(StaticPrefs::javascript_options_asmjs())
       .setThrowOnAsmJSValidationFailure(
@@ -848,7 +856,9 @@ void xpc::SetPrefableContextOptions(JS::ContextOptions& options) {
       .setWasmVerbose(Preferences::GetBool(JS_OPTIONS_DOT_STR "wasm_verbose"))
       .setAsyncStack(Preferences::GetBool(JS_OPTIONS_DOT_STR "asyncstack"))
       .setAsyncStackCaptureDebuggeeOnly(Preferences::GetBool(
-          JS_OPTIONS_DOT_STR "asyncstack_capture_debuggee_only"));
+          JS_OPTIONS_DOT_STR "asyncstack_capture_debuggee_only"))
+      .setEnableDestructuringFuse(
+          StaticPrefs::javascript_options_destructuring_fuse());
 
   SetPrefableCompileOptions(options.compileOptions());
 }
@@ -976,11 +986,6 @@ static void LoadStartupJSPrefs(XPCJSContext* xpccx) {
   JS_SetGlobalJitCompilerOption(cx, JSJITCOMPILER_WRITE_PROTECT_CODE,
                                 writeProtectCode);
 
-  JS_SetGlobalJitCompilerOption(
-      cx, JSJITCOMPILER_WATCHTOWER_MEGAMORPHIC,
-      StaticPrefs::
-          javascript_options_watchtower_megamorphic_DoNotUseDirectly());
-
   if (disableWasmHugeMemory) {
     bool disabledHugeMemory = JS::DisableWasmHugeMemory();
     MOZ_RELEASE_ASSERT(disabledHugeMemory);
@@ -1018,11 +1023,11 @@ static void ReloadPrefsCallback(const char* pref, void* aXpccx) {
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.iterator_helpers");
   sNewSetMethodsEnabled =
       Preferences::GetBool(JS_OPTIONS_DOT_STR "experimental.new_set_methods");
-  sArrayBufferTransferEnabled = Preferences::GetBool(
-      JS_OPTIONS_DOT_STR "experimental.arraybuffer_transfer");
   sSymbolsAsWeakMapKeysEnabled = Preferences::GetBool(
       JS_OPTIONS_DOT_STR "experimental.symbols_as_weakmap_keys");
 #endif
+  sArrayBufferTransferEnabled =
+      Preferences::GetBool(JS_OPTIONS_DOT_STR "arraybuffer_transfer");
 
 #ifdef JS_GC_ZEAL
   int32_t zeal = Preferences::GetInt(JS_OPTIONS_DOT_STR "gczeal", -1);

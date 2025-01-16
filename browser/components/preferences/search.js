@@ -11,6 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
 });
 
+const PREF_URLBAR_QUICKSUGGEST_BLOCKLIST =
+  "browser.urlbar.quicksuggest.blockedDigests";
+const PREF_URLBAR_WEATHER_USER_ENABLED = "browser.urlbar.suggest.weather";
+
 Preferences.addAll([
   { id: "browser.search.suggest.enabled", type: "bool" },
   { id: "browser.urlbar.suggest.searches", type: "bool" },
@@ -67,16 +71,33 @@ var gSearchPane = {
 
     let suggestsPref = Preferences.get("browser.search.suggest.enabled");
     let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
+    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
     let privateSuggestsPref = Preferences.get(
       "browser.search.suggest.enabled.private"
     );
+
     let updateSuggestionCheckboxes =
       this._updateSuggestionCheckboxes.bind(this);
     suggestsPref.on("change", updateSuggestionCheckboxes);
     urlbarSuggestsPref.on("change", updateSuggestionCheckboxes);
+    searchBarPref.on("change", updateSuggestionCheckboxes);
     let urlbarSuggests = document.getElementById("urlBarSuggestion");
     urlbarSuggests.addEventListener("command", () => {
       urlbarSuggestsPref.value = urlbarSuggests.checked;
+    });
+    let suggestionsInSearchFieldsCheckbox = document.getElementById(
+      "suggestionsInSearchFieldsCheckbox"
+    );
+    // We only want to call _updateSuggestionCheckboxes once after updating
+    // all prefs.
+    suggestionsInSearchFieldsCheckbox.addEventListener("command", () => {
+      this._skipUpdateSuggestionCheckboxesFromPrefChanges = true;
+      if (!searchBarPref.value) {
+        urlbarSuggestsPref.value = suggestionsInSearchFieldsCheckbox.checked;
+      }
+      suggestsPref.value = suggestionsInSearchFieldsCheckbox.checked;
+      this._skipUpdateSuggestionCheckboxesFromPrefChanges = false;
+      this._updateSuggestionCheckboxes();
     });
     let privateWindowCheckbox = document.getElementById(
       "showSearchSuggestionsPrivateWindows"
@@ -90,21 +111,13 @@ var gSearchPane = {
       "command",
       this._onBrowserSeparateDefaultEngineChange.bind(this)
     );
-    setEventListener(
-      "openLocationBarPrivacyPreferences",
-      "click",
-      function (event) {
-        if (event.button == 0) {
-          gotoPref("privacy-locationBar");
-        }
-      }
-    );
 
     this._initDefaultEngines();
     this._initShowSearchTermsCheckbox();
     this._updateSuggestionCheckboxes();
     this._showAddEngineButton();
     this._initRecentSeachesCheckbox();
+    this._initAddressBar();
   },
 
   /**
@@ -177,19 +190,33 @@ var gSearchPane = {
   },
 
   _updateSuggestionCheckboxes() {
+    if (this._skipUpdateSuggestionCheckboxesFromPrefChanges) {
+      return;
+    }
     let suggestsPref = Preferences.get("browser.search.suggest.enabled");
     let permanentPB = Services.prefs.getBoolPref(
       "browser.privatebrowsing.autostart"
     );
     let urlbarSuggests = document.getElementById("urlBarSuggestion");
+    let suggestionsInSearchFieldsCheckbox = document.getElementById(
+      "suggestionsInSearchFieldsCheckbox"
+    );
     let positionCheckbox = document.getElementById(
       "showSearchSuggestionsFirstCheckbox"
     );
     let privateWindowCheckbox = document.getElementById(
       "showSearchSuggestionsPrivateWindows"
     );
+    let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
+    let searchBarPref = Preferences.get("browser.search.widget.inNavBar");
+
+    suggestionsInSearchFieldsCheckbox.checked =
+      suggestsPref.value &&
+      (searchBarPref.value ? true : urlbarSuggestsPref.value);
 
     urlbarSuggests.disabled = !suggestsPref.value || permanentPB;
+    urlbarSuggests.hidden = !searchBarPref.value;
+
     privateWindowCheckbox.disabled = !suggestsPref.value;
     privateWindowCheckbox.checked = Preferences.get(
       "browser.search.suggest.enabled.private"
@@ -198,12 +225,10 @@ var gSearchPane = {
       privateWindowCheckbox.checked = false;
     }
 
-    let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
     urlbarSuggests.checked = urlbarSuggestsPref.value;
     if (urlbarSuggests.disabled) {
       urlbarSuggests.checked = false;
     }
-
     if (urlbarSuggests.checked) {
       positionCheckbox.disabled = false;
       // Update the checked state of the show-suggestions-first checkbox.  Note
@@ -214,6 +239,13 @@ var gSearchPane = {
     } else {
       positionCheckbox.disabled = true;
       positionCheckbox.checked = false;
+    }
+    if (
+      suggestionsInSearchFieldsCheckbox.checked &&
+      !searchBarPref.value &&
+      !urlbarSuggests.checked
+    ) {
+      urlbarSuggestsPref.value = true;
     }
 
     let permanentPBLabel = document.getElementById(
@@ -285,6 +317,175 @@ var gSearchPane = {
     }
   },
 
+  // ADDRESS BAR
+
+  /**
+   * Initializes the address bar section.
+   */
+  _initAddressBar() {
+    // Update the Firefox Suggest section when its Nimbus config changes.
+    let onNimbus = () => this._updateFirefoxSuggestSection();
+    NimbusFeatures.urlbar.onUpdate(onNimbus);
+    window.addEventListener("unload", () => {
+      NimbusFeatures.urlbar.offUpdate(onNimbus);
+    });
+
+    // The Firefox Suggest info box potentially needs updating when any of the
+    // toggles change.
+    let infoBoxPrefs = [
+      "browser.urlbar.suggest.quicksuggest.nonsponsored",
+      "browser.urlbar.suggest.quicksuggest.sponsored",
+      "browser.urlbar.quicksuggest.dataCollection.enabled",
+    ];
+    for (let pref of infoBoxPrefs) {
+      Preferences.get(pref).on("change", () =>
+        this._updateFirefoxSuggestInfoBox()
+      );
+    }
+
+    document.getElementById("clipboardSuggestion").hidden = !UrlbarPrefs.get(
+      "clipboard.featureGate"
+    );
+
+    this._updateFirefoxSuggestSection(true);
+    this._initQuickActionsSection();
+  },
+
+  /**
+   * Updates the Firefox Suggest section (in the address bar section) depending
+   * on whether the user is enrolled in a Firefox Suggest rollout.
+   *
+   * @param {boolean} [onInit]
+   *   Pass true when calling this when initializing the pane.
+   */
+  _updateFirefoxSuggestSection(onInit = false) {
+    let container = document.getElementById("firefoxSuggestContainer");
+
+    if (UrlbarPrefs.get("quickSuggestEnabled")) {
+      // Update the l10n IDs of text elements.
+      let l10nIdByElementId = {
+        locationBarGroupHeader: "addressbar-header-firefox-suggest",
+        locationBarSuggestionLabel: "addressbar-suggest-firefox-suggest",
+      };
+      for (let [elementId, l10nId] of Object.entries(l10nIdByElementId)) {
+        let element = document.getElementById(elementId);
+        element.dataset.l10nIdOriginal ??= element.dataset.l10nId;
+        element.dataset.l10nId = l10nId;
+      }
+
+      // Show the container.
+      this._updateFirefoxSuggestInfoBox();
+
+      this._updateDismissedSuggestionsStatus();
+      Preferences.get(PREF_URLBAR_QUICKSUGGEST_BLOCKLIST).on("change", () =>
+        this._updateDismissedSuggestionsStatus()
+      );
+      Preferences.get(PREF_URLBAR_WEATHER_USER_ENABLED).on("change", () =>
+        this._updateDismissedSuggestionsStatus()
+      );
+      setEventListener("restoreDismissedSuggestions", "command", () =>
+        this.restoreDismissedSuggestions()
+      );
+
+      container.removeAttribute("hidden");
+    } else if (!onInit) {
+      // Firefox Suggest is not enabled. This is the default, so to avoid
+      // accidentally messing anything up, only modify the doc if we're being
+      // called due to a change in the rollout-enabled status (!onInit).
+      container.setAttribute("hidden", "true");
+      let elementIds = ["locationBarGroupHeader", "locationBarSuggestionLabel"];
+      for (let id of elementIds) {
+        let element = document.getElementById(id);
+        element.dataset.l10nId = element.dataset.l10nIdOriginal;
+        delete element.dataset.l10nIdOriginal;
+        document.l10n.translateElements([element]);
+      }
+    }
+  },
+
+  /**
+   * Updates the Firefox Suggest info box (in the address bar section) depending
+   * on the states of the Firefox Suggest toggles.
+   */
+  _updateFirefoxSuggestInfoBox() {
+    let nonsponsored = Preferences.get(
+      "browser.urlbar.suggest.quicksuggest.nonsponsored"
+    ).value;
+    let sponsored = Preferences.get(
+      "browser.urlbar.suggest.quicksuggest.sponsored"
+    ).value;
+    let dataCollection = Preferences.get(
+      "browser.urlbar.quicksuggest.dataCollection.enabled"
+    ).value;
+
+    // Get the l10n ID of the appropriate text based on the values of the three
+    // prefs.
+    let l10nId;
+    if (nonsponsored && sponsored && dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-all";
+    } else if (nonsponsored && sponsored && !dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-nonsponsored-sponsored";
+    } else if (nonsponsored && !sponsored && dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-nonsponsored-data";
+    } else if (nonsponsored && !sponsored && !dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-nonsponsored";
+    } else if (!nonsponsored && sponsored && dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-sponsored-data";
+    } else if (!nonsponsored && sponsored && !dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-sponsored";
+    } else if (!nonsponsored && !sponsored && dataCollection) {
+      l10nId = "addressbar-firefox-suggest-info-data";
+    }
+
+    let instance = (this._firefoxSuggestInfoBoxInstance = {});
+    let infoBox = document.getElementById("firefoxSuggestInfoBox");
+    if (!l10nId) {
+      infoBox.hidden = true;
+    } else {
+      let infoText = document.getElementById("firefoxSuggestInfoText");
+      infoText.dataset.l10nId = l10nId;
+
+      // If the info box is currently hidden and we unhide it immediately, it
+      // will show its old text until the new text is asyncly fetched and shown.
+      // That's ugly, so wait for the fetch to finish before unhiding it.
+      document.l10n.translateElements([infoText]).then(() => {
+        if (instance == this._firefoxSuggestInfoBoxInstance) {
+          infoBox.hidden = false;
+        }
+      });
+    }
+  },
+
+  _initQuickActionsSection() {
+    let showPref = Preferences.get("browser.urlbar.quickactions.showPrefs");
+    let showQuickActionsGroup = () => {
+      document.getElementById("quickActionsBox").hidden = !showPref.value;
+    };
+    showPref.on("change", showQuickActionsGroup);
+    showQuickActionsGroup();
+  },
+
+  /**
+   * Enables/disables the "Restore" button for dismissed Firefox Suggest
+   * suggestions.
+   */
+  _updateDismissedSuggestionsStatus() {
+    document.getElementById("restoreDismissedSuggestions").disabled =
+      !Services.prefs.prefHasUserValue(PREF_URLBAR_QUICKSUGGEST_BLOCKLIST) &&
+      !(
+        Services.prefs.prefHasUserValue(PREF_URLBAR_WEATHER_USER_ENABLED) &&
+        !Services.prefs.getBoolPref(PREF_URLBAR_WEATHER_USER_ENABLED)
+      );
+  },
+
+  /**
+   * Restores Firefox Suggest suggestions dismissed by the user.
+   */
+  restoreDismissedSuggestions() {
+    Services.prefs.clearUserPref(PREF_URLBAR_QUICKSUGGEST_BLOCKLIST);
+    Services.prefs.clearUserPref(PREF_URLBAR_WEATHER_USER_ENABLED);
+  },
+
   /**
    * Builds a drop down menu of search engines.
    *
@@ -313,8 +514,8 @@ var gSearchPane = {
         "class",
         "menuitem-iconic searchengine-menuitem menuitem-with-favicon"
       );
-      if (e.iconURI) {
-        item.setAttribute("image", e.iconURI.spec);
+      if (e.iconURL) {
+        item.setAttribute("image", e.iconURL);
       }
       item.engine = e;
       if (e.name == currentEngine) {
@@ -695,8 +896,10 @@ EngineStore.prototype = {
   },
 
   _cloneEngine(aEngine) {
-    var clonedObj = {};
-    for (let i of ["id", "name", "alias", "iconURI", "hidden"]) {
+    var clonedObj = {
+      iconURL: aEngine.getIconURL(),
+    };
+    for (let i of ["id", "name", "alias", "hidden"]) {
       clonedObj[i] = aEngine[i];
     }
     clonedObj.originalEngine = aEngine;
@@ -815,12 +1018,6 @@ EngineStore.prototype = {
 
     this._engines[index][aProp] = aNewValue;
     aEngine.originalEngine[aProp] = aNewValue;
-  },
-
-  reloadIcons() {
-    this._engines.forEach(function (e) {
-      e.iconURI = e.originalEngine.iconURI;
-    });
   },
 };
 
@@ -960,8 +1157,8 @@ EngineView.prototype = {
         return shortcut.icon;
       }
 
-      if (this._engineStore.engines[index].iconURI) {
-        return this._engineStore.engines[index].iconURI.spec;
+      if (this._engineStore.engines[index].iconURL) {
+        return this._engineStore.engines[index].iconURL;
       }
 
       if (window.devicePixelRatio > 1) {

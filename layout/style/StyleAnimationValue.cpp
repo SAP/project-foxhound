@@ -123,7 +123,9 @@ bool AnimationValue::IsOffsetPathUrl() const {
 MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
   using namespace nsStyleTransformMatrix;
 
-  switch (Servo_AnimationValue_GetPropertyId(mServo)) {
+  AnimatedPropertyID property(eCSSProperty_UNKNOWN);
+  Servo_AnimationValue_GetPropertyId(mServo, &property);
+  switch (property.mID) {
     case eCSSProperty_scale: {
       const StyleScale& scale = GetScaleProperty();
       return scale.IsNone()
@@ -155,13 +157,13 @@ MatrixScales AnimationValue::GetScaleValue(const nsIFrame* aFrame) const {
 }
 
 void AnimationValue::SerializeSpecifiedValue(
-    nsCSSPropertyID aProperty, const StylePerDocumentStyleData* aRawData,
-    nsACString& aString) const {
+    const AnimatedPropertyID& aProperty,
+    const StylePerDocumentStyleData* aRawData, nsACString& aString) const {
   MOZ_ASSERT(mServo);
-  Servo_AnimationValue_Serialize(mServo, aProperty, aRawData, &aString);
+  Servo_AnimationValue_Serialize(mServo, &aProperty, aRawData, &aString);
 }
 
-bool AnimationValue::IsInterpolableWith(nsCSSPropertyID aProperty,
+bool AnimationValue::IsInterpolableWith(const AnimatedPropertyID& aProperty,
                                         const AnimationValue& aToValue) const {
   if (IsNull() || aToValue.IsNull()) {
     return false;
@@ -172,8 +174,7 @@ bool AnimationValue::IsInterpolableWith(nsCSSPropertyID aProperty,
   return Servo_AnimationValues_IsInterpolable(mServo, aToValue.mServo);
 }
 
-double AnimationValue::ComputeDistance(nsCSSPropertyID aProperty,
-                                       const AnimationValue& aOther) const {
+double AnimationValue::ComputeDistance(const AnimationValue& aOther) const {
   if (IsNull() || aOther.IsNull()) {
     return 0.0;
   }
@@ -187,7 +188,7 @@ double AnimationValue::ComputeDistance(nsCSSPropertyID aProperty,
 }
 
 /* static */
-AnimationValue AnimationValue::FromString(nsCSSPropertyID aProperty,
+AnimationValue AnimationValue::FromString(AnimatedPropertyID& aProperty,
                                           const nsACString& aValue,
                                           Element* aElement) {
   MOZ_ASSERT(aElement);

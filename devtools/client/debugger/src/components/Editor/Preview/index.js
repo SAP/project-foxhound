@@ -2,14 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import PropTypes from "prop-types";
-import React, { PureComponent } from "react";
-import { connect } from "../../../utils/connect";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import Popup from "./Popup";
 
-import { getIsCurrentThreadPaused } from "../../../selectors";
-import actions from "../../../actions";
+import { getIsCurrentThreadPaused } from "../../../selectors/index";
+import actions from "../../../actions/index";
 
 const EXCEPTION_MARKER = "mark-text-exception";
 
@@ -61,12 +61,6 @@ class Preview extends PureComponent {
     this.currentTokenId = tokenId;
 
     const { editor, getPreview, getExceptionPreview } = this.props;
-
-    // Ignore inline previews code widgets
-    if (target.closest(".CodeMirror-widget")) {
-      return;
-    }
-
     const isTargetException = target.classList.contains(EXCEPTION_MARKER);
 
     let preview;

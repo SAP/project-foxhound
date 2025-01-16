@@ -8,6 +8,7 @@
 #define mozilla_loader_WorkerModuleLoader_h
 
 #include "js/loader/ModuleLoaderBase.h"
+#include "js/loader/ScriptFetchOptions.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/UniquePtr.h"
 
@@ -63,7 +64,6 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
 
   already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
       JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
-      JS::Handle<JS::Value> aReferencingPrivate,
       JS::Handle<JSString*> aSpecifier,
       JS::Handle<JSObject*> aPromise) override;
 

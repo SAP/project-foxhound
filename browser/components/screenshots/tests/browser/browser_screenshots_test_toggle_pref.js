@@ -34,7 +34,7 @@ add_task(async function test() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_PAGE,
+      url: SHORT_TEST_PAGE,
     },
     async browser => {
       function awaitExtensionEvent(eventName, id) {
@@ -104,7 +104,7 @@ add_task(async function test() {
           let iframe;
           await ContentTaskUtils.waitForCondition(() => {
             iframe = content.document.querySelector(iframeSelector);
-            if (!iframe || !ContentTaskUtils.is_visible(iframe)) {
+            if (!iframe || !ContentTaskUtils.isVisible(iframe)) {
               info("in waitForUIContent, no visible iframe yet");
               return false;
             }
@@ -126,7 +126,7 @@ add_task(async function test() {
           let iframe;
           await ContentTaskUtils.waitForCondition(() => {
             iframe = content.document.querySelector(iframeSelector);
-            if (!iframe || !ContentTaskUtils.is_visible(iframe)) {
+            if (!iframe || !ContentTaskUtils.isVisible(iframe)) {
               info("in waitForUIContent, no visible iframe yet");
               return true;
             }
@@ -164,7 +164,7 @@ add_task(async function test() {
           let iframe;
           await ContentTaskUtils.waitForCondition(() => {
             iframe = content.document.querySelector(iframeSelector);
-            if (!iframe || !ContentTaskUtils.is_visible(iframe)) {
+            if (!iframe || !ContentTaskUtils.isVisible(iframe)) {
               info("in waitForUIContent, no visible iframe yet");
               return false;
             }
@@ -186,7 +186,7 @@ add_task(async function test() {
           let iframe;
           await ContentTaskUtils.waitForCondition(() => {
             iframe = content.document.querySelector(iframeSelector);
-            if (!iframe || !ContentTaskUtils.is_visible(iframe)) {
+            if (!iframe || !ContentTaskUtils.isVisible(iframe)) {
               return true;
             }
             info("in waitForUIContent, iframe still visible");
@@ -227,7 +227,7 @@ add_task(async function test() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_PAGE,
+      url: SHORT_TEST_PAGE,
     },
     async browser => {
       const SCREENSHOTS_PREF = "extensions.screenshots.disabled";
@@ -265,7 +265,7 @@ add_task(async function test() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_PAGE,
+      url: SHORT_TEST_PAGE,
     },
     async browser => {
       const SCREENSHOTS_PREF = "extensions.screenshots.disabled";

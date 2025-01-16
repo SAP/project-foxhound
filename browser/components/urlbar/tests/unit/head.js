@@ -16,7 +16,6 @@ ChromeUtils.defineESModuleGetters(this, {
   HttpServer: "resource://testing-common/httpd.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
   UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
@@ -325,6 +324,43 @@ async function addTestTailSuggestionsEngine(suggestionsFn = null) {
   return engine;
 }
 
+/**
+ * Creates a function that can be provided to the new engine
+ * utility function to mimic a search engine that returns
+ * rich suggestions.
+ *
+ * @param {string} searchStr
+ *        The string being searched for.
+ *
+ * @returns {object}
+ *        A JSON object mimicing the data format returned by
+ *        a search engine.
+ */
+function defaultRichSuggestionsFn(searchStr) {
+  let suffixes = ["toronto", "tunisia", "tacoma", "taipei"];
+  return [
+    "what time is it in t",
+    suffixes.map(s => searchStr + s.slice(1)),
+    [],
+    {
+      "google:irrelevantparameter": [],
+      "google:suggestdetail": suffixes.map((suffix, i) => {
+        // Set every other suggestion as a rich suggestion so we can
+        // test how they are handled and ordered when interleaved.
+        if (i % 2) {
+          return {};
+        }
+        return {
+          a: "description",
+          dc: "#FFFFFF",
+          i: "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==",
+          t: "Title",
+        };
+      }),
+    },
+  ];
+}
+
 async function addOpenPages(uri, count = 1, userContextId = 0) {
   for (let i = 0; i < count; i++) {
     await UrlbarProviderOpenTabs.registerOpenTab(
@@ -351,7 +387,7 @@ async function removeOpenPages(aUri, aCount = 1, aUserContextId = 0) {
  * suggestions.
  */
 function testEngine_setup() {
-  add_task(async function setup() {
+  add_setup(async () => {
     await cleanupPlaces();
     let engine = await addTestSuggestionsEngine();
     let oldDefaultEngine = await Services.search.getDefault();
@@ -427,6 +463,17 @@ function makeBookmarkResult(
       icon: [typeof iconUri != "undefined" ? iconUri : `page-icon:${uri}`],
       title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
       tags: [tags, UrlbarUtils.HIGHLIGHT.TYPED],
+      isBlockable:
+        source == UrlbarUtils.RESULT_SOURCE.HISTORY ? true : undefined,
+      blockL10n:
+        source == UrlbarUtils.RESULT_SOURCE.HISTORY
+          ? { id: "urlbar-result-menu-remove-from-history" }
+          : undefined,
+      helpUrl:
+        source == UrlbarUtils.RESULT_SOURCE.HISTORY
+          ? Services.urlFormatter.formatURLPref("app.support.baseURL") +
+            "awesome-bar-result-menu"
+          : undefined,
     })
   );
 
@@ -455,6 +502,11 @@ function makeFormHistoryResult(queryContext, { suggestion, engineName }) {
       engine: engineName,
       suggestion: [suggestion, UrlbarUtils.HIGHLIGHT.SUGGESTED],
       lowerCaseSuggestion: suggestion.toLocaleLowerCase(),
+      isBlockable: true,
+      blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+      helpUrl:
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "awesome-bar-result-menu",
     })
   );
 }
@@ -709,7 +761,7 @@ function makeSearchResult(
 ) {
   // Tail suggestion common cases, handled here to reduce verbosity in tests.
   if (tail) {
-    if (!tailPrefix) {
+    if (!tailPrefix && !isRichSuggestion) {
       tailPrefix = "… ";
     }
     if (!tailOffsetIndex) {
@@ -764,6 +816,12 @@ function makeSearchResult(
       result.payload.suggestion.toLocaleLowerCase();
     result.payload.trending = trending;
     result.isRichSuggestion = isRichSuggestion;
+  }
+
+  if (isRichSuggestion) {
+    result.payload.icon =
+      "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    result.payload.description = "description";
   }
 
   if (providerName) {
@@ -823,6 +881,19 @@ function makeVisitResult(
 
   if (fallbackTitle) {
     payload.fallbackTitle = [fallbackTitle, UrlbarUtils.HIGHLIGHT.TYPED];
+  }
+
+  if (
+    !heuristic &&
+    providerName != "AboutPages" &&
+    providerName != "PreloadedSites" &&
+    source == UrlbarUtils.RESULT_SOURCE.HISTORY
+  ) {
+    payload.isBlockable = true;
+    payload.blockL10n = { id: "urlbar-result-menu-remove-from-history" };
+    payload.helpUrl =
+      Services.urlFormatter.formatURLPref("app.support.baseURL") +
+      "awesome-bar-result-menu";
   }
 
   if (iconUri) {

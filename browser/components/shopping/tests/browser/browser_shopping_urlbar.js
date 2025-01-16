@@ -10,7 +10,7 @@ add_task(async function test_button_hidden() {
   await BrowserTestUtils.withNewTab(CONTENT_PAGE, async function (browser) {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "Shopping Button should be hidden on a content page"
     );
   });
@@ -20,7 +20,7 @@ add_task(async function test_button_shown() {
   await BrowserTestUtils.withNewTab(PRODUCT_PAGE, async function (browser) {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "Shopping Button should be visible on a product page"
     );
   });
@@ -31,19 +31,19 @@ add_task(async function test_button_changes_with_location() {
   await BrowserTestUtils.withNewTab(CONTENT_PAGE, async function (browser) {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "Shopping Button should be hidden on a content page"
     );
     BrowserTestUtils.startLoadingURIString(browser, PRODUCT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "Shopping Button should be visible on a product page"
     );
     BrowserTestUtils.startLoadingURIString(browser, CONTENT_PAGE);
     await BrowserTestUtils.browserLoaded(browser);
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "Shopping Button should be hidden on a content page"
     );
   });
@@ -92,13 +92,13 @@ add_task(async function test_button_changes_with_tabswitch() {
 
   await BrowserTestUtils.switchTab(gBrowser, productTab);
   ok(
-    BrowserTestUtils.is_visible(shoppingButton),
+    BrowserTestUtils.isVisible(shoppingButton),
     "Shopping Button should be visible on a product page"
   );
 
   await BrowserTestUtils.switchTab(gBrowser, contentTab);
   ok(
-    BrowserTestUtils.is_hidden(shoppingButton),
+    BrowserTestUtils.isHidden(shoppingButton),
     "Shopping Button should be hidden on a content page"
   );
 
@@ -131,7 +131,7 @@ add_task(async function test_button_toggles_sidebars() {
     );
 
     sidebar = browserPanel.querySelector("shopping-sidebar");
-    ok(BrowserTestUtils.is_visible(sidebar), "Shopping sidebar should be open");
+    ok(BrowserTestUtils.isVisible(sidebar), "Shopping sidebar should be open");
 
     // close
     shoppingButton.click();
@@ -143,10 +143,7 @@ add_task(async function test_button_toggles_sidebars() {
       () => shoppingButton.getAttribute("shoppingsidebaropen") == "false"
     );
 
-    ok(
-      BrowserTestUtils.is_hidden(sidebar),
-      "Shopping sidebar should be closed"
-    );
+    ok(BrowserTestUtils.isHidden(sidebar), "Shopping sidebar should be closed");
   });
 });
 
@@ -192,12 +189,12 @@ add_task(async function test_button_toggles_all_windows() {
   );
   sidebarA = browserPanelA.querySelector("shopping-sidebar");
   ok(
-    BrowserTestUtils.is_visible(sidebarA),
+    BrowserTestUtils.isVisible(sidebarA),
     "Shopping sidebar should be open in current window"
   );
   sidebarB = browserPanelB.querySelector("shopping-sidebar");
   ok(
-    BrowserTestUtils.is_visible(sidebarB),
+    BrowserTestUtils.isVisible(sidebarB),
     "Shopping sidebar should be open in new window"
   );
 
@@ -212,11 +209,11 @@ add_task(async function test_button_toggles_all_windows() {
   );
 
   ok(
-    BrowserTestUtils.is_hidden(sidebarA),
+    BrowserTestUtils.isHidden(sidebarA),
     "Shopping sidebar should be closed in current window"
   );
   ok(
-    BrowserTestUtils.is_hidden(sidebarB),
+    BrowserTestUtils.isHidden(sidebarB),
     "Shopping sidebar should be closed in new window"
   );
 
@@ -252,7 +249,7 @@ add_task(async function test_button_deals_with_tabswitches() {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
 
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "The shopping button is hidden on a non product page"
     );
 
@@ -265,7 +262,7 @@ add_task(async function test_button_deals_with_tabswitches() {
     );
 
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "The shopping button is still hidden after opening a background product tab"
     );
 
@@ -279,7 +276,7 @@ add_task(async function test_button_deals_with_tabswitches() {
     await shoppingButtonVisiblePromise;
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is now visible"
     );
 
@@ -292,7 +289,7 @@ add_task(async function test_button_deals_with_tabswitches() {
     );
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible after opening background product tab"
     );
 
@@ -305,7 +302,7 @@ add_task(async function test_button_deals_with_tabswitches() {
     await shoppingButtonVisiblePromise;
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible"
     );
 
@@ -322,7 +319,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     let shoppingButton = document.getElementById("shopping-sidebar-button");
 
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "The shopping button is hidden on a non product page"
     );
 
@@ -335,7 +332,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     );
 
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "The shopping button is still hidden after opening a background product tab"
     );
 
@@ -349,7 +346,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     await shoppingButtonVisiblePromise;
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is now visible"
     );
 
@@ -362,7 +359,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     );
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible after opening background product tab"
     );
 
@@ -375,7 +372,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     await shoppingButtonVisiblePromise;
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible"
     );
 
@@ -388,7 +385,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     });
 
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible after opting out."
     );
     Assert.equal(
@@ -403,7 +400,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
       gBrowser.getTabForBrowser(browser)
     );
     ok(
-      BrowserTestUtils.is_hidden(shoppingButton),
+      BrowserTestUtils.isHidden(shoppingButton),
       "The shopping button is hidden on non-product page."
     );
     Assert.equal(
@@ -414,7 +411,7 @@ add_task(async function test_button_deals_with_tabswitches_post_optout() {
     // Switch to non-product tab.
     await BrowserTestUtils.switchTab(gBrowser, newProductTab);
     ok(
-      BrowserTestUtils.is_visible(shoppingButton),
+      BrowserTestUtils.isVisible(shoppingButton),
       "The shopping button is still visible on a different product tab after opting out."
     );
     Assert.equal(

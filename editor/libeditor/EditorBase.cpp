@@ -1251,11 +1251,6 @@ void EditorBase::EndPlaceholderTransaction(
   }
 }
 
-NS_IMETHODIMP EditorBase::SetShouldTxnSetSelection(bool aShould) {
-  MakeThisAllowTransactionsToChangeSelection(aShould);
-  return NS_OK;
-}
-
 NS_IMETHODIMP EditorBase::GetDocumentIsEmpty(bool* aDocumentIsEmpty) {
   MOZ_ASSERT(aDocumentIsEmpty);
   *aDocumentIsEmpty = IsEmpty();
@@ -2287,8 +2282,13 @@ NS_IMETHODIMP EditorBase::SetSpellcheckUserOverride(bool enable) {
 }
 
 NS_IMETHODIMP EditorBase::InsertNode(nsINode* aNodeToInsert,
-                                     nsINode* aContainer, uint32_t aOffset) {
-  nsCOMPtr<nsIContent> contentToInsert = do_QueryInterface(aNodeToInsert);
+                                     nsINode* aContainer, uint32_t aOffset,
+                                     bool aPreserveSelection,
+                                     uint8_t aOptionalArgCount) {
+  MOZ_DIAGNOSTIC_ASSERT(IsHTMLEditor());
+
+  nsCOMPtr<nsIContent> contentToInsert =
+      nsIContent::FromNodeOrNull(aNodeToInsert);
   if (NS_WARN_IF(!contentToInsert) || NS_WARN_IF(!aContainer)) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -2299,6 +2299,17 @@ NS_IMETHODIMP EditorBase::InsertNode(nsINode* aNodeToInsert,
     NS_WARNING_ASSERTION(rv == NS_ERROR_EDITOR_ACTION_CANCELED,
                          "CanHandleAndMaybeDispatchBeforeInputEvent() failed");
     return EditorBase::ToGenericNSResult(rv);
+  }
+
+  // Make dispatch `input` event after stopping preserving selection.
+  AutoPlaceholderBatch treatAsOneTransaction(
+      *this,
+      ScrollSelectionIntoView::No,  // not a user interaction
+      __FUNCTION__);
+
+  Maybe<AutoTransactionsConserveSelection> preseveSelection;
+  if (aOptionalArgCount && aPreserveSelection) {
+    preseveSelection.emplace(*this);
   }
 
   const uint32_t offset = std::min(aOffset, aContainer->Length());
@@ -2411,23 +2422,10 @@ EditorBase::InsertPaddingBRElementForEmptyLastLineWithTransaction(
   return insertBRElementResult;
 }
 
-NS_IMETHODIMP EditorBase::DeleteNode(nsINode* aNode) {
-  if (NS_WARN_IF(!aNode) || NS_WARN_IF(!aNode->IsContent())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  AutoEditActionDataSetter editActionData(*this, EditAction::eRemoveNode);
-  nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
-  if (NS_FAILED(rv)) {
-    NS_WARNING_ASSERTION(rv == NS_ERROR_EDITOR_ACTION_CANCELED,
-                         "CanHandleAndMaybeDispatchBeforeInputEvent() failed");
-    return EditorBase::ToGenericNSResult(rv);
-  }
-
-  rv = DeleteNodeWithTransaction(MOZ_KnownLive(*aNode->AsContent()));
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "EditorBase::DeleteNodeWithTransaction() failed");
-  return EditorBase::ToGenericNSResult(rv);
+NS_IMETHODIMP EditorBase::DeleteNode(nsINode* aNode, bool aPreserveSelection,
+                                     uint8_t aOptionalArgCount) {
+  MOZ_ASSERT_UNREACHABLE("Do not use this API with TextEditor");
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult EditorBase::DeleteNodeWithTransaction(nsIContent& aContent) {
@@ -5664,14 +5662,21 @@ void EditorBase::SwitchTextDirectionTo(TextDirection aTextDirection) {
 }
 
 nsresult EditorBase::SetTextDirectionTo(TextDirection aTextDirection) {
-  Element* rootElement = GetExposedRoot();
+  Element* const editingHostOrTextControlElement =
+      IsHTMLEditor() ? AsHTMLEditor()->ComputeEditingHost(
+                           HTMLEditor::LimitInBodyElement::No)
+                     : GetExposedRoot();
+  if (!editingHostOrTextControlElement) {  // Don't warn, HTMLEditor may have no
+                                           // active editing host
+    return NS_OK;
+  }
 
   if (aTextDirection == TextDirection::eLTR) {
     NS_ASSERTION(!IsLeftToRight(), "Unexpected mutually exclusive flag");
     mFlags &= ~nsIEditor::eEditorRightToLeft;
     mFlags |= nsIEditor::eEditorLeftToRight;
-    nsresult rv = rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
-                                       u"ltr"_ns, true);
+    nsresult rv = editingHostOrTextControlElement->SetAttr(
+        kNameSpaceID_None, nsGkAtoms::dir, u"ltr"_ns, true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Element::SetAttr(nsGkAtoms::dir, ltr) failed");
     return rv;
@@ -5681,8 +5686,8 @@ nsresult EditorBase::SetTextDirectionTo(TextDirection aTextDirection) {
     NS_ASSERTION(!IsRightToLeft(), "Unexpected mutually exclusive flag");
     mFlags |= nsIEditor::eEditorRightToLeft;
     mFlags &= ~nsIEditor::eEditorLeftToRight;
-    nsresult rv = rootElement->SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
-                                       u"rtl"_ns, true);
+    nsresult rv = editingHostOrTextControlElement->SetAttr(
+        kNameSpaceID_None, nsGkAtoms::dir, u"rtl"_ns, true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Element::SetAttr(nsGkAtoms::dir, rtl) failed");
     return rv;
@@ -6443,16 +6448,20 @@ bool EditorBase::AutoEditActionDataSetter::IsBeforeInputEventEnabled() const {
   if (mEditorBase.IsSuppressingDispatchingInputEvent()) {
     return false;
   }
+  return EditorBase::TreatAsUserInput(mPrincipal);
+}
 
-  // If mPrincipal has set, it means that we're handling an edit action
-  // which is requested by JS.  If it's not chrome script, we shouldn't
+// static
+bool EditorBase::TreatAsUserInput(nsIPrincipal* aPrincipal) {
+  // If aPrincipal it not nullptr, it means that the caller is handling an edit
+  // action which is requested by JS.  If it's not chrome script, we shouldn't
   // dispatch "beforeinput" event.
-  if (mPrincipal && !mPrincipal->IsSystemPrincipal()) {
+  if (aPrincipal && !aPrincipal->IsSystemPrincipal()) {
     // But if it's content script of an addon, `execCommand` calls are a
     // part of browser's default action from point of view of web apps.
     // Therefore, we should dispatch `beforeinput` event.
     // https://github.com/w3c/input-events/issues/91
-    if (!mPrincipal->GetIsAddonOrExpandedAddonPrincipal()) {
+    if (!aPrincipal->GetIsAddonOrExpandedAddonPrincipal()) {
       return false;
     }
   }

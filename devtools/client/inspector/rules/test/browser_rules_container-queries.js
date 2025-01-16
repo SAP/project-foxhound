@@ -244,7 +244,17 @@ async function assertJumpToContainerButton(
   );
 
   await onNodeUnhighlight;
-  ok("Highlighter was hidden when clicking on icon");
+  ok(true, "Highlighter was hidden when clicking on icon");
+
+  // Move mouse so it does stay in a position where it could hover something impacting
+  // the test.
+  EventUtils.synthesizeMouse(
+    selectContainerButton.closest("body"),
+    0,
+    0,
+    { type: "mouseover" },
+    selectContainerButton.ownerDocument.defaultView
+  );
 }
 
 async function assertQueryContainerTooltip({
@@ -271,13 +281,16 @@ async function assertQueryContainerTooltip({
 
   const tooltip = view.tooltips.getTooltip("interactiveTooltip");
   const onTooltipReady = tooltip.once("shown");
+  info("synthesizing mousemove: " + tooltip.isVisible());
   EventUtils.synthesizeMouseAtCenter(
     tooltipTriggerEl,
     { type: "mousemove" },
     tooltipTriggerEl.ownerDocument.defaultView
   );
   await onTooltipReady;
+  info("tooltip was shown");
   await onNodeHighlight;
+  info("node was highlighted");
 
   is(
     tooltip.panel.querySelector("header").textContent,

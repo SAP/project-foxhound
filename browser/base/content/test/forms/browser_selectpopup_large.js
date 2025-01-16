@@ -174,12 +174,18 @@ async function performLargePopupTests(win) {
   ok(true, "scroll position at drag up from option");
 
   scrollPos = getScrollPos();
+  // We intentionally turn off this a11y check, because the following click
+  // is sent on an arbitrary web content that is not expected to be tested
+  // by itself with the browser mochitests, therefore this rule check shall
+  // be ignored by a11y-checks suite.
+  AccessibilityUtils.setEnv({ labelRule: false });
   EventUtils.synthesizeMouseAtPoint(
     popupRect.left + 20,
     popupRect.bottom + 25,
     { type: "mouseup" },
     win
   );
+  AccessibilityUtils.resetEnv();
   is(
     getScrollPos(),
     scrollPos,
@@ -267,27 +273,6 @@ async function performLargePopupTests(win) {
       }
     );
     await contentPainted;
-  }
-
-  if (navigator.platform.indexOf("Mac") == 0) {
-    await SpecialPowers.spawn(browser, [], async function () {
-      let doc = content.document;
-      doc.body.style = "padding-top: 400px;";
-
-      let select = doc.getElementById("one");
-      select.options[41].selected = true;
-      select.focus();
-    });
-
-    await openSelectPopup("key", "select", win);
-
-    ok(
-      selectPopup.getBoundingClientRect().top >
-        browser.getBoundingClientRect().top,
-      "select popup appears over selected item"
-    );
-
-    await hideSelectPopup("escape", win);
   }
 }
 

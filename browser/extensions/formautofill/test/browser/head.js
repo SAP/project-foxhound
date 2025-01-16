@@ -41,6 +41,10 @@ const ADDRESS_FORM_WITHOUT_AUTOCOMPLETE_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
   "address/without_autocomplete_address_basic.html";
+const ADDRESS_FORM_WITH_PAGE_NAVIGATION_BUTTONS =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "address/capture_address_on_page_navigation.html";
 const CREDITCARD_FORM_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
@@ -57,6 +61,10 @@ const CREDITCARD_FORM_WITHOUT_AUTOCOMPLETE_URL =
   "https://example.org" +
   HTTP_TEST_PATH +
   "creditCard/without_autocomplete_creditcard_basic.html";
+const CREDITCARD_FORM_WITH_PAGE_NAVIGATION_BUTTONS =
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "creditCard/capture_creditCard_on_page_navigation.html";
 const EMPTY_URL = "https://example.org" + HTTP_TEST_PATH + "empty.html";
 
 const ENABLED_AUTOFILL_ADDRESSES_PREF =
@@ -398,6 +406,7 @@ async function focusUpdateSubmitForm(target, args, submit = true) {
   if (alreadyFocused) {
     // If the element is already focused, assume the FieldsIdentified message
     // was sent before.
+    FormAutofillParent.removeMessageObserver(fieldsIdentifiedObserver);
     fieldsIdentifiedPromiseResolver();
   }
 
@@ -772,7 +781,8 @@ async function clickAddressDoorhangerButton(buttonType, subType) {
     button = AddressSaveDoorhanger.editButton(notification);
   } else if (buttonType == ADDRESS_MENU_BUTTON) {
     const menu = AutofillDoorhanger.menuButton(notification);
-    const promise = BrowserTestUtils.waitForEvent(menu.menupopup, "popupshown");
+    const menupopup = AutofillDoorhanger.menuPopup(notification);
+    const promise = BrowserTestUtils.waitForEvent(menupopup, "popupshown");
     menu.click();
     await promise;
     if (subType == ADDRESS_MENU_PREFENCE) {
@@ -932,6 +942,7 @@ function verifySectionFieldDetails(sections, expectedSectionsInfo) {
           section: "",
           contactType: "",
           addressType: "",
+          credentialType: "",
         },
         ...expectedSection.default,
         ...expectedFieldDetail,
@@ -1195,7 +1206,7 @@ async function verifyConfirmationHint(
   try {
     Assert.equal(hintElem.state, "open", "hint popup is open");
     Assert.ok(
-      BrowserTestUtils.is_visible(hintElem.anchorNode),
+      BrowserTestUtils.isVisible(hintElem.anchorNode),
       "hint anchorNode is visible"
     );
     Assert.equal(

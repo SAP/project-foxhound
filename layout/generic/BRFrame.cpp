@@ -6,6 +6,7 @@
 
 /* rendering object for HTML <br> elements */
 
+#include "mozilla/CaretAssociationHint.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLBRElement.h"
 #include "gfxContext.h"
@@ -62,11 +63,6 @@ class BRFrame final : public nsIFrame {
   Maybe<nscoord> GetNaturalBaselineBOffset(
       WritingMode aWM, BaselineSharingGroup aBaselineGroup,
       BaselineExportContext) const override;
-
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsIFrame::IsFrameOfType(
-        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eLineParticipant));
-  }
 
 #ifdef ACCESSIBILITY
   mozilla::a11y::AccType AccessibleType() override;
@@ -219,7 +215,7 @@ nsIFrame::ContentOffsets BRFrame::CalcContentOffsetsFromFramePoint(
   if (offsets.content) {
     offsets.offset = offsets.content->ComputeIndexOf_Deprecated(mContent);
     offsets.secondaryOffset = offsets.offset;
-    offsets.associate = CARET_ASSOCIATE_AFTER;
+    offsets.associate = CaretAssociationHint::After;
   }
   return offsets;
 }

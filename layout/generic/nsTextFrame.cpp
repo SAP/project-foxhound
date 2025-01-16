@@ -12,6 +12,7 @@
 
 #include "gfxUtils.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CaretAssociationHint.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/gfx/2D.h"
@@ -214,6 +215,7 @@ struct nsTextFrame::PaintTextSelectionParams : nsTextFrame::PaintTextParams {
 
 struct nsTextFrame::DrawTextRunParams {
   gfxContext* context;
+  mozilla::gfx::PaletteCache& paletteCache;
   PropertyProvider* provider = nullptr;
   gfxFloat* advanceWidth = nullptr;
   mozilla::SVGContextPaint* contextPaint = nullptr;
@@ -221,11 +223,12 @@ struct nsTextFrame::DrawTextRunParams {
   nscolor textColor = NS_RGBA(0, 0, 0, 0);
   nscolor textStrokeColor = NS_RGBA(0, 0, 0, 0);
   nsAtom* fontPalette = nullptr;
-  gfx::FontPaletteValueSet* paletteValueSet = nullptr;
   float textStrokeWidth = 0.0f;
   bool drawSoftHyphen = false;
   bool hasTextShadow = false;
-  explicit DrawTextRunParams(gfxContext* aContext) : context(aContext) {}
+  DrawTextRunParams(gfxContext* aContext,
+                    mozilla::gfx::PaletteCache& aPaletteCache)
+      : context(aContext), paletteCache(aPaletteCache) {}
 };
 
 struct nsTextFrame::ClipEdges {
@@ -262,7 +265,9 @@ struct nsTextFrame::DrawTextParams : nsTextFrame::DrawTextRunParams {
   const ClipEdges* clipEdges = nullptr;
   const nscolor* decorationOverrideColor = nullptr;
   Range glyphRange;
-  explicit DrawTextParams(gfxContext* aContext) : DrawTextRunParams(aContext) {}
+  DrawTextParams(gfxContext* aContext,
+                 mozilla::gfx::PaletteCache& aPaletteCache)
+      : DrawTextRunParams(aContext, aPaletteCache) {}
 };
 
 struct nsTextFrame::PaintShadowParams {
@@ -744,16 +749,13 @@ static bool IsCSSWordSpacingSpace(const nsTextFragment* aFrag, uint32_t aPos,
 }
 
 constexpr char16_t kOghamSpaceMark = 0x1680;
-constexpr char16_t kIdeographicSpace = 0x3000;
 
 // Check whether the string aChars/aLength starts with space that's
 // trimmable according to CSS 'white-space:normal/nowrap'.
-static bool IsTrimmableSpaceAtStart(const char16_t* aChars, uint32_t aLength) {
+static bool IsTrimmableSpace(const char16_t* aChars, uint32_t aLength) {
   NS_ASSERTION(aLength > 0, "No text for IsSpace!");
 
   char16_t ch = *aChars;
-  // Note that Ideographic Space is NOT treated as trimmable here, because
-  // (unlike ASCII space) it does not collapse at start-of-line.
   if (ch == ' ' || ch == kOghamSpaceMark) {
     return !nsTextFrameUtils::IsSpaceCombiningSequenceTail(aChars + 1,
                                                            aLength - 1);
@@ -775,7 +777,6 @@ static bool IsTrimmableSpace(const nsTextFragment* aFrag, uint32_t aPos,
   switch (aFrag->CharAt(aPos)) {
     case ' ':
     case kOghamSpaceMark:
-    case kIdeographicSpace:
       return (!aStyleText->WhiteSpaceIsSignificant() || aAllowHangingWS) &&
              !IsSpaceCombiningSequenceTail(aFrag, aPos + 1);
     case '\n':
@@ -824,7 +825,7 @@ static uint32_t GetTrimmableWhitespaceCount(const nsTextFragment* aFrag,
     const char16_t* str = aFrag->Get2b() + aStartOffset;
     int32_t fragLen = aFrag->GetLength() - aStartOffset;
     for (; count < aLength; ++count) {
-      if (!IsTrimmableSpaceAtStart(str, fragLen)) {
+      if (!IsTrimmableSpace(str, fragLen)) {
         break;
       }
       str += aDirection;
@@ -1129,8 +1130,8 @@ class BuildTextRunsScanner {
 };
 
 static nsIFrame* FindLineContainer(nsIFrame* aFrame) {
-  while (aFrame && (aFrame->IsFrameOfType(nsIFrame::eLineParticipant) ||
-                    aFrame->CanContinueTextRun())) {
+  while (aFrame &&
+         (aFrame->IsLineParticipant() || aFrame->CanContinueTextRun())) {
     aFrame = aFrame->GetParent();
   }
   return aFrame;
@@ -4126,25 +4127,7 @@ class nsContinuingTextFrame final : public nsTextFrame {
         "creating a loop in continuation chain!");
     mPrevContinuation = static_cast<nsTextFrame*>(aPrevContinuation);
     RemoveStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
-    nsTextFrame* prevFirst = mFirstContinuation;
-    if (mPrevContinuation) {
-      mFirstContinuation = mPrevContinuation->FirstContinuation();
-      if (mFirstContinuation) {
-        mFirstContinuation->ClearCachedContinuations();
-      }
-    } else {
-      mFirstContinuation = nullptr;
-    }
-    if (mFirstContinuation != prevFirst) {
-      if (prevFirst) {
-        prevFirst->ClearCachedContinuations();
-      }
-      auto* f = static_cast<nsContinuingTextFrame*>(mNextContinuation);
-      while (f) {
-        f->mFirstContinuation = mFirstContinuation;
-        f = static_cast<nsContinuingTextFrame*>(f->mNextContinuation);
-      }
-    }
+    UpdateCachedContinuations();
   }
 
   nsTextFrame* GetPrevInFlow() const final {
@@ -4160,6 +4143,11 @@ class nsContinuingTextFrame final : public nsTextFrame {
         "creating a loop in continuation chain!");
     mPrevContinuation = static_cast<nsTextFrame*>(aPrevInFlow);
     AddStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
+    UpdateCachedContinuations();
+  }
+
+  // Call this helper to update cache after mPrevContinuation is changed.
+  void UpdateCachedContinuations() {
     nsTextFrame* prevFirst = mFirstContinuation;
     if (mPrevContinuation) {
       mFirstContinuation = mPrevContinuation->FirstContinuation();
@@ -4215,7 +4203,7 @@ class nsContinuingTextFrame final : public nsTextFrame {
                                  nsPresContext* aPresContext)
       : nsTextFrame(aStyle, aPresContext, kClassID) {}
 
-  nsTextFrame* mPrevContinuation;
+  nsTextFrame* mPrevContinuation = nullptr;
   nsTextFrame* mFirstContinuation = nullptr;
 };
 
@@ -5019,8 +5007,7 @@ static already_AddRefed<gfxTextRun> GenerateTextRunForEmphasisMarks(
 static nsRubyFrame* FindFurthestInlineRubyAncestor(nsTextFrame* aFrame) {
   nsRubyFrame* rubyFrame = nullptr;
   for (nsIFrame* frame = aFrame->GetParent();
-       frame && frame->IsFrameOfType(nsIFrame::eLineParticipant);
-       frame = frame->GetParent()) {
+       frame && frame->IsLineParticipant(); frame = frame->GetParent()) {
     if (frame->IsRubyFrame()) {
       rubyFrame = static_cast<nsRubyFrame*>(frame);
     }
@@ -5557,7 +5544,7 @@ void nsTextFrame::DrawSelectionDecorations(
     case SelectionType::eIMESelectedClause:
     case SelectionType::eSpellCheck:
     case SelectionType::eHighlight: {
-      int32_t index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
+      auto index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
           aSelectionType);
       bool weDefineSelectionUnderline =
           aTextPaintStyle.GetSelectionUnderlineForPaint(
@@ -5953,7 +5940,7 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
   // need to translate any coordinates to fit on the surface.
   gfxFloat advanceWidth;
   nsTextPaintStyle textPaintStyle(this);
-  DrawTextParams params(shadowContext);
+  DrawTextParams params(shadowContext, PresContext()->FontPaletteCache());
   params.advanceWidth = &advanceWidth;
   params.dirtyRect = aParams.dirtyRect;
   params.framePt = aParams.framePt + shadowGfxOffset;
@@ -5967,7 +5954,6 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
   // color.
   params.decorationOverrideColor = &params.textColor;
   params.fontPalette = StyleFont()->GetFontPaletteAtom();
-  params.paletteValueSet = PresContext()->GetFontPaletteValueSet();
 
   DrawText(aParams.range, aParams.textBaselinePt + shadowGfxOffset, params);
 
@@ -6256,7 +6242,7 @@ bool nsTextFrame::PaintTextWithSelectionColors(
   }
 
   gfxFloat advance;
-  DrawTextParams params(aParams.context);
+  DrawTextParams params(aParams.context, PresContext()->FontPaletteCache());
   params.dirtyRect = aParams.dirtyRect;
   params.framePt = aParams.framePt;
   params.provider = aParams.provider;
@@ -6266,7 +6252,6 @@ bool nsTextFrame::PaintTextWithSelectionColors(
   params.callbacks = aParams.callbacks;
   params.glyphRange = aParams.glyphRange;
   params.fontPalette = StyleFont()->GetFontPaletteAtom();
-  params.paletteValueSet = PresContext()->GetFontPaletteValueSet();
   params.hasTextShadow = !StyleText()->mTextShadow.IsEmpty();
 
   PaintShadowParams shadowParams(aParams);
@@ -6502,10 +6487,11 @@ void nsTextFrame::DrawEmphasisMarks(gfxContext* aContext, WritingMode aWM,
   }
   if (!isTextCombined) {
     mTextRun->DrawEmphasisMarks(aContext, info->textRun.get(), info->advance,
-                                pt, aRange, aProvider);
+                                pt, aRange, aProvider,
+                                PresContext()->FontPaletteCache());
   } else {
     pt.y += (GetSize().height - info->advance) / 2;
-    gfxTextRun::DrawParams params(aContext);
+    gfxTextRun::DrawParams params(aContext, PresContext()->FontPaletteCache());
     info->textRun->Draw(Range(info->textRun.get()), pt, params);
   }
 }
@@ -6838,7 +6824,7 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
   }
 
   gfxFloat advanceWidth;
-  DrawTextParams params(aParams.context);
+  DrawTextParams params(aParams.context, PresContext()->FontPaletteCache());
   params.dirtyRect = aParams.dirtyRect;
   params.framePt = aParams.framePt;
   params.provider = &provider;
@@ -6853,7 +6839,6 @@ void nsTextFrame::PaintText(const PaintTextParams& aParams,
   params.callbacks = aParams.callbacks;
   params.glyphRange = range;
   params.fontPalette = StyleFont()->GetFontPaletteAtom();
-  params.paletteValueSet = PresContext()->GetFontPaletteValueSet();
   params.hasTextShadow = !StyleText()->mTextShadow.IsEmpty();
 
   DrawText(range, textBaselinePt, params);
@@ -6864,12 +6849,11 @@ static void DrawTextRun(const gfxTextRun* aTextRun,
                         gfxTextRun::Range aRange,
                         const nsTextFrame::DrawTextRunParams& aParams,
                         nsTextFrame* aFrame) {
-  gfxTextRun::DrawParams params(aParams.context);
+  gfxTextRun::DrawParams params(aParams.context, aParams.paletteCache);
   params.provider = aParams.provider;
   params.advanceWidth = aParams.advanceWidth;
   params.contextPaint = aParams.contextPaint;
   params.fontPalette = aParams.fontPalette;
-  params.paletteValueSet = aParams.paletteValueSet;
   params.callbacks = aParams.callbacks;
   params.hasTextShadow = aParams.hasTextShadow;
   if (aParams.callbacks) {
@@ -7352,8 +7336,9 @@ nsIFrame::ContentOffsets nsTextFrame::GetCharacterOffsetAtFramePointInternal(
 
   offsets.content = GetContent();
   offsets.offset = offsets.secondaryOffset = selectedOffset;
-  offsets.associate = mContentOffset == offsets.offset ? CARET_ASSOCIATE_AFTER
-                                                       : CARET_ASSOCIATE_BEFORE;
+  offsets.associate = mContentOffset == offsets.offset
+                          ? CaretAssociationHint::After
+                          : CaretAssociationHint::Before;
   return offsets;
 }
 
@@ -7405,7 +7390,7 @@ bool nsTextFrame::CombineSelectionUnderlineRect(nsPresContext* aPresContext,
     }
 
     float relativeSize;
-    int32_t index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
+    auto index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
         sd->mSelectionType);
     if (sd->mSelectionType == SelectionType::eSpellCheck) {
       if (!nsTextPaintStyle::GetSelectionUnderline(
@@ -9568,7 +9553,8 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   uint32_t transformedCharsFit = mTextRun->BreakAndMeasureText(
       transformedOffset, transformedLength, HasAnyStateBits(TEXT_START_OF_LINE),
       availWidth, provider, suppressBreak, boundingBoxType, aDrawTarget,
-      textStyle->WordCanWrap(this), isBreakSpaces,
+      textStyle->WordCanWrap(this), textStyle->WhiteSpaceCanWrap(this),
+      isBreakSpaces,
       // The following are output parameters:
       canTrimTrailingWhitespace || whitespaceCanHang ? &trimmableWS : nullptr,
       textMetrics, usedHyphenation, transformedLastBreak,

@@ -115,7 +115,10 @@
                                                                            \
   MACRO(22, "cpufreq", CPUFrequency,                                       \
         "Record the clock frequency of "                                   \
-        "every CPU core for every profiler sample.")
+        "every CPU core for every profiler sample.")                       \
+                                                                           \
+  MACRO(23, "bandwidth", Bandwidth,                                        \
+        "Record the network bandwidth used for every profiler sample.")
 // *** Synchronize with lists in BaseProfilerState.h and geckoProfiler.json ***
 
 struct ProfilerFeature {
@@ -196,6 +199,8 @@ using ProfilingStateChangeCallback = std::function<void(ProfilingState)>;
 
 [[nodiscard]] inline bool profiler_is_active() { return false; }
 [[nodiscard]] inline bool profiler_is_active_and_unpaused() { return false; }
+[[nodiscard]] inline bool profiler_is_collecting_markers() { return false; }
+[[nodiscard]] inline bool profiler_is_etw_collecting_markers() { return false; }
 [[nodiscard]] inline bool profiler_feature_active(uint32_t aFeature) {
   return false;
 }
@@ -230,6 +235,14 @@ class RacyFeatures {
  public:
   static void SetActive(uint32_t aFeatures) {
     sActiveAndFeatures = Active | aFeatures;
+  }
+
+  static void SetETWCollectionActive() {
+    sActiveAndFeatures |= ETWCollectionEnabled;
+  }
+
+  static void SetETWCollectionInactive() {
+    sActiveAndFeatures &= ~ETWCollectionEnabled;
   }
 
   static void SetInactive() { sActiveAndFeatures = 0; }
@@ -291,10 +304,21 @@ class RacyFeatures {
     return (af & Active) && !(af & (Paused | SamplingPaused));
   }
 
+  [[nodiscard]] static bool IsCollectingMarkers() {
+    uint32_t af = sActiveAndFeatures;  // copy it first
+    return ((af & Active) && !(af & Paused)) || (af & ETWCollectionEnabled);
+  }
+
+  [[nodiscard]] static bool IsETWCollecting() {
+    uint32_t af = sActiveAndFeatures;  // copy it first
+    return (af & ETWCollectionEnabled);
+  }
+
  private:
   static constexpr uint32_t Active = 1u << 31;
   static constexpr uint32_t Paused = 1u << 30;
   static constexpr uint32_t SamplingPaused = 1u << 29;
+  static constexpr uint32_t ETWCollectionEnabled = 1u << 28;
 
 // Ensure Active/Paused don't overlap with any of the feature bits.
 #  define NO_OVERLAP(n_, str_, Name_, desc_)                \
@@ -341,6 +365,17 @@ class RacyFeatures {
 // Same as profiler_is_active(), but also checks if the profiler is not paused.
 [[nodiscard]] inline bool profiler_is_active_and_unpaused() {
   return mozilla::profiler::detail::RacyFeatures::IsActiveAndUnpaused();
+}
+
+// Same as profiler_is_active_and_unpaused(), but also checks if the  ETW is
+// collecting markers.
+[[nodiscard]] inline bool profiler_is_collecting_markers() {
+  return mozilla::profiler::detail::RacyFeatures::IsCollectingMarkers();
+}
+
+// Reports if our ETW tracelogger is running.
+[[nodiscard]] inline bool profiler_is_etw_collecting_markers() {
+  return mozilla::profiler::detail::RacyFeatures::IsETWCollecting();
 }
 
 // Is the profiler active and paused? Returns false if the profiler is inactive.

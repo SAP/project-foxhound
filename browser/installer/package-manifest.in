@@ -137,7 +137,9 @@
 @BINPATH@/browser/VisualElements/PrivateBrowsing_150.png
 @BINPATH@/browser/VisualElements/PrivateBrowsing_70.png
 #else
+#ifndef XP_MACOSX
 @BINPATH@/@MOZ_APP_NAME@-bin
+#endif
 @BINPATH@/@MOZ_APP_NAME@
 #endif
 @RESPATH@/application.ini
@@ -434,6 +436,9 @@ bin/libfreebl_64int_3.so
 ; media
 @RESPATH@/gmp-clearkey/0.1/@DLL_PREFIX@clearkey@DLL_SUFFIX@
 @RESPATH@/gmp-clearkey/0.1/manifest.json
+#if defined(MOZ_WMF_CDM) && defined(ENABLE_TESTS)
+@BINPATH@/@DLL_PREFIX@wmfclearkey@DLL_SUFFIX@
+#endif
 
 #ifdef MOZ_DMD
 ; DMD

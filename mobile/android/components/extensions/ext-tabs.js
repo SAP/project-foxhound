@@ -8,7 +8,6 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   GeckoViewTabBridge: "resource://gre/modules/GeckoViewTab.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   mobileWindowTracker: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
 });
 
@@ -62,7 +61,7 @@ const tabListener = {
   awaitTabReady(nativeTab) {
     let deferred = this.tabReadyPromises.get(nativeTab);
     if (!deferred) {
-      deferred = PromiseUtils.defer();
+      deferred = Promise.withResolvers();
       if (
         !this.initializingTabs.has(nativeTab) &&
         (nativeTab.browser.innerWindowID ||
@@ -141,7 +140,7 @@ this.tabs = class extends ExtensionAPIPersistent {
         });
       },
     }),
-    onUpdated({ fire, context }, params) {
+    onUpdated({ fire }, params) {
       const { tabManager } = this.extension;
       const restricted = ["url", "favIconUrl", "title"];
 
@@ -221,9 +220,8 @@ this.tabs = class extends ExtensionAPIPersistent {
           windowTracker.removeListener("status", statusListener);
           windowTracker.removeListener("pagetitlechanged", listener);
         },
-        convert(_fire, _context) {
+        convert(_fire) {
           fire = _fire;
-          context = _context;
         },
       };
     },

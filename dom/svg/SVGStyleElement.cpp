@@ -9,6 +9,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/SVGStyleElementBinding.h"
 #include "nsCOMPtr.h"
@@ -49,6 +50,8 @@ SVGStyleElement::SVGStyleElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : SVGStyleElementBase(std::move(aNodeInfo)) {
   AddMutationObserver(this);
+  SetEnabledCallbacks(kCharacterDataChanged | kContentAppended |
+                      kContentInserted | kContentRemoved);
 }
 
 //----------------------------------------------------------------------
@@ -199,6 +202,7 @@ Maybe<LinkStyle::SheetInfo> SVGStyleElement::GetStyleSheetInfo() {
       HasAlternateRel::No,
       IsInline::Yes,
       IsExplicitlyEnabled::No,
+      FetchPriority::Auto,
   });
 }
 

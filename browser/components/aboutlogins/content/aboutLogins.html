@@ -8,7 +8,7 @@
     <meta charset="utf-8">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; object-src 'none'; script-src resource: chrome:; img-src data: blob: https://firefoxusercontent.com https://profile.accounts.firefox.com;">
     <meta name="color-scheme" content="light dark">
-    <title data-l10n-id="about-logins-page-title"></title>
+    <title data-l10n-id="about-logins-page-title-name"></title>
     <link rel="localization" href="branding/brand.ftl">
     <link rel="localization" href="browser/aboutLogins.ftl">
     <link rel="localization" href="toolkit/branding/accounts.ftl">
@@ -90,13 +90,13 @@
         <img slot="dialog-icon" part="dialog-icon" src="chrome://browser/skin/import.svg"/>
         <div slot="content" class="content">
           <div class="import-summary">
-            <div class="import-items-added import-items-row" data-l10n-id="about-logins-import-dialog-items-added" data-l10n-args='{"count": 0}'>
+            <div class="import-items-added import-items-row" data-l10n-id="about-logins-import-dialog-items-added2" data-l10n-args='{"count": 0}'>
               <span data-l10n-name="count" class="result-count"></span>
             </div>
-            <div class="import-items-modified import-items-row" data-l10n-id="about-logins-import-dialog-items-modified" data-l10n-args='{"count": 0}'>
+            <div class="import-items-modified import-items-row" data-l10n-id="about-logins-import-dialog-items-modified2" data-l10n-args='{"count": 0}'>
               <span data-l10n-name="count" class="result-count"></span>
             </div>
-            <div class="import-items-no-change import-items-row" data-l10n-id="about-logins-import-dialog-items-no-change" data-l10n-name="no-change" data-l10n-args='{"count": 0}'>
+            <div class="import-items-no-change import-items-row" data-l10n-id="about-logins-import-dialog-items-no-change2" data-l10n-name="no-change" data-l10n-args='{"count": 0}'>
               <span data-l10n-name="count" class="result-count"></span>
               <span hidden data-l10n-name="meta" class="result-meta"></span>
             </div>
@@ -183,7 +183,7 @@
       <div class="listHeader">
         <login-filter></login-filter>
         <div class="create-login-button-container">
-          <login-command-button class="create-login-button" data-l10n-id="create-new-login-button" icon="chrome://global/skin/icons/plus.svg" ></login-command-button>
+          <create-login-button></create-login-button>
         </div>
       </div>
       <div class="meta text-deemphasized">
@@ -199,17 +199,17 @@
             <option name="alerts" data-l10n-id="about-logins-login-list-alerts-option" value="alerts" hidden>
           </select>
         </label>
-        <span class="count" data-l10n-id="login-list-count" data-l10n-args='{"count": 0}'></span>
+        <span class="count" data-l10n-id="login-list-count2" data-l10n-args='{"count": 0}'></span>
       </div>
       <!-- This container is to work around bug 1569292 -->
       <div class="container">
         <ol role="listbox" tabindex="0" data-l10n-id="login-list"></ol>
         <div class="intro">
-          <p data-l10n-id="login-list-intro-title"></p>
+          <p data-l10n-id="login-list-intro-title2"></p>
           <span data-l10n-id="login-list-intro-description"></span>
         </div>
         <div class="empty-search-message">
-          <p data-l10n-id="about-logins-login-list-empty-search-title"></p>
+          <p data-l10n-id="about-logins-login-list-empty-search-title2"></p>
           <span data-l10n-id="about-logins-login-list-empty-search-description"></span>
         </div>
       </div>
@@ -238,9 +238,11 @@
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-intro.css">
 
       <img class="illustration" src="chrome://browser/content/aboutlogins/icons/intro-illustration.svg"/>
-      <h1 class="heading" data-l10n-id="about-logins-login-intro-heading-logged-out2"></h1>
+      <h1 class="heading" data-l10n-id="about-logins-login-intro-heading-message"></h1>
       <section>
-        <p class="description" data-l10n-id="login-intro-description"></p>
+        <p class="description" data-l10n-id="login-intro-description2">
+          <a data-l10n-name="breach-alert-link" href="https://support.mozilla.org/kb/firefox-password-manager-alerts-breached-websites" target="_blank" rel="noreferrer"></a>
+        </p>
         <ul>
           <li data-l10n-id="login-intro-instructions-fxa2"></li>
           <li data-l10n-id="login-intro-instructions-fxa-settings"></li>
@@ -251,7 +253,7 @@
         <p class="description intro-import-text no-file-import" hidden data-l10n-id="about-logins-intro-browser-only-import">
           <a data-l10n-name="import-link" href="#"></a>
         </p>
-        <p class="description intro-import-text file-import" hidden data-l10n-id="about-logins-intro-import2">
+        <p class="description intro-import-text file-import" hidden data-l10n-id="about-logins-intro-import3">
           <a data-l10n-name="import-browser-link" href="#"></a>
           <a data-l10n-name="import-file-link" href="#"></a>
         </p>
@@ -262,6 +264,7 @@
       <script type="module" src="chrome://browser/content/aboutlogins/components/login-timeline.mjs"></script>
       <script type="module" src="chrome://browser/content/aboutlogins/components/login-command-button.mjs"></script>
       <script type="module" src="chrome://browser/content/aboutlogins/components/login-alert.mjs"></script>
+      <script type="module" src="chrome://browser/content/aboutlogins/components/login-message-popup.mjs"></script>
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-item.css">
@@ -278,15 +281,15 @@
               <img class="login-item-favicon" />
               <h2 class="title">
                 <span class="login-item-title"></span>
-                <span class="new-login-title" data-l10n-id="login-item-new-login-title"></span>
+                <span class="new-login-title" data-l10n-id="about-logins-login-item-new-login-title"></span>
               </h2>
               <div class="action-buttons">
-                <login-command-button class="edit-button" l10nId="login-item-edit-button" variant="ghost-button" icon="chrome://global/skin/icons/edit.svg" ></login-command-button>
-                  <moz-button-group class="form-actions-row">
-                    <button class="save-changes-button" type="submit"></button>
-                    <button class="cancel-button" data-l10n-id="login-item-cancel-button" type="button"></button>
-                  </moz-button-group>
-                <login-command-button class="delete-button" l10nId="about-logins-login-item-remove-button" variant="ghost-button" icon="chrome://global/skin/icons/delete.svg" ></login-command-button>
+                <edit-button></edit-button>
+                <moz-button-group class="form-actions-row">
+                  <button class="save-changes-button" type="submit"></button>
+                  <button class="cancel-button" data-l10n-id="login-item-cancel-button" type="button"></button>
+                </moz-button-group>
+                <delete-button></delete-button>
               </div>
            </div>
             <login-breach-alert></login-breach-alert>
@@ -304,11 +307,7 @@
                         dir="auto"
                         readonly/>
                   <a class="origin-input" dir="auto" target="_blank" rel="noreferrer" name="origin" href=""></a>
-                  <div class="tooltip-container">
-                    <div class="arrow-box">
-                        <p class="tooltip-message" data-l10n-id="login-item-tooltip-message"></p>
-                    </div>
-                  </div>
+                  <origin-warning></origin-warning>
                 </label>
               </div>
               <div class="detail-grid">
@@ -321,8 +320,7 @@
                           dir="ltr"
                           readonly/>
                   </label>
-                  <login-command-button class="copy-button copy-username-button" l10nId="login-item-copy-username-button-text">
-                  </login-command-button>
+                  <copy-username-button class="copy-button"></copy-username-button>
                 </div>
                 <div class="detail-row">
                   <label class="detail-cell">
@@ -342,10 +340,10 @@
                       <input type="checkbox"
                             class="reveal-password-checkbox"
                             data-l10n-id="login-item-password-reveal-checkbox"/>
+                      <password-warning></password-warning>
                     </div>
                   </label>
-                  <login-command-button class="copy-button copy-password-button" l10nId="login-item-copy-password-button-text" >
-                  </login-command-button>
+                  <copy-password-button class="copy-button"></copy-password-button>
                 </div>
               </div>
               <login-timeline hidden ></login-timeline>
@@ -358,7 +356,7 @@
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-filter.css">
-      <input data-l10n-id="about-logins-login-filter" class="filter" type="text" dir="auto"/>
+      <input data-l10n-id="about-logins-login-filter2" class="filter" type="text" dir="auto"/>
     </template>
 
     <template id="menu-button-template">
@@ -369,8 +367,8 @@
       <ul class="menu" role="menu" hidden>
         <button role="menuitem" class="menuitem-button menuitem-import-browser ghost-button" hidden data-supported-platforms="Win32,MacIntel" data-event-name="AboutLoginsImportFromBrowser" data-l10n-id="about-logins-menu-menuitem-import-from-another-browser"></button>
         <button role="menuitem" class="menuitem-button menuitem-import-file ghost-button" data-event-name="AboutLoginsImportFromFile" data-l10n-id="about-logins-menu-menuitem-import-from-a-file"></button>
-        <button role="menuitem" class="menuitem-button menuitem-export ghost-button" data-event-name="AboutLoginsExportPasswordsDialog" data-l10n-id="about-logins-menu-menuitem-export-logins"></button>
-        <button role="menuitem" class="menuitem-button menuitem-remove-all-logins ghost-button" data-event-name="AboutLoginsRemoveAllLoginsDialog" data-l10n-id="about-logins-menu-menuitem-remove-all-logins"></button>
+        <button role="menuitem" class="menuitem-button menuitem-export ghost-button" data-event-name="AboutLoginsExportPasswordsDialog" data-l10n-id="about-logins-menu-menuitem-export-logins2"></button>
+        <button role="menuitem" class="menuitem-button menuitem-remove-all-logins ghost-button" data-event-name="AboutLoginsRemoveAllLoginsDialog" data-l10n-id="about-logins-menu-menuitem-remove-all-logins2"></button>
         <hr role="separator" class="menuitem-separator"></hr>
         <button role="menuitem" class="menuitem-button menuitem-preferences ghost-button" data-event-name="AboutLoginsOpenPreferences" data-l10n-id="menu-menuitem-preferences"></button>
         <button role="menuitem" class="menuitem-button menuitem-help ghost-button" data-event-name="AboutLoginsGetHelp" data-l10n-id="about-logins-menu-menuitem-help"></button>

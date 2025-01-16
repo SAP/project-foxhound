@@ -1740,7 +1740,7 @@ class AutoMappedView final {
 // CheckStack ensures that stack memory pages are committed up to a given size
 // in bytes from the current stack pointer. It updates the thread stack limit,
 // which points to the lowest committed stack address.
-MOZ_NEVER_INLINE __attribute__((naked)) inline void CheckStack(uint32_t size) {
+MOZ_NEVER_INLINE MOZ_NAKED inline void CheckStack(uint32_t size) {
   asm volatile(
       "mov %ecx, %eax;"
 #  if defined(__MINGW32__)

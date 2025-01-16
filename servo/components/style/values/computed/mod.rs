@@ -23,10 +23,10 @@ use crate::media_queries::Device;
 use crate::properties;
 use crate::properties::{ComputedValues, StyleBuilder};
 use crate::rule_cache::RuleCacheConditions;
-use crate::stylist::Stylist;
 use crate::stylesheets::container_rule::{
     ContainerInfo, ContainerSizeQuery, ContainerSizeQueryResult,
 };
+use crate::stylist::Stylist;
 use crate::values::specified::length::FontBaseSize;
 use crate::{ArcSlice, Atom, One};
 use euclid::{default, Point2D, Rect, Size2D};
@@ -44,8 +44,11 @@ pub use self::align::{
 #[cfg(feature = "gecko")]
 pub use self::align::{AlignSelf, JustifySelf};
 pub use self::angle::Angle;
-pub use self::animation::{AnimationIterationCount, AnimationName, AnimationTimeline};
-pub use self::animation::{ScrollAxis, ScrollTimelineName, TransitionProperty, ViewTimelineInset};
+pub use self::animation::{
+    AnimationIterationCount, AnimationName, AnimationTimeline, AnimationPlayState,
+    AnimationFillMode, AnimationComposition, AnimationDirection, ScrollAxis,
+    ScrollTimelineName, TransitionProperty, ViewTimelineInset
+};
 pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{

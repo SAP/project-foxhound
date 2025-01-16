@@ -340,6 +340,7 @@ export class UrlbarController {
         }
       // Fall through, we want the SPACE key to activate this element.
       case KeyEvent.DOM_VK_RETURN:
+        this.logger.debug(`Enter pressed${executeAction ? "" : " delayed"}`);
         if (executeAction) {
           this.input.handleCommand(event);
         }
@@ -669,6 +670,15 @@ export class UrlbarController {
   }
 
   /**
+   * Set the query context cache.
+   *
+   * @param {UrlbarQueryContext} queryContext the object to cache.
+   */
+  setLastQueryContextCache(queryContext) {
+    this._lastQueryContextWrapper = { queryContext };
+  }
+
+  /**
    * Clear the previous query context cache.
    */
   clearLastQueryContextCache() {
@@ -720,13 +730,14 @@ class TelemetryEvent {
    * invoking this on every input event as the user is typing, for example.
    *
    * @param {event} event A DOM event.
+   * @param {UrlbarQueryContext} queryContext A queryContext.
    * @param {string} [searchString] Pass a search string related to the event if
    *        you have one.  The event by itself sometimes isn't enough to
    *        determine the telemetry details we should record.
    * @throws This should never throw, or it may break the urlbar.
    * @see {@link https://firefox-source-docs.mozilla.org/browser/urlbar/telemetry.html}
    */
-  start(event, searchString = null) {
+  start(event, queryContext, searchString = null) {
     if (this._startEventInfo) {
       if (this._startEventInfo.interactionType == "topsites") {
         // If the most recent event came from opening the results pane with an
@@ -785,7 +796,6 @@ class TelemetryEvent {
       searchString,
     };
 
-    let { queryContext } = this._controller._lastQueryContextWrapper || {};
     this._controller.manager.notifyEngagementChange(
       "start",
       queryContext,

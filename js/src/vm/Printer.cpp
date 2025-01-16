@@ -336,7 +336,7 @@ static const char JSONEscapeMap[] = {
 
 template <QuoteTarget target, typename CharT>
 JS_PUBLIC_API void QuoteString(Sprinter* sp,
-                               const mozilla::Range<const CharT> chars,
+                               const mozilla::Range<const CharT>& chars,
                                char quote) {
   MOZ_ASSERT_IF(target == QuoteTarget::JSON, quote == '\0');
 
@@ -359,16 +359,16 @@ JS_PUBLIC_API void QuoteString(Sprinter* sp,
 }
 
 template JS_PUBLIC_API void QuoteString<QuoteTarget::String, Latin1Char>(
-    Sprinter* sp, const mozilla::Range<const Latin1Char> chars, char quote);
+    Sprinter* sp, const mozilla::Range<const Latin1Char>& chars, char quote);
 
 template JS_PUBLIC_API void QuoteString<QuoteTarget::String, char16_t>(
-    Sprinter* sp, const mozilla::Range<const char16_t> chars, char quote);
+    Sprinter* sp, const mozilla::Range<const char16_t>& chars, char quote);
 
 template JS_PUBLIC_API void QuoteString<QuoteTarget::JSON, Latin1Char>(
-    Sprinter* sp, const mozilla::Range<const Latin1Char> chars, char quote);
+    Sprinter* sp, const mozilla::Range<const Latin1Char>& chars, char quote);
 
 template JS_PUBLIC_API void QuoteString<QuoteTarget::JSON, char16_t>(
-    Sprinter* sp, const mozilla::Range<const char16_t> chars, char quote);
+    Sprinter* sp, const mozilla::Range<const char16_t>& chars, char quote);
 
 JS_PUBLIC_API void QuoteString(Sprinter* sp, JSString* str,
                                char quote /*= '\0' */) {
@@ -583,6 +583,51 @@ void StringEscape::convertInto(GenericPrinter& out, char16_t c) {
     // ECMA-262 allows only \u, not \x, in Unicode identifiers (see bug 621814).
     out.printf(!(c >> 8) ? "\\x%02X" : "\\u%04X", c);
   }
+}
+
+void IndentedPrinter::putIndent() {
+  // Allocate a static buffer of 16 spaces (plus null terminator) and use that
+  // in batches for the total number of spaces we need to put.
+  static const char spaceBuffer[17] = "                ";
+  size_t remainingSpaces = indentLevel_ * indentAmount_;
+  while (remainingSpaces > 16) {
+    out_.put(spaceBuffer, 16);
+    remainingSpaces -= 16;
+  }
+  if (remainingSpaces) {
+    out_.put(spaceBuffer, remainingSpaces);
+  }
+}
+
+void IndentedPrinter::putWithMaybeIndent(const char* s, size_t len) {
+  if (len == 0) {
+    return;
+  }
+  if (pendingIndent_) {
+    putIndent();
+    pendingIndent_ = false;
+  }
+  out_.put(s, len);
+}
+
+void IndentedPrinter::put(const char* s, size_t len) {
+  const char* current = s;
+  // Split the text into lines and output each with an indent
+  while (const char* nextLineEnd = (const char*)memchr(current, '\n', len)) {
+    // Put this line (including the new-line)
+    size_t lineWithNewLineSize = nextLineEnd - current + 1;
+    putWithMaybeIndent(current, lineWithNewLineSize);
+
+    // The next put should have an indent added
+    pendingIndent_ = true;
+
+    // Advance the cursor
+    current += lineWithNewLineSize;
+    len -= lineWithNewLineSize;
+  }
+
+  // Put any remaining text
+  putWithMaybeIndent(current, len);
 }
 
 }  // namespace js

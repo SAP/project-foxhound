@@ -13,6 +13,26 @@ XPCOMUtils.defineLazyScriptGetter(
 const TEST_URL = "https://example.com/";
 var gAuthenticatorId;
 
+/**
+ * Waits for the PopupNotifications button enable delay to expire so the
+ * Notification can be interacted with using the buttons.
+ */
+async function waitForPopupNotificationSecurityDelay() {
+  let notification = PopupNotifications.panel.firstChild.notification;
+  let notificationEnableDelayMS = Services.prefs.getIntPref(
+    "security.notification_enable_delay"
+  );
+  await TestUtils.waitForCondition(
+    () => {
+      let timeSinceShown = performance.now() - notification.timeShown;
+      return timeSinceShown > notificationEnableDelayMS;
+    },
+    "Wait for security delay to expire",
+    500,
+    50
+  );
+}
+
 add_task(async function test_setup_usbtoken() {
   return SpecialPowers.pushPrefEnv({
     set: [
@@ -52,19 +72,6 @@ add_task(async function test_setup_softtoken() {
 add_task(test_register_direct_proceed);
 add_task(test_register_direct_proceed_anon);
 add_task(test_select_sign_result);
-
-function promiseNotification(id) {
-  return new Promise(resolve => {
-    PopupNotifications.panel.addEventListener("popupshown", function shown() {
-      let notification = PopupNotifications.getNotification(id);
-      if (notification) {
-        ok(true, `${id} prompt visible`);
-        PopupNotifications.panel.removeEventListener("popupshown", shown);
-        resolve();
-      }
-    });
-  });
-}
 
 function promiseNavToolboxStatus(aExpectedStatus) {
   let navToolboxStatus;
@@ -481,6 +488,7 @@ async function test_no_fullscreen_dom() {
   ok(!document.fullscreenElement, "no DOM element is fullscreen");
 
   // Cancel the request.
+  await waitForPopupNotificationSecurityDelay();
   PopupNotifications.panel.firstElementChild.secondaryButton.click();
   await requestPromise;
 

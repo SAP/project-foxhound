@@ -251,10 +251,9 @@ add_task(async function test_tab() {
   await promise;
 
   // ... and move the focus out of the searchbox.
-  isnot(
-    Services.focus.focusedElement,
-    textbox.inputField,
-    "the search bar no longer be focused"
+  ok(
+    !Services.focus.focusedElement.classList.contains("searchbar-textbox"),
+    "the search input in the search bar should no longer be focused"
   );
 });
 
@@ -298,11 +297,27 @@ add_task(async function test_shift_tab() {
   await promise;
 
   // ... and move the focus out of the searchbox.
-  isnot(
-    Services.focus.focusedElement,
-    textbox.inputField,
-    "the search bar no longer be focused"
+  ok(
+    !Services.focus.focusedElement.classList.contains("searchbar-textbox"),
+    "the search input in the search bar should no longer be focused"
   );
+
+  // Return the focus to the search bar
+  EventUtils.synthesizeKey("KEY_Tab");
+  ok(
+    Services.focus.focusedElement.classList.contains("searchbar-textbox"),
+    "the search bar should be focused"
+  );
+
+  // ... and confirm the input value was autoselected and is replaced.
+  EventUtils.synthesizeKey("fo");
+  is(
+    Services.focus.focusedElement.value,
+    "fo",
+    "when the search bar was focused, the value should be autoselected"
+  );
+  // Return to the expected value
+  EventUtils.synthesizeKey("o");
 });
 
 add_task(async function test_alt_down() {

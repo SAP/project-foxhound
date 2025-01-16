@@ -201,10 +201,13 @@ macosx64-xz:
 macosx64-custom-car:
     description: "Custom chromium-as-release build for mac"
     worker-type: b-osx-1015
+    attributes:
+        cached_task: false
     treeherder:
         symbol: TM(custom-car)
     worker:
-        max-run-time: 30000
+        max-run-time: 35000
+    run-on-projects: []
     run:
         script: build-custom-car.sh
         arguments: [
@@ -221,21 +224,61 @@ macosx64-custom-car:
             is_official_build=true,
             symbol_level=0,
             target_cpu="x64",
+            use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_macosx.tar.zst
     fetches:
         toolchain:
-            - MacOSX14.0.sdk
+            - macosx64-sdk-14.2
+            - macosx64-python-3.8
+
+macosx-arm64-custom-car:
+    description: "Custom chromium-as-release build for mac (apple silicon)"
+    worker-type: b-osx-1015
+    attributes:
+        cached_task: false
+    treeherder:
+        symbol: TM(custom-car-arm)
+        tier: 2
+    worker:
+        max-run-time: 50000
+    run-on-projects: []
+    run:
+        script: build-custom-car.sh
+        arguments: [
+            car_macosx_arm.tar.zst,
+            blink_symbol_level=0,
+            chrome_pgo_phase=2,
+            dcheck_always_on=false,
+            enable_nacl=false,
+            enable_resource_allowlist_generation=false,
+            is_chrome_branded=false,
+            is_clang=true,
+            is_component_build=false,
+            is_debug=false,
+            is_official_build=true,
+            symbol_level=0,
+            target_cpu="arm64",
+            use_v8_context_snapshot=false,
+            v8_symbol_level=0
+        ]
+        toolchain-artifact: public/build/car_macosx_arm.tar.zst
+    fetches:
+        toolchain:
+            - macosx64-sdk-14.2
             - macosx64-python-3.8
 
 android-custom-car:
     description: "Custom chromium-as-release build for Android"
+    attributes:
+        cached_task: false
     treeherder:
         symbol: TL(custom-car-android)
     worker:
         docker-image: {in-tree: custom-car-android}
         max-run-time: 20000
+    run-on-projects: []
     run:
         script: build-custom-car.sh
         arguments: [
@@ -255,17 +298,21 @@ android-custom-car:
             target_os="android",
             is_android=true,
             is_high_end_android=true,
+            use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_android.tar.zst
 
 linux64-custom-car:
     description: "Custom chromium-as-release build for Linux"
+    attributes:
+        cached_task: false
     treeherder:
         symbol: TL(custom-car)
     worker:
         docker-image: {in-tree: custom-car-linux}
         max-run-time: 16200
+    run-on-projects: []
     run:
         script: build-custom-car.sh
         arguments: [
@@ -282,12 +329,15 @@ linux64-custom-car:
             is_official_build=true,
             symbol_level=0,
             target_cpu="x64",
+            use_v8_context_snapshot=false,
             v8_symbol_level=0
         ]
         toolchain-artifact: public/build/car_linux.tar.zst
 
 win64-custom-car:
     description: "Custom chromium-as-release build for Windows"
+    attributes:
+        cached_task: false
     treeherder:
         symbol: TW64(custom-car)
     worker-type: b-win2022
@@ -295,6 +345,7 @@ win64-custom-car:
         max-run-time: 16200
         env:
             MSYSTEM: "MINGW64"
+    run-on-projects: []
     run:
         script: build-custom-car.sh
         arguments: [
@@ -345,12 +396,11 @@ wrench-deps:
         script: wrench-deps-vendoring.sh
         sparse-profile: null
         resources:
+            - 'gfx/wr/**/Cargo.toml'
             - 'gfx/wr/Cargo.lock'
             - 'gfx/wr/ci-scripts/install-meson.sh'
         toolchain-artifact: public/build/wrench-deps.tar.zst
     fetches:
-        fetch:
-            - android-ndk-rs
         toolchain:
             - linux64-rust  # whatever m-c is built with
 
@@ -510,3 +560,24 @@ linux64-afl-instrumentation-4.0:
         toolchain:
             - linux64-clang
             - linux64-toolchain-sysroot
+
+linux64-cargo-apk:
+    description: "cargo-apk toolchain build"
+    treeherder:
+        symbol: TL(cargo-apk)
+    worker:
+        env:
+            FETCH: android-ndk-rs/cargo-apk
+    run:
+        script: build-rust-based-toolchain.sh
+        arguments: ['x86_64-unknown-linux-gnu']
+        resources:
+            - taskcluster/scripts/misc/cargo-apk-Cargo.lock
+        toolchain-artifact: public/build/cargo-apk.tar.zst
+    fetches:
+        fetch:
+            - android-ndk-rs
+        toolchain:
+            - linux64-clang-toolchain
+            - linux64-rust-toolchain
+            - sysroot-x86_64-linux-gnu

@@ -1,6 +1,7 @@
 {
   "ui:order": [
     "telemetryId",
+    "searchPageMatches",
     "searchPageRegexp",
     "queryParamNames",
     "queryParamName",
@@ -15,6 +16,8 @@
     "components",
     "nonAdsLinkRegexps",
     "shoppingTab",
-    "domainExtraction"
+    "domainExtraction",
+    "isSPA",
+    "defaultPageQueryParam"
   ]
 }

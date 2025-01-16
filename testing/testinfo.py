@@ -234,7 +234,9 @@ class TestInfoReport(TestInfo):
         # if we fail to get valid json (i.e. end point has malformed data), return {}
         retVal = {}
         try:
+            self.log_verbose("getting url: %s" % target_url)
             r = requests.get(target_url, headers={"User-agent": "mach-test-info/1.0"})
+            self.log_verbose("got status: %s" % r.status_code)
             r.raise_for_status()
             retVal = r.json()
         except json.decoder.JSONDecodeError:
@@ -372,9 +374,17 @@ class TestInfoReport(TestInfo):
             return name_part.split()[-1]  # get just the test name, not extra words
         return None
 
-    def get_runcount_data(self, start, end):
+    def get_runcount_data(self, runcounts_input_file, start, end):
         # TODO: use start/end properly
-        runcounts = self.get_runcounts(days=MAX_DAYS)
+        if runcounts_input_file:
+            try:
+                with open(runcounts_input_file, "r") as f:
+                    runcounts = json.load(f)
+            except:
+                print("Unable to load runcounts from path: %s" % runcounts_input_file)
+                raise
+        else:
+            runcounts = self.get_runcounts(days=MAX_DAYS)
         runcounts = self.squash_runcounts(runcounts, days=MAX_DAYS)
         return runcounts
 
@@ -408,7 +418,7 @@ class TestInfoReport(TestInfo):
         # get historical data from test-info job artifact; if missing get fresh
         url = self.get_testinfoall_index_url()
         print("INFO: requesting runcounts url: %s" % url)
-        testrundata = self.get_url(url)
+        olddata = self.get_url(url)
 
         # fill in any holes we have
         endday = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
@@ -419,17 +429,14 @@ class TestInfoReport(TestInfo):
         # build list of dates with missing data
         while startday < endday:
             nextday = startday + datetime.timedelta(days=1)
-            if (
-                str(nextday) not in testrundata.keys()
-                or testrundata[str(nextday)] == {}
-            ):
+            if not olddata.get(str(nextday.date()), {}):
                 url = "https://treeherder.mozilla.org/api/groupsummary/"
                 url += "?startdate=%s&enddate=%s" % (
                     startday.date(),
                     nextday.date(),
                 )
                 urls_to_fetch.append([str(nextday.date()), url])
-                testrundata[str(nextday.date())] = {}
+            testrundata[str(nextday.date())] = olddata.get(str(nextday.date()), {})
 
             startday = nextday
 
@@ -557,6 +564,7 @@ class TestInfoReport(TestInfo):
         start,
         end,
         show_testruns,
+        runcounts_input_file,
     ):
         def matches_filters(test):
             """
@@ -604,7 +612,7 @@ class TestInfoReport(TestInfo):
             "https://hg.mozilla.org/mozilla-central",
             "https://hg.mozilla.org/try",
         ]:
-            runcount = self.get_runcount_data(start, end)
+            runcount = self.get_runcount_data(runcounts_input_file, start, end)
 
         print("Finding tests...")
         here = os.path.abspath(os.path.dirname(__file__))
@@ -783,7 +791,7 @@ class TestInfoReport(TestInfo):
                                 total_runs = 0
                                 for m in test_info["manifest"]:
                                     if m in runcount.keys():
-                                        for x in runcount.get("m", []):
+                                        for x in runcount.get(m, []):
                                             if not x:
                                                 break
                                             total_runs += x[3]

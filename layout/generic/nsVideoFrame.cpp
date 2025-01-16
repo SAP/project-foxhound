@@ -38,15 +38,28 @@ nsIFrame* NS_NewHTMLVideoFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
   return new (aPresShell) nsVideoFrame(aStyle, aPresShell->GetPresContext());
 }
 
+nsIFrame* NS_NewHTMLAudioFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
+  return new (aPresShell) nsAudioFrame(aStyle, aPresShell->GetPresContext());
+}
+
 NS_IMPL_FRAMEARENA_HELPERS(nsVideoFrame)
+NS_QUERYFRAME_HEAD(nsVideoFrame)
+  NS_QUERYFRAME_ENTRY(nsVideoFrame)
+  NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
+NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
+
+NS_IMPL_FRAMEARENA_HELPERS(nsAudioFrame)
+NS_QUERYFRAME_HEAD(nsAudioFrame)
+  NS_QUERYFRAME_ENTRY(nsAudioFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsVideoFrame)
 
 // A matrix to obtain a correct-rotated video frame.
 static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
                                     gfxFloat aRotatedHeight,
-                                    VideoInfo::Rotation aDegrees) {
+                                    VideoRotation aDegrees) {
   Matrix shiftVideoCenterToOrigin;
-  if (aDegrees == VideoInfo::Rotation::kDegree_90 ||
-      aDegrees == VideoInfo::Rotation::kDegree_270) {
+  if (aDegrees == VideoRotation::kDegree_90 ||
+      aDegrees == VideoRotation::kDegree_270) {
     shiftVideoCenterToOrigin =
         Matrix::Translation(-aRotatedHeight / 2.0, -aRotatedWidth / 2.0);
   } else {
@@ -62,26 +75,28 @@ static Matrix ComputeRotationMatrix(gfxFloat aRotatedWidth,
 }
 
 static void SwapScaleWidthHeightForRotation(IntSize& aSize,
-                                            VideoInfo::Rotation aDegrees) {
-  if (aDegrees == VideoInfo::Rotation::kDegree_90 ||
-      aDegrees == VideoInfo::Rotation::kDegree_270) {
+                                            VideoRotation aDegrees) {
+  if (aDegrees == VideoRotation::kDegree_90 ||
+      aDegrees == VideoRotation::kDegree_270) {
     int32_t tmpWidth = aSize.width;
     aSize.width = aSize.height;
     aSize.height = tmpWidth;
   }
 }
 
-nsVideoFrame::nsVideoFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
-    : nsContainerFrame(aStyle, aPresContext, kClassID) {
+nsVideoFrame::nsVideoFrame(ComputedStyle* aStyle, nsPresContext* aPc,
+                           ClassID aClassID)
+    : nsContainerFrame(aStyle, aPc, aClassID),
+      mIsAudio(aClassID == nsAudioFrame::kClassID) {
   EnableVisibilityTracking();
 }
 
 nsVideoFrame::~nsVideoFrame() = default;
 
-NS_QUERYFRAME_HEAD(nsVideoFrame)
-  NS_QUERYFRAME_ENTRY(nsVideoFrame)
-  NS_QUERYFRAME_ENTRY(nsIAnonymousContentCreator)
-NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
+nsAudioFrame::nsAudioFrame(ComputedStyle* aStyle, nsPresContext* aPc)
+    : nsVideoFrame(aStyle, aPc, kClassID) {}
+
+nsAudioFrame::~nsAudioFrame() = default;
 
 nsresult nsVideoFrame::CreateAnonymousContent(
     nsTArray<ContentInfo>& aElements) {
@@ -519,10 +534,6 @@ void nsVideoFrame::OnVisibilityChange(
   nsContainerFrame::OnVisibilityChange(aNewVisibility, aNonvisibleAction);
 }
 
-bool nsVideoFrame::HasVideoElement() const {
-  return static_cast<HTMLMediaElement*>(GetContent())->IsVideo();
-}
-
 bool nsVideoFrame::HasVideoData() const {
   if (!HasVideoElement()) {
     return false;
@@ -638,7 +649,7 @@ class nsDisplayVideo : public nsPaintedDisplayItem {
       return;
     }
 
-    VideoInfo::Rotation rotationDeg = element->RotationDegrees();
+    VideoRotation rotationDeg = element->RotationDegrees();
     Matrix preTransform = ComputeRotationMatrix(
         destGFXRect.Width(), destGFXRect.Height(), rotationDeg);
     Matrix transform =

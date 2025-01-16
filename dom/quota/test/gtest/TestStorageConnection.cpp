@@ -20,8 +20,6 @@
 #include "nsIURIMutator.h"
 #include "nss.h"
 
-#define QM_TEST_FAIL [](nsresult) { FAIL(); }
-
 namespace mozilla {
 
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedNSSContext, NSSInitContext,
@@ -34,7 +32,8 @@ namespace {
 void InitializeClientDirectory(const ClientMetadata& aClientMetadata) {
   QuotaManager* quotaManager = QuotaManager::Get();
 
-  QM_TRY(MOZ_TO_RESULT(quotaManager->EnsureTemporaryStorageIsInitialized()),
+  QM_TRY(MOZ_TO_RESULT(
+             quotaManager->EnsureTemporaryStorageIsInitializedInternal()),
          QM_TEST_FAIL);
 
   QM_TRY_INSPECT(const auto& directory,

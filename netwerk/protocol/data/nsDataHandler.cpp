@@ -15,6 +15,7 @@
 #include "mozilla/dom/MimeType.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Try.h"
+#include "DefaultURI.h"
 
 using namespace mozilla;
 
@@ -64,6 +65,20 @@ nsDataHandler::GetScheme(nsACString& result) {
   }
 
   if (NS_FAILED(rv)) return rv;
+
+  // use DefaultURI to check for validity when we have possible hostnames
+  // since nsSimpleURI doesn't know about hostnames
+  auto pos = aSpec.Find("data:");
+  if (pos != kNotFound) {
+    nsDependentCSubstring rest(aSpec, pos + sizeof("data:") - 1, -1);
+    if (StringBeginsWith(rest, "//"_ns)) {
+      nsCOMPtr<nsIURI> uriWithHost;
+      rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
+               .SetSpec(aSpec)
+               .Finalize(uriWithHost);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  }
 
   uri.forget(result);
   return rv;
@@ -186,7 +201,7 @@ nsresult nsDataHandler::ParsePathWithoutRef(const nsACString& aPath,
   // This is against the current spec, but we're doing it because we have
   // historically seen webcompat issues relying on this (see bug 781693).
   if (mozilla::UniquePtr<CMimeType> parsed = CMimeType::Parse(mimeType)) {
-    parsed->GetFullType(aContentType);
+    parsed->GetEssence(aContentType);
     if (aContentCharset) {
       parsed->GetParameterValue(kCharset, *aContentCharset);
     }

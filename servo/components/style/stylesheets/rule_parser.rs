@@ -26,8 +26,9 @@ use crate::stylesheets::layer_rule::{LayerBlockRule, LayerName, LayerStatementRu
 use crate::stylesheets::supports_rule::SupportsCondition;
 use crate::stylesheets::{
     AllowImportRules, CorsMode, CssRule, CssRuleType, CssRuleTypes, CssRules, DocumentRule,
-    FontFeatureValuesRule, FontPaletteValuesRule, KeyframesRule, MediaRule, NamespaceRule,
-    PageRule, PageSelectors, RulesMutateError, StyleRule, StylesheetLoader, SupportsRule,
+    FontFeatureValuesRule, FontPaletteValuesRule, KeyframesRule, MarginRule, MarginRuleType,
+    MediaRule, NamespaceRule, PageRule, PageSelectors, RulesMutateError, StyleRule,
+    StylesheetLoader, SupportsRule,
 };
 use crate::values::computed::font::FamilyName;
 use crate::values::{CssUrl, CustomIdent, DashedIdent, KeyframesName};
@@ -224,6 +225,8 @@ pub enum AtRulePrelude {
         Option<ImportSupportsCondition>,
         ImportLayer,
     ),
+    /// A @margin rule prelude.
+    Margin(MarginRuleType),
     /// A @namespace rule prelude.
     Namespace(Option<Prefix>, Namespace),
     /// A @layer rule prelude.
@@ -245,32 +248,9 @@ impl AtRulePrelude {
             Self::Property(..) => "property",
             Self::Document(..) => "-moz-document",
             Self::Import(..) => "import",
+            Self::Margin(..) => "margin",
             Self::Namespace(..) => "namespace",
             Self::Layer(..) => "layer",
-        }
-    }
-
-    // https://drafts.csswg.org/css-nesting/#conditionals
-    //     In addition to nested style rules, this specification allows nested group rules inside
-    //     of style rules: any at-rule whose body contains style rules can be nested inside of a
-    //     style rule as well.
-    fn allowed_in_style_rule(&self) -> bool {
-        match *self {
-            Self::Media(..) |
-            Self::Supports(..) |
-            Self::Container(..) |
-            Self::Document(..) |
-            Self::Layer(..) => true,
-
-            Self::Namespace(..) |
-            Self::FontFace |
-            Self::FontFeatureValues(..) |
-            Self::FontPaletteValues(..) |
-            Self::CounterStyle(..) |
-            Self::Keyframes(..) |
-            Self::Page(..) |
-            Self::Property(..) |
-            Self::Import(..) => false,
         }
     }
 }
@@ -506,6 +486,42 @@ impl<'a, 'i> NestedRuleParser<'a, 'i> {
         self.context.rule_types.contains(CssRuleType::Style)
     }
 
+    #[inline]
+    fn in_page_rule(&self) -> bool {
+        self.context.rule_types.contains(CssRuleType::Page)
+    }
+
+    #[inline]
+    fn in_style_or_page_rule(&self) -> bool {
+        let types = CssRuleTypes::from_bits(CssRuleType::Style.bit() | CssRuleType::Page.bit());
+        self.context.rule_types.intersects(types)
+    }
+
+    // https://drafts.csswg.org/css-nesting/#conditionals
+    //     In addition to nested style rules, this specification allows nested group rules inside
+    //     of style rules: any at-rule whose body contains style rules can be nested inside of a
+    //     style rule as well.
+    fn at_rule_allowed(&self, prelude: &AtRulePrelude) -> bool {
+        match prelude {
+            AtRulePrelude::Media(..) |
+            AtRulePrelude::Supports(..) |
+            AtRulePrelude::Container(..) |
+            AtRulePrelude::Document(..) |
+            AtRulePrelude::Layer(..) => true,
+
+            AtRulePrelude::Namespace(..) |
+            AtRulePrelude::FontFace |
+            AtRulePrelude::FontFeatureValues(..) |
+            AtRulePrelude::FontPaletteValues(..) |
+            AtRulePrelude::CounterStyle(..) |
+            AtRulePrelude::Keyframes(..) |
+            AtRulePrelude::Page(..) |
+            AtRulePrelude::Property(..) |
+            AtRulePrelude::Import(..) => !self.in_style_or_page_rule(),
+            AtRulePrelude::Margin(..) => self.in_page_rule(),
+        }
+    }
+
     fn nest_for_rule<R>(&mut self, rule_type: CssRuleType, cb: impl FnOnce(&mut Self) -> R) -> R {
         let old_rule_types = self.context.rule_types;
         self.context.rule_types.insert(rule_type);
@@ -542,7 +558,8 @@ impl<'a, 'i> NestedRuleParser<'a, 'i> {
             }
             let declarations = if parse_declarations {
                 let top = &mut **parser;
-                top.declaration_parser_state.report_errors_if_needed(&top.context, &top.error_reporting_state);
+                top.declaration_parser_state
+                    .report_errors_if_needed(&top.context, &top.error_reporting_state);
                 parser.declaration_parser_state.take_declarations()
             } else {
                 PropertyDeclarationBlock::default()
@@ -586,7 +603,9 @@ impl<'a, 'i> NestedRuleParser<'a, 'i> {
                     if found_host && found_non_host {
                         self.context.log_css_error(
                             start.source_location(),
-                            ContextualParseError::NeverMatchingHostSelector(selector.to_css_string()),
+                            ContextualParseError::NeverMatchingHostSelector(
+                                selector.to_css_string(),
+                            ),
                         );
                         continue 'selector_loop;
                     }
@@ -682,7 +701,14 @@ impl<'a, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'i> {
                 let cond = DocumentCondition::parse(&self.context, input)?;
                 AtRulePrelude::Document(cond)
             },
-            _ => return Err(input.new_error(BasicParseErrorKind::AtRuleInvalid(name.clone())))
+            _ => {
+                if static_prefs::pref!("layout.css.margin-rules.enabled") {
+                    if let Some(margin_rule_type) = MarginRuleType::match_name(&name) {
+                        return Ok(AtRulePrelude::Margin(margin_rule_type));
+                    }
+                }
+                return Err(input.new_error(BasicParseErrorKind::AtRuleInvalid(name.clone())))
+            },
         })
     }
 
@@ -692,7 +718,7 @@ impl<'a, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'i> {
         start: &ParserState,
         input: &mut Parser<'i, 't>,
     ) -> Result<(), ParseError<'i>> {
-        if self.in_style_rule() && !prelude.allowed_in_style_rule() {
+        if !self.at_rule_allowed(&prelude) {
             self.dom_error = Some(RulesMutateError::HierarchyRequest);
             return Err(input.new_error(BasicParseErrorKind::AtRuleInvalid(prelude.name().into())));
         }
@@ -763,22 +789,31 @@ impl<'a, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'i> {
                 })
             },
             AtRulePrelude::Page(selectors) => {
-                let declarations = self.nest_for_rule(CssRuleType::Page, |p| {
-                    // TODO: Support nesting in @page rules?
-                    parse_property_declaration_list(&p.context, input, &[])
-                });
-                CssRule::Page(Arc::new(self.shared_lock.wrap(PageRule {
-                    selectors,
-                    block: Arc::new(self.shared_lock.wrap(declarations)),
-                    source_location: start.source_location(),
-                })))
+                let source_location = start.source_location();
+                let page_rule = if !static_prefs::pref!("layout.css.margin-rules.enabled") {
+                    let declarations = self.nest_for_rule(CssRuleType::Page, |p| {
+                        parse_property_declaration_list(&p.context, input, &[])
+                    });
+                    PageRule {
+                        selectors,
+                        rules: CssRules::new(vec![], self.shared_lock),
+                        block: Arc::new(self.shared_lock.wrap(declarations)),
+                        source_location,
+                    }
+                } else {
+                    let result = self.parse_nested(input, CssRuleType::Page);
+                    PageRule {
+                        selectors,
+                        rules: CssRules::new(result.rules, self.shared_lock),
+                        block: Arc::new(self.shared_lock.wrap(result.declarations)),
+                        source_location,
+                    }
+                };
+                CssRule::Page(Arc::new(self.shared_lock.wrap(page_rule)))
             },
             AtRulePrelude::Property(name) => self.nest_for_rule(CssRuleType::Property, |p| {
-                let rule_data = parse_property_block(
-                    &p.context,
-                    input,
-                    name,
-                    start.source_location())?;
+                let rule_data =
+                    parse_property_block(&p.context, input, name, start.source_location())?;
                 Ok::<CssRule, ParseError<'i>>(CssRule::Property(Arc::new(rule_data)))
             })?,
             AtRulePrelude::Document(condition) => {
@@ -818,6 +853,16 @@ impl<'a, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'i> {
                     source_location,
                 }))
             },
+            AtRulePrelude::Margin(rule_type) => {
+                let declarations = self.nest_for_rule(CssRuleType::Margin, |p| {
+                    parse_property_declaration_list(&p.context, input, &[])
+                });
+                CssRule::Margin(Arc::new(MarginRule {
+                    rule_type,
+                    block: Arc::new(self.shared_lock.wrap(declarations)),
+                    source_location: start.source_location(),
+                }))
+            }
             AtRulePrelude::Import(..) | AtRulePrelude::Namespace(..) => {
                 // These rules don't have blocks.
                 return Err(input.new_unexpected_token_error(cssparser::Token::CurlyBracketBlock));
@@ -922,11 +967,16 @@ impl<'a, 'i> DeclarationParser<'i> for NestedRuleParser<'a, 'i> {
 }
 
 impl<'a, 'i> RuleBodyItemParser<'i, (), StyleParseErrorKind<'i>> for NestedRuleParser<'a, 'i> {
-    fn parse_qualified(&self) -> bool { true }
+    fn parse_qualified(&self) -> bool {
+        true
+    }
 
     /// If nesting is disabled, we can't get there for a non-style-rule. If it's enabled, we parse
     /// raw declarations there.
     fn parse_declarations(&self) -> bool {
-        self.in_style_rule()
+        // We also have to check for page rules here because we currently don't
+        // have a bespoke parser for page rules, and parse them as though they
+        // are style rules.
+        self.in_style_or_page_rule()
     }
 }

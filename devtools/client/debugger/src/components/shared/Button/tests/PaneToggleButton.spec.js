@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React from "react";
+import React from "devtools/client/shared/vendor/react";
 import { shallow } from "enzyme";
 import { PaneToggleButton } from "../";
 
@@ -36,7 +36,7 @@ describe("PaneToggleButton", () => {
     expect(wrapper.hasClass("start")).toBe(true);
   });
 
-  it("toggles end position ", () => {
+  it("toggles end position", () => {
     wrapper.setProps({ position: "end" });
     expect(wrapper.hasClass("end")).toBe(true);
   });

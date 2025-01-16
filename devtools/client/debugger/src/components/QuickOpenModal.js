@@ -2,17 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../utils/connect";
-import fuzzyAldrin from "fuzzaldrin-plus";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import { div } from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 import { basename } from "../utils/path";
 import { createLocation } from "../utils/location";
 
-const { throttle } = require("devtools/shared/throttle");
+const fuzzyAldrin = require("resource://devtools/client/shared/vendor/fuzzaldrin-plus.js");
+const { throttle } = require("resource://devtools/shared/throttle.js");
 
-import actions from "../actions";
+import actions from "../actions/index";
 import {
   getDisplayedSourcesList,
   getQuickOpenQuery,
@@ -22,9 +22,8 @@ import {
   getSourceTabs,
   getBlackBoxRanges,
   getProjectDirectoryRoot,
-} from "../selectors";
+} from "../selectors/index";
 import { memoizeLast } from "../utils/memoizeLast";
-import { scrollList } from "../utils/result-list";
 import { searchKeys } from "../constants";
 import {
   formatSymbol,
@@ -35,8 +34,6 @@ import {
 import Modal from "./shared/Modal";
 import SearchInput from "./shared/SearchInput";
 import ResultList from "./shared/ResultList";
-
-import "./QuickOpenModal.css";
 
 const maxResults = 100;
 
@@ -109,10 +106,6 @@ export class QuickOpenModal extends Component {
 
   componentDidUpdate(prevProps) {
     const queryChanged = prevProps.query !== this.props.query;
-
-    if (this.refs.resultList && this.refs.resultList.refs) {
-      scrollList(this.refs.resultList.refs, this.state.selectedIndex);
-    }
 
     if (queryChanged) {
       this.updateResults(this.props.query);

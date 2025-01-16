@@ -83,6 +83,13 @@ const MOCK_UNANALYZED_PRODUCT_RESPONSE = {
 const MOCK_STALE_PRODUCT_RESPONSE = {
   ...MOCK_POPULATED_DATA,
   product_id: "ABCD123",
+  grade: "A",
+  needs_analysis: true,
+};
+
+const MOCK_UNGRADED_PRODUCT_RESPONSE = {
+  ...MOCK_UNPOPULATED_DATA,
+  product_id: "ABCD123",
   needs_analysis: true,
 };
 
@@ -187,7 +194,7 @@ function getAnalysisDetails(browser, data) {
     ]) {
       returnState[el] =
         !!shoppingContainer[el] &&
-        ContentTaskUtils.is_visible(shoppingContainer[el]);
+        ContentTaskUtils.isVisible(shoppingContainer[el]);
     }
     returnState.shoppingMessageBarType =
       shoppingContainer.shoppingMessageBarEl?.getAttribute("type");
@@ -206,12 +213,12 @@ function getSettingsDetails(browser, data) {
     await shoppingSettings.updateComplete;
     let returnState = {
       settingsEl:
-        !!shoppingSettings && ContentTaskUtils.is_visible(shoppingSettings),
+        !!shoppingSettings && ContentTaskUtils.isVisible(shoppingSettings),
     };
     for (let el of ["recommendationsToggleEl", "optOutButtonEl"]) {
       returnState[el] =
         !!shoppingSettings[el] &&
-        ContentTaskUtils.is_visible(shoppingSettings[el]);
+        ContentTaskUtils.isVisible(shoppingSettings[el]);
     }
     return returnState;
   });

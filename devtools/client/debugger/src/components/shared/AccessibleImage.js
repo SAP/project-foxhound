@@ -2,12 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React from "react";
-import PropTypes from "prop-types";
+import React from "devtools/client/shared/vendor/react";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 
-const classnames = require("devtools/client/shared/classnames.js");
-
-import "./AccessibleImage.css";
+const classnames = require("resource://devtools/client/shared/classnames.js");
 
 const AccessibleImage = props => {
   return React.createElement("span", {

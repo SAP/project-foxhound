@@ -245,7 +245,7 @@ Referencing Externally Defined Data Types: IPDL Includes
 Let's begin with ``PMyManager.ipdl``.  It starts by including types that it
 will need from other places:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     include protocol PMyManaged;
     include MyTypes;                          // for MyActorPair
@@ -286,7 +286,7 @@ Namespaces
 
 From the IPDL file:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     namespace mozilla {
     namespace myns {
@@ -314,7 +314,7 @@ Generating IPDL-Aware C++ Data Types: IPDL Structs and Unions
 
 ``PMyManager.ipdl`` and ``MyTypes.ipdlh`` define:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     [Comparable] union MyUnion {
         float;
@@ -349,8 +349,9 @@ The real point of any ``.ipdl`` file is that each defines exactly one actor
 protocol.  The definition always matches the ``.ipdl`` filename.  Repeating the
 one in ``PMyManager.ipdl``:
 
-.. code-block:: c++
+.. code-block:: cpp
 
+    [ChildProc=Content]
     sync protocol PMyManager {
         manages PMyManaged;
 
@@ -406,13 +407,19 @@ They will be discussed further in `Nested messages`_.
                                response.
 ============================== ================================================
 
+In addition, top-level protocols are annotated with which processes each side
+should be bound into using the ``[ParentProc=*]`` and ``[ChildProc=*]``
+attributes.  The ``[ParentProc]`` attribute is optional, and defaults to the
+``Parent`` process.  The ``[ChildProc]`` attribute is required.  See `Process
+Type Attributes`_ for possible values.
+
 The ``manages`` clause tells IPDL that ``PMyManager`` manages the
 ``PMyManaged`` actor that was previously ``include`` d.  As with any managed
 protocol, it must also be the case that ``PMyManaged.ipdl`` includes
 ``PMyManager`` and declares that ``PMyManaged`` is ``managed`` by
 ``PMyManager``.  Recalling the code:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     // PMyManaged.ipdl
     include protocol PMyManager;
@@ -451,7 +458,7 @@ Declaring IPDL Messages
 
 The final part of the actor definition is the declaration of messages:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     sync protocol PMyManager {
       // ...
@@ -730,7 +737,62 @@ for use in IPDL files:
                               ``Recv`` methods should be used instead of direct
                               function calls.  *New uses of this attribute are
                               discouraged.*
+``[ChildProc=...]``           Indicates which process the child side of the actor
+                              is expected to be bound in.  This will be release
+                              asserted when creating the actor.  Required for
+                              top-level actors.  See `Process Type Attributes`_
+                              for possible values.
+``[ParentProc=...]``          Indicates which process the parent side of the
+                              actor is expected to be bound in.  This will be
+                              release asserted when creating the actor.
+                              Defaults to ``Parent`` for top-level actors.  See
+                              `Process Type Attributes`_ for possible values.
 ============================= =================================================
+
+.. _Process Type Attributes:
+
+Process Type Attributes
+^^^^^^^^^^^^^^^^^^^^^^^
+
+The following are valid values for the ``[ChildProc=...]`` and
+``[ParentProc=...]`` attributes on protocols, each corresponding to a specific
+process type:
+
+============================= =================================================
+``Parent``                    The primary "parent" or "main" process
+``Content``                   A content process, such as those used to host web
+                              pages, workers, and extensions
+``IPDLUnitTest``              Test-only process used in IPDL gtests
+``GMPlugin``                  Gecko Media Plugin (GMP) process
+``GPU``                       GPU process
+``VR``                        VR process
+``RDD``                       Remote Data Decoder (RDD) process
+``Socket``                    Socket/Networking process
+``RemoteSandboxBroker``       Remote Sandbox Broker process
+``ForkServer``                Fork Server process
+``Utility``                   Utility process
+============================= =================================================
+
+The attributes also support some wildcard values, which can be used when an
+actor can be bound in multiple processes.  If you are adding an actor which
+needs a new wildcard value, please reach out to the IPC team, and we can add one
+for your use-case.  They are as follows:
+
+============================= =================================================
+``any``                       Any process.  If a more specific value is
+                              applicable, it should be preferred where possible.
+``anychild``                  Any process other than ``Parent``.  Often used for
+                              utility actors which are bound on a per-process
+                              basis, such as profiling.
+``compositor``                Either the ``GPU`` or ``Parent`` process.  Often
+                              used for actors bound to the compositor thread.
+``anydom``                    Either the ``Parent`` or a ``Content`` process.
+                              Often used for actors used to implement DOM APIs.
+============================= =================================================
+
+Note that these assertions do not provide security guarantees, and are primarily
+intended for use when auditing and as documentation for how actors are being
+used.
 
 
 The C++ Interface
@@ -767,7 +829,7 @@ binary data format for a type.  Both options are available.
 We haven't seen any of this C++ yet.  Let's look at the data types included
 from ``MyDataTypes.h``:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     // MyDataTypes.h
     namespace mozilla::myns {
@@ -840,7 +902,7 @@ should only allocate a ``MyUnusedData`` to return if it so desires.
 These are straight-forward implementations of the ``ParamTraits`` methods for
 ``MyData``:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     /* static */ void IPC::ParamTraits<MyData>::Write(MessageWriter* m, const paramType& in) {
         WriteParam(m, in.s);
@@ -893,7 +955,7 @@ them.  The generated ``ParamTraits`` confirm that the enum is in valid range;
 ``Read`` will return false otherwise.  As an example, here is the
 ``MyActorEnum`` included from ``MyActorUtils.h``:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     enum MyActorEnum { e1, e2, e3, e4, e5 };
 
@@ -908,7 +970,7 @@ IPDL structs and unions become C++ classes that provide interfaces that are
 fairly self-explanatory.  Recalling ``MyUnion`` and ``MyActorPair`` from
 `IPDL Structs and Unions`_ :
 
-.. code-block:: c++
+.. code-block:: cpp
 
     union MyUnion {
         float;
@@ -922,7 +984,7 @@ fairly self-explanatory.  Recalling ``MyUnion`` and ``MyActorPair`` from
 
 These compile to:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     class MyUnion {
         enum Type { Tfloat, TMyOtherData };
@@ -985,7 +1047,7 @@ that declare our actor implementation subclasses (``MyManagerParent.h`` and
 
 So ``MyManagerParent.h`` looks like this:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     #include "PMyManagerParent.h"
 
@@ -1041,7 +1103,7 @@ returns a value: ``AnotherMsg``.  This is done with ``SendAnotherMsg``, which
 is defined automatically by IPDL in the base class ``PMyManagerParent``.  There
 are two signatures for ``Send`` and they look like this:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     // Return a Promise that IPDL will resolve with the response or reject.
     RefPtr<MozPromise<MyOtherData, ResponseRejectReason, true>>
@@ -1074,7 +1136,7 @@ simpler form; they return a ``bool`` indicating success or failure and return
 response values in non-const parameters, as the ``Recv`` methods do.  For
 example, ``PMyManagerChild`` defines this to send the sync message ``SomeMsg``:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     // generated in PMyManagerChild
     bool SendSomeMsg(const Maybe<MyActorPair>& aActors, const nsTArray<MyData>& aMyData,
@@ -1192,7 +1254,7 @@ beneficial to have it receive some final data.
 
 The relevant part of the parent class looks like this:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     class MyManagerParent : public PMyManagerParent {
         already_AddRefed<PMyManagedParent> AllocPMyManagedParent();
@@ -1218,7 +1280,7 @@ operational.
 The ``Send`` method for a constructor is similarly different from other
 ``Send`` methods.  In the child actor, ours looks like this:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     IPCResult SendPMyManagedConstructor(PMyManagedChild* aActor);
 
@@ -1244,7 +1306,7 @@ endpoint.
     cannot safely be a class instance method.  Instead, unlike other ``Send``
     methods, it's a ``static`` class method and takes the actor as a parameter:
 
-    .. code-block:: c++
+    .. code-block:: cpp
 
         static IPCResult Send__delete__(PMyManagerChild* aToDelete);
 
@@ -1358,7 +1420,7 @@ The most common way to create new top level actors is by creating a pair of
 connected Endpoints and sending one to the other actor.  This is done exactly
 the way it sounds.  For example:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     bool MyPreexistingActorParent::MakeMyActor() {
         Endpoint<PMyActorParent> parentEnd;
@@ -1395,7 +1457,7 @@ receiving them as well.
 ``MyPreexistingActorChild`` still has to receive the create message.  The code
 for that handler is pretty similar:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     IPCResult MyPreexistingActorChild::RecvCreateMyActorChild(Endpoint<PMyActorChild>&& childEnd) {
         RefPtr<MyActorChild> child = new MyActorChild;
@@ -1519,7 +1581,7 @@ with normal managees but, instead of ``new``-ing the child actor and then
 passing it in a ``SendFooConstructor`` call, background actors issue the send
 call to the ``BackgroundChild`` manager, which returns the new child:
 
-.. code-block:: c++
+.. code-block:: cpp
 
     // Bind our new PMyBackgroundActorChild to the current thread.
     PBackgroundChild* bc = BackgroundChild::GetOrCreateForCurrentThread();

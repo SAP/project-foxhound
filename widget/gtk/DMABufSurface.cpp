@@ -471,8 +471,9 @@ bool DMABufSurfaceRGBA::Create(int aWidth, int aHeight,
   if (mBufferModifiers[0] != DRM_FORMAT_MOD_INVALID) {
     mBufferPlaneCount = GbmLib::GetPlaneCount(mGbmBufferObject[0]);
     if (mBufferPlaneCount > DMABUF_BUFFER_PLANES) {
-      LOGDMABUF(("    There's too many dmabuf planes!"));
-      ReleaseSurface();
+      LOGDMABUF(
+          ("    There's too many dmabuf planes! (%d)", mBufferPlaneCount));
+      mBufferPlaneCount = DMABUF_BUFFER_PLANES;
       return false;
     }
 
@@ -510,6 +511,7 @@ bool DMABufSurfaceRGBA::Create(mozilla::gl::GLContext* aGLContext,
   }
   if (mBufferPlaneCount > DMABUF_BUFFER_PLANES) {
     LOGDMABUF(("  wrong plane count %d, quit\n", mBufferPlaneCount));
+    mBufferPlaneCount = DMABUF_BUFFER_PLANES;
     return false;
   }
   if (!egl->fExportDMABUFImage(mEGLImage, mDmabufFds, mStrides, mOffsets)) {
@@ -672,6 +674,14 @@ bool DMABufSurfaceRGBA::CreateTexture(GLContext* aGLContext, int aPlane) {
   attribs.AppendElement(LOCAL_EGL_NONE);
 
   if (!aGLContext) return false;
+
+  if (!aGLContext->MakeCurrent()) {
+    LOGDMABUF(
+        ("DMABufSurfaceRGBA::CreateTexture(): failed to make GL context "
+         "current"));
+    return false;
+  }
+
   const auto& gle = gl::GLContextEGL::Cast(aGLContext);
   const auto& egl = gle->mEgl;
   mEGLImage =
@@ -685,12 +695,6 @@ bool DMABufSurfaceRGBA::CreateTexture(GLContext* aGLContext, int aPlane) {
     return false;
   }
 
-  if (!aGLContext->MakeCurrent()) {
-    LOGDMABUF(
-        ("DMABufSurfaceRGBA::CreateTexture(): failed to make GL context "
-         "current"));
-    return false;
-  }
   aGLContext->fGenTextures(1, &mTexture);
   const ScopedBindTexture savedTex(aGLContext, mTexture);
   aGLContext->fTexParameteri(LOCAL_GL_TEXTURE_2D, LOCAL_GL_TEXTURE_WRAP_S,
@@ -1485,11 +1489,11 @@ bool DMABufSurfaceYUV::CreateTexture(GLContext* aGLContext, int aPlane) {
   MOZ_ASSERT(!mTexture[aPlane], "Texture is already created!");
   MOZ_ASSERT(aGLContext, "Missing GLContext!");
 
-  if (!CreateEGLImage(aGLContext, aPlane)) {
-    return false;
-  }
   if (!aGLContext->MakeCurrent()) {
     LOGDMABUF(("  Failed to make GL context current."));
+    return false;
+  }
+  if (!CreateEGLImage(aGLContext, aPlane)) {
     return false;
   }
   aGLContext->fGenTextures(1, &mTexture[aPlane]);

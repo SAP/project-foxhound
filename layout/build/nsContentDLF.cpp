@@ -11,7 +11,7 @@
 #include "nsDocShell.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsIDocumentLoaderFactory.h"
 #include "mozilla/dom/Document.h"
 #include "nsNodeInfoManager.h"
@@ -32,7 +32,7 @@
 
 using mozilla::dom::Document;
 
-already_AddRefed<nsIContentViewer> NS_NewContentViewer();
+already_AddRefed<nsIDocumentViewer> NS_NewDocumentViewer();
 
 static const char* const gHTMLTypes[] = {TEXT_HTML, VIEWSOURCE_CONTENT_TYPE,
                                          APPLICATION_XHTML_XML,
@@ -81,7 +81,7 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
                              const nsACString& aContentType,
                              nsIDocShell* aContainer, nsISupports* aExtraInfo,
                              nsIStreamListener** aDocListener,
-                             nsIContentViewer** aDocViewer) {
+                             nsIDocumentViewer** aDocViewer) {
   // Make a copy of aContentType, because we're possibly going to change it.
   nsAutoCString contentType(aContentType);
 
@@ -200,14 +200,14 @@ NS_IMETHODIMP
 nsContentDLF::CreateInstanceForDocument(nsISupports* aContainer,
                                         Document* aDocument,
                                         const char* aCommand,
-                                        nsIContentViewer** aContentViewer) {
+                                        nsIDocumentViewer** aDocumentViewer) {
   MOZ_ASSERT(aDocument);
 
-  nsCOMPtr<nsIContentViewer> contentViewer = NS_NewContentViewer();
+  nsCOMPtr<nsIDocumentViewer> viewer = NS_NewDocumentViewer();
 
   // Bind the document to the Content Viewer
-  contentViewer->LoadStart(aDocument);
-  contentViewer.forget(aContentViewer);
+  viewer->LoadStart(aDocument);
+  viewer.forget(aDocumentViewer);
   return NS_OK;
 }
 
@@ -288,7 +288,7 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
 nsresult nsContentDLF::CreateDocument(
     const char* aCommand, nsIChannel* aChannel, nsILoadGroup* aLoadGroup,
     nsIDocShell* aContainer, nsContentDLF::DocumentCreator aDocumentCreator,
-    nsIStreamListener** aDocListener, nsIContentViewer** aContentViewer) {
+    nsIStreamListener** aDocListener, nsIDocumentViewer** aDocumentViewer) {
   MOZ_ASSERT(aDocumentCreator);
 
   nsresult rv = NS_ERROR_FAILURE;
@@ -311,9 +311,11 @@ nsresult nsContentDLF::CreateDocument(
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
   // Create the content viewer  XXX: could reuse content viewer here!
-  nsCOMPtr<nsIContentViewer> contentViewer = NS_NewContentViewer();
+  nsCOMPtr<nsIDocumentViewer> viewer = NS_NewDocumentViewer();
 
   doc->SetContainer(static_cast<nsDocShell*>(aContainer));
+  doc->SetAllowDeclarativeShadowRoots(
+      mozilla::StaticPrefs::dom_webcomponents_shadowdom_declarative_enabled());
 
   // Initialize the document to begin loading the data.  An
   // nsIStreamListener connected to the parser is returned in
@@ -323,8 +325,8 @@ nsresult nsContentDLF::CreateDocument(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Bind the document to the Content Viewer
-  contentViewer->LoadStart(doc);
-  contentViewer.forget(aContentViewer);
+  viewer->LoadStart(doc);
+  viewer.forget(aDocumentViewer);
   return NS_OK;
 }
 

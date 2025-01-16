@@ -23,7 +23,7 @@
   When a new text node with non-neutral content is appended to a textarea
   element with NodeHasDirAuto, if the directionality of the textarea element
   is still unresolved, it is resolved based on the value of the text node.
-  Elements with unresolved directionality behave as LTR.
+  Elements with unresolved directionality behave as Ltr.
 
   When a new text node with non-neutral content is appended to an element that
   is not a textarea but has either of the NodeAncestorHasDirAuto or
@@ -231,7 +231,7 @@ using mozilla::dom::HTMLSlotElement;
 using mozilla::dom::ShadowRoot;
 
 static nsIContent* GetParentOrHostOrSlot(
-    nsIContent* aContent, bool* aCrossedShadowBoundary = nullptr) {
+    const nsIContent* aContent, bool* aCrossedShadowBoundary = nullptr) {
   if (HTMLSlotElement* slot = aContent->GetAssignedSlot()) {
     if (aCrossedShadowBoundary) {
       *aCrossedShadowBoundary = true;
@@ -244,7 +244,7 @@ static nsIContent* GetParentOrHostOrSlot(
     return parent;
   }
 
-  ShadowRoot* sr = ShadowRoot::FromNode(aContent);
+  const ShadowRoot* sr = ShadowRoot::FromNode(aContent);
   if (sr) {
     if (aCrossedShadowBoundary) {
       *aCrossedShadowBoundary = true;
@@ -308,13 +308,13 @@ static Directionality GetDirectionFromChar(uint32_t ch) {
   switch (intl::UnicodeProperties::GetBidiClass(ch)) {
     case intl::BidiClass::RightToLeft:
     case intl::BidiClass::RightToLeftArabic:
-      return eDir_RTL;
+      return Directionality::Rtl;
 
     case intl::BidiClass::LeftToRight:
-      return eDir_LTR;
+      return Directionality::Ltr;
 
     default:
-      return eDir_NotSet;
+      return Directionality::Unset;
   }
 }
 
@@ -343,7 +343,7 @@ Directionality GetDirectionFromText(const char16_t* aText,
     // Just ignore lone surrogates
     if (!IS_SURROGATE(ch)) {
       Directionality dir = GetDirectionFromChar(ch);
-      if (dir != eDir_NotSet) {
+      if (dir != Directionality::Unset) {
         if (aFirstStrong) {
           *aFirstStrong = current;
         }
@@ -355,7 +355,7 @@ Directionality GetDirectionFromText(const char16_t* aText,
   if (aFirstStrong) {
     *aFirstStrong = UINT32_MAX;
   }
-  return eDir_NotSet;
+  return Directionality::Unset;
 }
 
 static Directionality GetDirectionFromText(const char* aText,
@@ -369,7 +369,7 @@ static Directionality GetDirectionFromText(const char* aText,
     unsigned char ch = (unsigned char)*start++;
 
     Directionality dir = GetDirectionFromChar(ch);
-    if (dir != eDir_NotSet) {
+    if (dir != Directionality::Unset) {
       if (aFirstStrong) {
         *aFirstStrong = current;
       }
@@ -380,7 +380,7 @@ static Directionality GetDirectionFromText(const char* aText,
   if (aFirstStrong) {
     *aFirstStrong = UINT32_MAX;
   }
-  return eDir_NotSet;
+  return Directionality::Unset;
 }
 
 static Directionality GetDirectionFromText(const mozilla::dom::Text* aTextNode,
@@ -412,7 +412,7 @@ static nsTextNode* WalkDescendantsAndGetDirectionFromText(
           auto text = static_cast<nsTextNode*>(assignedNode);
           if (assignedNode != aSkip) {
             Directionality textNodeDir = GetDirectionFromText(text);
-            if (textNodeDir != eDir_NotSet) {
+            if (textNodeDir != Directionality::Unset) {
               *aDirectionality = textNodeDir;
               return text;
             }
@@ -432,7 +432,7 @@ static nsTextNode* WalkDescendantsAndGetDirectionFromText(
     if (child->NodeType() == nsINode::TEXT_NODE && child != aSkip) {
       auto text = static_cast<nsTextNode*>(child);
       Directionality textNodeDir = GetDirectionFromText(text);
-      if (textNodeDir != eDir_NotSet) {
+      if (textNodeDir != Directionality::Unset) {
         *aDirectionality = textNodeDir;
         return text;
       }
@@ -461,7 +461,7 @@ static nsTextNode* WalkDescendantsSetDirectionFromText(
     return nullptr;
   }
 
-  Directionality textNodeDir = eDir_NotSet;
+  Directionality textNodeDir = Directionality::Unset;
 
   // Check the text in Shadow DOM.
   if (ShadowRoot* shadowRoot = aElement->GetShadowRoot()) {
@@ -482,8 +482,8 @@ static nsTextNode* WalkDescendantsSetDirectionFromText(
   }
 
   // We walked all the descendants without finding a text node with strong
-  // directional characters. Set the directionality to LTR
-  aElement->SetDirectionality(eDir_LTR, aNotify);
+  // directional characters. Set the directionality to Ltr
+  aElement->SetDirectionality(Directionality::Ltr, aNotify);
   return nullptr;
 }
 
@@ -675,6 +675,24 @@ class nsTextNodeDirectionalityMap {
   }
 };
 
+Directionality GetParentDirectionality(const Element* aElement) {
+  if (nsIContent* parent = GetParentOrHostOrSlot(aElement)) {
+    if (ShadowRoot* shadow = ShadowRoot::FromNode(parent)) {
+      parent = shadow->GetHost();
+    }
+    if (parent && parent->IsElement()) {
+      // If the node doesn't have an explicit dir attribute with a valid value,
+      // the directionality is the same as the parent element (but don't
+      // propagate the parent directionality if it isn't set yet).
+      Directionality parentDir = parent->AsElement()->GetDirectionality();
+      if (parentDir != Directionality::Unset) {
+        return parentDir;
+      }
+    }
+  }
+  return Directionality::Ltr;
+}
+
 Directionality RecomputeDirectionality(Element* aElement, bool aNotify) {
   MOZ_ASSERT(!aElement->HasDirAuto(),
              "RecomputeDirectionality called with dir=auto");
@@ -682,8 +700,6 @@ Directionality RecomputeDirectionality(Element* aElement, bool aNotify) {
   if (aElement->HasValidDir()) {
     return aElement->GetDirectionality();
   }
-
-  Directionality dir = eDir_LTR;
 
   // https://html.spec.whatwg.org/multipage/dom.html#the-directionality:
   //
@@ -694,29 +710,20 @@ Directionality RecomputeDirectionality(Element* aElement, bool aNotify) {
   //     The directionality of the element is 'ltr'.
   if (auto* input = HTMLInputElement::FromNode(*aElement)) {
     if (input->ControlType() == FormControlType::InputTel) {
-      aElement->SetDirectionality(dir, aNotify);
-      return dir;
+      aElement->SetDirectionality(Directionality::Ltr, aNotify);
+      return Directionality::Ltr;
     }
   }
 
-  if (nsIContent* parent = GetParentOrHostOrSlot(aElement)) {
-    if (ShadowRoot* shadow = ShadowRoot::FromNode(parent)) {
-      parent = shadow->GetHost();
-    }
-
-    if (parent && parent->IsElement()) {
-      // If the node doesn't have an explicit dir attribute with a valid value,
-      // the directionality is the same as the parent element (but don't
-      // propagate the parent directionality if it isn't set yet).
-      Directionality parentDir = parent->AsElement()->GetDirectionality();
-      if (parentDir != eDir_NotSet) {
-        dir = parentDir;
-      }
-    }
-  }
-
+  const Directionality dir = GetParentDirectionality(aElement);
   aElement->SetDirectionality(dir, aNotify);
   return dir;
+}
+
+// Whether the element establishes its own directionality and the one of its
+// descendants.
+static inline bool IsBoundary(const Element& aElement) {
+  return aElement.HasValidDir() || aElement.HasDirAuto();
 }
 
 static void SetDirectionalityOnDescendantsInternal(nsINode* aNode,
@@ -729,14 +736,18 @@ static void SetDirectionalityOnDescendantsInternal(nsINode* aNode,
   }
 
   for (nsIContent* child = aNode->GetFirstChild(); child;) {
-    if (!child->IsElement()) {
+    auto* element = Element::FromNode(child);
+    if (!element) {
       child = child->GetNextNode(aNode);
       continue;
     }
 
-    Element* element = child->AsElement();
-    if (element->HasValidDir() || element->HasDirAuto() ||
-        element->GetAssignedSlot()) {
+    if (IsBoundary(*element) || element->GetAssignedSlot() ||
+        element->GetDirectionality() == aDir) {
+      // If the element is a directionality boundary, or it's assigned to a slot
+      // (in which case it doesn't inherit the directionality from its direct
+      // parent), or already has the right directionality, then we can skip the
+      // whole subtree.
       child = child->GetNextNonChildNode(aNode);
       continue;
     }
@@ -745,13 +756,9 @@ static void SetDirectionalityOnDescendantsInternal(nsINode* aNode,
     }
 
     if (auto* slot = HTMLSlotElement::FromNode(child)) {
-      const nsTArray<RefPtr<nsINode>>& assignedNodes = slot->AssignedNodes();
-      for (uint32_t i = 0; i < assignedNodes.Length(); ++i) {
-        nsINode* node = assignedNodes[i];
-        Element* assignedElement =
-            node->IsElement() ? node->AsElement() : nullptr;
-        if (assignedElement && !assignedElement->HasValidDir() &&
-            !assignedElement->HasDirAuto()) {
+      for (const RefPtr<nsINode>& assignedNode : slot->AssignedNodes()) {
+        auto* assignedElement = Element::FromNode(*assignedNode);
+        if (assignedElement && !IsBoundary(*assignedElement)) {
           assignedElement->SetDirectionality(aDir, aNotify);
           SetDirectionalityOnDescendantsInternal(assignedElement, aDir,
                                                  aNotify);
@@ -760,7 +767,6 @@ static void SetDirectionalityOnDescendantsInternal(nsINode* aNode,
     }
 
     element->SetDirectionality(aDir, aNotify);
-
     child = child->GetNextNode(aNode);
   }
 }
@@ -1116,8 +1122,9 @@ bool TextNodeWillChangeDirection(nsTextNode* aTextNode, Directionality* aOldDir,
 void TextNodeChangedDirection(nsTextNode* aTextNode, Directionality aOldDir,
                               bool aNotify) {
   Directionality newDir = GetDirectionFromText(aTextNode);
-  if (newDir == eDir_NotSet) {
-    if (aOldDir != eDir_NotSet && aTextNode->HasTextNodeDirectionalityMap()) {
+  if (newDir == Directionality::Unset) {
+    if (aOldDir != Directionality::Unset &&
+        aTextNode->HasTextNodeDirectionalityMap()) {
       // This node used to have a strong directional character but no
       // longer does. ResetTextNodeDirection() will re-resolve the
       // directionality of any elements whose directionality was
@@ -1152,7 +1159,7 @@ void SetDirectionFromNewTextNode(nsTextNode* aTextNode) {
   }
 
   Directionality dir = GetDirectionFromText(aTextNode);
-  if (dir != eDir_NotSet) {
+  if (dir != Directionality::Unset) {
     SetAncestorDirectionIfAuto(aTextNode, dir);
   }
 }
@@ -1164,7 +1171,8 @@ void ResetDirectionSetByTextNode(nsTextNode* aTextNode) {
   }
 
   Directionality dir = GetDirectionFromText(aTextNode);
-  if (dir != eDir_NotSet && aTextNode->HasTextNodeDirectionalityMap()) {
+  if (dir != Directionality::Unset &&
+      aTextNode->HasTextNodeDirectionalityMap()) {
     nsTextNodeDirectionalityMap::ResetTextNodeDirection(aTextNode, aTextNode);
   }
 }
@@ -1173,8 +1181,8 @@ void SetDirectionalityFromValue(Element* aElement, const nsAString& value,
                                 bool aNotify) {
   Directionality dir =
       GetDirectionFromText(value.BeginReading(), value.Length());
-  if (dir == eDir_NotSet) {
-    dir = eDir_LTR;
+  if (dir == Directionality::Unset) {
+    dir = Directionality::Ltr;
   }
 
   if (aElement->GetDirectionality() != dir) {

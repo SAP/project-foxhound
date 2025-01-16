@@ -185,7 +185,7 @@ add_task(async function test_file_migration() {
         Assert.equal(messageText, expectedMessageText);
       } else {
         Assert.ok(
-          BrowserTestUtils.is_hidden(progressGroup),
+          BrowserTestUtils.isHidden(progressGroup),
           `Resource progress group for ${progressGroup.dataset.resourceType}` +
             ` should be hidden.`
         );
@@ -292,7 +292,7 @@ add_task(async function test_file_migration_error() {
 
     let errorMessageContainer = shadow.querySelector(".file-import-error");
     Assert.ok(
-      BrowserTestUtils.is_visible(errorMessageContainer),
+      BrowserTestUtils.isVisible(errorMessageContainer),
       "Should be showing the error message container"
     );
 

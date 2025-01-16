@@ -10,19 +10,31 @@
 #include <unordered_map>
 #include <vector>
 
+#include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/gfx/InlineTranslator.h"
+#include "mozilla/gfx/RecordedEvent.h"
+#include "CanvasChild.h"
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/PCanvasParent.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/ipc/CrossProcessSemaphore.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
+
+using EventType = gfx::RecordedEvent::EventType;
 class TaskQueue;
+
+namespace gfx {
+class DrawTargetWebgl;
+class SharedContextWebgl;
+}  // namespace gfx
 
 namespace layers {
 
+class SharedSurfacesHolder;
 class TextureData;
 
 class CanvasTranslator final : public gfx::InlineTranslator,
@@ -32,7 +44,12 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 
   friend class PProtocolParent;
 
-  CanvasTranslator();
+  CanvasTranslator(layers::SharedSurfacesHolder* aSharedSurfacesHolder,
+                   const dom::ContentParentId& aContentId, uint32_t aManagerId);
+
+  const dom::ContentParentId& GetContentId() const { return mContentId; }
+
+  uint32_t GetManagerId() const { return mManagerId; }
 
   /**
    * Dispatches a runnable to the preferred task queue or thread.
@@ -52,40 +69,50 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    * CanvasEventRingBuffer.
    *
    * @param aTextureType the TextureType the translator will create
-   * @param aReadHandle handle to the shared memory for the
-   *        CanvasEventRingBuffer
+   * @param aBackendType the BackendType for texture data
+   * @param aHeaderHandle handle for the control header
+   * @param aBufferHandles handles for the initial buffers for translation
+   * @param aBufferSize size of buffers and the default size
    * @param aReaderSem reading blocked semaphore for the CanvasEventRingBuffer
    * @param aWriterSem writing blocked semaphore for the CanvasEventRingBuffer
    * @param aUseIPDLThread if true, use the IPDL thread instead of the worker
    *        pool for translation requests
    */
   ipc::IPCResult RecvInitTranslator(
-      const TextureType& aTextureType,
-      ipc::SharedMemoryBasic::Handle&& aReadHandle,
-      CrossProcessSemaphoreHandle&& aReaderSem,
-      CrossProcessSemaphoreHandle&& aWriterSem, const bool& aUseIPDLThread);
+      TextureType aTextureType, gfx::BackendType aBackendType,
+      Handle&& aReadHandle, nsTArray<Handle>&& aBufferHandles,
+      uint64_t aBufferSize, CrossProcessSemaphoreHandle&& aReaderSem,
+      CrossProcessSemaphoreHandle&& aWriterSem, bool aUseIPDLThread);
 
   /**
-   * New buffer to resume translation after it has been stopped by writer.
+   * Restart the translation from a Stopped state.
    */
-  ipc::IPCResult RecvNewBuffer(ipc::SharedMemoryBasic::Handle&& aReadHandle);
+  ipc::IPCResult RecvRestartTranslation();
 
   /**
-   * Used to tell the CanvasTranslator to start translating again after it has
-   * stopped due to a timeout waiting for events.
+   * Adds a new buffer to be translated. The current buffer will be recycled if
+   * it is of the default size. The translation will then be restarted.
    */
-  ipc::IPCResult RecvResumeTranslation();
+  ipc::IPCResult RecvAddBuffer(Handle&& aBufferHandle, uint64_t aBufferSize);
+
+  /**
+   * Sets the shared memory to be used for readback.
+   */
+  ipc::IPCResult RecvSetDataSurfaceBuffer(Handle&& aBufferHandle,
+                                          uint64_t aBufferSize);
+
+  ipc::IPCResult RecvClearCachedResources();
 
   void ActorDestroy(ActorDestroyReason why) final;
+
+  void CheckAndSignalWriter();
 
   /**
    * Translates events until no more are available or the end of a transaction
    * If this returns false the caller of this is responsible for re-calling
    * this function.
-   *
-   * @returns true if all events are processed and false otherwise.
    */
-  bool TranslateRecording();
+  void TranslateRecording();
 
   /**
    * Marks the beginning of rendering for a transaction. While in a transaction
@@ -111,57 +138,50 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void DeviceChangeAcknowledged();
 
   /**
-   * Used to send data back to the writer. This is done through the same shared
-   * memory so the writer must wait and read the response after it has submitted
-   * the event that uses this.
-   *
-   * @param aData the data to be written back to the writer
-   * @param aSize the number of chars to write
-   */
-  void ReturnWrite(const char* aData, size_t aSize) {
-    mStream->ReturnWrite(aData, aSize);
-  }
-
-  /**
-   * Set the texture ID that will be used as a lookup for the texture created by
-   * the next CreateDrawTarget.
-   */
-  void SetNextTextureId(int64_t aNextTextureId) {
-    mNextTextureId = aNextTextureId;
-  }
-
-  /**
    * Used during playback of events to create DrawTargets. For the
    * CanvasTranslator this means creating TextureDatas and getting the
    * DrawTargets from those.
    *
    * @param aRefPtr the key to store the created DrawTarget against
+   * @param aTextureId texture ID for this DrawTarget
+   * @param aTextureOwnerId texture owner ID for this DrawTarget
    * @param aSize the size of the DrawTarget
    * @param aFormat the surface format for the DrawTarget
    * @returns the new DrawTarget
    */
   already_AddRefed<gfx::DrawTarget> CreateDrawTarget(
+      gfx::ReferencePtr aRefPtr, int64_t aTextureId,
+      RemoteTextureOwnerId aTextureOwnerId, const gfx::IntSize& aSize,
+      gfx::SurfaceFormat aFormat);
+
+  already_AddRefed<gfx::DrawTarget> CreateDrawTarget(
       gfx::ReferencePtr aRefPtr, const gfx::IntSize& aSize,
       gfx::SurfaceFormat aFormat) final;
 
   already_AddRefed<gfx::GradientStops> GetOrCreateGradientStops(
-      gfx::GradientStop* aRawStops, uint32_t aNumStops,
-      gfx::ExtendMode aExtendMode) final;
+      gfx::DrawTarget* aDrawTarget, gfx::GradientStop* aRawStops,
+      uint32_t aNumStops, gfx::ExtendMode aExtendMode) final;
 
-  /**
-   * Get the TextureData associated with a TextureData from another process.
-   *
-   * @param aTextureId the key used to find the TextureData
-   * @returns the TextureData found
-   */
-  TextureData* LookupTextureData(int64_t aTextureId);
+  void CheckpointReached();
+
+  void PauseTranslation();
 
   /**
    * Removes the texture and other objects associated with a texture ID.
    *
    * @param aTextureId the texture ID to remove
    */
-  void RemoveTexture(int64_t aTextureId);
+  void RemoveTexture(int64_t aTextureId, RemoteTextureTxnType aTxnType = 0,
+                     RemoteTextureTxnId aTxnId = 0);
+
+  bool LockTexture(int64_t aTextureId, OpenMode aMode,
+                   bool aInvalidContents = false);
+  bool UnlockTexture(int64_t aTextureId);
+
+  bool PresentTexture(int64_t aTextureId, RemoteTextureId aId);
+
+  bool PushRemoteTexture(int64_t aTextureId, TextureData* aData,
+                         RemoteTextureId aId, RemoteTextureOwnerId aOwnerId);
 
   /**
    * Overriden to remove any DataSourceSurfaces associated with the RefPtr.
@@ -244,12 +264,26 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   UniquePtr<gfx::DataSourceSurface::ScopedMap> GetPreparedMap(
       gfx::ReferencePtr aSurface);
 
+  void PrepareShmem(int64_t aTextureId);
+
+  void RecycleBuffer();
+
+  void NextBuffer();
+
+  void GetDataSurface(uint64_t aSurfaceRef);
+
  private:
   ~CanvasTranslator();
 
-  void Bind(Endpoint<PCanvasParent>&& aEndpoint);
+  void AddBuffer(Handle&& aBufferHandle, size_t aBufferSize);
 
-  void StartTranslation();
+  void SetDataSurfaceBuffer(Handle&& aBufferHandle, size_t aBufferSize);
+
+  bool ReadNextEvent(EventType& aEventType);
+
+  bool HasPendingEvent();
+
+  bool ReadPendingEvent(EventType& aEventType);
 
   void FinishShutdown();
 
@@ -257,11 +291,28 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 
   void Deactivate();
 
-  TextureData* CreateTextureData(TextureType aTextureType,
-                                 const gfx::IntSize& aSize,
-                                 gfx::SurfaceFormat aFormat);
+  bool TryDrawTargetWebglFallback(int64_t aTextureId,
+                                  gfx::DrawTargetWebgl* aWebgl);
+  void ForceDrawTargetWebglFallback();
 
-  void AddSurfaceDescriptor(int64_t aTextureId, TextureData* atextureData);
+  void BlockCanvas();
+
+  UniquePtr<TextureData> CreateTextureData(const gfx::IntSize& aSize,
+                                           gfx::SurfaceFormat aFormat,
+                                           bool aClear);
+
+  void EnsureRemoteTextureOwner(
+      RemoteTextureOwnerId aOwnerId = RemoteTextureOwnerId());
+
+  UniquePtr<TextureData> CreateOrRecycleTextureData(const gfx::IntSize& aSize,
+                                                    gfx::SurfaceFormat aFormat);
+
+  already_AddRefed<gfx::DrawTarget> CreateFallbackDrawTarget(
+      gfx::ReferencePtr aRefPtr, int64_t aTextureId,
+      RemoteTextureOwnerId aTextureOwnerId, const gfx::IntSize& aSize,
+      gfx::SurfaceFormat aFormat);
+
+  void ClearTextureInfo();
 
   bool HandleExtensionEvent(int32_t aType);
 
@@ -269,25 +320,72 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   bool CheckForFreshCanvasDevice(int aLineNumber);
   void NotifyDeviceChanged();
 
+  bool EnsureSharedContextWebgl();
+  gfx::DrawTargetWebgl* GetDrawTargetWebgl(int64_t aTextureId,
+                                           bool aCheckForFallback = true) const;
+  void NotifyRequiresRefresh(int64_t aTextureId, bool aDispatch = true);
+  void CacheSnapshotShmem(int64_t aTextureId, bool aDispatch = true);
+
+  void ClearCachedResources();
+
   RefPtr<TaskQueue> mTranslationTaskQueue;
+  RefPtr<SharedSurfacesHolder> mSharedSurfacesHolder;
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> mDevice;
 #endif
-  // We hold the ring buffer as a UniquePtr so we can drop it once
-  // mTranslationTaskQueue has shutdown to break a RefPtr cycle.
-  UniquePtr<CanvasEventRingBuffer> mStream;
+  RefPtr<gfx::SharedContextWebgl> mSharedContext;
+  RefPtr<RemoteTextureOwnerClient> mRemoteTextureOwner;
+
+  size_t mDefaultBufferSize = 0;
+  uint32_t mMaxSpinCount;
+  TimeDuration mNextEventTimeout;
+
+  using State = CanvasDrawEventRecorder::State;
+  using Header = CanvasDrawEventRecorder::Header;
+
+  RefPtr<ipc::SharedMemoryBasic> mHeaderShmem;
+  Header* mHeader = nullptr;
+
+  struct CanvasShmem {
+    RefPtr<ipc::SharedMemoryBasic> shmem;
+    auto Size() { return shmem->Size(); }
+    gfx::MemReader CreateMemReader() {
+      return {static_cast<char*>(shmem->memory()), Size()};
+    }
+  };
+  std::queue<CanvasShmem> mCanvasShmems;
+  CanvasShmem mCurrentShmem;
+  gfx::MemReader mCurrentMemReader{0, 0};
+  RefPtr<ipc::SharedMemoryBasic> mDataSurfaceShmem;
+  UniquePtr<CrossProcessSemaphore> mWriterSemaphore;
+  UniquePtr<CrossProcessSemaphore> mReaderSemaphore;
   TextureType mTextureType = TextureType::Unknown;
   UniquePtr<TextureData> mReferenceTextureData;
+  dom::ContentParentId mContentId;
+  uint32_t mManagerId;
   // Sometimes during device reset our reference DrawTarget can be null, so we
   // hold the BackendType separately.
   gfx::BackendType mBackendType = gfx::BackendType::NONE;
-  typedef std::unordered_map<int64_t, UniquePtr<TextureData>> TextureMap;
-  TextureMap mTextureDatas;
-  int64_t mNextTextureId = -1;
+  base::ProcessId mOtherPid = base::kInvalidProcessId;
+  struct TextureInfo {
+    gfx::ReferencePtr mRefPtr;
+    UniquePtr<TextureData> mTextureData;
+    RefPtr<gfx::DrawTarget> mDrawTarget;
+    RemoteTextureOwnerId mRemoteTextureOwnerId;
+    bool mNotifiedRequiresRefresh = false;
+    // Ref-count of how active uses of the DT. Avoids deletion when locked.
+    int32_t mLocked = 1;
+    OpenMode mTextureLockMode = OpenMode::OPEN_NONE;
+
+    gfx::DrawTargetWebgl* GetDrawTargetWebgl(
+        bool aCheckForFallback = true) const;
+  };
+  std::unordered_map<int64_t, TextureInfo> mTextureInfo;
   nsRefPtrHashtable<nsPtrHashKey<void>, gfx::DataSourceSurface> mDataSurfaces;
   gfx::ReferencePtr mMappedSurface;
   UniquePtr<gfx::DataSourceSurface::ScopedMap> mPreparedMap;
   Atomic<bool> mDeactivated{false};
+  Atomic<bool> mBlocked{false};
   bool mIsInTransaction = false;
   bool mDeviceResetInProgress = false;
 };

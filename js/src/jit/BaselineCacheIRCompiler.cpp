@@ -1255,11 +1255,7 @@ bool BaselineCacheIRCompiler::emitLoadStringCharResult(StringOperandId strId,
 
   // Load StaticString for this char. For larger code units perform a VM call.
   Label vmCall;
-  masm.boundsCheck32PowerOfTwo(scratch1, StaticStrings::UNIT_STATIC_LIMIT,
-                               &vmCall);
-  masm.movePtr(ImmPtr(&cx_->staticStrings().unitStaticTable), scratch2);
-  masm.loadPtr(BaseIndex(scratch2, scratch1, ScalePointer), scratch2);
-
+  masm.lookupStaticString(scratch1, scratch2, cx_->staticStrings(), &vmCall);
   masm.jump(&done);
 
   if (handleOOB) {
@@ -1314,10 +1310,8 @@ bool BaselineCacheIRCompiler::emitStringFromCodeResult(Int32OperandId codeId,
   // We pre-allocate atoms for the first UNIT_STATIC_LIMIT characters.
   // For code units larger than that, we must do a VM call.
   Label vmCall;
-  masm.boundsCheck32PowerOfTwo(code, StaticStrings::UNIT_STATIC_LIMIT, &vmCall);
+  masm.lookupStaticString(code, scratch, cx_->staticStrings(), &vmCall);
 
-  masm.movePtr(ImmPtr(cx_->runtime()->staticStrings->unitStaticTable), scratch);
-  masm.loadPtr(BaseIndex(scratch, code, ScalePointer), scratch);
   Label done;
   masm.jump(&done);
 
@@ -2597,7 +2591,7 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     JitSpew(JitSpew_BaselineICFallback,
             "Tried attaching identical stub for (%s:%u:%u)",
             outerScript->filename(), outerScript->lineno(),
-            outerScript->column().zeroOriginValue());
+            outerScript->column().oneOriginValue());
     return ICAttachResult::DuplicateStub;
   }
 
@@ -2622,6 +2616,9 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     cx->zone()->jitZone()->clearStubFoldingBailoutData();
     if (stub->usedByTranspiler() && owningScript->hasIonScript()) {
       owningScript->ionScript()->resetNumFixableBailouts();
+    } else {
+      // Update the last IC counter if this is not a bailout from Ion.
+      owningScript->updateLastICStubCounter();
     }
     return ICAttachResult::Attached;
   }
@@ -2645,8 +2642,11 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
       stub->setTrialInliningState(writer.trialInliningState());
       break;
     case TrialInliningState::MonomorphicInlined:
+      stub->setTrialInliningState(TrialInliningState::Failure);
+      break;
     case TrialInliningState::Inlined:
       stub->setTrialInliningState(TrialInliningState::Failure);
+      icScript->removeInlinedChild(stub->pcOffset());
       break;
     case TrialInliningState::Failure:
       break;
@@ -2656,6 +2656,11 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
   writer.copyStubData(newStub->stubDataStart());
   newStub->setTypeData(writer.typeData());
   stub->addNewStub(icEntry, newStub);
+
+  JSScript* owningScript = icScript->isInlined()
+                               ? icScript->inliningRoot()->owningScript()
+                               : outerScript;
+  owningScript->updateLastICStubCounter();
   return ICAttachResult::Attached;
 }
 
@@ -3381,7 +3386,6 @@ void BaselineCacheIRCompiler::createThis(Register argcReg, Register calleeReg,
   // Save live registers that don't have to be traced.
   LiveGeneralRegisterSet liveNonGCRegs;
   liveNonGCRegs.add(argcReg);
-  liveNonGCRegs.add(ICStubReg);
   masm.PushRegsInMask(liveNonGCRegs);
 
   // CreateThis takes two arguments: callee, and newTarget.
@@ -3418,6 +3422,8 @@ void BaselineCacheIRCompiler::createThis(Register argcReg, Register calleeReg,
 
   // Restore saved registers.
   masm.PopRegsInMask(liveNonGCRegs);
+  Address stubAddr(FramePointer, BaselineStubFrameLayout::ICStubOffsetFromFP);
+  masm.loadPtr(stubAddr, ICStubReg);
 
   // Save |this| value back into pushed arguments on stack.
   MOZ_ASSERT(!liveNonGCRegs.aliases(JSReturnOperand));

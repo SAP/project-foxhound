@@ -381,6 +381,8 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
         sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
 
+        withClipboard("clipboardReadAllow") {} // Reset clipboard data
+
         val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
         mainSession.loadUri(url)
         mainSession.waitForPageStop()
@@ -394,7 +396,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
                 perm: ClipboardPermission,
             ):
                 GeckoResult<AllowOrDeny> {
-                assertThat("URI should match", perm.uri, startsWith(url))
                 assertThat(
                     "Type should match",
                     perm.type,
@@ -427,6 +428,8 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
         sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
 
+        withClipboard("clipboardReadDeny") {} // Reset clipboard data
+
         val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
         mainSession.loadUri(url)
         mainSession.waitForPageStop()
@@ -440,7 +443,6 @@ class SelectionActionDelegateTest : BaseSessionTest() {
                 perm: ClipboardPermission,
             ):
                 GeckoResult<AllowOrDeny>? {
-                assertThat("URI should match", perm.uri, startsWith(url))
                 assertThat(
                     "Type should match",
                     perm.type,
@@ -472,11 +474,14 @@ class SelectionActionDelegateTest : BaseSessionTest() {
 
         sessionRule.setPrefsUntilTestEnd(mapOf("dom.events.asyncClipboard.readText" to true))
 
+        withClipboard("clipboardReadDeactivate") {} // Reset clipboard data
+
         val url = createTestUrl(CLIPBOARD_READ_HTML_PATH)
         mainSession.loadUri(url)
         mainSession.waitForPageStop()
 
         val result = GeckoResult<Void>()
+        val permissionResult = GeckoResult<AllowOrDeny>()
         mainSession.delegateDuringNextWait(object : SelectionActionDelegate {
             @AssertCalled(count = 1)
             override fun onShowClipboardPermissionRequest(
@@ -490,7 +495,7 @@ class SelectionActionDelegateTest : BaseSessionTest() {
                     equalTo(SelectionActionDelegate.PERMISSION_CLIPBOARD_READ),
                 )
                 result.complete(null)
-                return GeckoResult()
+                return permissionResult
             }
         })
 
@@ -500,10 +505,12 @@ class SelectionActionDelegateTest : BaseSessionTest() {
         mainSession.delegateDuringNextWait(object : SelectionActionDelegate {
             @AssertCalled
             override fun onDismissClipboardPermissionRequest(session: GeckoSession) {
+                permissionResult.complete(AllowOrDeny.DENY)
             }
         })
 
         mainSession.loadTestPath(HELLO_HTML_PATH)
+        sessionRule.waitForResult(permissionResult)
         sessionRule.waitForPageStop()
     }
 

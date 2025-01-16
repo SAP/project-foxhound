@@ -18,6 +18,9 @@ job-defaults:
             - name: public/build/maven
               path: /builds/worker/workspace/obj-build/gradle/maven/
               type: directory
+            - name: public/build/target.maven.tar.xz
+              path: /builds/worker/workspace/obj-build/gradle/target.maven.tar.xz
+              type: file
             - name: public/build/geckoview-androidTest.apk
               path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/geckoview/outputs/apk/androidTest/withGeckoBinaries/debug/geckoview-withGeckoBinaries-debug-androidTest.apk
               type: file
@@ -386,7 +389,7 @@ android-aarch64/debug:
 
 android-aarch64-shippable/opt:
     description: "Android 5.0 AArch64 Shippable"
-    use-pgo: android-x86_64-shippable/opt
+    use-pgo: android-aarch64-shippable/opt
     attributes:
         enable-full-crashsymbols: true
         shippable: true
@@ -417,7 +420,7 @@ android-aarch64-shippable/opt:
 
 android-aarch64-shippable-lite/opt:
     description: "Android 5.0 AArch64 Shippable Lite"
-    use-pgo: android-x86_64-shippable/opt
+    use-pgo: android-aarch64-shippable/opt
     attributes:
         enable-full-crashsymbols: true
         shippable: true

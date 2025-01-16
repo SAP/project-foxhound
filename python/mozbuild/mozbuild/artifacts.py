@@ -280,8 +280,8 @@ class ArtifactJob(object):
                     added_entry = True
                     break
 
-                if filename.endswith(".ini"):
-                    # The artifact build writes test .ini files into the object
+                if filename.endswith(".toml"):
+                    # The artifact build writes test .toml files into the object
                     # directory; they don't come from the upstream test archive.
                     self.log(
                         logging.DEBUG,
@@ -343,8 +343,8 @@ class ArtifactJob(object):
                         added_entry = True
                         break
 
-                    if filename.endswith(".ini"):
-                        # The artifact build writes test .ini files into the object
+                    if filename.endswith(".toml"):
+                        # The artifact build writes test .toml files into the object
                         # directory; they don't come from the upstream test archive.
                         self.log(
                             logging.DEBUG,
@@ -471,9 +471,9 @@ class ArtifactJob(object):
 
         if "esr" in version_display or "esr" in source_repo:
             return self.esr_candidate_trees
-        elif re.search("a\d+$", version_display):
+        elif re.search(r"a\d+$", version_display):
             return self.nightly_candidate_trees
-        elif re.search("b\d+$", version_display):
+        elif re.search(r"b\d+$", version_display):
             return self.beta_candidate_trees
 
         return self.default_candidate_trees
@@ -1176,13 +1176,13 @@ class Artifacts(object):
             return "android-arm" + target_suffix
 
         target_64bit = False
-        if self._substs["target_cpu"] == "x86_64":
+        if self._substs["TARGET_CPU"] == "x86_64":
             target_64bit = True
 
         if self._defines.get("XP_LINUX", False):
             return ("linux64" if target_64bit else "linux") + target_suffix
         if self._defines.get("XP_WIN", False):
-            if self._substs["target_cpu"] == "aarch64":
+            if self._substs["TARGET_CPU"] == "aarch64":
                 return "win64-aarch64" + target_suffix
             return ("win64" if target_64bit else "win32") + target_suffix
         if self._defines.get("XP_MACOSX", False):
@@ -1364,9 +1364,13 @@ https://firefox-source-docs.mozilla.org/contributing/vcs/mercurial_bundles.html
         """
 
         last_revs = self._get_recent_public_revisions()
-        candidate_pushheads = self._pushheads_from_rev(
-            last_revs[0].rstrip(), NUM_PUSHHEADS_TO_QUERY_PER_PARENT
-        )
+        candidate_pushheads = []
+        for rev in last_revs:
+            candidate_pushheads = self._pushheads_from_rev(
+                rev.rstrip(), NUM_PUSHHEADS_TO_QUERY_PER_PARENT
+            )
+            if candidate_pushheads:
+                break
         count = 0
         for rev in last_revs:
             rev = rev.rstrip()

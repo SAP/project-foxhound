@@ -4,8 +4,15 @@
 
 .search-container {
   border: 1px solid var(--fxview-border);
+  border-radius: var(--border-radius-small);
   color: var(--fxview-text-primary-color);
+  display: inline-flex;
+  overflow: hidden;
   position: relative;
+
+  &:focus-within {
+    overflow: visible;
+  }
 }
 
 .search-icon {

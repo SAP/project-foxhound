@@ -1022,7 +1022,19 @@ impl WillChange {
 }
 
 /// The change bits that we care about.
-#[derive(Clone, Copy, Debug, Default, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(C)]
 pub struct WillChangeBits(u16);
 bitflags! {
@@ -1134,7 +1146,20 @@ impl Parse for WillChange {
 }
 
 /// Values for the `touch-action` property.
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[css(bitflags(single = "none,auto,manipulation", mixed = "pan-x,pan-y,pinch-zoom"))]
 #[repr(C)]
 pub struct TouchAction(u8);
@@ -1163,8 +1188,25 @@ impl TouchAction {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
-#[css(bitflags(single = "none,strict,content", mixed="size,layout,style,paint,inline-size", overlapping_bits))]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+#[css(bitflags(
+    single = "none,strict,content",
+    mixed = "size,layout,style,paint,inline-size",
+    overlapping_bits
+))]
 #[repr(C)]
 /// Constants for contain: https://drafts.csswg.org/css-contain/#contain-property
 pub struct Contain(u8);
@@ -1574,9 +1616,6 @@ pub enum Appearance {
     /// The dropdown portion of a toolbar button
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     ToolbarbuttonDropdown,
-    /// The gripper for a toolbar.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Toolbargripper,
     /// The toolbox that contains the toolbars.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Toolbox,
@@ -1589,9 +1628,6 @@ pub enum Appearance {
     /// An individual header cell
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeheadercell,
-    /// The sort arrow for a header.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Treeheadersortarrow,
     /// A tree item.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeitem,
@@ -1607,12 +1643,16 @@ pub enum Appearance {
     /// A tree widget.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     Treeview,
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Dialog,
 
     /// Mac help button.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
     MozMacHelpButton,
+
+    /// An appearance value for the root, so that we can get unified toolbar looks (which require a
+    /// transparent gecko background) without really using the whole transparency set-up which
+    /// otherwise loses window borders, see bug 1870481.
+    #[parse(condition = "ParserContext::chrome_rules_enabled")]
+    MozMacUnifiedToolbarWindow,
 
     /// Windows themed window frame elements.
     #[parse(condition = "ParserContext::chrome_rules_enabled")]
@@ -1844,9 +1884,26 @@ impl Overflow {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(C)]
-#[css(bitflags(single = "auto", mixed = "stable,both-edges", validate_mixed="Self::has_stable"))]
+#[css(bitflags(
+    single = "auto",
+    mixed = "stable,both-edges",
+    validate_mixed = "Self::has_stable"
+))]
 /// Values for scrollbar-gutter:
 /// <https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property>
 pub struct ScrollbarGutter(u8);

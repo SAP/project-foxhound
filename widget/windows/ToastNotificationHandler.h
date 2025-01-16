@@ -10,14 +10,20 @@
 #include <windows.data.xml.dom.h>
 #include <wrl.h>
 #include "nsCOMPtr.h"
-#include "nsIAlertsService.h"
 #include "nsICancelable.h"
 #include "nsIFile.h"
+#include "nsIWindowsAlertsService.h"
 #include "nsString.h"
 #include "mozilla/Result.h"
 
 namespace mozilla {
 namespace widget {
+
+enum class ImagePlacement {
+  eInline,
+  eHero,
+  eIcon,
+};
 
 class ToastNotification;
 
@@ -27,15 +33,15 @@ class ToastNotificationHandler final
   NS_DECL_ISUPPORTS
   NS_DECL_NSIALERTNOTIFICATIONIMAGELISTENER
 
-  ToastNotificationHandler(ToastNotification* backend, const nsAString& aumid,
-                           nsIObserver* aAlertListener, const nsAString& aName,
-                           const nsAString& aCookie, const nsAString& aTitle,
-                           const nsAString& aMsg, const nsAString& aHostPort,
-                           bool aClickable, bool aRequireInteraction,
-                           const nsTArray<RefPtr<nsIAlertAction>>& aActions,
-                           bool aIsSystemPrincipal,
-                           const nsAString& aOpaqueRelaunchData,
-                           bool aInPrivateBrowsing, bool aIsSilent)
+  ToastNotificationHandler(
+      ToastNotification* backend, const nsAString& aumid,
+      nsIObserver* aAlertListener, const nsAString& aName,
+      const nsAString& aCookie, const nsAString& aTitle, const nsAString& aMsg,
+      const nsAString& aHostPort, bool aClickable, bool aRequireInteraction,
+      const nsTArray<RefPtr<nsIAlertAction>>& aActions, bool aIsSystemPrincipal,
+      const nsAString& aOpaqueRelaunchData, bool aInPrivateBrowsing,
+      bool aIsSilent, bool aHandlesActions = false,
+      ImagePlacement aImagePlacement = ImagePlacement::eInline)
       : mBackend(backend),
         mAumid(aumid),
         mHasImage(false),
@@ -52,7 +58,9 @@ class ToastNotificationHandler final
         mIsSystemPrincipal(aIsSystemPrincipal),
         mOpaqueRelaunchData(aOpaqueRelaunchData),
         mIsSilent(aIsSilent),
-        mSentFinished(!aAlertListener) {}
+        mSentFinished(!aAlertListener),
+        mHandleActions(aHandlesActions),
+        mImagePlacement(aImagePlacement) {}
 
   nsresult InitAlertAsync(nsIAlertNotification* aAlert);
 
@@ -124,6 +132,8 @@ class ToastNotificationHandler final
   nsString mOpaqueRelaunchData;
   bool mIsSilent;
   bool mSentFinished;
+  bool mHandleActions;
+  ImagePlacement mImagePlacement;
 
   nsresult TryShowAlert();
   bool ShowAlert();

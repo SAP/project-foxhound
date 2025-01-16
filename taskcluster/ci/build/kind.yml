@@ -47,7 +47,10 @@ job-defaults:
         # Note: These settings are only honored by nightly (i.e. shipping) builds
         update-channel:
             by-release-type:
-                nightly: nightly
+                nightly:
+                    by-project:
+                        try: nightly-try
+                        default: nightly
                 nightly-oak: nightly-oak
                 nightly-pine: nightly-pine
                 beta:
@@ -56,10 +59,7 @@ job-defaults:
                         default: beta
                 release.*: release
                 esr.*: esr
-                default:
-                    by-project:
-                        try: nightly-try
-                        default: null
+                default: null
         # ACCEPTED_MAR_CHANNEL_IDS should usually be the same as the value MAR_CHANNEL_ID.
         # If more than one ID is needed, then you should use a comma separated list
         # of values.

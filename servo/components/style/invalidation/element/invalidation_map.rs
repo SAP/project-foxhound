@@ -163,7 +163,10 @@ impl Dependency {
     /// The kind of normal invalidation that this would generate. The dependency
     /// in question must be a normal dependency.
     pub fn normal_invalidation_kind(&self) -> NormalDependencyInvalidationKind {
-        debug_assert!(self.relative_kind.is_none(), "Querying normal invalidation kind on relative dependency.");
+        debug_assert!(
+            self.relative_kind.is_none(),
+            "Querying normal invalidation kind on relative dependency."
+        );
         match self.combinator() {
             None => NormalDependencyInvalidationKind::Element,
             Some(Combinator::Child) | Some(Combinator::Descendant) => {
@@ -174,7 +177,9 @@ impl Dependency {
             },
             // TODO(emilio): We could look at the selector itself to see if it's
             // an eager pseudo, and return only Descendants here if not.
-            Some(Combinator::PseudoElement) => NormalDependencyInvalidationKind::ElementAndDescendants,
+            Some(Combinator::PseudoElement) => {
+                NormalDependencyInvalidationKind::ElementAndDescendants
+            },
             Some(Combinator::SlotAssignment) => NormalDependencyInvalidationKind::SlottedElements,
             Some(Combinator::Part) => NormalDependencyInvalidationKind::Parts,
         }
@@ -197,7 +202,8 @@ impl Dependency {
             return false;
         }
         matches!(
-            self.selector.combinator_at_match_order(self.selector_offset - 1),
+            self.selector
+                .combinator_at_match_order(self.selector_offset - 1),
             Combinator::NextSibling
         )
     }
@@ -209,8 +215,9 @@ impl Dependency {
     pub fn dependency_is_relative_with_single_next_sibling(&self) -> bool {
         match self.invalidation_kind() {
             DependencyInvalidationKind::Normal(_) => false,
-            DependencyInvalidationKind::Relative(kind) =>
-                kind == RelativeDependencyInvalidationKind::PrevSibling,
+            DependencyInvalidationKind::Relative(kind) => {
+                kind == RelativeDependencyInvalidationKind::PrevSibling
+            },
         }
     }
 }
@@ -286,8 +293,11 @@ bitflags! {
     impl TSStateForInvalidation : u8 {
         /// :empty
         const EMPTY = 1 << 0;
-        /// :nth, :first-child, etc, without of.
+        /// :nth etc, without of.
         const NTH = 1 << 1;
+        /// "Simple" edge child selectors, like :first-child, :last-child, etc.
+        /// Excludes :*-of-type.
+        const NTH_EDGE = 1 << 2;
     }
 }
 
@@ -559,8 +569,6 @@ fn on_pseudo_class<C: Collector>(pc: &NonTSPseudoClass, collector: &mut C) -> Re
     let attr_name = match *pc {
         #[cfg(feature = "gecko")]
         NonTSPseudoClass::MozTableBorderNonzero => local_name!("border"),
-        #[cfg(feature = "gecko")]
-        NonTSPseudoClass::MozBrowserFrame => local_name!("mozbrowser"),
         #[cfg(feature = "gecko")]
         NonTSPseudoClass::MozSelectListBox => {
             // This depends on two attributes.
@@ -1030,7 +1038,9 @@ impl<'a> Collector for RelativeSelectorDependencyCollector<'a> {
             selector_offset: self.compound_state.state.offset,
             relative_kind: Some(match self.combinator_count.get_match_hint() {
                 RelativeSelectorMatchHint::InChild => RelativeDependencyInvalidationKind::Parent,
-                RelativeSelectorMatchHint::InSubtree => RelativeDependencyInvalidationKind::Ancestors,
+                RelativeSelectorMatchHint::InSubtree => {
+                    RelativeDependencyInvalidationKind::Ancestors
+                },
                 RelativeSelectorMatchHint::InNextSibling => {
                     RelativeDependencyInvalidationKind::PrevSibling
                 },
@@ -1152,10 +1162,15 @@ impl<'a> SelectorVisitor for RelativeSelectorDependencyCollector<'a> {
                     .insert(TSStateForInvalidation::EMPTY);
                 true
             },
-            Component::Nth(..) => {
+            Component::Nth(data) => {
+                let kind = if data.is_simple_edge() {
+                    TSStateForInvalidation::NTH_EDGE
+                } else {
+                    TSStateForInvalidation::NTH
+                };
                 self.compound_state
                     .ts_state
-                    .insert(TSStateForInvalidation::NTH);
+                    .insert(kind);
                 true
             },
             Component::RelativeSelectorAnchor => unreachable!("Should not visit this far"),
@@ -1378,10 +1393,15 @@ impl<'a, 'b> SelectorVisitor for RelativeSelectorInnerDependencyCollector<'a, 'b
                     .insert(TSStateForInvalidation::EMPTY);
                 true
             },
-            Component::Nth(..) => {
+            Component::Nth(data) => {
+                let kind = if data.is_simple_edge() {
+                    TSStateForInvalidation::NTH_EDGE
+                } else {
+                    TSStateForInvalidation::NTH
+                };
                 self.compound_state
                     .ts_state
-                    .insert(TSStateForInvalidation::NTH);
+                    .insert(kind);
                 true
             },
             Component::RelativeSelectorAnchor => unreachable!("Should not visit this far"),

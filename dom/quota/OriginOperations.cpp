@@ -283,7 +283,7 @@ class StorageNameOp final : public QuotaRequestBase {
   void CloseDirectory() override;
 };
 
-class InitializedRequestBase : public QuotaRequestBase {
+class InitializedRequestBase : public ResolvableNormalOriginOp<bool> {
  protected:
   bool mInitialized;
 
@@ -308,7 +308,7 @@ class StorageInitializedOp final : public InitializedRequestBase {
 
   nsresult DoDirectoryWork(QuotaManager& aQuotaManager) override;
 
-  void GetResponse(RequestResponse& aResponse) override;
+  bool GetResolveValue() override;
 };
 
 class TemporaryStorageInitializedOp final : public InitializedRequestBase {
@@ -323,7 +323,7 @@ class TemporaryStorageInitializedOp final : public InitializedRequestBase {
 
   nsresult DoDirectoryWork(QuotaManager& aQuotaManager) override;
 
-  void GetResponse(RequestResponse& aResponse) override;
+  bool GetResolveValue() override;
 };
 
 class InitOp final : public ResolvableNormalOriginOp<bool> {
@@ -345,12 +345,12 @@ class InitOp final : public ResolvableNormalOriginOp<bool> {
   void CloseDirectory() override;
 };
 
-class InitTemporaryStorageOp final : public QuotaRequestBase {
+class InitTemporaryStorageOp final : public ResolvableNormalOriginOp<bool> {
   RefPtr<UniversalDirectoryLock> mDirectoryLock;
 
  public:
-  explicit InitTemporaryStorageOp(
-      MovingNotNull<RefPtr<QuotaManager>> aQuotaManager);
+  InitTemporaryStorageOp(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+                         RefPtr<UniversalDirectoryLock> aDirectoryLock);
 
  private:
   ~InitTemporaryStorageOp() = default;
@@ -359,7 +359,7 @@ class InitTemporaryStorageOp final : public QuotaRequestBase {
 
   nsresult DoDirectoryWork(QuotaManager& aQuotaManager) override;
 
-  void GetResponse(RequestResponse& aResponse) override;
+  bool GetResolveValue() override;
 
   void CloseDirectory() override;
 };
@@ -756,12 +756,12 @@ RefPtr<QuotaRequestBase> CreateStorageNameOp(
   return MakeRefPtr<StorageNameOp>(std::move(aQuotaManager));
 }
 
-RefPtr<QuotaRequestBase> CreateStorageInitializedOp(
+RefPtr<ResolvableNormalOriginOp<bool>> CreateStorageInitializedOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager) {
   return MakeRefPtr<StorageInitializedOp>(std::move(aQuotaManager));
 }
 
-RefPtr<QuotaRequestBase> CreateTemporaryStorageInitializedOp(
+RefPtr<ResolvableNormalOriginOp<bool>> CreateTemporaryStorageInitializedOp(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager) {
   return MakeRefPtr<TemporaryStorageInitializedOp>(std::move(aQuotaManager));
 }
@@ -773,9 +773,11 @@ RefPtr<ResolvableNormalOriginOp<bool>> CreateInitOp(
                             std::move(aDirectoryLock));
 }
 
-RefPtr<QuotaRequestBase> CreateInitTemporaryStorageOp(
-    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager) {
-  return MakeRefPtr<InitTemporaryStorageOp>(std::move(aQuotaManager));
+RefPtr<ResolvableNormalOriginOp<bool>> CreateInitTemporaryStorageOp(
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+    RefPtr<UniversalDirectoryLock> aDirectoryLock) {
+  return MakeRefPtr<InitTemporaryStorageOp>(std::move(aQuotaManager),
+                                            std::move(aDirectoryLock));
 }
 
 RefPtr<QuotaRequestBase> CreateInitializePersistentOriginOp(
@@ -1304,7 +1306,8 @@ nsresult GetOriginUsageOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
     // Ensure temporary storage is initialized. If temporary storage hasn't been
     // initialized yet, the method will initialize it by traversing the
     // repositories for temporary and default storage (including our origin).
-    QM_TRY(MOZ_TO_RESULT(aQuotaManager.EnsureTemporaryStorageIsInitialized()));
+    QM_TRY(MOZ_TO_RESULT(
+        aQuotaManager.EnsureTemporaryStorageIsInitializedInternal()));
 
     // Get cached usage (the method doesn't have to stat any files). File usage
     // is not tracked in memory separately, so just add to the database usage.
@@ -1381,7 +1384,8 @@ void StorageNameOp::CloseDirectory() { AssertIsOnOwningThread(); }
 
 InitializedRequestBase::InitializedRequestBase(
     MovingNotNull<RefPtr<QuotaManager>> aQuotaManager, const char* aName)
-    : QuotaRequestBase(std::move(aQuotaManager), aName), mInitialized(false) {
+    : ResolvableNormalOriginOp(std::move(aQuotaManager), aName),
+      mInitialized(false) {
   AssertIsOnOwningThread();
 }
 
@@ -1403,14 +1407,10 @@ nsresult StorageInitializedOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
   return NS_OK;
 }
 
-void StorageInitializedOp::GetResponse(RequestResponse& aResponse) {
+bool StorageInitializedOp::GetResolveValue() {
   AssertIsOnOwningThread();
 
-  StorageInitializedResponse storageInitializedResponse;
-
-  storageInitializedResponse.initialized() = mInitialized;
-
-  aResponse = storageInitializedResponse;
+  return mInitialized;
 }
 
 nsresult TemporaryStorageInitializedOp::DoDirectoryWork(
@@ -1419,19 +1419,15 @@ nsresult TemporaryStorageInitializedOp::DoDirectoryWork(
 
   AUTO_PROFILER_LABEL("TemporaryStorageInitializedOp::DoDirectoryWork", OTHER);
 
-  mInitialized = aQuotaManager.IsTemporaryStorageInitialized();
+  mInitialized = aQuotaManager.IsTemporaryStorageInitializedInternal();
 
   return NS_OK;
 }
 
-void TemporaryStorageInitializedOp::GetResponse(RequestResponse& aResponse) {
+bool TemporaryStorageInitializedOp::GetResolveValue() {
   AssertIsOnOwningThread();
 
-  TemporaryStorageInitializedResponse temporaryStorageInitializedResponse;
-
-  temporaryStorageInitializedResponse.initialized() = mInitialized;
-
-  aResponse = temporaryStorageInitializedResponse;
+  return mInitialized;
 }
 
 InitOp::InitOp(MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
@@ -1468,20 +1464,19 @@ void InitOp::CloseDirectory() {
 }
 
 InitTemporaryStorageOp::InitTemporaryStorageOp(
-    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager)
-    : QuotaRequestBase(std::move(aQuotaManager),
-                       "dom::quota::InitTemporaryStorageOp") {
+    MovingNotNull<RefPtr<QuotaManager>> aQuotaManager,
+    RefPtr<UniversalDirectoryLock> aDirectoryLock)
+    : ResolvableNormalOriginOp(std::move(aQuotaManager),
+                               "dom::quota::InitTemporaryStorageOp"),
+      mDirectoryLock(std::move(aDirectoryLock)) {
   AssertIsOnOwningThread();
 }
 
 RefPtr<BoolPromise> InitTemporaryStorageOp::OpenDirectory() {
   AssertIsOnOwningThread();
+  MOZ_ASSERT(mDirectoryLock);
 
-  mDirectoryLock = mQuotaManager->CreateDirectoryLockInternal(
-      Nullable<PersistenceType>(), OriginScope::FromNull(),
-      Nullable<Client::Type>(), /* aExclusive */ false);
-
-  return mDirectoryLock->Acquire();
+  return BoolPromise::CreateAndResolve(true, __func__);
 }
 
 nsresult InitTemporaryStorageOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
@@ -1492,15 +1487,16 @@ nsresult InitTemporaryStorageOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
   QM_TRY(OkIf(aQuotaManager.IsStorageInitializedInternal()),
          NS_ERROR_NOT_INITIALIZED);
 
-  QM_TRY(MOZ_TO_RESULT(aQuotaManager.EnsureTemporaryStorageIsInitialized()));
+  QM_TRY(MOZ_TO_RESULT(
+      aQuotaManager.EnsureTemporaryStorageIsInitializedInternal()));
 
   return NS_OK;
 }
 
-void InitTemporaryStorageOp::GetResponse(RequestResponse& aResponse) {
+bool InitTemporaryStorageOp::GetResolveValue() {
   AssertIsOnOwningThread();
 
-  aResponse = InitTemporaryStorageResponse();
+  return true;
 }
 
 void InitTemporaryStorageOp::CloseDirectory() {
@@ -1604,7 +1600,7 @@ nsresult InitializeTemporaryOriginOp::DoDirectoryWork(
   QM_TRY(OkIf(aQuotaManager.IsStorageInitializedInternal()),
          NS_ERROR_NOT_INITIALIZED);
 
-  QM_TRY(OkIf(aQuotaManager.IsTemporaryStorageInitialized()),
+  QM_TRY(OkIf(aQuotaManager.IsTemporaryStorageInitializedInternal()),
          NS_ERROR_NOT_INITIALIZED);
 
   QM_TRY_UNWRAP(mCreated,
@@ -1723,7 +1719,7 @@ nsresult InitializeTemporaryClientOp::DoDirectoryWork(
   QM_TRY(MOZ_TO_RESULT(aQuotaManager.IsStorageInitializedInternal()),
          NS_ERROR_FAILURE);
 
-  QM_TRY(MOZ_TO_RESULT(aQuotaManager.IsTemporaryStorageInitialized()),
+  QM_TRY(MOZ_TO_RESULT(aQuotaManager.IsTemporaryStorageInitializedInternal()),
          NS_ERROR_FAILURE);
 
   QM_TRY(MOZ_TO_RESULT(
@@ -1786,7 +1782,8 @@ nsresult GetFullOriginMetadataOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
   // Ensure temporary storage is initialized. If temporary storage hasn't
   // been initialized yet, the method will initialize it by traversing the
   // repositories for temporary and default storage (including our origin).
-  QM_TRY(MOZ_TO_RESULT(aQuotaManager.EnsureTemporaryStorageIsInitialized()));
+  QM_TRY(MOZ_TO_RESULT(
+      aQuotaManager.EnsureTemporaryStorageIsInitializedInternal()));
 
   // Get metadata cached in memory (the method doesn't have to stat any
   // files).
@@ -2039,7 +2036,7 @@ void ClearRequestBase::DeleteFilesInternal(
             const bool initialized =
                 aPersistenceType == PERSISTENCE_TYPE_PERSISTENT
                     ? aQuotaManager.IsOriginInitialized(metadata.mOrigin)
-                    : aQuotaManager.IsTemporaryStorageInitialized();
+                    : aQuotaManager.IsTemporaryStorageInitializedInternal();
 
             // If it hasn't been initialized, we don't need to update the
             // quota and notify the removing client.
@@ -2467,7 +2464,7 @@ nsresult PersistOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
 
     // Origin directory has been successfully created.
     // Create OriginInfo too if temporary storage was already initialized.
-    if (aQuotaManager.IsTemporaryStorageInitialized()) {
+    if (aQuotaManager.IsTemporaryStorageInitializedInternal()) {
       timestamp = aQuotaManager.NoteOriginDirectoryCreated(
           originMetadata, /* aPersisted */ true);
     } else {
@@ -2502,7 +2499,7 @@ nsresult PersistOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
 
     // Directory metadata has been successfully updated.
     // Update OriginInfo too if temporary storage was already initialized.
-    if (aQuotaManager.IsTemporaryStorageInitialized()) {
+    if (aQuotaManager.IsTemporaryStorageInitializedInternal()) {
       aQuotaManager.PersistOrigin(originMetadata);
     }
   }
@@ -2559,7 +2556,8 @@ nsresult EstimateOp::DoDirectoryWork(QuotaManager& aQuotaManager) {
   // initialized yet, the method will initialize it by traversing the
   // repositories for temporary and default storage (including origins
   // belonging to our group).
-  QM_TRY(MOZ_TO_RESULT(aQuotaManager.EnsureTemporaryStorageIsInitialized()));
+  QM_TRY(MOZ_TO_RESULT(
+      aQuotaManager.EnsureTemporaryStorageIsInitializedInternal()));
 
   // Get cached usage (the method doesn't have to stat any files).
   mUsageAndLimit = aQuotaManager.GetUsageAndLimitForEstimate(mOriginMetadata);

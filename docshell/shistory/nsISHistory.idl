@@ -197,19 +197,19 @@ interface nsISHistory: nsISupports
    *                         history, aIndex should be the index history was
    *                         navigated to.
    */
-  void evictOutOfRangeContentViewers(in long aIndex);
+  void evictOutOfRangeDocumentViewers(in long aIndex);
 
   /**
    * Evict the content viewer associated with a bfcache entry that has timed
    * out.
    */
   [noscript, notxpcom]
-  void evictExpiredContentViewerForEntry(in SHEntrySharedParentStatePtr aEntry);
+  void evictExpiredDocumentViewerForEntry(in SHEntrySharedParentStatePtr aEntry);
 
   /**
    * Evict all the content viewers in this session history
    */
-  void evictAllContentViewers();
+  void evictAllDocumentViewers();
 
   /**
    * Add a BFCache entry to expiration tracker so it gets evicted on
@@ -273,7 +273,7 @@ interface nsISHistory: nsISupports
 
   [notxpcom] void EnsureCorrectEntryAtCurrIndex(in nsISHEntry aEntry);
 
-  [notxpcom] void EvictContentViewersOrReplaceEntry(in nsISHEntry aNewSHEntry, in bool aReplace);
+  [notxpcom] void EvictDocumentViewersOrReplaceEntry(in nsISHEntry aNewSHEntry, in bool aReplace);
 
   nsISHEntry createEntry();
 

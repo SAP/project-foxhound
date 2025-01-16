@@ -60,6 +60,7 @@
 #include "mozilla/dom/VRServiceTest.h"
 #include "mozilla/dom/XRSystem.h"
 #include "mozilla/dom/workerinternals/RuntimeService.h"
+#include "mozilla/dom/WakeLockJS.h"
 #include "mozilla/Hal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
@@ -162,6 +163,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocks)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mUserActivation)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWakeLock)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
@@ -251,6 +253,8 @@ void Navigator::Invalidate() {
   mUserActivation = nullptr;
 
   mSharePromise = nullptr;
+
+  mWakeLock = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -677,10 +681,8 @@ namespace {
 
 class VibrateWindowListener : public nsIDOMEventListener {
  public:
-  VibrateWindowListener(nsPIDOMWindowInner* aWindow, Document* aDocument) {
-    mWindow = do_GetWeakReference(aWindow);
-    mDocument = do_GetWeakReference(aDocument);
-
+  VibrateWindowListener(nsPIDOMWindowInner* aWindow, Document* aDocument)
+      : mWindow(do_GetWeakReference(aWindow)), mDocument(aDocument) {
     constexpr auto visibilitychange = u"visibilitychange"_ns;
     aDocument->AddSystemEventListener(visibilitychange, this, /* listener */
                                       true,                   /* use capture */
@@ -696,7 +698,7 @@ class VibrateWindowListener : public nsIDOMEventListener {
   virtual ~VibrateWindowListener() = default;
 
   nsWeakPtr mWindow;
-  nsWeakPtr mDocument;
+  WeakPtr<Document> mDocument;
 };
 
 NS_IMPL_ISUPPORTS(VibrateWindowListener, nsIDOMEventListener)
@@ -728,7 +730,7 @@ VibrateWindowListener::HandleEvent(Event* aEvent) {
 }
 
 void VibrateWindowListener::RemoveListener() {
-  nsCOMPtr<EventTarget> target = do_QueryReferent(mDocument);
+  nsCOMPtr<Document> target(mDocument);
   if (!target) {
     return;
   }
@@ -2306,6 +2308,13 @@ already_AddRefed<dom::UserActivation> Navigator::UserActivation() {
     mUserActivation = new dom::UserActivation(GetWindow());
   }
   return do_AddRef(mUserActivation);
+}
+
+dom::WakeLockJS* Navigator::WakeLock() {
+  if (!mWakeLock) {
+    mWakeLock = new WakeLockJS(mWindow);
+  }
+  return mWakeLock;
 }
 
 }  // namespace mozilla::dom

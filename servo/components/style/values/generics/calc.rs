@@ -503,8 +503,10 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                 }
                 dividend_unit | divisor_unit
             },
-            CalcNode::Sign(_) => {
-                // Result of a sign() is always a number.
+            CalcNode::Sign(ref child) => {
+                // sign() always resolves to a number, but we still need to make sure that the
+                // child units make sense.
+                let _ = child.unit()?;
                 CalcUnits::empty()
             },
         })
@@ -802,12 +804,12 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
         }
     }
 
-    /// Reolve this node into a value.
+    /// Resolve this node into a value.
     pub fn resolve(&self) -> Result<L, ()> {
         self.resolve_map(|l| Ok(l.clone()))
     }
 
-    /// Reolve this node into a value, given a function that maps the leaf values.
+    /// Resolve this node into a value, given a function that maps the leaf values.
     pub fn resolve_map<F>(&self, mut leaf_to_output_fn: F) -> Result<L, ()>
     where
         F: FnMut(&L) -> Result<L, ()>,
@@ -946,7 +948,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
                     return Err(());
                 }
 
-                let step = step.unitless_value();
+                let step = step.unitless_value().abs();
 
                 value.map(|value| {
                     // TODO(emilio): Seems like at least a few of these
@@ -1070,9 +1072,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
             Self::Abs(ref c) => {
                 let mut result = c.resolve_internal(leaf_to_output_fn)?;
 
-                if !result.is_zero() {
-                    result.map(|v| v.abs());
-                }
+                result.map(|v| v.abs());
 
                 Ok(result)
             },
@@ -1533,7 +1533,7 @@ impl<L: CalcNodeLeaf> CalcNode<L> {
             },
             Self::Abs(ref mut child) => {
                 if let CalcNode::Leaf(leaf) = child.as_mut() {
-                    leaf.map(|v| if v.is_zero() { v } else { v.abs() });
+                    leaf.map(|v| v.abs());
                     replace_self_with!(&mut **child);
                 }
             },

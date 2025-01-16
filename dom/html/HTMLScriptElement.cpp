@@ -204,7 +204,8 @@ void HTMLScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
         nsContentUtils::ReportToConsole(
             nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
             nsContentUtils::eDOM_PROPERTIES, "ScriptSourceInvalidUri", params,
-            nullptr, u""_ns, GetScriptLineNumber(), GetScriptColumnNumber());
+            nullptr, u""_ns, GetScriptLineNumber(),
+            GetScriptColumnNumber().oneOriginValue());
       }
     } else {
       AutoTArray<nsString, 1> params = {u"src"_ns};
@@ -212,7 +213,8 @@ void HTMLScriptElement::FreezeExecutionAttrs(const Document* aOwnerDoc) {
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, "HTML"_ns, OwnerDoc(),
           nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, nullptr,
-          u""_ns, GetScriptLineNumber(), GetScriptColumnNumber());
+          u""_ns, GetScriptLineNumber(),
+          GetScriptColumnNumber().oneOriginValue());
     }
 
     // At this point mUri will be null for invalid URLs.
@@ -233,14 +235,7 @@ CORSMode HTMLScriptElement::GetCORSMode() const {
 }
 
 FetchPriority HTMLScriptElement::GetFetchPriority() const {
-  const nsAttrValue* fetchpriorityAttribute =
-      GetParsedAttr(nsGkAtoms::fetchpriority);
-  if (fetchpriorityAttribute) {
-    MOZ_ASSERT(fetchpriorityAttribute->Type() == nsAttrValue::eEnum);
-    return FetchPriority(fetchpriorityAttribute->GetEnumValue());
-  }
-
-  return FetchPriority::Auto;
+  return nsGenericHTMLElement::GetFetchPriority();
 }
 
 mozilla::dom::ReferrerPolicy HTMLScriptElement::GetReferrerPolicy() {
@@ -258,8 +253,8 @@ bool HTMLScriptElement::Supports(const GlobalObject& aGlobal,
                                  const nsAString& aType) {
   nsAutoString type(aType);
   return aType.EqualsLiteral("classic") || aType.EqualsLiteral("module") ||
-         (StaticPrefs::dom_importMaps_enabled() &&
-          aType.EqualsLiteral("importmap"));
+
+         aType.EqualsLiteral("importmap");
 }
 
 }  // namespace mozilla::dom

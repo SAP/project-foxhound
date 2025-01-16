@@ -37,7 +37,6 @@
 #include "GLConsts.h"
 #include "GLDefs.h"
 #include "GLTypes.h"
-#include "GLVendor.h"
 #include "nsRegionFwd.h"
 #include "nsString.h"
 #include "GLContextTypes.h"
@@ -173,6 +172,7 @@ enum class GLRenderer {
   GalliumLlvmpipe,
   IntelHD3000,
   MicrosoftBasicRenderDriver,
+  SamsungXclipse,
   Other
 };
 
@@ -180,19 +180,26 @@ class GLContext : public GenericAtomicRefCounted, public SupportsWeakPtr {
  public:
   static MOZ_THREAD_LOCAL(const GLContext*) sCurrentContext;
 
+  static void InvalidateCurrentContext();
+
   const GLContextDesc mDesc;
 
   bool mImplicitMakeCurrent = false;
   bool mUseTLSIsCurrent;
+
+  static void ResetTLSCurrentContext();
 
   class TlsScope final {
     const WeakPtr<GLContext> mGL;
     const bool mWasTlsOk;
 
    public:
-    explicit TlsScope(GLContext* const gl)
+    explicit TlsScope(GLContext* const gl, bool invalidate = false)
         : mGL(gl), mWasTlsOk(gl && gl->mUseTLSIsCurrent) {
       if (mGL) {
+        if (invalidate) {
+          InvalidateCurrentContext();
+        }
         mGL->mUseTLSIsCurrent = true;
       }
     }

@@ -9,8 +9,8 @@ const { ActivityStreamMessageChannel } = ChromeUtils.import(
 const { ActivityStreamStorage } = ChromeUtils.import(
   "resource://activity-stream/lib/ActivityStreamStorage.jsm"
 );
-const { Prefs } = ChromeUtils.import(
-  "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
+const { Prefs } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/ActivityStreamPrefs.sys.mjs"
 );
 const { reducers } = ChromeUtils.importESModule(
   "resource://activity-stream/common/Reducers.sys.mjs"
@@ -156,6 +156,12 @@ class Store {
   }
 
   async _initIndexedDB(telemetryKey) {
+    // "snippets" is the name of one storage space, but these days it is used
+    // not for snippet-related data (snippets were removed in bug 1715158),
+    // but storage for impression or session data for all ASRouter messages.
+    //
+    // We keep the name "snippets" to avoid having to do an IndexedDB database
+    // migration.
     this.dbStorage = new ActivityStreamStorage({
       storeNames: ["sectionPrefs", "snippets"],
     });

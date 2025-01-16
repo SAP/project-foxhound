@@ -41,7 +41,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   HomePage: "resource:///modules/HomePage.sys.mjs",
   Integration: "resource://gre/modules/Integration.sys.mjs",
   Interactions: "resource:///modules/Interactions.sys.mjs",
-  Log: "resource://gre/modules/Log.sys.mjs",
   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
@@ -162,6 +161,9 @@ const PREF_PRIVATE_BROWSING_SHORTCUT_CREATED =
 // Whether this launch was initiated by the OS.  A launch-on-login will contain
 // the "os-autostart" flag in the initial launch command line.
 let gThisInstanceIsLaunchOnLogin = false;
+// Whether this launch was initiated by a taskbar tab shortcut. A launch from
+// a taskbar tab shortcut will contain the "taskbar-tab" flag.
+let gThisInstanceIsTaskbarTab = false;
 
 /**
  * Fission-compatible JSProcess implementations.
@@ -282,8 +284,8 @@ let JSWINDOWACTORS = {
         visibilitychange: {},
       },
     },
-    // The wildcard on about:newtab is for the ?endpoint query parameter
-    // that is used for snippets debugging. The wildcard for about:home
+    // The wildcard on about:newtab is for the # parameter
+    // that is used for the newtab devtools. The wildcard for about:home
     // is similar, and also allows for falling back to loading the
     // about:home document dynamically if an attempt is made to load
     // about:home?jscache from the AboutHomeStartupCache as a top-level
@@ -578,6 +580,7 @@ let JSWINDOWACTORS = {
     includeChrome: true,
     allFrames: true,
     matches: [
+      "about:asrouter",
       "about:home",
       "about:newtab",
       "about:welcome",
@@ -585,7 +588,6 @@ let JSWINDOWACTORS = {
       "chrome://browser/content/places/historySidebar.xhtml",
       "chrome://browser/content/places/bookmarksSidebar.xhtml",
       "about:firefoxview",
-      "about:firefoxview-next",
     ],
   },
 
@@ -760,6 +762,7 @@ let JSWINDOWACTORS = {
         ReportProductAvailable: { wantUntrusted: true },
         AdClicked: { wantUntrusted: true },
         AdImpression: { wantUntrusted: true },
+        DisableShopping: { wantUntrusted: true },
       },
     },
     matches: ["about:shoppingsidebar"],
@@ -793,6 +796,7 @@ let JSWINDOWACTORS = {
       },
     },
     matches: [
+      "about:asrouter*",
       "about:home*",
       "about:newtab*",
       "about:welcome*",
@@ -1223,6 +1227,7 @@ BrowserGlue.prototype = {
         break;
       case "app-startup":
         this._earlyBlankFirstPaint(subject);
+        gThisInstanceIsTaskbarTab = subject.handleFlag("taskbar-tab", false);
         gThisInstanceIsLaunchOnLogin = subject.handleFlag(
           "os-autostart",
           false
@@ -1233,18 +1238,24 @@ BrowserGlue.prototype = {
         ].getService(Ci.nsIToolkitProfileService);
         if (
           AppConstants.platform == "win" &&
-          Services.prefs.getBoolPref(launchOnLoginPref) &&
           !profileSvc.startWithLastProfile
         ) {
           // If we don't start with last profile, the user
           // likely sees the profile selector on launch.
+          if (Services.prefs.getBoolPref(launchOnLoginPref)) {
+            Services.telemetry.setEventRecordingEnabled(
+              "launch_on_login",
+              true
+            );
+            Services.telemetry.recordEvent(
+              "launch_on_login",
+              "last_profile_disable",
+              "startup"
+            );
+          }
           Services.prefs.setBoolPref(launchOnLoginPref, false);
-          Services.telemetry.setEventRecordingEnabled("launch_on_login", true);
-          Services.telemetry.recordEvent(
-            "launch_on_login",
-            "last_profile_disable:",
-            "startup"
-          );
+          // Only remove registry key, not shortcut here as we can assume
+          // if a user manually created a shortcut they want this behavior.
           await lazy.WindowsLaunchOnLogin.removeLaunchOnLoginRegistryKey();
         }
         break;
@@ -2601,7 +2612,11 @@ BrowserGlue.prototype = {
               classification = "Other";
             }
           }
-
+          // Because of how taskbar tabs work, it may be classifed as a taskbar
+          // shortcut, in which case we want to overwrite it.
+          if (gThisInstanceIsTaskbarTab) {
+            classification = "TaskbarTab";
+          }
           Services.telemetry.scalarSet(
             "os.environment.launch_method",
             classification
@@ -3722,12 +3737,12 @@ BrowserGlue.prototype = {
    * Show the notificationBox for a locked places database.
    */
   _showPlacesLockedNotificationBox:
-    function BG__showPlacesLockedNotificationBox() {
+    async function BG__showPlacesLockedNotificationBox() {
       var win = lazy.BrowserWindowTracker.getTopWindow();
       var buttons = [{ supportPage: "places-locked" }];
 
       var notifyBox = win.gBrowser.getNotificationBox();
-      var notification = notifyBox.appendNotification(
+      var notification = await notifyBox.appendNotification(
         "places-locked",
         {
           label: { "l10n-id": "places-locked-prompt" },
@@ -4602,7 +4617,7 @@ BrowserGlue.prototype = {
     ];
 
     const notifyBox = win.gBrowser.getNotificationBox();
-    const notification = notifyBox.appendNotification(
+    const notification = await notifyBox.appendNotification(
       "startup-restore-session-suggestion",
       {
         label: messageFragment,
@@ -5480,7 +5495,12 @@ export var DefaultBrowserCheck = {
     let buttonNumClicked = rv.get("buttonNumClicked");
     let checkboxState = rv.get("checked");
     if (buttonNumClicked == 0) {
-      shellService.setAsDefault();
+      try {
+        await shellService.setAsDefault();
+      } catch (e) {
+        this.log.error("Failed to set the default browser", e);
+      }
+
       shellService.pinToTaskbar();
     }
     if (checkboxState) {
@@ -5713,12 +5733,10 @@ export var AboutHomeStartupCache = {
       return;
     }
 
-    this.log = lazy.Log.repository.getLogger(this.LOG_NAME);
-    this.log.manageLevelFromPref(this.LOG_LEVEL_PREF);
-    this._appender = new lazy.Log.ConsoleAppender(
-      new lazy.Log.BasicFormatter()
-    );
-    this.log.addAppender(this._appender);
+    this.log = console.createInstance({
+      prefix: this.LOG_NAME,
+      maxLogLevelPref: this.LOG_LEVEL_PREF,
+    });
 
     this.log.trace("Initting.");
 
@@ -5820,7 +5838,6 @@ export var AboutHomeStartupCache = {
 
     if (this.log) {
       this.log.trace("Uninitialized.");
-      this.log.removeAppender(this._appender);
       this.log = null;
     }
 

@@ -42,6 +42,7 @@
 #include "mozilla/InputTaskManager.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/VsyncTaskManager.h"
 #include "nsITimer.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -143,6 +144,8 @@ namespace mozilla {
 
 static TimeStamp sMostRecentHighRateVsync;
 
+static TimeDuration sMostRecentHighRate;
+
 /*
  * The base class for all global refresh driver timers.  It takes care
  * of managing the list of refresh drivers attached to them and
@@ -219,6 +222,7 @@ class RefreshDriverTimer {
 
   TimeStamp MostRecentRefresh() const { return mLastFireTime; }
   VsyncId MostRecentRefreshVsyncId() const { return mLastFireId; }
+  virtual bool IsBlocked() { return false; }
 
   virtual TimeDuration GetTimerRate() = 0;
 
@@ -232,12 +236,12 @@ class RefreshDriverTimer {
     TimeStamp mostRecentRefresh = MostRecentRefresh();
     TimeDuration refreshPeriod = GetTimerRate();
     TimeStamp idleEnd = mostRecentRefresh + refreshPeriod;
-    bool inHighRateMode = nsRefreshDriver::IsInHighRateMode();
+    double highRateMultiplier = nsRefreshDriver::HighRateMultiplier();
 
     // If we haven't painted for some time, then guess that we won't paint
     // again for a while, so the refresh driver is not a good way to predict
     // idle time.
-    if (!inHighRateMode &&
+    if (highRateMultiplier == 1.0 &&
         (idleEnd +
              refreshPeriod *
                  StaticPrefs::layout_idle_period_required_quiescent_frames() <
@@ -248,10 +252,9 @@ class RefreshDriverTimer {
     // End the predicted idle time a little early, the amount controlled by a
     // pref, to prevent overrunning the idle time and delaying a frame.
     // But do that only if we aren't in high rate mode.
-    idleEnd =
-        idleEnd -
-        TimeDuration::FromMilliseconds(
-            inHighRateMode ? 0 : StaticPrefs::layout_idle_period_time_limit());
+    idleEnd = idleEnd - TimeDuration::FromMilliseconds(
+                            highRateMultiplier *
+                            StaticPrefs::layout_idle_period_time_limit());
     return idleEnd < aDefault ? idleEnd : aDefault;
   }
 
@@ -486,6 +489,12 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
                : TimeDuration::FromMilliseconds(1000.0 / 60.0);
   }
 
+  bool IsBlocked() override {
+    return !mSuspendVsyncPriorityTicksUntil.IsNull() &&
+           mSuspendVsyncPriorityTicksUntil > TimeStamp::Now() &&
+           ShouldGiveNonVsyncTasksMoreTime();
+  }
+
  private:
   // RefreshDriverVsyncObserver redirects vsync notifications to the main thread
   // and calls VsyncRefreshDriverTimer::NotifyVsyncOnMainThread on it. It also
@@ -620,7 +629,8 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
         mLastTickStart(TimeStamp::Now()),
         mLastIdleTaskCount(0),
         mLastRunOutOfMTTasksCount(0),
-        mProcessedVsync(true) {
+        mProcessedVsync(true),
+        mHasPendingLowPrioTask(false) {
     mVsyncObserver = new RefreshDriverVsyncObserver(this);
   }
 
@@ -639,15 +649,23 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     mVsyncObserver = nullptr;
   }
 
-  bool ShouldGiveNonVsyncTasksMoreTime() {
+  bool ShouldGiveNonVsyncTasksMoreTime(bool aCheckOnlyNewPendingTasks = false) {
     TaskController* taskController = TaskController::Get();
     IdleTaskManager* idleTaskManager = taskController->GetIdleTaskManager();
+    VsyncTaskManager* vsyncTaskManager = VsyncTaskManager::Get();
 
-    // Note, pendingTaskCount includes also all the pending idle tasks.
+    // Note, pendingTaskCount includes also all the pending idle and vsync
+    // tasks.
     uint64_t pendingTaskCount =
         taskController->PendingMainthreadTaskCountIncludingSuspended();
     uint64_t pendingIdleTaskCount = idleTaskManager->PendingTaskCount();
-    MOZ_ASSERT(pendingTaskCount >= pendingIdleTaskCount);
+    uint64_t pendingVsyncTaskCount = vsyncTaskManager->PendingTaskCount();
+    if (!(pendingTaskCount > (pendingIdleTaskCount + pendingVsyncTaskCount))) {
+      return false;
+    }
+    if (aCheckOnlyNewPendingTasks) {
+      return true;
+    }
 
     uint64_t idleTaskCount = idleTaskManager->ProcessedTaskCount();
 
@@ -657,7 +675,6 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     // In the parent process RunOutOfMTTasksCount() is less meaningful
     // because some of the tasks run through AppShell.
     return mLastIdleTaskCount == idleTaskCount &&
-           pendingTaskCount > pendingIdleTaskCount &&
            (taskController->RunOutOfMTTasksCount() ==
                 mLastRunOutOfMTTasksCount ||
             XRE_IsParentProcess());
@@ -669,24 +686,28 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     mRecentVsync = aVsyncEvent.mTime;
     mRecentVsyncId = aVsyncEvent.mId;
     if (!mSuspendVsyncPriorityTicksUntil.IsNull() &&
-        mSuspendVsyncPriorityTicksUntil > aVsyncEvent.mTime) {
+        mSuspendVsyncPriorityTicksUntil > TimeStamp::Now()) {
       if (ShouldGiveNonVsyncTasksMoreTime()) {
         if (!IsAnyToplevelContentPageLoading()) {
           // If pages aren't loading and there aren't other tasks to run,
           // trigger the pending vsync notification.
-          static bool sHasPendingLowPrioTask = false;
-          if (!sHasPendingLowPrioTask) {
-            sHasPendingLowPrioTask = true;
+          mPendingVsync = mRecentVsync;
+          mPendingVsyncId = mRecentVsyncId;
+          if (!mHasPendingLowPrioTask) {
+            mHasPendingLowPrioTask = true;
             NS_DispatchToMainThreadQueue(
                 NS_NewRunnableFunction(
                     "NotifyVsyncOnMainThread[low priority]",
-                    [self = RefPtr{this}, event = aVsyncEvent]() {
-                      sHasPendingLowPrioTask = false;
-                      if (self->mRecentVsync == event.mTime &&
-                          self->mRecentVsyncId == event.mId &&
+                    [self = RefPtr{this}]() {
+                      self->mHasPendingLowPrioTask = false;
+                      if (self->mRecentVsync == self->mPendingVsync &&
+                          self->mRecentVsyncId == self->mPendingVsyncId &&
                           !self->ShouldGiveNonVsyncTasksMoreTime()) {
                         self->mSuspendVsyncPriorityTicksUntil = TimeStamp();
-                        self->NotifyVsyncOnMainThread(event);
+                        self->NotifyVsyncOnMainThread({self->mPendingVsyncId,
+                                                       self->mPendingVsync,
+                                                       /* unused */
+                                                       TimeStamp()});
                       }
                     }),
                 EventQueuePriority::Low);
@@ -818,9 +839,10 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
           ContentChild::GetPerformanceHintTarget(rate));
     }
 
-    if (TimeDuration::FromMilliseconds(nsRefreshDriver::DefaultInterval() / 2) >
+    if (TimeDuration::FromMilliseconds(nsRefreshDriver::DefaultInterval()) >
         rate) {
       sMostRecentHighRateVsync = tickStart;
+      sMostRecentHighRate = rate;
     }
 
     // On 32-bit Windows we sometimes get times where TimeStamp::Now() is not
@@ -851,38 +873,38 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
 
     // Let also non-RefreshDriver code to run at least for awhile if we have
     // a mVsyncRefreshDriverTimer.
-    // Always give a tiny bit, 1% of the vsync interval, time outside the
+    // Always give a tiny bit, 5% of the vsync interval, time outside the
     // tick
     // In case there are both normal tasks and RefreshDrivers are doing
     // work, mSuspendVsyncPriorityTicksUntil will be set to a timestamp in the
     // future where the period between the previous tick start
-    // (aVsyncTimestamp) and the next tick needs to be at least the amount of
-    // work normal tasks and RefreshDrivers did together (minus short grace
+    // (mostRecentTickStart) and the next tick needs to be at least the amount
+    // of work normal tasks and RefreshDrivers did together (minus short grace
     // period).
-    TimeDuration gracePeriod = rate / int64_t(100);
+    TimeDuration gracePeriod = rate / int64_t(20);
 
-    if (shouldGiveNonVSyncTasksMoreTime) {
-      if (!mLastTickEnd.IsNull() && XRE_IsContentProcess() &&
-          // For RefreshDriver scheduling during page load there is currently
-          // idle priority based setup.
-          // XXX Consider to remove the page load specific code paths.
-          !IsAnyToplevelContentPageLoading()) {
-        // In case normal tasks are doing lots of work, we still want to paint
-        // every now and then, so only at maximum 4 * rate of work is counted
-        // here.
-        // If we're giving extra time for tasks outside a tick, try to
-        // ensure the next vsync after that period is handled, so subtract
-        // a grace period.
-        TimeDuration timeForOutsideTick = clamped(
-            tickStart - mLastTickEnd - gracePeriod, TimeDuration(), rate * 4);
-        mSuspendVsyncPriorityTicksUntil = aVsyncTimestamp + timeForOutsideTick +
-                                          (tickEnd - mostRecentTickStart);
-      } else {
-        mSuspendVsyncPriorityTicksUntil =
-            aVsyncTimestamp + gracePeriod + (tickEnd - mostRecentTickStart);
-      }
+    if (shouldGiveNonVSyncTasksMoreTime && !mLastTickEnd.IsNull() &&
+        XRE_IsContentProcess() &&
+        // For RefreshDriver scheduling during page load there is currently
+        // idle priority based setup.
+        // XXX Consider to remove the page load specific code paths.
+        !IsAnyToplevelContentPageLoading()) {
+      // In case normal tasks are doing lots of work, we still want to paint
+      // every now and then, so only at maximum 4 * rate of work is counted
+      // here.
+      // If we're giving extra time for tasks outside a tick, try to
+      // ensure the next vsync after that period is handled, so subtract
+      // a grace period.
+      TimeDuration timeForOutsideTick = clamped(
+          tickStart - mLastTickEnd - gracePeriod, gracePeriod, rate * 4);
+      mSuspendVsyncPriorityTicksUntil = tickEnd + timeForOutsideTick;
+    } else if (ShouldGiveNonVsyncTasksMoreTime(true)) {
+      // We've got some new tasks, give them some extra time.
+      // This handles also the case when mLastTickEnd.IsNull() above and we
+      // should give some more time for non-vsync tasks.
+      mSuspendVsyncPriorityTicksUntil = tickEnd + gracePeriod;
     } else {
-      mSuspendVsyncPriorityTicksUntil = aVsyncTimestamp + gracePeriod;
+      mSuspendVsyncPriorityTicksUntil = mostRecentTickStart + gracePeriod;
     }
 
     mLastIdleTaskCount =
@@ -969,9 +991,13 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
   TimeStamp mLastProcessedTick;
   // mSuspendVsyncPriorityTicksUntil is used to block too high refresh rate in
   // case the main thread has also other non-idle tasks to process.
-  // The timestamp is effectively mLastProcessedTick + some duration.
+  // The timestamp is effectively mLastTickEnd + some duration.
   TimeStamp mSuspendVsyncPriorityTicksUntil;
   bool mProcessedVsync;
+
+  TimeStamp mPendingVsync;
+  VsyncId mPendingVsyncId;
+  bool mHasPendingLowPrioTask;
 };  // VsyncRefreshDriverTimer
 
 /**
@@ -1234,7 +1260,7 @@ int32_t nsRefreshDriver::DefaultInterval() {
 }
 
 /* static */
-bool nsRefreshDriver::IsInHighRateMode() {
+double nsRefreshDriver::HighRateMultiplier() {
   // We're in high rate mode if we've gotten a fast rate during the last
   // DefaultInterval().
   bool inHighRateMode =
@@ -1246,8 +1272,11 @@ bool nsRefreshDriver::IsInHighRateMode() {
   if (!inHighRateMode) {
     // Clear the timestamp so that the next call is faster.
     sMostRecentHighRateVsync = TimeStamp();
+    sMostRecentHighRate = TimeDuration();
+    return 1.0;
   }
-  return inHighRateMode;
+
+  return sMostRecentHighRate.ToMilliseconds() / DefaultInterval();
 }
 
 // Compute the interval to use for the refresh driver timer, in milliseconds.
@@ -1659,6 +1688,10 @@ bool nsRefreshDriver::CanDoCatchUpTick() {
   // If we've already ticked for the current timer refresh (or more recently
   // than that), then we don't need to do any catching up.
   if (mMostRecentRefresh >= mActiveTimer->MostRecentRefresh()) {
+    return false;
+  }
+
+  if (mActiveTimer->IsBlocked()) {
     return false;
   }
 
@@ -2225,11 +2258,8 @@ void nsRefreshDriver::UpdateRelevancyOfContentVisibilityAutoFrames() {
   mNeedToUpdateContentRelevancy = false;
 }
 
-void nsRefreshDriver::NotifyResizeObservers() {
-  AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Notify ResizeObserver", LAYOUT);
-  if (!mNeedToUpdateResizeObservers) {
-    return;
-  }
+void nsRefreshDriver::DetermineProximityToViewportAndNotifyResizeObservers() {
+  AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Update the rendering: step 14", LAYOUT);
   // NotifyResizeObservers might re-schedule us for next tick.
   mNeedToUpdateResizeObservers = false;
 
@@ -2237,18 +2267,26 @@ void nsRefreshDriver::NotifyResizeObservers() {
     return;
   }
 
+  auto ShouldCollect = [](const Document* aDocument) {
+    PresShell* ps = aDocument->GetPresShell();
+    if (!ps || !ps->DidInitialize()) {
+      // If there's no shell or it didn't initialize, then we'll run this code
+      // when the pres shell does the initial reflow.
+      return false;
+    }
+    return ps->HasContentVisibilityAutoFrames() ||
+           aDocument->HasResizeObservers();
+  };
+
   AutoTArray<RefPtr<Document>, 32> documents;
-  if (mPresContext->Document()->HasResizeObservers()) {
+  if (ShouldCollect(mPresContext->Document())) {
     documents.AppendElement(mPresContext->Document());
   }
-
-  mPresContext->Document()->CollectDescendantDocuments(
-      documents, [](const Document* document) -> bool {
-        return document->HasResizeObservers();
-      });
+  mPresContext->Document()->CollectDescendantDocuments(documents,
+                                                       ShouldCollect);
 
   for (const RefPtr<Document>& doc : documents) {
-    MOZ_KnownLive(doc)->NotifyResizeObservers();
+    MOZ_KnownLive(doc)->DetermineProximityToViewportAndNotifyResizeObservers();
   }
 }
 
@@ -2734,15 +2772,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
     pm->UpdatePopupPositions(this);
   }
 
-  // Notify resize observers if any, see
-  // https://html.spec.whatwg.org/#update-the-rendering step 14.
-  NotifyResizeObservers();
-  if (MOZ_UNLIKELY(!mPresContext || !mPresContext->GetPresShell())) {
-    // A resize observer callback apparently destroyed our PresContext.
-    StopTimer();
-    return;
-  }
-
   // Update the relevancy of the content of any `content-visibility: auto`
   // elements. The specification says: "Specifically, such changes will
   // take effect between steps 13 and 14 of Update the Rendering step of
@@ -2750,6 +2779,16 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime,
   // “run the update intersection observations steps”)."
   // https://drafts.csswg.org/css-contain/#cv-notes
   UpdateRelevancyOfContentVisibilityAutoFrames();
+
+  // Step 14 (https://html.spec.whatwg.org/#update-the-rendering).
+  // 1) Initial proximity to the viewport determination for
+  // content-visibility:auto elements and 2) Resize observers notifications.
+  DetermineProximityToViewportAndNotifyResizeObservers();
+  if (MOZ_UNLIKELY(!mPresContext || !mPresContext->GetPresShell())) {
+    // A resize observer callback apparently destroyed our PresContext.
+    StopTimer();
+    return;
+  }
 
   UpdateIntersectionObservations(aNowTime);
 

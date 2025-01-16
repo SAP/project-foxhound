@@ -150,21 +150,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   mozilla::LogicalMargin GetBCBorderWidth(mozilla::WritingMode aWM);
 
   /**
-   * Gets inner border widths before collapsing with cell borders
-   * Caller must get bstart border from previous row group or from table
-   * GetContinuousBCBorderWidth will not overwrite aBorder.BStart()
-   * see nsTablePainter about continuous borders
-   */
-  void GetContinuousBCBorderWidth(mozilla::WritingMode aWM,
-                                  mozilla::LogicalMargin& aBorder);
-
-  /**
-   * Sets full border widths before collapsing with cell borders
-   * @param aForSide - side to set; only IEnd, IStart, BEnd are valid
-   */
-  void SetContinuousBCBorderWidth(mozilla::LogicalSide aForSide,
-                                  BCPixelSize aPixelValue);
-  /**
    * Adjust to the effect of visibility:collapse on the row group and
    * its children
    * @return              additional shift bstart-wards that should be applied
@@ -288,14 +273,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   bool CanProvideLineIterator() const final { return true; }
   nsILineIterator* GetLineIterator() final { return this; }
 
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & (eSupportsContainLayoutAndPaint | eSupportsAspectRatio)) {
-      return false;
-    }
-
-    return nsContainerFrame::IsFrameOfType(aFlags & ~(nsIFrame::eTablePart));
-  }
-
   void InvalidateFrame(uint32_t aDisplayItemKey = 0,
                        bool aRebuildDisplayItems = true) override;
   void InvalidateFrameWithRect(const nsRect& aRect,
@@ -364,12 +341,6 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   void UndoContinuedRow(nsPresContext* aPresContext, nsTableRowFrame* aRow);
 
- private:
-  // border widths in pixels in the collapsing border model
-  BCPixelSize mIEndContBorderWidth = 0;
-  BCPixelSize mBEndContBorderWidth = 0;
-  BCPixelSize mIStartContBorderWidth = 0;
-
  public:
   bool IsRepeatable() const;
   void SetRepeatable(bool aRepeatable);
@@ -403,11 +374,4 @@ inline void nsTableRowGroupFrame::SetHasStyleBSize(bool aValue) {
   }
 }
 
-inline void nsTableRowGroupFrame::GetContinuousBCBorderWidth(
-    mozilla::WritingMode aWM, mozilla::LogicalMargin& aBorder) {
-  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
-  aBorder.IEnd(aWM) = BC_BORDER_START_HALF_COORD(d2a, mIEndContBorderWidth);
-  aBorder.BEnd(aWM) = BC_BORDER_START_HALF_COORD(d2a, mBEndContBorderWidth);
-  aBorder.IStart(aWM) = BC_BORDER_END_HALF_COORD(d2a, mIStartContBorderWidth);
-}
 #endif

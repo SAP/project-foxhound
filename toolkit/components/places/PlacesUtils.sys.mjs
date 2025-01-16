@@ -5,7 +5,6 @@
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
-import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -1673,7 +1672,7 @@ export var PlacesUtils = {
          FROM moz_bookmarks b2
          JOIN descendants ON b2.parent = descendants.id AND b2.id <> :tags_folder),
        tagged(place_id, tags) AS (
-         SELECT b.fk, group_concat(p.title)
+         SELECT b.fk, group_concat(p.title ORDER BY p.title)
          FROM moz_bookmarks b
          JOIN moz_bookmarks p ON p.id = b.parent
          JOIN moz_bookmarks g ON g.id = p.parent
@@ -2104,7 +2103,7 @@ ChromeUtils.defineLazyGetter(lazy, "gAsyncDBWrapperPromised", () =>
     .catch(console.error)
 );
 
-var gAsyncDBLargeCacheConnDeferred = PromiseUtils.defer();
+var gAsyncDBLargeCacheConnDeferred = Promise.withResolvers();
 ChromeUtils.defineLazyGetter(lazy, "gAsyncDBLargeCacheConnPromised", () =>
   lazy.Sqlite.cloneStorageConnection({
     connection: PlacesUtils.history.DBConnection,
@@ -2823,7 +2822,26 @@ PlacesUtils.keywords = {
    */
   invalidateCachedKeywords() {
     gKeywordsCachePromise = gKeywordsCachePromise.then(_ => null);
+    this.ensureCacheInitialized();
     return gKeywordsCachePromise;
+  },
+
+  /**
+   * Ensures the keywords cache is initialized.
+   */
+  async ensureCacheInitialized() {
+    this._cache = await promiseKeywordsCache();
+  },
+
+  /**
+   * Checks from the cache if a given word is a bookmark keyword.
+   * We must make sure the cache is populated, and await ensureCacheInitialized()
+   * before calling this function.
+   *
+   * @return {Boolean} Whether the given word is a keyword.
+   */
+  isKeywordFromCache(keyword) {
+    return this._cache?.has(keyword);
   },
 };
 

@@ -5,14 +5,16 @@
 import re
 from counted_unknown_properties import COUNTED_UNKNOWN_PROPERTIES
 
+# It is important that the order of these physical / logical variants matches
+# the order of the enum variants in logical_geometry.rs
 PHYSICAL_SIDES = ["top", "right", "bottom", "left"]
-LOGICAL_SIDES = ["block-start", "block-end", "inline-start", "inline-end"]
-PHYSICAL_SIZES = ["width", "height"]
-LOGICAL_SIZES = ["block-size", "inline-size"]
 PHYSICAL_CORNERS = ["top-left", "top-right", "bottom-right", "bottom-left"]
+PHYSICAL_AXES = ["y", "x"]
+PHYSICAL_SIZES = ["height", "width"]
+LOGICAL_SIDES = ["block-start", "block-end", "inline-start", "inline-end"]
 LOGICAL_CORNERS = ["start-start", "start-end", "end-start", "end-end"]
-PHYSICAL_AXES = ["x", "y"]
-LOGICAL_AXES = ["inline", "block"]
+LOGICAL_SIZES = ["block-size", "inline-size"]
+LOGICAL_AXES = ["block", "inline"]
 
 # bool is True when logical
 ALL_SIDES = [(side, False) for side in PHYSICAL_SIDES] + [
@@ -30,6 +32,70 @@ ALL_AXES = [(axis, False) for axis in PHYSICAL_AXES] + [
 
 SYSTEM_FONT_LONGHANDS = """font_family font_size font_style
                            font_stretch font_weight""".split()
+
+PRIORITARY_PROPERTIES = set(
+    [
+        # The writing-mode group has the most priority of all property groups, as
+        # sizes like font-size can depend on it.
+        "writing-mode",
+        "direction",
+        "text-orientation",
+        # The fonts and colors group has the second priority, as all other lengths
+        # and colors depend on them.
+        #
+        # There are some interdependencies between these, but we fix them up in
+        # Cascade::fixup_font_stuff.
+        # Needed to properly compute the zoomed font-size.
+        "-x-text-scale",
+        # Needed to do font-size computation in a language-dependent way.
+        "-x-lang",
+        # Needed for ruby to respect language-dependent min-font-size
+        # preferences properly, see bug 1165538.
+        "-moz-min-font-size-ratio",
+        # font-size depends on math-depth's computed value.
+        "math-depth",
+        # Needed to compute the first available font and its used size,
+        # in order to compute font-relative units correctly.
+        "font-size",
+        "font-size-adjust",
+        "font-weight",
+        "font-stretch",
+        "font-style",
+        "font-family",
+        # color-scheme affects how system colors resolve.
+        "color-scheme",
+        # forced-color-adjust affects whether colors are adjusted.
+        "forced-color-adjust",
+        # Zoom affects all absolute lengths.
+        "zoom",
+        # Line height lengths depend on this.
+        "line-height",
+    ]
+)
+
+VISITED_DEPENDENT_PROPERTIES = set(
+    [
+        "column-rule-color",
+        "text-emphasis-color",
+        "-webkit-text-fill-color",
+        "-webkit-text-stroke-color",
+        "text-decoration-color",
+        "fill",
+        "stroke",
+        "caret-color",
+        "background-color",
+        "border-top-color",
+        "border-right-color",
+        "border-bottom-color",
+        "border-left-color",
+        "border-block-start-color",
+        "border-inline-end-color",
+        "border-block-end-color",
+        "border-inline-start-color",
+        "outline-color",
+        "color",
+    ]
+)
 
 # Bitfield values for all rule types which can have property declarations.
 STYLE_RULE = 1 << 0
@@ -279,6 +345,12 @@ class Property(object):
     def enabled_in_content(self):
         return self.enabled_in == "content"
 
+    def is_visited_dependent(self):
+        return self.name in VISITED_DEPENDENT_PROPERTIES
+
+    def is_prioritary(self):
+        return self.name in PRIORITARY_PROPERTIES
+
     def nscsspropertyid(self):
         return "nsCSSPropertyID::eCSSProperty_" + self.ident
 
@@ -408,30 +480,42 @@ class Longhand(Property):
     def type():
         return "longhand"
 
+    # For a given logical property, return the kind of mapping we need to
+    # perform, and which logical value we represent, in a tuple.
+    def logical_mapping_data(self, data):
+        if not self.logical:
+            return []
+        # Sizes and axes are basically the same for mapping, we just need
+        # slightly different replacements (block-size -> height, etc rather
+        # than -x/-y) below.
+        for [ty, logical_items, physical_items] in [
+            ["Side", LOGICAL_SIDES, PHYSICAL_SIDES],
+            ["Corner", LOGICAL_CORNERS, PHYSICAL_CORNERS],
+            ["Axis", LOGICAL_SIZES, PHYSICAL_SIZES],
+            ["Axis", LOGICAL_AXES, PHYSICAL_AXES],
+        ]:
+            candidate = [s for s in logical_items if s in self.name]
+            if candidate:
+                assert len(candidate) == 1
+                return [ty, candidate[0], logical_items, physical_items]
+        assert False, "Don't know how to deal with " + self.name
+
+    def logical_mapping_kind(self, data):
+        assert self.logical
+        [kind, item, _, _] = self.logical_mapping_data(data)
+        return "LogicalMappingKind::{}(Logical{}::{})".format(
+            kind, kind, to_camel_case(item.replace("-size", ""))
+        )
+
     # For a given logical property return all the physical property names
     # corresponding to it.
     def all_physical_mapped_properties(self, data):
         if not self.logical:
             return []
-
-        candidates = [
-            s for s in LOGICAL_SIDES + LOGICAL_SIZES + LOGICAL_CORNERS if s in self.name
-        ] + [s for s in LOGICAL_AXES if self.name.endswith(s)]
-        assert len(candidates) == 1
-        logical_side = candidates[0]
-
-        physical = (
-            PHYSICAL_SIDES
-            if logical_side in LOGICAL_SIDES
-            else PHYSICAL_SIZES
-            if logical_side in LOGICAL_SIZES
-            else PHYSICAL_AXES
-            if logical_side in LOGICAL_AXES
-            else LOGICAL_CORNERS
-        )
+        [_, logical_side, _, physical_items] = self.logical_mapping_data(data)
         return [
             data.longhands_by_name[to_phys(self.name, logical_side, physical_side)]
-            for physical_side in physical
+            for physical_side in physical_items
         ]
 
     def may_be_disabled_in(self, shorthand, engine):
@@ -473,6 +557,10 @@ class Longhand(Property):
                 "AlignItems",
                 "AlignSelf",
                 "Appearance",
+                "AnimationComposition",
+                "AnimationDirection",
+                "AnimationFillMode",
+                "AnimationPlayState",
                 "AspectRatio",
                 "BaselineSource",
                 "BreakBetween",

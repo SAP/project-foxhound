@@ -11,6 +11,7 @@
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CaretAssociationHint.h"
 #include "mozilla/CompactPair.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/EventForwards.h"
@@ -25,7 +26,6 @@
 #include "nsISelectionListener.h"
 #include "nsITableCellLayout.h"
 #include "WordMovementType.h"
-#include "CaretAssociationHint.h"
 #include "nsBidiPresUtils.h"
 
 class nsRange;
@@ -64,16 +64,12 @@ struct SelectionCustomColors {
 
 namespace mozilla {
 class PresShell;
-}  // namespace mozilla
 
 /** PeekOffsetStruct is used to group various arguments (both input and output)
  *  that are passed to nsIFrame::PeekOffset(). See below for the description of
  *  individual arguments.
  */
-
-namespace mozilla {
-
-enum class PeekOffsetOption : uint8_t {
+enum class PeekOffsetOption : uint16_t {
   // Whether to allow jumping across line boundaries.
   //
   // Used with: eSelectCharacter, eSelectWord.
@@ -85,7 +81,10 @@ enum class PeekOffsetOption : uint8_t {
   // Whether to stop when reaching a scroll view boundary.
   //
   // Used with: eSelectCharacter, eSelectWord, eSelectLine.
-  ScrollViewStop,
+  StopAtScroller,
+
+  // Whether to stop when reaching a placeholder frame.
+  StopAtPlaceholder,
 
   // Whether the peeking is done in response to a keyboard action.
   //
@@ -221,7 +220,7 @@ class nsIScrollableFrame;
 
 class nsFrameSelection final {
  public:
-  typedef mozilla::CaretAssociationHint CaretAssociateHint;
+  using CaretAssociationHint = mozilla::CaretAssociationHint;
 
   /*interfaces for addref and release and queryinterface*/
 
@@ -256,7 +255,7 @@ class nsFrameSelection final {
                                           uint32_t aContentOffset,
                                           uint32_t aContentEndOffset,
                                           FocusMode aFocusMode,
-                                          CaretAssociateHint aHint);
+                                          CaretAssociationHint aHint);
 
  public:
   /**
@@ -486,21 +485,6 @@ class nsFrameSelection final {
 
   bool IsValidSelectionPoint(nsINode* aNode) const;
 
-  static bool AdjustFrameForLineStart(nsIFrame*& aFrame, int32_t& aFrameOffset);
-
-  /**
-   * Given a node and its child offset, return the nsIFrame and the offset into
-   * that frame.
-   *
-   * @param aNode input parameter for the node to look at
-   *              TODO: Make this `const nsIContent*` for `ContentEventHandler`.
-   * @param aOffset offset into above node.
-   * @param aReturnOffset will contain offset into frame.
-   */
-  static nsIFrame* GetFrameForNodeOffset(nsIContent* aNode, int32_t aOffset,
-                                         CaretAssociateHint aHint,
-                                         int32_t* aReturnOffset);
-
   /**
    * GetFrameToPageSelect() returns a frame which is ancestor limit of
    * per-page selection.  The frame may not be scrollable.  E.g.,
@@ -530,8 +514,8 @@ class nsFrameSelection final {
                                        nsIFrame* aFrame,
                                        SelectionIntoView aSelectionIntoView);
 
-  void SetHint(CaretAssociateHint aHintRight) { mCaret.mHint = aHintRight; }
-  CaretAssociateHint GetHint() const { return mCaret.mHint; }
+  void SetHint(CaretAssociationHint aHintRight) { mCaret.mHint = aHintRight; }
+  CaretAssociationHint GetHint() const { return mCaret.mHint; }
 
   void SetCaretBidiLevelAndMaybeSchedulePaint(
       mozilla::intl::BidiEmbeddingLevel aLevel);
@@ -743,21 +727,6 @@ class nsFrameSelection final {
                                              bool aJumpLines) const;
 
   /**
-   * GetFrameFromLevel will scan in a given direction
-   * until it finds a frame with a Bidi level less than or equal to a given
-   * level. It will return the last frame before this.
-   *
-   * @param aPresContext is the context to use
-   * @param aFrameIn is the frame to start from
-   * @param aDirection is the direction to scan
-   * @param aBidiLevel is the level to search for
-   * @param aFrameOut will hold the frame returned
-   */
-  nsresult GetFrameFromLevel(nsIFrame* aFrameIn, nsDirection aDirection,
-                             mozilla::intl::BidiEmbeddingLevel aBidiLevel,
-                             nsIFrame** aFrameOut) const;
-
-  /**
    * MaintainSelection will track the normal selection as being "sticky".
    * Dragging or extending selection will never allow for a subset
    * (or the whole) of the maintained selection to become unselected.
@@ -817,7 +786,7 @@ class nsFrameSelection final {
   // error, in other cases to runtime errors. This deserves to be cleaned up.
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   TakeFocus(nsIContent& aNewFocus, uint32_t aContentOffset,
-            uint32_t aContentEndOffset, CaretAssociateHint aHint,
+            uint32_t aContentEndOffset, CaretAssociationHint aHint,
             FocusMode aFocusMode);
 
   /**
@@ -844,7 +813,7 @@ class nsFrameSelection final {
    */
   void BidiLevelFromMove(mozilla::PresShell* aPresShell, nsIContent* aNode,
                          uint32_t aContentOffset, nsSelectionAmount aAmount,
-                         CaretAssociateHint aHint);
+                         CaretAssociationHint aHint);
   /**
    * BidiLevelFromClick is called when the caret is repositioned by clicking the
    * mouse
@@ -853,11 +822,6 @@ class nsFrameSelection final {
    * @param aContentOffset is the new caret position, as an offset into aNode
    */
   void BidiLevelFromClick(nsIContent* aNewFocus, uint32_t aContentOffset);
-
-  static nsPrevNextBidiLevels GetPrevNextBidiLevels(nsIContent* aNode,
-                                                    uint32_t aContentOffset,
-                                                    CaretAssociateHint aHint,
-                                                    bool aJumpLines);
 
   /**
    * @param aReasons potentially multiple of the reasons defined in
@@ -910,8 +874,9 @@ class nsFrameSelection final {
                                         CaretMovementStyle aMovementStyle);
 
   /**
-   * PeekOffsetForCaretMove() only peek offset for caret move.  I.e., won't
-   * change selection ranges nor bidi information.
+   * PeekOffsetForCaretMove() only peek offset for caret move from the focus
+   * point of the normal selection.  I.e., won't change selection ranges nor
+   * bidi information.
    */
   mozilla::Result<mozilla::PeekOffsetStruct, nsresult> PeekOffsetForCaretMove(
       nsDirection aDirection, bool aContinueSelection,
@@ -928,29 +893,6 @@ class nsFrameSelection final {
   CreateRangeExtendedToSomewhere(nsDirection aDirection,
                                  const nsSelectionAmount aAmount,
                                  CaretMovementStyle aMovementStyle);
-
-  /**
-   * IsIntraLineCaretMove() is a helper method for PeekOffsetForCaretMove()
-   * and CreateRangeExtendedToSomwhereFromNormalSelection().  This returns
-   * whether aAmount is intra line move or is crossing hard line break.
-   * This returns error if aMount is not supported by the methods.
-   */
-  static mozilla::Result<bool, nsresult> IsIntraLineCaretMove(
-      nsSelectionAmount aAmount) {
-    switch (aAmount) {
-      case eSelectCharacter:
-      case eSelectCluster:
-      case eSelectWord:
-      case eSelectWordNoSpace:
-      case eSelectBeginLine:
-      case eSelectEndLine:
-        return true;
-      case eSelectLine:
-        return false;
-      default:
-        return mozilla::Err(NS_ERROR_FAILURE);
-    }
-  }
 
   void InvalidateDesiredCaretPos();  // do not listen to mDesiredCaretPos.mValue
                                      // you must get another.
@@ -1072,10 +1014,12 @@ class nsFrameSelection final {
         mozilla::dom::Selection& aNormalSelection) const;
 
     /**
-     * @param aScrollViewStop see `PeekOffsetOption::ScrollViewStop`.
+     * @param aStopAtScroller   If yes, this will
+     *                          set `PeekOffsetOption::StopAtScroller`.
      */
+    enum class StopAtScroller : bool { No, Yes };
     void AdjustContentOffsets(nsIFrame::ContentOffsets& aOffsets,
-                              bool aScrollViewStop) const;
+                              StopAtScroller aStopAtScroller) const;
 
     void MaintainAnchorFocusRange(
         const mozilla::dom::Selection& aNormalSelection,
@@ -1114,7 +1058,7 @@ class nsFrameSelection final {
   struct Caret {
     // Hint to tell if the selection is at the end of this line or beginning of
     // next.
-    CaretAssociateHint mHint = mozilla::CARET_ASSOCIATE_BEFORE;
+    CaretAssociationHint mHint = CaretAssociationHint::Before;
     mozilla::intl::BidiEmbeddingLevel mBidiLevel = BIDI_LEVEL_UNDEFINED;
 
     bool IsVisualMovement(bool aContinueSelection,

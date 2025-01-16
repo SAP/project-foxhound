@@ -40,8 +40,8 @@
                          data-l10n-id="toolbar-button-firefox-view-2"
                          role="button"
                          aria-pressed="false"
-                         oncommand="FirefoxViewHandler.openTab(event);"
-                         onmousedown="FirefoxViewHandler.openTab(event);"
+                         oncommand="FirefoxViewHandler.openTab();"
+                         onmousedown="FirefoxViewHandler.openToolbarMouseEvent(event);"
                          cui-areatype="toolbar"
                          removable="true"/>
 
@@ -307,7 +307,9 @@
               <html:span id="urlbar-search-mode-indicator-title"/>
               <html:div id="urlbar-search-mode-indicator-close"
                      class="close-button"
-                     role="button"/>
+                     role="button"
+                     aria-labelledby="urlbar-search-mode-indicator-close urlbar-search-mode-indicator-title"
+                     data-l10n-id="urlbar-search-mode-indicator-close"/>
             </html:div>
             <moz-input-box tooltip="aHTMLTooltip"
                            class="urlbar-input-box"
@@ -326,6 +328,7 @@
             </moz-input-box>
             <image id="urlbar-go-button"
                    class="urlbar-icon"
+                   role="button"
                    onclick="gURLBar.handleCommand(event);"
                    data-l10n-id="urlbar-go-button"/>
             <hbox id="page-action-buttons" context="pageActionContextMenu" align="center">
@@ -448,7 +451,7 @@
                      onkeypress="gSync.toggleAccountPanel(this, event)"
                      consumeanchor="fxa-toolbar-menu-button"
                      closemenu="none"
-                     data-l10n-id="toolbar-button-fxaccount"
+                     data-l10n-id="toolbar-button-account"
                      cui-areatype="toolbar"
                      removable="true">
                      <vbox>
@@ -676,6 +679,9 @@
 
         <menuseparator/>
         <!-- Bookmarks menu items will go here -->
+        <menuseparator class="hide-if-empty-places-result"
+                       afterplacescontent="true"/>
+
         <menuitem id="BMB_bookmarksShowAll"
                   data-l10n-id="bookmarks-manage-bookmarks"
                   afterplacescontent="true"

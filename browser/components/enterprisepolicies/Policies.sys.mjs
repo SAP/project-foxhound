@@ -1289,13 +1289,6 @@ export var Policies = {
           param.Locked
         );
       }
-      if ("Snippets" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.snippets",
-          param.Snippets,
-          param.Locked
-        );
-      }
     },
   },
 
@@ -1718,6 +1711,7 @@ export var Policies = {
     onBeforeAddons(manager, param) {
       let allowedPrefixes = [
         "accessibility.",
+        "alerts.",
         "app.update.",
         "browser.",
         "datareporting.policy.",
@@ -1819,7 +1813,9 @@ export var Policies = {
             Services.prefs.unlockPref(preference);
           }
           try {
-            switch (typeof param[preference].Value) {
+            let prefType =
+              param[preference].Type || typeof param[preference].Value;
+            switch (prefType) {
               case "boolean":
                 prefBranch.setBoolPref(preference, param[preference].Value);
                 break;
@@ -1829,14 +1825,9 @@ export var Policies = {
                   throw new Error(`Non-integer value for ${preference}`);
                 }
 
-                // This is ugly, but necessary. On Windows GPO and macOS
-                // configs, booleans are converted to 0/1. In the previous
-                // Preferences implementation, the schema took care of
-                // automatically converting these values to booleans.
-                // Since we allow arbitrary prefs now, we have to do
-                // something different. See bug 1666836.
-                // Even uglier, because pdfjs prefs are set async, we need
-                // to get their type from PdfJsDefaultPreferences.
+                // Because pdfjs prefs are set async, we can't check the
+                // default pref branch to see if they are int or bool, so we
+                // have to get their type from PdfJsDefaultPreferences.
                 if (preference.startsWith("pdfjs.")) {
                   let preferenceTail = preference.replace("pdfjs.", "");
                   if (
@@ -1851,7 +1842,21 @@ export var Policies = {
                       !!param[preference].Value
                     );
                   }
-                } else if (
+                  break;
+                }
+
+                // This is ugly, but necessary. On Windows GPO and macOS
+                // configs, booleans are converted to 0/1. In the previous
+                // Preferences implementation, the schema took care of
+                // automatically converting these values to booleans.
+                // Since we allow arbitrary prefs now, we have to do
+                // something different. See bug 1666836, 1668374, and 1872267.
+
+                // We only set something as int if it was explicit in policy,
+                // the same type as the default pref, or NOT 0/1. Otherwise
+                // we set it as bool.
+                if (
+                  param[preference].Type == "number" ||
                   prefBranch.getPrefType(preference) == prefBranch.PREF_INT ||
                   ![0, 1].includes(param[preference].Value)
                 ) {
@@ -2336,6 +2341,11 @@ export var Policies = {
           param.FeatureRecommendations,
           param.Locked
         );
+        PoliciesUtils.setDefaultPref(
+          "browser.translations.panelShown",
+          !param.FeatureRecommendations,
+          param.Locked
+        );
       }
       if ("UrlbarInterventions" in param && !param.UrlbarInterventions) {
         manager.disallowFeature("urlbarinterventions");
@@ -2725,7 +2735,7 @@ function blockAboutPage(manager, feature, neededOnContentProcess = false) {
 }
 
 let ChromeURLBlockPolicy = {
-  shouldLoad(contentLocation, loadInfo, mimeTypeGuess) {
+  shouldLoad(contentLocation, loadInfo) {
     let contentType = loadInfo.externalContentPolicyType;
     if (
       (contentLocation.scheme != "chrome" &&
@@ -2745,7 +2755,7 @@ let ChromeURLBlockPolicy = {
     }
     return Ci.nsIContentPolicy.ACCEPT;
   },
-  shouldProcess(contentLocation, loadInfo, mimeTypeGuess) {
+  shouldProcess(contentLocation, loadInfo) {
     return Ci.nsIContentPolicy.ACCEPT;
   },
   classDescription: "Policy Engine Content Policy",

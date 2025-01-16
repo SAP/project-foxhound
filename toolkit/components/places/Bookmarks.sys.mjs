@@ -9,7 +9,7 @@
  * separators.  Multiple bookmarks for the same URL are allowed.
  *
  * Note that if you are handling bookmarks operations in the UI, you should
- * not use this API directly, but rather use PlacesTransactions.jsm, so that
+ * not use this API directly, but rather use PlacesTransactions, so that
  * any operation is undo/redo-able.
  *
  * Each bookmark-item is represented by an object having the following
@@ -963,6 +963,7 @@ export var Bookmarks = Object.freeze({
                 frecency: details.frecency,
                 hidden: details.hidden,
                 visitCount: details.visitCount,
+                dateAdded: updatedItem.dateAdded ?? Date.now(),
                 lastVisitDate: details.lastVisitDate,
               })
             );
@@ -1208,6 +1209,7 @@ export var Bookmarks = Object.freeze({
               frecency: details.frecency,
               hidden: details.hidden,
               visitCount: details.visitCount,
+              dateAdded: updatedItem.dateAdded,
               lastVisitDate: details.lastVisitDate,
             })
           );
@@ -1492,7 +1494,7 @@ export var Bookmarks = Object.freeze({
    * @note Any unknown property in the info object is ignored.  Known properties
    *       may be overwritten.
    */
-  fetch(guidOrInfo, onResult = null, options = {}) {
+  async fetch(guidOrInfo, onResult = null, options = {}) {
     if (onResult && typeof onResult != "function") {
       throw new Error("onResult callback must be a valid function");
     }
@@ -1555,67 +1557,65 @@ export var Bookmarks = Object.freeze({
       behavior
     );
 
-    return (async () => {
-      let results;
-      if (fetchInfo.hasOwnProperty("url")) {
-        results = await fetchBookmarksByURL(fetchInfo, options);
-      } else if (fetchInfo.hasOwnProperty("guid")) {
-        results = await fetchBookmark(fetchInfo, options);
-      } else if (fetchInfo.hasOwnProperty("parentGuid")) {
-        if (fetchInfo.hasOwnProperty("index")) {
-          results = await fetchBookmarkByPosition(fetchInfo, options);
-        } else {
-          results = await fetchBookmarksByParentGUID(fetchInfo, options);
-        }
-      } else if (fetchInfo.hasOwnProperty("guidPrefix")) {
-        results = await fetchBookmarksByGUIDPrefix(fetchInfo, options);
-      } else if (fetchInfo.hasOwnProperty("tags")) {
-        results = await fetchBookmarksByTags(fetchInfo, options);
+    let results;
+    if (fetchInfo.hasOwnProperty("url")) {
+      results = await fetchBookmarksByURL(fetchInfo, options);
+    } else if (fetchInfo.hasOwnProperty("guid")) {
+      results = await fetchBookmark(fetchInfo, options);
+    } else if (fetchInfo.hasOwnProperty("parentGuid")) {
+      if (fetchInfo.hasOwnProperty("index")) {
+        results = await fetchBookmarkByPosition(fetchInfo, options);
+      } else {
+        results = await fetchBookmarksByParentGUID(fetchInfo, options);
       }
+    } else if (fetchInfo.hasOwnProperty("guidPrefix")) {
+      results = await fetchBookmarksByGUIDPrefix(fetchInfo, options);
+    } else if (fetchInfo.hasOwnProperty("tags")) {
+      results = await fetchBookmarksByTags(fetchInfo, options);
+    }
 
-      if (!results) {
-        return null;
+    if (!results) {
+      return null;
+    }
+
+    if (!Array.isArray(results)) {
+      results = [results];
+    }
+    // Remove non-enumerable properties.
+    results = results.map(r => {
+      if (r.type == this.TYPE_FOLDER) {
+        r.childCount = r._childCount;
       }
-
-      if (!Array.isArray(results)) {
-        results = [results];
+      if (options.includeItemIds) {
+        r.itemId = r._id;
+        r.parentId = r._parentId;
       }
-      // Remove non-enumerable properties.
-      results = results.map(r => {
-        if (r.type == this.TYPE_FOLDER) {
-          r.childCount = r._childCount;
-        }
-        if (options.includeItemIds) {
-          r.itemId = r._id;
-          r.parentId = r._parentId;
-        }
-        return Object.assign({}, r);
-      });
+      return Object.assign({}, r);
+    });
 
-      if (options.includePath) {
-        for (let result of results) {
-          let folderPath = await retrieveFullBookmarkPath(result.parentGuid);
-          if (folderPath) {
-            result.path = folderPath;
-          }
+    if (options.includePath) {
+      for (let result of results) {
+        let folderPath = await retrieveFullBookmarkPath(result.parentGuid);
+        if (folderPath) {
+          result.path = folderPath;
         }
       }
+    }
 
-      // Ideally this should handle an incremental behavior and thus be invoked
-      // while we fetch.  Though, the likelihood of 2 or more bookmarks for the
-      // same match is very low, so it's not worth the added code complication.
-      if (onResult) {
-        for (let result of results) {
-          try {
-            onResult(result);
-          } catch (ex) {
-            console.error(ex);
-          }
+    // Ideally this should handle an incremental behavior and thus be invoked
+    // while we fetch.  Though, the likelihood of 2 or more bookmarks for the
+    // same match is very low, so it's not worth the added code complication.
+    if (onResult) {
+      for (let result of results) {
+        try {
+          onResult(result);
+        } catch (ex) {
+          console.error(ex);
         }
       }
+    }
 
-      return results[0];
-    })();
+    return results[0];
   },
 
   /**
@@ -1806,6 +1806,7 @@ export var Bookmarks = Object.freeze({
             frecency: details.frecency,
             hidden: details.hidden,
             visitCount: details.visitCount,
+            dateAdded: child.dateAdded,
             lastVisitDate: details.lastVisitDate,
           })
         );
@@ -2466,7 +2467,7 @@ async function fetchBookmarksByTags(info, options = {}) {
               h.url AS url, b.id AS _id, b.parent AS _parentId,
               NULL AS _childCount,
               p.parent AS _grandParentId, b.syncStatus AS _syncStatus,
-              (SELECT group_concat(pp.title)
+              (SELECT group_concat(pp.title ORDER BY pp.title)
                FROM moz_bookmarks bb
                JOIN moz_bookmarks pp ON pp.id = bb.parent
                JOIN moz_bookmarks gg ON gg.id = pp.parent
@@ -2545,7 +2546,7 @@ async function fetchBookmarksByURL(info, options = {}) {
               h.url AS url, b.id AS _id, b.parent AS _parentId,
               NULL AS _childCount, /* Unused for now */
               p.parent AS _grandParentId, b.syncStatus AS _syncStatus,
-              (SELECT group_concat(pp.title)
+              (SELECT group_concat(pp.title ORDER BY pp.title)
                FROM moz_bookmarks bb
                JOIN moz_bookmarks pp ON bb.parent = pp.id
                JOIN moz_bookmarks gg ON pp.parent = gg.id
@@ -3340,7 +3341,7 @@ async function getBookmarkDetailMap(aGuids) {
             IFNULL(h.visit_count, 0),
             h.last_visit_date,
             (
-              SELECT group_concat(pp.title)
+              SELECT group_concat(pp.title ORDER BY pp.title)
               FROM moz_bookmarks bb
               JOIN moz_bookmarks pp ON pp.id = bb.parent
               JOIN moz_bookmarks gg ON gg.id = pp.parent
@@ -3371,7 +3372,7 @@ async function getBookmarkDetailMap(aGuids) {
               lastVisitDate: lastVisitDate
                 ? lazy.PlacesUtils.toDate(lastVisitDate).getTime()
                 : null,
-              tags: row.getResultByIndex(7) ?? "",
+              tags: row.getResultByIndex(7),
               targetFolderGuid: row.getResultByIndex(8),
               targetFolderItemId: row.getResultByIndex(9),
               targetFolderTitle: row.getResultByIndex(10),

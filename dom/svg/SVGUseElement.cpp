@@ -16,9 +16,10 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
-#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGGraphicsElement.h"
+#include "mozilla/dom/SVGLengthBinding.h"
 #include "mozilla/dom/SVGSVGElement.h"
+#include "mozilla/dom/SVGSymbolElement.h"
 #include "mozilla/dom/SVGUseElementBinding.h"
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
@@ -60,7 +61,6 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(SVGUseElement)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(SVGUseElement,
                                                 SVGUseElementBase)
-  nsAutoScriptBlocker scriptBlocker;
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOriginal)
   tmp->UnlinkSource();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -78,8 +78,11 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(SVGUseElement, SVGUseElementBase,
 
 SVGUseElement::SVGUseElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
-    : SVGUseElementBase(std::move(aNodeInfo)),
-      mReferencedElementTracker(this) {}
+    : SVGUseElementBase(std::move(aNodeInfo)), mReferencedElementTracker(this) {
+  SetEnabledCallbacks(kCharacterDataChanged | kAttributeChanged |
+                      kContentAppended | kContentInserted | kContentRemoved |
+                      kNodeWillBeDestroyed);
+}
 
 SVGUseElement::~SVGUseElement() {
   UnlinkSource();
@@ -118,7 +121,6 @@ void SVGUseElement::ProcessAttributeChange(int32_t aNamespaceID,
     if (auto* frame = GetFrame()) {
       frame->HrefChanged();
     }
-    mOriginal = nullptr;
     UnlinkSource();
     TriggerReclone();
   }
@@ -144,8 +146,10 @@ nsresult SVGUseElement::Clone(dom::NodeInfo* aNodeInfo,
   nsresult rv1 = it->Init();
   nsresult rv2 = const_cast<SVGUseElement*>(this)->CopyInnerTo(it);
 
-  // SVGUseElement specific portion - record who we cloned from
-  it->mOriginal = const_cast<SVGUseElement*>(this);
+  if (aNodeInfo->GetDocument()->CloningForSVGUse()) {
+    // SVGUseElement specific portion - record who we cloned from
+    it->mOriginal = const_cast<SVGUseElement*>(this);
+  }
 
   if (NS_SUCCEEDED(rv1) && NS_SUCCEEDED(rv2)) {
     kungFuDeathGrip.swap(*aResult);
@@ -244,11 +248,8 @@ void SVGUseElement::NodeWillBeDestroyed(nsINode* aNode) {
 
 // Returns whether this node could ever be displayed.
 static bool NodeCouldBeRendered(const nsINode& aNode) {
-  if (aNode.IsSVGElement(nsGkAtoms::symbol)) {
-    // Only <symbol> elements in the root of a <svg:use> shadow tree are
-    // displayed.
-    auto* shadowRoot = ShadowRoot::FromNodeOrNull(aNode.GetParentNode());
-    return shadowRoot && shadowRoot->Host()->IsSVGElement(nsGkAtoms::use);
+  if (const auto* symbol = SVGSymbolElement::FromNode(aNode)) {
+    return symbol->CouldBeRendered();
   }
   // TODO: Do we have other cases we can optimize out easily?
   return true;
@@ -545,19 +546,31 @@ void SVGUseElement::LookupHref() {
     return;
   }
 
-  nsCOMPtr<nsIURI> originURI =
-      mOriginal ? mOriginal->GetBaseURI() : GetBaseURI();
-  nsCOMPtr<nsIURI> baseURI =
-      nsContentUtils::IsLocalRefURL(href)
-          ? SVGObserverUtils::GetBaseURLForLocalRef(this, originURI)
-          : originURI;
+  Element* treeToWatch = mOriginal ? mOriginal.get() : this;
+  if (nsContentUtils::IsLocalRefURL(href)) {
+    mReferencedElementTracker.ResetWithLocalRef(*treeToWatch, href);
+    return;
+  }
 
+  nsCOMPtr<nsIURI> baseURI = treeToWatch->GetBaseURI();
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
                                             GetComposedDoc(), baseURI);
+  if (!targetURI) {
+    return;
+  }
+
+  // Don't allow <use href="data:...">. Using "#ref" inside a data: document is
+  // handled above.
+  if (targetURI->SchemeIs("data") &&
+      !StaticPrefs::svg_use_element_data_url_href_allowed()) {
+    return;
+  }
+
   nsIReferrerInfo* referrer =
       OwnerDoc()->ReferrerInfoForInternalCSSAndSVGResources();
-  mReferencedElementTracker.ResetToURIFragmentID(this, targetURI, referrer);
+  mReferencedElementTracker.ResetToURIFragmentID(treeToWatch, targetURI,
+                                                 referrer);
 }
 
 void SVGUseElement::TriggerReclone() {

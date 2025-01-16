@@ -79,8 +79,7 @@ FrameGeneratorInterface::VideoFrameData IvfVideoFrameGenerator::NextFrame() {
   RTC_CHECK(image);
   // Last parameter is undocumented and there is no usage of it found.
   RTC_CHECK_EQ(WEBRTC_VIDEO_CODEC_OK,
-               video_decoder_->Decode(*image, /*missing_frames=*/false,
-                                      /*render_time_ms=*/0));
+               video_decoder_->Decode(*image, /*render_time_ms=*/0));
   bool decoded = next_frame_decoded_.Wait(kMaxNextFrameWaitTimeout);
   RTC_CHECK(decoded) << "Failed to decode next frame in "
                      << kMaxNextFrameWaitTimeout << ". Can't continue";
@@ -148,6 +147,9 @@ std::unique_ptr<VideoDecoder> IvfVideoFrameGenerator::CreateVideoDecoder(
   }
   if (codec_type == VideoCodecType::kVideoCodecAV1) {
     return CreateDav1dDecoder();
+  }
+  if (codec_type == VideoCodecType::kVideoCodecH265) {
+    // TODO(bugs.webrtc.org/13485): implement H265 decoder
   }
   return nullptr;
 }

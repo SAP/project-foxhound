@@ -6,6 +6,7 @@
 #include "AudioSegment.h"
 #include "AudioMixer.h"
 #include "AudioChannelFormat.h"
+#include "MediaTrackGraph.h"  // for nsAutoRefTraits<SpeexResamplerState>
 #include <speex/speex_resampler.h>
 
 namespace mozilla {
@@ -27,6 +28,64 @@ const int16_t* SilentChannel::ZeroChannel<int16_t>() {
 void AudioSegment::ApplyVolume(float aVolume) {
   for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
     ci->mVolume *= aVolume;
+  }
+}
+
+template <typename T>
+void AudioSegment::Resample(nsAutoRef<SpeexResamplerState>& aResampler,
+                            uint32_t* aResamplerChannelCount, uint32_t aInRate,
+                            uint32_t aOutRate) {
+  mDuration = 0;
+
+  for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
+    AutoTArray<nsTArray<T>, GUESS_AUDIO_CHANNELS> output;
+    AutoTArray<const T*, GUESS_AUDIO_CHANNELS> bufferPtrs;
+    AudioChunk& c = *ci;
+    // If this chunk is null, don't bother resampling, just alter its duration
+    if (c.IsNull()) {
+      c.mDuration = (c.mDuration * aOutRate) / aInRate;
+      mDuration += c.mDuration;
+      continue;
+    }
+    uint32_t channels = c.mChannelData.Length();
+    // This might introduce a discontinuity, but a channel count change in the
+    // middle of a stream is not that common. This also initializes the
+    // resampler as late as possible.
+    if (channels != *aResamplerChannelCount) {
+      SpeexResamplerState* state =
+          speex_resampler_init(channels, aInRate, aOutRate,
+                               SPEEX_RESAMPLER_QUALITY_DEFAULT, nullptr);
+      MOZ_ASSERT(state);
+      aResampler.own(state);
+      *aResamplerChannelCount = channels;
+    }
+    output.SetLength(channels);
+    bufferPtrs.SetLength(channels);
+    uint32_t inFrames = c.mDuration;
+    // Round up to allocate; the last frame may not be used.
+    NS_ASSERTION((UINT64_MAX - aInRate + 1) / c.mDuration >= aOutRate,
+                 "Dropping samples");
+    uint32_t outSize =
+        (static_cast<uint64_t>(c.mDuration) * aOutRate + aInRate - 1) / aInRate;
+    for (uint32_t i = 0; i < channels; i++) {
+      T* out = output[i].AppendElements(outSize);
+      uint32_t outFrames = outSize;
+
+      const T* in = static_cast<const T*>(c.mChannelData[i]);
+      dom::WebAudioUtils::SpeexResamplerProcess(aResampler.get(), i, in,
+                                                &inFrames, out, &outFrames);
+      MOZ_ASSERT(inFrames == c.mDuration);
+
+      bufferPtrs[i] = out;
+      output[i].SetLength(outFrames);
+    }
+    MOZ_ASSERT(channels > 0);
+    c.mDuration = output[0].Length();
+    c.mBuffer = new mozilla::SharedChannelArrayBuffer<T>(std::move(output));
+    for (uint32_t i = 0; i < channels; i++) {
+      c.mChannelData[i] = bufferPtrs[i];
+    }
+    mDuration += c.mDuration;
   }
 }
 
@@ -151,6 +210,26 @@ static void DownMixChunk(const AudioChunk& aChunk,
   }
 }
 
+void AudioChunk::DownMixTo(
+    Span<AudioDataValue* const> aOutputChannelPtrs) const {
+  switch (mBufferFormat) {
+    case AUDIO_FORMAT_FLOAT32:
+      DownMixChunk<float>(*this, aOutputChannelPtrs);
+      return;
+    case AUDIO_FORMAT_S16:
+      DownMixChunk<int16_t>(*this, aOutputChannelPtrs);
+      return;
+    case AUDIO_FORMAT_SILENCE:
+      for (AudioDataValue* outChannel : aOutputChannelPtrs) {
+        std::fill_n(outChannel, mDuration, static_cast<AudioDataValue>(0));
+      }
+      return;
+      // Avoid `default:` so that `-Wswitch` catches missing enumerators at
+      // compile time.
+  }
+  MOZ_ASSERT_UNREACHABLE("buffer format");
+}
+
 void AudioSegment::Mix(AudioMixer& aMixer, uint32_t aOutputChannels,
                        uint32_t aSampleRate) {
   AutoTArray<AudioDataValue,
@@ -200,70 +279,13 @@ void AudioSegment::Mix(AudioMixer& aMixer, uint32_t aOutputChannels,
                                SilentChannel::gZeroChannel);
       downMixInput = &upMixChunk;
     }
-    switch (c.mBufferFormat) {
-      case AUDIO_FORMAT_FLOAT32:
-        DownMixChunk<float>(*downMixInput, outChannelPtrs);
-        continue;
-      case AUDIO_FORMAT_S16:
-        DownMixChunk<int16_t>(*downMixInput, outChannelPtrs);
-        continue;
-      case AUDIO_FORMAT_SILENCE:
-        break;
-        // Avoid `default:` so that `-Wswitch` catches missing enumerators at
-        // compile time.
-    }
-    MOZ_ASSERT_UNREACHABLE("buffer format");
+    downMixInput->DownMixTo(outChannelPtrs);
   }
 
   if (offsetSamples) {
     MOZ_ASSERT(offsetSamples == outBufferLength / aOutputChannels,
                "We forgot to write some samples?");
     aMixer.Mix(buf.Elements(), aOutputChannels, offsetSamples, aSampleRate);
-  }
-}
-
-void AudioSegment::WriteTo(AudioMixer& aMixer, uint32_t aOutputChannels,
-                           uint32_t aSampleRate) {
-  AutoTArray<AudioDataValue,
-             SilentChannel::AUDIO_PROCESSING_FRAMES * GUESS_AUDIO_CHANNELS>
-      buf;
-  // Offset in the buffer that will be written to the mixer, in samples.
-  uint32_t offset = 0;
-
-  if (GetDuration() <= 0) {
-    MOZ_ASSERT(GetDuration() == 0);
-    return;
-  }
-
-  uint32_t outBufferLength = GetDuration() * aOutputChannels;
-  buf.SetLength(outBufferLength);
-
-  for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
-    AudioChunk& c = *ci;
-
-    switch (c.mBufferFormat) {
-      case AUDIO_FORMAT_S16:
-        WriteChunk<int16_t>(c, aOutputChannels, c.mVolume,
-                            buf.Elements() + offset);
-        break;
-      case AUDIO_FORMAT_FLOAT32:
-        WriteChunk<float>(c, aOutputChannels, c.mVolume,
-                          buf.Elements() + offset);
-        break;
-      case AUDIO_FORMAT_SILENCE:
-        // The mixer is expecting interleaved data, so this is ok.
-        PodZero(buf.Elements() + offset, c.mDuration * aOutputChannels);
-        break;
-      default:
-        MOZ_ASSERT(false, "Not handled");
-    }
-
-    offset += c.mDuration * aOutputChannels;
-  }
-
-  if (offset) {
-    aMixer.Mix(buf.Elements(), aOutputChannels, offset / aOutputChannels,
-               aSampleRate);
   }
 }
 

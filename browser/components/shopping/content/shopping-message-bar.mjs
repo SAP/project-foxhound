@@ -3,11 +3,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/* eslint-env mozilla/remote-page */
+
 import { html, styleMap } from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-message-bar.mjs";
+
+const SHOPPING_SIDEBAR_ACTIVE_PREF = "browser.shopping.experience2023.active";
+const SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF =
+  "browser.shopping.experience2023.showKeepSidebarClosedMessage";
+const SHOPPING_AUTO_OPEN_SIDEBAR_PREF =
+  "browser.shopping.experience2023.autoOpen.userEnabled";
 
 class ShoppingMessageBar extends MozLitElement {
   #MESSAGE_TYPES_RENDER_TEMPLATE_MAPPING = new Map([
@@ -24,6 +32,7 @@ class ShoppingMessageBar extends MozLitElement {
     ["reanalysis-in-progress", () => this.reanalysisInProgressTemplate()],
     ["page-not-supported", () => this.pageNotSupportedTemplate()],
     ["thank-you-for-feedback", () => this.thankYouForFeedbackTemplate()],
+    ["keep-closed", () => this.keepClosedTemplate()],
   ]);
 
   static properties = {
@@ -36,6 +45,8 @@ class ShoppingMessageBar extends MozLitElement {
     return {
       reAnalysisButtonEl: "#message-bar-reanalysis-button",
       productAvailableBtnEl: "#message-bar-report-product-available-btn",
+      yesKeepClosedButtonEl: "#yes-keep-closed-button",
+      noThanksButtonEl: "#no-thanks-button",
     };
   }
 
@@ -58,6 +69,31 @@ class ShoppingMessageBar extends MozLitElement {
     );
   }
 
+  handleNoThanksClick() {
+    RPMSetPref(SHOPPING_SIDEBAR_ACTIVE_PREF, false);
+    RPMSetPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false);
+    this.dispatchEvent(
+      new CustomEvent("HideKeepClosedMessage", {
+        bubbles: true,
+        composed: true,
+      })
+    );
+    Glean.shopping.surfaceNoThanksButtonClicked.record();
+  }
+
+  handleKeepClosedClick() {
+    RPMSetPref(SHOPPING_SIDEBAR_ACTIVE_PREF, false);
+    RPMSetPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false);
+    RPMSetPref(SHOPPING_AUTO_OPEN_SIDEBAR_PREF, false);
+    this.dispatchEvent(
+      new CustomEvent("HideKeepClosedMessage", {
+        bubbles: true,
+        composed: true,
+      })
+    );
+    Glean.shopping.surfaceYesKeepClosedButtonClicked.record();
+  }
+
   getStaleWarningTemplate() {
     return html`<message-bar>
       <article id="message-bar-container" aria-labelledby="header">
@@ -66,7 +102,7 @@ class ShoppingMessageBar extends MozLitElement {
         ></span>
         <button
           id="message-bar-reanalysis-button"
-          class="small-button"
+          class="small-button shopping-button"
           data-l10n-id="shopping-message-bar-warning-stale-analysis-button"
           @click=${this.onClickAnalysisButton}
         ></button>
@@ -101,7 +137,7 @@ class ShoppingMessageBar extends MozLitElement {
       <button
         slot="actions"
         id="message-bar-report-product-available-btn"
-        class="small-button"
+        class="small-button shopping-button"
         data-l10n-id="shopping-message-bar-warning-product-not-available-button2"
         @click=${this.onClickProductAvailable}
       ></button>
@@ -192,6 +228,29 @@ class ShoppingMessageBar extends MozLitElement {
     </moz-message-bar>`;
   }
 
+  keepClosedTemplate() {
+    return html`<moz-message-bar
+      data-l10n-attrs="heading, message"
+      type="info"
+      data-l10n-id="shopping-message-bar-keep-closed-header"
+    >
+      <moz-button-group slot="actions">
+        <button
+          id="no-thanks-button"
+          class="small-button"
+          data-l10n-id="shopping-message-bar-keep-closed-dismiss-button"
+          @click=${this.handleNoThanksClick}
+        ></button>
+        <button
+          id="yes-keep-closed-button"
+          class="primary small-button"
+          data-l10n-id="shopping-message-bar-keep-closed-accept-button"
+          @click=${this.handleKeepClosedClick}
+        ></button>
+      </moz-button-group>
+    </moz-message-bar>`;
+  }
+
   render() {
     let messageBarTemplate = this.#MESSAGE_TYPES_RENDER_TEMPLATE_MAPPING.get(
       this.type
@@ -204,6 +263,10 @@ class ShoppingMessageBar extends MozLitElement {
         <link
           rel="stylesheet"
           href="chrome://browser/content/shopping/shopping-message-bar.css"
+        />
+        <link
+          rel="stylesheet"
+          href="chrome://browser/content/shopping/shopping-page.css"
         />
         ${messageBarTemplate}
       `;

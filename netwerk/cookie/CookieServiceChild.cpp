@@ -47,6 +47,7 @@ static StaticRefPtr<CookieServiceChild> gCookieChildService;
 already_AddRefed<CookieServiceChild> CookieServiceChild::GetSingleton() {
   if (!gCookieChildService) {
     gCookieChildService = new CookieServiceChild();
+    gCookieChildService->Init();
     ClearOnShutdown(&gCookieChildService);
   }
 
@@ -56,9 +57,11 @@ already_AddRefed<CookieServiceChild> CookieServiceChild::GetSingleton() {
 NS_IMPL_ISUPPORTS(CookieServiceChild, nsICookieService,
                   nsISupportsWeakReference)
 
-CookieServiceChild::CookieServiceChild() {
-  NS_ASSERTION(IsNeckoChild(), "not a child process");
+CookieServiceChild::CookieServiceChild() { NeckoChild::InitNeckoChild(); }
 
+CookieServiceChild::~CookieServiceChild() { gCookieChildService = nullptr; }
+
+void CookieServiceChild::Init() {
   auto* cc = static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
   if (cc->IsShuttingDown()) {
     return;
@@ -67,9 +70,8 @@ CookieServiceChild::CookieServiceChild() {
   // This corresponds to Release() in DeallocPCookieService.
   NS_ADDREF_THIS();
 
-  NeckoChild::InitNeckoChild();
-
-  // Create a child PCookieService actor.
+  // Create a child PCookieService actor. Don't do this in the constructor
+  // since it could release 'this' on failure
   gNeckoChild->SendPCookieServiceConstructor(this);
 
   mThirdPartyUtil = ThirdPartyUtil::GetInstance();
@@ -78,8 +80,6 @@ CookieServiceChild::CookieServiceChild() {
   mTLDService = do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
   NS_ASSERTION(mTLDService, "couldn't get TLDService");
 }
-
-CookieServiceChild::~CookieServiceChild() { gCookieChildService = nullptr; }
 
 void CookieServiceChild::TrackCookieLoad(nsIChannel* aChannel) {
   if (!CanSend()) {
@@ -113,11 +113,28 @@ void CookieServiceChild::TrackCookieLoad(nsIChannel* aChannel) {
 
 IPCResult CookieServiceChild::RecvRemoveAll() {
   mCookiesMap.Clear();
+
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (obsService) {
+    obsService->NotifyObservers(nullptr, "content-removed-all-cookies",
+                                nullptr);
+  }
   return IPC_OK();
 }
 
 IPCResult CookieServiceChild::RecvRemoveCookie(const CookieStruct& aCookie,
                                                const OriginAttributes& aAttrs) {
+  RemoveSingleCookie(aCookie, aAttrs);
+
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (obsService) {
+    obsService->NotifyObservers(nullptr, "content-removed-cookie", nullptr);
+  }
+  return IPC_OK();
+}
+
+void CookieServiceChild::RemoveSingleCookie(const CookieStruct& aCookie,
+                                            const OriginAttributes& aAttrs) {
   nsCString baseDomain;
   CookieCommons::GetBaseDomainFromHost(mTLDService, aCookie.host(), baseDomain);
   CookieKey key(baseDomain, aAttrs);
@@ -125,20 +142,25 @@ IPCResult CookieServiceChild::RecvRemoveCookie(const CookieStruct& aCookie,
   mCookiesMap.Get(key, &cookiesList);
 
   if (!cookiesList) {
-    return IPC_OK();
+    return;
   }
 
   for (uint32_t i = 0; i < cookiesList->Length(); i++) {
     Cookie* cookie = cookiesList->ElementAt(i);
+    // bug 1858366: In the case that we are updating a stale cookie
+    // from the content process: the parent process will signal
+    // a batch deletion for the old cookie.
+    // When received by the content process we should not remove
+    // the new cookie since we have already updated the content
+    // process cookies. So we also check the expiry here.
     if (cookie->Name().Equals(aCookie.name()) &&
         cookie->Host().Equals(aCookie.host()) &&
-        cookie->Path().Equals(aCookie.path())) {
+        cookie->Path().Equals(aCookie.path()) &&
+        cookie->Expiry() <= aCookie.expiry()) {
       cookiesList->RemoveElementAt(i);
       break;
     }
   }
-
-  return IPC_OK();
 }
 
 IPCResult CookieServiceChild::RecvAddCookie(const CookieStruct& aCookie,
@@ -149,7 +171,7 @@ IPCResult CookieServiceChild::RecvAddCookie(const CookieStruct& aCookie,
   // signal test code to check their cookie list
   nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
   if (obsService) {
-    obsService->NotifyObservers(nullptr, "cookie-content-filter-test", nullptr);
+    obsService->NotifyObservers(nullptr, "content-added-cookie", nullptr);
   }
 
   return IPC_OK();
@@ -161,7 +183,13 @@ IPCResult CookieServiceChild::RecvRemoveBatchDeletedCookies(
   MOZ_ASSERT(aCookiesList.Length() == aAttrsList.Length());
   for (uint32_t i = 0; i < aCookiesList.Length(); i++) {
     CookieStruct cookieStruct = aCookiesList.ElementAt(i);
-    RecvRemoveCookie(cookieStruct, aAttrsList.ElementAt(i));
+    RemoveSingleCookie(cookieStruct, aAttrsList.ElementAt(i));
+  }
+
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (obsService) {
+    obsService->NotifyObservers(nullptr, "content-batch-deleted-cookies",
+                                nullptr);
   }
   return IPC_OK();
 }
@@ -172,6 +200,12 @@ IPCResult CookieServiceChild::RecvTrackCookiesLoad(
     RefPtr<Cookie> cookie = Cookie::Create(aCookiesList[i], aAttrs);
     cookie->SetIsHttpOnly(false);
     RecordDocumentCookie(cookie, aAttrs);
+  }
+
+  nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+  if (obsService) {
+    obsService->NotifyObservers(nullptr, "content-track-cookies-loaded",
+                                nullptr);
   }
 
   return IPC_OK();
@@ -319,8 +353,8 @@ CookieServiceChild::GetCookieStringFromDocument(dom::Document* aDocument,
       continue;
     }
 
-    if (thirdParty &&
-        !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(cookie)) {
+    if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
+                          cookie, aDocument)) {
       continue;
     }
 
@@ -399,8 +433,8 @@ CookieServiceChild::SetCookieStringFromDocument(
     }
   }
 
-  if (thirdParty &&
-      !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(cookie)) {
+  if (thirdParty && !CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
+                        cookie, aDocument)) {
     return NS_OK;
   }
 
@@ -531,13 +565,20 @@ CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI,
                                          &isForeignAndNotAddon);
   }
 
+  bool mustBePartitioned =
+      isForeignAndNotAddon &&
+      cookieJarSettings->GetCookieBehavior() ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+      !result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted);
+
   bool moreCookies;
   do {
     CookieStruct cookieData;
     bool canSetCookie = false;
     moreCookies = CookieService::CanSetCookie(
         aHostURI, baseDomain, cookieData, requireHostMatch, cookieStatus,
-        cookieString, true, isForeignAndNotAddon, crc, canSetCookie);
+        cookieString, true, isForeignAndNotAddon, mustBePartitioned, crc,
+        canSetCookie);
     if (!canSetCookie) {
       continue;
     }

@@ -99,7 +99,8 @@ void PlatformFocusEvent(Accessible* aTarget,
                         const LayoutDeviceIntRect& aCaretRect);
 void PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
                             bool aIsSelectionCollapsed, int32_t aGranularity,
-                            const LayoutDeviceIntRect& aCaretRect);
+                            const LayoutDeviceIntRect& aCaretRect,
+                            bool aFromUser);
 void PlatformTextChangeEvent(Accessible* aTarget, const nsAString& aStr,
                              int32_t aStart, uint32_t aLen, bool aIsInsert,
                              bool aFromUser);
@@ -109,11 +110,6 @@ void PlatformSelectionEvent(Accessible* aTarget, Accessible* aWidget,
                             uint32_t aType);
 
 #if defined(ANDROID)
-void PlatformVirtualCursorChangeEvent(Accessible* aTarget,
-                                      Accessible* aOldPosition,
-                                      Accessible* aNewPosition, int16_t aReason,
-                                      bool aFromUser);
-
 void PlatformScrollingEvent(Accessible* aTarget, uint32_t aEventType,
                             uint32_t aScrollX, uint32_t aScrollY,
                             uint32_t aMaxScrollX, uint32_t aMaxScrollY);

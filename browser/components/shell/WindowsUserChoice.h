@@ -10,6 +10,7 @@
 
 #include "ErrorList.h"  // for nsresult
 #include "mozilla/UniquePtr.h"
+#include "nsString.h"
 
 /*
  * Check the UserChoice Hashes for https, http, .html, .htm

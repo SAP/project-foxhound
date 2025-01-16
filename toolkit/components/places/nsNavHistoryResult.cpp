@@ -369,25 +369,12 @@ nsNavHistoryResultNode::GetParentResult(nsINavHistoryResult** aResult) {
 }
 
 void nsNavHistoryResultNode::SetTags(const nsAString& aTags) {
-  mTags.SetIsVoid(true);
   if (aTags.IsVoid()) {
+    mTags.SetIsVoid(true);
     return;
   }
 
-  // We'd like to sort tags in the query, and completely skip the
-  // deconstructing, sorting and rebuilding here, unfortunately Sqlite's
-  // group_concat() at this time doesn't guarantee the concat order, even using
-  // a sub query. If that should change in the future, we could surely save some
-  // code here.
-  nsTArray<nsCString> tags;
-  ParseString(NS_ConvertUTF16toUTF8(aTags), ',', tags);
-  tags.Sort();
-  for (nsTArray<nsCString>::index_type i = 0; i < tags.Length(); ++i) {
-    AppendUTF8toUTF16(tags[i], mTags);
-    if (i < tags.Length() - 1) {
-      mTags.AppendLiteral(", ");
-    }
-  }
+  mTags.Assign(aTags);
 }
 
 NS_IMETHODIMP
@@ -893,7 +880,7 @@ nsNavHistoryContainerResultNode::GetSortingComparator(uint16_t aSortType) {
  */
 void nsNavHistoryContainerResultNode::RecursiveSort(
     SortComparator aComparator) {
-  mChildren.Sort(aComparator, nullptr);
+  mChildren.Sort(aComparator);
   for (nsNavHistoryResultNode* child : mChildren) {
     if (child->IsContainer()) {
       child->GetAsContainer()->RecursiveSort(aComparator);
@@ -917,14 +904,14 @@ int32_t nsNavHistoryContainerResultNode::FindInsertionPoint(
   // The common case is the beginning or the end because this is used to insert
   // new items that are added to history, which is usually sorted by date.
   int32_t res;
-  res = aComparator(aNode, mChildren[0], nullptr);
+  res = aComparator(aNode, mChildren[0]);
   if (res <= 0) {
     if (aItemExists && res == 0) {
       (*aItemExists) = true;
     }
     return 0;
   }
-  res = aComparator(aNode, mChildren[mChildren.Count() - 1], nullptr);
+  res = aComparator(aNode, mChildren[mChildren.Count() - 1]);
   if (res >= 0) {
     if (aItemExists && res == 0) {
       (*aItemExists) = true;
@@ -936,7 +923,7 @@ int32_t nsNavHistoryContainerResultNode::FindInsertionPoint(
   int32_t endRange = mChildren.Count();  // exclusive
   while (beginRange < endRange) {
     int32_t center = beginRange + (endRange - beginRange) / 2;
-    int32_t res = aComparator(aNode, mChildren[center], nullptr);
+    int32_t res = aComparator(aNode, mChildren[center]);
     if (res <= 0) {
       endRange = center;  // left side
       if (aItemExists && res == 0) {
@@ -966,13 +953,13 @@ bool nsNavHistoryContainerResultNode::DoesChildNeedResorting(
 
   if (aIndex > 0) {
     // compare to previous item
-    if (aComparator(mChildren[aIndex - 1], mChildren[aIndex], nullptr) > 0) {
+    if (aComparator(mChildren[aIndex - 1], mChildren[aIndex]) > 0) {
       return true;
     }
   }
   if (aIndex < mChildren.Count() - 1) {
     // compare to next item
-    if (aComparator(mChildren[aIndex], mChildren[aIndex + 1], nullptr) > 0) {
+    if (aComparator(mChildren[aIndex], mChildren[aIndex + 1]) > 0) {
       return true;
     }
   }
@@ -997,7 +984,7 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_StringLess(
  * everything will be -1 and we don't worry about sorting.
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_Bookmark(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   return a->mBookmarkIndex - b->mBookmarkIndex;
 }
 
@@ -1010,7 +997,7 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_Bookmark(
  * The collation object must be allocated before sorting on title!
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_TitleLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   uint32_t aType;
   a->GetType(&aType);
 
@@ -1025,16 +1012,15 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_TitleLess(
       // resolve by date
       value = ComparePRTime(a->mTime, b->mTime);
       if (value == 0) {
-        value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(
-            a, b, closure);
+        value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
       }
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_TitleGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -SortComparison_TitleLess(a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -SortComparison_TitleLess(a, b);
 }
 
 /**
@@ -1042,60 +1028,55 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_TitleGreater(
  * deterministic ordering of the results so they don't move around.
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_DateLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = ComparePRTime(a->mTime, b->mTime);
   if (value == 0) {
     value = SortComparison_StringLess(NS_ConvertUTF8toUTF16(a->mTitle),
                                       NS_ConvertUTF8toUTF16(b->mTitle));
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_DateGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -nsNavHistoryContainerResultNode::SortComparison_DateLess(a, b,
-                                                                   closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -nsNavHistoryContainerResultNode::SortComparison_DateLess(a, b);
 }
 
 int32_t nsNavHistoryContainerResultNode::SortComparison_DateAddedLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = ComparePRTime(a->mDateAdded, b->mDateAdded);
   if (value == 0) {
     value = SortComparison_StringLess(NS_ConvertUTF8toUTF16(a->mTitle),
                                       NS_ConvertUTF8toUTF16(b->mTitle));
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_DateAddedGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -nsNavHistoryContainerResultNode::SortComparison_DateAddedLess(
-      a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -nsNavHistoryContainerResultNode::SortComparison_DateAddedLess(a, b);
 }
 
 int32_t nsNavHistoryContainerResultNode::SortComparison_LastModifiedLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = ComparePRTime(a->mLastModified, b->mLastModified);
   if (value == 0) {
     value = SortComparison_StringLess(NS_ConvertUTF8toUTF16(a->mTitle),
                                       NS_ConvertUTF8toUTF16(b->mTitle));
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_LastModifiedGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -nsNavHistoryContainerResultNode::SortComparison_LastModifiedLess(
-      a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -nsNavHistoryContainerResultNode::SortComparison_LastModifiedLess(a,
+                                                                           b);
 }
 
 /**
@@ -1103,7 +1084,7 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_LastModifiedGreater(
  * valid (like days or hosts).
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_URILess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value;
   if (a->IsURI() && b->IsURI()) {
     // normal URI or visit
@@ -1122,40 +1103,37 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_URILess(
   if (value == 0) {
     value = ComparePRTime(a->mTime, b->mTime);
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_URIGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -SortComparison_URILess(a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -SortComparison_URILess(a, b);
 }
 
 /**
  * Fall back on dates for conflict resolution
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_VisitCountLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = CompareIntegers(a->mAccessCount, b->mAccessCount);
   if (value == 0) {
     value = ComparePRTime(a->mTime, b->mTime);
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_VisitCountGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -nsNavHistoryContainerResultNode::SortComparison_VisitCountLess(
-      a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -nsNavHistoryContainerResultNode::SortComparison_VisitCountLess(a, b);
 }
 
 int32_t nsNavHistoryContainerResultNode::SortComparison_TagsLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = 0;
   nsAutoString aTags, bTags;
 
@@ -1169,36 +1147,34 @@ int32_t nsNavHistoryContainerResultNode::SortComparison_TagsLess(
 
   // fall back to title sorting
   if (value == 0) {
-    value = SortComparison_TitleLess(a, b, closure);
+    value = SortComparison_TitleLess(a, b);
   }
 
   return value;
 }
 
 int32_t nsNavHistoryContainerResultNode::SortComparison_TagsGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -SortComparison_TagsLess(a, b, closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -SortComparison_TagsLess(a, b);
 }
 
 /**
  * Fall back on date and bookmarked status, for conflict resolution.
  */
 int32_t nsNavHistoryContainerResultNode::SortComparison_FrecencyLess(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
   int32_t value = CompareIntegers(a->mFrecency, b->mFrecency);
   if (value == 0) {
     value = ComparePRTime(a->mTime, b->mTime);
     if (value == 0) {
-      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b,
-                                                                       closure);
+      value = nsNavHistoryContainerResultNode::SortComparison_Bookmark(a, b);
     }
   }
   return value;
 }
 int32_t nsNavHistoryContainerResultNode::SortComparison_FrecencyGreater(
-    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b, void* closure) {
-  return -nsNavHistoryContainerResultNode::SortComparison_FrecencyLess(a, b,
-                                                                       closure);
+    nsNavHistoryResultNode* a, nsNavHistoryResultNode* b) {
+  return -nsNavHistoryContainerResultNode::SortComparison_FrecencyLess(a, b);
 }
 
 /**
@@ -2065,7 +2041,7 @@ uint16_t nsNavHistoryQueryResultNode::GetSortType() {
 
 void nsNavHistoryQueryResultNode::RecursiveSort(SortComparator aComparator) {
   if (!IsContainersQuery()) {
-    mChildren.Sort(aComparator, nullptr);
+    mChildren.Sort(aComparator);
   }
 
   for (int32_t i = 0; i < mChildren.Count(); ++i) {
@@ -3480,7 +3456,8 @@ nsresult nsNavHistoryFolderResultNode::OnItemMoved(
     const nsACString& aGUID, const nsACString& aOldParentGUID,
     const nsACString& aNewParentGUID, uint16_t aSource, const nsACString& aURI,
     const nsACString& aTitle, const nsAString& aTags, int64_t aFrecency,
-    bool aHidden, uint32_t aVisitCount, PRTime aLastVisitDate) {
+    bool aHidden, uint32_t aVisitCount, PRTime aLastVisitDate,
+    PRTime aDateAdded) {
   MOZ_ASSERT(aOldParentGUID.Equals(mTargetFolderGuid) ||
                  aNewParentGUID.Equals(mTargetFolderGuid),
              "Got a bookmark message that doesn't belong to us");
@@ -3543,12 +3520,10 @@ nsresult nsNavHistoryFolderResultNode::OnItemMoved(
                   aGUID, aOldParentGUID, aSource);
   }
   if (aNewParentGUID.Equals(mTargetFolderGuid)) {
-    OnItemAdded(
-        aItemId, mTargetFolderItemId, aNewIndex, aItemType, itemURI,
-        RoundedPRNow(),  // This is a dummy dateAdded, not the real value.
-        aGUID, aNewParentGUID, aSource, aTitle, aTags, aFrecency, aHidden,
-        aVisitCount, aLastVisitDate, mTargetFolderItemId, mTargetFolderGuid,
-        aTitle);
+    OnItemAdded(aItemId, mTargetFolderItemId, aNewIndex, aItemType, itemURI,
+                aDateAdded, aGUID, aNewParentGUID, aSource, aTitle, aTags,
+                aFrecency, aHidden, aVisitCount, aLastVisitDate,
+                mTargetFolderItemId, mTargetFolderGuid, aTitle);
   }
 
   return NS_OK;
@@ -4227,13 +4202,12 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
           continue;
         }
         nsCOMPtr<nsIURI> uri, faviconUri;
-        MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), faviconEvent->mUrl));
-        if (!uri) {
+        if (NS_WARN_IF(NS_FAILED(
+                NS_NewURI(getter_AddRefs(uri), faviconEvent->mUrl)))) {
           continue;
         }
-        MOZ_ALWAYS_SUCCEEDS(
-            NS_NewURI(getter_AddRefs(faviconUri), faviconEvent->mFaviconUrl));
-        if (!faviconUri) {
+        if (NS_WARN_IF(NS_FAILED(NS_NewURI(getter_AddRefs(faviconUri),
+                                           faviconEvent->mFaviconUrl)))) {
           continue;
         }
         OnIconChanged(uri, faviconUri, faviconEvent->mPageGuid);
@@ -4246,8 +4220,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
         }
 
         nsCOMPtr<nsIURI> uri;
-        MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), visit->mUrl));
-        if (!uri) {
+        if (NS_WARN_IF(
+                NS_FAILED(NS_NewURI(getter_AddRefs(uri), visit->mUrl)))) {
           continue;
         }
         OnVisit(uri, static_cast<int64_t>(visit->mVisitId),
@@ -4265,8 +4239,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
 
         nsCOMPtr<nsIURI> uri;
         if (item->mItemType == nsINavBookmarksService::TYPE_BOOKMARK) {
-          MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), item->mUrl));
-          if (!uri) {
+          if (NS_WARN_IF(
+                  NS_FAILED(NS_NewURI(getter_AddRefs(uri), item->mUrl)))) {
             continue;
           }
         }
@@ -4335,7 +4309,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
                         item->mFrecency, item->mHidden, item->mVisitCount,
                         item->mLastVisitDate.IsNull()
                             ? 0
-                            : item->mLastVisitDate.Value() * 1000));
+                            : item->mLastVisitDate.Value() * 1000,
+                        item->mDateAdded * 1000));
         if (!item->mParentGuid.Equals(item->mOldParentGuid)) {
           ENUMERATE_BOOKMARK_FOLDER_OBSERVERS(
               item->mParentGuid,
@@ -4346,7 +4321,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
                           item->mFrecency, item->mHidden, item->mVisitCount,
                           item->mLastVisitDate.IsNull()
                               ? 0
-                              : item->mLastVisitDate.Value() * 1000));
+                              : item->mLastVisitDate.Value() * 1000,
+                          item->mDateAdded * 1000));
         }
         ENUMERATE_ALL_BOOKMARKS_OBSERVERS(
             OnItemMoved(item->mId, item->mOldIndex, item->mIndex,
@@ -4433,8 +4409,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
         }
 
         nsCOMPtr<nsIURI> uri;
-        MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), titleEvent->mUrl));
-        if (!uri) {
+        if (NS_WARN_IF(
+                NS_FAILED(NS_NewURI(getter_AddRefs(uri), titleEvent->mUrl)))) {
           continue;
         }
 
@@ -4453,8 +4429,8 @@ void nsNavHistoryResult::HandlePlacesEvent(const PlacesEventSequence& aEvents) {
         }
 
         nsCOMPtr<nsIURI> uri;
-        MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), removeEvent->mUrl));
-        if (!uri) {
+        if (NS_WARN_IF(
+                NS_FAILED(NS_NewURI(getter_AddRefs(uri), removeEvent->mUrl)))) {
           continue;
         }
 

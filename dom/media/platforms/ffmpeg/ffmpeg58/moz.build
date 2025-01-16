@@ -8,7 +8,9 @@ UNIFIED_SOURCES += [
     '../FFmpegAudioDecoder.cpp',
     '../FFmpegDataDecoder.cpp',
     '../FFmpegDecoderModule.cpp',
+    '../FFmpegEncoderModule.cpp',
     '../FFmpegVideoDecoder.cpp',
+    '../FFmpegVideoEncoder.cpp',
 ]
 LOCAL_INCLUDES += [
     '..',
@@ -35,5 +37,9 @@ if CONFIG['MOZ_ENABLE_VAAPI'] or CONFIG['MOZ_ENABLE_V4L2']:
   DEFINES['MOZ_USE_HWDECODE'] = 1
 
 include("/ipc/chromium/chromium-config.mozbuild")
+
+LOCAL_INCLUDES += [
+  "/media/libyuv/libyuv/include",
+]
 
 FINAL_LIBRARY = 'xul'

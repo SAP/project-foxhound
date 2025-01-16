@@ -15,6 +15,12 @@
 
 namespace mozilla {
 
+enum class CryptoScheme : uint8_t;
+#ifdef MOZ_WMF_CDM
+class MFCDMCapabilitiesIPDL;
+#endif
+struct KeySystemConfig;
+
 namespace dom {
 class ArrayBufferViewOrArrayBuffer;
 }
@@ -58,6 +64,8 @@ bool IsWidevineKeySystem(const nsAString& aKeySystem);
 bool IsPlayReadyKeySystemAndSupported(const nsAString& aKeySystem);
 
 bool IsWidevineExperimentKeySystemAndSupported(const nsAString& aKeySystem);
+
+bool IsWMFClearKeySystemAndSupported(const nsAString& aKeySystem);
 #endif
 
 // Note: Primetime is now unsupported, but we leave it in the enum so
@@ -77,6 +85,20 @@ const char* ToMediaKeyStatusStr(dom::MediaKeyStatus aStatus);
 // Return true if given config supports hardware decryption (SL3000 or L1).
 bool IsHardwareDecryptionSupported(
     const dom::MediaKeySystemConfiguration& aConfig);
+
+const char* EncryptionSchemeStr(const CryptoScheme& aScheme);
+
+#ifdef MOZ_WMF_CDM
+void MFCDMCapabilitiesIPDLToKeySystemConfig(
+    const MFCDMCapabilitiesIPDL& aCDMConfig, KeySystemConfig& aKeySystemConfig);
+#endif
+
+bool DoesKeySystemSupportClearLead(const nsAString& aKeySystem);
+
+// Return true if there is any config in the given configs has hardware DRM
+// associated robustness.
+bool CheckIfHarewareDRMConfigExists(
+    const nsTArray<dom::MediaKeySystemConfiguration>& aConfigs);
 
 }  // namespace mozilla
 

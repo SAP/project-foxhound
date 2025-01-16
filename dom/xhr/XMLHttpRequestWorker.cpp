@@ -2164,10 +2164,7 @@ void XMLHttpRequestWorker::GetResponse(JSContext* aCx,
         return;
       }
 
-      XMLHttpRequestStringSnapshotReaderHelper helper(
-          mResponseData->mResponseText);
-
-      str = JS_NewUCStringCopyN(aCx, helper.Buffer(), helper.Length());
+      str = mResponseData->mResponseText.GetAsJSStringCopy(aCx);
       if (!str) {
         aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
         return;

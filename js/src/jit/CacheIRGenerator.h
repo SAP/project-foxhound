@@ -651,11 +651,16 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachStringCharAt();
   AttachDecision tryAttachStringFromCharCode();
   AttachDecision tryAttachStringFromCodePoint();
+  AttachDecision tryAttachStringIncludes();
   AttachDecision tryAttachStringIndexOf();
+  AttachDecision tryAttachStringLastIndexOf();
   AttachDecision tryAttachStringStartsWith();
   AttachDecision tryAttachStringEndsWith();
   AttachDecision tryAttachStringToLowerCase();
   AttachDecision tryAttachStringToUpperCase();
+  AttachDecision tryAttachStringTrim();
+  AttachDecision tryAttachStringTrimStart();
+  AttachDecision tryAttachStringTrimEnd();
   AttachDecision tryAttachStringReplaceString();
   AttachDecision tryAttachStringSplitString();
   AttachDecision tryAttachMathRandom();
@@ -711,6 +716,7 @@ class MOZ_RAII InlinableNativeIRGenerator {
   AttachDecision tryAttachAssertRecoveredOnBailout();
   AttachDecision tryAttachObjectIs();
   AttachDecision tryAttachObjectIsPrototypeOf();
+  AttachDecision tryAttachObjectKeys();
   AttachDecision tryAttachObjectToString();
   AttachDecision tryAttachBigIntAsIntN();
   AttachDecision tryAttachBigIntAsUintN();
@@ -862,6 +868,7 @@ class MOZ_RAII BinaryArithIRGenerator : public IRGenerator {
   AttachDecision tryAttachStringObjectConcat();
   AttachDecision tryAttachBigInt();
   AttachDecision tryAttachStringInt32Arith();
+  AttachDecision tryAttachStringNumberArith();
 
  public:
   BinaryArithIRGenerator(JSContext* cx, HandleScript, jsbytecode* pc,

@@ -19,6 +19,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Try.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/EncodedVideoChunk.h"
@@ -120,8 +121,9 @@ VideoDecoderConfigInternal::VideoDecoderConfigInternal(
 /*static*/
 UniquePtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
     const VideoDecoderConfig& aConfig) {
-  if (!VideoDecoderTraits::Validate(aConfig)) {
-    LOGE("Failed to create VideoDecoderConfigInternal");
+  nsCString errorMessage;
+  if (!VideoDecoderTraits::Validate(aConfig, errorMessage)) {
+    LOGE("Failed to create VideoDecoderConfigInternal: %s", errorMessage.get());
     return nullptr;
   }
 
@@ -152,6 +154,34 @@ UniquePtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
       OptionalToMaybe(aConfig.mOptimizeForLatency)));
 }
 
+nsString VideoDecoderConfigInternal::ToString() const {
+  nsString rv;
+
+  rv.Append(mCodec);
+  if (mCodedWidth.isSome()) {
+    rv.AppendPrintf("coded: %dx%d", mCodedWidth.value(), mCodedHeight.value());
+  }
+  if (mDisplayAspectWidth.isSome()) {
+    rv.AppendPrintf("display %dx%d", mDisplayAspectWidth.value(),
+                    mDisplayAspectHeight.value());
+  }
+  if (mColorSpace.isSome()) {
+    rv.AppendPrintf("colorspace %s", "todo");
+  }
+  if (mDescription.isSome()) {
+    rv.AppendPrintf("extradata: %zu bytes", mDescription.value()->Length());
+  }
+  rv.AppendPrintf(
+      "hw accel: %s",
+      HardwareAccelerationValues::GetString(mHardwareAcceleration).data());
+  if (mOptimizeForLatency.isSome()) {
+    rv.AppendPrintf("optimize for latency: %s",
+                    mOptimizeForLatency.value() ? "true" : "false");
+  }
+
+  return rv;
+}
+
 /*
  * The followings are helpers for VideoDecoder methods
  */
@@ -171,36 +201,20 @@ struct MIMECreateParam {
   const Maybe<uint32_t> mHeight;
 };
 
-static nsTArray<nsCString> GuessMIMETypes(MIMECreateParam aParam) {
+static nsTArray<nsCString> GuessMIMETypes(const MIMECreateParam& aParam) {
   const auto codec = NS_ConvertUTF16toUTF8(aParam.mParsedCodec);
   nsTArray<nsCString> types;
   for (const nsCString& container : GuessContainers(aParam.mParsedCodec)) {
     nsPrintfCString mime("video/%s; codecs=%s", container.get(), codec.get());
     if (aParam.mWidth) {
-      mime.Append(nsPrintfCString("; width=%d", *aParam.mWidth));
+      mime.AppendPrintf("; width=%d", *aParam.mWidth);
     }
     if (aParam.mHeight) {
-      mime.Append(nsPrintfCString("; height=%d", *aParam.mHeight));
+      mime.AppendPrintf("; height=%d", *aParam.mHeight);
     }
     types.AppendElement(mime);
   }
   return types;
-}
-
-static bool IsOnAndroid() {
-#if defined(ANDROID)
-  return true;
-#else
-  return false;
-#endif
-}
-
-static bool IsOnMacOS() {
-#if defined(XP_MACOSX)
-  return true;
-#else
-  return false;
-#endif
 }
 
 static bool IsSupportedCodec(const nsAString& aCodec) {
@@ -232,7 +246,8 @@ static bool CanDecode(const Config& aConfig) {
   if (!IsSupportedCodec(param.mParsedCodec)) {
     return false;
   }
-  if (IsOnMacOS() && IsH264CodecString(param.mParsedCodec)) {
+  if (IsOnMacOS() && IsH264CodecString(param.mParsedCodec) &&
+      !StaticPrefs::dom_media_webcodecs_force_osx_h264_enabled()) {
     // This will be fixed in Bug 1846796.
     return false;
   }
@@ -272,14 +287,17 @@ static nsTArray<UniquePtr<TrackInfo>> GetTracksInfo(
 static Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraData(
     const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
   RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
-  Unused << AppendTypedArrayDataTo(aBuffer, *data);
+  if (!AppendTypedArrayDataTo(aBuffer, *data)) {
+    return Err(NS_ERROR_OUT_OF_MEMORY);
+  }
   return data->Length() > 0 ? data : nullptr;
 }
 
 static Result<Ok, nsresult> CloneConfiguration(
     RootedDictionary<VideoDecoderConfig>& aDest, JSContext* aCx,
     const VideoDecoderConfig& aConfig) {
-  MOZ_ASSERT(VideoDecoderTraits::Validate(aConfig));
+  DebugOnly<nsCString> str;
+  MOZ_ASSERT(VideoDecoderTraits::Validate(aConfig, str));
 
   aDest.mCodec = aConfig.mCodec;
   if (aConfig.mCodedHeight.WasPassed()) {
@@ -357,6 +375,7 @@ static Maybe<VideoPixelFormat> GuessPixelFormat(layers::Image* aImage) {
 static VideoColorSpaceInternal GuessColorSpace(
     const layers::PlanarYCbCrData* aData) {
   if (!aData) {
+    LOGE("nullptr in GuessColorSpace");
     return {};
   }
 
@@ -364,15 +383,67 @@ static VideoColorSpaceInternal GuessColorSpace(
   colorSpace.mFullRange = Some(ToFullRange(aData->mColorRange));
   if (Maybe<VideoMatrixCoefficients> m =
           ToMatrixCoefficients(aData->mYUVColorSpace)) {
-    colorSpace.mMatrix = Some(*m);
+    colorSpace.mMatrix = ToMatrixCoefficients(aData->mYUVColorSpace);
+    colorSpace.mPrimaries = ToPrimaries(aData->mColorPrimaries);
   }
-  if (Maybe<VideoColorPrimaries> p = ToPrimaries(aData->mColorPrimaries)) {
-    colorSpace.mPrimaries = Some(*p);
+  if (!colorSpace.mPrimaries) {
+    LOG("Missing primaries, guessing from colorspace");
+    // Make an educated guess based on the coefficients.
+    colorSpace.mPrimaries = colorSpace.mMatrix.map([](const auto& aMatrix) {
+      switch (aMatrix) {
+        case VideoMatrixCoefficients::EndGuard_:
+          MOZ_CRASH("This should not happen");
+        case VideoMatrixCoefficients::Bt2020_ncl:
+          return VideoColorPrimaries::Bt2020;
+        case VideoMatrixCoefficients::Rgb:
+        case VideoMatrixCoefficients::Bt470bg:
+        case VideoMatrixCoefficients::Smpte170m:
+          LOGW(
+              "Warning: Falling back to BT709 when attempting to determine the "
+              "primaries function of a YCbCr buffer");
+          [[fallthrough]];
+        case VideoMatrixCoefficients::Bt709:
+          return VideoColorPrimaries::Bt709;
+      }
+      MOZ_ASSERT_UNREACHABLE("Unexpected matrix coefficients");
+      LOGW(
+          "Warning: Falling back to BT709 due to unexpected matrix "
+          "coefficients "
+          "when attempting to determine the primaries function of a YCbCr "
+          "buffer");
+      return VideoColorPrimaries::Bt709;
+    });
   }
+
   if (Maybe<VideoTransferCharacteristics> c =
           ToTransferCharacteristics(aData->mTransferFunction)) {
     colorSpace.mTransfer = Some(*c);
   }
+  if (!colorSpace.mTransfer) {
+    LOG("Missing transfer characteristics, guessing from colorspace");
+    colorSpace.mTransfer = Some(([&] {
+      switch (aData->mYUVColorSpace) {
+        case gfx::YUVColorSpace::Identity:
+          return VideoTransferCharacteristics::Iec61966_2_1;
+        case gfx::YUVColorSpace::BT2020:
+          return VideoTransferCharacteristics::Pq;
+        case gfx::YUVColorSpace::BT601:
+          LOGW(
+              "Warning: Falling back to BT709 when attempting to determine the "
+              "transfer function of a MacIOSurface");
+          [[fallthrough]];
+        case gfx::YUVColorSpace::BT709:
+          return VideoTransferCharacteristics::Bt709;
+      }
+      MOZ_ASSERT_UNREACHABLE("Unexpected color space");
+      LOGW(
+          "Warning: Falling back to BT709 due to unexpected color space "
+          "when attempting to determine the transfer function of a "
+          "MacIOSurface");
+      return VideoTransferCharacteristics::Bt709;
+    })());
+  }
+
   return colorSpace;
 }
 
@@ -382,7 +453,6 @@ static VideoColorSpaceInternal GuessColorSpace(const MacIOSurface* aSurface) {
     return {};
   }
   VideoColorSpaceInternal colorSpace;
-  // TODO: Could ToFullRange(aSurface->GetColorRange()) conflict with the below?
   colorSpace.mFullRange = Some(aSurface->IsFullRange());
   if (Maybe<dom::VideoMatrixCoefficients> m =
           ToMatrixCoefficients(aSurface->GetYUVColorSpace())) {
@@ -391,8 +461,20 @@ static VideoColorSpaceInternal GuessColorSpace(const MacIOSurface* aSurface) {
   if (Maybe<VideoColorPrimaries> p = ToPrimaries(aSurface->mColorPrimaries)) {
     colorSpace.mPrimaries = Some(*p);
   }
-  // TODO: Track gfx::TransferFunction setting in
-  // MacIOSurface::CreateNV12OrP010Surface to get colorSpace.mTransfer
+  // Make an educated guess based on the coefficients.
+  if (aSurface->GetYUVColorSpace() == gfx::YUVColorSpace::Identity) {
+    colorSpace.mTransfer = Some(VideoTransferCharacteristics::Iec61966_2_1);
+  } else if (aSurface->GetYUVColorSpace() == gfx::YUVColorSpace::BT709) {
+    colorSpace.mTransfer = Some(VideoTransferCharacteristics::Bt709);
+  } else if (aSurface->GetYUVColorSpace() == gfx::YUVColorSpace::BT2020) {
+    colorSpace.mTransfer = Some(VideoTransferCharacteristics::Pq);
+  } else {
+    LOGW(
+        "Warning: Falling back to BT709 when attempting to determine the "
+        "transfer function of a MacIOSurface");
+    colorSpace.mTransfer = Some(VideoTransferCharacteristics::Bt709);
+  }
+
   return colorSpace;
 }
 #endif
@@ -420,6 +502,40 @@ static VideoColorSpaceInternal GuessColorSpace(layers::Image* aImage) {
     }
     if (layers::NVImage* image = aImage->AsNVImage()) {
       return GuessColorSpace(image->GetData());
+    }
+    if (layers::GPUVideoImage* image = aImage->AsGPUVideoImage()) {
+      VideoColorSpaceInternal colorSpace;
+      colorSpace.mFullRange =
+          Some(image->GetColorRange() != gfx::ColorRange::LIMITED);
+      colorSpace.mMatrix = ToMatrixCoefficients(image->GetYUVColorSpace());
+      colorSpace.mPrimaries = ToPrimaries(image->GetColorPrimaries());
+      colorSpace.mTransfer =
+          ToTransferCharacteristics(image->GetTransferFunction());
+      // In some circumstances, e.g. on Linux software decoding when using
+      // VPXDecoder and RDD, the primaries aren't set correctly. Make a good
+      // guess based on the other params. Fixing this is tracked in
+      // https://bugzilla.mozilla.org/show_bug.cgi?id=1869825
+      if (!colorSpace.mPrimaries) {
+        if (colorSpace.mMatrix.isSome()) {
+          switch (colorSpace.mMatrix.value()) {
+            case VideoMatrixCoefficients::Rgb:
+            case VideoMatrixCoefficients::Bt709:
+              colorSpace.mPrimaries = Some(VideoColorPrimaries::Bt709);
+              break;
+            case VideoMatrixCoefficients::Bt470bg:
+            case VideoMatrixCoefficients::Smpte170m:
+              colorSpace.mPrimaries = Some(VideoColorPrimaries::Bt470bg);
+              break;
+            case VideoMatrixCoefficients::Bt2020_ncl:
+              colorSpace.mPrimaries = Some(VideoColorPrimaries::Bt2020);
+              break;
+            case VideoMatrixCoefficients::EndGuard_:
+              MOZ_ASSERT_UNREACHABLE("bad enum value");
+              break;
+          };
+        }
+      }
+      return colorSpace;
     }
 #ifdef XP_MACOSX
     // TODO: Make sure VideoFrame can interpret its internal data in different
@@ -508,7 +624,7 @@ bool VideoDecoderTraits::IsSupported(
 Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     const VideoDecoderConfigInternal& aConfig) {
   LOG("Create a VideoInfo from %s config",
-      NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
+      NS_ConvertUTF16toUTF8(aConfig.ToString()).get());
 
   nsTArray<UniquePtr<TrackInfo>> tracks = GetTracksInfo(aConfig);
   if (tracks.Length() != 1 || tracks[0]->GetType() != TrackInfo::kVideoTrack) {
@@ -567,12 +683,32 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     if (colorSpace.mMatrix.isSome()) {
       vi->mColorSpace.emplace(ToColorSpace(colorSpace.mMatrix.value()));
     }
+    // Some decoders get their primaries and transfer function from the codec
+    // string, and it's already set here. This is the case for VP9 decoders.
     if (colorSpace.mPrimaries.isSome()) {
-      vi->mColorPrimaries.emplace(ToPrimaries(colorSpace.mPrimaries.value()));
+      auto primaries = ToPrimaries(colorSpace.mPrimaries.value());
+      if (vi->mColorPrimaries.isSome()) {
+        if (vi->mColorPrimaries.value() != primaries) {
+          LOG("Conflict between decoder config and codec string, keeping codec "
+              "string primaries of %d",
+              static_cast<int>(primaries));
+        }
+      } else {
+        vi->mColorPrimaries.emplace(primaries);
+      }
     }
     if (colorSpace.mTransfer.isSome()) {
-      vi->mTransferFunction.emplace(
-          ToTransferFunction(colorSpace.mTransfer.value()));
+      auto primaries = ToTransferFunction(colorSpace.mTransfer.value());
+      if (vi->mTransferFunction.isSome()) {
+        if (vi->mTransferFunction.value() != primaries) {
+          LOG("Conflict between decoder config and codec string, keeping codec "
+              "string transfer function of %d",
+              static_cast<int>(vi->mTransferFunction.value()));
+        }
+      } else {
+        vi->mTransferFunction.emplace(
+            ToTransferFunction(colorSpace.mTransfer.value()));
+      }
     }
   }
 
@@ -634,17 +770,16 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     LOGW("image height is set to %d compulsively", vi->mImage.height);
   }
 
-  LOG("Create a VideoInfo - image: %d x %d, display: %d x %d, with extra-data: "
-      "%s",
-      vi->mImage.width, vi->mImage.height, vi->mDisplay.width,
-      vi->mDisplay.height, vi->mExtraData ? "yes" : "no");
+  LOG("Created a VideoInfo for decoder - %s",
+      NS_ConvertUTF16toUTF8(vi->ToString()).get());
 
   return track;
 }
 
 // https://w3c.github.io/webcodecs/#valid-videodecoderconfig
 /* static */
-bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig) {
+bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
+                                  nsCString& aErrorMessage) {
   Maybe<nsString> codec = ParseCodecString(aConfig.mCodec);
   if (!codec || codec->IsEmpty()) {
     LOGE("Invalid codec string");
@@ -709,11 +844,6 @@ VideoDecoder::VideoDecoder(nsIGlobalObject* aParent,
   LOG("VideoDecoder %p ctor", this);
 }
 
-VideoDecoder::~VideoDecoder() {
-  LOG("VideoDecoder %p dtor", this);
-  Unused << ResetInternal(NS_ERROR_DOM_ABORT_ERR);
-}
-
 JSObject* VideoDecoder::WrapObject(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
   AssertIsOnOwningThread();
@@ -756,8 +886,10 @@ already_AddRefed<Promise> VideoDecoder::IsConfigSupported(
     return p.forget();
   }
 
-  if (!VideoDecoderTraits::Validate(aConfig)) {
-    p->MaybeRejectWithTypeError("config is invalid");
+  nsCString errorMessage;
+  if (!VideoDecoderTraits::Validate(aConfig, errorMessage)) {
+    p->MaybeRejectWithTypeError(nsPrintfCString(
+        "VideoDecoderConfig is invalid: %s", errorMessage.get()));
     return p.forget();
   }
 
@@ -820,21 +952,30 @@ already_AddRefed<MediaRawData> VideoDecoder::InputDataToMediaRawData(
 }
 
 nsTArray<RefPtr<VideoFrame>> VideoDecoder::DecodedDataToOutputType(
-    nsIGlobalObject* aGlobalObject, nsTArray<RefPtr<MediaData>>&& aData,
+    nsIGlobalObject* aGlobalObject, const nsTArray<RefPtr<MediaData>>&& aData,
     VideoDecoderConfigInternal& aConfig) {
   AssertIsOnOwningThread();
 
   nsTArray<RefPtr<VideoFrame>> frames;
-  for (RefPtr<MediaData>& data : aData) {
+  for (const RefPtr<MediaData>& data : aData) {
     MOZ_RELEASE_ASSERT(data->mType == MediaData::Type::VIDEO_DATA);
     RefPtr<const VideoData> d(data->As<const VideoData>());
-    VideoColorSpaceInternal colorSpace = GuessColorSpace(d->mImage.get());
+    VideoColorSpaceInternal colorSpace;
+    // Determine which color space to use: prefer the color space as configured
+    // at the decoder level, if it has one, otherwise look at the underlying
+    // image and make a guess.
+    if (aConfig.mColorSpace.isSome() &&
+        aConfig.mColorSpace->mPrimaries.isSome() &&
+        aConfig.mColorSpace->mTransfer.isSome() &&
+        aConfig.mColorSpace->mMatrix.isSome()) {
+      colorSpace = aConfig.mColorSpace.value();
+    } else {
+      colorSpace = GuessColorSpace(d->mImage.get());
+    }
     frames.AppendElement(CreateVideoFrame(
         aGlobalObject, d.get(), d->mTime.ToMicroseconds(),
         static_cast<uint64_t>(d->mDuration.ToMicroseconds()),
-        aConfig.mDisplayAspectWidth, aConfig.mDisplayAspectHeight,
-        aConfig.mColorSpace.isSome() ? aConfig.mColorSpace.value()
-                                     : colorSpace));
+        aConfig.mDisplayAspectWidth, aConfig.mDisplayAspectHeight, colorSpace));
   }
   return frames;
 }

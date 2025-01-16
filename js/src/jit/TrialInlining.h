@@ -67,6 +67,7 @@ class ICCacheIRStub;
 class ICEntry;
 class ICFallbackStub;
 class ICScript;
+class ICStubSpace;
 
 /*
  * An InliningRoot is owned by a JitScript. In turn, it owns the set
@@ -86,14 +87,20 @@ class InliningRoot {
 
   uint32_t numInlinedScripts() const { return inlinedScripts_.length(); }
 
-  void purgeStubs(Zone* zone);
-  void resetWarmUpCounts(uint32_t count);
+  void purgeInactiveICScripts();
 
   JSScript* owningScript() const { return owningScript_; }
 
   size_t totalBytecodeSize() const { return totalBytecodeSize_; }
 
   void addToTotalBytecodeSize(size_t size) { totalBytecodeSize_ += size; }
+
+  template <typename F>
+  void forEachInlinedScript(const F& f) const {
+    for (auto& script : inlinedScripts_) {
+      f(script.get());
+    }
+  }
 
  private:
   HeapPtr<JSScript*> owningScript_;
@@ -161,6 +168,8 @@ class MOZ_RAII TrialInliner {
 
   static bool canInline(JSFunction* target, HandleScript caller,
                         BytecodeLocation loc);
+
+  static bool IsValidInliningOp(JSOp op);
 
  private:
   ICCacheIRStub* maybeSingleStub(const ICEntry& entry);

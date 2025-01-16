@@ -73,26 +73,13 @@ const CHROME_FLAGS_MAP = [
   [Ci.nsIWebBrowserChrome.CHROME_STATUSBAR, "status"],
   [Ci.nsIWebBrowserChrome.CHROME_MENUBAR, "menubar"],
   [Ci.nsIWebBrowserChrome.CHROME_WINDOW_RESIZE, "resizable"],
-  [Ci.nsIWebBrowserChrome.CHROME_WINDOW_MIN, "minimizable"],
+  [Ci.nsIWebBrowserChrome.CHROME_WINDOW_MINIMIZE, "minimizable"],
   [Ci.nsIWebBrowserChrome.CHROME_SCROLLBARS, "", "scrollbars=0"],
   [Ci.nsIWebBrowserChrome.CHROME_PRIVATE_WINDOW, "private"],
   [Ci.nsIWebBrowserChrome.CHROME_NON_PRIVATE_WINDOW, "non-private"],
   // Do not inherit remoteness and fissionness from the previous session.
   //[Ci.nsIWebBrowserChrome.CHROME_REMOTE_WINDOW, "remote", "non-remote"],
   //[Ci.nsIWebBrowserChrome.CHROME_FISSION_WINDOW, "fission", "non-fission"],
-  [Ci.nsIWebBrowserChrome.CHROME_WINDOW_POPUP, "popup"],
-  [
-    Ci.nsIWebBrowserChrome.CHROME_WINDOW_POPUP |
-      Ci.nsIWebBrowserChrome.CHROME_TITLEBAR,
-    "",
-    "titlebar=0",
-  ],
-  [
-    Ci.nsIWebBrowserChrome.CHROME_WINDOW_POPUP |
-      Ci.nsIWebBrowserChrome.CHROME_WINDOW_CLOSE,
-    "",
-    "close=0",
-  ],
   [Ci.nsIWebBrowserChrome.CHROME_WINDOW_LOWERED, "alwayslowered"],
   [Ci.nsIWebBrowserChrome.CHROME_WINDOW_RAISED, "alwaysraised"],
   // "chrome" and "suppressanimation" are always set.
@@ -236,7 +223,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
   PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   RunState: "resource:///modules/sessionstore/RunState.sys.mjs",
   SessionCookies: "resource:///modules/sessionstore/SessionCookies.sys.mjs",
   SessionFile: "resource:///modules/sessionstore/SessionFile.sys.mjs",
@@ -2554,7 +2540,7 @@ var SessionStoreInternal = {
           let promises = [this.flushAllWindowsAsync(progress)];
 
           const observeTopic = topic => {
-            let deferred = lazy.PromiseUtils.defer();
+            let deferred = Promise.withResolvers();
             const observer = subject => {
               // Skip abort on ipc:content-shutdown if not abnormal/crashed
               subject.QueryInterface(Ci.nsIPropertyBag2);
@@ -6233,7 +6219,7 @@ var SessionStoreInternal = {
     );
 
     this._updateWindowRestoreState(window, aState);
-    WINDOW_SHOWING_PROMISES.set(window, lazy.PromiseUtils.defer());
+    WINDOW_SHOWING_PROMISES.set(window, Promise.withResolvers());
 
     return window;
   },
@@ -6532,27 +6518,29 @@ var SessionStoreInternal = {
           activeIndex = Math.min(activeIndex, tabState.entries.length - 1);
           activeIndex = Math.max(activeIndex, 0);
 
-          let title =
-            tabState.entries[activeIndex].title ||
-            tabState.entries[activeIndex].url;
+          if (activeIndex in tabState.entries) {
+            let title =
+              tabState.entries[activeIndex].title ||
+              tabState.entries[activeIndex].url;
 
-          let tabData = {
-            state: tabState,
-            title,
-            image: tabState.image,
-            pos: tIndex,
-            closedAt: Date.now(),
-            closedInGroup: false,
-            removeAfterRestore: true,
-          };
+            let tabData = {
+              state: tabState,
+              title,
+              image: tabState.image,
+              pos: tIndex,
+              closedAt: Date.now(),
+              closedInGroup: false,
+              removeAfterRestore: true,
+            };
 
-          if (this._shouldSaveTabState(tabState)) {
-            this.saveClosedTabData(
-              window,
-              newWindowState._closedTabs,
-              tabData,
-              false
-            );
+            if (this._shouldSaveTabState(tabState)) {
+              this.saveClosedTabData(
+                window,
+                newWindowState._closedTabs,
+                tabData,
+                false
+              );
+            }
           }
         }
         tIndex++;
@@ -6560,20 +6548,16 @@ var SessionStoreInternal = {
 
       hasPinnedTabs ||= !!newWindowState.tabs.length;
 
-      // At this point the window in the state object has been modified (or not)
-      // We want to build the rest of this new window object if we have pinnedTabs.
-      if (
-        newWindowState.tabs.length ||
-        (PERSIST_SESSIONS && newWindowState._closedTabs.length)
-      ) {
-        // First get the other attributes off the window
+      // Only transfer over window attributes for pinned tabs, which has
+      // already been extracted into newWindowState.tabs.
+      if (newWindowState.tabs.length) {
         WINDOW_ATTRIBUTES.forEach(function (attr) {
           if (attr in window) {
             newWindowState[attr] = window[attr];
             delete window[attr];
           }
         });
-        // We're just copying position data into the pinned window.
+        // We're just copying position data into the window for pinned tabs.
         // Not copying over:
         // - extData
         // - isPopup
@@ -6583,8 +6567,14 @@ var SessionStoreInternal = {
         // remaining data
         window.__lastSessionWindowID = newWindowState.__lastSessionWindowID =
           "" + Date.now() + Math.random();
+      }
 
-        // Actually add this window to our defaultState
+      // If this newWindowState contains pinned tabs (stored in tabs) or
+      // closed tabs, add it to the defaultState so they're available immediately.
+      if (
+        newWindowState.tabs.length ||
+        (PERSIST_SESSIONS && newWindowState._closedTabs.length)
+      ) {
         defaultState.windows.push(newWindowState);
         // Remove the window from the state if it doesn't have any tabs
         if (!window.tabs.length) {
@@ -6924,7 +6914,7 @@ var SessionStoreInternal = {
     let DELAY_BEAT = 1000;
     let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
     let beats = Math.ceil(delay / DELAY_BEAT);
-    let deferred = lazy.PromiseUtils.defer();
+    let deferred = Promise.withResolvers();
     timer.initWithCallback(
       function () {
         if (beats <= 0) {
@@ -7037,7 +7027,7 @@ var SessionStoreInternal = {
   },
 
   _waitForStateStop(browser, expectedURL = null) {
-    const deferred = lazy.PromiseUtils.defer();
+    const deferred = Promise.withResolvers();
 
     const listener = {
       unregister(reject = true) {

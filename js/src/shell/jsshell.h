@@ -132,7 +132,9 @@ extern bool enableWellFormedUnicodeStrings;
 extern bool enableArrayBufferTransfer;
 extern bool enableSymbolsAsWeakMapKeys;
 extern bool enableNewSetMethods;
-extern bool enableImportAssertions;
+extern bool enableImportAttributes;
+extern bool enableImportAttributesAssertSyntax;
+extern bool enableDestructuringFuse;
 #ifdef JS_GC_ZEAL
 extern uint32_t gZealBits;
 extern uint32_t gZealFrequency;
@@ -177,7 +179,7 @@ class NonshrinkingGCObjectVector
   }
 };
 
-using MarkBitObservers = JS::WeakCache<NonshrinkingGCObjectVector>;
+using MarkBitObservers = WeakCache<NonshrinkingGCObjectVector>;
 
 #ifdef SINGLESTEP_PROFILING
 using StackChars = Vector<char16_t, 0, SystemAllocPolicy>;

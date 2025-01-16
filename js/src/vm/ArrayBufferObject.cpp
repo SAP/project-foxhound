@@ -348,19 +348,15 @@ static const JSPropertySpec arraybuffer_properties[] = {
 
 static const JSFunctionSpec arraybuffer_proto_functions[] = {
     JS_SELF_HOSTED_FN("slice", "ArrayBufferSlice", 2, 0),
-#ifdef NIGHTLY_BUILD
     JS_FN("transfer", ArrayBufferObject::transfer, 0, 0),
     JS_FN("transferToFixedLength", ArrayBufferObject::transferToFixedLength, 0,
           0),
-#endif
     JS_FS_END,
 };
 
 static const JSPropertySpec arraybuffer_proto_properties[] = {
     JS_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0),
-#ifdef NIGHTLY_BUILD
     JS_PSG("detached", ArrayBufferObject::detachedGetter, 0),
-#endif
     JS_STRING_SYM_PS(toStringTag, "ArrayBuffer", JSPROP_READONLY),
     JS_PS_END,
 };
@@ -415,7 +411,6 @@ bool ArrayBufferObject::byteLengthGetter(JSContext* cx, unsigned argc,
   return CallNonGenericMethod<IsArrayBuffer, byteLengthGetterImpl>(cx, args);
 }
 
-#ifdef NIGHTLY_BUILD
 /**
  * ArrayBufferCopyAndDetach ( arrayBuffer, newLength, preserveResizability )
  *
@@ -555,7 +550,6 @@ bool ArrayBufferObject::transferToFixedLength(JSContext* cx, unsigned argc,
   return CallNonGenericMethod<IsArrayBuffer, transferToFixedLengthImpl>(cx,
                                                                         args);
 }
-#endif
 
 /*
  * ArrayBuffer.isView(obj); ES6 (Dec 2013 draft) 24.1.3.1
@@ -1111,7 +1105,8 @@ bool ArrayBufferObject::prepareForAsmJS() {
              "prior size checking should have excluded empty buffers");
 
   switch (bufferKind()) {
-    case MALLOCED:
+    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
+    case MALLOCED_UNKNOWN_ARENA:
     case MAPPED:
     case EXTERNAL:
       // It's okay if this uselessly sets the flag a second time.
@@ -1139,10 +1134,6 @@ bool ArrayBufferObject::prepareForAsmJS() {
     // wasm buffers can be detached at any time.
     case WASM:
       MOZ_ASSERT(!isPreparedForAsmJS());
-      return false;
-
-    case BAD1:
-      MOZ_ASSERT_UNREACHABLE("invalid bufferKind() encountered");
       return false;
   }
 
@@ -1179,7 +1170,8 @@ void ArrayBufferObject::releaseData(JS::GCContext* gcx) {
     case INLINE_DATA:
       // Inline data doesn't require releasing.
       break;
-    case MALLOCED:
+    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
+    case MALLOCED_UNKNOWN_ARENA:
       gcx->free_(this, dataPointer(), byteLength(),
                  MemoryUse::ArrayBufferContents);
       break;
@@ -1210,9 +1202,6 @@ void ArrayBufferObject::releaseData(JS::GCContext* gcx) {
         freeInfo()->freeFunc(dataPointer(), freeInfo()->freeUserData);
       }
       break;
-    case BAD1:
-      MOZ_CRASH("invalid BufferKind encountered");
-      break;
   }
 }
 
@@ -1232,10 +1221,10 @@ size_t ArrayBufferObject::byteLength() const {
 }
 
 inline size_t ArrayBufferObject::associatedBytes() const {
-  if (bufferKind() == MALLOCED) {
+  if (isMalloced()) {
     return byteLength();
   }
-  if (bufferKind() == MAPPED) {
+  if (isMapped()) {
     return RoundUp(byteLength(), js::gc::SystemPageSize());
   }
   MOZ_CRASH("Unexpected buffer kind");
@@ -1553,7 +1542,8 @@ ArrayBufferObject* ArrayBufferObject::createForContents(
     if (contents.kind() == MAPPED) {
       nAllocated = RoundUp(nbytes, js::gc::SystemPageSize());
     } else {
-      MOZ_ASSERT(contents.kind() == MALLOCED,
+      MOZ_ASSERT(contents.kind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA ||
+                     contents.kind() == MALLOCED_UNKNOWN_ARENA,
                  "should have handled all possible callers' kinds");
     }
   }
@@ -1573,7 +1563,9 @@ ArrayBufferObject* ArrayBufferObject::createForContents(
 
   buffer->initialize(nbytes, contents);
 
-  if (contents.kind() == MAPPED || contents.kind() == MALLOCED) {
+  if (contents.kind() == MAPPED ||
+      contents.kind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA ||
+      contents.kind() == MALLOCED_UNKNOWN_ARENA) {
     AddCellMemory(buffer, nAllocated, MemoryUse::ArrayBufferContents);
   }
 
@@ -1621,7 +1613,8 @@ ArrayBufferObject::createBufferAndData(
   uint8_t* toFill;
   if (data) {
     toFill = data.release();
-    buffer->initialize(nbytes, BufferContents::createMalloced(toFill));
+    buffer->initialize(
+        nbytes, BufferContents::createMallocedArrayBufferContentsArena(toFill));
     AddCellMemory(buffer, nbytes, MemoryUse::ArrayBufferContents);
   } else {
     auto contents =
@@ -1680,11 +1673,14 @@ ArrayBufferObject::createBufferAndData(
              "caller must validate the byte count it passes");
 
   if (newByteLength > ArrayBufferObject::MaxInlineBytes &&
-      source->bufferKind() == ArrayBufferObject::MALLOCED) {
+      source->isMalloced()) {
     if (newByteLength == source->byteLength()) {
       return copyAndDetachSteal(cx, source);
     }
-    return copyAndDetachRealloc(cx, newByteLength, source);
+    if (source->bufferKind() ==
+        ArrayBufferObject::MALLOCED_ARRAYBUFFER_CONTENTS_ARENA) {
+      return copyAndDetachRealloc(cx, newByteLength, source);
+    }
   }
 
   auto* newBuffer = ArrayBufferObject::copy(cx, newByteLength, source);
@@ -1699,7 +1695,7 @@ ArrayBufferObject::createBufferAndData(
 /* static */ ArrayBufferObject* ArrayBufferObject::copyAndDetachSteal(
     JSContext* cx, JS::Handle<ArrayBufferObject*> source) {
   MOZ_ASSERT(!source->isDetached());
-  MOZ_ASSERT(source->bufferKind() == MALLOCED);
+  MOZ_ASSERT(source->isMalloced());
 
   size_t byteLength = source->byteLength();
   MOZ_ASSERT(byteLength > ArrayBufferObject::MaxInlineBytes,
@@ -1713,7 +1709,8 @@ ArrayBufferObject::createBufferAndData(
   // Extract the contents from |source|.
   BufferContents contents = source->contents();
   MOZ_ASSERT(contents);
-  MOZ_ASSERT(contents.kind() == MALLOCED);
+  MOZ_ASSERT(contents.kind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA ||
+             contents.kind() == MALLOCED_UNKNOWN_ARENA);
 
   // Overwrite |source|'s data pointer *without* releasing the data.
   source->setDataPointer(BufferContents::createNoData());
@@ -1733,7 +1730,7 @@ ArrayBufferObject::createBufferAndData(
     JSContext* cx, size_t newByteLength,
     JS::Handle<ArrayBufferObject*> source) {
   MOZ_ASSERT(!source->isDetached());
-  MOZ_ASSERT(source->bufferKind() == MALLOCED);
+  MOZ_ASSERT(source->bufferKind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA);
   MOZ_ASSERT(newByteLength > ArrayBufferObject::MaxInlineBytes,
              "prefer copying small buffers");
   MOZ_ASSERT(newByteLength <= ArrayBufferObject::MaxByteLength,
@@ -1751,7 +1748,7 @@ ArrayBufferObject::createBufferAndData(
   // Extract the contents from |source|.
   BufferContents contents = source->contents();
   MOZ_ASSERT(contents);
-  MOZ_ASSERT(contents.kind() == MALLOCED);
+  MOZ_ASSERT(contents.kind() == MALLOCED_ARRAYBUFFER_CONTENTS_ARENA);
 
   // Reallocate the data pointer.
   auto newData = ReallocateArrayBufferContents(cx, contents.data(),
@@ -1760,7 +1757,8 @@ ArrayBufferObject::createBufferAndData(
     // If reallocation failed, the old pointer is still valid, so just return.
     return nullptr;
   }
-  auto newContents = BufferContents::createMalloced(newData.release());
+  auto newContents =
+      BufferContents::createMallocedArrayBufferContentsArena(newData.release());
 
   // Overwrite |source|'s data pointer *without* releasing the data.
   source->setDataPointer(BufferContents::createNoData());
@@ -1834,7 +1832,8 @@ ArrayBufferObject* ArrayBufferObject::createFromNewRawBuffer(
   CheckStealPreconditions(buffer, cx);
 
   switch (buffer->bufferKind()) {
-    case MALLOCED: {
+    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
+    case MALLOCED_UNKNOWN_ARENA: {
       uint8_t* stolenData = buffer->dataPointer();
       MOZ_ASSERT(stolenData);
 
@@ -1873,10 +1872,6 @@ ArrayBufferObject* ArrayBufferObject::createFromNewRawBuffer(
           "memory.grow operation that shouldn't call this "
           "function");
       return nullptr;
-
-    case BAD1:
-      MOZ_ASSERT_UNREACHABLE("bad kind when stealing malloc'd data");
-      return nullptr;
   }
 
   MOZ_ASSERT_UNREACHABLE("garbage kind computed");
@@ -1906,10 +1901,12 @@ ArrayBufferObject::extractStructuredCloneContents(
       }
 
       ArrayBufferObject::detach(cx, buffer);
-      return BufferContents::createMalloced(copiedData.release());
+      return BufferContents::createMallocedArrayBufferContentsArena(
+          copiedData.release());
     }
 
-    case MALLOCED:
+    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
+    case MALLOCED_UNKNOWN_ARENA:
     case MAPPED: {
       MOZ_ASSERT(contents);
 
@@ -1933,10 +1930,6 @@ ArrayBufferObject::extractStructuredCloneContents(
       MOZ_ASSERT_UNREACHABLE(
           "external ArrayBuffer shouldn't have passed the "
           "structured-clone preflighting");
-      break;
-
-    case BAD1:
-      MOZ_ASSERT_UNREACHABLE("bad kind when stealing malloc'd data");
       break;
   }
 
@@ -1968,7 +1961,7 @@ bool ArrayBufferObject::ensureNonInline(JSContext* cx,
     return false;
   }
   BufferContents outOfLineContents =
-      BufferContents::createMalloced(copy.release());
+      BufferContents::createMallocedArrayBufferContentsArena(copy.release());
   buffer->setDataPointer(outOfLineContents);
   AddCellMemory(buffer, nbytes, MemoryUse::ArrayBufferContents);
 
@@ -2001,7 +1994,8 @@ void ArrayBufferObject::addSizeOfExcludingThis(
       // Inline data's size should be reported by this object's size-class
       // reporting.
       break;
-    case MALLOCED:
+    case MALLOCED_ARRAYBUFFER_CONTENTS_ARENA:
+    case MALLOCED_UNKNOWN_ARENA:
       if (buffer.isPreparedForAsmJS()) {
         info->objectsMallocHeapElementsAsmJS +=
             mallocSizeOf(buffer.dataPointer());
@@ -2034,8 +2028,6 @@ void ArrayBufferObject::addSizeOfExcludingThis(
         }
       }
       break;
-    case BAD1:
-      MOZ_CRASH("bad bufferKind()");
   }
 }
 
@@ -2098,54 +2090,112 @@ bool ArrayBufferObject::addView(JSContext* cx, ArrayBufferViewObject* view) {
  * InnerViewTable
  */
 
-constexpr size_t VIEW_LIST_MAX_LENGTH = 500;
+inline bool InnerViewTable::Views::empty() { return views.empty(); }
 
-bool InnerViewTable::addView(JSContext* cx, ArrayBufferObject* buffer,
-                             JSObject* view) {
-  // ArrayBufferObject entries are only added when there are multiple views.
-  MOZ_ASSERT(buffer->firstView());
+inline bool InnerViewTable::Views::hasNurseryViews() {
+  return firstNurseryView < views.length();
+}
 
-  Map::AddPtr p = map.lookupForAdd(buffer);
+bool InnerViewTable::Views::addView(ArrayBufferViewObject* view) {
+  // Add the view to the list, ensuring that all nursery views are at end.
 
-  MOZ_ASSERT(!gc::IsInsideNursery(buffer));
-  bool addToNursery = nurseryKeysValid && gc::IsInsideNursery(view);
-
-  if (p) {
-    ViewVector& views = p->value();
-    MOZ_ASSERT(!views.empty());
-
-    if (addToNursery) {
-      // Only add the entry to |nurseryKeys| if it isn't already there.
-      if (views.length() >= VIEW_LIST_MAX_LENGTH) {
-        // To avoid quadratic blowup, skip the loop below if we end up
-        // adding enormous numbers of views for the same object.
-        nurseryKeysValid = false;
-      } else {
-        for (size_t i = 0; i < views.length(); i++) {
-          if (gc::IsInsideNursery(views[i])) {
-            addToNursery = false;
-            break;
-          }
-        }
-      }
-    }
-
-    if (!views.append(view)) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-  } else {
-    if (!map.add(p, buffer, ViewVector(cx->zone()))) {
-      ReportOutOfMemory(cx);
-      return false;
-    }
-    // ViewVector has one inline element, so the first insertion is
-    // guaranteed to succeed.
-    MOZ_ALWAYS_TRUE(p->value().append(view));
+  if (!views.append(view)) {
+    return false;
   }
 
-  if (addToNursery && !nurseryKeys.append(buffer)) {
-    nurseryKeysValid = false;
+  if (!gc::IsInsideNursery(view)) {
+    // Move tenured views before |firstNurseryView|.
+    if (firstNurseryView != views.length() - 1) {
+      std::swap(views[firstNurseryView], views.back());
+    }
+    firstNurseryView++;
+  }
+
+  check();
+
+  return true;
+}
+
+bool InnerViewTable::Views::sweepAfterMinorGC(JSTracer* trc) {
+  return traceWeak(trc, firstNurseryView);
+}
+
+bool InnerViewTable::Views::traceWeak(JSTracer* trc, size_t startIndex) {
+  // Use |trc| to trace the view vector from |startIndex| to the end, removing
+  // dead views and updating |firstNurseryView|.
+
+  size_t index = startIndex;
+  bool sawNurseryView = false;
+  views.mutableEraseIf(
+      [&](auto& view) {
+        if (!JS::GCPolicy<ViewVector::ElementType>::traceWeak(trc, &view)) {
+          return true;
+        }
+
+        if (!sawNurseryView && gc::IsInsideNursery(view)) {
+          sawNurseryView = true;
+          firstNurseryView = index;
+        }
+
+        index++;
+        return false;
+      },
+      startIndex);
+
+  if (!sawNurseryView) {
+    firstNurseryView = views.length();
+  }
+
+  check();
+
+  return !views.empty();
+}
+
+inline void InnerViewTable::Views::check() {
+#ifdef DEBUG
+  MOZ_ASSERT(firstNurseryView <= views.length());
+  if (views.length() < 100) {
+    for (size_t i = 0; i < views.length(); i++) {
+      MOZ_ASSERT(gc::IsInsideNursery(views[i]) == (i >= firstNurseryView));
+    }
+  }
+#endif
+}
+
+bool InnerViewTable::addView(JSContext* cx, ArrayBufferObject* buffer,
+                             ArrayBufferViewObject* view) {
+  // ArrayBufferObject entries are only added when there are multiple views.
+  MOZ_ASSERT(buffer->firstView());
+  MOZ_ASSERT(!gc::IsInsideNursery(buffer));
+
+  // Ensure the buffer is present in the map, getting the list of views.
+  auto ptr = map.lookupForAdd(buffer);
+  if (!ptr && !map.add(ptr, buffer, Views(cx->zone()))) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+  Views& views = ptr->value();
+
+  bool isNurseryView = gc::IsInsideNursery(view);
+  bool hadNurseryViews = views.hasNurseryViews();
+  if (!views.addView(view)) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  // If we added the first nursery view, add the buffer to the list of buffers
+  // which have nursery views.
+  if (isNurseryView && !hadNurseryViews && nurseryKeysValid) {
+#ifdef DEBUG
+    if (nurseryKeys.length() < 100) {
+      for (auto* key : nurseryKeys) {
+        MOZ_ASSERT(key != buffer);
+      }
+    }
+#endif
+    if (!nurseryKeys.append(buffer)) {
+      nurseryKeysValid = false;
+    }
   }
 
   return true;
@@ -2153,18 +2203,18 @@ bool InnerViewTable::addView(JSContext* cx, ArrayBufferObject* buffer,
 
 InnerViewTable::ViewVector* InnerViewTable::maybeViewsUnbarriered(
     ArrayBufferObject* buffer) {
-  Map::Ptr p = map.lookup(buffer);
-  if (p) {
-    return &p->value();
+  auto ptr = map.lookup(buffer);
+  if (ptr) {
+    return &ptr->value().views;
   }
   return nullptr;
 }
 
 void InnerViewTable::removeViews(ArrayBufferObject* buffer) {
-  Map::Ptr p = map.lookup(buffer);
-  MOZ_ASSERT(p);
+  auto ptr = map.lookup(buffer);
+  MOZ_ASSERT(ptr);
 
-  map.remove(p);
+  map.remove(ptr);
 }
 
 bool InnerViewTable::traceWeak(JSTracer* trc) { return map.traceWeak(trc); }
@@ -2174,16 +2224,20 @@ void InnerViewTable::sweepAfterMinorGC(JSTracer* trc) {
 
   if (nurseryKeysValid) {
     for (size_t i = 0; i < nurseryKeys.length(); i++) {
-      JSObject* buffer = MaybeForwarded(nurseryKeys[i]);
-      Map::Ptr p = map.lookup(buffer);
-      if (p &&
-          !Map::EntryGCPolicy::traceWeak(trc, &p->mutableKey(), &p->value())) {
-        map.remove(p);
+      ArrayBufferObject* buffer = nurseryKeys[i];
+      MOZ_ASSERT(!gc::IsInsideNursery(buffer));
+      auto ptr = map.lookup(buffer);
+      if (ptr && !ptr->value().sweepAfterMinorGC(trc)) {
+        map.remove(ptr);
       }
     }
   } else {
-    // Do the required sweeping by looking at every map entry.
-    map.traceWeak(trc);
+    for (ArrayBufferViewMap::Enum e(map); !e.empty(); e.popFront()) {
+      MOZ_ASSERT(!gc::IsInsideNursery(e.front().key()));
+      if (!e.front().value().sweepAfterMinorGC(trc)) {
+        e.removeFront();
+      }
+    }
   }
 
   nurseryKeys.clear();
@@ -2192,8 +2246,8 @@ void InnerViewTable::sweepAfterMinorGC(JSTracer* trc) {
 
 size_t InnerViewTable::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
   size_t vectorSize = 0;
-  for (Map::Enum e(map); !e.empty(); e.popFront()) {
-    vectorSize += e.front().value().sizeOfExcludingThis(mallocSizeOf);
+  for (auto r = map.all(); !r.empty(); r.popFront()) {
+    vectorSize += r.front().value().views.sizeOfExcludingThis(mallocSizeOf);
   }
 
   return vectorSize + map.shallowSizeOfExcludingThis(mallocSizeOf) +
@@ -2321,7 +2375,7 @@ JS_PUBLIC_API JSObject* JS::NewArrayBufferWithContents(
 
   using BufferContents = ArrayBufferObject::BufferContents;
 
-  BufferContents contents = BufferContents::createMalloced(data);
+  BufferContents contents = BufferContents::createMallocedUnknownArena(data);
   return ArrayBufferObject::createForContents(cx, nbytes, contents);
 }
 

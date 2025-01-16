@@ -8,6 +8,7 @@ add_task(async function test_ads_requested_after_enabled() {
     set: [
       ["browser.shopping.experience2023.ads.enabled", true],
       ["browser.shopping.experience2023.ads.userEnabled", false],
+      ["browser.shopping.experience2023.autoOpen.enabled", true],
       ["toolkit.shopping.ohttpRelayURL", ""],
       ["toolkit.shopping.ohttpConfigURL", ""],
     ],
@@ -23,7 +24,7 @@ add_task(async function test_ads_requested_after_enabled() {
         .querySelector("shopping-sidebar");
       Assert.ok(sidebar, "Sidebar should exist");
       Assert.ok(
-        BrowserTestUtils.is_visible(sidebar),
+        BrowserTestUtils.isVisible(sidebar),
         "Sidebar should be visible."
       );
       info("Waiting for sidebar to update.");
@@ -46,7 +47,6 @@ add_task(async function test_ads_requested_after_enabled() {
 
           let shoppingSettings = shoppingContainer.settingsEl;
           await shoppingSettings.updateComplete;
-          shoppingSettings.shoppingCardEl.detailsEl.open = true;
 
           let recommendationsToggle = shoppingSettings.recommendationsToggleEl;
           recommendationsToggle.click();
@@ -61,7 +61,7 @@ add_task(async function test_ads_requested_after_enabled() {
           await recommendedCard.updateComplete;
           Assert.ok(recommendedCard, "Recommended card should exist");
           Assert.ok(
-            ContentTaskUtils.is_visible(recommendedCard),
+            ContentTaskUtils.isVisible(recommendedCard),
             "Recommended card is visible"
           );
         }

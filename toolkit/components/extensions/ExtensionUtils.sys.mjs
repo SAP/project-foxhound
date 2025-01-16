@@ -77,6 +77,7 @@ class WorkerExtensionError extends DOMException {
  * Similar to a WeakMap, but creates a new key with the given
  * constructor if one is not present.
  */
+// @ts-ignore (https://github.com/microsoft/TypeScript/issues/56664)
 class DefaultWeakMap extends WeakMap {
   constructor(defaultConstructor = undefined, init = undefined) {
     super(init);
@@ -126,7 +127,7 @@ function getInnerWindowID(window) {
  * @param {integer} [slop = limit * .25]
  *        The number of extra entries to allow in the set after it
  *        reaches the size limit, before it is truncated to the limit.
- * @param {iterable} [iterable]
+ * @param {Iterable} [iterable]
  *        An iterable of initial entries to add to the set.
  */
 class LimitedSet extends Set {
@@ -153,7 +154,7 @@ class LimitedSet extends Set {
     if (this.size >= this.limit + this.slop && !this.has(item)) {
       this.truncate(this.limit - 1);
     }
-    super.add(item);
+    return super.add(item);
   }
 }
 
@@ -230,7 +231,7 @@ function promiseDocumentLoaded(doc) {
  * @param {boolean} [useCapture = true]
  *        If true, listen for the even in the capturing rather than
  *        bubbling phase.
- * @param {Event} [test]
+ * @param {function(Event): boolean} [test]
  *        An optional test function which, when called with the
  *        observer's subject and data, should return true if this is the
  *        expected event, false otherwise.
@@ -259,7 +260,7 @@ function promiseEvent(
  *
  * @param {string} topic
  *        The topic to observe.
- * @param {function(nsISupports, string)} [test]
+ * @param {function(any, string): boolean} [test]
  *        An optional test function which, when called with the
  *        observer's subject and data, should return true if this is the
  *        expected notification, false otherwise.

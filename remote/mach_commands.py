@@ -72,7 +72,7 @@ def vendor_puppeteer(command_context, repository, commitish, install):
     # Preserve our custom mocha reporter
     shutil.move(
         os.path.join(puppeteer_dir, "json-mocha-reporter.js"),
-        remotedir(command_context),
+        os.path.join(remotedir(command_context), "json-mocha-reporter.js"),
     )
     shutil.rmtree(puppeteer_dir, ignore_errors=True)
     os.makedirs(puppeteer_dir)
@@ -133,7 +133,12 @@ def vendor_puppeteer(command_context, repository, commitish, install):
         )
 
     if install:
-        env = {"HUSKY": "0", "PUPPETEER_SKIP_DOWNLOAD": "1"}
+        env = {
+            "CI": "1",  # Force the quiet logger of wireit
+            "HUSKY": "0",  # Disable any hook checks
+            "PUPPETEER_SKIP_DOWNLOAD": "1",  # Don't download any build
+        }
+
         run_npm(
             "install",
             cwd=os.path.join(command_context.topsrcdir, puppeteer_dir),
@@ -488,7 +493,7 @@ class PuppeteerRunner(MozbuildObject):
         ]
 
         output_handler = MochaOutputHandler(logger, expectations)
-        return_code = run_npm(
+        run_npm(
             *command,
             cwd=self.puppeteer_dir,
             env=env,
@@ -496,19 +501,14 @@ class PuppeteerRunner(MozbuildObject):
             # Puppeteer unit tests don't always clean-up child processes in case of
             # failure, so use an output_timeout as a fallback
             output_timeout=60,
-            exit_on_fail=False,
+            exit_on_fail=True,
         )
 
         output_handler.after_end()
 
-        # Non-zero return codes are non-fatal for now since we have some
-        # issues with unresolved promises that shouldn't otherwise block
-        # running the tests
-        if return_code != 0:
-            logger.warning("npm exited with code %s" % return_code)
-
         if output_handler.has_unexpected:
-            exit(1, "Got unexpected results")
+            logger.error("Got unexpected results")
+            exit(1)
 
 
 def create_parser_puppeteer():
@@ -704,7 +704,11 @@ def puppeteer_test(
 
 def install_puppeteer(command_context, product, ci):
     setup()
-    env = {"HUSKY": "0"}
+
+    env = {
+        "CI": "1",  # Force the quiet logger of wireit
+        "HUSKY": "0",  # Disable any hook checks
+    }
 
     puppeteer_dir = os.path.join("remote", "test", "puppeteer")
     puppeteer_dir_full_path = os.path.join(command_context.topsrcdir, puppeteer_dir)
@@ -726,8 +730,8 @@ def install_puppeteer(command_context, product, ci):
             exit_on_fail=False,
         )
 
-    command = "ci" if ci else "install"
-    run_npm(command, cwd=puppeteer_dir_full_path, env=env)
+    # Always use the `ci` command to not get updated sub-dependencies installed.
+    run_npm("ci", cwd=puppeteer_dir_full_path, env=env)
     run_npm(
         "run",
         "build",

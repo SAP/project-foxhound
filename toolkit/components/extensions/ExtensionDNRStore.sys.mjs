@@ -15,7 +15,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Extension: "resource://gre/modules/Extension.sys.mjs",
   ExtensionDNR: "resource://gre/modules/ExtensionDNR.sys.mjs",
   ExtensionDNRLimits: "resource://gre/modules/ExtensionDNRLimits.sys.mjs",
-  PromiseUtils: "resource://gre/modules/PromiseUtils.sys.mjs",
   Schemas: "resource://gre/modules/Schemas.sys.mjs",
 });
 
@@ -117,7 +116,7 @@ class StoreData {
    * @param {Extension} extension
    *        The extension the StoreData is associated to.
    * @param {object} params
-   * @param {string} params.extVersion
+   * @param {string} [params.extVersion]
    *        extension version
    * @param {string} [params.lastUpdateTag]
    *        a tag associated to the data. It is only passed when we are loading the data
@@ -148,7 +147,7 @@ class StoreData {
     if (!(extension instanceof lazy.Extension)) {
       throw new Error("Missing mandatory extension parameter");
     }
-    this.schemaVersion = schemaVersion || this.constructor.VERSION;
+    this.schemaVersion = schemaVersion || StoreData.VERSION;
     this.extVersion = extVersion ?? extension.version;
     this.#extUUID = extension.uuid;
     // Used to skip storing the data in the startupCache or storing the lastUpdateTag in
@@ -220,8 +219,8 @@ class StoreData {
   }
 
   #updateRulesets({
-    staticRulesets,
-    dynamicRuleset,
+    staticRulesets = null,
+    dynamicRuleset = null,
     lastUpdateTag = Services.uuid.generateUUID().toString(),
   } = {}) {
     if (staticRulesets) {
@@ -298,7 +297,7 @@ class Queue {
     if (this.#closed) {
       throw new Error("Unexpected queueTask call on closed queue");
     }
-    const deferred = lazy.PromiseUtils.defer();
+    const deferred = Promise.withResolvers();
     this.#tasks.push({ callback, deferred });
     // Run the queued task right away if there isn't one already running.
     if (!this.#runningTask) {
@@ -667,11 +666,7 @@ class RulesetsStore {
    * @returns {StoreData}
    */
   #getDefaults(extension) {
-    return new StoreData(extension, {
-      extUUID: extension.uuid,
-      extVersion: extension.version,
-      temporarilyInstalled: extension.temporarilyInstalled,
-    });
+    return new StoreData(extension, { extVersion: extension.version });
   }
 
   /**
@@ -754,6 +749,8 @@ class RulesetsStore {
    * Reads the store file for the given extensions and all rules
    * for the enabled static ruleset ids listed in the store file.
    *
+   * @typedef {string} ruleset_id
+   *
    * @param {Extension} extension
    * @param {object} [options]
    * @param {Array<string>} [options.enabledRulesetIds]
@@ -768,7 +765,7 @@ class RulesetsStore {
    *        `enabledRulesetIds` contains the IDs of disabled rulesets that
    *        should be enabled. Already-enabled rulesets are not included in
    *        `enabledRulesetIds`.
-   * @param {RuleQuotaCounter} [options.ruleQuotaCounter]
+   * @param {import("ExtensionDNR.sys.mjs").RuleQuotaCounter} [options.ruleQuotaCounter]
    *        The counter of already-enabled rules that are not part of
    *        `enabledRulesetIds`. Set when `isUpdateEnabledRulesets` is true.
    *        This method may mutate its internal counters.
@@ -904,6 +901,8 @@ class RulesetsStore {
    * of raw rules data (e.g. in form of plain objects read from the static rules
    * JSON files or the dynamicRuleset property from the extension DNR store data).
    *
+   * @typedef {import("ExtensionDNR.sys.mjs").Rule} Rule
+   *
    * @param   {Extension}     extension
    * @param   {string}        rulesetId
    * @param   {Array<object>} rawRules
@@ -1018,7 +1017,7 @@ class RulesetsStore {
     // TODO(Bug 1803369): consider also setting to true if the extension is installed temporarily.
     if (this.#hasInstallOrUpdateStartupReason(extension)) {
       // Reset the stored static rules on addon updates.
-      await StartupCache.delete(extension, "dnr", "hasEnabledStaticRules");
+      await StartupCache.delete(extension, ["dnr", "hasEnabledStaticRules"]);
     }
 
     const hasEnabledStaticRules = await StartupCache.get(
@@ -1151,7 +1150,7 @@ class RulesetsStore {
       // Reset the stored data if a data schema version downgrade has been
       // detected (this should only be hit on downgrades if the user have
       // also explicitly passed --allow-downgrade CLI option).
-      if (result && result.version > StoreData.VERSION) {
+      if (result && result.schemaVersion > StoreData.VERSION) {
         Cu.reportError(
           `Unsupport DNR store schema version downgrade: resetting stored data for ${extension.id}`
         );

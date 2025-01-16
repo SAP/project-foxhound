@@ -187,13 +187,14 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   bool IsFullyOccluded() const override { return mIsFullyOccluded; }
 
   void SetCursor(const Cursor&) override;
+  void SetCustomCursorAllowed(bool) override;
   void ClearCachedCursor() final {
     mCursor = {};
     mUpdateCursor = true;
   }
   void SetTransparencyMode(TransparencyMode aMode) override;
   TransparencyMode GetTransparencyMode() override;
-  void SetWindowShadowStyle(mozilla::StyleWindowShadow aStyle) override {}
+  void SetWindowShadowStyle(mozilla::WindowShadow) override {}
   void SetShowsToolbarButton(bool aShow) override {}
   void SetSupportsNativeFullscreen(bool aSupportsNativeFullscreen) override {}
   void SetWindowAnimationType(WindowAnimationType aType) override {}
@@ -217,7 +218,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // resources and possibly schedule another paint.
   //
   // A reference to the session object is held until this function has
-  // returned.
+  // returned. Callers should hold a reference to the widget, since this
+  // function could deallocate the widget if it is unparented.
   virtual void NotifyCompositorSessionLost(
       mozilla::layers::CompositorSession* aSession);
 
@@ -694,6 +696,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   RefPtr<mozilla::SwipeTracker> mSwipeTracker;
   mozilla::UniquePtr<mozilla::SwipeEventQueue> mSwipeEventQueue;
   Cursor mCursor;
+  bool mCustomCursorAllowed = true;
   BorderStyle mBorderStyle;
   LayoutDeviceIntRect mBounds;
   bool mIsTiled;

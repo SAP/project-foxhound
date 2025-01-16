@@ -1036,20 +1036,26 @@ export var UrlbarTestUtils = {
    *
    * @param {string} url
    *  The url that is supposed to be sanitizied.
+   * @param {{removeSingleTrailingSlash: (boolean)}} options
+   *    removeSingleTrailingSlash: Remove trailing slash, when trimming enabled.
    * @returns {string}
    *  The sanitized URL.
    */
-  trimURL(url) {
+  trimURL(url, { removeSingleTrailingSlash = true } = {}) {
     if (!lazy.UrlbarPrefs.get("trimURLs")) {
       return url;
     }
 
     let sanitizedURL = url;
+    if (removeSingleTrailingSlash) {
+      sanitizedURL =
+        lazy.BrowserUIUtils.removeSingleTrailingSlashFromURL(sanitizedURL);
+    }
 
     if (lazy.UrlbarPrefs.get("trimHttps")) {
-      sanitizedURL = url.replace("https://", "");
+      sanitizedURL = sanitizedURL.replace("https://", "");
     } else {
-      sanitizedURL = url.replace("http://", "");
+      sanitizedURL = sanitizedURL.replace("http://", "");
     }
 
     // Remove empty emphasis markers in case the protocol was trimmed.
@@ -1478,6 +1484,8 @@ class TestProvider extends UrlbarProvider {
    *   {@link UrlbarView.#selectElement} method is called.
    * @param {Function} [options.onEngagement]
    *   If given, a function that will be called when engagement.
+   * @param {Function} [options.delayResultsPromise]
+   *   If given, we'll await on this before returning results.
    */
   constructor({
     results,
@@ -1488,7 +1496,13 @@ class TestProvider extends UrlbarProvider {
     onCancel = null,
     onSelection = null,
     onEngagement = null,
+    delayResultsPromise = null,
   } = {}) {
+    if (delayResultsPromise && addTimeout) {
+      throw new Error(
+        "Can't provide both `addTimeout` and `delayResultsPromise`"
+      );
+    }
     super();
     this._results = results;
     this._name = name;
@@ -1498,6 +1512,12 @@ class TestProvider extends UrlbarProvider {
     this._onCancel = onCancel;
     this._onSelection = onSelection;
     this._onEngagement = onEngagement;
+    this._delayResultsPromise = delayResultsPromise;
+    // As this has been a common source of mistakes, auto-upgrade the provider
+    // type to heuristic if any result is heuristic.
+    if (!type && this._results?.some(r => r.heuristic)) {
+      this._type = UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    }
   }
   get name() {
     return this._name;
@@ -1514,6 +1534,9 @@ class TestProvider extends UrlbarProvider {
   async startQuery(context, addCallback) {
     if (!this._results.length && this._addTimeout) {
       await new Promise(resolve => lazy.setTimeout(resolve, this._addTimeout));
+    }
+    if (this._delayResultsPromise) {
+      await this._delayResultsPromise;
     }
     for (let result of this._results) {
       if (!this._addTimeout) {

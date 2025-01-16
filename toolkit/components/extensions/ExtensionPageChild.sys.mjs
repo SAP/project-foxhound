@@ -29,12 +29,10 @@ import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
 const { getInnerWindowID, promiseEvent } = ExtensionUtils;
 
-const { BaseContext, CanOfAPIs, SchemaAPIManager, defineLazyGetter } =
+const { BaseContext, CanOfAPIs, SchemaAPIManager, redefineGetter } =
   ExtensionCommon;
 
 const { ChildAPIManager, Messenger } = ExtensionChild;
-
-export var ExtensionPageChild;
 
 const initializeBackgroundPage = context => {
   // Override the `alert()` method inside background windows;
@@ -43,6 +41,7 @@ const initializeBackgroundPage = context => {
   let alertDisplayedWarning = false;
   const innerWindowID = getInnerWindowID(context.contentWindow);
 
+  /** @param {{ text, filename, lineNumber?, columnNumber? }} options */
   function logWarningMessage({ text, filename, lineNumber, columnNumber }) {
     let consoleMsg = Cc["@mozilla.org/scripterror;1"].createInstance(
       Ci.nsIScriptError
@@ -184,7 +183,7 @@ export function getContextChildManagerGetter(
   };
 }
 
-class ExtensionBaseContextChild extends BaseContext {
+export class ExtensionBaseContextChild extends BaseContext {
   /**
    * This ExtensionBaseContextChild represents an addon execution environment
    * that is running in an addon or devtools child process.
@@ -196,6 +195,7 @@ class ExtensionBaseContextChild extends BaseContext {
    * @param {string} params.viewType One of "background", "popup", "tab",
    *   "sidebar", "devtools_page" or "devtools_panel".
    * @param {number} [params.tabId] This tab's ID, used if viewType is "tab".
+   * @param {nsIURI} [params.uri] The URI of the page.
    */
   constructor(extension, params) {
     if (!params.envType) {
@@ -218,12 +218,6 @@ class ExtensionBaseContextChild extends BaseContext {
       });
     }
 
-    defineLazyGetter(this, "browserObj", () => {
-      let browserObj = Cu.createObjectIn(contentWindow);
-      this.childManager.inject(browserObj);
-      return browserObj;
-    });
-
     lazy.Schemas.exportLazyGetter(contentWindow, "browser", () => {
       return this.browserObj;
     });
@@ -241,6 +235,12 @@ class ExtensionBaseContextChild extends BaseContext {
       chromeApiWrapper.inject(chromeObj);
       return chromeObj;
     });
+  }
+
+  get browserObj() {
+    const browserObj = Cu.createObjectIn(this.contentWindow);
+    this.childManager.inject(browserObj);
+    return redefineGetter(this, "browserObj", browserObj);
   }
 
   logActivity(type, name, data) {
@@ -281,11 +281,16 @@ class ExtensionBaseContextChild extends BaseContext {
 
     super.unload();
   }
-}
 
-defineLazyGetter(ExtensionBaseContextChild.prototype, "messenger", function () {
-  return new Messenger(this);
-});
+  get messenger() {
+    return redefineGetter(this, "messenger", new Messenger(this));
+  }
+
+  /** @type {ReturnType<ReturnType<getContextChildManagerGetter>>} */
+  get childManager() {
+    throw new Error("childManager getter must be overridden");
+  }
+}
 
 class ExtensionPageContextChild extends ExtensionBaseContextChild {
   /**
@@ -304,6 +309,7 @@ class ExtensionPageContextChild extends ExtensionBaseContextChild {
    *     "popup" is only used internally to identify page action and browser
    *     action popups and options_ui pages.
    * @param {number} [params.tabId] This tab's ID, used if viewType is "tab".
+   * @param {nsIURI} [params.uri] The URI of the page.
    */
   constructor(extension, params) {
     super(extension, Object.assign(params, { envType: "addon_child" }));
@@ -319,15 +325,16 @@ class ExtensionPageContextChild extends ExtensionBaseContextChild {
     super.unload();
     this.extension.views.delete(this);
   }
+
+  get childManager() {
+    const childManager = getContextChildManagerGetter({
+      envType: "addon_parent",
+    }).call(this);
+    return redefineGetter(this, "childManager", childManager);
+  }
 }
 
-defineLazyGetter(
-  ExtensionPageContextChild.prototype,
-  "childManager",
-  getContextChildManagerGetter({ envType: "addon_parent" })
-);
-
-class DevToolsContextChild extends ExtensionBaseContextChild {
+export class DevToolsContextChild extends ExtensionBaseContextChild {
   /**
    * This DevToolsContextChild represents a devtools-related addon execution
    * environment that has access to the devtools API namespace and to the same subset
@@ -339,6 +346,8 @@ class DevToolsContextChild extends ExtensionBaseContextChild {
    * @param {string} params.viewType One of "devtools_page" or "devtools_panel".
    * @param {object} [params.devtoolsToolboxInfo] This devtools toolbox's information,
    *   used if viewType is "devtools_page" or "devtools_panel".
+   * @param {number} [params.tabId] This tab's ID, used if viewType is "tab".
+   * @param {nsIURI} [params.uri] The URI of the page.
    */
   constructor(extension, params) {
     super(extension, Object.assign(params, { envType: "devtools_child" }));
@@ -356,15 +365,16 @@ class DevToolsContextChild extends ExtensionBaseContextChild {
     super.unload();
     this.extension.devtoolsViews.delete(this);
   }
+
+  get childManager() {
+    const childManager = getContextChildManagerGetter({
+      envType: "devtools_parent",
+    }).call(this);
+    return redefineGetter(this, "childManager", childManager);
+  }
 }
 
-defineLazyGetter(
-  DevToolsContextChild.prototype,
-  "childManager",
-  getContextChildManagerGetter({ envType: "devtools_parent" })
-);
-
-ExtensionPageChild = {
+export var ExtensionPageChild = {
   initialized: false,
 
   // Map<innerWindowId, ExtensionPageContextChild>
@@ -394,6 +404,7 @@ ExtensionPageChild = {
       global,
       "DOMContentLoaded",
       true,
+      /** @param {{target: Window|any}} event */
       event =>
         event.target.location != "about:blank" &&
         // Ignore DOMContentLoaded bubbled from child frames:

@@ -60,6 +60,10 @@ void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   moveToFloat32(src, dest);
 }
 
+void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
+  as_bstrpick_d(dest, src, 7, 0);
+}
+
 void MacroAssembler::move8SignExtend(Register src, Register dest) {
   as_ext_w_b(dest, src);
 }
@@ -1852,6 +1856,13 @@ void MacroAssembler::branchToComputedAddress(const BaseIndex& addr) {
   SecondScratchRegisterScope scratch2(asMasm());
   loadPtr(addr, scratch2);
   branch(scratch2);
+}
+
+void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Imm32 rhs,
+                                 Register src, Register dest) {
+  SecondScratchRegisterScope scratch2(asMasm());
+  cmp32Set(cond, lhs, rhs, scratch2);
+  moveIfNotZero(dest, src, scratch2);
 }
 
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,

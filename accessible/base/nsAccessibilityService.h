@@ -181,6 +181,12 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
                                     nsIContent* aContent);
 
   /**
+   * Notifies when an element's popovertarget shows/hides.
+   */
+  void PopovertargetMaybeChanged(mozilla::PresShell* aPresShell,
+                                 nsIContent* aContent);
+
+  /**
    * Notifies when a combobox <option> text or label changes.
    */
   void ComboboxOptionMaybeChanged(mozilla::PresShell*,
@@ -481,7 +487,6 @@ static const char kEventTypeNames[][40] = {
     "window minimize",           // EVENT_WINDOW_MINIMIZE
     "window restore",            // EVENT_WINDOW_RESTORE
     "object attribute changed",  // EVENT_OBJECT_ATTRIBUTE_CHANGED
-    "virtual cursor changed",    // EVENT_VIRTUALCURSOR_CHANGED
     "text value change",         // EVENT_TEXT_VALUE_CHANGE
     "scrolling",                 // EVENT_SCROLLING
     "announcement",              // EVENT_ANNOUNCEMENT

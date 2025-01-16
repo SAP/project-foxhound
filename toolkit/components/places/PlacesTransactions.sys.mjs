@@ -88,43 +88,39 @@
  * Sometimes it is useful to "batch" or "merge" transactions.  For example,
  * something like "Bookmark All Tabs" may be implemented as one NewFolder
  * transaction followed by numerous NewBookmark transactions - all to be undone
- * or redone in a single undo or redo command.  Use |PlacesTransactions.batch|
- * in such cases.  It can take either an array of transactions which will be
- * executed in the given order and later be treated a a single entry in the
- * transactions history, or a generator function that is passed to Task.spawn,
- * that is to "contain" the batch: once the generator function is called a batch
- * starts, and it lasts until the asynchronous generator iteration is complete
- * All transactions executed by |transact| during this time are to be treated as
- * a single entry in the transactions history.
+ * or redone in a single undo or redo command.  Use `PlacesTransactions.batch()`
+ * in such cases.
+ * It takes an array of transactions which will be executed in the given order
+ * and later be treated as a single entry in the transactions history.
+ * If a transaction depends on the results from a previous one, it can be
+ * replaced by a function that will be invoked with an array of results
+ * accumulated from the previous transactions, indexed in the same positions.
+ * The function should return the transaction to execute. For example:
  *
- * In both modes, |PlacesTransactions.batch| returns a promise that is to be
- * resolved when the batch ends.  In the array-input mode, there's no resolution
- * value.  In the generator mode, the resolution value is whatever the generator
- * function returned (the semantics are the same as in Task.spawn, basically).
+ *  let transactions = [
+ *    // Returns the GUID of the new bookmark.
+ *    PlacesTransactions.NewBookmark({
+ *      parentGuid: "someGUID",
+ *      title: "someTitle",
+ *      url: "https://www.mozilla.org/""
+ *    }),
+ *    previousResults => PlacesTransactions.EditKeyword({
+ *      // Get the GUID from the result of transactions[0].
+ *      guid: previousResults[0],
+ *      keyword: "someKeyword",
+ *    },
+ *  ];
  *
- * The array-input mode of |PlacesTransactions.batch| is useful for implementing
- * a batch of mostly-independent transaction (for example, |paste| into a folder
- * can be implemented as a batch of multiple NewBookmark transactions).
- * The generator mode is useful when the resolution value of executing one
- * transaction is the input of one more subsequent transaction.
+ * `PlacesTransactions.batch()` returns a promise resolved when the batch ends.
+ * The resolution value is an array with all the transaction return values
+ * indexed like the original transactions. So, for example, if a transaction
+ * returns an array of GUIDs, to get a list of all the created GUIDs for all the
+ * transactions one could use .flat() to flatten the array.
  *
- * In the array-input mode, if any transactions fails to execute, the batch
- * continues (exceptions are logged).  Only transactions that were executed
- * successfully are added to the transactions history.
- *
- * WARNING: "nested" batches are not supported, if you call batch while another
- * batch is still running, the new batch is enqueued with all other PTM work
- * and thus not run until the running batch ends. The same goes for undo, redo
- * and clearTransactionsHistory (note batches cannot be done partially, meaning
- * undo and redo calls that during a batch are just enqueued).
- *
- * *****************************************************************************
- * IT'S PARTICULARLY IMPORTANT NOT TO await ANY PROMISE RETURNED BY ANY OF
- * THESE METHODS (undo, redo, clearTransactionsHistory) FROM A BATCH FUNCTION.
- * UNTIL WE FIND A WAY TO THROW IN THAT CASE (SEE BUG 1091446) DOING SO WILL
- * COMPLETELY BREAK PTM UNTIL SHUTDOWN, NOT ALLOWING THE EXECUTION OF ANY
- * TRANSACTION!
- * *****************************************************************************
+ * If any transactions fails to execute, the batch continues (exceptions are
+ * logged) and the result of that transactions will be set to undefined.
+ * Only transactions that were executed successfully are added to the
+ * transactions history as part of the batch.
  *
  * Serialization
  * -------------
@@ -160,12 +156,35 @@
 
 const TRANSACTIONS_QUEUE_TIMEOUT_MS = 240000; // 4 Mins.
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
+// Use a single queue bookmarks transaction manager. This pref exists as an
+// emergency switch-off, it will go away in the future.
+const prefs = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  prefs,
+  "USE_SINGLE_QUEUE",
+  "places.bookmarks.useSingleQueueTransactionManager",
+  true
+);
+
 import { PlacesUtils } from "resource://gre/modules/PlacesUtils.sys.mjs";
 
 function setTimeout(callback, ms) {
   let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
   timer.initWithCallback(callback, ms, timer.TYPE_ONE_SHOT);
 }
+
+const lazy = {};
+ChromeUtils.defineLazyGetter(lazy, "logger", function () {
+  return console.createInstance({
+    prefix: "PlacesTransactions",
+    maxLogLevel: Services.prefs.getCharPref(
+      "places.transactions.logLevel",
+      "Error"
+    ),
+  });
+});
 
 class TransactionsHistoryArray extends Array {
   constructor() {
@@ -202,8 +221,11 @@ class TransactionsHistoryArray extends Array {
    */
   proxifyTransaction(rawTransaction) {
     let proxy = Object.freeze({
-      transact() {
-        return TransactionsManager.transact(this);
+      transact(inBatch, batchIndex) {
+        return TransactionsManager.transact(this, inBatch, batchIndex);
+      },
+      toString() {
+        return rawTransaction.toString();
       },
     });
     this.proxifiedToRaw.set(proxy, rawTransaction);
@@ -251,8 +273,10 @@ class TransactionsHistoryArray extends Array {
 
     if (!this.length || forceNewEntry) {
       this.clearRedoEntries();
+      lazy.logger.debug(`Adding transaction: ${proxifiedTransaction}`);
       this.unshift([proxifiedTransaction]);
     } else {
+      lazy.logger.debug(`Adding transaction: ${proxifiedTransaction}`);
       this[this.undoPosition].unshift(proxifiedTransaction);
     }
   }
@@ -261,6 +285,7 @@ class TransactionsHistoryArray extends Array {
    * Clear all undo entries.
    */
   clearUndoEntries() {
+    lazy.logger.debug("Clearing undo entries");
     if (this.undoPosition < this.length) {
       this.splice(this.undoPosition);
     }
@@ -270,6 +295,7 @@ class TransactionsHistoryArray extends Array {
    * Clear all redo entries.
    */
   clearRedoEntries() {
+    lazy.logger.debug("Clearing redo entries");
     if (this.undoPosition > 0) {
       this.splice(0, this.undoPosition);
       this._undoPosition = 0;
@@ -280,14 +306,13 @@ class TransactionsHistoryArray extends Array {
    * Clear all entries.
    */
   clearAllEntries() {
+    lazy.logger.debug("Clearing all entries");
     if (this.length) {
       this.splice(0);
       this._undoPosition = 0;
     }
   }
 }
-
-const lazy = {};
 
 ChromeUtils.defineLazyGetter(
   lazy,
@@ -299,34 +324,44 @@ export var PlacesTransactions = {
   /**
    * @see Batches in the module documentation.
    */
-  batch(transactionsToBatch) {
-    if (Array.isArray(transactionsToBatch)) {
-      if (!transactionsToBatch.length) {
-        throw new Error("Must pass a non-empty array");
-      }
-
-      if (
-        transactionsToBatch.some(
-          o => !lazy.TransactionsHistory.isProxifiedTransactionObject(o)
-        )
-      ) {
-        throw new Error("Must pass only transaction entries");
-      }
-      return TransactionsManager.batch(async function () {
-        for (let txn of transactionsToBatch) {
-          try {
-            await txn.transact();
-          } catch (ex) {
-            console.error(ex);
+  batch(transactionsToBatch, batchName) {
+    if (!Array.isArray(transactionsToBatch) || !transactionsToBatch.length) {
+      throw new Error("Must pass a non-empty array");
+    }
+    if (
+      transactionsToBatch.some(
+        o =>
+          !lazy.TransactionsHistory.isProxifiedTransactionObject(o) &&
+          typeof o != "function"
+      )
+    ) {
+      throw new Error("Must pass only transactions or functions");
+    }
+    lazy.logger.debug(
+      `Batch ${batchName}: ${transactionsToBatch.length} transactions`
+    );
+    return TransactionsManager.batch(async function () {
+      lazy.logger.debug(`Batch ${batchName}: executing transactions`);
+      let accumulatedResults = [];
+      for (let txn of transactionsToBatch) {
+        try {
+          if (typeof txn == "function") {
+            txn = txn(accumulatedResults);
           }
+          accumulatedResults.push(
+            await txn.transact(true, accumulatedResults.length)
+          );
+        } catch (ex) {
+          // TODO Bug 1865631: handle these errors better, currently we just
+          // continue, that works for non-dependent transactions, but will
+          // skip most of the work for functions depending on previous results.
+          // Moreover in both cases we should notify the user about the problem.
+          accumulatedResults.push(undefined);
+          console.error(ex);
         }
-      });
-    }
-    if (typeof transactionsToBatch == "function") {
-      return TransactionsManager.batch(transactionsToBatch);
-    }
-
-    throw new Error("Must pass either a function or a transactions array");
+      }
+      return accumulatedResults;
+    });
   },
 
   /**
@@ -339,6 +374,7 @@ export var PlacesTransactions = {
    * history may change by the time your request is fulfilled.
    */
   undo() {
+    lazy.logger.debug("undo() was invoked");
     return TransactionsManager.undo();
   },
 
@@ -352,6 +388,7 @@ export var PlacesTransactions = {
    * history may change by the time your request is fulfilled.
    */
   redo() {
+    lazy.logger.debug("redo() was invoked");
     return TransactionsManager.redo();
   },
 
@@ -370,6 +407,7 @@ export var PlacesTransactions = {
    * history may change by the time your request is fulfilled.
    */
   clearTransactionsHistory(undoEntries = true, redoEntries = true) {
+    lazy.logger.debug("clearTransactionsHistory() was invoked");
     return TransactionsManager.clearTransactionsHistory(
       undoEntries,
       redoEntries
@@ -437,8 +475,9 @@ export var PlacesTransactions = {
  * In other words: Enqueuer.enqueue(aFunc1); Enqueuer.enqueue(aFunc2) is roughly
  * the same as Task.spawn(aFunc1).then(Task.spawn(aFunc2)).
  */
-function Enqueuer() {
+function Enqueuer(name) {
   this._promise = Promise.resolve();
+  this._name = name;
 }
 Enqueuer.prototype = {
   /**
@@ -451,6 +490,7 @@ Enqueuer.prototype = {
    *          "mirrors" the promise returned by aFunc.
    */
   enqueue(func) {
+    lazy.logger.debug(`${this._name} enqueing`);
     // If a transaction awaits on a never resolved promise, or is mistakenly
     // nested, it could hang the transactions queue forever.  Thus we timeout
     // the execution after a meaningful amount of time, to ensure in any case
@@ -471,7 +511,7 @@ Enqueuer.prototype = {
     );
 
     // Propagate exceptions to the caller, but dismiss them internally.
-    this._promise = promise.catch(console.error);
+    this._promise = promise.catch(lazy.logger.error);
     return promise;
   },
 
@@ -480,10 +520,13 @@ Enqueuer.prototype = {
    * This is useful, for example, for serializing transact calls with undo calls,
    * even though transact has its own Enqueuer.
    *
-   * @param otherPromise
+   * @param {Promise} otherPromise
    *        any promise.
+   * @param {string} source
+   *        source for logging purposes
    */
-  alsoWaitFor(otherPromise) {
+  alsoWaitFor(otherPromise, source) {
+    lazy.logger.debug(`${this._name} alsoWaitFor: ${source}`);
     // We don't care if aPromise resolves or rejects, but just that is not
     // pending anymore.
     // If a transaction awaits on a never resolved promise, or is mistakenly
@@ -518,24 +561,23 @@ Enqueuer.prototype = {
 var TransactionsManager = {
   // See the documentation at the top of this file. |transact| calls are not
   // serialized with |batch| calls.
-  _mainEnqueuer: new Enqueuer(),
-  _transactEnqueuer: new Enqueuer(),
-
-  // Is a batch in progress? set when we enter a batch function and unset when
-  // it's execution is done.
-  _batching: false,
-
-  // If a batch started, this indicates if we've already created an entry in the
-  // transactions history for the batch (i.e. if at least one transaction was
-  // executed successfully).
-  _createdBatchEntry: false,
+  _mainEnqueuer: new Enqueuer("MainEnqueuer"),
+  _transactEnqueuer: new Enqueuer("TransactEnqueuer"),
 
   // Transactions object should never be recycled (that is, |execute| should
   // only be called once (or not at all) after they're constructed.
   // This keeps track of all transactions which were executed.
   _executedTransactions: new WeakSet(),
 
-  transact(txnProxy) {
+  /**
+   * Execute a proxified transaction.
+   *
+   * @param {object} txnProxy The proxified transaction to execute.
+   * @param {boolean} [inBatch] Whether the transaction is part of a batch.
+   * @param {integer} [batchIndex] The index of the transaction in the batch array.
+   * @returns {Promise} resolved to the transaction return value once complete.
+   */
+  transact(txnProxy, inBatch = false, batchIndex = undefined) {
     let rawTxn = lazy.TransactionsHistory.getRawTransaction(txnProxy);
     if (!rawTxn) {
       throw new Error("|transact| was called with an unexpected object");
@@ -545,45 +587,36 @@ var TransactionsManager = {
       throw new Error("Transactions objects may not be recycled.");
     }
 
+    lazy.logger.debug(`transact() enqueue: ${txnProxy}`);
+
     // Add it in advance so one doesn't accidentally do
     // sameTxn.transact(); sameTxn.transact();
     this._executedTransactions.add(rawTxn);
 
-    let promise = this._transactEnqueuer.enqueue(async () => {
+    let task = async () => {
+      lazy.logger.debug(`transact execute(): ${txnProxy}`);
       // Don't try to catch exceptions. If execute fails, we better not add the
       // transaction to the undo stack.
       let retval = await rawTxn.execute();
 
-      let forceNewEntry = !this._batching || !this._createdBatchEntry;
+      let forceNewEntry = !inBatch || batchIndex === 0;
       lazy.TransactionsHistory.add(txnProxy, forceNewEntry);
-      if (this._batching) {
-        this._createdBatchEntry = true;
-      }
 
       this._updateCommandsOnActiveWindow();
       return retval;
-    });
-    this._mainEnqueuer.alsoWaitFor(promise);
+    };
+
+    if (prefs.USE_SINGLE_QUEUE) {
+      return task();
+    }
+
+    let promise = this._transactEnqueuer.enqueue(task);
+    this._mainEnqueuer.alsoWaitFor(promise, "transact");
     return promise;
   },
 
   batch(task) {
-    return this._mainEnqueuer.enqueue(async () => {
-      this._batching = true;
-      this._createdBatchEntry = false;
-      let rv;
-      try {
-        rv = await task();
-      } finally {
-        // We must enqueue clearing batching mode to ensure that any existing
-        // transactions have completed before we clear the batching mode.
-        this._mainEnqueuer.enqueue(() => {
-          this._batching = false;
-          this._createdBatchEntry = false;
-        });
-      }
-      return rv;
-    });
+    return this._mainEnqueuer.enqueue(task);
   },
 
   /**
@@ -591,6 +624,7 @@ var TransactionsManager = {
    */
   undo() {
     let promise = this._mainEnqueuer.enqueue(async () => {
+      lazy.logger.debug("Undo execute");
       let entry = lazy.TransactionsHistory.topUndoEntry;
       if (!entry) {
         return;
@@ -610,7 +644,9 @@ var TransactionsManager = {
       lazy.TransactionsHistory._undoPosition++;
       this._updateCommandsOnActiveWindow();
     });
-    this._transactEnqueuer.alsoWaitFor(promise);
+    if (!prefs.USE_SINGLE_QUEUE) {
+      this._transactEnqueuer.alsoWaitFor(promise, "undo");
+    }
     return promise;
   },
 
@@ -619,6 +655,7 @@ var TransactionsManager = {
    */
   redo() {
     let promise = this._mainEnqueuer.enqueue(async () => {
+      lazy.logger.debug("Redo execute");
       let entry = lazy.TransactionsHistory.topRedoEntry;
       if (!entry) {
         return;
@@ -643,13 +680,15 @@ var TransactionsManager = {
       lazy.TransactionsHistory._undoPosition--;
       this._updateCommandsOnActiveWindow();
     });
-
-    this._transactEnqueuer.alsoWaitFor(promise);
+    if (!prefs.USE_SINGLE_QUEUE) {
+      this._transactEnqueuer.alsoWaitFor(promise, "redo");
+    }
     return promise;
   },
 
   clearTransactionsHistory(undoEntries, redoEntries) {
     let promise = this._mainEnqueuer.enqueue(function () {
+      lazy.logger.debug(`ClearTransactionsHistory execute`);
       if (undoEntries && redoEntries) {
         lazy.TransactionsHistory.clearAllEntries();
       } else if (undoEntries) {
@@ -661,7 +700,9 @@ var TransactionsManager = {
       }
     });
 
-    this._transactEnqueuer.alsoWaitFor(promise);
+    if (!prefs.USE_SINGLE_QUEUE) {
+      this._transactEnqueuer.alsoWaitFor(promise, "clearTransactionsHistory");
+    }
     return promise;
   },
 
@@ -1108,6 +1149,9 @@ PT.NewBookmark.prototype = Object.seal({
     };
     return info.guid;
   },
+  toString() {
+    return "NewBookmark";
+  },
 });
 
 /**
@@ -1173,6 +1217,9 @@ PT.NewFolder.prototype = Object.seal({
     };
     return folderGuid;
   },
+  toString() {
+    return "NewFolder";
+  },
 });
 
 /**
@@ -1192,6 +1239,9 @@ PT.NewSeparator.prototype = Object.seal({
     this.undo = PlacesUtils.bookmarks.remove.bind(PlacesUtils.bookmarks, info);
     this.redo = PlacesUtils.bookmarks.insert.bind(PlacesUtils.bookmarks, info);
     return info.guid;
+  },
+  toString() {
+    return "NewSeparator";
   },
 });
 
@@ -1236,6 +1286,9 @@ PT.Move.prototype = Object.seal({
     );
     return guids;
   },
+  toString() {
+    return "Move";
+  },
 });
 
 /**
@@ -1262,6 +1315,9 @@ PT.EditTitle.prototype = Object.seal({
       PlacesUtils.bookmarks,
       updateInfo
     );
+  },
+  toString() {
+    return "EditTitle";
   },
 });
 
@@ -1326,6 +1382,9 @@ PT.EditUrl.prototype = Object.seal({
       updatedInfo = await updateItem();
     };
   },
+  toString() {
+    return "EditUrl";
+  },
 });
 
 /**
@@ -1367,6 +1426,9 @@ PT.EditKeyword.prototype = Object.seal({
         await PlacesUtils.keywords.insert(oldKeywordEntry);
       }
     };
+  },
+  toString() {
+    return "EditKeyword";
   },
 });
 
@@ -1428,6 +1490,9 @@ PT.SortByName.prototype = {
       await PlacesUtils.bookmarks.reorder(guid, newOrderGuids);
     };
   },
+  toString() {
+    return "SortByName";
+  },
 };
 
 /**
@@ -1475,6 +1540,9 @@ PT.Remove.prototype = {
       }
     };
     this.redo = removeThem;
+  },
+  toString() {
+    return "Remove";
   },
 };
 
@@ -1527,6 +1595,9 @@ PT.Tag.prototype = {
       }
     };
   },
+  toString() {
+    return "Tag";
+  },
 };
 
 /**
@@ -1575,6 +1646,9 @@ PT.Untag.prototype = {
         await f();
       }
     };
+  },
+  toString() {
+    return "Untag";
   },
 };
 
@@ -1679,6 +1753,9 @@ PT.RenameTag.prototype = {
       }
     };
   },
+  toString() {
+    return "RenameTag";
+  },
 };
 
 /**
@@ -1717,5 +1794,8 @@ PT.Copy.prototype = {
     };
 
     return newItemGuid;
+  },
+  toString() {
+    return "Copy";
   },
 };

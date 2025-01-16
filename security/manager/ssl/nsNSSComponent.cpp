@@ -309,7 +309,7 @@ void nsNSSComponent::UnloadEnterpriseRoots() {
   }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("UnloadEnterpriseRoots"));
   MutexAutoLock lock(mMutex);
-  mEnterpriseCerts.clear();
+  mEnterpriseCerts.Clear();
   setValidationOptions(false, lock);
   ClearSSLExternalAndInternalSessionCache();
 }
@@ -357,7 +357,7 @@ void nsNSSComponent::ImportEnterpriseRoots() {
     return;
   }
 
-  Vector<EnterpriseCert> enterpriseCerts;
+  nsTArray<EnterpriseCert> enterpriseCerts;
   nsresult rv = GatherEnterpriseCerts(enterpriseCerts);
   if (NS_SUCCEEDED(rv)) {
     MutexAutoLock lock(mMutex);
@@ -374,18 +374,13 @@ nsresult nsNSSComponent::CommonGetEnterpriseCerts(
     return rv;
   }
 
-  MutexAutoLock nsNSSComponentLock(mMutex);
   enterpriseCerts.Clear();
+  MutexAutoLock nsNSSComponentLock(mMutex);
   for (const auto& cert : mEnterpriseCerts) {
     nsTArray<uint8_t> certCopy;
     // mEnterpriseCerts includes both roots and intermediates.
     if (cert.GetIsRoot() == getRoots) {
-      nsresult rv = cert.CopyBytes(certCopy);
-      if (NS_FAILED(rv)) {
-        return rv;
-      }
-      // XXX(Bug 1631371) Check if this should use a fallible operation as it
-      // pretended earlier.
+      cert.CopyBytes(certCopy);
       enterpriseCerts.AppendElement(std::move(certCopy));
     }
   }
@@ -411,18 +406,11 @@ nsNSSComponent::AddEnterpriseIntermediate(
   if (NS_FAILED(rv)) {
     return rv;
   }
-  EnterpriseCert intermediate;
-  rv = intermediate.Init(intermediateBytes.Elements(),
-                         intermediateBytes.Length(), false);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
+  EnterpriseCert intermediate(intermediateBytes.Elements(),
+                              intermediateBytes.Length(), false);
   {
     MutexAutoLock nsNSSComponentLock(mMutex);
-    if (!mEnterpriseCerts.append(std::move(intermediate))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    mEnterpriseCerts.AppendElement(std::move(intermediate));
   }
 
   UpdateCertVerifierWithEnterpriseRoots();
@@ -1044,6 +1032,15 @@ void SetDeprecatedTLS1CipherPrefs() {
   }
 }
 
+// static
+void SetKyberPolicy() {
+  if (StaticPrefs::security_tls_enable_kyber()) {
+    NSS_SetAlgorithmPolicy(SEC_OID_XYBER768D00, NSS_USE_ALG_IN_SSL_KX, 0);
+  } else {
+    NSS_SetAlgorithmPolicy(SEC_OID_XYBER768D00, 0, NSS_USE_ALG_IN_SSL_KX);
+  }
+}
+
 nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
                                             const char* aTopic,
                                             const char16_t* someData) {
@@ -1060,6 +1057,7 @@ nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
       }
     }
     SetDeprecatedTLS1CipherPrefs();
+    SetKyberPolicy();
     nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
   } else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     Preferences::RemoveObserver(this, "security.");
@@ -1895,15 +1893,11 @@ nsresult nsNSSComponent::MaybeEnableIntermediatePreloadingHealer() {
     return NS_OK;
   }
 
-  if (!mIntermediatePreloadingHealerTaskQueue) {
-    nsresult rv = NS_CreateBackgroundTaskQueue(
-        "IntermediatePreloadingHealer",
-        getter_AddRefs(mIntermediatePreloadingHealerTaskQueue));
-    if (NS_FAILED(rv)) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Error,
-              ("NS_CreateBackgroundTaskQueue failed"));
-      return rv;
-    }
+  nsCOMPtr<nsIEventTarget> socketThread(
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID));
+  if (!socketThread) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("couldn't get socket thread?"));
+    return NS_ERROR_FAILURE;
   }
   uint32_t timerDelayMS =
       StaticPrefs::security_intermediate_preloading_healer_timer_interval_ms();
@@ -1911,7 +1905,7 @@ nsresult nsNSSComponent::MaybeEnableIntermediatePreloadingHealer() {
       getter_AddRefs(mIntermediatePreloadingHealerTimer),
       IntermediatePreloadingHealerCallback, nullptr, timerDelayMS,
       nsITimer::TYPE_REPEATING_SLACK_LOW_PRIORITY,
-      "IntermediatePreloadingHealer", mIntermediatePreloadingHealerTaskQueue);
+      "IntermediatePreloadingHealer", socketThread);
   if (NS_FAILED(rv)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error,
             ("NS_NewTimerWithFuncCallback failed"));
@@ -2496,6 +2490,8 @@ nsresult InitializeCipherSuite() {
   // devices like wifi routers with woefully small keys (they would have to add
   // an override to do so, but they already do for such devices).
   NSS_OptionSet(NSS_RSA_MIN_KEY_SIZE, 512);
+
+  SetKyberPolicy();
 
   // Observe preference change around cipher suite setting.
   return CipherSuiteChangeObserver::StartObserve();

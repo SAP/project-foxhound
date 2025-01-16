@@ -2,7 +2,7 @@
 # cargo-vet config file
 
 [cargo-vet]
-version = "0.8"
+version = "0.9"
 
 [imports.bytecode-alliance]
 url = "https://raw.githubusercontent.com/bytecodealliance/wasmtime/main/supply-chain/audits.toml"
@@ -51,18 +51,6 @@ notes = "Upstream release plus a couple unpublished changes"
 audit-as-crates-io = true
 notes = "Part of the wgpu repository, pinned as the rest of wgpu crates."
 
-[policy.diplomat]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
-
-[policy.diplomat-runtime]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
-
-[policy.diplomat_core]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
-
 [policy.firefox-on-glean]
 audit-as-crates-io = false
 notes = "The crates.io version of this is just a placeholder to allow public crates to depend on firefox-on-glean."
@@ -88,13 +76,13 @@ notes = "Used for fuzzing."
 criteria = "safe-to-run"
 notes = "Used for testing."
 
-[policy.icu_provider_macros]
+[policy.icu_capi]
 audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
+notes = "Patched version of upstream"
 
-[policy.icu_testdata]
-audit-as-crates-io = false
-notes = "Customized ICU4X baked data only that Gecko wants"
+[policy.icu_segmenter_data]
+audit-as-crates-io = true
+notes = "Patched version of upstream"
 
 [policy.l10nregistry]
 dependency-criteria = { fluent-testing = "safe-to-run", tokio = "safe-to-run" }
@@ -115,14 +103,6 @@ notes = "This is a first-party crate which is also published to crates.io. We ce
 [policy.midir]
 audit-as-crates-io = true
 notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
-
-[policy."minidump-common:0.17.0@git:6ae42a7f992e8a88ebee661bc77bcedb95cd671f"]
-audit-as-crates-io = true
-notes = "Unreleased upstream."
-
-[policy.minidump-writer]
-audit-as-crates-io = true
-notes = "Unreleased upstream."
 
 [policy."mio:0.6.23"]
 audit-as-crates-io = true
@@ -241,18 +221,6 @@ notes = "Upstream project which we pin."
 
 [policy.wr_malloc_size_of]
 audit-as-crates-io = false
-
-[policy.yoke-derive]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
-
-[policy.zerofrom-derive]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
-
-[policy.zerovec-derive]
-audit-as-crates-io = true
-notes = "Upstream version not to use syn 1.x"
 
 [[exemptions.ahash]]
 version = "0.7.6"
@@ -810,10 +778,6 @@ criteria = "safe-to-run"
 [[exemptions.unix_str]]
 version = "1.0.0"
 criteria = "safe-to-run"
-
-[[exemptions.url]]
-version = "2.1.0"
-criteria = "safe-to-deploy"
 
 [[exemptions.uuid]]
 version = "0.8.2"

@@ -121,7 +121,7 @@ export default class LoginList extends HTMLElement {
     shadowRoot.appendChild(loginListTemplate.content.cloneNode(true));
 
     this._count = shadowRoot.querySelector(".count");
-    this._createLoginButton = shadowRoot.querySelector(".create-login-button");
+    this._createLoginButton = shadowRoot.querySelector("create-login-button");
     this._list = shadowRoot.querySelector("ol");
     this._list.appendChild(this._blankLoginListItem);
     this._sortSelect = shadowRoot.querySelector("#login-sort");
@@ -714,7 +714,7 @@ export default class LoginList extends HTMLElement {
     if (count != args.count || total != args.total) {
       document.l10n.setAttributes(
         this._count,
-        count == total ? "login-list-count" : "login-list-filtered-count",
+        count == total ? "login-list-count2" : "login-list-filtered-count2",
         { count, total }
       );
     }

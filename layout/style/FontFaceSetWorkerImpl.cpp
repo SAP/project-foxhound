@@ -5,7 +5,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FontFaceSetWorkerImpl.h"
-#include "FontPreloader.h"
+#include "mozilla/FontLoaderUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -255,10 +255,10 @@ nsresult FontFaceSetWorkerImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
 
   nsCOMPtr<nsILoadGroup> loadGroup(mWorkerRef->Private()->GetLoadGroup());
   nsCOMPtr<nsIChannel> channel;
-  rv = FontPreloader::BuildChannel(
+  rv = FontLoaderUtils::BuildChannel(
       getter_AddRefs(channel), src.mURI->get(), CORS_ANONYMOUS,
       dom::ReferrerPolicy::_empty /* not used */, aUserFontEntry, &src,
-      mWorkerRef->Private(), loadGroup, nullptr, false);
+      mWorkerRef->Private(), loadGroup, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<nsFontFaceLoader> fontLoader =
@@ -322,10 +322,9 @@ bool FontFaceSetWorkerImpl::IsFontLoadAllowed(const gfxFontFaceSrc& aSrc) {
       nsIContentPolicy::TYPE_FONT);
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
-  nsresult rv = NS_CheckContentLoadPolicy(aSrc.mURI->get(), secCheckLoadInfo,
-                                          ""_ns,  // mime type
-                                          &shouldLoad,
-                                          nsContentUtils::GetContentPolicy());
+  nsresult rv =
+      NS_CheckContentLoadPolicy(aSrc.mURI->get(), secCheckLoadInfo, &shouldLoad,
+                                nsContentUtils::GetContentPolicy());
 
   return NS_SUCCEEDED(rv) && NS_CP_ACCEPTED(shouldLoad);
 }

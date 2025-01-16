@@ -147,8 +147,8 @@ class FunctionBox;
   F(ImportSpecList, ListNode)                                    \
   F(ImportSpec, BinaryNode)                                      \
   F(ImportNamespaceSpec, UnaryNode)                              \
-  F(ImportAssertionList, ListNode)                               \
-  F(ImportAssertion, BinaryNode)                                 \
+  F(ImportAttributeList, ListNode)                               \
+  F(ImportAttribute, BinaryNode)                                 \
   F(ImportModuleRequest, BinaryNode)                             \
   F(ExportStmt, UnaryNode)                                       \
   F(ExportFromStmt, BinaryNode)                                  \
@@ -2504,19 +2504,21 @@ class ClassNode : public TernaryNode {
 
 #ifdef ENABLE_DECORATORS
   ListNode* decorators_;
+  FunctionNode* addInitializerFunction_;
 #endif
 
  public:
   ClassNode(ParseNode* names, ParseNode* heritage,
             LexicalScopeNode* memberBlock,
 #ifdef ENABLE_DECORATORS
-            ListNode* decorators,
+            ListNode* decorators, FunctionNode* addInitializerFunction,
 #endif
             const TokenPos& pos)
       : TernaryNode(ParseNodeKind::ClassDecl, names, heritage, memberBlock, pos)
 #ifdef ENABLE_DECORATORS
         ,
-        decorators_(decorators)
+        decorators_(decorators),
+        addInitializerFunction_(addInitializerFunction)
 #endif
   {
     MOZ_ASSERT(innerScope()->scopeBody()->is<ClassBodyScopeNode>());
@@ -2549,6 +2551,9 @@ class ClassNode : public TernaryNode {
 #ifdef ENABLE_DECORATORS
   ListNode* decorators() const { return decorators_; }
 
+  FunctionNode* addInitializerFunction() const {
+    return addInitializerFunction_;
+  }
 #  ifdef DEBUG
   void dumpImpl(const ParserAtomsTable* parserAtoms, GenericPrinter& out,
                 int indent);

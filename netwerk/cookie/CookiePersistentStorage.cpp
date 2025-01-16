@@ -9,6 +9,7 @@
 #include "CookiePersistentStorage.h"
 
 #include "mozilla/FileUtils.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Telemetry.h"
 #include "mozIStorageAsyncStatement.h"
@@ -1694,7 +1695,7 @@ UniquePtr<CookieStruct> CookiePersistentStorage::GetCookieFromRow(
   // Create a new constCookie and assign the data.
   return MakeUnique<CookieStruct>(
       name, value, host, path, expiry, lastAccessed, creationTime, isHttpOnly,
-      false, isSecure, sameSite, rawSameSite,
+      false, isSecure, false, sameSite, rawSameSite,
       static_cast<nsICookie::schemeType>(schemeMap));
 }
 
@@ -2068,6 +2069,34 @@ already_AddRefed<nsIArray> CookiePersistentStorage::PurgeCookies(
           self->DeleteFromDB(paramsArray);
         }
       });
+}
+
+void CookiePersistentStorage::CollectCookieJarSizeData() {
+  COOKIE_LOGSTRING(LogLevel::Debug,
+                   ("CookiePersistentStorage::CollectCookieJarSizeData"));
+
+  uint32_t sumPartitioned = 0;
+  uint32_t sumUnpartitioned = 0;
+  for (const auto& cookieEntry : mHostTable) {
+    if (cookieEntry.IsPartitioned()) {
+      uint16_t cePartitioned = cookieEntry.GetCookies().Length();
+      sumPartitioned += cePartitioned;
+      mozilla::glean::networking::cookie_count_part_by_key.AccumulateSamples(
+          {cePartitioned});
+    } else {
+      uint16_t ceUnpartitioned = cookieEntry.GetCookies().Length();
+      sumUnpartitioned += ceUnpartitioned;
+      mozilla::glean::networking::cookie_count_unpart_by_key.AccumulateSamples(
+          {ceUnpartitioned});
+    }
+  }
+
+  mozilla::glean::networking::cookie_count_total.AccumulateSamples(
+      {mCookieCount});
+  mozilla::glean::networking::cookie_count_partitioned.AccumulateSamples(
+      {sumPartitioned});
+  mozilla::glean::networking::cookie_count_unpartitioned.AccumulateSamples(
+      {sumUnpartitioned});
 }
 
 }  // namespace net

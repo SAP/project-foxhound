@@ -183,9 +183,7 @@ nsMixedContentBlocker::AsyncOnChannelRedirect(
   }
 
   int16_t decision = REJECT_REQUEST;
-  rv = ShouldLoad(newUri, loadInfo,
-                  ""_ns,  // aMimeGuess
-                  &decision);
+  rv = ShouldLoad(newUri, loadInfo, &decision);
   if (NS_FAILED(rv)) {
     autoCallback.DontCallback();
     aOldChannel->Cancel(NS_ERROR_DOM_BAD_URI);
@@ -208,16 +206,13 @@ nsMixedContentBlocker::AsyncOnChannelRedirect(
  */
 NS_IMETHODIMP
 nsMixedContentBlocker::ShouldLoad(nsIURI* aContentLocation,
-                                  nsILoadInfo* aLoadInfo,
-                                  const nsACString& aMimeGuess,
-                                  int16_t* aDecision) {
+                                  nsILoadInfo* aLoadInfo, int16_t* aDecision) {
   // We pass in false as the first parameter to ShouldLoad(), because the
   // callers of this method don't know whether the load went through cached
   // image redirects.  This is handled by direct callers of the static
   // ShouldLoad.
-  nsresult rv =
-      ShouldLoad(false,  // aHadInsecureImageRedirect
-                 aContentLocation, aLoadInfo, aMimeGuess, true, aDecision);
+  nsresult rv = ShouldLoad(false,  // aHadInsecureImageRedirect
+                           aContentLocation, aLoadInfo, true, aDecision);
 
   if (*aDecision == nsIContentPolicy::REJECT_REQUEST) {
     NS_SetRequestBlockingReason(aLoadInfo,
@@ -425,7 +420,6 @@ static already_AddRefed<nsIURI> GetPrincipalURIOrPrecursorPrincipalURI(
 nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
                                            nsIURI* aContentLocation,
                                            nsILoadInfo* aLoadInfo,
-                                           const nsACString& aMimeGuess,
                                            bool aReportError,
                                            int16_t* aDecision) {
   // Asserting that we are on the main thread here and hence do not have to lock
@@ -615,6 +609,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
     case ExtContentPolicy::TYPE_OTHER:
     case ExtContentPolicy::TYPE_SPECULATIVE:
     case ExtContentPolicy::TYPE_WEB_TRANSPORT:
+    case ExtContentPolicy::TYPE_WEB_IDENTITY:
       break;
 
     case ExtContentPolicy::TYPE_INVALID:
@@ -810,7 +805,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
                         u""_ns,  // aSourceFile
                         u""_ns,  // aScriptSample
                         0,       // aLineNumber
-                        0,       // aColumnNumber
+                        1,       // aColumnNumber
                         nsIScriptError::errorFlag, "blockAllMixedContent"_ns,
                         requestingWindow->Id(),
                         !!aLoadInfo->GetOriginAttributes().mPrivateBrowsingId);
@@ -1005,7 +1000,6 @@ bool nsMixedContentBlocker::URISafeToBeLoadedInSecureContext(nsIURI* aURI) {
 NS_IMETHODIMP
 nsMixedContentBlocker::ShouldProcess(nsIURI* aContentLocation,
                                      nsILoadInfo* aLoadInfo,
-                                     const nsACString& aMimeGuess,
                                      int16_t* aDecision) {
   if (!aContentLocation) {
     // aContentLocation may be null when a plugin is loading without an
@@ -1022,7 +1016,7 @@ nsMixedContentBlocker::ShouldProcess(nsIURI* aContentLocation,
     return NS_ERROR_FAILURE;
   }
 
-  return ShouldLoad(aContentLocation, aLoadInfo, aMimeGuess, aDecision);
+  return ShouldLoad(aContentLocation, aLoadInfo, aDecision);
 }
 
 // Record information on when HSTS would have made mixed content not mixed

@@ -283,27 +283,6 @@ const void* __wrap___gnu_Unwind_Find_exidx(void* pc, int* pcount) {
 }
 #endif
 
-/**
- * faulty.lib public API
- */
-
-MFBT_API size_t __dl_get_mappable_length(void* handle) {
-  if (!handle) return 0;
-  return reinterpret_cast<LibHandle*>(handle)->GetMappableLength();
-}
-
-MFBT_API void* __dl_mmap(void* handle, void* addr, size_t length,
-                         off_t offset) {
-  if (!handle) return nullptr;
-  return reinterpret_cast<LibHandle*>(handle)->MappableMMap(addr, length,
-                                                            offset);
-}
-
-MFBT_API void __dl_munmap(void* handle, void* addr, size_t length) {
-  if (!handle) return;
-  return reinterpret_cast<LibHandle*>(handle)->MappableMUnmap(addr, length);
-}
-
 namespace {
 
 /**
@@ -357,23 +336,6 @@ const char* LibHandle::GetName() const {
   return path ? LeafName(path) : nullptr;
 }
 
-size_t LibHandle::GetMappableLength() const {
-  if (!mappable) mappable = GetMappable();
-  if (!mappable) return 0;
-  return mappable->GetLength();
-}
-
-void* LibHandle::MappableMMap(void* addr, size_t length, off_t offset) const {
-  if (!mappable) mappable = GetMappable();
-  if (!mappable) return MAP_FAILED;
-  void* mapped = mappable->mmap(addr, length, PROT_READ, MAP_PRIVATE, offset);
-  return mapped;
-}
-
-void LibHandle::MappableMUnmap(void* addr, size_t length) const {
-  if (mappable) mappable->munmap(addr, length);
-}
-
 /**
  * SystemElf
  */
@@ -412,23 +374,6 @@ void* SystemElf::GetSymbolPtr(const char* symbol) const {
   DEBUG_LOG("dlsym(%p [\"%s\"], \"%s\") = %p", dlhandle, GetPath(), symbol,
             sym);
   return sym;
-}
-
-Mappable* SystemElf::GetMappable() const {
-  const char* path = GetPath();
-  if (!path) return nullptr;
-#ifdef ANDROID
-  /* On Android, if we don't have the full path, try in /system/lib */
-  const char* name = LeafName(path);
-  std::string systemPath;
-  if (name == path) {
-    systemPath = "/system/lib/";
-    systemPath += path;
-    path = systemPath.c_str();
-  }
-#endif
-
-  return MappableFile::Create(path);
 }
 
 #ifdef __ARM_EABI__
@@ -532,36 +477,7 @@ already_AddRefed<LibHandle> ElfLoader::GetHandleByPtr(void* addr) {
 }
 
 Mappable* ElfLoader::GetMappableFromPath(const char* path) {
-  const char* name = LeafName(path);
-  Mappable* mappable = nullptr;
-  RefPtr<Zip> zip;
-  const char* subpath;
-  if ((subpath = strchr(path, '!'))) {
-    char* zip_path = strndup(path, subpath - path);
-    while (*(++subpath) == '/') {
-    }
-    zip = ZipCollection::GetZip(zip_path);
-    free(zip_path);
-    Zip::Stream s;
-    if (zip && zip->GetStream(subpath, &s)) {
-      /* When the MOZ_LINKER_EXTRACT environment variable is set to "1",
-       * compressed libraries are going to be (temporarily) extracted as
-       * files, in the directory pointed by the MOZ_LINKER_CACHE
-       * environment variable. */
-      const char* extract = getenv("MOZ_LINKER_EXTRACT");
-      if (extract && !strncmp(extract, "1", 2 /* Including '\0' */))
-        mappable = MappableExtractFile::Create(name, zip, &s);
-      if (!mappable) {
-        if (s.GetType() == Zip::Stream::DEFLATE) {
-          mappable = MappableDeflate::Create(name, zip, &s);
-        }
-      }
-    }
-  }
-  /* If we couldn't load above, try with a MappableFile */
-  if (!mappable && !zip) mappable = MappableFile::Create(path);
-
-  return mappable;
+  return Mappable::Create(path);
 }
 
 void ElfLoader::Register(LibHandle* handle) {

@@ -112,8 +112,9 @@ include("/ipc/chromium/chromium-config.mozbuild")
 FINAL_LIBRARY = "xul"
 
 MOCHITEST_MANIFESTS += [
-    "test/mochitest-dFPI.ini",
+    "test/mochitest-dFPI.toml",
     "test/mochitest.toml",
+    "test/performance/perftest.toml",
 ]
 
 MOCHITEST_CHROME_MANIFESTS += [

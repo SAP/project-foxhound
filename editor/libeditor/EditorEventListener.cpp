@@ -652,11 +652,7 @@ nsresult EditorEventListener::KeyPress(WidgetKeyboardEvent* aKeyboardEvent) {
       return aKeyboardEvent->mWidget;
     }
     // If the event is created by chrome script, the widget is always nullptr.
-    nsPresContext* presContext = GetPresContext();
-    if (NS_WARN_IF(!presContext)) {
-      return nullptr;
-    }
-    return presContext->GetTextInputHandlingWidget();
+    return IMEStateManager::GetWidgetForTextInputHandling();
   };
 
   if (DetachedFromEditor()) {
@@ -1214,8 +1210,8 @@ bool EditorEventListener::ShouldHandleNativeKeyBindings(
   // unnecessary.  IsAcceptableInputEvent currently makes a similar check for
   // mouse events.
 
-  nsCOMPtr<nsIContent> targetContent =
-      do_QueryInterface(aKeyboardEvent->GetDOMEventTarget());
+  nsCOMPtr<nsIContent> targetContent = nsIContent::FromEventTargetOrNull(
+      aKeyboardEvent->GetOriginalDOMEventTarget());
   if (NS_WARN_IF(!targetContent)) {
     return false;
   }

@@ -2,28 +2,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div, main, span } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../utils/connect";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  main,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 import { prefs } from "../utils/prefs";
 import { primaryPaneTabs } from "../constants";
-import actions from "../actions";
+import actions from "../actions/index";
 import AccessibleImage from "./shared/AccessibleImage";
 
 import {
-  getSelectedSource,
+  getSelectedLocation,
   getPaneCollapse,
   getActiveSearch,
   getQuickOpenEnabled,
   getOrientation,
   getIsCurrentThreadPaused,
   isMapScopesEnabled,
-} from "../selectors";
-const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
+  getSourceMapErrorForSourceActor,
+} from "../selectors/index";
+const KeyShortcuts = require("resource://devtools/client/shared/key-shortcuts.js");
 
-const SplitBox = require("devtools/client/shared/components/splitter/SplitBox");
-const AppErrorBoundary = require("devtools/client/shared/components/AppErrorBoundary");
+const SplitBox = require("resource://devtools/client/shared/components/splitter/SplitBox.js");
+const AppErrorBoundary = require("resource://devtools/client/shared/components/AppErrorBoundary.js");
 
 const shortcuts = new KeyShortcuts({ window });
 
@@ -32,14 +37,10 @@ const verticalLayoutBreakpoint = window.matchMedia(
   "(min-width: 10px) and (max-width: 799px)"
 );
 
-import "./variables.css";
-import "./App.css";
-import "./shared/menu.css";
-
 import { ShortcutsModal } from "./ShortcutsModal";
-import PrimaryPanes from "./PrimaryPanes";
-import Editor from "./Editor";
-import SecondaryPanes from "./SecondaryPanes";
+import PrimaryPanes from "./PrimaryPanes/index";
+import Editor from "./Editor/index";
+import SecondaryPanes from "./SecondaryPanes/index";
 import WelcomeBox from "./WelcomeBox";
 import EditorTabs from "./Editor/Tabs";
 import EditorFooter from "./Editor/Footer";
@@ -65,7 +66,7 @@ class App extends Component {
       openQuickOpen: PropTypes.func.isRequired,
       orientation: PropTypes.oneOf(["horizontal", "vertical"]).isRequired,
       quickOpenEnabled: PropTypes.bool.isRequired,
-      selectedSource: PropTypes.object,
+      selectedLocation: PropTypes.object,
       setActiveSearch: PropTypes.func.isRequired,
       setOrientation: PropTypes.func.isRequired,
       setPrimaryPaneTab: PropTypes.func.isRequired,
@@ -208,6 +209,16 @@ class App extends Component {
   }
 
   renderEditorNotificationBar() {
+    if (this.props.sourceMapError) {
+      return div(
+        { className: "editor-notification-footer", "aria-role": "status" },
+        span(
+          { className: "info icon" },
+          React.createElement(AccessibleImage, { className: "sourcemap" })
+        ),
+        `Source Map Error: ${this.props.sourceMapError}`
+      );
+    }
     if (this.props.showOriginalVariableMappingWarning) {
       return div(
         { className: "editor-notification-footer", "aria-role": "status" },
@@ -245,7 +256,7 @@ class App extends Component {
           startPanelSize: startPanelSize,
           endPanelSize: endPanelSize,
         }),
-        !this.props.selectedSource
+        !this.props.selectedLocation
           ? React.createElement(WelcomeBox, {
               horizontal,
               toggleShortcutsModal: () => this.toggleShortcutsModal(),
@@ -351,24 +362,27 @@ App.childContextTypes = {
 };
 
 const mapStateToProps = state => {
-  const selectedSource = getSelectedSource(state);
+  const selectedLocation = getSelectedLocation(state);
   const mapScopeEnabled = isMapScopesEnabled(state);
   const isPaused = getIsCurrentThreadPaused(state);
 
   const showOriginalVariableMappingWarning =
     isPaused &&
-    selectedSource?.isOriginal &&
-    !selectedSource.isPrettyPrinted &&
+    selectedLocation?.source.isOriginal &&
+    !selectedLocation?.source.isPrettyPrinted &&
     !mapScopeEnabled;
 
   return {
     showOriginalVariableMappingWarning,
-    selectedSource,
+    selectedLocation,
     startPanelCollapsed: getPaneCollapse(state, "start"),
     endPanelCollapsed: getPaneCollapse(state, "end"),
     activeSearch: getActiveSearch(state),
     quickOpenEnabled: getQuickOpenEnabled(state),
     orientation: getOrientation(state),
+    sourceMapError: selectedLocation?.sourceActor
+      ? getSourceMapErrorForSourceActor(state, selectedLocation.sourceActor.id)
+      : null,
   };
 };
 

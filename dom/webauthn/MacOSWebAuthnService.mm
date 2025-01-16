@@ -9,6 +9,7 @@
 #include "MacOSWebAuthnService.h"
 
 #include "CFTypeRefPtr.h"
+#include "WebAuthnAutoFillEntry.h"
 #include "WebAuthnEnumStrings.h"
 #include "WebAuthnResult.h"
 #include "WebAuthnTransportIdentifiers.h"
@@ -208,7 +209,9 @@ namespace mozilla::dom {
 class API_AVAILABLE(macos(13.3)) MacOSWebAuthnService final
     : public nsIWebAuthnService {
  public:
-  MacOSWebAuthnService() = default;
+  MacOSWebAuthnService()
+      : mTransactionState(Nothing(),
+                          "MacOSWebAuthnService::mTransactionState") {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIWEBAUTHNSERVICE
@@ -235,7 +238,22 @@ class API_AVAILABLE(macos(13.3)) MacOSWebAuthnService final
                        nsTArray<uint8_t>&& aCredentialListTransports,
                        uint64_t aBrowsingContextId);
 
+  struct TransactionState {
+    uint64_t transactionId;
+    uint64_t browsingContextId;
+    Maybe<RefPtr<nsIWebAuthnSignArgs>> pendingSignArgs;
+    Maybe<RefPtr<nsIWebAuthnSignPromise>> pendingSignPromise;
+    Maybe<nsTArray<RefPtr<nsIWebAuthnAutoFillEntry>>> autoFillEntries;
+  };
+
+  using TransactionStateMutex = DataMutex<Maybe<TransactionState>>;
+  void DoGetAssertion(Maybe<nsTArray<uint8_t>>&& aSelectedCredentialId,
+                      const TransactionStateMutex::AutoLock& aGuard);
+
+  TransactionStateMutex mTransactionState;
+
   // Main thread only:
+  ASAuthorizationWebBrowserPublicKeyCredentialManager* mCredentialManager = nil;
   nsCOMPtr<nsIWebAuthnRegisterPromise> mRegisterPromise;
   nsCOMPtr<nsIWebAuthnSignPromise> mSignPromise;
   MacOSAuthorizationController* mAuthorizationController = nil;
@@ -300,6 +318,8 @@ nsTArray<uint8_t> NSDataToArray(NSData* data) {
         }
       }
 #endif
+    } else {
+      authenticatorAttachment.emplace(u"cross-platform"_ns);
     }
     mCallback->FinishMakeCredential(rawAttestationObject, credentialId,
                                     transports, authenticatorAttachment);
@@ -340,6 +360,8 @@ nsTArray<uint8_t> NSDataToArray(NSData* data) {
         }
       }
 #endif
+    } else {
+      authenticatorAttachment.emplace(u"cross-platform"_ns);
     }
     mCallback->FinishGetAssertion(credentialId, signature, rawAuthenticatorData,
                                   userHandle, authenticatorAttachment);
@@ -478,6 +500,15 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
                                      uint64_t aBrowsingContextId,
                                      nsIWebAuthnRegisterArgs* aArgs,
                                      nsIWebAuthnRegisterPromise* aPromise) {
+  Reset();
+  auto guard = mTransactionState.Lock();
+  *guard = Some(TransactionState{
+      aTransactionId,
+      aBrowsingContextId,
+      Nothing(),
+      Nothing(),
+      Nothing(),
+  });
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "MacOSWebAuthnService::MakeCredential",
       [self = RefPtr{this}, browsingContextId(aBrowsingContextId),
@@ -525,16 +556,31 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
           return;
         }
 
+        Maybe<ASAuthorizationPublicKeyCredentialUserVerificationPreference>
+            userVerificationPreference = Nothing();
         nsAutoString userVerification;
         Unused << aArgs->GetUserVerification(userVerification);
-        NSString* userVerificationPreference =
-            nsCocoaUtils::ToNSString(userVerification);
+        if (userVerification.EqualsLiteral(
+                MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferenceRequired);
+        } else if (userVerification.EqualsLiteral(
+                       MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferencePreferred);
+        } else if (
+            userVerification.EqualsLiteral(
+                MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferenceDiscouraged);
+        }
 
-        nsAutoString attestationConveyancePreference;
-        Unused << aArgs->GetAttestationConveyancePreference(
-            attestationConveyancePreference);
-        NSString* attestationPreference =
-            nsCocoaUtils::ToNSString(attestationConveyancePreference);
+        // The API doesn't support attestation for platform passkeys and shows
+        // no consent UI for non-none attestation for cross-platform devices,
+        // so this must always be none.
+        ASAuthorizationPublicKeyCredentialAttestationKind
+            attestationPreference =
+                ASAuthorizationPublicKeyCredentialAttestationKindNone;
 
         // Initialize the platform provider with the rpId.
         ASAuthorizationPlatformPublicKeyCredentialProvider* platformProvider =
@@ -550,8 +596,10 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
         [platformProvider release];
         platformRegistrationRequest.attestationPreference =
             attestationPreference;
-        platformRegistrationRequest.userVerificationPreference =
-            userVerificationPreference;
+        if (userVerificationPreference.isSome()) {
+          platformRegistrationRequest.userVerificationPreference =
+              *userVerificationPreference;
+        }
 
         // Initialize the cross-platform provider with the rpId.
         ASAuthorizationSecurityKeyPublicKeyCredentialProvider*
@@ -572,8 +620,10 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
             attestationPreference;
         crossPlatformRegistrationRequest.credentialParameters =
             credentialParameters;
-        crossPlatformRegistrationRequest.userVerificationPreference =
-            userVerificationPreference;
+        if (userVerificationPreference.isSome()) {
+          crossPlatformRegistrationRequest.userVerificationPreference =
+              *userVerificationPreference;
+        }
         nsTArray<uint8_t> clientDataHash;
         nsresult rv = aArgs->GetClientDataHash(clientDataHash);
         if (NS_FAILED(rv)) {
@@ -670,10 +720,101 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
                                    uint64_t aBrowsingContextId,
                                    nsIWebAuthnSignArgs* aArgs,
                                    nsIWebAuthnSignPromise* aPromise) {
+  Reset();
+
+  auto guard = mTransactionState.Lock();
+  *guard = Some(TransactionState{
+      aTransactionId,
+      aBrowsingContextId,
+      Some(RefPtr{aArgs}),
+      Some(RefPtr{aPromise}),
+      Nothing(),
+  });
+
+  bool conditionallyMediated;
+  Unused << aArgs->GetConditionallyMediated(&conditionallyMediated);
+  if (!conditionallyMediated) {
+    DoGetAssertion(Nothing(), guard);
+    return NS_OK;
+  }
+
+  // Using conditional mediation, so dispatch a task to collect any available
+  // passkeys.
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "platformCredentialsForRelyingParty",
+      [self = RefPtr{this}, aTransactionId, aArgs = nsCOMPtr{aArgs}]() {
+        // This handler is called when platformCredentialsForRelyingParty
+        // completes.
+        auto credentialsCompletionHandler = ^(
+            NSArray<ASAuthorizationWebBrowserPlatformPublicKeyCredential*>*
+                credentials) {
+          nsTArray<RefPtr<nsIWebAuthnAutoFillEntry>> autoFillEntries;
+          for (NSUInteger i = 0; i < credentials.count; i++) {
+            const auto& credential = credentials[i];
+            nsAutoString userName;
+            nsCocoaUtils::GetStringForNSString(credential.name, userName);
+            nsAutoString rpId;
+            nsCocoaUtils::GetStringForNSString(credential.relyingParty, rpId);
+            autoFillEntries.AppendElement(new WebAuthnAutoFillEntry(
+                nsIWebAuthnAutoFillEntry::PROVIDER_PLATFORM_MACOS, userName,
+                rpId, NSDataToArray(credential.credentialID)));
+          }
+          auto guard = self->mTransactionState.Lock();
+          if (guard->isSome() && guard->ref().transactionId == aTransactionId) {
+            guard->ref().autoFillEntries.emplace(std::move(autoFillEntries));
+          }
+        };
+        // This handler is called when
+        // requestAuthorizationForPublicKeyCredentials completes.
+        auto authorizationHandler = ^(
+            ASAuthorizationWebBrowserPublicKeyCredentialManagerAuthorizationState
+                authorizationState) {
+          // If authorized, list any available passkeys.
+          if (authorizationState ==
+              ASAuthorizationWebBrowserPublicKeyCredentialManagerAuthorizationStateAuthorized) {
+            nsAutoString rpId;
+            Unused << aArgs->GetRpId(rpId);
+            [self->mCredentialManager
+                platformCredentialsForRelyingParty:nsCocoaUtils::ToNSString(
+                                                       rpId)
+                                 completionHandler:
+                                     credentialsCompletionHandler];
+          }
+        };
+        if (!self->mCredentialManager) {
+          self->mCredentialManager =
+              [[ASAuthorizationWebBrowserPublicKeyCredentialManager alloc]
+                  init];
+        }
+        // Request authorization to examine any available passkeys. This will
+        // cause a permission prompt to appear once.
+        [self->mCredentialManager
+            requestAuthorizationForPublicKeyCredentials:authorizationHandler];
+      }));
+
+  return NS_OK;
+}
+
+void MacOSWebAuthnService::DoGetAssertion(
+    Maybe<nsTArray<uint8_t>>&& aSelectedCredentialId,
+    const TransactionStateMutex::AutoLock& aGuard) {
+  if (aGuard->isNothing() || aGuard->ref().pendingSignArgs.isNothing() ||
+      aGuard->ref().pendingSignPromise.isNothing()) {
+    return;
+  }
+
+  // Take the pending Args and Promise to prevent repeated calls to
+  // DoGetAssertion for this transaction.
+  RefPtr<nsIWebAuthnSignArgs> aArgs = aGuard->ref().pendingSignArgs.extract();
+  RefPtr<nsIWebAuthnSignPromise> aPromise =
+      aGuard->ref().pendingSignPromise.extract();
+  uint64_t aBrowsingContextId = aGuard->ref().browsingContextId;
+
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "MacOSWebAuthnService::MakeCredential",
-      [self = RefPtr{this}, browsingContextId(aBrowsingContextId),
-       aArgs = nsCOMPtr{aArgs}, aPromise = nsCOMPtr{aPromise}]() {
+      [self = RefPtr{this}, browsingContextId(aBrowsingContextId), aArgs,
+       aPromise,
+       aSelectedCredentialId = std::move(aSelectedCredentialId)]() mutable {
         self->mSignPromise = aPromise;
 
         nsAutoString rpId;
@@ -686,9 +827,15 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
                                              length:challenge.Length()];
 
         nsTArray<nsTArray<uint8_t>> allowList;
-        Unused << aArgs->GetAllowList(allowList);
         nsTArray<uint8_t> allowListTransports;
-        Unused << aArgs->GetAllowListTransports(allowListTransports);
+        if (aSelectedCredentialId.isSome()) {
+          allowList.AppendElement(aSelectedCredentialId.extract());
+          allowListTransports.AppendElement(
+              MOZ_WEBAUTHN_AUTHENTICATOR_TRANSPORT_ID_INTERNAL);
+        } else {
+          Unused << aArgs->GetAllowList(allowList);
+          Unused << aArgs->GetAllowListTransports(allowListTransports);
+        }
         NSMutableArray* platformAllowedCredentials =
             [[NSMutableArray alloc] init];
         for (const auto& allowedCredentialId : allowList) {
@@ -710,10 +857,24 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
                     allowList, allowListTransports,
                     securityKeyPublicKeyCredentialDescriptorClass);
 
+        Maybe<ASAuthorizationPublicKeyCredentialUserVerificationPreference>
+            userVerificationPreference = Nothing();
         nsAutoString userVerification;
         Unused << aArgs->GetUserVerification(userVerification);
-        NSString* userVerificationPreference =
-            nsCocoaUtils::ToNSString(userVerification);
+        if (userVerification.EqualsLiteral(
+                MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferenceRequired);
+        } else if (userVerification.EqualsLiteral(
+                       MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_PREFERRED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferencePreferred);
+        } else if (
+            userVerification.EqualsLiteral(
+                MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_DISCOURAGED)) {
+          userVerificationPreference.emplace(
+              ASAuthorizationPublicKeyCredentialUserVerificationPreferenceDiscouraged);
+        }
 
         // Initialize the platform provider with the rpId.
         ASAuthorizationPlatformPublicKeyCredentialProvider* platformProvider =
@@ -726,8 +887,10 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
         [platformProvider release];
         platformAssertionRequest.allowedCredentials =
             platformAllowedCredentials;
-        platformAssertionRequest.userVerificationPreference =
-            userVerificationPreference;
+        if (userVerificationPreference.isSome()) {
+          platformAssertionRequest.userVerificationPreference =
+              *userVerificationPreference;
+        }
 
         // Initialize the cross-platform provider with the rpId.
         ASAuthorizationSecurityKeyPublicKeyCredentialProvider*
@@ -741,8 +904,10 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
         [crossPlatformProvider release];
         crossPlatformAssertionRequest.allowedCredentials =
             crossPlatformAllowedCredentials;
-        crossPlatformAssertionRequest.userVerificationPreference =
-            userVerificationPreference;
+        if (userVerificationPreference.isSome()) {
+          crossPlatformAssertionRequest.userVerificationPreference =
+              *userVerificationPreference;
+        }
         nsTArray<uint8_t> clientDataHash;
         nsresult rv = aArgs->GetClientDataHash(clientDataHash);
         if (NS_FAILED(rv)) {
@@ -757,7 +922,6 @@ MacOSWebAuthnService::GetAssertion(uint64_t aTransactionId,
             std::move(clientDataHash), std::move(allowList),
             std::move(allowListTransports), browsingContextId);
       }));
-  return NS_OK;
 }
 
 void MacOSWebAuthnService::FinishGetAssertion(
@@ -779,6 +943,8 @@ void MacOSWebAuthnService::FinishGetAssertion(
 
 void MacOSWebAuthnService::ReleasePlatformResources() {
   MOZ_ASSERT(NS_IsMainThread());
+  [mCredentialManager release];
+  mCredentialManager = nil;
   [mAuthorizationController release];
   mAuthorizationController = nil;
   [mRequestDelegate release];
@@ -789,6 +955,16 @@ void MacOSWebAuthnService::ReleasePlatformResources() {
 
 NS_IMETHODIMP
 MacOSWebAuthnService::Reset() {
+  auto guard = mTransactionState.Lock();
+  if (guard->isSome()) {
+    if (guard->ref().pendingSignPromise.isSome()) {
+      // This request was never dispatched to the platform API, so
+      // we need to reject the promise ourselves.
+      guard->ref().pendingSignPromise.ref()->Reject(
+          NS_ERROR_DOM_NOT_ALLOWED_ERR);
+    }
+    guard->reset();
+  }
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "MacOSWebAuthnService::Cancel", [self = RefPtr{this}] {
         // cancel results in the delegate's didCompleteWithError method being
@@ -807,6 +983,76 @@ MacOSWebAuthnService::GetIsUVPAA(bool* aAvailable) {
 NS_IMETHODIMP
 MacOSWebAuthnService::Cancel(uint64_t aTransactionId) {
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+MacOSWebAuthnService::HasPendingConditionalGet(uint64_t aBrowsingContextId,
+                                               const nsAString& aOrigin,
+                                               uint64_t* aRv) {
+  auto guard = mTransactionState.Lock();
+  if (guard->isNothing() ||
+      guard->ref().browsingContextId != aBrowsingContextId ||
+      guard->ref().pendingSignArgs.isNothing()) {
+    *aRv = 0;
+    return NS_OK;
+  }
+
+  nsString origin;
+  Unused << guard->ref().pendingSignArgs.ref()->GetOrigin(origin);
+  if (origin != aOrigin) {
+    *aRv = 0;
+    return NS_OK;
+  }
+
+  *aRv = guard->ref().transactionId;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MacOSWebAuthnService::GetAutoFillEntries(
+    uint64_t aTransactionId, nsTArray<RefPtr<nsIWebAuthnAutoFillEntry>>& aRv) {
+  auto guard = mTransactionState.Lock();
+  if (guard->isNothing() || guard->ref().transactionId != aTransactionId ||
+      guard->ref().pendingSignArgs.isNothing() ||
+      guard->ref().autoFillEntries.isNothing()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  aRv.Assign(guard->ref().autoFillEntries.ref());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MacOSWebAuthnService::SelectAutoFillEntry(
+    uint64_t aTransactionId, const nsTArray<uint8_t>& aCredentialId) {
+  auto guard = mTransactionState.Lock();
+  if (guard->isNothing() || guard->ref().transactionId != aTransactionId ||
+      guard->ref().pendingSignArgs.isNothing()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsTArray<nsTArray<uint8_t>> allowList;
+  Unused << guard->ref().pendingSignArgs.ref()->GetAllowList(allowList);
+  if (!allowList.IsEmpty() && !allowList.Contains(aCredentialId)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  Maybe<nsTArray<uint8_t>> id;
+  id.emplace();
+  id.ref().Assign(aCredentialId);
+  DoGetAssertion(std::move(id), guard);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MacOSWebAuthnService::ResumeConditionalGet(uint64_t aTransactionId) {
+  auto guard = mTransactionState.Lock();
+  if (guard->isNothing() || guard->ref().transactionId != aTransactionId ||
+      guard->ref().pendingSignArgs.isNothing()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  DoGetAssertion(Nothing(), guard);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

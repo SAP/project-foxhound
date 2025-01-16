@@ -45,6 +45,10 @@ const STYLE_INSPECTOR_PROPERTIES =
 const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
 const STYLE_INSPECTOR_L10N = new LocalizationHelper(STYLE_INSPECTOR_PROPERTIES);
 
+loader.lazyGetter(this, "NEW_PROPERTY_NAME_INPUT_LABEL", function () {
+  return STYLE_INSPECTOR_L10N.getStr("rule.newPropertyName.label");
+});
+
 const INDENT_SIZE = 2;
 const INDENT_STR = " ".repeat(INDENT_SIZE);
 
@@ -249,13 +253,6 @@ RuleEditor.prototype = {
           selectorContainer.append(
             this.doc.createTextNode(`@import ${ancestorData.value}`)
           );
-        } else if (ancestorData.selectorText) {
-          // @backward-compat { version 121 } Newer server now send a `selectors` property
-          // (and no `selectorText` anymore), that we're using to display the selectors.
-          // This if block can be removed when 121 hits release.
-          selectorContainer.append(
-            this.doc.createTextNode(ancestorData.selectorText)
-          );
         } else if (ancestorData.selectors) {
           ancestorData.selectors.forEach((selector, i) => {
             if (i !== 0) {
@@ -326,6 +323,15 @@ RuleEditor.prototype = {
         element: this.selectorText,
         done: this._onSelectorDone,
         cssProperties: this.rule.cssProperties,
+        // (Shift+)Tab will move the focus to the previous/next editable field (so property name,
+        // or new property of the previous rule).
+        focusEditableFieldAfterApply: true,
+        focusEditableFieldContainerSelector: ".ruleview-rule",
+        // We don't want Enter to trigger the next editable field, just to validate
+        // what the user entered, close the editor, and focus the span so the user can
+        // navigate with the keyboard as expected, unless the user has
+        // devtools.inspector.rule-view.focusNextOnEnter set to true
+        stopOnReturn: this.ruleView.inplaceEditorFocusNextOnEnter !== true,
       });
     }
 
@@ -342,11 +348,10 @@ RuleEditor.prototype = {
 
       const isHighlighted = this.ruleView.isSelectorHighlighted(selector);
       // Handling of click events is delegated to CssRuleView.handleEvent()
-      createChild(header, "span", {
+      createChild(header, "button", {
         class:
           "ruleview-selectorhighlighter js-toggle-selector-highlighter" +
           (isHighlighted ? " highlighted" : ""),
-        role: "button",
         "aria-pressed": isHighlighted,
         // This is used in rules.js for the selector highlighter
         "data-computed-selector": desugaredSelector,
@@ -551,25 +556,9 @@ RuleEditor.prototype = {
       const sourceLabel = this.element.querySelector(
         ".ruleview-rule-source-label"
       );
-      const title = this.rule.title;
-      const sourceHref = this.rule.sheet?.href || title;
-
       const uaLabel = STYLE_INSPECTOR_L10N.getStr("rule.userAgentStyles");
-      sourceLabel.textContent = uaLabel + " " + title;
+      sourceLabel.textContent = uaLabel + " " + this.rule.title;
       sourceLabel.setAttribute("data-url", this.rule.sheet?.href);
-
-      // Special case about:PreferenceStyleSheet, as it is generated on the
-      // fly and the URI is not registered with the about: handler.
-      // https://bugzilla.mozilla.org/show_bug.cgi?id=935803#c37
-      //
-      // @backward-compat { version 120 } about:preferenceStyleSheet was
-      // removed in bug 1857915, so we can remove this whole block when 120
-      // hits release.
-      if (sourceHref === "about:PreferenceStyleSheet") {
-        this.source.setAttribute("unselectable", "permanent");
-        sourceLabel.textContent = uaLabel;
-        sourceLabel.removeAttribute("title");
-      }
     } else {
       this._updateLocation(null);
     }
@@ -687,7 +676,15 @@ RuleEditor.prototype = {
       });
     }
 
+    let focusedElSelector;
     if (reset) {
+      // If we're going to reset the rule (i.e. if this is the `element` rule),
+      // we want to restore the focus after the rule is populated.
+      // So if this element contains the active element, retrieve its selector for later use.
+      if (this.element.contains(this.doc.activeElement)) {
+        focusedElSelector = CssLogic.findCssSelector(this.doc.activeElement);
+      }
+
       while (this.propertyList.hasChildNodes()) {
         this.propertyList.removeChild(this.propertyList.lastChild);
       }
@@ -701,6 +698,17 @@ RuleEditor.prototype = {
         // If an editor already existed, append it to the bottom now to make sure the
         // order of editors in the DOM follow the order of the rule's properties.
         this.propertyList.appendChild(prop.editor.element);
+      }
+    }
+
+    if (focusedElSelector) {
+      const elementToFocus = this.doc.querySelector(focusedElSelector);
+      if (elementToFocus && this.element.contains(elementToFocus)) {
+        // We need to wait for a tick for the focus to be properly set
+        setTimeout(() => {
+          elementToFocus.focus();
+          this.ruleView.emitForTests("rule-editor-focus-reset");
+        }, 0);
       }
     }
   },
@@ -822,6 +830,7 @@ RuleEditor.prototype = {
       contentType: InplaceEditor.CONTENT_TYPES.CSS_PROPERTY,
       popup: this.ruleView.popup,
       cssProperties: this.rule.cssProperties,
+      inputAriaLabel: NEW_PROPERTY_NAME_INPUT_LABEL,
     });
 
     // Auto-close the input if multiple rules get pasted into new property.
@@ -893,8 +902,10 @@ RuleEditor.prototype = {
    *        True if the change should be applied.
    * @param {Number} direction
    *        The move focus direction number.
+   * @param {Number} key
+   *        The event keyCode that trigger the editor to close
    */
-  async _onSelectorDone(value, commit, direction) {
+  async _onSelectorDone(value, commit, direction, key) {
     if (
       !commit ||
       this.isEditing ||
@@ -962,6 +973,11 @@ RuleEditor.prototype = {
       // pseudo-element rules and the like.
       this.element.parentNode.replaceChild(editor.element, this.element);
 
+      // As the rules elements will be replaced, and given that the inplace-editor doesn't
+      // wait for this `done` callback to be resolved, the focus management we do there
+      // will be useless as this specific code will usually happen later (and the focused
+      // element might be replaced).
+      // Because of this, we need to handle setting the focus ourselves from here.
       editor._moveSelectorFocus(direction);
     } catch (err) {
       this.isEditing = false;
@@ -970,8 +986,7 @@ RuleEditor.prototype = {
   },
 
   /**
-   * Handle moving the focus change after a tab or return keypress in the
-   * selector inplace editor.
+   * Handle moving the focus change after a Tab keypress in the selector inplace editor.
    *
    * @param {Number} direction
    *        The move focus direction number.

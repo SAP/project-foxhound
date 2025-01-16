@@ -30,7 +30,7 @@ def validate_annotations(annotations):
             sys.exit(1)
         else:
             annotation_type = data.get("type")
-            valid_types = ["boolean", "integer", "string"]
+            valid_types = ["string", "boolean", "u32", "u64", "usize"]
             if not any(annotation_type == t for t in valid_types):
                 print(
                     "Annotation "
@@ -72,13 +72,45 @@ def read_template(template_filename):
     return template
 
 
-def extract_crash_ping_allowlist(annotations):
-    """Extract an array holding the names of the annotations allowlisted for
+def extract_crash_ping_allowedlist(annotations):
+    """Extract an array holding the names of the annotations allowed for
     inclusion in the crash ping."""
 
     return [
         name for (name, data) in sorted(annotations.items()) if data.get("ping", False)
     ]
+
+
+def extract_skiplist(annotations):
+    """Extract an array holding the names of the annotations that should be
+    skipped and the values which will cause them to be skipped."""
+
+    return [
+        (name, data.get("skip_if"))
+        for (name, data) in sorted(annotations.items())
+        if len(data.get("skip_if", "")) > 0
+    ]
+
+
+def type_to_enum(annotation_type):
+    """Emit the enum value corresponding to each annotation type."""
+
+    if annotation_type == "string":
+        return "String"
+    elif annotation_type == "boolean":
+        return "Boolean"
+    elif annotation_type == "u32":
+        return "U32"
+    elif annotation_type == "u64":
+        return "U64"
+    elif annotation_type == "usize":
+        return "USize"
+
+
+def extract_types(annotations):
+    """Extract an array holding the type of each annotation."""
+
+    return [type_to_enum(data.get("type")) for (_, data) in sorted(annotations.items())]
 
 
 ###############################################################################
@@ -111,10 +143,28 @@ def generate_enum(annotations):
     return enum
 
 
-def generate_array_initializer(contents):
+def generate_annotations_array_initializer(contents):
     """Generates the initializer for a C++ array of annotations."""
 
     initializer = ["  Annotation::" + name for name in contents]
+
+    return ",\n".join(initializer)
+
+
+def generate_skiplist_initializer(contents):
+    """Generates the initializer for a C++ array of AnnotationSkipValue structs."""
+
+    initializer = [
+        "  { Annotation::" + name + ', "' + value + '" }' for (name, value) in contents
+    ]
+
+    return ",\n".join(initializer)
+
+
+def generate_types_initializer(contents):
+    """Generates the initializer for a C++ array of AnnotationType values."""
+
+    initializer = ["  AnnotationType::" + typename for typename in contents]
 
     return ",\n".join(initializer)
 
@@ -123,13 +173,17 @@ def generate_header(template, annotations):
     """Generate a header by filling the template with the the list of
     annotations and return it as a string."""
 
-    allowlist = extract_crash_ping_allowlist(annotations)
+    allowedlist = extract_crash_ping_allowedlist(annotations)
+    skiplist = extract_skiplist(annotations)
+    typelist = extract_types(annotations)
 
     return template_header + string.Template(template).substitute(
         {
             "enum": generate_enum(annotations),
             "strings": generate_strings(annotations),
-            "allowlist": generate_array_initializer(allowlist),
+            "allowedlist": generate_annotations_array_initializer(allowedlist),
+            "skiplist": generate_skiplist_initializer(skiplist),
+            "types": generate_types_initializer(typelist),
         }
     )
 
@@ -168,11 +222,11 @@ def generate_java_array_initializer(contents):
 def generate_class(template, annotations):
     """Fill the class template from the list of annotations."""
 
-    allowlist = extract_crash_ping_allowlist(annotations)
+    allowedlist = extract_crash_ping_allowedlist(annotations)
 
     return template_header + string.Template(template).substitute(
         {
-            "allowlist": generate_java_array_initializer(allowlist),
+            "allowedlist": generate_java_array_initializer(allowedlist),
         }
     )
 
@@ -189,8 +243,8 @@ def emit_class(output, annotations_filename):
      * are kept in sync with the other C++ and JS users.
      */
     public class CrashReporterConstants {
-        public static final String[] ANNOTATION_ALLOWLIST = {
-    ${allowlist}
+        public static final String[] ANNOTATION_ALLOWEDLIST = {
+    ${allowedlist}
         };
     }"""
     )

@@ -63,7 +63,7 @@ add_task(async function test_create_login() {
         );
         let createButton = loginList._createLoginButton;
         Assert.ok(
-          ContentTaskUtils.is_hidden(loginList._blankLoginListItem),
+          ContentTaskUtils.isHidden(loginList._blankLoginListItem),
           "the blank login list item should be hidden initially"
         );
         Assert.ok(
@@ -82,7 +82,7 @@ add_task(async function test_create_login() {
         createButton.click();
 
         Assert.ok(
-          ContentTaskUtils.is_visible(loginList._blankLoginListItem),
+          ContentTaskUtils.isVisible(loginList._blankLoginListItem),
           "the blank login list item should be visible after clicking on the create button"
         );
         Assert.ok(
@@ -92,7 +92,7 @@ add_task(async function test_create_login() {
 
         let cancelButton = loginItem.shadowRoot.querySelector(".cancel-button");
         Assert.ok(
-          ContentTaskUtils.is_visible(cancelButton),
+          ContentTaskUtils.isVisible(cancelButton),
           "cancel button should be visible in create mode with no logins saved"
         );
 
@@ -101,6 +101,18 @@ add_task(async function test_create_login() {
         );
         let passwordInput = loginItem.shadowRoot.querySelector(
           "input[name='password']"
+        );
+
+        // Upon clicking create-login-button, the origin input field is automatically focused.
+        Assert.ok(
+          ContentTaskUtils.isVisible(loginItem._originWarning),
+          "The origin warning should be visible"
+        );
+
+        // At this moment, the password input field is not focused so no warning should be displayed.
+        Assert.ok(
+          ContentTaskUtils.isHidden(loginItem._passwordWarning),
+          "The password warning should not be visible if the password input field is not focused"
         );
 
         Assert.equal(
@@ -113,9 +125,22 @@ add_task(async function test_create_login() {
           "",
           "there should be no placeholder on the username input in edit mode"
         );
+
         originInput.value = aOriginTuple[0];
         usernameInput.value = "testuser1";
+
+        passwordInput.focus();
+        Assert.ok(
+          ContentTaskUtils.isVisible(loginItem._passwordWarning),
+          "The password warning should not visible"
+        );
         passwordInput.value = "testpass1";
+
+        // Since the password field is focused, the origin warning should not be displayed.
+        Assert.ok(
+          ContentTaskUtils.isHidden(loginItem._originWarning),
+          "The origin warning should not be visible if the origin input field is not focused"
+        );
 
         let saveChangesButton = loginItem.shadowRoot.querySelector(
           ".save-changes-button"
@@ -153,7 +178,7 @@ add_task(async function test_create_login() {
         "login-list should no longer be in no logins view"
       );
       Assert.ok(
-        ContentTaskUtils.is_hidden(loginList._blankLoginListItem),
+        ContentTaskUtils.isHidden(loginList._blankLoginListItem),
         "the blank login list item should be hidden after adding new login"
       );
       Assert.ok(
@@ -218,9 +243,7 @@ add_task(async function test_create_login() {
       let loginItem = Cu.waiveXrays(
         content.document.querySelector("login-item")
       );
-      let editButton = loginItem.shadowRoot
-        .querySelector(".edit-button")
-        .shadowRoot.querySelector("button");
+      let editButton = loginItem.shadowRoot.querySelector("edit-button");
       info("clicking on edit button");
       editButton.click();
     });
@@ -320,14 +343,11 @@ add_task(async function test_cancel_create_login() {
       "there should be a selected guid before create mode"
     );
     Assert.ok(
-      ContentTaskUtils.is_hidden(loginList._blankLoginListItem),
+      ContentTaskUtils.isHidden(loginList._blankLoginListItem),
       "the blank login list item should be hidden before create mode"
     );
 
-    let createButton = content.document
-      .querySelector("login-list")
-      .shadowRoot.querySelector(".create-login-button")
-      .shadowRoot.querySelector("button");
+    let createButton = loginList._createLoginButton;
     createButton.click();
 
     Assert.ok(
@@ -335,7 +355,7 @@ add_task(async function test_cancel_create_login() {
       "there should be no selected guid when in create mode"
     );
     Assert.ok(
-      ContentTaskUtils.is_visible(loginList._blankLoginListItem),
+      ContentTaskUtils.isVisible(loginList._blankLoginListItem),
       "the blank login list item should be visible in create mode"
     );
 
@@ -348,7 +368,7 @@ add_task(async function test_cancel_create_login() {
       "there should be a selected guid after canceling create mode"
     );
     Assert.ok(
-      ContentTaskUtils.is_hidden(loginList._blankLoginListItem),
+      ContentTaskUtils.isHidden(loginList._blankLoginListItem),
       "the blank login list item should be hidden after canceling create mode"
     );
   });
@@ -385,7 +405,7 @@ add_task(
       );
       let cancelButton = loginItem.shadowRoot.querySelector(".cancel-button");
       Assert.ok(
-        ContentTaskUtils.is_visible(cancelButton),
+        ContentTaskUtils.isVisible(cancelButton),
         "cancel button should be visible in create mode with one login showing"
       );
       cancelButton.click();
@@ -431,7 +451,7 @@ add_task(async function test_cancel_create_login_with_logins_filtered_out() {
     let loginItem = Cu.waiveXrays(content.document.querySelector("login-item"));
     let cancelButton = loginItem.shadowRoot.querySelector(".cancel-button");
     Assert.ok(
-      ContentTaskUtils.is_visible(cancelButton),
+      ContentTaskUtils.isVisible(cancelButton),
       "cancel button should be visible in create mode with no logins showing"
     );
     cancelButton.click();

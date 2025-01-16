@@ -22,6 +22,7 @@
 #include "mozilla/dom/Touch.h"              // for Touch
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/LoggingConstants.h"
+#include "mozilla/gfx/Matrix.h"
 #include "mozilla/gfx/gfxVars.h"            // for gfxVars
 #include "mozilla/gfx/GPUParent.h"          // for GPUParent
 #include "mozilla/gfx/Logging.h"            // for gfx::TreeLog
@@ -34,6 +35,7 @@
 #include "mozilla/layers/CompositorBridgeParent.h"  // for CompositorBridgeParent, etc
 #include "mozilla/layers/DoubleTapToZoom.h"         // for ZoomTarget
 #include "mozilla/layers/MatrixMessage.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/layers/WebRenderScrollDataWrapper.h"
 #include "mozilla/MouseEvents.h"
@@ -46,6 +48,7 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/EventStateManager.h"  // for WheelPrefs
 #include "mozilla/webrender/WebRenderAPI.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 #include "nsDebug.h"                 // for NS_WARNING
 #include "nsPoint.h"                 // for nsIntPoint
 #include "nsThreadUtils.h"           // for NS_IsMainThread
@@ -267,11 +270,11 @@ APZCTreeManager::APZCTreeManager(LayersId aRootLayersId,
                                  UniquePtr<IAPZHitTester> aHitTester)
     : mTestSampleTime(Nothing(), "APZCTreeManager::mTestSampleTime"),
       mInputQueue(new InputQueue()),
+      mMapLock("APZCMapLock"),
       mRootLayersId(aRootLayersId),
       mSampler(nullptr),
       mUpdater(nullptr),
       mTreeLock("APZCTreeLock"),
-      mMapLock("APZCMapLock"),
       mRetainedTouchIdentifier(-1),
       mInScrollbarTouchDrag(false),
       mCurrentMousePosition(ScreenPoint(),
@@ -329,6 +332,13 @@ void APZCTreeManager::NotifyLayerTreeAdopted(
     // manager into this one, it's safer to not do that, as we'll probably have
     // that information repopulated soon anyway (on the next layers update).
   }
+
+  // There may be focus updates from the tab's content process in flight
+  // triggered by events that were processed by the old tree manager,
+  // which this tree manager does not expect.
+  // Resetting the focus state avoids this (the state will sync with content
+  // on the next focus update).
+  mFocusState.Reset();
 
   UniquePtr<APZTestData> adoptedData;
   if (aOldApzcTreeManager) {
@@ -748,7 +758,7 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
         wrBridgeParent = aState.mWrBridge;
       });
 
-  bool activeAnimations = AdvanceAnimationsInternal(lock, aSampleTime);
+  const bool activeAnimations = AdvanceAnimationsInternal(lock, aSampleTime);
   if (activeAnimations && controller) {
     controller->ScheduleRenderOnCompositorThread(
         wr::RenderReasons::ANIMATED_PROPERTY);
@@ -757,8 +767,8 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
   nsTArray<wr::WrTransformProperty> transforms;
 
   // Sample async transforms on scrollable layers.
-  for (const auto& mapping : mApzcMap) {
-    AsyncPanZoomController* apzc = mapping.second.apzc;
+  for (const auto& [_, mapData] : mApzcMap) {
+    AsyncPanZoomController* apzc = mapData.apzc;
 
     if (Maybe<CompositionPayload> payload = apzc->NotifyScrollSampling()) {
       if (wrBridgeParent && aVsyncId) {
@@ -782,6 +792,8 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
       }
     }
 
+    wr::LayoutTransform zoomForMinimap =
+        wr::ToLayoutTransform(gfx::Matrix4x4());
     if (Maybe<uint64_t> zoomAnimationId = apzc->GetZoomAnimationId()) {
       // for now we only support zooming on root content APZCs
       MOZ_ASSERT(apzc->IsRootContent());
@@ -793,12 +805,17 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
           AsyncPanZoomController::eForCompositing,
           AsyncTransformComponents{AsyncTransformComponent::eVisual});
 
-      transforms.AppendElement(wr::ToWrTransformProperty(
+      wr::WrTransformProperty zoomTransform = wr::ToWrTransformProperty(
           *zoomAnimationId, LayoutDeviceToParentLayerMatrix4x4::Scaling(
                                 zoom.scale, zoom.scale, 1.0f) *
                                 AsyncTransformComponentMatrix::Translation(
-                                    asyncVisualTransform.mTranslation)));
+                                    asyncVisualTransform.mTranslation));
 
+      // Store the zoom transform to be added to the minimap data so that we
+      // can take it into account correctly during minimap rendering.
+      zoomForMinimap = zoomTransform.value;
+
+      transforms.AppendElement(zoomTransform);
       aTxn.UpdateIsTransformAsyncZooming(*zoomAnimationId,
                                          apzc->IsAsyncZooming());
     }
@@ -807,6 +824,40 @@ void APZCTreeManager::SampleForWebRender(const Maybe<VsyncId>& aVsyncId,
         apzc->GetSampledScrollOffsets();
     aTxn.UpdateScrollPosition(wr::AsPipelineId(apzc->GetGuid().mLayersId),
                               apzc->GetGuid().mScrollId, sampledOffsets);
+
+    if (StaticPrefs::apz_minimap_enabled()) {
+      wr::MinimapData minimapData = apzc->GetMinimapData();
+      minimapData.zoom_transform = zoomForMinimap;
+      // If this APZC is inside the subtree of a root content APZC, find the
+      // ID of that root content APZC.
+      ScrollableLayerGuid enclosingRootContentId;
+      ApzcMapData currentEntry = mapData;
+      AsyncPanZoomController* current = currentEntry.apzc;
+      while (current) {
+        if (current->IsRootContent()) {
+          enclosingRootContentId = current->GetGuid();
+          break;
+        }
+        // We can't call AsyncPanZoomController::GetParent(), since that
+        // requires acquiring the tree lock, and doing that on the sampler
+        // thread would violate the lock ordering. Instead, get the parent
+        // from the mApzcMap entry.
+        if (auto parentGuid = currentEntry.parent) {
+          auto iter = mApzcMap.find(*parentGuid);
+          if (iter != mApzcMap.end()) {
+            currentEntry = iter->second;
+            current = currentEntry.apzc;
+            continue;
+          }
+        }
+        break;
+      }
+      minimapData.root_content_pipeline_id =
+          wr::AsPipelineId(enclosingRootContentId.mLayersId);
+      minimapData.root_content_scroll_id = enclosingRootContentId.mScrollId;
+      aTxn.AddMinimapData(wr::AsPipelineId(apzc->GetGuid().mLayersId),
+                          apzc->GetGuid().mScrollId, minimapData);
+    }
 
 #if defined(MOZ_WIDGET_ANDROID)
     // Send the root frame metrics to java through the UIController
@@ -1100,8 +1151,7 @@ void APZCTreeManager::NotifyAutoscrollRejected(
 void SetHitTestData(HitTestingTreeNode* aNode,
                     const WebRenderScrollDataWrapper& aLayer,
                     const EventRegionsOverride& aOverrideFlags) {
-  aNode->SetHitTestData(aLayer.GetVisibleRegion(),
-                        aLayer.GetRemoteDocumentSize(),
+  aNode->SetHitTestData(aLayer.GetVisibleRect(), aLayer.GetRemoteDocumentSize(),
                         aLayer.GetTransformTyped(), aOverrideFlags,
                         aLayer.GetAsyncZoomContainerId());
 }
@@ -1482,6 +1532,7 @@ APZEventResult APZCTreeManager::ReceiveInputEvent(
         FlushRepaintsToClearScreenToGeckoTransform();
       }
 
+      // TODO(botond): Is it necessary to do a hit test on every mouse-move?
       state.mHit = GetTargetAPZC(mouseInput.mOrigin);
       bool hitScrollbar = (bool)state.mHit.mScrollbarNode;
 
@@ -2433,8 +2484,12 @@ void APZCTreeManager::ZoomToRect(const ScrollableLayerGuid& aGuid,
     }
     return;
   }
+
   if (apzc) {
-    apzc->ZoomToRect(aZoomTarget, aFlags);
+    apzc = FindZoomableApzc(apzc);
+    if (apzc) {
+      apzc->ZoomToRect(aZoomTarget, aFlags);
+    }
   }
 }
 
@@ -3047,6 +3102,14 @@ ScreenMargin APZCTreeManager::GetCompositorFixedLayerMargins() const {
   return mCompositorFixedLayerMargins;
 }
 
+AsyncPanZoomController* APZCTreeManager::FindRootApzcFor(
+    LayersId aLayersId) const {
+  RecursiveMutexAutoLock lock(mTreeLock);
+
+  HitTestingTreeNode* resultNode = FindRootNodeForLayersId(aLayersId);
+  return resultNode ? resultNode->GetApzc() : nullptr;
+}
+
 AsyncPanZoomController* APZCTreeManager::FindRootContentApzcForLayersId(
     LayersId aLayersId) const {
   mTreeLock.AssertCurrentThreadIn();
@@ -3262,10 +3325,8 @@ ParentLayerToScreenMatrix4x4 APZCTreeManager::GetApzcToGeckoTransformForHit(
   return GetApzcToGeckoTransform(aHitResult.mTargetApzc, components);
 }
 
-ParentLayerToParentLayerMatrix4x4
-APZCTreeManager::GetOopifApzcToRootContentApzcTransform(
+CSSToCSSMatrix4x4 APZCTreeManager::GetOopifToRootContentTransform(
     AsyncPanZoomController* aApzc) const {
-  ParentLayerToParentLayerMatrix4x4 result;
   MOZ_ASSERT(aApzc->IsRootForLayersId());
 
   RefPtr<AsyncPanZoomController> rootContentApzc = FindZoomableApzc(aApzc);
@@ -3273,36 +3334,44 @@ APZCTreeManager::GetOopifApzcToRootContentApzcTransform(
              "aApzc must be out-of-process of the rootContentApzc");
   if (!rootContentApzc || rootContentApzc == aApzc ||
       rootContentApzc->GetLayersId() == aApzc->GetLayersId()) {
-    return result;
+    return CSSToCSSMatrix4x4();
+  }
+  ParentLayerToParentLayerMatrix4x4 result =
+      GetApzcToApzcTransform(aApzc, rootContentApzc,
+                             AsyncTransformComponent::eLayout) *
+      // We need to multiply by the root content APZC's
+      // GetPaintedResolutionTransform() here; See
+      // https://phabricator.services.mozilla.com/D184440?vs=755900&id=757585#6173584
+      // for the details.
+      ViewAs<AsyncTransformComponentMatrix>(
+          rootContentApzc->GetPaintedResolutionTransform());
+
+  CSSToParentLayerScale thisZoom = aApzc->GetZoom();
+  result.PreScale(thisZoom.scale, thisZoom.scale, 1.0);
+  CSSToParentLayerScale rootZoom = rootContentApzc->GetZoom();
+  if (rootZoom != CSSToParentLayerScale(0)) {
+    result.PostScale(1.0 / rootZoom.scale, 1.0 / rootZoom.scale, 1.0);
   }
 
-  return GetApzcToApzcTransform(aApzc, rootContentApzc,
-                                AsyncTransformComponent::eLayout) *
-         // We need to multiply by the root content APZC's
-         // GetPaintedResolutionTransform() here; See
-         // https://phabricator.services.mozilla.com/D184440?vs=755900&id=757585#6173584
-         // for the details.
-         ViewAs<AsyncTransformComponentMatrix>(
-             rootContentApzc->GetPaintedResolutionTransform());
+  CSSPoint rootScrollPosition = rootContentApzc->GetLayoutScrollOffset();
+  return ViewAs<CSSToCSSMatrix4x4>(result,
+                                   PixelCastJustification::UntypedPrePostScale)
+      .PostTranslate(rootScrollPosition.x, rootScrollPosition.y, 0);
 }
 
 CSSRect APZCTreeManager::ConvertRectInApzcToRoot(AsyncPanZoomController* aApzc,
                                                  const CSSRect& aRect) const {
   MOZ_ASSERT(aApzc->IsRootForLayersId());
   RefPtr<AsyncPanZoomController> rootContentApzc = FindZoomableApzc(aApzc);
-  if (!rootContentApzc || rootContentApzc == aApzc) {
+  if (!rootContentApzc) {
     return aRect;
   }
 
-  ParentLayerRect rectInParent = aRect * aApzc->GetZoom();
-  ParentLayerRect rectInRoot =
-      GetOopifApzcToRootContentApzcTransform(aApzc).TransformBounds(
-          rectInParent);
-
-  if (rootContentApzc->GetZoom() != CSSToParentLayerScale(0)) {
-    return rectInRoot / rootContentApzc->GetZoom();
+  if (rootContentApzc == aApzc) {
+    return aRect + rootContentApzc->GetLayoutScrollOffset();
   }
-  return rectInRoot / CSSToParentLayerScale(1);
+
+  return GetOopifToRootContentTransform(aApzc).TransformBounds(aRect);
 }
 
 ScreenPoint APZCTreeManager::GetCurrentMousePosition() const {

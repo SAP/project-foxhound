@@ -35,6 +35,18 @@ namespace layers {
 class StackingContextHelper;
 }
 
+// An input to nsTableFrame::ReflowTable() and TableReflowInput.
+enum class TableReflowMode : uint8_t {
+  // A reflow to measure the block-size of the table. We use this value to
+  // request an unconstrained available block in the first reflow if a second
+  // special block-size reflow is needed later.
+  Measuring,
+
+  // A final reflow with the available block-size in the table frame's
+  // ReflowInput.
+  Final,
+};
+
 class nsDisplayTableItem : public nsPaintedDisplayItem {
  public:
   nsDisplayTableItem(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
@@ -256,19 +268,6 @@ class nsTableFrame : public nsContainerFrame {
       mozilla::Maybe<mozilla::LogicalMargin>& aBorder,
       mozilla::Maybe<mozilla::LogicalMargin>& aPadding) const;
 
-  /**
-   * In quirks mode, the size of the table background is reduced
-   * by the outer BC border. Compute the reduction needed.
-   */
-  nsMargin GetDeflationForBackground(nsPresContext* aPresContext) const;
-
-  /** Get width of table + colgroup + col collapse: elements that
-   *  continue along the length of the whole iStart side.
-   *  see nsTablePainter about continuous borders
-   */
-  nscoord GetContinuousIStartBCBorderWidth() const;
-  void SetContinuousIStartBCBorderWidth(nscoord aValue);
-
   friend class nsDelayedCalcBCBorders;
 
   void AddBCDamageArea(const mozilla::TableArea& aValue);
@@ -334,20 +333,14 @@ class nsTableFrame : public nsContainerFrame {
               nsReflowStatus& aStatus) override;
 
   void ReflowTable(ReflowOutput& aDesiredSize, const ReflowInput& aReflowInput,
-                   nscoord aAvailBSize, nsIFrame*& aLastChildReflowed,
-                   nsReflowStatus& aStatus);
+                   const LogicalMargin& aBorderPadding,
+                   mozilla::TableReflowMode aReflowMode,
+                   nsIFrame*& aLastChildReflowed, nsReflowStatus& aStatus);
 
   nsFrameList& GetColGroups();
 
   ComputedStyle* GetParentComputedStyle(
       nsIFrame** aProviderFrame) const override;
-
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    if (aFlags & eSupportsCSSTransforms) {
-      return false;
-    }
-    return nsContainerFrame::IsFrameOfType(aFlags);
-  }
 
 #ifdef DEBUG_FRAME_DUMP
   /** @see nsIFrame::GetFrameName */
@@ -640,7 +633,8 @@ class nsTableFrame : public nsContainerFrame {
   // Note: this method is accurate after the children are reflowed. It might
   // distribute extra block-size to table rows if the table has a specified
   // block-size larger than the intrinsic block-size.
-  nscoord CalcDesiredBSize(const ReflowInput& aReflowInput);
+  nscoord CalcDesiredBSize(const ReflowInput& aReflowInput,
+                           const LogicalMargin& aBorderPadding);
 
   // The following is a helper for CalcDesiredBSize
   void DistributeBSizeToRows(const ReflowInput& aReflowInput, nscoord aAmount);
@@ -836,7 +830,6 @@ class nsTableFrame : public nsContainerFrame {
     uint32_t mRowInserted : 1;
     uint32_t mNeedToCalcBCBorders : 1;
     uint32_t mGeometryDirty : 1;
-    uint32_t mIStartContBCBorder : 8;
     uint32_t mNeedToCollapse : 1;  // rows, cols that have visibility:collapse
                                    // need to be collapsed
     uint32_t mResizedColumns : 1;  // have we resized columns since last reflow?
@@ -942,15 +935,6 @@ inline bool nsTableFrame::HasBCBorders() {
 
 inline void nsTableFrame::SetHasBCBorders(bool aValue) {
   mBits.mHasBCBorders = (unsigned)aValue;
-}
-
-inline nscoord nsTableFrame::GetContinuousIStartBCBorderWidth() const {
-  int32_t d2a = PresContext()->AppUnitsPerDevPixel();
-  return BC_BORDER_END_HALF_COORD(d2a, mBits.mIStartContBCBorder);
-}
-
-inline void nsTableFrame::SetContinuousIStartBCBorderWidth(nscoord aValue) {
-  mBits.mIStartContBCBorder = (unsigned)aValue;
 }
 
 #define ABORT0()                                       \

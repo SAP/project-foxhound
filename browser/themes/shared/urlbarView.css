@@ -134,7 +134,7 @@
 .urlbarView-no-wrap {
   display: inline-flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: baseline;
   justify-content: start;
 }
 
@@ -266,6 +266,7 @@
 .urlbarView-favicon {
   width: var(--urlbarView-favicon-width);
   height: var(--urlbarView-favicon-width);
+  align-self: center;
   margin-inline-start: var(--urlbarView-icon-margin-start);
   margin-inline-end: var(--urlbarView-icon-margin-end);
   background-repeat: no-repeat;
@@ -293,6 +294,7 @@
   position: absolute;
   width: 12px;
   height: 12px;
+  align-self: center;
   margin-top: var(--urlbarView-favicon-width);
   margin-inline-start: calc(var(--urlbarView-icon-margin-start) + var(--urlbarView-favicon-width) - 6px);
   background-repeat: no-repeat;
@@ -324,6 +326,13 @@
   margin-inline: 4px;
   -moz-context-properties: fill, fill-opacity;
   border-radius: 100%;
+
+  &:not(:hover, [selected], [primary], [open]) {
+    @media (prefers-contrast) {
+      outline: 1px solid currentColor;
+      outline-offset: -1px;
+    }
+  }
 
   &[selected] {
     outline: var(--focus-outline);
@@ -381,37 +390,35 @@
 
 /* Button with label, e.g. tip button */
 
-.urlbarView-button:not(:empty) {
-  &:not(.urlbarView-button-menu) {
-    border-radius: var(--toolbarbutton-border-radius);
-    padding: .5em 1em;
-    margin-inline-end: 1.4em;
-    font-size: 0.93em;
-    font-weight: var(--font-weight-bold);
-    background-clip: padding-box;
-    min-height: 16px;
-    min-width: 6em;
-    text-align: center;
-    flex-basis: initial;
-    flex-shrink: 0;
+.urlbarView-button:not(:empty):not(.urlbarView-button-menu) {
+  border-radius: var(--toolbarbutton-border-radius);
+  padding: .5em 1em;
+  margin-inline-end: 1.4em;
+  font-size: 0.93em;
+  font-weight: var(--font-weight-bold);
+  background-clip: padding-box;
+  min-height: 16px;
+  min-width: 6em;
+  text-align: center;
+  flex-basis: initial;
+  flex-shrink: 0;
 
-    &:not(:hover) {
-      background-color: var(--button-bgcolor);
+  &:not(:hover) {
+    background-color: var(--button-bgcolor);
+  }
+
+  &:is([selected], [primary]) {
+    color: var(--button-primary-color);
+    background-color: var(--button-primary-bgcolor);
+    outline-color: var(--button-primary-bgcolor);
+    outline-offset: var(--focus-outline-offset);
+
+    &:hover {
+      background-color: var(--button-primary-hover-bgcolor);
     }
 
-    &:is([selected], [primary]) {
-      color: var(--button-primary-color);
-      background-color: var(--button-primary-bgcolor);
-      outline-color: var(--button-primary-bgcolor);
-      outline-offset: var(--focus-outline-offset);
-
-      &:hover {
-        background-color: var(--button-primary-hover-bgcolor);
-      }
-
-      &:hover:active {
-        background-color: var(--button-primary-active-bgcolor);
-      }
+    &:hover:active {
+      background-color: var(--button-primary-active-bgcolor);
     }
   }
 }
@@ -445,6 +452,21 @@
 
     > .urlbarView-no-wrap > .urlbarView-title {
       white-space: normal;
+    }
+  }
+
+  .urlbarView-results[wrap] > & {
+    display: block;
+    text-align: end;
+
+    > .urlbarView-row-inner {
+      display: block;
+      text-align: start;
+    }
+
+    > .urlbarView-button {
+      margin-top: 1em;
+      margin-bottom: var(--urlbarView-item-block-padding);
     }
   }
 
@@ -714,7 +736,6 @@
 
 .urlbarView-row[rich-suggestion] > .urlbarView-row-inner {
   align-items: center;
-  justify-content: start;
 }
 
 .urlbarView-row[rich-suggestion] > .urlbarView-row-inner > .urlbarView-favicon {
@@ -754,14 +775,12 @@
     flex-wrap: nowrap;
     flex-direction: row;
     align-items: baseline;
-    justify-content: start;
 
     > .urlbarView-row-body-top-no-wrap {
       display: flex;
       flex-wrap: nowrap;
       flex-direction: row;
       align-items: baseline;
-      justify-content: start;
       flex-shrink: 0;
       min-width: 0;
 

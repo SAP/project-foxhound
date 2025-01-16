@@ -22,9 +22,9 @@ static_prefs = { path = "../../../../modules/libpref/init/static_prefs" }
 profiler_helper = { path = "../../../../tools/profiler/rust-helper", optional = true }
 mozurl = { path = "../../../../netwerk/base/mozurl" }
 webrender_bindings = { path = "../../../../gfx/webrender_bindings" }
-cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "93b5c01a131f65c83c11aeb317f4583405c5eb79", optional = true }
-cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="cf48897be5cbe147d051ebbbe1eaf5fd8fb6bbc9", optional = true, features=["pulse-dlopen"] }
-cubeb-sys = { version = "0.10.3", optional = true, features=["gecko-in-tree"] }
+cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "89abc256a2eab3398f880e114b2d8308f5bc1d1a", optional = true }
+cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="c04c4d2c7f2291cb81a1c48f5a8c425748f18cd8", optional = true, features=["pulse-dlopen"] }
+cubeb-sys = { version = "0.10.7", optional = true, features=["gecko-in-tree"] }
 audioipc2-client = { git = "https://github.com/mozilla/audioipc", rev = "6be424d75f1367e70f2f5ddcacd6d0237e81a6a9", optional = true }
 audioipc2-server = { git = "https://github.com/mozilla/audioipc", rev = "6be424d75f1367e70f2f5ddcacd6d0237e81a6a9", optional = true }
 encoding_glue = { path = "../../../../intl/encoding_glue" }
@@ -69,23 +69,24 @@ origin-trials-ffi = { path = "../../../../dom/origin-trials/ffi" }
 jog = { path = "../../../components/glean/bindings/jog" }
 dap_ffi = { path = "../../../components/telemetry/dap/ffi" }
 data-encoding-ffi = { path = "../../../../dom/fs/parent/rust/data-encoding-ffi" }
-uniffi-example-arithmetic = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "c0e64b839018728d8153ce1758d391b7782e2e21", optional = true }
-uniffi-example-geometry = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "c0e64b839018728d8153ce1758d391b7782e2e21", optional = true }
-uniffi-example-rondpoint = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "c0e64b839018728d8153ce1758d391b7782e2e21", optional = true }
-uniffi-example-sprites = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "c0e64b839018728d8153ce1758d391b7782e2e21", optional = true }
-uniffi-example-todolist = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "c0e64b839018728d8153ce1758d391b7782e2e21", optional = true }
+uniffi-example-arithmetic = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
+uniffi-example-geometry = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
+uniffi-example-rondpoint = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
+uniffi-example-sprites = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
+uniffi-example-todolist = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
 uniffi-example-custom-types = { path = "../../../components/uniffi-example-custom-types/", optional = true }
 uniffi-fixture-callbacks = { path = "../../../components/uniffi-fixture-callbacks/", optional = true }
 uniffi-fixture-external-types = { path = "../../../components/uniffi-fixture-external-types/", optional = true }
 binary_http = { path = "../../../../netwerk/protocol/http/binary_http" }
 oblivious_http = { path = "../../../../netwerk/protocol/http/oblivious_http" }
 mime-guess-ffi = { path = "../../../../dom/fs/parent/rust/mime-guess-ffi" }
+uniffi = { version = "0.25.2" }
 
 # Note: `modern_sqlite` means rusqlite's bindings file be for a sqlite with
 # version less than or equal to what we link to. This isn't a problem because we
 # tend to keep this up to date, but it needs to be taken into consideration when
 # changing this version.
-rusqlite = { version = "0.29.0", features = ["modern_sqlite", "in_gecko"] }
+rusqlite = { workspace = true, features = ["modern_sqlite", "in_gecko"] }
 
 fluent = { version = "0.16.0", features = ["fluent-pseudo"] }
 fluent-ffi = { path = "../../../../intl/l10n/rust/fluent-ffi" }
@@ -100,8 +101,7 @@ qcms = { path = "../../../../gfx/qcms", features = ["c_bindings", "neon"], defau
 wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "99979da091fd58fba8477e7fcdf5ec0727102916" }
 aa-stroke = { git = "https://github.com/FirefoxGraphics/aa-stroke", rev = "ed4206ea11703580cd1d4fc63371a527b29d8252" }
 
-# Force url to stay at 2.1.0. See bug 1734538.
-url = "=2.1.0"
+url = "2.5.0"
 
 # Since we're building with at least rustc 1.63, enable rust 1.57 features (use of try_reserve methods).
 fallible_collections = { version = "0.4", features = ["rust_1_57"] }

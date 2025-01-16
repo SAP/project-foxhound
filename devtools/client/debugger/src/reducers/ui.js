@@ -12,7 +12,7 @@
 import { prefs, features } from "../utils/prefs";
 import { searchKeys } from "../constants";
 
-export const initialUIState = ({ supportsDebuggerStatementIgnore } = {}) => ({
+export const initialUIState = () => ({
   selectedPrimaryPaneTab: "sources",
   activeSearch: null,
   startPanelCollapsed: prefs.startPanelCollapsed,
@@ -36,6 +36,8 @@ export const initialUIState = ({ supportsDebuggerStatementIgnore } = {}) => ({
   editorWrappingEnabled: prefs.editorWrapping,
   javascriptEnabled: true,
   javascriptTracingLogMethod: prefs.javascriptTracingLogMethod,
+  javascriptTracingValues: prefs.javascriptTracingValues,
+  javascriptTracingOnNextInteraction: prefs.javascriptTracingOnNextInteraction,
   mutableSearchOptions: prefs.searchOptions || {
     [searchKeys.FILE_SEARCH]: {
       regexMatch: false,
@@ -59,8 +61,6 @@ export const initialUIState = ({ supportsDebuggerStatementIgnore } = {}) => ({
   projectSearchQuery: "",
   hideIgnoredSources: prefs.hideIgnoredSources,
   sourceMapIgnoreListEnabled: prefs.sourceMapIgnoreListEnabled,
-  // A server side trait to know if ignoring debugger statement is supported
-  supportsDebuggerStatementIgnore,
 });
 
 function update(state = initialUIState(), action) {
@@ -162,6 +162,24 @@ function update(state = initialUIState(), action) {
     case "SET_JAVASCRIPT_TRACING_LOG_METHOD": {
       prefs.javascriptTracingLogMethod = action.value;
       return { ...state, javascriptTracingLogMethod: action.value };
+    }
+
+    case "TOGGLE_JAVASCRIPT_TRACING_VALUES": {
+      prefs.javascriptTracingValues = !prefs.javascriptTracingValues;
+      return {
+        ...state,
+        javascriptTracingValues: prefs.javascriptTracingValues,
+      };
+    }
+
+    case "TOGGLE_JAVASCRIPT_TRACING_ON_NEXT_INTERACTION": {
+      prefs.javascriptTracingOnNextInteraction =
+        !prefs.javascriptTracingOnNextInteraction;
+      return {
+        ...state,
+        javascriptTracingOnNextInteraction:
+          prefs.javascriptTracingOnNextInteraction,
+      };
     }
 
     case "SET_SEARCH_OPTIONS": {

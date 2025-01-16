@@ -53,14 +53,14 @@ using mozilla::Nothing;
 using mozilla::RangedPtr;
 
 template <typename CharT>
-extern void InflateUTF8CharsToBuffer(const JS::UTF8Chars src, CharT* dst,
+extern void InflateUTF8CharsToBuffer(const JS::UTF8Chars& src, CharT* dst,
                                      size_t dstLen,
                                      JS::SmallestEncoding encoding);
 
 template <typename CharT>
-extern bool UTF8EqualsChars(const JS::UTF8Chars utf8, const CharT* chars);
+extern bool UTF8EqualsChars(const JS::UTF8Chars& utf8, const CharT* chars);
 
-extern bool GetUTF8AtomizationData(JSContext* cx, const JS::UTF8Chars utf8,
+extern bool GetUTF8AtomizationData(JSContext* cx, const JS::UTF8Chars& utf8,
                                    size_t* outlen,
                                    JS::SmallestEncoding* encoding,
                                    HashNumber* hashNum);
@@ -630,7 +630,7 @@ template <typename CharT>
 static MOZ_ALWAYS_INLINE JSAtom* MakeUTF8AtomHelperNonStaticValidLength(
     JSContext* cx, const AtomizeUTF8CharsWrapper* chars, size_t length,
     js::HashNumber hash) {
-  if (JSInlineString::lengthFits<CharT>(length)) {
+  if (JSAtom::lengthFitsInline<CharT>(length)) {
     CharT* storage;
     JSAtom* str = AllocateInlineAtom(cx, length, &storage, hash);
     if (!str) {

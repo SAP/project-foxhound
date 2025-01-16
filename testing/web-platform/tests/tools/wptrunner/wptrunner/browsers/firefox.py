@@ -193,7 +193,7 @@ def env_options():
             "supports_debugger": True}
 
 
-def run_info_extras(**kwargs):
+def run_info_extras(logger, **kwargs):
 
     def get_bool_pref_if_exists(pref):
         for key, value in kwargs.get('extra_prefs', []):
@@ -214,7 +214,7 @@ def run_info_extras(**kwargs):
           "sessionHistoryInParent": (not kwargs.get("disable_fission") or
                                      not get_bool_pref("fission.disableSessionHistoryInParent")),
           "swgl": get_bool_pref("gfx.webrender.software"),
-          "privateBrowsing": (kwargs["tags"] != None and ("privatebrowsing" in kwargs["tags"]))}
+          "privateBrowsing": (kwargs["tags"] is not None and ("privatebrowsing" in kwargs["tags"]))}
 
     rv.update(run_info_browser_version(**kwargs))
 
@@ -725,6 +725,9 @@ class ProfileCreator:
 
         if self.test_type == "print-reftest":
             profile.set_preferences({"print.always_print_silent": True})
+
+        if self.test_type == "wdspec":
+            profile.set_preferences({"remote.prefs.recommended": True})
 
         # Bug 1262954: winxp + e10s, disable hwaccel
         if (self.e10s and platform.system() in ("Windows", "Microsoft") and

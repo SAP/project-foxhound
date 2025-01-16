@@ -80,19 +80,12 @@ class nsHTMLButtonControlFrame : public nsContainerFrame,
     return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
   }
 
-  bool IsFrameOfType(uint32_t aFlags) const override {
-    return nsContainerFrame::IsFrameOfType(
-        aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock));
-  }
-
   // Return the ::-moz-button-content anonymous box.
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
 
  protected:
   nsHTMLButtonControlFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
                            nsIFrame::ClassID aID);
-
-  virtual bool IsInput() { return false; }
 
   // Indicates whether we should clip our children's painting to our
   // border-box (either because of "overflow" or because of legacy reasons

@@ -2,29 +2,37 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div, ul, li, span, h2, button } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
-import { score as fuzzaldrinScore } from "fuzzaldrin-plus";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  ul,
+  li,
+  span,
+  h2,
+  button,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import { containsPosition, positionAfter } from "../../utils/ast";
 import { createLocation } from "../../utils/location";
 
-import actions from "../../actions";
+import actions from "../../actions/index";
 import {
   getSelectedLocation,
   getCursorPosition,
   getSelectedSourceTextContent,
-} from "../../selectors";
+} from "../../selectors/index";
 
 import OutlineFilter from "./OutlineFilter";
-import "./Outline.css";
 import PreviewFunction from "../shared/PreviewFunction";
 
 import { isFulfilled } from "../../utils/async-value";
 
-const classnames = require("devtools/client/shared/classnames.js");
+const classnames = require("resource://devtools/client/shared/classnames.js");
+const {
+  score: fuzzaldrinScore,
+} = require("resource://devtools/client/shared/vendor/fuzzaldrin-plus.js");
 
 // Set higher to make the fuzzaldrin filter more specific
 const FUZZALDRIN_FILTER_THRESHOLD = 15000;

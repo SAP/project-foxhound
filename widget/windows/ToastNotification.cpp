@@ -20,6 +20,7 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/mscom/COMWrappers.h"
 #include "mozilla/mscom/Utils.h"
+#include "mozilla/widget/WinRegistry.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
 #include "mozilla/WidgetUtils.h"
@@ -36,7 +37,6 @@
 #include "prenv.h"
 #include "ToastNotificationHandler.h"
 #include "ToastNotificationHeaderOnlyUtils.h"
-#include "WinUtils.h"
 
 namespace mozilla {
 namespace widget {
@@ -154,7 +154,7 @@ bool ToastNotification::AssignIfNsisAumid(nsAutoString& aInstallHash,
   nsAutoString nsisAumidName =
       u""_ns MOZ_TOAST_APP_NAME u"Toast-"_ns + aInstallHash;
   nsAutoString nsisAumidPath = u"AppUserModelId\\"_ns + nsisAumidName;
-  if (!WinUtils::HasRegistryKey(HKEY_CLASSES_ROOT, nsisAumidPath.get())) {
+  if (!WinRegistry::HasKey(HKEY_CLASSES_ROOT, nsisAumidPath)) {
     MOZ_LOG(sWASLog, LogLevel::Debug,
             ("No CustomActivator value from installer in key 'HKCR\\%s'",
              NS_ConvertUTF16toUTF8(nsisAumidPath).get()));
@@ -464,13 +464,41 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
   MOZ_TRY(aAlert->GetPrincipal(getter_AddRefs(principal)));
   bool isSystemPrincipal = principal && principal->IsSystemPrincipal();
 
+  bool handleActions = false;
+  auto imagePlacement = ImagePlacement::eInline;
+  if (isSystemPrincipal) {
+    nsCOMPtr<nsIWindowsAlertNotification> winAlert(do_QueryInterface(aAlert));
+    if (winAlert) {
+      MOZ_TRY(winAlert->GetHandleActions(&handleActions));
+
+      nsIWindowsAlertNotification::ImagePlacement placement;
+      MOZ_TRY(winAlert->GetImagePlacement(&placement));
+      switch (placement) {
+        case nsIWindowsAlertNotification::eHero:
+          imagePlacement = ImagePlacement::eHero;
+          break;
+        case nsIWindowsAlertNotification::eIcon:
+          imagePlacement = ImagePlacement::eIcon;
+          break;
+        case nsIWindowsAlertNotification::eInline:
+          imagePlacement = ImagePlacement::eInline;
+          break;
+        default:
+          MOZ_LOG(sWASLog, LogLevel::Error,
+                  ("Invalid image placement enum value: %hhu", placement));
+          return NS_ERROR_UNEXPECTED;
+      }
+    }
+  }
+
   RefPtr<ToastNotificationHandler> oldHandler = mActiveHandlers.Get(name);
 
   NS_ENSURE_TRUE(mAumid.isSome(), NS_ERROR_UNEXPECTED);
   RefPtr<ToastNotificationHandler> handler = new ToastNotificationHandler(
       this, mAumid.ref(), aAlertListener, name, cookie, title, text, hostPort,
       textClickable, requireInteraction, actions, isSystemPrincipal,
-      opaqueRelaunchData, inPrivateBrowsing, isSilent);
+      opaqueRelaunchData, inPrivateBrowsing, isSilent, handleActions,
+      imagePlacement);
   mActiveHandlers.InsertOrUpdate(name, RefPtr{handler});
 
   MOZ_LOG(sWASLog, LogLevel::Debug,
@@ -841,6 +869,44 @@ ToastNotification::RemoveAllNotificationsForInstall() {
       Unused << NS_WARN_IF(FAILED(hr));
     }
   }();
+
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS_INHERITED(WindowsAlertNotification, AlertNotification,
+                            nsIWindowsAlertNotification)
+
+NS_IMETHODIMP
+WindowsAlertNotification::GetHandleActions(bool* aHandleActions) {
+  *aHandleActions = mHandleActions;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WindowsAlertNotification::SetHandleActions(bool aHandleActions) {
+  mHandleActions = aHandleActions;
+  return NS_OK;
+}
+
+NS_IMETHODIMP WindowsAlertNotification::GetImagePlacement(
+    nsIWindowsAlertNotification::ImagePlacement* aImagePlacement) {
+  *aImagePlacement = mImagePlacement;
+  return NS_OK;
+}
+
+NS_IMETHODIMP WindowsAlertNotification::SetImagePlacement(
+    nsIWindowsAlertNotification::ImagePlacement aImagePlacement) {
+  switch (aImagePlacement) {
+    case eHero:
+    case eIcon:
+    case eInline:
+      mImagePlacement = aImagePlacement;
+      break;
+    default:
+      MOZ_LOG(sWASLog, LogLevel::Error,
+              ("Invalid image placement enum value: %hhu", aImagePlacement));
+      return NS_ERROR_INVALID_ARG;
+  }
 
   return NS_OK;
 }

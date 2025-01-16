@@ -12,18 +12,19 @@
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "nsISupports.h"
 
-mozilla::LazyLogModule sLogWFD("FileDialog");
-
 namespace mozilla::widget::filedialog {
 
+// Count of currently-open file dialogs (not just open-file dialogs).
 static size_t sOpenDialogActors = 0;
 
 WinFileDialogParent::WinFileDialogParent() {
-  MOZ_LOG(sLogWFD, LogLevel::Info, ("%s %p", __PRETTY_FUNCTION__, this));
+  MOZ_LOG(sLogFileDialog, LogLevel::Debug,
+          ("%s %p", __PRETTY_FUNCTION__, this));
 }
 
 WinFileDialogParent::~WinFileDialogParent() {
-  MOZ_LOG(sLogWFD, LogLevel::Info, ("%s %p", __PRETTY_FUNCTION__, this));
+  MOZ_LOG(sLogFileDialog, LogLevel::Debug,
+          ("%s %p", __PRETTY_FUNCTION__, this));
 }
 
 PWinFileDialogParent::nsresult WinFileDialogParent::BindToUtilityProcess(
@@ -54,7 +55,7 @@ PWinFileDialogParent::nsresult WinFileDialogParent::BindToUtilityProcess(
 }
 
 void WinFileDialogParent::ProcessingError(Result aCode, const char* aReason) {
-  detail::LogProcessingError(sLogWFD, this, aCode, aReason);
+  detail::LogProcessingError(sLogFileDialog, this, aCode, aReason);
 }
 
 ProcessProxy::ProcessProxy(RefPtr<WFDP>&& obj)
@@ -70,12 +71,24 @@ ProcessProxy::Contents::~Contents() {
 
   // ... and possibly the process
   if (!--sOpenDialogActors) {
-    MOZ_LOG(
-        sLogWFD, LogLevel::Info,
-        ("%s: killing the WINDOWS_FILE_DIALOG process (no more live actors)",
-         __PRETTY_FUNCTION__));
-    ipc::UtilityProcessManager::GetSingleton()->CleanShutdown(
-        ipc::SandboxingKind::WINDOWS_FILE_DIALOG);
+    StopProcess();
   }
 }
+
+void ProcessProxy::Contents::StopProcess() {
+  auto const upm = ipc::UtilityProcessManager::GetSingleton();
+  if (!upm) {
+    // This is only possible when the UtilityProcessManager has shut down -- in
+    // which case the file-dialog process has also already been directed to shut
+    // down, and there's nothing we need to do here.
+    return;
+  }
+
+  MOZ_LOG(sLogFileDialog, LogLevel::Debug,
+          ("%s: killing the WINDOWS_FILE_DIALOG process (no more live "
+           "actors)",
+           __PRETTY_FUNCTION__));
+  upm->CleanShutdown(ipc::SandboxingKind::WINDOWS_FILE_DIALOG);
+}
+
 }  // namespace mozilla::widget::filedialog

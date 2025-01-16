@@ -24,9 +24,6 @@ const {
 } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccountsCommon.sys.mjs"
 );
-const { PromiseUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/PromiseUtils.sys.mjs"
-);
 
 // We grab some additional stuff via backstage passes.
 var { AccountState } = ChromeUtils.importESModule(
@@ -196,7 +193,7 @@ function MockFxAccounts(credentials = null) {
     VERIFICATION_POLL_TIMEOUT_INITIAL: 100, // 100ms
 
     _getCertificateSigned_calls: [],
-    _d_signCertificate: PromiseUtils.defer(),
+    _d_signCertificate: Promise.withResolvers(),
     _now_is: new Date(),
     now() {
       return this._now_is;
@@ -940,6 +937,29 @@ add_task(async function test_getScopedKeys_misconfigured_fxa_server() {
   await Assert.rejects(
     fxa.keys.getKeyForScope(SCOPE_OLD_SYNC),
     /The FxA server did not grant Firefox the `oldsync` scope/
+  );
+});
+
+add_task(async function test_setScopedKeys() {
+  const fxa = new MockFxAccounts();
+  const user = {
+    ...getTestUser("foo"),
+    verified: true,
+  };
+  await fxa.setSignedInUser(user);
+  await fxa.keys.setScopedKeys(MOCK_ACCOUNT_KEYS.scopedKeys);
+  const key = await fxa.keys.getKeyForScope(SCOPE_OLD_SYNC);
+  Assert.deepEqual(key, {
+    scope: SCOPE_OLD_SYNC,
+    ...MOCK_ACCOUNT_KEYS.scopedKeys[SCOPE_OLD_SYNC],
+  });
+});
+
+add_task(async function test_setScopedKeys_user_not_signed_in() {
+  const fxa = new MockFxAccounts();
+  await Assert.rejects(
+    fxa.keys.setScopedKeys(MOCK_ACCOUNT_KEYS.scopedKeys),
+    /Cannot persist keys, no user signed in/
   );
 });
 

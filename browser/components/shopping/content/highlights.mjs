@@ -33,6 +33,7 @@ class ReviewHighlights extends MozLitElement {
 
   static properties = {
     highlights: { type: Object },
+    lang: { type: String, reflect: true },
   };
 
   static get queries() {
@@ -86,9 +87,7 @@ class ReviewHighlights extends MozLitElement {
     highlightEl.l10nId = l10nId;
     highlightEl.highlightType = type;
     highlightEl.reviews = reviews;
-    // At present, en is only supported. Once we support more locales,
-    // update this attribute accordingly.
-    highlightEl.lang = "en";
+    highlightEl.lang = this.lang;
     return highlightEl;
   }
 
@@ -108,14 +107,11 @@ class ReviewHighlights extends MozLitElement {
       highlightsTemplate.push(highlightEl);
     }
 
-    // Only use show-more card type if there are more than two highlights.
-    let isShowMore = Array.from(this.#highlightsMap.values()).flat().length > 2;
-
     return html`
       <shopping-card
         data-l10n-id="shopping-highlights-label"
         data-l10n-attrs="label"
-        type=${isShowMore ? "show-more" : ""}
+        type="show-more"
       >
         <div slot="content" id="review-highlights-wrapper">
           <dl id="review-highlights-list">${highlightsTemplate}</dl>

@@ -36,6 +36,7 @@
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Swizzle.h"
+#include "mozilla/layers/LayersSurfaces.h"
 #include "nsLayoutUtils.h"
 #include "nsIPrincipal.h"
 #include "nsIURI.h"
@@ -1022,8 +1023,12 @@ InitializeFrameWithResourceAndSize(
 
   Maybe<uint64_t> duration = OptionalToMaybe(aInit.mDuration);
 
-  // TODO: WPT will fail if we guess a VideoColorSpace here.
-  const VideoColorSpaceInit colorSpace{};
+  VideoColorSpaceInit colorSpace{};
+  if (IsYUVFormat(SurfaceFormatToVideoPixelFormat(surface->GetFormat()).ref())) {
+    colorSpace = FallbackColorSpaceForVideoContent();
+  } else {
+    colorSpace = FallbackColorSpaceForWebContent();
+  }
   return MakeAndAddRef<VideoFrame>(
       aGlobal, image, format ? Some(format->PixelFormat()) : Nothing(),
       image->GetSize(), visibleRect.value(), displaySize.value(), duration,
@@ -1714,7 +1719,7 @@ already_AddRefed<Promise> VideoFrame::CopyTo(
 }
 
 // https://w3c.github.io/webcodecs/#dom-videoframe-clone
-already_AddRefed<VideoFrame> VideoFrame::Clone(ErrorResult& aRv) {
+already_AddRefed<VideoFrame> VideoFrame::Clone(ErrorResult& aRv) const {
   AssertIsOnOwningThread();
 
   if (!mResource) {
@@ -1734,6 +1739,11 @@ void VideoFrame::Close() {
   mCodedSize = gfx::IntSize();
   mVisibleRect = gfx::IntRect();
   mDisplaySize = gfx::IntSize();
+  mColorSpace = VideoColorSpaceInit();
+}
+
+bool VideoFrame::IsClosed() const {
+  return !mResource;
 }
 
 already_AddRefed<layers::Image> VideoFrame::GetImage() const {
@@ -1741,6 +1751,31 @@ already_AddRefed<layers::Image> VideoFrame::GetImage() const {
     return nullptr;
   }
   return do_AddRef(mResource->mImage);
+}
+
+nsCString VideoFrame::ToString() const {
+  nsCString rv;
+
+  if (IsClosed()) {
+    rv.AppendPrintf("VideoFrame (closed)");
+    return rv;
+  }
+
+  rv.AppendPrintf(
+      "VideoFrame ts: %" PRId64
+      ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
+      mTimestamp,
+      dom::VideoPixelFormatValues::GetString(mResource->mFormat->PixelFormat())
+          .data(),
+      mCodedSize.width, mCodedSize.height, mVisibleRect.width,
+      mVisibleRect.height, mDisplaySize.width, mDisplaySize.height,
+      ColorSpaceInitToString(mColorSpace).get());
+
+  if (mDuration) {
+    rv.AppendPrintf(" dur: %" PRId64, mDuration.value());
+  }
+
+  return rv;
 }
 
 // https://w3c.github.io/webcodecs/#ref-for-deserialization-steps%E2%91%A0
@@ -2205,7 +2240,7 @@ bool VideoFrame::Resource::CopyTo(const Format::Plane& aPlane,
     }
 
     RefPtr<gfx::DataSourceSurface> dataSurface = surface->GetDataSurface();
-    if (NS_WARN_IF(!surface)) {
+    if (NS_WARN_IF(!dataSurface)) {
       return false;
     }
 

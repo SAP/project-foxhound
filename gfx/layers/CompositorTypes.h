@@ -13,6 +13,7 @@
 #include "LayersTypes.h"  // for LayersBackend, etc
 #include "nsXULAppAPI.h"  // for GeckoProcessType, etc
 #include "mozilla/gfx/Types.h"
+#include "mozilla/layers/SyncObject.h"
 #include "mozilla/EnumSet.h"
 
 #include "mozilla/TypedEnumBits.h"
@@ -96,9 +97,11 @@ enum class TextureFlags : uint32_t {
   DUMMY_TEXTURE = 1 << 22,
   // Software decoded video
   SOFTWARE_DECODED_VIDEO = 1 << 23,
+  // Whether the remote texture must wait for its owner to be created.
+  WAIT_FOR_REMOTE_TEXTURE_OWNER = 1 << 24,
 
   // OR union of all valid bits
-  ALL_BITS = (1 << 24) - 1,
+  ALL_BITS = (1 << 25) - 1,
   // the default flags
   DEFAULT = NO_FLAGS
 };
@@ -145,12 +148,6 @@ enum class CompositableType : uint8_t {
   COUNT
 };
 
-#ifdef XP_WIN
-typedef void* SyncHandle;
-#else
-typedef uintptr_t SyncHandle;
-#endif  // XP_WIN
-
 /**
  * Sent from the compositor to the content-side LayerManager, includes
  * properties of the compositor and should (in the future) include information
@@ -178,7 +175,7 @@ struct TextureFactoryIdentifier {
       bool aCompositorUseDComp = false, bool aUseCompositorWnd = false,
       bool aSupportsTextureBlitting = false,
       bool aSupportsPartialUploads = false, bool aSupportsComponentAlpha = true,
-      bool aSupportsD3D11NV12 = false, SyncHandle aSyncHandle = 0)
+      bool aSupportsD3D11NV12 = false, SyncHandle aSyncHandle = {})
       : mParentBackend(aLayersBackend),
         mWebRenderBackend(WebRenderBackend::HARDWARE),
         mWebRenderCompositor(WebRenderCompositor::DRAW),
@@ -201,7 +198,7 @@ struct TextureFactoryIdentifier {
       bool aCompositorUseDComp = false, bool aUseCompositorWnd = false,
       bool aSupportsTextureBlitting = false,
       bool aSupportsPartialUploads = false, bool aSupportsComponentAlpha = true,
-      bool aSupportsD3D11NV12 = false, SyncHandle aSyncHandle = 0)
+      bool aSupportsD3D11NV12 = false, SyncHandle aSyncHandle = {})
       : mParentBackend(LayersBackend::LAYERS_WR),
         mWebRenderBackend(aWebRenderBackend),
         mWebRenderCompositor(aWebRenderCompositor),

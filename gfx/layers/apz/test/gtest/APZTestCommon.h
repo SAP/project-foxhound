@@ -18,6 +18,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
+#include "mozilla/layers/DoubleTapToZoom.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "mozilla/layers/MatrixMessage.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -126,8 +127,9 @@ class MockContentController : public GeckoContentController {
  public:
   MOCK_METHOD1(NotifyLayerTransforms, void(nsTArray<MatrixMessage>&&));
   MOCK_METHOD1(RequestContentRepaint, void(const RepaintRequest&));
-  MOCK_METHOD5(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
-                               const ScrollableLayerGuid&, uint64_t));
+  MOCK_METHOD6(HandleTap, void(TapType, const LayoutDevicePoint&, Modifiers,
+                               const ScrollableLayerGuid&, uint64_t,
+                               const Maybe<DoubleTapToZoomMetrics>&));
   MOCK_METHOD5(NotifyPinchGesture,
                void(PinchGestureInput::PinchGestureType,
                     const ScrollableLayerGuid&, const LayoutDevicePoint&,
@@ -247,6 +249,11 @@ class TestAPZCTreeManager : public APZCTreeManager {
    * See bug 1468804 for more information.
    **/
   void CancelAnimation() { EXPECT_TRUE(false); }
+
+  bool AdvanceAnimations(const SampleTime& aSampleTime) {
+    MutexAutoLock lock(mMapLock);
+    return AdvanceAnimationsInternal(lock, aSampleTime);
+  }
 
   APZEventResult ReceiveInputEvent(
       InputData& aEvent,
@@ -389,6 +396,11 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
     EXPECT_EQ(PAN_MOMENTUM, mState);
   }
 
+  void AssertStateIsWheelScroll() {
+    RecursiveMutexAutoLock lock(mRecursiveMutex);
+    EXPECT_EQ(WHEEL_SCROLL, mState);
+  }
+
   void SetAxisLocked(ScrollDirections aDirections, bool aLockValue) {
     if (aDirections.contains(ScrollDirection::eVertical)) {
       mY.SetAxisLocked(aLockValue);
@@ -449,6 +461,10 @@ class TestAsyncPanZoomController : public AsyncPanZoomController {
 
   bool IsOverscrollAnimationRunning() const {
     return mState == PanZoomState::OVERSCROLL_ANIMATION;
+  }
+
+  bool IsWheelScrollAnimationRunning() const {
+    return mState == PanZoomState::WHEEL_SCROLL;
   }
 
  private:

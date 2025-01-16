@@ -122,8 +122,8 @@ TEST_F(AudioEgressTest, ProcessAudioWithMute) {
   rtc::Event event;
   int rtp_count = 0;
   RtpPacketReceived rtp;
-  auto rtp_sent = [&](const uint8_t* packet, size_t length, Unused) {
-    rtp.Parse(packet, length);
+  auto rtp_sent = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+    rtp.Parse(packet);
     if (++rtp_count == kExpected) {
       event.Set();
     }
@@ -160,8 +160,8 @@ TEST_F(AudioEgressTest, ProcessAudioWithSineWave) {
   rtc::Event event;
   int rtp_count = 0;
   RtpPacketReceived rtp;
-  auto rtp_sent = [&](const uint8_t* packet, size_t length, Unused) {
-    rtp.Parse(packet, length);
+  auto rtp_sent = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
+    rtp.Parse(packet);
     if (++rtp_count == kExpected) {
       event.Set();
     }
@@ -195,7 +195,7 @@ TEST_F(AudioEgressTest, SkipAudioEncodingAfterStopSend) {
   constexpr int kExpected = 10;
   rtc::Event event;
   int rtp_count = 0;
-  auto rtp_sent = [&](const uint8_t* packet, size_t length, Unused) {
+  auto rtp_sent = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
     if (++rtp_count == kExpected) {
       event.Set();
     }
@@ -218,7 +218,7 @@ TEST_F(AudioEgressTest, SkipAudioEncodingAfterStopSend) {
 
   // It should be safe to exit the test case while encoder_queue_ has
   // outstanding data to process. We are making sure that this doesn't
-  // result in crahses or sanitizer errors due to remaining data.
+  // result in crashes or sanitizer errors due to remaining data.
   for (size_t i = 0; i < kExpected * 2; i++) {
     egress_->SendAudioData(GetAudioFrame(i));
     time_controller_.AdvanceTime(TimeDelta::Millis(10));
@@ -269,9 +269,9 @@ TEST_F(AudioEgressTest, SendDTMF) {
   // It's possible that we may have actual audio RTP packets along with
   // DTMF packtets.  We are only interested in the exact number of DTMF
   // packets rtp stack is emitting.
-  auto rtp_sent = [&](const uint8_t* packet, size_t length, Unused) {
+  auto rtp_sent = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
     RtpPacketReceived rtp;
-    rtp.Parse(packet, length);
+    rtp.Parse(packet);
     if (is_dtmf(rtp) && ++dtmf_count == kExpected) {
       event.Set();
     }
@@ -296,7 +296,7 @@ TEST_F(AudioEgressTest, TestAudioInputLevelAndEnergyDuration) {
   constexpr int kExpected = 6;
   rtc::Event event;
   int rtp_count = 0;
-  auto rtp_sent = [&](const uint8_t* packet, size_t length, Unused) {
+  auto rtp_sent = [&](rtc::ArrayView<const uint8_t> packet, Unused) {
     if (++rtp_count == kExpected) {
       event.Set();
     }

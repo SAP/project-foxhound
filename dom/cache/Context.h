@@ -10,6 +10,7 @@
 #include "CacheCipherKeyManager.h"
 #include "mozilla/dom/SafeRefPtr.h"
 #include "mozilla/dom/cache/Types.h"
+#include "mozilla/dom/quota/StringifyUtils.h"
 #include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsProxyRelease.h"
@@ -63,7 +64,7 @@ class Manager;
 // As an invariant, all Context objects must be destroyed before permitting
 // the "profile-before-change" shutdown event to complete.  This is ensured
 // via the code in ShutdownObserver.cpp.
-class Context final : public SafeRefCounted<Context> {
+class Context final : public SafeRefCounted<Context>, public Stringifyable {
   using DirectoryLock = mozilla::dom::quota::DirectoryLock;
 
  public:
@@ -104,7 +105,7 @@ class Context final : public SafeRefCounted<Context> {
   // interface and register themselves with the AddActivity().  When they are
   // destroyed they must call RemoveActivity().  This allows the Context to
   // cancel any outstanding Activity work when the Context is cancelled.
-  class Activity {
+  class Activity : public Stringifyable {
    public:
     virtual void Cancel() = 0;
     virtual bool MatchesCacheId(CacheId aCacheId) const = 0;
@@ -183,14 +184,16 @@ class Context final : public SafeRefCounted<Context> {
   void DispatchAction(SafeRefPtr<Action> aAction, bool aDoomData = false);
   void OnQuotaInit(nsresult aRv,
                    const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
-                   already_AddRefed<DirectoryLock> aDirectoryLock,
-                   already_AddRefed<CipherKeyManager> aCipherKeyManager);
+                   RefPtr<DirectoryLock> aDirectoryLock,
+                   RefPtr<CipherKeyManager> aCipherKeyManager);
 
   SafeRefPtr<ThreadsafeHandle> CreateThreadsafeHandle();
 
   void SetNextContext(SafeRefPtr<Context> aNextContext);
 
   void DoomTargetData();
+
+  void DoStringify(nsACString& aData) override;
 
   SafeRefPtr<Manager> mManager;
   nsCOMPtr<nsISerialEventTarget> mTarget;
@@ -220,8 +223,6 @@ class Context final : public SafeRefCounted<Context> {
   Context(SafeRefPtr<Manager> aManager, nsISerialEventTarget* aTarget,
           SafeRefPtr<Action> aInitAction);
   ~Context();
-
-  void Stringify(nsACString& aData);
 
   NS_DECL_OWNINGTHREAD
   MOZ_DECLARE_REFCOUNTED_TYPENAME(cache::Context)

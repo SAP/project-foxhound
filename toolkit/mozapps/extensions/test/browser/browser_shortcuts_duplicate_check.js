@@ -205,7 +205,7 @@ add_task(async function testDuplicateShortcutOnMacOSCtrlKey() {
   const errorLabel = errorEl.querySelector(".error-message-label");
 
   ok(
-    BrowserTestUtils.is_hidden(errorEl),
+    BrowserTestUtils.isHidden(errorEl),
     "Expect shortcut error element to be initially hidden"
   );
 
@@ -214,7 +214,7 @@ add_task(async function testDuplicateShortcutOnMacOSCtrlKey() {
 
   const assertDuplicateShortcutWarning = async msg => {
     await TestUtils.waitForCondition(
-      () => BrowserTestUtils.is_visible(errorEl),
+      () => BrowserTestUtils.isVisible(errorEl),
       `Wait for the shortcut-duplicate error to be visible on ${msg}`
     );
     Assert.deepEqual(
@@ -230,7 +230,7 @@ add_task(async function testDuplicateShortcutOnMacOSCtrlKey() {
   const clearWarning = async inputEl => {
     anotherCommandInput.blur();
     await TestUtils.waitForCondition(
-      () => BrowserTestUtils.is_hidden(errorEl),
+      () => BrowserTestUtils.isHidden(errorEl),
       "Wait for the shortcut-duplicate error to be hidden"
     );
   };

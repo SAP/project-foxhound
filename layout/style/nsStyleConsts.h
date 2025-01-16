@@ -145,11 +145,6 @@ enum class StyleUserFocus : uint8_t {
   None,
   Ignore,
   Normal,
-  SelectAll,
-  SelectBefore,
-  SelectAfter,
-  SelectSame,
-  SelectMenu,
 };
 
 // user-input
@@ -185,16 +180,6 @@ enum class StyleOrient : uint8_t {
   Horizontal,
   Vertical,
 };
-
-// See AnimationEffect.webidl
-// and mozilla/dom/AnimationEffectBinding.h
-namespace dom {
-enum class PlaybackDirection : uint8_t;
-enum class FillMode : uint8_t;
-}  // namespace dom
-
-// Animation play state
-enum class StyleAnimationPlayState : uint8_t { Running, Paused };
 
 // See nsStyleImageLayers
 enum class StyleImageLayerAttachment : uint8_t { Scroll, Fixed, Local };
@@ -490,18 +475,10 @@ enum class StyleImeMode : uint8_t {
 
 // See nsStyleSVG
 
-/*
- * -moz-window-shadow
- * Also used in widget code
- */
+// -moz-window-shadow
 enum class StyleWindowShadow : uint8_t {
+  Auto,
   None,
-  Default,
-
-  // These can't be specified in CSS, they get computed from the "default"
-  // value.
-  Menu,
-  Tooltip,
 };
 
 // dominant-baseline

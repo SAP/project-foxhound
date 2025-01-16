@@ -19,10 +19,11 @@ dependencies = [
     "virtualenv",
     "mock",
     "coverage",
-    "nose",
+    "pynose",
     "pylint",
     "pyflakes",
     "toml",
+    "tomlkit",
 ]
 try:
     import json

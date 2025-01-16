@@ -6,8 +6,8 @@
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
   "resource://activity-stream/common/Actions.sys.mjs"
 );
-const { Prefs } = ChromeUtils.import(
-  "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
+const { Prefs } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/ActivityStreamPrefs.sys.mjs"
 );
 const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
@@ -171,17 +171,6 @@ class PrefsFeed {
     values["improvesearch.handoffToAwesomebar"] = handoffToAwesomebarPrefValue;
     this._prefMap.set("improvesearch.handoffToAwesomebar", {
       value: handoffToAwesomebarPrefValue,
-    });
-
-    // Read the pref for the cached default engine name from firefox.js and
-    // store it in our internal list of prefs to watch
-    let placeholderPrefValue = Services.prefs.getStringPref(
-      "browser.urlbar.placeholderName",
-      ""
-    );
-    values["urlbar.placeholderName"] = placeholderPrefValue;
-    this._prefMap.set("urlbar.placeholderName", {
-      value: placeholderPrefValue,
     });
 
     // Add experiment values and default values

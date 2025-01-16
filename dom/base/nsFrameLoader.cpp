@@ -17,7 +17,7 @@
 
 #include "nsDocShell.h"
 #include "nsIContentInlines.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsService.h"
 #include "mozilla/dom/Document.h"
@@ -1161,9 +1161,9 @@ void nsFrameLoader::Hide() {
     return;
   }
 
-  nsCOMPtr<nsIContentViewer> contentViewer;
-  GetDocShell()->GetContentViewer(getter_AddRefs(contentViewer));
-  if (contentViewer) contentViewer->SetSticky(false);
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  GetDocShell()->GetDocViewer(getter_AddRefs(viewer));
+  if (viewer) viewer->SetSticky(false);
 
   RefPtr<nsDocShell> baseWin = GetDocShell();
   baseWin->SetVisibility(false);
@@ -1329,7 +1329,7 @@ nsresult nsFrameLoader::SwapWithOtherRemoteLoader(
               aFrameLoader->GetMaybePendingBrowsingContext()) {
         nsCOMPtr<nsISHistory> shistory = bc->Canonical()->GetSessionHistory();
         if (shistory) {
-          shistory->EvictAllContentViewers();
+          shistory->EvictAllDocumentViewers();
         }
       }
     };
@@ -1794,10 +1794,10 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
 
   // Drop any cached content viewers in the two session histories.
   if (ourHistory) {
-    ourHistory->EvictLocalContentViewers();
+    ourHistory->EvictLocalDocumentViewers();
   }
   if (otherHistory) {
-    otherHistory->EvictLocalContentViewers();
+    otherHistory->EvictLocalDocumentViewers();
   }
 
   NS_ASSERTION(ourFrame == ourContent->GetPrimaryFrame() &&
@@ -2800,16 +2800,18 @@ bool nsFrameLoader::TryRemoteBrowserInternal() {
 }
 
 bool nsFrameLoader::TryRemoteBrowser() {
-  // Creating remote browsers may result in creating new processes, but during
-  // parent shutdown that would add just noise, so better bail out.
-  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
-    return false;
-  }
+  // NOTE: Do not add new checks to this function, it exists to ensure we always
+  // MaybeNotifyCrashed for any errors within TryRemoteBrowserInternal. If new
+  // checks are added, they should be added into that function, not here.
 
   // Try to create the internal remote browser.
   if (TryRemoteBrowserInternal()) {
     return true;
   }
+
+  // We shouldn't TryRemoteBrowser again, even if a check failed before we
+  // initialize mInitialized within TryRemoteBrowserInternal.
+  mInitialized = true;
 
   // Check if we should report a browser-crashed error because the browser
   // failed to start.
@@ -2936,8 +2938,8 @@ nsresult nsFrameLoader::FinishStaticClone(
   nsCOMPtr<Document> kungFuDeathGrip = docShell->GetDocument();
   Unused << kungFuDeathGrip;
 
-  nsCOMPtr<nsIContentViewer> viewer;
-  docShell->GetContentViewer(getter_AddRefs(viewer));
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  docShell->GetDocViewer(getter_AddRefs(viewer));
   NS_ENSURE_STATE(viewer);
 
   nsCOMPtr<Document> clonedDoc = doc->CreateStaticClone(

@@ -1770,7 +1770,7 @@ const selectors = {
   stepIn: ".stepIn.active",
   trace: ".debugger-trace-menu-button",
   prettyPrintButton: ".source-footer .prettyPrint",
-  sourceMapLink: ".source-footer .mapped-source",
+  mappedSourceLink: ".source-footer .mapped-source",
   sourcesFooter: ".sources-panel .source-footer",
   editorFooter: ".editor-pane .source-footer",
   sourceNode: i => `.sources-list .tree-node:nth-child(${i}) .node`,
@@ -1832,6 +1832,7 @@ const selectors = {
   fileSearchInput: ".search-bar input",
   watchExpressionsHeader: ".watch-expressions-pane ._header .header-label",
   watchExpressionsAddButton: ".watch-expressions-pane ._header .plus",
+  editorNotificationFooter: ".editor-notification-footer",
 };
 
 function getSelector(elementName, ...args) {
@@ -2848,7 +2849,11 @@ async function hasConsoleMessage({ toolbox }, msg) {
   });
 }
 
-function evaluateExpressionInConsole(hud, expression) {
+function evaluateExpressionInConsole(
+  hud,
+  expression,
+  expectedClassName = "result"
+) {
   const seenMessages = new Set(
     JSON.parse(
       hud.ui.outputNode
@@ -2860,7 +2865,7 @@ function evaluateExpressionInConsole(hud, expression) {
     const onNewMessage = messages => {
       for (const message of messages) {
         if (
-          message.node.classList.contains("result") &&
+          message.node.classList.contains(expectedClassName) &&
           !seenMessages.has(message.node.getAttribute("data-message-id"))
         ) {
           hud.ui.off("new-messages", onNewMessage);
@@ -3068,9 +3073,19 @@ async function selectBlackBoxContextMenuItem(dbg, itemName) {
   return wait;
 }
 
+function openOutlinePanel(dbg, waitForOutlineList = true) {
+  const outlineTab = findElementWithSelector(dbg, ".outline-tab a");
+  EventUtils.synthesizeMouseAtCenter(outlineTab, {}, outlineTab.ownerGlobal);
+
+  if (!waitForOutlineList) {
+    return Promise.resolve();
+  }
+
+  return waitForElementWithSelector(dbg, ".outline-list");
+}
+
 // Test empty panel when source has not function or class symbols
 // Test that anonymous functions do not show in the outline panel
-
 function assertOutlineItems(dbg, expectedItems) {
   const outlineItems = Array.from(
     findAllElementsWithSelector(
@@ -3083,4 +3098,22 @@ function assertOutlineItems(dbg, expectedItems) {
     expectedItems,
     "The expected items are displayed in the outline panel"
   );
+}
+
+async function checkAdditionalThreadCount(dbg, count) {
+  await waitForState(
+    dbg,
+    state => {
+      return dbg.selectors.getThreads().length == count;
+    },
+    "Have the expected number of additional threads"
+  );
+  ok(true, `Have ${count} threads`);
+}
+
+/**
+ * Retrieve the text displayed as warning under the editor.
+ */
+function findFooterNotificationMessage(dbg) {
+  return findElement(dbg, "editorNotificationFooter")?.innerText;
 }

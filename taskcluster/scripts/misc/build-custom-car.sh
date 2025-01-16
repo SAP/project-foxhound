@@ -23,6 +23,10 @@ CUSTOM_CAR_DIR=$PWD
 git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 export PATH="$PATH:$CUSTOM_CAR_DIR/depot_tools"
 
+# Log the current revision of depot tools for easier tracking in the future
+DEPOT_TOOLS_REV=$(cd depot_tools && git rev-parse HEAD && cd ..)
+echo "Current depot_tools revision: $DEPOT_TOOLS_REV"
+
 # Set up some env variables depending on the target OS
 # Linux is the default case, with minor adjustments for
 # android since it is built with a linux host
@@ -51,7 +55,7 @@ fi
 # Logic for macosx64
 if [[ $(uname -s) == "Darwin" ]]; then
   # Modify the config with fetched sdk path
-  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX14.0.sdk"
+  export MACOS_SYSROOT="$MOZ_FETCHES_DIR/MacOSX14.2.sdk"
 
   # Use the fetched toolchain python instead as it is a higher version
   # than the system python
@@ -64,6 +68,13 @@ if [[ $(uname -s) == "Darwin" ]]; then
 
   # Ensure we don't use ARM64 profdata with this unique sub string
   PGO_SUBSTR="chrome-mac-main"
+
+  # Temporary hacky way for now while we build this on intel workers.
+  # Afterwards we can replace it with a $(uname -m) == "arm64" check.
+  # Bug 1858740
+  if [[ "$ARTIFACT_NAME" == *"macosx_arm"* ]]; then
+    PGO_SUBSTR="chrome-mac-arm-main"
+  fi
 
   # macOS final build folder is different than linux/win
   FINAL_BIN_PATH="src/out/Default/Chromium.app"
@@ -94,7 +105,7 @@ if [[ $(uname -o) == "Msys" ]]; then
   pushd "$WINDOWSSDKDIR"
   mkdir -p Debuggers/x64/
   popd
-  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.34.31931/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
+  mv $MOZ_FETCHES_DIR/VS/VC/Redist/MSVC/14.38.33130/x64/Microsoft.VC143.CRT/* chrome_dll/system32/
   mv "$WINDOWSSDKDIR/App Certification Kit/"* "$WINDOWSSDKDIR"/Debuggers/x64/
   export WINDIR="$PWD/chrome_dll"
 
@@ -117,6 +128,10 @@ fetch --no-history --nohooks $FETCH_NAME
 gclient config --name src "https://chromium.googlesource.com/chromium/src.git" --custom-var="checkout_pgo_profiles=True" --unmanaged
 
 cd src
+
+# Log the current revision of the chromium src for easier tracking in the future
+CHROMIUM_REV=$(git rev-parse HEAD)
+echo "Current chromium revision: $CHROMIUM_REV"
 
 # Amend gclient file
 if [ "$IS_ANDROID" = true ]; then

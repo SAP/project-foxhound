@@ -15,10 +15,8 @@ support-files = [
 skip-if = ["!updater"]
 
 ["browser_application_xml_handle_internally.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked menulist.actionsMenu may not be labeled
 
 ["browser_applications_selection.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#typeColumn and treecol#actionColumn may not be focusable
 
 ["browser_basic_rebuild_fonts_test.js"]
 
@@ -76,7 +74,6 @@ skip-if = ["socketprocess_networking"]
 ["browser_cookie_exceptions_addRemove.js"]
 
 ["browser_cookies_exceptions.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#siteCol may not be focusable
 
 ["browser_defaultbrowser_alwayscheck.js"]
 
@@ -106,7 +103,6 @@ skip-if = [
 ]
 
 ["browser_filetype_dialog.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked menulist.actionsMenu may not be labeled
 
 ["browser_fluent.js"]
 
@@ -151,7 +147,6 @@ support-files = ["empty_pdf_file.pdf"]
 ["browser_password_management.js"]
 
 ["browser_pdf_disabled.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked menulist.actionsMenu may not be labeled
 
 ["browser_performance.js"]
 
@@ -165,7 +160,6 @@ skip-if = ["true"]
 ["browser_permissions_checkPermissionsWereAdded.js"]
 
 ["browser_permissions_dialog.js"]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#statusCol, treecol#siteCol may not be focusable
 
 ["browser_permissions_dialog_default_perm.js"]
 
@@ -182,8 +176,6 @@ fail-if = ["a11y_checks"] # Bug 1854636 clicked treecol#statusCol, treecol#siteC
 ["browser_privacy_gpc.js"]
 
 ["browser_privacy_passwordGenerationAndAutofill.js"]
-
-["browser_privacy_quickactions.js"]
 
 ["browser_privacy_relayIntegration.js"]
 
@@ -206,7 +198,6 @@ support-files = [
   "engine1/manifest.json",
   "engine2/manifest.json",
 ]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked menulist#defaultEngine, menulist#defaultPrivateEngine may not be labeled
 
 ["browser_searchFindMoreLink.js"]
 
@@ -217,7 +208,11 @@ support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js
 
 ["browser_searchShowSuggestionsFirst.js"]
 
+["browser_search_firefoxSuggest.js"]
+
 ["browser_search_no_results_change_category.js"]
+
+["browser_search_quickactions.js"]
 
 ["browser_search_searchTerms.js"]
 

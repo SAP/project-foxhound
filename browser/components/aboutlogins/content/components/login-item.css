@@ -53,9 +53,9 @@ form {
   flex-grow: 1;
 }
 
-:host([data-editing]) .edit-button,
-:host([data-editing]) .copy-button,
-:host([data-is-new-login]) .delete-button,
+:host([data-editing]) edit-button,
+:host([data-editing]) :is(.copy-button, .copied-button),
+:host([data-is-new-login]) delete-button,
 :host([data-is-new-login]) .origin-saved-value,
 :host([data-is-new-login]) login-timeline,
 :host([data-is-new-login]) .login-item-title,
@@ -101,6 +101,7 @@ input[type="url"]:read-only {
   display: flex;
   align-items: center;
   margin-bottom: 40px;
+  margin-top: 5px;
 }
 
 .title {
@@ -108,57 +109,17 @@ input[type="url"]:read-only {
   flex-grow: 1;
 }
 
-input[type = "url"]:focus:not(:user-invalid):invalid ~ .tooltip-container {
-  display: block;
-}
-
-input[type = "url"]:focus:user-invalid:not(:placeholder-shown) ~ .tooltip-container {
-  display: block;
-}
-
-.tooltip-container {
+origin-warning, password-warning {
   display: none;
-  position: absolute;
-  inset-inline-start: 315px;
-  width: 232px;
-  box-shadow: 2px 2px 10px 1px rgba(0,0,0,0.18);
-  top: 0;
 }
 
-.tooltip-message {
-  margin: 0;
-  font-size: 14px;
+input[type = "url"]:focus:not(:user-invalid):invalid ~ origin-warning,
+input[type = "url"]:focus:user-invalid:not(:placeholder-shown) ~ origin-warning {
+  display: block;
 }
 
-.arrow-box {
-  position: relative;
-  padding: 12px;
-	background-color: var(--in-content-box-background);
-	border: 1px solid var(--in-content-border-color);
-  border-radius: 4px;
-}
-
-.arrow-box::before,
-.arrow-box::after {
-  inset-inline-end: 100%;
-  top: 40px; /* This allows the arrow to stay in the correct position, even if the text length is changed */
-	border: solid transparent;
-	content: "";
-	height: 0;
-	width: 0;
-	position: absolute;
-	pointer-events: none;
-}
-
-.arrow-box::after {
-	border-inline-end-color: var(--in-content-box-background);
-	border-width: 10px;
-	margin-top: -10px;
-}
-.arrow-box::before {
-	border-inline-end-color: var(--in-content-border-color);
-	border-width: 11px;
-	margin-top: -11px;
+input[name = "password"]:focus ~ password-warning {
+  display: block;
 }
 
 .reveal-password-wrapper {
@@ -180,6 +141,10 @@ input[type = "url"]:focus:user-invalid:not(:placeholder-shown) ~ .tooltip-contai
   grid-template-columns: auto;
 }
 
+:host([data-editing]) .detail-grid > .detail-row {
+  display: flex;
+}
+
 .detail-grid > .detail-row:not([hidden]) {
   display: contents;
 }
@@ -188,7 +153,7 @@ input[type = "url"]:focus:user-invalid:not(:placeholder-shown) ~ .tooltip-contai
   grid-column: 1;
 }
 
-.detail-grid > .detail-row > .copy-button {
+.detail-grid > .detail-row > :is(.copy-button, .copied-button) {
   grid-column: 2;
   margin-inline-start: 0; /* Reset button's margin so it doesn't affect the overall grid's width */
   justify-self: start;
@@ -222,22 +187,14 @@ moz-button-group,
   box-sizing: border-box;
 }
 
-.copy-button {
+.copy-button,
+.copied-button {
   margin-bottom: 0; /* Align button at the bottom of the row */
 }
 
-.copy-button:not([data-copied]) .copied-button-text,
-.copy-button[data-copied] .copy-button-text {
-  display: none;
-}
-
-.copy-button[data-copied]:-moz-focusring {
+.copied-button[data-copied]:focus-visible {
   outline-width: 0;
   box-shadow: none;
-}
-
-.copied-button-text:dir(rtl) {
-  background-position-x: right;
 }
 
 input.password-display,
@@ -246,29 +203,26 @@ input[name="password"] {
 }
 
 .reveal-password-checkbox {
-  /* !important is needed to override common.css styling for checkboxes */
-  background-color: transparent !important;
-  border-width: 0 !important;
-  background-image: url("resource://gre-resources/password.svg") !important;
-  margin-inline: 10px 0 !important;
+  appearance: none;
+  background-image: url("resource://gre-resources/password.svg");
+  margin-inline: 10px 0;
   cursor: pointer;
   -moz-context-properties: fill;
-  fill: currentColor !important;
-  color: inherit !important;
+  fill: currentColor;
+  color: inherit;
   opacity: var(--reveal-checkbox-opacity);
-  flex-shrink: 0;
-}
 
-.reveal-password-checkbox:hover {
-  opacity: var(--reveal-checkbox-opacity-hover);
-}
+  &:hover {
+    opacity: var(--reveal-checkbox-opacity-hover);
 
-.reveal-password-checkbox:hover:active {
-  opacity: var(--reveal-checkbox-opacity-active);
-}
+    &:active {
+      opacity: var(--reveal-checkbox-opacity-active);
+    }
+  }
 
-.reveal-password-checkbox:checked {
-  background-image: url("resource://gre-resources/password-hide.svg") !important;
+  &:checked {
+    background-image: url("resource://gre-resources/password-hide.svg");
+  }
 }
 
 .login-item-favicon {
@@ -370,6 +324,5 @@ login-command-button {
 }
 
 .action-buttons .form-actions-row {
-  margin-block: 5px 0;
   margin-inline: 0 5px;
 }

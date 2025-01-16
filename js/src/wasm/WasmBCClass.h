@@ -81,6 +81,9 @@ struct Control {
         deadOnArrival(false),
         deadThenBranch(false),
         tryNoteIndex(0) {}
+
+  Control(Control&&) = default;
+  Control(const Control&) = delete;
 };
 
 // A vector of Nothing values, used for reading opcodes.
@@ -876,7 +879,7 @@ struct BaseCompiler final {
                                        StackHeight destHeight, ResultType type);
 
   // If in debug mode, adds LeaveFrame breakpoint.
-  bool insertLeaveFrame();
+  bool insertDebugCollapseFrame();
 
   //////////////////////////////////////////////////////////////////////
   //
@@ -1394,10 +1397,12 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitBodyDelegateThrowPad();
 
   [[nodiscard]] bool emitTry();
+  [[nodiscard]] bool emitTryTable();
   [[nodiscard]] bool emitCatch();
   [[nodiscard]] bool emitCatchAll();
   [[nodiscard]] bool emitDelegate();
   [[nodiscard]] bool emitThrow();
+  [[nodiscard]] bool emitThrowRef();
   [[nodiscard]] bool emitRethrow();
   [[nodiscard]] bool emitEnd();
   [[nodiscard]] bool emitBr();
@@ -1454,6 +1459,7 @@ struct BaseCompiler final {
   [[nodiscard]] bool endIfThen(ResultType type);
   [[nodiscard]] bool endIfThenElse(ResultType type);
   [[nodiscard]] bool endTryCatch(ResultType type);
+  [[nodiscard]] bool endTryTable(ResultType type);
 
   void doReturn(ContinuationKind kind);
   void pushReturnValueOfCall(const FunctionCall& call, MIRType type);
@@ -1695,8 +1701,8 @@ struct BaseCompiler final {
                                         const ResultType& labelType,
                                         RefType sourceType, RefType destType);
   [[nodiscard]] bool emitBrOnCast(bool onSuccess);
-  [[nodiscard]] bool emitExternInternalize();
-  [[nodiscard]] bool emitExternExternalize();
+  [[nodiscard]] bool emitAnyConvertExtern();
+  [[nodiscard]] bool emitExternConvertAny();
 
   // Utility classes/methods to add trap information related to
   // null pointer dereferences/accesses.
@@ -1715,6 +1721,10 @@ struct BaseCompiler final {
   RegPtr loadTypeDefInstanceData(uint32_t typeIndex);
   // Load a pointer to the SuperTypeVector for a given type index
   RegPtr loadSuperTypeVector(uint32_t typeIndex);
+
+  template <bool ZeroFields>
+  bool emitStructAlloc(uint32_t typeIndex, RegRef* object,
+                       bool* isOutlineStruct, RegPtr* outlineBase);
 
   template <typename NullCheckPolicy>
   RegPtr emitGcArrayGetData(RegRef rp);
@@ -1775,7 +1785,7 @@ struct BaseCompiler final {
   [[nodiscard]] bool emitVectorShiftRightI64x2();
 #  endif
 #endif
-  [[nodiscard]] bool emitIntrinsic();
+  [[nodiscard]] bool emitCallBuiltinModuleFunc();
 };
 
 }  // namespace wasm

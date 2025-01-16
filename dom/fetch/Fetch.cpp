@@ -283,7 +283,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     aWorkerPrivate->AssertIsOnWorkerThread();
     MOZ_ASSERT(!mIsShutdown);
 
-    return mPromiseProxy->WorkerPromise();
+    return mPromiseProxy->GetWorkerPromise();
   }
 
   FetchObserver* GetFetchObserver(WorkerPrivate* aWorkerPrivate) const {
@@ -815,7 +815,10 @@ class WorkerFetchResponseRunnable final : public MainThreadWorkerRunnable {
     }
 
     RefPtr<Promise> promise = mResolver->WorkerPromise(aWorkerPrivate);
-    MOZ_ASSERT(promise);
+    // Once Worker had already started shutdown, workerPromise would be nullptr
+    if (!promise) {
+      return true;
+    }
     RefPtr<FetchObserver> fetchObserver =
         mResolver->GetFetchObserver(aWorkerPrivate);
 
@@ -1257,19 +1260,18 @@ void FetchBody<Derived>::SetBodyUsed(JSContext* aCx, ErrorResult& aRv) {
   // If we already have a ReadableStreamBody and it has been created by DOM, we
   // have to lock it now because it can have been shared with other objects.
   if (mReadableStreamBody) {
-    if (mReadableStreamBody->MaybeGetInputStreamIfUnread()) {
-      LockStream(aCx, mReadableStreamBody, aRv);
-      if (NS_WARN_IF(aRv.Failed())) {
-        return;
-      }
-    } else {
-      MOZ_ASSERT(mFetchStreamReader);
-      //  Let's activate the FetchStreamReader.
+    if (mFetchStreamReader) {
+      // Having FetchStreamReader means there's no nsIInputStream underlying it
+      MOZ_ASSERT(!mReadableStreamBody->MaybeGetInputStreamIfUnread());
       mFetchStreamReader->StartConsuming(aCx, mReadableStreamBody, aRv);
-      if (NS_WARN_IF(aRv.Failed())) {
-        return;
-      }
+      return;
     }
+    // We should have nsIInputStream at this point as long as it's still
+    // readable
+    MOZ_ASSERT_IF(
+        mReadableStreamBody->State() == ReadableStream::ReaderState::Readable,
+        mReadableStreamBody->MaybeGetInputStreamIfUnread());
+    LockStream(aCx, mReadableStreamBody, aRv);
   }
 }
 

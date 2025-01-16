@@ -57,9 +57,9 @@ class DocumentLoadListener;
 }  // namespace net
 }  // namespace mozilla
 
-class nsIContentViewer;
 class nsIController;
 class nsIDocShellTreeOwner;
+class nsIDocumentViewer;
 class nsIHttpChannel;
 class nsIMutableArray;
 class nsIPrompt;
@@ -313,13 +313,6 @@ class nsDocShell final : public nsDocLoader,
                          LOCATION_CHANGE_SAME_DOCUMENT);
   }
 
-  // This function is created exclusively for dom.background_loading_iframe is
-  // set. As soon as the current DocShell knows itself can be treated as
-  // background loading, it triggers the parent docshell to see if the parent
-  // document can fire load event earlier.
-  // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void TriggerParentCheckDocShellIsEmpty();
-
   nsresult HistoryEntryRemoved(int32_t aIndex);
 
   // Notify Scroll observers when an async panning/zooming transform
@@ -410,7 +403,7 @@ class nsDocShell final : public nsDocLoader,
 
   // Create a content viewer within this nsDocShell for the given
   // `WindowGlobalChild` actor.
-  nsresult CreateContentViewerForActor(
+  nsresult CreateDocumentViewerForActor(
       mozilla::dom::WindowGlobalChild* aWindowActor);
 
   // Creates a real network channel (not a DocumentChannel) using the specified
@@ -493,7 +486,7 @@ class nsDocShell final : public nsDocLoader,
   static void ExtractLastVisit(nsIChannel* aChannel, nsIURI** aURI,
                                uint32_t* aChannelRedirectFlags);
 
-  bool HasContentViewer() const { return !!mContentViewer; }
+  bool HasDocumentViewer() const { return !!mDocumentViewer; }
 
   static uint32_t ComputeURILoaderFlags(
       mozilla::dom::BrowsingContext* aBrowsingContext, uint32_t aLoadType);
@@ -567,12 +560,12 @@ class nsDocShell final : public nsDocLoader,
   // Content Viewer Management
   //
 
-  nsresult EnsureContentViewer();
+  nsresult EnsureDocumentViewer();
 
   // aPrincipal can be passed in if the caller wants. If null is
   // passed in, the about:blank principal will end up being used.
   // aCSP, if any, will be used for the new about:blank load.
-  nsresult CreateAboutBlankContentViewer(
+  nsresult CreateAboutBlankDocumentViewer(
       nsIPrincipal* aPrincipal, nsIPrincipal* aPartitionedPrincipal,
       nsIContentSecurityPolicy* aCSP, nsIURI* aBaseURI, bool aIsInitialDocument,
       const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCOEP =
@@ -580,19 +573,19 @@ class nsDocShell final : public nsDocLoader,
       bool aTryToSaveOldPresentation = true, bool aCheckPermitUnload = true,
       mozilla::dom::WindowGlobalChild* aActor = nullptr);
 
-  nsresult CreateContentViewer(const nsACString& aContentType,
-                               nsIRequest* aRequest,
-                               nsIStreamListener** aContentHandler);
+  nsresult CreateDocumentViewer(const nsACString& aContentType,
+                                nsIRequest* aRequest,
+                                nsIStreamListener** aContentHandler);
 
-  nsresult NewContentViewerObj(const nsACString& aContentType,
-                               nsIRequest* aRequest, nsILoadGroup* aLoadGroup,
-                               nsIStreamListener** aContentHandler,
-                               nsIContentViewer** aViewer);
+  nsresult NewDocumentViewerObj(const nsACString& aContentType,
+                                nsIRequest* aRequest, nsILoadGroup* aLoadGroup,
+                                nsIStreamListener** aContentHandler,
+                                nsIDocumentViewer** aViewer);
 
   already_AddRefed<nsILoadURIDelegate> GetLoadURIDelegate();
 
   nsresult SetupNewViewer(
-      nsIContentViewer* aNewViewer,
+      nsIDocumentViewer* aNewViewer,
       mozilla::dom::WindowGlobalChild* aWindowActor = nullptr);
 
   //
@@ -818,7 +811,7 @@ class nsDocShell final : public nsDocLoader,
   static void InternalAddURIVisit(
       nsIURI* aURI, nsIURI* aPreviousURI, uint32_t aChannelRedirectFlags,
       uint32_t aResponseStatus, mozilla::dom::BrowsingContext* aBrowsingContext,
-      nsIWidget* aWidget, uint32_t aLoadType);
+      nsIWidget* aWidget, uint32_t aLoadType, bool aWasUpgraded);
 
   static already_AddRefed<nsIURIFixupInfo> KeywordToURI(
       const nsACString& aKeyword, bool aIsPrivateContext);
@@ -841,13 +834,13 @@ class nsDocShell final : public nsDocLoader,
   // The following methods deal with saving and restoring content viewers
   // in session history.
 
-  // mContentViewer points to the current content viewer associated with
+  // mDocumentViewer points to the current content viewer associated with
   // this docshell. When loading a new document, the content viewer is
   // either destroyed or stored into a session history entry. To make sure
   // that destruction happens in a controlled fashion, a given content viewer
   // is always owned in exactly one of these ways:
   //   1) The content viewer is active and owned by a docshell's
-  //      mContentViewer.
+  //      mDocumentViewer.
   //   2) The content viewer is still being displayed while we begin loading
   //      a new document. The content viewer is owned by the _new_
   //      content viewer's mPreviousViewer, and has a pointer to the
@@ -860,11 +853,11 @@ class nsDocShell final : public nsDocLoader,
   //
   // When restoring a content viewer from session history, open() is called
   // to reattach the document to the window object. The content viewer is
-  // then placed into mContentViewer and removed from the history entry.
-  // (mContentViewer is put into session history as described above, if
+  // then placed into mDocumentViewer and removed from the history entry.
+  // (mDocumentViewer is put into session history as described above, if
   // applicable).
 
-  // Determines whether we can safely cache the current mContentViewer in
+  // Determines whether we can safely cache the current mDocumentViewer in
   // session history. This checks a number of factors such as cache policy,
   // pending requests, and unload handlers.
   // |aLoadType| should be the load type that will replace the current
@@ -985,7 +978,7 @@ class nsDocShell final : public nsDocLoader,
   nsresult EnsureCommandHandler();
   nsresult RefreshURIFromQueue();
   void RefreshURIToQueue();
-  nsresult Embed(nsIContentViewer* aContentViewer,
+  nsresult Embed(nsIDocumentViewer* aDocumentViewer,
                  mozilla::dom::WindowGlobalChild* aWindowActor,
                  bool aIsTransientAboutBlank, bool aPersist,
                  nsIRequest* aRequest, nsIURI* aPreviousURI);
@@ -1060,7 +1053,8 @@ class nsDocShell final : public nsDocLoader,
   // continuing with new document navigation.
   MOZ_CAN_RUN_SCRIPT
   nsresult HandleSameDocumentNavigation(nsDocShellLoadState* aLoadState,
-                                        SameDocumentNavigationState& aState);
+                                        SameDocumentNavigationState& aState,
+                                        bool& aSameDocument);
 
   uint32_t GetSameDocumentNavigationFlags(nsIURI* aNewURI);
 
@@ -1165,7 +1159,7 @@ class nsDocShell final : public nsDocLoader,
   // mBFCachedRefreshURIList.
   nsCOMPtr<nsIMutableArray> mBFCachedRefreshURIList;
   uint64_t mContentWindowID;
-  nsCOMPtr<nsIContentViewer> mContentViewer;
+  nsCOMPtr<nsIDocumentViewer> mDocumentViewer;
   nsCOMPtr<nsIWidget> mParentWidget;
   RefPtr<mozilla::dom::ChildSHistory> mSessionHistory;
   nsCOMPtr<nsIWebBrowserFind> mFind;
@@ -1234,7 +1228,7 @@ class nsDocShell final : public nsDocLoader,
   nsCOMPtr<nsIURI> mLoadingURI;
 
   // Set in LoadErrorPage from the method argument and used later
-  // in CreateContentViewer. We have to delay an shistory entry creation
+  // in CreateDocumentViewer. We have to delay an shistory entry creation
   // for which these objects are needed.
   nsCOMPtr<nsIURI> mFailedURI;
   nsCOMPtr<nsIChannel> mFailedChannel;
@@ -1323,7 +1317,7 @@ class nsDocShell final : public nsDocLoader,
 
   bool mIsExecutingOnLoadHandler : 1;
 
-  // Indicates to CreateContentViewer() that it is safe to cache the old
+  // Indicates to CreateDocumentViewer() that it is safe to cache the old
   // presentation of the page, and to SetupNewViewer() that the old viewer
   // should be passed a SHEntry to save itself into.
   // Only used with SHIP disabled.

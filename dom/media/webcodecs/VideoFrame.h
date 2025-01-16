@@ -157,9 +157,10 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
       const MaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aDestination,
       const VideoFrameCopyToOptions& aOptions, ErrorResult& aRv);
 
-  already_AddRefed<VideoFrame> Clone(ErrorResult& aRv);
+  already_AddRefed<VideoFrame> Clone(ErrorResult& aRv) const;
 
   void Close();
+  bool IsClosed() const;
 
   // [Serializable] implementations: {Read, Write}StructuredClone
   static JSObject* ReadStructuredClone(JSContext* aCx, nsIGlobalObject* aGlobal,
@@ -182,6 +183,8 @@ class VideoFrame final : public nsISupports, public nsWrapperCache {
   const gfx::IntSize& NativeDisplaySize() const { return mDisplaySize; }
   const gfx::IntRect& NativeVisibleRect() const { return mVisibleRect; }
   already_AddRefed<layers::Image> GetImage() const;
+
+  nsCString ToString() const;
 
  public:
   // A VideoPixelFormat wrapper providing utilities for VideoFrame.

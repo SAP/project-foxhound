@@ -19,7 +19,6 @@ from operator import itemgetter
 UNSUPPORTED_FEATURES = set(
     [
         "tail-call-optimization",
-        "Intl.Segmenter",  # Bug 1423593
         "Intl.Locale-info",  # Bug 1693576
         "Intl.DurationFormat",  # Bug 1648139
         "Atomics.waitAsync",  # Bug 1467846
@@ -28,7 +27,6 @@ UNSUPPORTED_FEATURES = set(
         "resizable-arraybuffer",  # Bug 1670026
         "regexp-duplicate-named-groups",  # Bug 1773135
         "json-parse-with-source",  # Bug 1658310
-        "import-attributes",  # Bug 1835669
         "set-methods",  # Bug 1805038
     ]
 )
@@ -40,15 +38,18 @@ FEATURE_CHECK_NEEDED = {
     "WeakRef": "!this.hasOwnProperty('WeakRef')",
     "decorators": "!(this.hasOwnProperty('getBuildConfiguration')&&getBuildConfiguration('decorators'))",  # Bug 1435869
     "iterator-helpers": "!this.hasOwnProperty('Iterator')",  # Bug 1568906
-    "arraybuffer-transfer": "!ArrayBuffer.prototype.transfer",  # Bug 1519163
-    "symbols-as-weakmap-keys": "!(this.hasOwnProperty('getBuildConfiguration')&&!getBuildConfiguration('release_or_beta'))",
+    "Intl.Segmenter": "!Intl.Segmenter",  # Bug 1423593
 }
-RELEASE_OR_BETA = set([])
+RELEASE_OR_BETA = set(
+    [
+        "symbols-as-weakmap-keys",
+    ]
+)
 SHELL_OPTIONS = {
     "import-assertions": "--enable-import-assertions",
+    "import-attributes": "--enable-import-attributes",
     "ShadowRealm": "--enable-shadow-realms",
     "iterator-helpers": "--enable-iterator-helpers",
-    "arraybuffer-transfer": "--enable-arraybuffer-transfer",
     "symbols-as-weakmap-keys": "--enable-symbols-as-weakmap-keys",
 }
 

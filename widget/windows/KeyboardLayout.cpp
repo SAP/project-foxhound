@@ -7,22 +7,19 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/MiscEvents.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/widget/WinRegistry.h"
 
-#include "nsAlgorithm.h"
 #include "nsExceptionHandler.h"
 #include "nsGkAtoms.h"
 #include "nsIUserIdleServiceInternal.h"
 #include "nsIWindowsRegKey.h"
 #include "nsPrintfCString.h"
-#include "nsQuickSort.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
-#include "nsToolkit.h"
+#include "nsTArray.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowDbg.h"
 
@@ -4272,8 +4269,8 @@ static bool IsValidKeyboardLayoutsChild(const nsAString& aChildName) {
 }
 
 nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
-  const wchar_t kKeyboardLayouts[] =
-      L"SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\";
+  constexpr auto kKeyboardLayouts =
+      u"SYSTEM\\CurrentControlSet\\Control\\Keyboard Layouts\\"_ns;
   uint16_t language = reinterpret_cast<uintptr_t>(aLayout) & 0xFFFF;
   uint16_t layout = (reinterpret_cast<uintptr_t>(aLayout) >> 16) & 0xFFFF;
   // If the layout is less than 0xA000XXXX (normal keyboard layout for the
@@ -4284,8 +4281,9 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
                                         ? layout
                                         : reinterpret_cast<uintptr_t>(aLayout));
     wchar_t buf[256];
-    if (NS_WARN_IF(!WinUtils::GetRegistryKey(
-            HKEY_LOCAL_MACHINE, key.get(), L"Layout Text", buf, sizeof(buf)))) {
+    if (NS_WARN_IF(!WinRegistry::GetString(
+            HKEY_LOCAL_MACHINE, key, u"Layout Text"_ns, buf,
+            WinRegistry::kLegacyWinUtilsStringFlags))) {
       return "No name or too long name"_ns;
     }
     return NS_ConvertUTF16toUTF8(buf);
@@ -4299,28 +4297,22 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
   }
 
   // Otherwise, we need to walk the registry under "Keyboard Layouts".
-  nsCOMPtr<nsIWindowsRegKey> regKey =
-      do_CreateInstance("@mozilla.org/windows-registry-key;1");
+  WinRegistry::Key regKey(HKEY_LOCAL_MACHINE, kKeyboardLayouts,
+                          WinRegistry::KeyMode::Read);
   if (NS_WARN_IF(!regKey)) {
     return ""_ns;
   }
-  nsresult rv =
-      regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE,
-                   nsString(kKeyboardLayouts), nsIWindowsRegKey::ACCESS_READ);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return ""_ns;
-  }
-  uint32_t childCount = 0;
-  if (NS_WARN_IF(NS_FAILED(regKey->GetChildCount(&childCount))) ||
-      NS_WARN_IF(!childCount)) {
+  uint32_t childCount = regKey.GetChildCount();
+  if (NS_WARN_IF(!childCount)) {
     return ""_ns;
   }
   for (uint32_t i = 0; i < childCount; i++) {
     nsAutoString childName;
-    if (NS_WARN_IF(NS_FAILED(regKey->GetChildName(i, childName))) ||
+    if (NS_WARN_IF(!regKey.GetChildName(i, childName)) ||
         !IsValidKeyboardLayoutsChild(childName)) {
       continue;
     }
+    nsresult rv = NS_OK;
     uint32_t childNum = static_cast<uint32_t>(childName.ToInteger64(&rv, 16));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
@@ -4337,17 +4329,22 @@ nsCString KeyboardLayout::GetLayoutName(HKL aLayout) const {
     // Then, the child should have "Layout Id" which is "YYY" of 0xFYYYXXXX.
     nsAutoString key(kKeyboardLayouts);
     key += childName;
+    WinRegistry::Key regKey(HKEY_LOCAL_MACHINE, key,
+                            WinRegistry::KeyMode::QueryValue);
+    if (NS_WARN_IF(!regKey)) {
+      continue;
+    }
     wchar_t buf[256];
-    if (NS_WARN_IF(!WinUtils::GetRegistryKey(HKEY_LOCAL_MACHINE, key.get(),
-                                             L"Layout Id", buf, sizeof(buf)))) {
+    if (NS_WARN_IF(!regKey.GetValueAsString(
+            u"Layout Id"_ns, buf, WinRegistry::kLegacyWinUtilsStringFlags))) {
       continue;
     }
     uint16_t layoutId = wcstol(buf, nullptr, 16);
     if (layoutId != (layout & 0x0FFF)) {
       continue;
     }
-    if (NS_WARN_IF(!WinUtils::GetRegistryKey(
-            HKEY_LOCAL_MACHINE, key.get(), L"Layout Text", buf, sizeof(buf)))) {
+    if (NS_WARN_IF(!regKey.GetValueAsString(
+            u"Layout Text"_ns, buf, WinRegistry::kLegacyWinUtilsStringFlags))) {
       continue;
     }
     return NS_ConvertUTF16toUTF8(buf);
@@ -4463,14 +4460,13 @@ void KeyboardLayout::LoadLayout(HKL aLayout) {
     for (uint32_t virtualKey = 0; virtualKey < 256; virtualKey++) {
       int32_t vki = GetKeyIndex(virtualKey);
       if (vki >= 0 && mVirtualKeys[vki].IsDeadKey(shiftState)) {
-        DeadKeyEntry deadKeyArray[256];
-        int32_t n = GetDeadKeyCombinations(
-            virtualKey, kbdState, shiftStatesWithBaseChars, deadKeyArray,
-            ArrayLength(deadKeyArray));
+        AutoTArray<DeadKeyEntry, 256> deadKeyArray;
+        uint32_t n = GetDeadKeyCombinations(
+            virtualKey, kbdState, shiftStatesWithBaseChars, deadKeyArray);
         const DeadKeyTable* dkt =
-            mVirtualKeys[vki].MatchingDeadKeyTable(deadKeyArray, n);
+            mVirtualKeys[vki].MatchingDeadKeyTable(deadKeyArray.Elements(), n);
         if (!dkt) {
-          dkt = AddDeadKeyTable(deadKeyArray, n);
+          dkt = AddDeadKeyTable(deadKeyArray.Elements(), n);
         }
         mVirtualKeys[vki].AttachDeadKeyTable(shiftState, dkt);
       }
@@ -4557,14 +4553,6 @@ inline int32_t KeyboardLayout::GetKeyIndex(uint8_t aVirtualKey) {
   return xlat[aVirtualKey];
 }
 
-int KeyboardLayout::CompareDeadKeyEntries(const void* aArg1, const void* aArg2,
-                                          void*) {
-  const DeadKeyEntry* arg1 = static_cast<const DeadKeyEntry*>(aArg1);
-  const DeadKeyEntry* arg2 = static_cast<const DeadKeyEntry*>(aArg2);
-
-  return arg1->BaseChar - arg2->BaseChar;
-}
-
 const DeadKeyTable* KeyboardLayout::AddDeadKeyTable(
     const DeadKeyEntry* aDeadKeyArray, uint32_t aEntries) {
   DeadKeyTableListEntry* next = mDeadKeyTableListHead;
@@ -4640,24 +4628,22 @@ void KeyboardLayout::DeactivateDeadKeyState() {
 
 bool KeyboardLayout::AddDeadKeyEntry(char16_t aBaseChar,
                                      char16_t aCompositeChar,
-                                     DeadKeyEntry* aDeadKeyArray,
-                                     uint32_t aEntries) {
-  for (uint32_t index = 0; index < aEntries; index++) {
-    if (aDeadKeyArray[index].BaseChar == aBaseChar) {
+                                     nsTArray<DeadKeyEntry>& aDeadKeyArray) {
+  auto dke = DeadKeyEntry(aBaseChar, aCompositeChar);
+  for (uint32_t index = 0; index < aDeadKeyArray.Length(); index++) {
+    if (aDeadKeyArray[index] == dke) {
       return false;
     }
   }
 
-  aDeadKeyArray[aEntries].BaseChar = aBaseChar;
-  aDeadKeyArray[aEntries].CompositeChar = aCompositeChar;
+  aDeadKeyArray.AppendElement(dke);
 
   return true;
 }
 
 uint32_t KeyboardLayout::GetDeadKeyCombinations(
     uint8_t aDeadKey, const PBYTE aDeadKeyKbdState,
-    uint16_t aShiftStatesWithBaseChars, DeadKeyEntry* aDeadKeyArray,
-    uint32_t aMaxEntries) {
+    uint16_t aShiftStatesWithBaseChars, nsTArray<DeadKeyEntry>& aDeadKeyArray) {
   bool deadKeyActive = false;
   uint32_t entries = 0;
   BYTE kbdState[256];
@@ -4698,14 +4684,14 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
             char16_t baseChars[5];
             ret = ::ToUnicodeEx(virtualKey, 0, kbdState, (LPWSTR)baseChars,
                                 ArrayLength(baseChars), 0, mKeyboardLayout);
-            if (entries < aMaxEntries) {
+            if (entries < aDeadKeyArray.Capacity()) {
               switch (ret) {
                 case 1:
                   // Exactly one composite character produced. Now, when
                   // dead-key is not active, repeat the last character one more
                   // time to determine the base character.
                   if (AddDeadKeyEntry(baseChars[0], compositeChars[0],
-                                      aDeadKeyArray, entries)) {
+                                      aDeadKeyArray)) {
                     entries++;
                   }
                   deadKeyActive = false;
@@ -4733,7 +4719,7 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
                   }
                   if (ret > 0 &&
                       AddDeadKeyEntry(baseChars[0], compositeChars[0],
-                                      aDeadKeyArray, entries)) {
+                                      aDeadKeyArray)) {
                     entries++;
                   }
                   // Inactivate dead-key state for current virtual keycode.
@@ -4781,8 +4767,8 @@ uint32_t KeyboardLayout::GetDeadKeyCombinations(
     deadKeyActive = EnsureDeadKeyActive(false, aDeadKey, aDeadKeyKbdState);
   }
 
-  NS_QuickSort(aDeadKeyArray, entries, sizeof(DeadKeyEntry),
-               CompareDeadKeyEntries, nullptr);
+  aDeadKeyArray.Sort();
+
   return entries;
 }
 

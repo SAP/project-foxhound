@@ -425,7 +425,7 @@ MethodStatus jit::CanEnterBaselineInterpreterAtBranch(JSContext* cx,
 
   // JITs do not respect the debugger's OnNativeCall hook, so JIT execution is
   // disabled if this hook might need to be called.
-  if (cx->insideDebuggerEvaluationWithOnNativeCallHook) {
+  if (cx->realm()->debuggerObservesNativeCall()) {
     return Method_CantCompile;
   }
 
@@ -921,7 +921,7 @@ void BaselineInterpreter::toggleCodeCoverageInstrumentation(bool enable) {
 
 void jit::FinishDiscardBaselineScript(JS::GCContext* gcx, JSScript* script) {
   MOZ_ASSERT(script->hasBaselineScript());
-  MOZ_ASSERT(!script->jitScript()->active());
+  MOZ_ASSERT(!script->jitScript()->icScript()->active());
 
   BaselineScript* baseline =
       script->jitScript()->clearBaselineScript(gcx, script);

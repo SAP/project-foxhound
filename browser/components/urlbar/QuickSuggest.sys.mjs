@@ -29,6 +29,7 @@ const FEATURES = {
   SuggestBackendRust:
     "resource:///modules/urlbar/private/SuggestBackendRust.sys.mjs",
   Weather: "resource:///modules/urlbar/private/Weather.sys.mjs",
+  YelpSuggestions: "resource:///modules/urlbar/private/YelpSuggestions.sys.mjs",
 };
 
 const TIMESTAMP_TEMPLATE = "%YYYYMMDDHH%";
@@ -152,13 +153,13 @@ class _QuickSuggest {
   }
 
   /**
-   * @returns {Iterator}
-   *   An iterator over the names of all Rust suggestion types ("Adm",
-   *   "Wikipedia", etc.) that are managed by registered features (as defined by
-   *   `feature.rustSuggestionTypes`).
+   * @returns {Map}
+   *   A map from the name of each registered Rust suggestion type to the
+   *   feature that manages that type. This mapping is determined by each
+   *   feature's `rustSuggestionTypes`.
    */
-  get registeredRustSuggestionTypes() {
-    return this.#featuresByRustSuggestionType.keys();
+  get featuresByRustSuggestionType() {
+    return this.#featuresByRustSuggestionType;
   }
 
   get logger() {

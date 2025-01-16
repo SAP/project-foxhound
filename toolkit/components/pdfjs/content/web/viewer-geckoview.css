@@ -311,8 +311,8 @@
   .buttonWidgetAnnotation.radioButton input:checked::before{
     border-radius:50%;
     height:50%;
-    left:30%;
-    top:20%;
+    left:25%;
+    top:25%;
     width:50%;
   }
 
@@ -771,7 +771,8 @@
   transform:rotate(270deg) translateX(-100%);
 }
 
-#hiddenCopyElement{
+#hiddenCopyElement,
+.hiddenCanvasElement{
   position:absolute;
   top:0;
   left:0;

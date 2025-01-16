@@ -20,6 +20,7 @@
 #include "ForwardedInputTrack.h"
 #include "ImageContainer.h"
 #include "AudioCaptureTrack.h"
+#include "AudioDeviceInfo.h"
 #include "AudioNodeTrack.h"
 #include "AudioNodeExternalInputTrack.h"
 #if defined(MOZ_WEBRTC)
@@ -53,6 +54,9 @@ using namespace mozilla::gfx;
 using namespace mozilla::media;
 
 namespace mozilla {
+
+using AudioDeviceID = CubebUtils::AudioDeviceID;
+using IsInShutdown = MediaTrack::IsInShutdown;
 
 LazyLogModule gMediaTrackGraphLog("MediaTrackGraph");
 #ifdef LOG
@@ -133,7 +137,7 @@ struct MediaTrackGraphImpl::Lookup final {
 
 // Implicit to support GraphHashSet.lookup(*graph).
 MOZ_IMPLICIT MediaTrackGraphImpl::operator MediaTrackGraphImpl::Lookup() const {
-  return {mWindowID, mSampleRate, mOutputDeviceID};
+  return {mWindowID, mSampleRate, PrimaryOutputDeviceID()};
 }
 
 namespace {
@@ -145,7 +149,7 @@ struct GraphHasher {  // for HashSet
   static bool match(const MediaTrackGraphImpl* aGraph, const Lookup& aLookup) {
     return aGraph->mWindowID == aLookup.mWindowID &&
            aGraph->GraphRate() == aLookup.mSampleRate &&
-           aGraph->mOutputDeviceID == aLookup.mOutputDeviceID;
+           aGraph->PrimaryOutputDeviceID() == aLookup.mOutputDeviceID;
   }
 };
 
@@ -153,6 +157,7 @@ struct GraphHasher {  // for HashSet
 using GraphHashSet =
     HashSet<MediaTrackGraphImpl*, GraphHasher, InfallibleAllocPolicy>;
 GraphHashSet* Graphs() {
+  MOZ_ASSERT(NS_IsMainThread());
   static GraphHashSet sGraphs(4);  // 4 is minimum HashSet capacity
   return &sGraphs;
 }
@@ -441,12 +446,13 @@ void MediaTrackGraphImpl::CheckDriver() {
       native ? AudioInputDevicePreference(native->mDeviceId)
              : AudioInputType::Unknown;
 
-  uint32_t graphOutputChannelCount = AudioOutputChannelCount();
+  uint32_t primaryOutputChannelCount = PrimaryOutputChannelCount();
   if (!audioCallbackDriver) {
-    if (graphOutputChannelCount > 0) {
+    if (primaryOutputChannelCount > 0) {
       AudioCallbackDriver* driver = new AudioCallbackDriver(
-          this, CurrentDriver(), mSampleRate, graphOutputChannelCount,
-          inputChannelCount, mOutputDeviceID, inputDevice, inputPreference);
+          this, CurrentDriver(), mSampleRate, primaryOutputChannelCount,
+          inputChannelCount, PrimaryOutputDeviceID(), inputDevice,
+          inputPreference);
       SwitchAtNextIteration(driver);
     }
     return;
@@ -458,10 +464,11 @@ void MediaTrackGraphImpl::CheckDriver() {
   // directly playing back via another HTMLMediaElement, the number of channels
   // of the media determines how many channels to output, and it can change
   // dynamically.
-  if (graphOutputChannelCount != audioCallbackDriver->OutputChannelCount()) {
+  if (primaryOutputChannelCount != audioCallbackDriver->OutputChannelCount()) {
     AudioCallbackDriver* driver = new AudioCallbackDriver(
-        this, CurrentDriver(), mSampleRate, graphOutputChannelCount,
-        inputChannelCount, mOutputDeviceID, inputDevice, inputPreference);
+        this, CurrentDriver(), mSampleRate, primaryOutputChannelCount,
+        inputChannelCount, PrimaryOutputDeviceID(), inputDevice,
+        inputPreference);
     SwitchAtNextIteration(driver);
   }
 }
@@ -653,17 +660,16 @@ void MediaTrackGraphImpl::UpdateTrackOrder() {
   MOZ_ASSERT(orderedTrackCount == mFirstCycleBreaker);
 }
 
-TrackTime MediaTrackGraphImpl::PlayAudio(AudioMixer* aMixer,
-                                         const TrackKeyAndVolume& aTkv,
-                                         GraphTime aPlayedTime) {
+TrackTime MediaTrackGraphImpl::PlayAudio(const TrackAndVolume& aOutput,
+                                         GraphTime aPlayedTime,
+                                         uint32_t aOutputChannelCount) {
   MOZ_ASSERT(OnGraphThread());
   MOZ_ASSERT(mRealtime, "Should only attempt to play audio in realtime mode");
-  MOZ_ASSERT(aMixer, "Can only play audio if there's a mixer");
 
   TrackTime ticksWritten = 0;
 
   ticksWritten = 0;
-  MediaTrack* track = aTkv.mTrack;
+  MediaTrack* track = aOutput.mTrack;
   AudioSegment* audio = track->GetData<AudioSegment>();
   AudioSegment output;
 
@@ -730,22 +736,11 @@ TrackTime MediaTrackGraphImpl::PlayAudio(AudioMixer* aMixer,
              MediaTimeToSeconds(end), offset, endTicksNeeded));
         ticksWritten += toWrite;
       }
-      output.ApplyVolume(mGlobalVolume * aTkv.mVolume);
+      output.ApplyVolume(mGlobalVolume * aOutput.mVolume);
     }
     t = end;
 
-    uint32_t outputChannels;
-    // Use the number of channel the driver expects: this is the number of
-    // channel that can be output by the underlying system level audio stream.
-    // Fall back to something sensible if this graph is being driven by a normal
-    // thread (this can happen when there are no output devices, etc.).
-    if (CurrentDriver()->AsAudioCallbackDriver()) {
-      outputChannels =
-          CurrentDriver()->AsAudioCallbackDriver()->OutputChannelCount();
-    } else {
-      outputChannels = AudioOutputChannelCount();
-    }
-    output.WriteTo(*aMixer, outputChannels, mSampleRate);
+    output.Mix(mMixer, aOutputChannelCount, mSampleRate);
   }
   return ticksWritten;
 }
@@ -773,8 +768,8 @@ void MediaTrackGraphImpl::OpenAudioInputImpl(DeviceInputTrack* aTrack) {
   if (aTrack->AsNativeInputTrack()) {
     // Switch Drivers since we're adding input (to input-only or full-duplex)
     AudioCallbackDriver* driver = new AudioCallbackDriver(
-        this, CurrentDriver(), mSampleRate, AudioOutputChannelCount(),
-        AudioInputChannelCount(aTrack->mDeviceId), mOutputDeviceID,
+        this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
+        AudioInputChannelCount(aTrack->mDeviceId), PrimaryOutputDeviceID(),
         aTrack->mDeviceId, AudioInputDevicePreference(aTrack->mDeviceId));
     LOG(LogLevel::Debug,
         ("%p OpenAudioInputImpl: starting new AudioCallbackDriver(input) %p",
@@ -845,9 +840,9 @@ void MediaTrackGraphImpl::CloseAudioInputImpl(DeviceInputTrack* aTrack) {
         ("%p: CloseInput: output present (AudioCallback)", this));
 
     driver = new AudioCallbackDriver(
-        this, CurrentDriver(), mSampleRate, AudioOutputChannelCount(),
-        AudioInputChannelCount(aTrack->mDeviceId), mOutputDeviceID, nullptr,
-        AudioInputDevicePreference(aTrack->mDeviceId));
+        this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
+        AudioInputChannelCount(aTrack->mDeviceId), PrimaryOutputDeviceID(),
+        nullptr, AudioInputDevicePreference(aTrack->mDeviceId));
     SwitchAtNextIteration(driver);
   } else if (CurrentDriver()->AsAudioCallbackDriver()) {
     LOG(LogLevel::Debug,
@@ -858,48 +853,14 @@ void MediaTrackGraphImpl::CloseAudioInputImpl(DeviceInputTrack* aTrack) {
   }  // else SystemClockDriver->SystemClockDriver, no switch
 }
 
-void MediaTrackGraphImpl::RegisterAudioOutput(MediaTrack* aTrack, void* aKey) {
-  MOZ_ASSERT(OnGraphThread());
-  MOZ_ASSERT(!mAudioOutputs.Contains(TrackAndKey{aTrack, aKey}));
-
-  TrackKeyAndVolume* tkv = mAudioOutputs.AppendElement();
-  tkv->mTrack = aTrack;
-  tkv->mKey = aKey;
-  tkv->mVolume = 1.0;
-
-  if (!CurrentDriver()->AsAudioCallbackDriver() && !Switching()) {
-    NativeInputTrack* native =
-        mDeviceInputTrackManagerGraphThread.GetNativeInputTrack();
-    CubebUtils::AudioDeviceID inputDevice =
-        native ? native->mDeviceId : nullptr;
-    uint32_t inputChannelCount =
-        native ? AudioInputChannelCount(native->mDeviceId) : 0;
-    AudioInputType inputPreference =
-        native ? AudioInputDevicePreference(native->mDeviceId)
-               : AudioInputType::Unknown;
-
-    AudioCallbackDriver* driver = new AudioCallbackDriver(
-        this, CurrentDriver(), mSampleRate, AudioOutputChannelCount(),
-        inputChannelCount, mOutputDeviceID, inputDevice, inputPreference);
-    SwitchAtNextIteration(driver);
-  }
-}
-
 void MediaTrackGraphImpl::UnregisterAllAudioOutputs(MediaTrack* aTrack) {
   MOZ_ASSERT(OnGraphThreadOrNotRunning());
-
-  mAudioOutputs.RemoveElementsBy([aTrack](const TrackKeyAndVolume& aTkv) {
-    return aTkv.mTrack == aTrack;
+  mOutputDevices.RemoveElementsBy([&](OutputDeviceEntry& aDeviceRef) {
+    aDeviceRef.mTrackOutputs.RemoveElement(aTrack);
+    // mReceiver is null for the primary output device, which is retained for
+    // AudioCallbackDriver output even when no tracks have audio outputs.
+    return aDeviceRef.mTrackOutputs.IsEmpty() && aDeviceRef.mReceiver;
   });
-}
-
-void MediaTrackGraphImpl::UnregisterAudioOutput(MediaTrack* aTrack,
-                                                void* aKey) {
-  MOZ_ASSERT(OnGraphThreadOrNotRunning());
-
-  DebugOnly<bool> removed =
-      mAudioOutputs.RemoveElement(TrackAndKey{aTrack, aKey});
-  MOZ_ASSERT(removed, "Audio output not found");
 }
 
 void MediaTrackGraphImpl::CloseAudioInput(DeviceInputTrack* aTrack) {
@@ -936,9 +897,7 @@ void MediaTrackGraphImpl::CloseAudioInput(DeviceInputTrack* aTrack) {
 }
 
 // All AudioInput listeners get the same speaker data (at least for now).
-void MediaTrackGraphImpl::NotifyOutputData(AudioDataValue* aBuffer,
-                                           size_t aFrames, TrackRate aRate,
-                                           uint32_t aChannels) {
+void MediaTrackGraphImpl::NotifyOutputData(const AudioChunk& aChunk) {
   if (!mDeviceInputTrackManagerGraphThread.GetNativeInputTrack()) {
     return;
   }
@@ -946,7 +905,7 @@ void MediaTrackGraphImpl::NotifyOutputData(AudioDataValue* aBuffer,
 #if defined(MOZ_WEBRTC)
   for (const auto& track : mTracks) {
     if (const auto& t = track->AsAudioProcessingTrack()) {
-      t->NotifyOutputData(this, aBuffer, aFrames, aRate, aChannels);
+      t->NotifyOutputData(this, aChunk);
     }
   }
 #endif
@@ -1154,8 +1113,8 @@ void MediaTrackGraphImpl::ReevaluateInputDevice(CubebUtils::AudioDeviceID aID) {
 
   if (needToSwitch) {
     AudioCallbackDriver* newDriver = new AudioCallbackDriver(
-        this, CurrentDriver(), mSampleRate, AudioOutputChannelCount(),
-        AudioInputChannelCount(aID), mOutputDeviceID, aID,
+        this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
+        AudioInputChannelCount(aID), PrimaryOutputDeviceID(), aID,
         AudioInputDevicePreference(aID));
     SwitchAtNextIteration(newDriver);
   }
@@ -1428,7 +1387,53 @@ void MediaTrackGraphImpl::UpdateGraph(GraphTime aEndBlockingDecisions) {
   }
 }
 
-void MediaTrackGraphImpl::Process(AudioMixer* aMixer) {
+void MediaTrackGraphImpl::SelectOutputDeviceForAEC() {
+  MOZ_ASSERT(OnGraphThread());
+  size_t currentDeviceIndex = mOutputDevices.IndexOf(mOutputDeviceForAEC);
+  if (currentDeviceIndex == mOutputDevices.NoIndex) {
+    // Outputs for this device have been removed.
+    // Fall back to the primary output device.
+    mOutputDeviceForAEC = PrimaryOutputDeviceID();
+    currentDeviceIndex = 0;
+    MOZ_ASSERT(mOutputDevices[0].mDeviceID == mOutputDeviceForAEC);
+  }
+  if (mOutputDevices.Length() == 1) {
+    // No other output devices so there is no choice.
+    return;
+  }
+
+  // The output is considered silent intentionally only if the whole duration
+  // (often more than just this processing interval) of audio data in the
+  // MediaSegment is null so as to reduce switching between output devices
+  // should there be short durations of silence.
+  auto HasNonNullAudio = [](const TrackAndVolume& aTV) {
+    return aTV.mVolume != 0 && !aTV.mTrack->IsSuspended() &&
+           !aTV.mTrack->GetData()->IsNull();
+  };
+  // Keep using the same output device stream if it has non-null data,
+  // so as to stay with a stream having ongoing audio.  If the output stream
+  // is switched, the echo cancellation algorithm can take some time to adjust
+  // to the change in delay, so there is less value in switching back and
+  // forth between output devices for very short sounds.
+  for (const auto& output : mOutputDevices[currentDeviceIndex].mTrackOutputs) {
+    if (HasNonNullAudio(output)) {
+      return;
+    }
+  }
+  // The current output device is silent.  Use another if it has non-null data.
+  for (const auto& outputDeviceEntry : mOutputDevices) {
+    for (const auto& output : outputDeviceEntry.mTrackOutputs) {
+      if (HasNonNullAudio(output)) {
+        // Switch to this device.
+        mOutputDeviceForAEC = outputDeviceEntry.mDeviceID;
+        return;
+      }
+    }
+  }
+  // Null data for all outputs.  Keep using the same device.
+}
+
+void MediaTrackGraphImpl::Process(MixerCallbackReceiver* aMixerReceiver) {
   TRACE("MTG::Process");
   MOZ_ASSERT(OnGraphThread());
   // Play track contents.
@@ -1477,15 +1482,32 @@ void MediaTrackGraphImpl::Process(AudioMixer* aMixer) {
   }
   mProcessedTime = mStateComputedTime;
 
-  if (aMixer) {
-    MOZ_ASSERT(mRealtime, "If there's a mixer, this graph must be realtime");
-    aMixer->StartMixing();
+  SelectOutputDeviceForAEC();
+  for (const auto& outputDeviceEntry : mOutputDevices) {
+    uint32_t outputChannelCount;
+    if (!outputDeviceEntry.mReceiver) {  // primary output
+      if (!aMixerReceiver) {
+        // Running off a system clock driver.  No need to mix output.
+        continue;
+      }
+      MOZ_ASSERT(CurrentDriver()->AsAudioCallbackDriver(),
+                 "Driver must be AudioCallbackDriver if aMixerReceiver");
+      // Use the number of channel the driver expects: this is the number of
+      // channel that can be output by the underlying system level audio stream.
+      outputChannelCount =
+          CurrentDriver()->AsAudioCallbackDriver()->OutputChannelCount();
+    } else {
+      outputChannelCount = AudioOutputChannelCount(outputDeviceEntry);
+    }
+    MOZ_ASSERT(mRealtime,
+               "If there's an output device, this graph must be realtime");
+    mMixer.StartMixing();
     // This is the number of frames that are written to the output buffer, for
     // this iteration.
     TrackTime ticksPlayed = 0;
-    for (auto& t : mAudioOutputs) {
+    for (const auto& t : outputDeviceEntry.mTrackOutputs) {
       TrackTime ticksPlayedForThisTrack =
-          PlayAudio(aMixer, t, oldProcessedTime);
+          PlayAudio(t, oldProcessedTime, outputChannelCount);
       if (ticksPlayed == 0) {
         ticksPlayed = ticksPlayedForThisTrack;
       } else {
@@ -1499,12 +1521,21 @@ void MediaTrackGraphImpl::Process(AudioMixer* aMixer) {
       // Nothing was played, so the mixer doesn't know how many frames were
       // processed. We still tell it so AudioCallbackDriver knows how much has
       // been processed. (bug 1406027)
-      aMixer->Mix(
-          nullptr,
-          CurrentDriver()->AsAudioCallbackDriver()->OutputChannelCount(),
-          mStateComputedTime - oldProcessedTime, mSampleRate);
+      mMixer.Mix(nullptr, outputChannelCount,
+                 mStateComputedTime - oldProcessedTime, mSampleRate);
     }
-    aMixer->FinishMixing();
+    AudioChunk* outputChunk = mMixer.MixedChunk();
+    if (outputDeviceEntry.mDeviceID == mOutputDeviceForAEC) {
+      // Callback any observers for the AEC speaker data.  Note that one
+      // (maybe) of these will be full-duplex, the others will get their input
+      // data off separate cubeb callbacks.
+      NotifyOutputData(*outputChunk);
+    }
+    if (!outputDeviceEntry.mReceiver) {  // primary output
+      aMixerReceiver->MixerCallback(outputChunk, mSampleRate);
+    } else {
+      outputDeviceEntry.mReceiver->EnqueueAudio(*outputChunk);
+    }
   }
 
   if (!allBlockedForever) {
@@ -1541,18 +1572,19 @@ bool MediaTrackGraphImpl::UpdateMainThreadState() {
 
 auto MediaTrackGraphImpl::OneIteration(GraphTime aStateTime,
                                        GraphTime aIterationEnd,
-                                       AudioMixer* aMixer) -> IterationResult {
+                                       MixerCallbackReceiver* aMixerReceiver)
+    -> IterationResult {
   if (mGraphRunner) {
-    return mGraphRunner->OneIteration(aStateTime, aIterationEnd, aMixer);
+    return mGraphRunner->OneIteration(aStateTime, aIterationEnd,
+                                      aMixerReceiver);
   }
 
-  return OneIterationImpl(aStateTime, aIterationEnd, aMixer);
+  return OneIterationImpl(aStateTime, aIterationEnd, aMixerReceiver);
 }
 
-auto MediaTrackGraphImpl::OneIterationImpl(GraphTime aStateTime,
-                                           GraphTime aIterationEnd,
-                                           AudioMixer* aMixer)
-    -> IterationResult {
+auto MediaTrackGraphImpl::OneIterationImpl(
+    GraphTime aStateTime, GraphTime aIterationEnd,
+    MixerCallbackReceiver* aMixerReceiver) -> IterationResult {
   TRACE("MTG::OneIterationImpl");
 
   mIterationEndTime = aIterationEnd;
@@ -1596,7 +1628,7 @@ auto MediaTrackGraphImpl::OneIterationImpl(GraphTime aStateTime,
   mStateComputedTime = stateTime;
 
   GraphTime oldProcessedTime = mProcessedTime;
-  Process(aMixer);
+  Process(aMixerReceiver);
   MOZ_ASSERT(mProcessedTime == stateTime);
 
   UpdateCurrentTimeForTracks(oldProcessedTime);
@@ -1680,8 +1712,7 @@ void MediaTrackGraphImpl::ForceShutDown() {
 NS_IMETHODIMP
 MediaTrackGraphImpl::Notify(nsITimer* aTimer) {
   MOZ_ASSERT(NS_IsMainThread());
-  NS_ASSERTION(!mShutdownBlocker,
-               "MediaTrackGraph took too long to shut down!");
+  MOZ_ASSERT(!mShutdownBlocker, "MediaTrackGraph took too long to shut down!");
   // Sigh, graph took too long to shut down.  Stop blocking system
   // shutdown and hope all is well.
   RemoveShutdownBlocker();
@@ -2301,60 +2332,178 @@ TrackTime MediaTrack::GetEnd() const {
   return mSegment ? mSegment->GetDuration() : 0;
 }
 
-void MediaTrack::AddAudioOutput(void* aKey) {
+void MediaTrack::AddAudioOutput(void* aKey, const AudioDeviceInfo* aSink) {
+  MOZ_ASSERT(NS_IsMainThread());
+  AudioDeviceID deviceID = nullptr;
+  TrackRate preferredSampleRate = 0;
+  if (aSink) {
+    deviceID = aSink->DeviceID();
+    preferredSampleRate = static_cast<TrackRate>(aSink->DefaultRate());
+  }
+  AddAudioOutput(aKey, deviceID, preferredSampleRate);
+}
+
+void MediaTrack::AddAudioOutput(void* aKey, CubebUtils::AudioDeviceID aDeviceID,
+                                TrackRate aPreferredSampleRate) {
+  MOZ_ASSERT(NS_IsMainThread());
   if (mMainThreadDestroyed) {
     return;
   }
-  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aKey] {
-    TRACE("MediaTrack::AddAudioOutputImpl ControlMessage");
-    AddAudioOutputImpl(aKey);
-  });
+  LOG(LogLevel::Info, ("MediaTrack %p adding AudioOutput", this));
+  GraphImpl()->RegisterAudioOutput(this, aKey, aDeviceID, aPreferredSampleRate);
 }
 
 void MediaTrackGraphImpl::SetAudioOutputVolume(MediaTrack* aTrack, void* aKey,
                                                float aVolume) {
-  for (auto& tkv : mAudioOutputs) {
-    if (tkv.mKey == aKey && aTrack == tkv.mTrack) {
-      tkv.mVolume = aVolume;
+  MOZ_ASSERT(NS_IsMainThread());
+  for (auto& params : mAudioOutputParams) {
+    if (params.mKey == aKey && aTrack == params.mTrack) {
+      params.mVolume = aVolume;
+      UpdateAudioOutput(aTrack, params.mDeviceID);
       return;
     }
   }
-  MOZ_CRASH("Audio stream key not found when setting the volume.");
-}
-
-void MediaTrack::SetAudioOutputVolumeImpl(void* aKey, float aVolume) {
-  MOZ_ASSERT(GraphImpl()->OnGraphThread());
-  GraphImpl()->SetAudioOutputVolume(this, aKey, aVolume);
+  MOZ_CRASH("Audio output key not found when setting the volume.");
 }
 
 void MediaTrack::SetAudioOutputVolume(void* aKey, float aVolume) {
   if (mMainThreadDestroyed) {
     return;
   }
-  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aKey, aVolume] {
-    TRACE("MediaTrack::SetAudioOutputVolumeImpl ControlMessage");
-    SetAudioOutputVolumeImpl(aKey, aVolume);
-  });
+  GraphImpl()->SetAudioOutputVolume(this, aKey, aVolume);
 }
 
-void MediaTrack::AddAudioOutputImpl(void* aKey) {
-  LOG(LogLevel::Info, ("MediaTrack %p adding AudioOutput", this));
-  GraphImpl()->RegisterAudioOutput(this, aKey);
-}
-
-void MediaTrack::RemoveAudioOutputImpl(void* aKey) {
+void MediaTrack::RemoveAudioOutput(void* aKey) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mMainThreadDestroyed) {
+    return;
+  }
   LOG(LogLevel::Info, ("MediaTrack %p removing AudioOutput", this));
   GraphImpl()->UnregisterAudioOutput(this, aKey);
 }
 
-void MediaTrack::RemoveAudioOutput(void* aKey) {
-  if (mMainThreadDestroyed) {
-    return;
+void MediaTrackGraphImpl::RegisterAudioOutput(
+    MediaTrack* aTrack, void* aKey, CubebUtils::AudioDeviceID aDeviceID,
+    TrackRate aPreferredSampleRate) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!mAudioOutputParams.Contains(TrackAndKey{aTrack, aKey}));
+
+  IncrementOutputDeviceRefCnt(aDeviceID, aPreferredSampleRate);
+
+  mAudioOutputParams.EmplaceBack(
+      TrackKeyDeviceAndVolume{aTrack, aKey, aDeviceID, 1.f});
+
+  UpdateAudioOutput(aTrack, aDeviceID);
+}
+
+void MediaTrackGraphImpl::UnregisterAudioOutput(MediaTrack* aTrack,
+                                                void* aKey) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  size_t index = mAudioOutputParams.IndexOf(TrackAndKey{aTrack, aKey});
+  MOZ_ASSERT(index != mAudioOutputParams.NoIndex);
+  AudioDeviceID deviceID = mAudioOutputParams[index].mDeviceID;
+  mAudioOutputParams.UnorderedRemoveElementAt(index);
+
+  UpdateAudioOutput(aTrack, deviceID);
+
+  DecrementOutputDeviceRefCnt(deviceID);
+}
+
+void MediaTrackGraphImpl::UpdateAudioOutput(MediaTrack* aTrack,
+                                            AudioDeviceID aDeviceID) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!aTrack->IsDestroyed());
+
+  float volume = 0.f;
+  bool found = false;
+  for (const auto& params : mAudioOutputParams) {
+    if (params.mTrack == aTrack && params.mDeviceID == aDeviceID) {
+      volume += params.mVolume;
+      found = true;
+    }
   }
-  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aKey] {
-    TRACE("MediaTrack::RemoveAudioOutputImpl ControlMessage");
-    RemoveAudioOutputImpl(aKey);
+
+  QueueControlMessageWithNoShutdown(
+      // track has a strong reference to this.
+      [track = RefPtr{aTrack}, aDeviceID, volume, found] {
+        TRACE("MediaTrack::UpdateAudioOutput ControlMessage");
+        MediaTrackGraphImpl* graph = track->GraphImpl();
+        auto& outputDevicesRef = graph->mOutputDevices;
+        size_t deviceIndex = outputDevicesRef.IndexOf(aDeviceID);
+        MOZ_ASSERT(deviceIndex != outputDevicesRef.NoIndex);
+        auto& deviceOutputsRef = outputDevicesRef[deviceIndex].mTrackOutputs;
+        if (found) {
+          for (auto& outputRef : deviceOutputsRef) {
+            if (outputRef.mTrack == track) {
+              outputRef.mVolume = volume;
+              return;
+            }
+          }
+          deviceOutputsRef.EmplaceBack(TrackAndVolume{track, volume});
+        } else {
+          DebugOnly<bool> removed = deviceOutputsRef.RemoveElement(track);
+          MOZ_ASSERT(removed);
+          // mOutputDevices[0] is retained for AudioCallbackDriver output even
+          // when no tracks have audio outputs.
+          if (deviceIndex != 0 && deviceOutputsRef.IsEmpty()) {
+            // The device is no longer in use.
+            outputDevicesRef.UnorderedRemoveElementAt(deviceIndex);
+          }
+        }
+      });
+}
+
+void MediaTrackGraphImpl::IncrementOutputDeviceRefCnt(
+    AudioDeviceID aDeviceID, TrackRate aPreferredSampleRate) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  for (auto& elementRef : mOutputDeviceRefCnts) {
+    if (elementRef.mDeviceID == aDeviceID) {
+      ++elementRef.mRefCnt;
+      return;
+    }
+  }
+  MOZ_ASSERT(aDeviceID != mPrimaryOutputDeviceID,
+             "mOutputDeviceRefCnts should always have the primary device");
+  // Need to add an output device.
+  // Output via another graph for this device.
+  // This sample rate is not exposed to content.
+  TrackRate sampleRate =
+      aPreferredSampleRate != 0
+          ? aPreferredSampleRate
+          : static_cast<TrackRate>(CubebUtils::PreferredSampleRate(
+                /*aShouldResistFingerprinting*/ false));
+  MediaTrackGraph* newGraph = MediaTrackGraphImpl::GetInstance(
+      MediaTrackGraph::AUDIO_THREAD_DRIVER, mWindowID, sampleRate, aDeviceID,
+      GetMainThreadSerialEventTarget());
+  // CreateCrossGraphReceiver wants the sample rate of this graph.
+  RefPtr receiver = newGraph->CreateCrossGraphReceiver(mSampleRate);
+  receiver->AddAudioOutput(nullptr, aDeviceID, sampleRate);
+  mOutputDeviceRefCnts.EmplaceBack(
+      DeviceReceiverAndCount{aDeviceID, receiver, 1});
+
+  QueueControlMessageWithNoShutdown([self = RefPtr{this}, this, aDeviceID,
+                                     receiver = std::move(receiver)]() mutable {
+    TRACE("MediaTrackGraph add output device ControlMessage");
+    MOZ_ASSERT(!mOutputDevices.Contains(aDeviceID));
+    mOutputDevices.EmplaceBack(
+        OutputDeviceEntry{aDeviceID, std::move(receiver)});
   });
+}
+
+void MediaTrackGraphImpl::DecrementOutputDeviceRefCnt(AudioDeviceID aDeviceID) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  size_t index = mOutputDeviceRefCnts.IndexOf(aDeviceID);
+  MOZ_ASSERT(index != mOutputDeviceRefCnts.NoIndex);
+  // mOutputDeviceRefCnts[0] is retained for consistency with
+  // mOutputDevices[0], which is retained for AudioCallbackDriver output even
+  // when no tracks have audio outputs.
+  if (--mOutputDeviceRefCnts[index].mRefCnt == 0 && index != 0) {
+    mOutputDeviceRefCnts[index].mReceiver->Destroy();
+    mOutputDeviceRefCnts.UnorderedRemoveElementAt(index);
+  }
 }
 
 void MediaTrack::Suspend() {
@@ -3056,8 +3205,8 @@ SourceMediaTrack::~SourceMediaTrack() = default;
 
 void MediaInputPort::Init() {
   mGraph->AssertOnGraphThreadOrNotRunning();
-  LOG(LogLevel::Debug, ("%p: Adding MediaInputPort %p (from %p to %p)",
-                        mSource->GraphImpl(), this, mSource, mDest));
+  LOG(LogLevel::Debug, ("%p: Adding MediaInputPort %p (from %p to %p)", mGraph,
+                        this, mSource, mDest));
   // Only connect the port if it wasn't disconnected on allocation.
   if (mSource) {
     mSource->AddConsumer(this);
@@ -3237,9 +3386,9 @@ void ProcessedMediaTrack::DestroyImpl() {
 MediaTrackGraphImpl::MediaTrackGraphImpl(
     GraphDriverType aDriverRequested, GraphRunType aRunTypeRequested,
     uint64_t aWindowID, TrackRate aSampleRate, uint32_t aChannelCount,
-    CubebUtils::AudioDeviceID aOutputDeviceID,
-    nsISerialEventTarget* aMainThread)
-    : MediaTrackGraph(aSampleRate),
+    AudioDeviceID aPrimaryOutputDeviceID, nsISerialEventTarget* aMainThread)
+    : MediaTrackGraph(aSampleRate, aPrimaryOutputDeviceID),
+      mWindowID(aWindowID),
       mGraphRunner(aRunTypeRequested == SINGLE_THREAD
                        ? GraphRunner::Create(this)
                        : already_AddRefed<GraphRunner>(nullptr)),
@@ -3248,8 +3397,6 @@ MediaTrackGraphImpl::MediaTrackGraphImpl(
       ,
       mEndTime(aDriverRequested == OFFLINE_THREAD_DRIVER ? 0 : GRAPH_TIME_MAX),
       mPortCount(0),
-      mWindowID(aWindowID),
-      mOutputDeviceID(aOutputDeviceID),
       mMonitor("MediaTrackGraphImpl"),
       mLifecycleState(LIFECYCLE_THREAD_NOT_STARTED),
       mPostedRunInStableStateEvent(false),
@@ -3268,6 +3415,13 @@ MediaTrackGraphImpl::MediaTrackGraphImpl(
       mMainThreadGraphTime(0, "MediaTrackGraphImpl::mMainThreadGraphTime"),
       mAudioOutputLatency(0.0),
       mMaxOutputChannelCount(std::min(8u, CubebUtils::MaxNumberOfChannels())) {
+  // The primary output device always exists because an AudioCallbackDriver
+  // may exist, and want to be fed data, even when no tracks have audio
+  // outputs.
+  mOutputDeviceRefCnts.EmplaceBack(
+      DeviceReceiverAndCount{aPrimaryOutputDeviceID, nullptr, 0});
+  mOutputDevices.EmplaceBack(OutputDeviceEntry{aPrimaryOutputDeviceID});
+
   bool failedToGetShutdownBlocker = false;
   if (!IsNonRealtime()) {
     failedToGetShutdownBlocker = !AddShutdownBlocker();
@@ -3290,9 +3444,9 @@ MediaTrackGraphImpl::MediaTrackGraphImpl(
     if (aDriverRequested == AUDIO_THREAD_DRIVER) {
       // Always start with zero input channels, and no particular preferences
       // for the input channel.
-      mDriver = new AudioCallbackDriver(this, nullptr, mSampleRate,
-                                        aChannelCount, 0, mOutputDeviceID,
-                                        nullptr, AudioInputType::Unknown);
+      mDriver = new AudioCallbackDriver(
+          this, nullptr, mSampleRate, aChannelCount, 0, PrimaryOutputDeviceID(),
+          nullptr, AudioInputType::Unknown);
     } else {
       mDriver = new SystemClockDriver(this, nullptr, mSampleRate);
     }
@@ -3330,12 +3484,12 @@ void MediaTrackGraphImpl::Destroy() {
 /* static */
 MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstanceIfExists(
     uint64_t aWindowID, TrackRate aSampleRate,
-    CubebUtils::AudioDeviceID aOutputDeviceID) {
+    AudioDeviceID aPrimaryOutputDeviceID) {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
   MOZ_ASSERT(aSampleRate > 0);
 
   GraphHashSet::Ptr p =
-      Graphs()->lookup({aWindowID, aSampleRate, aOutputDeviceID});
+      Graphs()->lookup({aWindowID, aSampleRate, aPrimaryOutputDeviceID});
   return p ? *p : nullptr;
 }
 
@@ -3344,20 +3498,20 @@ MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstanceIfExists(
 /* static */
 MediaTrackGraph* MediaTrackGraph::GetInstanceIfExists(
     nsPIDOMWindowInner* aWindow, TrackRate aSampleRate,
-    CubebUtils::AudioDeviceID aOutputDeviceID) {
+    AudioDeviceID aPrimaryOutputDeviceID) {
   TrackRate sampleRate =
       aSampleRate ? aSampleRate
                   : CubebUtils::PreferredSampleRate(
                         aWindow->AsGlobal()->ShouldResistFingerprinting(
                             RFPTarget::AudioSampleRate));
-  return MediaTrackGraphImpl::GetInstanceIfExists(aWindow->WindowID(),
-                                                  sampleRate, aOutputDeviceID);
+  return MediaTrackGraphImpl::GetInstanceIfExists(
+      aWindow->WindowID(), sampleRate, aPrimaryOutputDeviceID);
 }
 
 /* static */
 MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstance(
     GraphDriverType aGraphDriverRequested, uint64_t aWindowID,
-    TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID,
+    TrackRate aSampleRate, AudioDeviceID aPrimaryOutputDeviceID,
     nsISerialEventTarget* aMainThread) {
   MOZ_ASSERT(NS_IsMainThread(), "Main thread only");
   MOZ_ASSERT(aSampleRate > 0);
@@ -3366,7 +3520,7 @@ MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstance(
 
   GraphHashSet* graphs = Graphs();
   GraphHashSet::AddPtr addPtr =
-      graphs->lookupForAdd({aWindowID, aSampleRate, aOutputDeviceID});
+      graphs->lookupForAdd({aWindowID, aSampleRate, aPrimaryOutputDeviceID});
   if (addPtr) {  // graph already exists
     return *addPtr;
   }
@@ -3383,14 +3537,8 @@ MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstance(
       std::min<uint32_t>(8, CubebUtils::MaxNumberOfChannels());
   MediaTrackGraphImpl* graph = new MediaTrackGraphImpl(
       aGraphDriverRequested, runType, aWindowID, aSampleRate, channelCount,
-      aOutputDeviceID, aMainThread);
+      aPrimaryOutputDeviceID, aMainThread);
   MOZ_ALWAYS_TRUE(graphs->add(addPtr, graph));
-
-  nsCOMPtr<nsIObserverService> observerService =
-      mozilla::services::GetObserverService();
-  if (observerService) {
-    observerService->AddObserver(graph, "document-title-changed", false);
-  }
 
   LOG(LogLevel::Debug, ("Starting up MediaTrackGraph %p for window 0x%" PRIx64,
                         graph, aWindowID));
@@ -3401,15 +3549,15 @@ MediaTrackGraphImpl* MediaTrackGraphImpl::GetInstance(
 /* static */
 MediaTrackGraph* MediaTrackGraph::GetInstance(
     GraphDriverType aGraphDriverRequested, nsPIDOMWindowInner* aWindow,
-    TrackRate aSampleRate, CubebUtils::AudioDeviceID aOutputDeviceID) {
+    TrackRate aSampleRate, AudioDeviceID aPrimaryOutputDeviceID) {
   TrackRate sampleRate =
       aSampleRate ? aSampleRate
                   : CubebUtils::PreferredSampleRate(
                         aWindow->AsGlobal()->ShouldResistFingerprinting(
                             RFPTarget::AudioSampleRate));
   return MediaTrackGraphImpl::GetInstance(
-      aGraphDriverRequested, aWindow->WindowID(), sampleRate, aOutputDeviceID,
-      GetMainThreadSerialEventTarget());
+      aGraphDriverRequested, aWindow->WindowID(), sampleRate,
+      aPrimaryOutputDeviceID, GetMainThreadSerialEventTarget());
 }
 
 MediaTrackGraph* MediaTrackGraph::CreateNonRealtimeInstance(
@@ -3604,12 +3752,21 @@ CrossGraphReceiver* MediaTrackGraph::CreateCrossGraphReceiver(
 
 void MediaTrackGraph::AddTrack(MediaTrack* aTrack) {
   MediaTrackGraphImpl* graph = static_cast<MediaTrackGraphImpl*>(this);
+  MOZ_ASSERT(NS_IsMainThread());
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   if (graph->mRealtime) {
     GraphHashSet::Ptr p = Graphs()->lookup(*graph);
     MOZ_DIAGNOSTIC_ASSERT(p, "Graph must not be shutting down");
   }
 #endif
+  if (graph->mMainThreadTrackCount == 0) {
+    nsCOMPtr<nsIObserverService> observerService =
+        mozilla::services::GetObserverService();
+    if (observerService) {
+      observerService->AddObserver(graph, "document-title-changed", false);
+    }
+  }
+
   NS_ADDREF(aTrack);
   aTrack->SetGraphImpl(graph);
   ++graph->mMainThreadTrackCount;
@@ -3619,6 +3776,16 @@ void MediaTrackGraph::AddTrack(MediaTrack* aTrack) {
 void MediaTrackGraphImpl::RemoveTrack(MediaTrack* aTrack) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_DIAGNOSTIC_ASSERT(mMainThreadTrackCount > 0);
+
+  mAudioOutputParams.RemoveElementsBy(
+      [&](const TrackKeyDeviceAndVolume& aElement) {
+        if (aElement.mTrack != aTrack) {
+          return false;
+        };
+        DecrementOutputDeviceRefCnt(aElement.mDeviceID);
+        return true;
+      });
+
   if (--mMainThreadTrackCount == 0) {
     LOG(LogLevel::Info, ("MediaTrackGraph %p, last track %p removed from "
                          "main thread. Graph will shut down.",
@@ -3642,68 +3809,70 @@ void MediaTrackGraphImpl::RemoveTrack(MediaTrack* aTrack) {
   }
 }
 
-auto MediaTrackGraph::NotifyWhenDeviceStarted(MediaTrack* aTrack)
+auto MediaTrackGraphImpl::NotifyWhenDeviceStarted(AudioDeviceID aDeviceID)
     -> RefPtr<GraphStartedPromise> {
   MOZ_ASSERT(NS_IsMainThread());
+
+  size_t index = mOutputDeviceRefCnts.IndexOf(aDeviceID);
+  if (index == decltype(mOutputDeviceRefCnts)::NoIndex) {
+    return GraphStartedPromise::CreateAndReject(NS_ERROR_INVALID_ARG, __func__);
+  }
+
   MozPromiseHolder<GraphStartedPromise> h;
   RefPtr<GraphStartedPromise> p = h.Ensure(__func__);
-  aTrack->GraphImpl()->NotifyWhenGraphStarted(aTrack, std::move(h));
+
+  if (CrossGraphReceiver* receiver = mOutputDeviceRefCnts[index].mReceiver) {
+    receiver->GraphImpl()->NotifyWhenPrimaryDeviceStarted(std::move(h));
+    return p;
+  }
+
+  // aSink corresponds to the primary audio output device of this graph.
+  NotifyWhenPrimaryDeviceStarted(std::move(h));
   return p;
 }
 
-void MediaTrackGraphImpl::NotifyWhenGraphStarted(
-    RefPtr<MediaTrack> aTrack,
+void MediaTrackGraphImpl::NotifyWhenPrimaryDeviceStarted(
     MozPromiseHolder<GraphStartedPromise>&& aHolder) {
-  class GraphStartedNotificationControlMessage : public ControlMessage {
-    RefPtr<MediaTrack> mMediaTrack;
-    MozPromiseHolder<GraphStartedPromise> mHolder;
-
-   public:
-    GraphStartedNotificationControlMessage(
-        RefPtr<MediaTrack> aTrack,
-        MozPromiseHolder<GraphStartedPromise>&& aHolder)
-        : ControlMessage(nullptr),
-          mMediaTrack(std::move(aTrack)),
-          mHolder(std::move(aHolder)) {}
-    void Run() override {
-      TRACE("MTG::GraphStartedNotificationControlMessage ControlMessage");
-      // This runs on the graph thread, so when this runs, and the current
-      // driver is an AudioCallbackDriver, we know the audio hardware is
-      // started. If not, we are going to switch soon, keep reposting this
-      // ControlMessage.
-      MediaTrackGraphImpl* graphImpl = mMediaTrack->GraphImpl();
-      if (graphImpl->CurrentDriver()->AsAudioCallbackDriver() &&
-          graphImpl->CurrentDriver()->ThreadRunning() &&
-          !graphImpl->CurrentDriver()->AsAudioCallbackDriver()->OnFallback()) {
-        // Avoid Resolve's locking on the graph thread by doing it on main.
-        graphImpl->Dispatch(NS_NewRunnableFunction(
-            "MediaTrackGraphImpl::NotifyWhenGraphStarted::Resolver",
-            [holder = std::move(mHolder)]() mutable {
-              holder.Resolve(true, __func__);
-            }));
-      } else {
-        graphImpl->DispatchToMainThreadStableState(
-            NewRunnableMethod<
-                StoreCopyPassByRRef<RefPtr<MediaTrack>>,
-                StoreCopyPassByRRef<MozPromiseHolder<GraphStartedPromise>>>(
-                "MediaTrackGraphImpl::NotifyWhenGraphStarted", graphImpl,
-                &MediaTrackGraphImpl::NotifyWhenGraphStarted,
-                std::move(mMediaTrack), std::move(mHolder)));
-      }
-    }
-    void RunDuringShutdown() override {
-      mHolder.Reject(NS_ERROR_ILLEGAL_DURING_SHUTDOWN, __func__);
-    }
-  };
-
-  if (aTrack->IsDestroyed()) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mOutputDeviceRefCnts[0].mRefCnt == 0) {
+    // There are no track outputs that require the device, so the creator of
+    // this promise no longer needs to know when the graph is running.  Don't
+    // keep the graph alive with another message.
     aHolder.Reject(NS_ERROR_NOT_AVAILABLE, __func__);
     return;
   }
 
-  MediaTrackGraphImpl* graph = aTrack->GraphImpl();
-  graph->AppendMessage(MakeUnique<GraphStartedNotificationControlMessage>(
-      std::move(aTrack), std::move(aHolder)));
+  QueueControlOrShutdownMessage(
+      [self = RefPtr{this}, this,
+       holder = std::move(aHolder)](IsInShutdown aInShutdown) mutable {
+        if (aInShutdown == IsInShutdown::Yes) {
+          holder.Reject(NS_ERROR_ILLEGAL_DURING_SHUTDOWN, __func__);
+          return;
+        }
+
+        TRACE("MTG::NotifyWhenPrimaryDeviceStarted ControlMessage");
+        // This runs on the graph thread, so when this runs, and the current
+        // driver is an AudioCallbackDriver, we know the audio hardware is
+        // started. If not, we are going to switch soon, keep reposting this
+        // ControlMessage.
+        if (CurrentDriver()->AsAudioCallbackDriver() &&
+            CurrentDriver()->ThreadRunning() &&
+            !CurrentDriver()->AsAudioCallbackDriver()->OnFallback()) {
+          // Avoid Resolve's locking on the graph thread by doing it on main.
+          Dispatch(NS_NewRunnableFunction(
+              "MediaTrackGraphImpl::NotifyWhenPrimaryDeviceStarted::Resolver",
+              [holder = std::move(holder)]() mutable {
+                holder.Resolve(true, __func__);
+              }));
+        } else {
+          DispatchToMainThreadStableState(
+              NewRunnableMethod<
+                  StoreCopyPassByRRef<MozPromiseHolder<GraphStartedPromise>>>(
+                  "MediaTrackGraphImpl::NotifyWhenPrimaryDeviceStarted", this,
+                  &MediaTrackGraphImpl::NotifyWhenPrimaryDeviceStarted,
+                  std::move(holder)));
+        }
+      });
 }
 
 class AudioContextOperationControlMessage : public ControlMessage {
@@ -3833,20 +4002,27 @@ auto MediaTrackGraph::ApplyAudioContextOperation(
   return p;
 }
 
-uint32_t MediaTrackGraphImpl::AudioOutputChannelCount() const {
+uint32_t MediaTrackGraphImpl::PrimaryOutputChannelCount() const {
+  MOZ_ASSERT(!mOutputDevices[0].mReceiver);
+  return AudioOutputChannelCount(mOutputDevices[0]);
+}
+
+uint32_t MediaTrackGraphImpl::AudioOutputChannelCount(
+    const OutputDeviceEntry& aDevice) const {
   MOZ_ASSERT(OnGraphThread());
   // The audio output channel count for a graph is the maximum of the output
-  // channel count of all the tracks that are in mAudioOutputs, or the max audio
-  // output channel count the machine can do, whichever is smaller.
+  // channel count of all the tracks with outputs to this device, or the max
+  // audio output channel count the machine can do, whichever is smaller.
   uint32_t channelCount = 0;
-  for (auto& tkv : mAudioOutputs) {
-    channelCount = std::max(channelCount, tkv.mTrack->NumberOfChannels());
+  for (const auto& output : aDevice.mTrackOutputs) {
+    channelCount = std::max(channelCount, output.mTrack->NumberOfChannels());
   }
   channelCount = std::min(channelCount, mMaxOutputChannelCount);
   if (channelCount) {
     return channelCount;
   } else {
-    if (CurrentDriver()->AsAudioCallbackDriver()) {
+    // null aDevice.mReceiver indicates the primary graph output device.
+    if (!aDevice.mReceiver && CurrentDriver()->AsAudioCallbackDriver()) {
       return CurrentDriver()->AsAudioCallbackDriver()->OutputChannelCount();
     }
     return 2;

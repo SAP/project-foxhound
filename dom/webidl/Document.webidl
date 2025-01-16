@@ -151,6 +151,9 @@ interface Document : Node {
 
 // https://html.spec.whatwg.org/multipage/dom.html#the-document-object
 partial interface Document {
+  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
+  static Document parseHTMLUnsafe(DOMString html);
+
   [PutForwards=href, LegacyUnforgeable] readonly attribute Location? location;
   [SetterThrows]                           attribute DOMString domain;
   readonly attribute DOMString referrer;

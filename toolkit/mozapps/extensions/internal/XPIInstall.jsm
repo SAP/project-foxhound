@@ -59,7 +59,7 @@ XPCOMUtils.defineLazyModuleGetters(lazy, {
   XPIInternal: "resource://gre/modules/addons/XPIProvider.jsm",
 });
 
-XPCOMUtils.defineLazyGetter(lazy, "IconDetails", () => {
+ChromeUtils.defineLazyGetter(lazy, "IconDetails", () => {
   return ChromeUtils.importESModule(
     "resource://gre/modules/ExtensionParent.sys.mjs"
   ).ExtensionParent.IconDetails;
@@ -1565,6 +1565,16 @@ class AddonInstall {
         return Promise.reject([
           AddonManager.ERROR_CORRUPT_FILE,
           new Error(msg),
+        ]);
+      }
+
+      if (
+        AppConstants.platform == "android" &&
+        this.addon.type !== "extension"
+      ) {
+        return Promise.reject([
+          AddonManager.ERROR_UNSUPPORTED_ADDON_TYPE,
+          `Unsupported add-on type: ${this.addon.type}`,
         ]);
       }
 

@@ -7,6 +7,7 @@ import {
   ifDefined,
   when,
 } from "chrome://global/content/vendor/lit.all.mjs";
+import { escapeHtmlEntities, isSearchEnabled } from "./helpers.mjs";
 import { ViewPage } from "./viewpage.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/migration/migration-wizard.mjs";
@@ -15,7 +16,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
-  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   FirefoxViewPlacesQuery:
     "resource:///modules/firefox-view-places-query.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
@@ -28,11 +28,6 @@ let XPCOMUtils = ChromeUtils.importESModule(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
-  "searchEnabledPref",
-  "browser.firefox-view.search.enabled"
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
   "maxRowsPref",
   "browser.firefox-view.max-history-rows",
   -1
@@ -43,8 +38,7 @@ const HAS_IMPORTED_HISTORY_PREF = "browser.migrate.interactions.history";
 const IMPORT_HISTORY_DISMISSED_PREF =
   "browser.tabs.firefox-view.importHistory.dismissed";
 
-const SEARCH_DEBOUNCE_RATE_MS = 500;
-const SEARCH_DEBOUNCE_TIMEOUT_MS = 1000;
+const SEARCH_RESULTS_LIMIT = 300;
 
 class HistoryInView extends ViewPage {
   constructor() {
@@ -61,6 +55,7 @@ class HistoryInView extends ViewPage {
     this.sortOption = "date";
     this.profileAge = 8;
     this.fullyUpdated = false;
+    this.cumulativeSearches = 0;
   }
 
   start() {
@@ -72,11 +67,7 @@ class HistoryInView extends ViewPage {
     this.#updateAllHistoryItems();
     this.placesQuery.observeHistory(data => this.#updateAllHistoryItems(data));
 
-    this.searchTask = new lazy.DeferredTask(
-      () => this.#updateSearchResults(),
-      SEARCH_DEBOUNCE_RATE_MS,
-      SEARCH_DEBOUNCE_TIMEOUT_MS
-    );
+    this.toggleVisibilityInCardContainer();
   }
 
   async connectedCallback() {
@@ -116,9 +107,8 @@ class HistoryInView extends ViewPage {
     }
     this._started = false;
     this.placesQuery.close();
-    if (!this.searchTask.isFinalized) {
-      this.searchTask.finalize();
-    }
+
+    this.toggleVisibilityInCardContainer();
   }
 
   disconnectedCallback() {
@@ -146,7 +136,7 @@ class HistoryInView extends ViewPage {
       try {
         this.searchResults = await this.placesQuery.searchHistory(
           this.searchQuery,
-          lazy.maxRowsPref
+          SEARCH_RESULTS_LIMIT
         );
       } catch (e) {
         // Connection interrupted, ignore.
@@ -264,6 +254,14 @@ class HistoryInView extends ViewPage {
       {}
     );
 
+    if (this.searchQuery) {
+      const searchesHistogram = Services.telemetry.getKeyedHistogramById(
+        "FIREFOX_VIEW_CUMULATIVE_SEARCHES"
+      );
+      searchesHistogram.add("history", this.cumulativeSearches);
+      this.cumulativeSearches = 0;
+    }
+
     let currentWindow = this.getWindow();
     if (currentWindow.openTrustedLinkIn) {
       let where = lazy.BrowserUtils.whereToOpenLink(
@@ -297,6 +295,7 @@ class HistoryInView extends ViewPage {
       null,
       {
         sort_type: this.sortOption,
+        search_start: this.searchQuery ? "true" : "false",
       }
     );
     await this.updateHistoryData();
@@ -359,6 +358,9 @@ class HistoryInView extends ViewPage {
 
   updated() {
     this.fullyUpdated = true;
+    if (this.lists?.length) {
+      this.toggleVisibilityInCardContainer();
+    }
   }
 
   panelListTemplate() {
@@ -409,11 +411,11 @@ class HistoryInView extends ViewPage {
         if (historyItem.items.length) {
           let dateArg = JSON.stringify({ date: historyItem.items[0].time });
           cardsTemplate.push(html`<card-container>
-            <h3
+            <h2
               slot="header"
               data-l10n-id=${historyItem.l10nId}
               data-l10n-args=${dateArg}
-            ></h3>
+            ></h2>
             <fxview-tab-list
               slot="main"
               class="with-context-menu"
@@ -502,7 +504,7 @@ class HistoryInView extends ViewPage {
         slot="header"
         data-l10n-id="firefoxview-search-results-header"
         data-l10n-args=${JSON.stringify({
-          query: this.#escapeHtmlEntities(this.searchQuery),
+          query: escapeHtmlEntities(this.searchQuery),
         })}
       ></h3>
       ${when(
@@ -532,15 +534,6 @@ class HistoryInView extends ViewPage {
     </card-container>`;
   }
 
-  #escapeHtmlEntities(text) {
-    return (text || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
   render() {
     if (!this.selectedTab) {
       return null;
@@ -548,7 +541,7 @@ class HistoryInView extends ViewPage {
     return html`
       <link
         rel="stylesheet"
-        href="chrome://browser/content/firefoxview/firefoxview-next.css"
+        href="chrome://browser/content/firefoxview/firefoxview.css"
       />
       <link
         rel="stylesheet"
@@ -562,12 +555,14 @@ class HistoryInView extends ViewPage {
         ></h2>
         <div class="history-sort-options">
           ${when(
-            lazy.searchEnabledPref,
+            isSearchEnabled(),
             () => html` <div class="history-sort-option">
               <fxview-search-textbox
                 .query=${this.searchQuery}
                 data-l10n-id="firefoxview-search-text-box-history"
                 data-l10n-attrs="placeholder"
+                .size=${this.searchTextboxSize}
+                pageName=${this.recentBrowsing ? "recentbrowsing" : "history"}
                 @fxview-search-textbox-query=${this.onSearchQuery}
               ></fxview-search-textbox>
             </div>`
@@ -647,7 +642,7 @@ class HistoryInView extends ViewPage {
 
   async onSearchQuery(e) {
     this.searchQuery = e.detail.query;
-    this.searchTask.arm();
+    this.#updateSearchResults();
   }
 
   willUpdate(changedProperties) {
@@ -656,6 +651,11 @@ class HistoryInView extends ViewPage {
       // onChangeSortOption() will update history data once it has been fetched
       // from the API.
       this.createHistoryMaps();
+    }
+    if (changedProperties.has("searchQuery")) {
+      this.cumulativeSearches = this.searchQuery
+        ? this.cumulativeSearches + 1
+        : 0;
     }
   }
 }

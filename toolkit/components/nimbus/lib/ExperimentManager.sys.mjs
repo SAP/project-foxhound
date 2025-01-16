@@ -93,8 +93,13 @@ export class _ExperimentManager {
    */
   createTargetingContext() {
     let context = {
-      isFirstStartup: lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS,
       ...this.extraContext,
+
+      isFirstStartup: lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS,
+
+      get currentDate() {
+        return new Date();
+      },
     };
     Object.defineProperty(context, "activeExperiments", {
       get: async () => {
@@ -130,6 +135,15 @@ export class _ExperimentManager {
       get: async () => {
         await this.store.ready();
         return this.store.getAll().map(enrollment => enrollment.slug);
+      },
+    });
+    Object.defineProperty(context, "enrollmentsMap", {
+      get: async () => {
+        await this.store.ready();
+        return this.store.getAll().reduce((acc, enrollment) => {
+          acc[enrollment.slug] = enrollment.branch.slug;
+          return acc;
+        }, {});
       },
     });
     return context;

@@ -128,10 +128,14 @@ class nsContentSink : public nsICSSLoaderObserver,
   nsresult ProcessLinkFromHeader(const mozilla::net::LinkHeader& aHeader,
                                  uint64_t aEarlyHintPreloaderId);
 
+  // @param aFetchPriority Accepts a case-insensitive fetch priority keyword and
+  //                       other values too, see
+  //                       <https://html.spec.whatwg.org/#fetch-priority-attribute>.
   virtual nsresult ProcessStyleLinkFromHeader(
       const nsAString& aHref, bool aAlternate, const nsAString& aTitle,
       const nsAString& aIntegrity, const nsAString& aType,
-      const nsAString& aMedia, const nsAString& aReferrerPolicy);
+      const nsAString& aMedia, const nsAString& aReferrerPolicy,
+      const nsAString& aFetchPriority);
 
   void PrefetchHref(const nsAString& aHref, const nsAString& aAs,
                     const nsAString& aType, const nsAString& aMedia);
@@ -140,13 +144,15 @@ class nsContentSink : public nsICSSLoaderObserver,
                    const nsAString& aNonce, const nsAString& aIntegrity,
                    const nsAString& aSrcset, const nsAString& aSizes,
                    const nsAString& aCORS, const nsAString& aReferrerPolicy,
-                   uint64_t aEarlyHintPreloaderId);
+                   uint64_t aEarlyHintPreloaderId,
+                   const nsAString& aFetchPriority);
 
   void PreloadModule(const nsAString& aHref, const nsAString& aAs,
                      const nsAString& aMedia, const nsAString& aNonce,
                      const nsAString& aIntegrity, const nsAString& aCORS,
                      const nsAString& aReferrerPolicy,
-                     uint64_t aEarlyHintPreloaderId);
+                     uint64_t aEarlyHintPreloaderId,
+                     const nsAString& aFetchPriority);
 
   // For PrefetchDNS() aHref can either be the usual
   // URI format or of the form "//www.hostname.com" without a scheme.

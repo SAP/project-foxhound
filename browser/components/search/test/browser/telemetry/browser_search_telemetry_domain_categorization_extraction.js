@@ -8,7 +8,6 @@
  */
 
 ChromeUtils.defineESModuleGetters(this, {
-  SearchSERPCategorization: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
 
@@ -170,7 +169,6 @@ const TESTS = [
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.search.log", true],
       ["browser.search.serpEventTelemetry.enabled", true],
       ["browser.search.serpEventTelemetryCategorization.enabled", true],
     ],

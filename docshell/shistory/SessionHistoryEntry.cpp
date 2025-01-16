@@ -654,13 +654,13 @@ SessionHistoryEntry::SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
 }
 
 NS_IMETHODIMP
-SessionHistoryEntry::GetContentViewer(nsIContentViewer** aContentViewer) {
-  *aContentViewer = nullptr;
+SessionHistoryEntry::GetDocumentViewer(nsIDocumentViewer** aDocumentViewer) {
+  *aDocumentViewer = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-SessionHistoryEntry::SetContentViewer(nsIContentViewer* aContentViewer) {
+SessionHistoryEntry::SetDocumentViewer(nsIDocumentViewer* aDocumentViewer) {
   MOZ_CRASH("This lives in the child process");
   return NS_ERROR_FAILURE;
 }
@@ -1508,7 +1508,7 @@ void SessionHistoryEntry::SetFrameLoader(nsFrameLoader* aFrameLoader) {
     if (shistory) {
       int32_t index = 0;
       shistory->GetIndex(&index);
-      shistory->EvictOutOfRangeContentViewers(index);
+      shistory->EvictOutOfRangeDocumentViewers(index);
     }
   }
 }

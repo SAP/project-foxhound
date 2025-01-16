@@ -55,13 +55,13 @@ function sleep(ms) {
 
 async function blockedIconShown() {
   await TestUtils.waitForCondition(() => {
-    return BrowserTestUtils.is_visible(autoplayBlockedIcon());
+    return BrowserTestUtils.isVisible(autoplayBlockedIcon());
   }, "Blocked icon is shown");
 }
 
 async function blockedIconHidden() {
   await TestUtils.waitForCondition(() => {
-    return BrowserTestUtils.is_hidden(autoplayBlockedIcon());
+    return BrowserTestUtils.isHidden(autoplayBlockedIcon());
   }, "Blocked icon is hidden");
 }
 
@@ -91,7 +91,7 @@ add_task(async function testMainViewVisible() {
 
   await BrowserTestUtils.withNewTab(AUTOPLAY_PAGE, async function () {
     ok(
-      BrowserTestUtils.is_hidden(autoplayBlockedIcon()),
+      BrowserTestUtils.isHidden(autoplayBlockedIcon()),
       "Blocked icon not shown"
     );
 
@@ -265,7 +265,7 @@ add_task(async function testChangingBlockingSettingDuringNavigation() {
     // would have shown.
     await sleep(100);
     ok(
-      BrowserTestUtils.is_hidden(autoplayBlockedIcon()),
+      BrowserTestUtils.isHidden(autoplayBlockedIcon()),
       "Blocked icon is hidden"
     );
   });

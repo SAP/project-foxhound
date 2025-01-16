@@ -34,6 +34,7 @@
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
 #include "mozilla/layers/OMTASampler.h"
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
@@ -314,6 +315,8 @@ WebRenderBridgeParent::WebRenderBridgeParent(
     mBoolParameterBits = ~gfxVars::WebRenderBoolParameters();
     UpdateBoolParameters();
   }
+  mRemoteTextureTxnScheduler =
+      RemoteTextureTxnScheduler::Create(aCompositorBridge);
 }
 
 WebRenderBridgeParent::WebRenderBridgeParent(const wr::PipelineId& aPipelineId,
@@ -391,6 +394,9 @@ void WebRenderBridgeParent::Destroy() {
       IsRootWebRenderBridgeParent());
 
   mDestroyed = true;
+  if (mRemoteTextureTxnScheduler) {
+    mRemoteTextureTxnScheduler = nullptr;
+  }
   if (mWebRenderBridgeRef) {
     // Break mutual reference
     mWebRenderBridgeRef->Clear();
@@ -1232,6 +1238,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvSetDisplayList(
   wr::IpcResourceUpdateQueue::ReleaseShmems(this, aDisplayList.mSmallShmems);
   wr::IpcResourceUpdateQueue::ReleaseShmems(this, aDisplayList.mLargeShmems);
 
+  if (mRemoteTextureTxnScheduler) {
+    mRemoteTextureTxnScheduler->NotifyTxn(aFwdTransactionId);
+  }
+
   if (!success) {
     return IPC_FAIL(this, "Failed to process DisplayListData.");
   }
@@ -1383,6 +1393,10 @@ mozilla::ipc::IPCResult WebRenderBridgeParent::RecvEmptyTransaction(
                                               aTransactionData->mLargeShmems);
   }
 
+  if (mRemoteTextureTxnScheduler) {
+    mRemoteTextureTxnScheduler->NotifyTxn(aFwdTransactionId);
+  }
+
   if (!success) {
     return IPC_FAIL(this, "Failed to process empty transaction update.");
   }
@@ -1430,8 +1444,8 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
     wr::TransactionBuilder& aTxn) {
   // Transaction for async image pipeline that uses ImageBridge always need to
   // be non low priority.
-  wr::TransactionBuilder txnForImageBridge(mApi);
-  wr::AutoTransactionSender sender(mApi, &txnForImageBridge);
+  wr::TransactionBuilder txnForImageBridge(mApi->GetRootAPI());
+  wr::AutoTransactionSender sender(mApi->GetRootAPI(), &txnForImageBridge);
 
   bool success = true;
   for (nsTArray<WebRenderParentCommand>::index_type i = 0;
@@ -1459,23 +1473,31 @@ bool WebRenderBridgeParent::ProcessWebRenderParentCommands(
       case WebRenderParentCommand::TOpUpdateAsyncImagePipeline: {
         const OpUpdateAsyncImagePipeline& op =
             cmd.get_OpUpdateAsyncImagePipeline();
+
+        auto* pendingOps = mApi->GetPendingAsyncImagePipelineOps(aTxn);
+        auto* pendingRemotetextures = mApi->GetPendingRemoteTextureInfoList();
+
         mAsyncImageManager->UpdateAsyncImagePipeline(
             op.pipelineId(), op.scBounds(), op.rotation(), op.filter(),
             op.mixBlendMode());
-        auto* list = mApi->GetPendingRemoteTextureInfoList();
-        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !list);
-        mAsyncImageManager->ApplyAsyncImageForPipeline(op.pipelineId(), aTxn,
-                                                       txnForImageBridge, list);
+        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !pendingRemotetextures);
+        mAsyncImageManager->ApplyAsyncImageForPipeline(
+            op.pipelineId(), aTxn, txnForImageBridge, pendingOps,
+            pendingRemotetextures);
         break;
       }
       case WebRenderParentCommand::TOpUpdatedAsyncImagePipeline: {
         const OpUpdatedAsyncImagePipeline& op =
             cmd.get_OpUpdatedAsyncImagePipeline();
         aTxn.InvalidateRenderedFrame(wr::RenderReasons::ASYNC_IMAGE);
-        auto* list = mApi->GetPendingRemoteTextureInfoList();
-        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !list);
-        mAsyncImageManager->ApplyAsyncImageForPipeline(op.pipelineId(), aTxn,
-                                                       txnForImageBridge, list);
+
+        auto* pendingOps = mApi->GetPendingAsyncImagePipelineOps(aTxn);
+        auto* pendingRemotetextures = mApi->GetPendingRemoteTextureInfoList();
+
+        MOZ_ASSERT_IF(IsRootWebRenderBridgeParent(), !pendingRemotetextures);
+        mAsyncImageManager->ApplyAsyncImageForPipeline(
+            op.pipelineId(), aTxn, txnForImageBridge, pendingOps,
+            pendingRemotetextures);
         break;
       }
       case WebRenderParentCommand::TCompositableOperation: {

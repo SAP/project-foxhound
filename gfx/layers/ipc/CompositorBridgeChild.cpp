@@ -80,7 +80,6 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild* aManager)
       mCanSend(false),
       mActorDestroyed(false),
       mPaused(false),
-      mFwdTransactionId(0),
       mThread(NS_GetCurrentThread()),
       mProcessToken(0),
       mSectionAllocator(nullptr) {
@@ -470,7 +469,8 @@ void CompositorBridgeChild::HoldUntilCompositableRefReleasedIfNecessary(
     return;
   }
 
-  aClient->SetLastFwdTransactionId(GetFwdTransactionId());
+  aClient->SetLastFwdTransactionId(
+      GetFwdTransactionCounter().mFwdTransactionId);
   mTexturesWaitingNotifyNotUsed.emplace(aClient->GetSerial(), aClient);
 }
 
@@ -517,7 +517,7 @@ PTextureChild* CompositorBridgeChild::CreateTexture(
 }
 
 already_AddRefed<CanvasChild> CompositorBridgeChild::GetCanvasChild() {
-  MOZ_ASSERT(gfx::gfxVars::RemoteCanvasEnabled());
+  MOZ_ASSERT(gfxPlatform::UseRemoteCanvas());
   if (auto* cm = gfx::CanvasManagerChild::Get()) {
     return cm->GetCanvasChild().forget();
   }
@@ -531,7 +531,9 @@ void CompositorBridgeChild::EndCanvasTransaction() {
 }
 
 void CompositorBridgeChild::ClearCachedResources() {
-  CanvasChild::ClearCachedResources();
+  if (auto* cm = gfx::CanvasManagerChild::Get()) {
+    cm->ClearCachedResources();
+  }
 }
 
 bool CompositorBridgeChild::AllocUnsafeShmem(size_t aSize, ipc::Shmem* aShmem) {
@@ -628,6 +630,10 @@ wr::MaybeExternalImageId CompositorBridgeChild::GetNextExternalImageId() {
 
 wr::PipelineId CompositorBridgeChild::GetNextPipelineId() {
   return wr::AsPipelineId(GetNextResourceId());
+}
+
+FwdTransactionCounter& CompositorBridgeChild::GetFwdTransactionCounter() {
+  return mCompositorManager->GetFwdTransactionCounter();
 }
 
 }  // namespace layers

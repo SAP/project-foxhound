@@ -127,6 +127,8 @@ class MOZ_STACK_CLASS BaselineStackBuilder {
 
   BailoutKind bailoutKind_;
 
+  bool canUseTrialInlinedICScripts_ = true;
+
   // The baseline frames we will reconstruct on the heap are not
   // rooted, so GC must be suppressed.
   gc::AutoSuppressGC suppress_;
@@ -479,7 +481,7 @@ bool BaselineStackBuilder::initFrame() {
 
   JitSpew(JitSpew_BaselineBailouts, "      Unpacking %s:%u:%u",
           script_->filename(), script_->lineno(),
-          script_->column().zeroOriginValue());
+          script_->column().oneOriginValue());
   JitSpew(JitSpew_BaselineBailouts, "      [BASELINE-JS FRAME]");
 
   // Write the previous frame pointer value. For the outermost frame we reuse
@@ -502,7 +504,8 @@ void BaselineStackBuilder::setNextCallee(
     JSFunction* nextCallee, TrialInliningState trialInliningState) {
   nextCallee_ = nextCallee;
 
-  if (trialInliningState == TrialInliningState::Inlined) {
+  if (trialInliningState == TrialInliningState::Inlined &&
+      !iter_.ionScript()->purgedICScripts() && canUseTrialInlinedICScripts_) {
     // Update icScript_ to point to the icScript of nextCallee
     const uint32_t pcOff = script_->pcToOffset(pc_);
     icScript_ = icScript_->findInlinedChild(pcOff);
@@ -511,8 +514,18 @@ void BaselineStackBuilder::setNextCallee(
     // just use the callee's own ICScript. We could still have the trial
     // inlined ICScript available, but we also could not if we transitioned
     // to TrialInliningState::Failure after being monomorphic inlined.
+    //
+    // Also use the callee's own ICScript if we purged callee ICScripts.
     icScript_ = nextCallee->nonLazyScript()->jitScript()->icScript();
+    if (trialInliningState != TrialInliningState::MonomorphicInlined) {
+      canUseTrialInlinedICScripts_ = false;
+    }
   }
+
+  // Assert the ICScript matches nextCallee.
+  JSScript* calleeScript = nextCallee->nonLazyScript();
+  MOZ_RELEASE_ASSERT(icScript_->numICEntries() == calleeScript->numICEntries());
+  MOZ_RELEASE_ASSERT(icScript_->bytecodeSize() == calleeScript->length());
 }
 
 bool BaselineStackBuilder::done() {
@@ -1496,7 +1509,7 @@ bool BaselineStackBuilder::buildOneFrame() {
           "      Resuming %s pc offset %d (op %s) (line %u) of %s:%u:%u",
           resumeAfter() ? "after" : "at", (int)pcOff, CodeName(op_),
           PCToLineNumber(script_, pc()), script_->filename(), script_->lineno(),
-          script_->column().zeroOriginValue());
+          script_->column().oneOriginValue());
   JitSpew(JitSpew_BaselineBailouts, "      Bailout kind: %s",
           BailoutKindString(bailoutKind()));
 #endif
@@ -1582,7 +1595,7 @@ bool jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation,
   JitSpew(JitSpew_BaselineBailouts,
           "Bailing to baseline %s:%u:%u (IonScript=%p) (FrameType=%d)",
           iter.script()->filename(), iter.script()->lineno(),
-          iter.script()->column().zeroOriginValue(), (void*)iter.ionScript(),
+          iter.script()->column().oneOriginValue(), (void*)iter.ionScript(),
           (int)prevFrameType);
 
   if (excInfo) {
@@ -1628,7 +1641,7 @@ bool jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation,
   if (iter.maybeCallee()) {
     JitSpew(JitSpew_BaselineBailouts, "  Callee function (%s:%u:%u)",
             iter.script()->filename(), iter.script()->lineno(),
-            iter.script()->column().zeroOriginValue());
+            iter.script()->column().oneOriginValue());
   } else {
     JitSpew(JitSpew_BaselineBailouts, "  No callee!");
   }
@@ -1733,8 +1746,8 @@ static void HandleLexicalCheckFailure(JSContext* cx, HandleScript outerScript,
   JitSpew(JitSpew_IonBailouts,
           "Lexical check failure %s:%u:%u, inlined into %s:%u:%u",
           innerScript->filename(), innerScript->lineno(),
-          innerScript->column().zeroOriginValue(), outerScript->filename(),
-          outerScript->lineno(), outerScript->column().zeroOriginValue());
+          innerScript->column().oneOriginValue(), outerScript->filename(),
+          outerScript->lineno(), outerScript->column().oneOriginValue());
 
   if (!innerScript->failedLexicalCheck()) {
     innerScript->setFailedLexicalCheck();
@@ -1962,10 +1975,10 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
           "  Restored outerScript=(%s:%u:%u,%u) innerScript=(%s:%u:%u,%u) "
           "(bailoutKind=%u)",
           outerScript->filename(), outerScript->lineno(),
-          outerScript->column().zeroOriginValue(),
-          outerScript->getWarmUpCount(), innerScript->filename(),
-          innerScript->lineno(), innerScript->column().zeroOriginValue(),
-          innerScript->getWarmUpCount(), (unsigned)bailoutKind);
+          outerScript->column().oneOriginValue(), outerScript->getWarmUpCount(),
+          innerScript->filename(), innerScript->lineno(),
+          innerScript->column().oneOriginValue(), innerScript->getWarmUpCount(),
+          (unsigned)bailoutKind);
 
   BailoutAction action = BailoutAction::InvalidateImmediately;
   DebugOnly<bool> saveFailedICHash = false;

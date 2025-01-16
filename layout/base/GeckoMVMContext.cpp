@@ -113,11 +113,11 @@ GeckoMVMContext::ScrollbarAreaToExcludeFromCompositionBounds() const {
       mPresShell->GetPresContext()->AppUnitsPerDevPixel());
 }
 
-Maybe<LayoutDeviceIntSize> GeckoMVMContext::GetContentViewerSize() const {
+Maybe<LayoutDeviceIntSize> GeckoMVMContext::GetDocumentViewerSize() const {
   MOZ_ASSERT(mPresShell);
   LayoutDeviceIntSize result;
-  if (nsLayoutUtils::GetContentViewerSize(mPresShell->GetPresContext(),
-                                          result)) {
+  if (nsLayoutUtils::GetDocumentViewerSize(mPresShell->GetPresContext(),
+                                           result)) {
     return Some(result);
   }
   return Nothing();
@@ -204,6 +204,14 @@ void GeckoMVMContext::Reflow(const CSSSize& aNewSize) {
                                      CSSPixel::ToAppUnits(aNewSize.height))) {
     doc->FlushPendingNotifications(FlushType::InterruptibleLayout);
   }
+}
+
+ScreenIntCoord GeckoMVMContext::GetDynamicToolbarOffset() {
+  const nsPresContext* presContext = mPresShell->GetPresContext();
+  return presContext->HasDynamicToolbar()
+             ? presContext->GetDynamicToolbarMaxHeight() -
+                   presContext->GetDynamicToolbarHeight()
+             : ScreenIntCoord(0);
 }
 
 }  // namespace mozilla

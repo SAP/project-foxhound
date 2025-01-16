@@ -155,7 +155,6 @@ export let RemotePageAccessManager = {
       ],
       RPMSendQuery: [
         "IsPromoBlocked",
-        "ShouldShowSearch",
         "ShouldShowSearchBanner",
         "ShouldShowPromo",
         "SpecialMessageActionDispatch",
@@ -196,6 +195,7 @@ export let RemotePageAccessManager = {
       RPMGetBoolPref: [
         "browser.contentblocking.report.lockwise.enabled",
         "browser.contentblocking.report.monitor.enabled",
+        "privacy.fingerprintingProtection",
         "privacy.socialtracking.block_cookies.enabled",
         "browser.contentblocking.report.proxy.enabled",
         "privacy.trackingprotection.cryptomining.enabled",
@@ -240,8 +240,15 @@ export let RemotePageAccessManager = {
         "browser.shopping.experience2023.optedIn",
         "browser.shopping.experience2023.active",
         "browser.shopping.experience2023.ads.userEnabled",
+        "browser.shopping.experience2023.sidebarClosedCount",
+        "browser.shopping.experience2023.showKeepSidebarClosedMessage",
+        "browser.shopping.experience2023.autoOpen.userEnabled",
       ],
       RPMGetFormatURLPref: ["app.support.baseURL"],
+      RPMGetIntPref: ["browser.shopping.experience2023.sidebarClosedCount"],
+      RPMGetBoolPref: [
+        "browser.shopping.experience2023.showKeepSidebarClosedMessage",
+      ],
     },
     "about:tabcrashed": {
       RPMSendAsyncMessage: ["Load", "closeTab", "restoreTab", "restoreAll"],

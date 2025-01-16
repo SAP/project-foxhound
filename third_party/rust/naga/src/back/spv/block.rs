@@ -494,7 +494,7 @@ impl<'w> BlockContext<'w> {
                         crate::TypeInner::Matrix {
                             columns,
                             rows,
-                            width,
+                            scalar,
                         } => {
                             self.write_matrix_matrix_column_op(
                                 block,
@@ -504,7 +504,7 @@ impl<'w> BlockContext<'w> {
                                 right_id,
                                 columns,
                                 rows,
-                                width,
+                                scalar.width,
                                 spirv::Op::FAdd,
                             );
 
@@ -522,7 +522,7 @@ impl<'w> BlockContext<'w> {
                         crate::TypeInner::Matrix {
                             columns,
                             rows,
-                            width,
+                            scalar,
                         } => {
                             self.write_matrix_matrix_column_op(
                                 block,
@@ -532,7 +532,7 @@ impl<'w> BlockContext<'w> {
                                 right_id,
                                 columns,
                                 rows,
-                                width,
+                                scalar.width,
                                 spirv::Op::FSub,
                             );
 
@@ -1141,9 +1141,7 @@ impl<'w> BlockContext<'w> {
                     match *self.fun_info[expr].ty.inner_with(&self.ir_module.types) {
                         crate::TypeInner::Scalar(scalar) => (scalar, None, false),
                         crate::TypeInner::Vector { scalar, size } => (scalar, Some(size), false),
-                        crate::TypeInner::Matrix { width, .. } => {
-                            (crate::Scalar::float(width), None, true)
-                        }
+                        crate::TypeInner::Matrix { scalar, .. } => (scalar, None, true),
                         ref other => {
                             log::error!("As source {:?}", other);
                             return Err(Error::Validation("Unexpected Expression::As source"));
@@ -1177,7 +1175,7 @@ impl<'w> BlockContext<'w> {
                             let op = match src_scalar.kind {
                                 Sk::Sint | Sk::Uint => spirv::Op::INotEqual,
                                 Sk::Float => spirv::Op::FUnordNotEqual,
-                                Sk::Bool => unreachable!(),
+                                Sk::Bool | Sk::AbstractInt | Sk::AbstractFloat => unreachable!(),
                             };
                             let zero_scalar_id =
                                 self.writer.get_constant_scalar_with(0, src_scalar)?;
@@ -1465,7 +1463,7 @@ impl<'w> BlockContext<'w> {
         // but we expect these checks to almost always succeed, and keeping branches to a
         // minimum is essential.
         let mut accumulated_checks = None;
-        // Is true if we are accessing into a binding array of buffers with a non-uniform index.
+        // Is true if we are accessing into a binding array with a non-uniform index.
         let mut is_non_uniform_binding_array = false;
 
         self.temp_list.clear();
@@ -1475,20 +1473,14 @@ impl<'w> BlockContext<'w> {
                     if let crate::Expression::GlobalVariable(var_handle) =
                         self.ir_function.expressions[base]
                     {
-                        let gvar: &crate::GlobalVariable =
-                            &self.ir_module.global_variables[var_handle];
-                        match gvar.space {
-                            crate::AddressSpace::Storage { .. } | crate::AddressSpace::Uniform => {
-                                if let crate::TypeInner::BindingArray { .. } =
-                                    self.ir_module.types[gvar.ty].inner
-                                {
-                                    is_non_uniform_binding_array = self.fun_info[index]
-                                        .uniformity
-                                        .non_uniform_result
-                                        .is_some();
-                                }
-                            }
-                            _ => {}
+                        // The access chain needs to be decorated as NonUniform
+                        // see VUID-RuntimeSpirv-NonUniform-06274
+                        let gvar = &self.ir_module.global_variables[var_handle];
+                        if let crate::TypeInner::BindingArray { .. } =
+                            self.ir_module.types[gvar.ty].inner
+                        {
+                            is_non_uniform_binding_array =
+                                self.fun_info[index].uniformity.non_uniform_result.is_some();
                         }
                     }
 
@@ -1573,7 +1565,7 @@ impl<'w> BlockContext<'w> {
             (pointer_id, expr_pointer)
         };
         // Subsequent load, store and atomic operations require the pointer to be decorated as NonUniform
-        // if the buffer binding array was accessed with a non-uniform index
+        // if the binding array was accessed with a non-uniform index
         // see VUID-RuntimeSpirv-NonUniform-06274
         if is_non_uniform_binding_array {
             self.writer

@@ -93,6 +93,209 @@ networking:
     bucket_count: 100
     histogram_type: exponential
 
+  cookie_count_total:
+    type: custom_distribution
+    description: >
+      Reports the total number of cookies in storage
+    range_min: 0
+    range_max: 4000
+    bucket_count: 22
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_count_partitioned:
+    type: custom_distribution
+    description: >
+      Reports the number of partitioned cookies in storage
+    range_min: 0
+    range_max: 4000
+    bucket_count: 22
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_count_unpartitioned:
+    type: custom_distribution
+    description: >
+      Reports the number of unpartitioned cookies in storage
+    range_min: 0
+    range_max: 4000
+    bucket_count: 22
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_count_part_by_key:
+    type: custom_distribution
+    description: >
+      A distribution of the partitioned cookies in storage belonging to
+      a particular cookie key (host + origin attributes)
+    range_min: 1
+    range_max: 220
+    bucket_count: 10
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_count_unpart_by_key:
+    type: custom_distribution
+    description: >
+      A distribution of the unpartitioned cookies in storage belonging to
+      a particular cookie key (host + origin attributes)
+    range_min: 1
+    range_max: 220
+    bucket_count: 10
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_purge_max:
+    type: custom_distribution
+    description: >
+      A distribution of the number of cookies purged across
+      all host + OAs as a result of exceeding the cookie maximum threshold
+      (single purge)
+    range_min: 1
+    range_max: 4000
+    bucket_count: 22
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  cookie_purge_entry_max:
+    type: custom_distribution
+    description: >
+      A distribution of the number of cookies purged for a single
+      host + OA entry as a result of exceeding the maximum threshold
+      for the given host + OA (single purge)
+    range_min: 1
+    range_max: 220
+    bucket_count: 10
+    histogram_type: exponential
+    unit: integer
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1828942#TDB
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - edgul@mozilla.com
+    expires: 128
+
+  set_cookie:
+    type: counter
+    description: >
+      This counts the number of times we set a cookie. Introduced
+      as a denomenator for measuring CHIPS adoption.
+    bugs:
+      - https://bugzilla.mozilla.org/1865199
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1865199#c3
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: 132
+
+  set_cookie_foreign:
+    type: rate
+    description: >
+      This counts the number of times we set a cookie from a foreign (not
+      same-site) context. Introduced as a denomenator for measuring CHIPS
+      adoption.
+    bugs:
+      - https://bugzilla.mozilla.org/1865199
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1865199#c3
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: 132
+    denominator_metric: networking.set_cookie
+
+  set_cookie_partitioned:
+    type: rate
+    description: >
+      This counts the number of times we set a cookie that has the Partitioned
+      attribute. This tracks the adoption of CHIPS.
+    bugs:
+      - https://bugzilla.mozilla.org/1865199
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1865199#c3
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: 132
+    denominator_metric: networking.set_cookie
+
+  set_cookie_foreign_partitioned:
+    type: rate
+    description: >
+      This counts the number of times we set a cookie that has the Partitioned
+      attribute in a foreign (not same-site) context. This tracks the adoption
+      of CHIPS.
+    bugs:
+      - https://bugzilla.mozilla.org/1865199
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1865199#c3
+    notification_emails:
+      - bvandersloot@mozilla.com
+    expires: 132
+    denominator_metric: networking.set_cookie
+
   dns_lookup_time:
     type: timing_distribution
     time_unit: millisecond
@@ -164,6 +367,26 @@ networking:
       - acreskey@mozilla.com
     expires: never
     telemetry_mirror: DNS_FAILED_LOOKUP_TIME
+
+  dns_native_count:
+    type: labeled_counter
+    description: >
+      The count of calls to the native DNS APIs
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879165
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879165
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - vgosu@mozilla.com
+      - necko@mozilla.com
+    expires: 140
+    labels:
+      - regular
+      - private
+      - https_regular
+      - https_private
 
   http_content_onstart_delay:
     type: timing_distribution
@@ -402,3 +625,237 @@ networking:
       - acreskey@mozilla.com
     expires: never
     telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3
+
+  http_1_upload_throughput_10_50:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/1.0, http/1.1 request size between 10MB and 50MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_10_50
+
+  http_1_upload_throughput_50_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/1.0, http/1.1 request size between 50MB and 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_50_100
+
+  http_1_upload_throughput_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/1.0, http/1.1 request size larger than 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_100
+
+  http_2_upload_throughput_10_50:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/2 request size between 10MB and 50MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_10_50
+
+  http_2_upload_throughput_50_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/2 request size between 50MB and 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_50_100
+
+  http_2_upload_throughput_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/2 request size larger than 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_100
+
+  http_3_upload_throughput_10_50:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/3 request size between 10MB and 50MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_10_50
+
+  http_3_upload_throughput_50_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/3 request size between 50MB and 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_50_100
+
+  http_3_upload_throughput_100:
+    type: custom_distribution
+    unit: mbps
+    range_min: 0
+    range_max: 5000
+    bucket_count: 100
+    histogram_type: exponential
+    description: >
+     The upload throughput for http/3 request size larger than 100MB. Measured in megabits per second, Mbps.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866739
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858256#c2
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - necko@mozilla.com
+      - kershaw@mozilla.com
+    expires: never
+    telemetry_mirror: HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_100
+
+  residual_cache_folder_count:
+    type: counter
+    description: >
+      Counts how often we find a cache folder that wasn't purged
+      at shutdown by a background task process.
+    bugs:
+      - https://bugzilla.mozilla.org/1848542
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1848542
+    notification_emails:
+      - vgosu@mozilla.com
+    expires: 136
+
+  residual_cache_folder_removal:
+    type: labeled_counter
+    description: >
+      Counts how often succeed/fail in removing cache folder
+      that wasn't purged at shutdown
+    bugs:
+      - https://bugzilla.mozilla.org/1848542
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1848542
+    notification_emails:
+      - vgosu@mozilla.com
+    expires: 136
+    labels:
+      - success
+      - failure
+
+  trr_request_count:
+    type: labeled_counter
+    description: >
+      The count of successful TRR requests keyed by regular/private browsing
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866245
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1866245
+    notification_emails:
+      - vgosu@mozilla.com
+      - necko@mozilla.com
+    expires: 130
+    labels:
+      - regular
+      - private

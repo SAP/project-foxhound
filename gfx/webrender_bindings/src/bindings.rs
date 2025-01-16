@@ -2019,6 +2019,21 @@ pub extern "C" fn wr_transaction_set_is_transform_async_zooming(
 }
 
 #[no_mangle]
+pub extern "C" fn wr_transaction_add_minimap_data(
+  txn: &mut Transaction,
+  pipeline_id: WrPipelineId,
+  scroll_id: u64,
+  minimap_data: MinimapData
+) {
+  // FIXME: It would be a nice simplification (to both this function and
+  // wr_transaction_scroll_layer) to expose ExternalScrollId to C++ code
+  // and let it pass it in as a single argument (which on the C++ side
+  // we can construct from a ScrollableLayerGuid).
+  let scroll_id = ExternalScrollId(scroll_id, pipeline_id);
+  txn.set_minimap_data(scroll_id, minimap_data);
+}
+
+#[no_mangle]
 pub extern "C" fn wr_transaction_set_quality_settings(txn: &mut Transaction, force_subpixel_aa_where_possible: bool) {
     txn.set_quality_settings(QualitySettings {
         force_subpixel_aa_where_possible,
@@ -2049,13 +2064,30 @@ pub extern "C" fn wr_resource_updates_add_blob_image(
     bytes: &mut WrVecU8,
     visible_rect: DeviceIntRect,
 ) {
+    // If we're at risk of generating an excessive number of tiles, try making
+    // them larger so as to reduce the total number. This helps avoid swamping
+    // the Moz2dBlobRasterizer with too many parallel requests.
+    const TILE_COUNT_LIMIT: i64 = 8192;
+    const TILE_SIZE_LIMIT: u16 = 2048;
+    let mut adjusted = tile_size;
+    // Rather than some tricky computation involving the image dimensions, just
+    // keep doubling tile_size until the estimated count is reasonable, or size
+    // gets too big. The size limit means this loop won't execute more than a
+    // handful of times even in extreme cases.
+    while adjusted < TILE_SIZE_LIMIT
+        && ((descriptor.height / adjusted as i32 + 1) as i64 * (descriptor.width / adjusted as i32 + 1) as i64)
+            > TILE_COUNT_LIMIT
+    {
+        adjusted = adjusted * 2;
+    }
+
     txn.add_blob_image(
         image_key,
         descriptor.into(),
         Arc::new(bytes.flush_into_vec()),
         visible_rect,
-        if descriptor.format == ImageFormat::BGRA8 {
-            Some(tile_size)
+        if descriptor.format == ImageFormat::BGRA8 || adjusted > tile_size {
+            Some(adjusted)
         } else {
             None
         },

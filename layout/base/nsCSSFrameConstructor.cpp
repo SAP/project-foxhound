@@ -129,6 +129,7 @@ using namespace mozilla::dom;
 nsIFrame* NS_NewHTMLCanvasFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsIFrame* NS_NewHTMLVideoFrame(PresShell* aPresShell, ComputedStyle* aStyle);
+nsIFrame* NS_NewHTMLAudioFrame(PresShell* aPresShell, ComputedStyle* aStyle);
 
 nsContainerFrame* NS_NewSVGOuterSVGFrame(PresShell* aPresShell,
                                          ComputedStyle* aStyle);
@@ -265,7 +266,7 @@ static void AssertAnonymousFlexOrGridItemParent(const nsIFrame* aChild,
  * needs to terminate it).
  */
 static bool IsInlineFrame(const nsIFrame* aFrame) {
-  return aFrame->IsFrameOfType(nsIFrame::eLineParticipant);
+  return aFrame->IsLineParticipant();
 }
 
 /**
@@ -284,7 +285,7 @@ static inline bool IsDisplayContents(const nsIContent* aContent) {
  * frame being used for SVG text.
  */
 static bool IsFrameForSVG(const nsIFrame* aFrame) {
-  return aFrame->IsFrameOfType(nsIFrame::eSVG) || aFrame->IsInSVGTextSubtree();
+  return aFrame->IsSVGFrame() || aFrame->IsInSVGTextSubtree();
 }
 
 static bool IsLastContinuationForColumnContent(const nsIFrame* aFrame) {
@@ -300,8 +301,7 @@ static bool IsLastContinuationForColumnContent(const nsIFrame* aFrame) {
  * lower-level descendents inside them, of course).
  */
 static bool ShouldSuppressFloatingOfDescendants(nsIFrame* aFrame) {
-  return aFrame->IsFlexOrGridContainer() ||
-         aFrame->IsFrameOfType(nsIFrame::eMathML);
+  return aFrame->IsFlexOrGridContainer() || aFrame->IsMathMLFrame();
 }
 
 // Return true if column-span descendants should be suppressed under aFrame's
@@ -320,7 +320,7 @@ static bool ShouldSuppressColumnSpanDescendants(nsIFrame* aFrame) {
   }
 
   if (!aFrame->IsBlockFrameOrSubclass() ||
-      aFrame->HasAnyStateBits(NS_BLOCK_FLOAT_MGR | NS_FRAME_OUT_OF_FLOW) ||
+      aFrame->HasAnyStateBits(NS_BLOCK_BFC_STATE_BITS | NS_FRAME_OUT_OF_FLOW) ||
       aFrame->IsFixedPosContainingBlock()) {
     // Need to suppress column-span if we:
     // - Are a different block formatting context,
@@ -1551,8 +1551,12 @@ void nsCSSFrameConstructor::CreateGeneratedContent(
     }
 
     case Type::String: {
-      RefPtr text = CreateGenConTextNode(
-          aState, NS_ConvertUTF8toUTF16(item.AsString().AsString()), nullptr);
+      const auto string = item.AsString().AsString();
+      if (string.IsEmpty()) {
+        return;
+      }
+      RefPtr text =
+          CreateGenConTextNode(aState, NS_ConvertUTF8toUTF16(string), nullptr);
       aAddChild(text);
       return;
     }
@@ -2325,7 +2329,7 @@ static inline bool NeedFrameFor(const nsFrameConstructorState& aState,
   // white-space, where we know we'll be dropping them all anyway, and involve
   // an extra walk down the frame construction item list.
   auto excludesIgnorableWhitespace = [](nsIFrame* aParentFrame) {
-    return aParentFrame->IsFrameOfType(nsIFrame::eMathML);
+    return aParentFrame->IsMathMLFrame();
   };
   if (!aParentFrame || !excludesIgnorableWhitespace(aParentFrame) ||
       aParentFrame->IsGeneratedContentFrame() || !aChildContent->IsText()) {
@@ -2581,9 +2585,9 @@ nsIFrame* nsCSSFrameConstructor::ConstructDocElementFrame(
     // Still need to process the child content
     nsFrameList childList;
 
-    NS_ASSERTION(!contentFrame->IsBlockFrameOrSubclass() &&
-                     !contentFrame->IsFrameOfType(nsIFrame::eSVG),
-                 "Only XUL frames should reach here");
+    NS_ASSERTION(
+        !contentFrame->IsBlockFrameOrSubclass() && !contentFrame->IsSVGFrame(),
+        "Only XUL frames should reach here");
 
     nsFrameConstructorSaveState floatSaveState;
     state.MaybePushFloatContainingBlock(contentFrame, floatSaveState);
@@ -3011,9 +3015,8 @@ nsIFrame* nsCSSFrameConstructor::ConstructSelectFrame(
     // through anonymous content. The drop-down list's frame is created
     // explicitly. The combobox frame shares its content with the drop-down
     // list.
-    nsFrameState flags = NS_BLOCK_FLOAT_MGR;
     nsComboboxControlFrame* comboboxFrame =
-        NS_NewComboboxControlFrame(mPresShell, computedStyle, flags);
+        NS_NewComboboxControlFrame(mPresShell, computedStyle);
 
     // Save the history state so we don't restore during construction
     // since the complete tree is required before we restore.
@@ -3085,7 +3088,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructSelectFrame(
       NS_NewListControlFrame(mPresShell, computedStyle);
 
   nsContainerFrame* scrolledFrame =
-      NS_NewSelectsAreaFrame(mPresShell, computedStyle, NS_BLOCK_FLOAT_MGR);
+      NS_NewSelectsAreaFrame(mPresShell, computedStyle);
 
   // ******* this code stolen from Initialze ScrollFrame ********
   // please adjust this code to use BuildScrollFrame.
@@ -3511,7 +3514,7 @@ nsCSSFrameConstructor::FindHTMLData(const Element& aElement,
         PseudoStyleType::buttonContent}},
       SIMPLE_TAG_CHAIN(canvas, nsCSSFrameConstructor::FindCanvasData),
       SIMPLE_TAG_CREATE(video, NS_NewHTMLVideoFrame),
-      SIMPLE_TAG_CREATE(audio, NS_NewHTMLVideoFrame),
+      SIMPLE_TAG_CREATE(audio, NS_NewHTMLAudioFrame),
       SIMPLE_TAG_CREATE(progress, NS_NewProgressFrame),
       SIMPLE_TAG_CREATE(meter, NS_NewMeterFrame),
       SIMPLE_TAG_CHAIN(details, nsCSSFrameConstructor::FindDetailsData),
@@ -3968,7 +3971,7 @@ void nsCSSFrameConstructor::ConstructFrameFromItemInternal(
     }
   }
 
-  NS_ASSERTION(newFrame->IsFrameOfType(nsIFrame::eLineParticipant) ==
+  NS_ASSERTION(newFrame->IsLineParticipant() ==
                    ((bits & FCDATA_IS_LINE_PARTICIPANT) != 0),
                "Incorrectly set FCDATA_IS_LINE_PARTICIPANT bits");
 
@@ -4600,7 +4603,7 @@ nsIFrame* nsCSSFrameConstructor::ConstructNonScrollableBlock(
        aDisplay->DisplayInside() == StyleDisplayInside::FlowRoot ||
        clipPaginatedOverflow) &&
       !aParentFrame->IsInSVGTextSubtree()) {
-    flags = NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS;
+    flags = NS_BLOCK_STATIC_BFC;
     if (clipPaginatedOverflow) {
       flags |= NS_BLOCK_CLIP_PAGINATED_OVERFLOW;
     }
@@ -5574,7 +5577,7 @@ nsContainerFrame* nsCSSFrameConstructor::GetAbsoluteContainingBlock(
   // Starting with aFrame, look for a frame that is absolutely positioned or
   // relatively positioned (and transformed, if aType is FIXED)
   for (nsIFrame* frame = aFrame; frame; frame = frame->GetParent()) {
-    if (frame->IsFrameOfType(nsIFrame::eMathML)) {
+    if (frame->IsMathMLFrame()) {
       // If it's mathml, bail out -- no absolute positioning out from inside
       // mathml frames.  Note that we don't make this part of the loop
       // condition because of the stuff at the end of this method...
@@ -7468,7 +7471,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     nsIFrame* possibleMathMLAncestor = parentType == LayoutFrameType::Block
                                            ? parentFrame->GetParent()
                                            : parentFrame;
-    if (possibleMathMLAncestor->IsFrameOfType(nsIFrame::eMathML)) {
+    if (possibleMathMLAncestor->IsMathMLFrame()) {
       LAYOUT_PHASE_TEMP_EXIT();
       RecreateFramesForContent(parentFrame->GetContent(), InsertionKind::Async);
       LAYOUT_PHASE_TEMP_REENTER();
@@ -8431,14 +8434,13 @@ void nsCSSFrameConstructor::UpdateTableCellSpans(nsIContent* aContent) {
 static nsIContent* GetTopmostMathMLElement(nsIContent* aMathMLContent) {
   MOZ_ASSERT(aMathMLContent->IsMathMLElement());
   MOZ_ASSERT(aMathMLContent->GetPrimaryFrame());
-  MOZ_ASSERT(
-      aMathMLContent->GetPrimaryFrame()->IsFrameOfType(nsIFrame::eMathML));
+  MOZ_ASSERT(aMathMLContent->GetPrimaryFrame()->IsMathMLFrame());
   nsIContent* root = aMathMLContent;
 
   for (nsIContent* parent = aMathMLContent->GetFlattenedTreeParent(); parent;
        parent = parent->GetFlattenedTreeParent()) {
     nsIFrame* frame = parent->GetPrimaryFrame();
-    if (!frame || !frame->IsFrameOfType(nsIFrame::eMathML)) {
+    if (!frame || !frame->IsMathMLFrame()) {
       break;
     }
     root = parent;
@@ -8508,7 +8510,7 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
   }
 
   nsIFrame* frame = aContent->GetPrimaryFrame();
-  if (frame && frame->IsFrameOfType(nsIFrame::eMathML)) {
+  if (frame && frame->IsMathMLFrame()) {
     // Reframe the topmost MathML element to prevent exponential blowup
     // (see bug 397518).
     aContent = GetTopmostMathMLElement(aContent);
@@ -9330,7 +9332,7 @@ static bool FrameWantsToBeInAnonymousItem(const nsIFrame* aContainerFrame,
 
   // Any line-participant frames (e.g. text) definitely want to be wrapped in
   // an anonymous flex/grid item.
-  if (aFrame->IsFrameOfType(nsIFrame::eLineParticipant)) {
+  if (aFrame->IsLineParticipant()) {
     return true;
   }
 
@@ -10029,7 +10031,7 @@ nsFirstLetterFrame* nsCSSFrameConstructor::CreateFloatingLetterFrame(
   MOZ_ASSERT(aParentStyle);
 
   nsFirstLetterFrame* letterFrame =
-      NS_NewFirstLetterFrame(mPresShell, aComputedStyle);
+      NS_NewFloatingFirstLetterFrame(mPresShell, aComputedStyle);
   // We don't want to use a text content for a non-text frame (because we want
   // its primary frame to be a text frame).
   nsIContent* letterContent = aParentFrame->GetContent();
@@ -10739,7 +10741,7 @@ nsBlockFrame* nsCSSFrameConstructor::BeginBuildingColumns(
   aColumnContent->SetComputedStyleWithoutNotification(blockStyle);
   InitAndRestoreFrame(aState, aContent, columnSet, aColumnContent);
   aColumnContent->AddStateBits(NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR |
-                               NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS);
+                               NS_BLOCK_STATIC_BFC);
 
   // Set up the parent-child chain.
   SetInitialSingleChild(columnSetWrapper, columnSet);
@@ -11276,7 +11278,7 @@ bool nsCSSFrameConstructor::WipeInsertionParent(nsContainerFrame* aFrame) {
 
   // FIXME(emilio): This looks terribly inefficient if you insert elements deep
   // in a MathML subtree.
-  if (aFrame->IsFrameOfType(nsIFrame::eMathML)) {
+  if (aFrame->IsMathMLFrame()) {
     TRACE("MathML");
     RecreateFramesForContent(aFrame->GetContent(), InsertionKind::Async);
     return true;

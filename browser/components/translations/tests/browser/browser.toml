@@ -41,6 +41,12 @@ support-files = [
 
 ["browser_translations_panel_engine_destroy_pending.js"]
 
+["browser_translations_panel_close_panel_never_translate_language_with_translations_active.js"]
+
+["browser_translations_panel_close_panel_never_translate_language_with_translations_inactive.js"]
+
+["browser_translations_panel_close_panel_never_translate_site.js"]
+
 ["browser_translations_panel_engine_unsupported.js"]
 
 ["browser_translations_panel_engine_unsupported_lang.js"]
@@ -63,12 +69,23 @@ skip-if = true
 ["browser_translations_panel_never_translate_site_manual.js"]
 
 ["browser_translations_panel_retry.js"]
+skip-if = ["os == 'linux' && !debug"] # Bug 1863227
 
 ["browser_translations_panel_settings_unsupported_lang.js"]
 
 ["browser_translations_panel_switch_languages.js"]
 
 ["browser_translations_reader_mode.js"]
+
+["browser_translations_select_context_menu_feature_disabled.js"]
+
+["browser_translations_select_context_menu_with_full_page_translations_active.js"]
+
+["browser_translations_select_context_menu_with_hyperlink.js"]
+
+["browser_translations_select_context_menu_with_no_text_selected.js"]
+
+["browser_translations_select_context_menu_with_text_selected.js"]
 
 ["browser_translations_telemetry_firstrun_auto_translate.js"]
 

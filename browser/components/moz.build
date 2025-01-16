@@ -29,6 +29,8 @@ with Files("controlcenter/**"):
 DIRS += [
     "about",
     "aboutlogins",
+    "aboutwelcome",
+    "asrouter",
     "attribution",
     "contentanalysis",
     "contextualidentity",
@@ -59,6 +61,7 @@ DIRS += [
     "shell",
     "shopping",
     "syncedtabs",
+    "tabpreview",
     "tabunloader",
     "textrecognition",
     "translations",
@@ -109,4 +112,6 @@ if CONFIG["MOZ_UPDATER"]:
         "tests/browser/whats_new_page/browser.toml",
     ]
 
-XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.ini"]
+MARIONETTE_MANIFESTS += ["tests/marionette/manifest.toml"]
+
+XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.toml"]

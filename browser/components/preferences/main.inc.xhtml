@@ -110,6 +110,9 @@
               preference="browser.taskbar.previews.enable"/>
 #endif
 
+    <checkbox id="tabPreviewShowThumbnails" data-l10n-id="settings-tabs-show-image-in-preview"
+              preference="browser.tabs.cardPreview.showThumbnails" hidden="true"/>
+
     <vbox id="browserContainersbox" hidden="true">
       <hbox id="browserContainersExtensionContent"
             align="center" class="extension-controlled info-box-container">
@@ -542,10 +545,10 @@
                 is="highlightable-button"
                 disabled="true"/>
       </hbox>
-      <hbox id="downloading" align="start" data-l10n-id="settings-update-downloading" data-l10n-args='{"transfer":""}'>
+      <description id="downloading" data-l10n-id="settings-update-downloading" data-l10n-args='{"transfer":""}'>
         <html:img class="update-throbber" data-l10n-name="icon"/>
         <label data-l10n-name="download-status"/>
-      </hbox>
+      </description>
       <hbox id="applying" align="start">
         <html:img class="update-throbber"/>
         <label data-l10n-id="update-applying"/>
@@ -644,11 +647,6 @@
       </description>
     </hbox>
   </vbox>
-#ifdef MOZ_MAINTENANCE_SERVICE
-  <checkbox id="useService"
-            data-l10n-id="update-application-use-service"
-            preference="app.update.service.enabled"/>
-#endif
 #ifdef NIGHTLY_BUILD
   <checkbox id="showUpdatePrompts"
             data-l10n-id="update-application-suppress-prompts"

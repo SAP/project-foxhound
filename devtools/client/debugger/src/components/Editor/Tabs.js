@@ -2,10 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { PureComponent } from "react";
-import { div, ul, li, span } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../utils/connect";
+import React, { PureComponent } from "devtools/client/shared/vendor/react";
+import {
+  div,
+  ul,
+  li,
+  span,
+} from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import {
   getSourceTabs,
@@ -14,22 +19,20 @@ import {
   getIsPaused,
   getCurrentThread,
   getBlackBoxRanges,
-} from "../../selectors";
+} from "../../selectors/index";
 import { isVisible } from "../../utils/ui";
 
 import { getHiddenTabs } from "../../utils/tabs";
 import { getFilename, isPretty, getFileURL } from "../../utils/source";
-import actions from "../../actions";
-
-import "./Tabs.css";
+import actions from "../../actions/index";
 
 import Tab from "./Tab";
-import { PaneToggleButton } from "../shared/Button";
+import { PaneToggleButton } from "../shared/Button/index";
 import Dropdown from "../shared/Dropdown";
 import AccessibleImage from "../shared/AccessibleImage";
 import CommandBar from "../SecondaryPanes/CommandBar";
 
-const { debounce } = require("devtools/shared/debounce");
+const { debounce } = require("resource://devtools/shared/debounce.js");
 
 function haveTabSourcesChanged(tabSources, prevTabSources) {
   if (tabSources.length !== prevTabSources.length) {

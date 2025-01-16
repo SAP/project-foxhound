@@ -91,6 +91,26 @@ shopping.settings:
       - metrics
     telemetry_mirror: SHOPPING_DISABLED_ADS
 
+  auto_open_user_disabled:
+    type: boolean
+    lifetime: application
+    description: |
+      Indicates if the user has manually disabled the auto open sidebar feature.
+      Set during shopping component init and updated when changed in browser.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879119
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879119
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - metrics
+    telemetry_mirror: SHOPPING_AUTO_OPEN_USER_DISABLED
+
 shopping:
   surface_displayed:
     type: event
@@ -153,10 +173,10 @@ shopping:
     extra_keys:
       action:
         description: >
-          Whether the button was used to expand or collapse the quality 
+          Whether the button was used to expand or collapse the quality
           explainer card.
           Possible values are `expanded` and `collapsed`.
-        type: string    
+        type: string
 
   surface_settings_expand_clicked:
     type: event
@@ -201,7 +221,7 @@ shopping:
       source:
         description: >
           The source of the close event. For example, whether the shopping
-          sidebar was closed with the close button or the icon in the 
+          sidebar was closed with the close button or the icon in the
           address bar.
         type: string
 
@@ -344,7 +364,7 @@ shopping:
     type: event
     description: |
       Review reliability was not available for display in the shopping side
-      bar. This metric does not contain any information about the product 
+      bar. This metric does not contain any information about the product
       the user is viewing.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849243
@@ -363,7 +383,7 @@ shopping:
     type: event
     description: |
       The user clicked to analyze reviews in the case the reliability rating
-      was not available for display in the shopping side bar. This metric 
+      was not available for display in the shopping side bar. This metric
       does not contain any information about the product the user is viewing.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849244
@@ -384,7 +404,7 @@ shopping:
       The user clicked the 'Learn More' link in the Shopping onboarding
       experience.
     bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1851820 
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1851820
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1851820#c2
     data_sensitivity:
@@ -560,6 +580,23 @@ shopping:
     send_in_pings:
       - events
 
+  surface_ads_placement:
+    type: event
+    description: |
+      An ad unit was fetched successfully.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1872872
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1872872
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
   surface_no_ads_available:
     type: event
     description: |
@@ -622,3 +659,80 @@ shopping:
           Whether the toggle was used to enable or disable ads. Possible values
           are `enabled` and `disabled`.
         type: string
+
+  surface_opt_out_button_clicked:
+    type: event
+    description: |
+      The user clicked the button in the settings panel to turn off the shopping experience.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1869413
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1869413
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_auto_open_setting_toggled:
+    type: event
+    description: |
+      The user clicked the settings toggle to enable or disable auto-open in the
+      sidebar settings component.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879125
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879125
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      action:
+        description: >
+          Whether the toggle was used to enable or disable auto-open. Possible values
+          are `enabled` and `disabled`.
+        type: string
+
+  surface_no_thanks_button_clicked:
+    type: event
+    description: |
+      The user clicks the 'No thanks' button when asked if they want to
+      disable auto-open behavior.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_yes_keep_closed_button_clicked:
+    type: event
+    description: |
+      The user clicks the 'Yes, keep closed' button when asked if they want to
+      disable auto-open behavior.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
+    data_sensitivity:
+      - interaction
+    expires: 134
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events

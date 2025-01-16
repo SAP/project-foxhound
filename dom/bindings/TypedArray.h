@@ -18,6 +18,7 @@
 #include "js/RootingAPI.h"              // JS::Rooted
 #include "js/ScalarType.h"              // JS::Scalar::Type
 #include "js/SharedArrayBuffer.h"
+#include "js/friend/ErrorMessages.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Buffer.h"
 #include "mozilla/ErrorResult.h"
@@ -26,6 +27,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SpiderMonkeyInterface.h"
+#include "nsIGlobalObject.h"
 #include "nsWrapperCache.h"
 #include "nsWrapperCacheInlines.h"
 
@@ -637,8 +639,93 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
   [[nodiscard]] ProcessReturnType<Processor> ProcessFixedData(
       Processor&& aProcessor) const {
     mozilla::dom::AutoJSAPI jsapi;
-    if (!jsapi.Init(mImplObj) ||
-        !JS::EnsureNonInlineArrayBufferOrView(jsapi.cx(), mImplObj)) {
+    if (!jsapi.Init(mImplObj)) {
+#if defined(EARLY_BETA_OR_EARLIER)
+      if constexpr (std::is_same_v<ArrayT, JS::ArrayBufferView>) {
+        if (!mImplObj) {
+          MOZ_CRASH("Null mImplObj");
+        }
+        if (!xpc::NativeGlobal(mImplObj)) {
+          MOZ_CRASH("Null xpc::NativeGlobal(mImplObj)");
+        }
+        if (!xpc::NativeGlobal(mImplObj)->GetGlobalJSObject()) {
+          MOZ_CRASH("Null xpc::NativeGlobal(mImplObj)->GetGlobalJSObject()");
+        }
+      }
+#endif
+      MOZ_CRASH("Failed to get JSContext");
+    }
+#if defined(EARLY_BETA_OR_EARLIER)
+    if constexpr (std::is_same_v<ArrayT, JS::ArrayBufferView>) {
+      JS::Rooted<JSObject*> view(jsapi.cx(),
+                                 js::UnwrapArrayBufferView(mImplObj));
+      if (!view) {
+        if (JSObject* unwrapped = js::CheckedUnwrapStatic(mImplObj)) {
+          if (!js::UnwrapArrayBufferView(unwrapped)) {
+            MOZ_CRASH(
+                "Null "
+                "js::UnwrapArrayBufferView(js::CheckedUnwrapStatic(mImplObj))");
+          }
+          view = unwrapped;
+        } else {
+          MOZ_CRASH("Null js::CheckedUnwrapStatic(mImplObj)");
+        }
+      }
+      if (!JS::IsArrayBufferViewShared(view)) {
+        JSAutoRealm ar(jsapi.cx(), view);
+        bool unused;
+        bool noBuffer;
+        {
+          JSObject* buffer =
+              JS_GetArrayBufferViewBuffer(jsapi.cx(), view, &unused);
+          noBuffer = !buffer;
+        }
+        if (noBuffer) {
+          if (JS_IsTypedArrayObject(view)) {
+            JS::Value bufferSlot =
+                JS::GetReservedSlot(view, /* BUFFER_SLOT */ 0);
+            if (bufferSlot.isNull()) {
+              MOZ_CRASH("TypedArrayObject with bufferSlot containing null");
+            } else if (bufferSlot.isBoolean()) {
+              // If we're here then TypedArrayObject::ensureHasBuffer must have
+              // failed in the call to JS_GetArrayBufferViewBuffer.
+              if (JS_IsThrowingOutOfMemory(jsapi.cx())) {
+                MOZ_CRASH("We did run out of memory!");
+              } else if (JS_IsExceptionPending(jsapi.cx())) {
+                JS::Rooted<JS::Value> exn(jsapi.cx());
+                if (JS_GetPendingException(jsapi.cx(), &exn) &&
+                    exn.isObject()) {
+                  JS::Rooted<JSObject*> exnObj(jsapi.cx(), &exn.toObject());
+                  JSErrorReport* err =
+                      JS_ErrorFromException(jsapi.cx(), exnObj);
+                  if (err && err->errorNumber == JSMSG_BAD_ARRAY_LENGTH) {
+                    MOZ_CRASH("Length was too big");
+                  }
+                }
+              }
+              // Did ArrayBufferObject::createBufferAndData fail without OOM?
+              MOZ_CRASH("TypedArrayObject with bufferSlot containing boolean");
+            } else if (bufferSlot.isObject()) {
+              if (!bufferSlot.toObjectOrNull()) {
+                MOZ_CRASH(
+                    "TypedArrayObject with bufferSlot containing null object");
+              } else {
+                MOZ_CRASH(
+                    "JS_GetArrayBufferViewBuffer failed but bufferSlot "
+                    "contains a non-null object");
+              }
+            } else {
+              MOZ_CRASH(
+                  "TypedArrayObject with bufferSlot containing weird value");
+            }
+          } else {
+            MOZ_CRASH("JS_GetArrayBufferViewBuffer failed for DataViewObject");
+          }
+        }
+      }
+    }
+#endif
+    if (!JS::EnsureNonInlineArrayBufferOrView(jsapi.cx(), mImplObj)) {
       MOZ_CRASH("small oom when moving inline data out-of-line");
     }
     LengthPinner pinner(this);
@@ -705,7 +792,7 @@ struct TypedArray : public TypedArray_base<ArrayT> {
                                  Span<const element_type> data,
                                  ErrorResult& error) {
     ArrayT array = CreateCommon(cx, creator, data.Length(), error);
-    if (!error.Failed()) {
+    if (!error.Failed() && !data.IsEmpty()) {
       CopyFrom(cx, data, array);
     }
     return array.asObject();
@@ -714,7 +801,7 @@ struct TypedArray : public TypedArray_base<ArrayT> {
   static inline JSObject* Create(JSContext* cx, Span<const element_type> data,
                                  ErrorResult& error) {
     ArrayT array = CreateCommon(cx, data.Length(), error);
-    if (!error.Failed()) {
+    if (!error.Failed() && !data.IsEmpty()) {
       CopyFrom(cx, data, array);
     }
     return array.asObject();

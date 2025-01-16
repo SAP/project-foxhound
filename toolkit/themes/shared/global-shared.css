@@ -80,7 +80,7 @@
   }
 }
 
-:is(menupopup, panel)[type=arrow] {
+:is(menupopup, panel):where([type=arrow]) {
   --panel-background: var(--arrowpanel-background);
   --panel-color: var(--arrowpanel-color);
   --panel-border-color: var(--arrowpanel-border-color);
@@ -225,11 +225,18 @@ button.text-link .button-text {
   color: var(--button-color, inherit);
   background-color: var(--button-bgcolor, color-mix(in srgb, currentColor 13%, transparent));
   padding: .45em 1em;
-  min-height: 32px;
+  min-height: var(--size-item-large);
   font-weight: 600;
   min-width: 0;
   margin-inline: 8px 0;
   margin-bottom: 0;
+
+  &.small-button {
+    margin: 0;
+    min-height: var(--size-item-medium);
+    font-size: var(--font-size-small);
+    align-items: center;
+  }
 
   &[disabled] {
     opacity: 0.4;
@@ -247,7 +254,8 @@ button.text-link .button-text {
     &:hover:active {
       background-color: var(--button-active-bgcolor, color-mix(in srgb, currentColor 30%, transparent));
     }
-    &[default] {
+    &[default],
+    &.primary {
       color: var(--button-primary-color);
       background-color: var(--button-primary-bgcolor);
 
@@ -321,6 +329,11 @@ button.text-link .button-text {
    * backgrounds, so we make sure to apply it on top of the default background. */
   background-image: var(--content-select-background-image, none);
   background-color: -moz-Combobox;
+}
+
+/* Full width separator in select */
+#ContentSelectDropdown menuseparator {
+  padding-inline: 0;
 }
 
 /* Indent options in optgroups */

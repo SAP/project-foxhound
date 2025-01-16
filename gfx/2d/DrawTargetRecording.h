@@ -11,6 +11,11 @@
 #include "DrawEventRecorder.h"
 
 namespace mozilla {
+namespace layers {
+class CanvasDrawEventRecorder;
+struct RemoteTextureOwnerId;
+}  // namespace layers
+
 namespace gfx {
 
 class DrawTargetRecording : public DrawTarget {
@@ -18,6 +23,10 @@ class DrawTargetRecording : public DrawTarget {
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawTargetRecording, override)
   DrawTargetRecording(DrawEventRecorder* aRecorder, DrawTarget* aDT,
                       IntRect aRect, bool aHasData = false);
+  DrawTargetRecording(layers::CanvasDrawEventRecorder* aRecorder,
+                      int64_t aTextureId,
+                      const layers::RemoteTextureOwnerId& aTextureOwnerId,
+                      DrawTarget* aDT, const IntSize& aSize);
 
   ~DrawTargetRecording();
 
@@ -72,6 +81,11 @@ class DrawTargetRecording : public DrawTarget {
                                      const Point& aDest,
                                      const ShadowOptions& aShadow,
                                      CompositionOp aOperator) override;
+
+  virtual void DrawShadow(const Path* aPath, const Pattern& aPattern,
+                          const ShadowOptions& aShadow,
+                          const DrawOptions& aOptions,
+                          const StrokeOptions* aStrokeOptions) override;
 
   /*
    * Clear a rectangle on the draw target to transparent black. This will
@@ -150,11 +164,19 @@ class DrawTargetRecording : public DrawTarget {
                     const DrawOptions& aOptions = DrawOptions()) override;
 
   /*
-   * Fill a series of clyphs on the draw target with a certain source pattern.
+   * Fill a series of glyphs on the draw target with a certain source pattern.
    */
   virtual void FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
                           const Pattern& aPattern,
                           const DrawOptions& aOptions = DrawOptions()) override;
+
+  /**
+   * Stroke a series of glyphs on the draw target with a certain source pattern.
+   */
+  virtual void StrokeGlyphs(
+      ScaledFont* aFont, const GlyphBuffer& aBuffer, const Pattern& aPattern,
+      const StrokeOptions& aStrokeOptions = StrokeOptions(),
+      const DrawOptions& aOptions = DrawOptions()) override;
 
   /*
    * This takes a source pattern and a mask, and composites the source pattern
@@ -330,6 +352,8 @@ class DrawTargetRecording : public DrawTarget {
    */
   virtual void SetTransform(const Matrix& aTransform) override;
 
+  virtual void SetPermitSubpixelAA(bool aPermitSubpixelAA) override;
+
   /* Tries to get a native surface for a DrawTarget, this may fail if the
    * draw target cannot convert to this surface type.
    */
@@ -356,9 +380,21 @@ class DrawTargetRecording : public DrawTarget {
   already_AddRefed<PathRecording> EnsurePathStored(const Path* aPath);
   void EnsurePatternDependenciesStored(const Pattern& aPattern);
 
+  void DrawGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
+                  const Pattern& aPattern,
+                  const DrawOptions& aOptions = DrawOptions(),
+                  const StrokeOptions* aStrokeOptions = nullptr);
+
   RefPtr<DrawEventRecorderPrivate> mRecorder;
   RefPtr<DrawTarget> mFinalDT;
   IntRect mRect;
+
+  struct PushedLayer {
+    explicit PushedLayer(bool aOldPermitSubpixelAA)
+        : mOldPermitSubpixelAA(aOldPermitSubpixelAA) {}
+    bool mOldPermitSubpixelAA;
+  };
+  std::vector<PushedLayer> mPushedLayers;
 };
 
 }  // namespace gfx

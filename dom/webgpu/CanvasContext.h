@@ -78,6 +78,9 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
     return nullptr;
   }
 
+  Maybe<layers::SurfaceDescriptor> GetFrontBuffer(WebGLFramebufferJS*,
+                                                  const bool) override;
+
  public:
   void GetCanvas(dom::OwningHTMLCanvasElementOrOffscreenCanvas&) const;
 
@@ -86,13 +89,15 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
 
   RefPtr<Texture> GetCurrentTexture(ErrorResult& aRv);
   void MaybeQueueSwapChainPresent();
-  void SwapChainPresent();
+  Maybe<layers::SurfaceDescriptor> SwapChainPresent();
   void ForceNewFrame();
+  void InvalidateCanvasContent();
 
  private:
   gfx::IntSize mCanvasSize;
   std::unique_ptr<dom::GPUCanvasConfiguration> mConfig;
   bool mPendingSwapChainPresent = false;
+  bool mWaitingCanvasRendererInitialized = false;
 
   RefPtr<WebGPUChild> mBridge;
   RefPtr<Texture> mTexture;

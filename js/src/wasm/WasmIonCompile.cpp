@@ -32,12 +32,12 @@
 #include "jit/ShuffleAnalysis.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "wasm/WasmBaselineCompile.h"
+#include "wasm/WasmBuiltinModule.h"
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmCodegenTypes.h"
 #include "wasm/WasmGC.h"
 #include "wasm/WasmGcObject.h"
 #include "wasm/WasmGenerator.h"
-#include "wasm/WasmIntrinsic.h"
 #include "wasm/WasmOpIter.h"
 #include "wasm/WasmSignalHandlers.h"
 #include "wasm/WasmStubs.h"
@@ -63,18 +63,33 @@ using DefVector = Vector<MDefinition*, 8, SystemAllocPolicy>;
 using ControlInstructionVector =
     Vector<MControlInstruction*, 8, SystemAllocPolicy>;
 
+struct TryControl {
+  // Branches to bind to the try's landing pad.
+  ControlInstructionVector landingPadPatches;
+  // For `try_table`, the list of tagged catches and labels to branch to.
+  TryTableCatchVector catches;
+  // Whether this try is in the body and should catch any thrown exception.
+  bool inBody;
+
+  TryControl() : inBody(false) {}
+
+  // Reset the try control for when it is cached in FunctionCompiler.
+  void reset() {
+    landingPadPatches.clearAndFree();
+    catches.clearAndFree();
+    inBody = false;
+  }
+};
+using UniqueTryControl = UniquePtr<TryControl>;
+using VectorUniqueTryControl = Vector<UniqueTryControl, 2, SystemAllocPolicy>;
+
 struct Control {
   MBasicBlock* block;
-  // For a try-catch ControlItem, when its block's Labelkind is Try, this
-  // collects branches to later bind and create the try's landing pad.
-  ControlInstructionVector tryPadPatches;
+  UniqueTryControl tryControl;
 
-  Control() : block(nullptr) {}
-
-  explicit Control(MBasicBlock* block) : block(block) {}
-
- public:
-  void setBlock(MBasicBlock* newBlock) { block = newBlock; }
+  Control() : block(nullptr), tryControl(nullptr) {}
+  Control(Control&&) = default;
+  Control(const Control&) = delete;
 };
 
 // [SMDOC] WebAssembly Exception Handling in Ion
@@ -240,6 +255,10 @@ class FunctionCompiler {
   uint32_t loopDepth_;
   uint32_t blockDepth_;
   ControlFlowPatchVectorVector blockPatches_;
+  // Control flow patches created by `delegate` instructions that target the
+  // outermost label of this function. These will be bound to a pad that will
+  // do a rethrow in `emitBodyDelegateThrowPad`.
+  ControlInstructionVector bodyDelegatePadPatches_;
 
   // Instance pointer argument to the current function.
   MWasmParameter* instancePointer_;
@@ -247,6 +266,9 @@ class FunctionCompiler {
 
   // Reference to masm.tryNotes_
   wasm::TryNoteVector& tryNotes_;
+
+  // Cache of TryControl to minimize heap allocations
+  VectorUniqueTryControl tryControlCache_;
 
  public:
   FunctionCompiler(const ModuleEnvironment& moduleEnv, Decoder& decoder,
@@ -282,6 +304,24 @@ class FunctionCompiler {
   BytecodeOffset bytecodeOffset() const { return iter_.bytecodeOffset(); }
   BytecodeOffset bytecodeIfNotAsmJS() const {
     return moduleEnv_.isAsmJS() ? BytecodeOffset() : iter_.bytecodeOffset();
+  }
+
+  // Try to get a free TryControl from the cache, or allocate a new one.
+  [[nodiscard]] UniqueTryControl newTryControl() {
+    if (tryControlCache_.empty()) {
+      return UniqueTryControl(js_new<TryControl>());
+    }
+    UniqueTryControl tryControl = std::move(tryControlCache_.back());
+    tryControlCache_.popBack();
+    return tryControl;
+  }
+
+  // Release the TryControl to the cache.
+  void freeTryControl(UniqueTryControl&& tryControl) {
+    // Ensure that it's in a consistent state
+    tryControl->reset();
+    // Ignore any OOM, as we'll fail later
+    (void)tryControlCache_.append(std::move(tryControl));
   }
 
   [[nodiscard]] bool init() {
@@ -2359,16 +2399,19 @@ class FunctionCompiler {
     }
 
     CallSiteDesc desc(lineOrBytecode, CallSiteDesc::Symbolic);
-    auto* ins = MWasmCallUncatchable::NewBuiltinInstanceMethodCall(
+    MInstruction* ins;
+    ins = MWasmCallUncatchable::NewBuiltinInstanceMethodCall(
         alloc(), desc, builtin.identity, builtin.failureMode, call.instanceArg_,
         call.regArgs_, StackArgAreaSizeUnaligned(builtin));
     if (!ins) {
       return false;
     }
-
     curBlock_->add(ins);
 
-    return def ? collectUnaryCallResult(builtin.retType, def) : true;
+    if (!def) {
+      return true;
+    }
+    return collectUnaryCallResult(builtin.retType, def);
   }
 
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
@@ -2716,11 +2759,20 @@ class FunctionCompiler {
         continue;
       }
       Control& control = iter().controlItem(depth);
-      for (MControlInstruction* patch : control.tryPadPatches) {
+      if (!control.tryControl) {
+        continue;
+      }
+      for (MControlInstruction* patch : control.tryControl->landingPadPatches) {
         MBasicBlock* block = patch->block();
         if (block->loopDepth() >= loopEntry->loopDepth()) {
           fixupRedundantPhis(block);
         }
+      }
+    }
+    for (MControlInstruction* patch : bodyDelegatePadPatches_) {
+      MBasicBlock* block = patch->block();
+      if (block->loopDepth() >= loopEntry->loopDepth()) {
+        fixupRedundantPhis(block);
       }
     }
 
@@ -2937,8 +2989,16 @@ class FunctionCompiler {
 
   /********************************************************** Exceptions ***/
 
+  bool inTryBlockFrom(uint32_t fromRelativeDepth, uint32_t* relativeDepth) {
+    return iter().controlFindInnermostFrom(
+        [](LabelKind kind, const Control& control) {
+          return control.tryControl != nullptr && control.tryControl->inBody;
+        },
+        fromRelativeDepth, relativeDepth);
+  }
+
   bool inTryBlock(uint32_t* relativeDepth) {
-    return iter().controlFindInnermost(LabelKind::Try, relativeDepth);
+    return inTryBlockFrom(0, relativeDepth);
   }
 
   bool inTryCode() {
@@ -2994,9 +3054,8 @@ class FunctionCompiler {
 
   [[nodiscard]] bool addPadPatch(MControlInstruction* ins,
                                  size_t relativeTryDepth) {
-    Control& tryControl = iter().controlItem(relativeTryDepth);
-    ControlInstructionVector& padPatches = tryControl.tryPadPatches;
-    return padPatches.emplaceBack(ins);
+    Control& control = iter().controlItem(relativeTryDepth);
+    return control.tryControl->landingPadPatches.emplaceBack(ins);
   }
 
   [[nodiscard]] bool endWithPadPatch(uint32_t relativeTryDepth) {
@@ -3012,15 +3071,20 @@ class FunctionCompiler {
     }
 
     // Find where we are delegating the pad patches to.
+    ControlInstructionVector* targetPatches;
     uint32_t targetRelativeDepth;
-    if (!iter().controlFindInnermostFrom(LabelKind::Try, relativeDepth,
-                                         &targetRelativeDepth)) {
+    if (inTryBlockFrom(relativeDepth, &targetRelativeDepth)) {
+      targetPatches = &iter()
+                           .controlItem(targetRelativeDepth)
+                           .tryControl->landingPadPatches;
+    } else {
       MOZ_ASSERT(relativeDepth <= blockDepth_ - 1);
-      targetRelativeDepth = blockDepth_ - 1;
+      targetPatches = &bodyDelegatePadPatches_;
     }
+
     // Append the delegate's pad patches to the target's.
     for (MControlInstruction* ins : patches) {
-      if (!addPadPatch(ins, targetRelativeDepth)) {
+      if (!targetPatches->emplaceBack(ins)) {
         return false;
       }
     }
@@ -3066,15 +3130,15 @@ class FunctionCompiler {
   }
 
   // Create a landing pad for a try block if there are any throwing
-  // instructions.
-  [[nodiscard]] bool createTryLandingPadIfNeeded(Control& control,
-                                                 MBasicBlock** landingPad) {
+  // instructions. This is also used for the implicit rethrow landing pad used
+  // for delegate instructions that target the outermost label.
+  [[nodiscard]] bool createTryLandingPadIfNeeded(
+      ControlInstructionVector& landingPadPatches, MBasicBlock** landingPad) {
     // If there are no pad-patches for this try control, it means there are no
     // instructions in the try code that could throw an exception. In this
     // case, all the catches are dead code, and the try code ends up equivalent
     // to a plain wasm block.
-    ControlInstructionVector& patches = control.tryPadPatches;
-    if (patches.empty()) {
+    if (landingPadPatches.empty()) {
       *landingPad = nullptr;
       return true;
     }
@@ -3082,14 +3146,14 @@ class FunctionCompiler {
     // Otherwise, if there are (pad-) branches from places in the try code that
     // may throw an exception, bind these branches to a new landing pad
     // block. This is done similarly to what is done in bindBranches.
-    MControlInstruction* ins = patches[0];
+    MControlInstruction* ins = landingPadPatches[0];
     MBasicBlock* pred = ins->block();
     if (!newBlock(pred, landingPad)) {
       return false;
     }
     ins->replaceSuccessor(0, *landingPad);
-    for (size_t i = 1; i < patches.length(); i++) {
-      ins = patches[i];
+    for (size_t i = 1; i < landingPadPatches.length(); i++) {
+      ins = landingPadPatches[i];
       pred = ins->block();
       if (!(*landingPad)->addPredecessor(alloc(), pred)) {
         return false;
@@ -3098,20 +3162,129 @@ class FunctionCompiler {
     }
 
     // Set up the slots in the landing pad block.
-    if (!setupLandingPadSlots(*landingPad)) {
+    if (!setupLandingPadSlots(landingPad)) {
       return false;
     }
 
     // Clear the now bound pad patches.
-    patches.clear();
+    landingPadPatches.clear();
+    return true;
+  }
+
+  [[nodiscard]] bool createTryTableLandingPad(TryControl* tryControl) {
+    MBasicBlock* landingPad;
+    if (!createTryLandingPadIfNeeded(tryControl->landingPadPatches,
+                                     &landingPad)) {
+      return false;
+    }
+
+    // If there is no landing pad created, no exceptions were possibly thrown
+    // and we don't need to do anything here.
+    if (!landingPad) {
+      return true;
+    }
+
+    MBasicBlock* originalBlock = curBlock_;
+    curBlock_ = landingPad;
+
+    bool hadCatchAll = false;
+    for (const TryTableCatch& tryTableCatch : tryControl->catches) {
+      MOZ_ASSERT(numPushed(curBlock_) == 2);
+
+      // Handle a catch_all by jumping to the target block
+      if (tryTableCatch.tagIndex == CatchAllIndex) {
+        // Get the exception from the slots we pushed when adding
+        // control flow patches.
+        curBlock_->pop();
+        MDefinition* exception = curBlock_->pop();
+
+        // Capture the exnref value if we need to
+        DefVector values;
+        if (tryTableCatch.captureExnRef && !values.append(exception)) {
+          return false;
+        }
+
+        // Branch to the catch_all code
+        if (!br(tryTableCatch.labelRelativeDepth, values)) {
+          return false;
+        }
+
+        // Break from the loop and skip the implicit rethrow that's needed
+        // if we didn't have a catch_all
+        hadCatchAll = true;
+        break;
+      }
+
+      // Handle a tagged catch by doing a compare and branch on the tag index,
+      // jumping to a catch block if they match, or else to a fallthrough block
+      // to continue the landing pad.
+      MBasicBlock* catchBlock = nullptr;
+      MBasicBlock* fallthroughBlock = nullptr;
+      if (!newBlock(curBlock_, &catchBlock) ||
+          !newBlock(curBlock_, &fallthroughBlock)) {
+        return false;
+      }
+
+      // Get the exception and its tag from the slots we pushed when adding
+      // control flow patches.
+      MDefinition* exceptionTag = curBlock_->pop();
+      curBlock_->pop();
+
+      // Branch to the catch block if the exception's tag matches this catch
+      // block's tag.
+      MDefinition* catchTag = loadTag(tryTableCatch.tagIndex);
+      MDefinition* matchesCatchTag = compare(exceptionTag, catchTag, JSOp::Eq,
+                                             MCompare::Compare_WasmAnyRef);
+      curBlock_->end(
+          MTest::New(alloc(), matchesCatchTag, catchBlock, fallthroughBlock));
+
+      // Set up the catch block by extracting the values from the exception
+      // object.
+      curBlock_ = catchBlock;
+
+      // Remove the tag and exception slots from the block, they are no
+      // longer necessary.
+      curBlock_->pop();
+      MDefinition* exception = curBlock_->pop();
+      MOZ_ASSERT(numPushed(curBlock_) == 0);
+
+      // Extract the exception values for the catch block
+      DefVector values;
+      if (!loadExceptionValues(exception, tryTableCatch.tagIndex, &values)) {
+        return false;
+      }
+      if (tryTableCatch.captureExnRef && !values.append(exception)) {
+        return false;
+      }
+
+      if (!br(tryTableCatch.labelRelativeDepth, values)) {
+        return false;
+      }
+
+      curBlock_ = fallthroughBlock;
+    }
+
+    // If there was no catch_all, we must rethrow this exception.
+    if (!hadCatchAll) {
+      MOZ_ASSERT(numPushed(curBlock_) == 2);
+      MDefinition* tag = curBlock_->pop();
+      MDefinition* exception = curBlock_->pop();
+      MOZ_ASSERT(numPushed(curBlock_) == 0);
+
+      if (!throwFrom(exception, tag)) {
+        return false;
+      }
+    }
+
+    curBlock_ = originalBlock;
     return true;
   }
 
   // Consume the pending exception state from instance, and set up the slots
   // of the landing pad with the exception state.
-  [[nodiscard]] bool setupLandingPadSlots(MBasicBlock* landingPad) {
+  [[nodiscard]] bool setupLandingPadSlots(MBasicBlock** landingPad) {
     MBasicBlock* prevBlock = curBlock_;
-    curBlock_ = landingPad;
+    curBlock_ = *landingPad;
 
     // Load the pending exception and tag
     MInstruction* exception;
@@ -3126,18 +3299,37 @@ class FunctionCompiler {
 
     // Push the exception and its tag on the stack to make them available
     // to the landing pad blocks.
-    if (!landingPad->ensureHasSlots(2)) {
+    if (!curBlock_->ensureHasSlots(2)) {
       return false;
     }
-    landingPad->push(exception);
-    landingPad->push(tag);
+    curBlock_->push(exception);
+    curBlock_->push(tag);
+    *landingPad = curBlock_;
 
     curBlock_ = prevBlock;
     return true;
   }
 
-  [[nodiscard]] bool startTry(MBasicBlock** curBlock) {
-    *curBlock = curBlock_;
+  [[nodiscard]] bool startTry() {
+    Control& control = iter().controlItem();
+    control.block = curBlock_;
+    control.tryControl = newTryControl();
+    if (!control.tryControl) {
+      return false;
+    }
+    control.tryControl->inBody = true;
+    return startBlock();
+  }
+
+  [[nodiscard]] bool startTryTable(TryTableCatchVector&& catches) {
+    Control& control = iter().controlItem();
+    control.block = curBlock_;
+    control.tryControl = newTryControl();
+    if (!control.tryControl) {
+      return false;
+    }
+    control.tryControl->inBody = true;
+    control.tryControl->catches = std::move(catches);
     return startBlock();
   }
 
@@ -3163,8 +3355,11 @@ class FunctionCompiler {
 
   // Finish the previous block (either a try or catch block) and then setup a
   // new catch block.
-  [[nodiscard]] bool switchToCatch(Control& control, const LabelKind& fromKind,
+  [[nodiscard]] bool switchToCatch(Control& control, LabelKind fromKind,
                                    uint32_t tagIndex) {
+    // Mark this control node as being no longer in the body of the try
+    control.tryControl->inBody = false;
+
     // If there is no control block, then either:
     //   - the entry of the try block is dead code, or
     //   - there is no landing pad for the try-catch.
@@ -3184,7 +3379,8 @@ class FunctionCompiler {
     // guaranteed to happen once and only once before processing catch blocks.
     if (fromKind == LabelKind::Try) {
       MBasicBlock* padBlock = nullptr;
-      if (!createTryLandingPadIfNeeded(control, &padBlock)) {
+      if (!createTryLandingPadIfNeeded(control.tryControl->landingPadPatches,
+                                       &padBlock)) {
         return false;
       }
       // Set the control block for this try-catch to the landing pad.
@@ -3253,7 +3449,7 @@ class FunctionCompiler {
     // Remove the tag and exception slots from the block, they are no
     // longer necessary.
     curBlock_->pop();
-    curBlock_->pop();
+    exception = curBlock_->pop();
 
     // Extract the exception values for the catch block
     DefVector values;
@@ -3310,12 +3506,14 @@ class FunctionCompiler {
         // specify a relativeDepth of '1' to delegate outside of the still
         // active try block.
         uint32_t relativeDepth = 1;
-        if (!delegatePadPatches(control.tryPadPatches, relativeDepth)) {
+        if (!delegatePadPatches(control.tryControl->landingPadPatches,
+                                relativeDepth)) {
           return false;
         }
         break;
       }
       case LabelKind::Catch: {
+        MOZ_ASSERT(!control.tryControl->inBody);
         // This is a try without a catch_all, we must have a rethrow at the end
         // of the landing pad (if any).
         MBasicBlock* padBlock = control.block;
@@ -3331,9 +3529,11 @@ class FunctionCompiler {
         }
         break;
       }
-      case LabelKind::CatchAll:
+      case LabelKind::CatchAll: {
+        MOZ_ASSERT(!control.tryControl->inBody);
         // This is a try with a catch_all, and requires no special handling.
         break;
+      }
       default:
         MOZ_CRASH();
     }
@@ -3342,10 +3542,21 @@ class FunctionCompiler {
     return finishBlock(defs);
   }
 
+  [[nodiscard]] bool finishTryTable(Control& control, DefVector* defs) {
+    // Mark this control as no longer in the body of the try
+    control.tryControl->inBody = false;
+    // Create a landing pad for all of the catches
+    if (!createTryTableLandingPad(control.tryControl.get())) {
+      return false;
+    }
+    // Finish the block, joining the try and catch blocks
+    return finishBlock(defs);
+  }
+
   [[nodiscard]] bool emitBodyDelegateThrowPad(Control& control) {
     // Create a landing pad for any throwing instructions
     MBasicBlock* padBlock;
-    if (!createTryLandingPadIfNeeded(control, &padBlock)) {
+    if (!createTryLandingPadIfNeeded(bodyDelegatePadPatches_, &padBlock)) {
       return false;
     }
 
@@ -3436,6 +3647,27 @@ class FunctionCompiler {
 
     // Throw the exception
     return throwFrom(exception, tag);
+  }
+
+  [[nodiscard]] bool emitThrowRef(MDefinition* exnRef) {
+    if (inDeadCode()) {
+      return true;
+    }
+
+    // The exception must be non-null
+    if (!refAsNonNull(exnRef)) {
+      return false;
+    }
+
+    // If there is no surrounding catching block, call an instance method to
+    // throw the exception.
+    if (!emitInstanceCall1(readBytecodeOffset(), SASigThrowException, exnRef)) {
+      return false;
+    }
+    unreachableTrap();
+
+    curBlock_ = nullptr;
+    return true;
   }
 
   [[nodiscard]] bool throwFrom(MDefinition* exn, MDefinition* tag) {
@@ -3851,6 +4083,31 @@ class FunctionCompiler {
   }
 
   /********************************************** WasmGC: struct helpers ***/
+
+  [[nodiscard]] MDefinition* createStructObject(uint32_t typeIndex,
+                                                bool zeroFields) {
+    const TypeDef& typeDef = (*moduleEnv().types)[typeIndex];
+    gc::AllocKind allocKind = WasmStructObject::allocKindForTypeDef(&typeDef);
+    bool isOutline =
+        WasmStructObject::requiresOutlineBytes(typeDef.structType().size_);
+
+    // Allocate an uninitialized struct.  This requires the type definition
+    // for the struct.
+    MDefinition* typeDefData = loadTypeDefInstanceData(typeIndex);
+    if (!typeDefData) {
+      return nullptr;
+    }
+
+    auto* structObject =
+        MWasmNewStructObject::New(alloc(), instancePointer_, typeDefData,
+                                  isOutline, zeroFields, allocKind);
+    if (!structObject) {
+      return nullptr;
+    }
+    curBlock_->add(structObject);
+
+    return structObject;
+  }
 
   // Helper function for EmitStruct{New,Set}: given a MIR pointer to a
   // WasmStructObject, a MIR pointer to a value, and a field descriptor,
@@ -4723,7 +4980,7 @@ static bool EmitLoop(FunctionCompiler& f) {
 
   f.addInterruptCheck();
 
-  f.iter().controlItem().setBlock(loopHeader);
+  f.iter().controlItem().block = loopHeader;
   return true;
 }
 
@@ -4739,7 +4996,7 @@ static bool EmitIf(FunctionCompiler& f) {
     return false;
   }
 
-  f.iter().controlItem().setBlock(elseBlock);
+  f.iter().controlItem().block = elseBlock;
   return true;
 }
 
@@ -4780,6 +5037,7 @@ static bool EmitEnd(FunctionCompiler& f) {
   DefVector postJoinDefs;
   switch (kind) {
     case LabelKind::Body:
+      MOZ_ASSERT(!control.tryControl);
       if (!f.emitBodyDelegateThrowPad(control)) {
         return false;
       }
@@ -4793,18 +5051,21 @@ static bool EmitEnd(FunctionCompiler& f) {
       MOZ_ASSERT(f.iter().controlStackEmpty());
       return f.iter().endFunction(f.iter().end());
     case LabelKind::Block:
+      MOZ_ASSERT(!control.tryControl);
       if (!f.finishBlock(&postJoinDefs)) {
         return false;
       }
       f.iter().popEnd();
       break;
     case LabelKind::Loop:
+      MOZ_ASSERT(!control.tryControl);
       if (!f.closeLoop(block, &postJoinDefs)) {
         return false;
       }
       f.iter().popEnd();
       break;
     case LabelKind::Then: {
+      MOZ_ASSERT(!control.tryControl);
       // If we didn't see an Else, create a trivial else block so that we create
       // a diamond anyway, to preserve Ion invariants.
       if (!f.switchToElse(block, &block)) {
@@ -4822,6 +5083,7 @@ static bool EmitEnd(FunctionCompiler& f) {
       break;
     }
     case LabelKind::Else:
+      MOZ_ASSERT(!control.tryControl);
       if (!f.joinIfElse(block, &postJoinDefs)) {
         return false;
       }
@@ -4830,9 +5092,19 @@ static bool EmitEnd(FunctionCompiler& f) {
     case LabelKind::Try:
     case LabelKind::Catch:
     case LabelKind::CatchAll:
+      MOZ_ASSERT(control.tryControl);
       if (!f.finishTryCatch(kind, control, &postJoinDefs)) {
         return false;
       }
+      f.freeTryControl(std::move(control.tryControl));
+      f.iter().popEnd();
+      break;
+    case LabelKind::TryTable:
+      MOZ_ASSERT(control.tryControl);
+      if (!f.finishTryTable(control, &postJoinDefs)) {
+        return false;
+      }
+      f.freeTryControl(std::move(control.tryControl));
       f.iter().popEnd();
       break;
   }
@@ -4919,13 +5191,7 @@ static bool EmitTry(FunctionCompiler& f) {
     return false;
   }
 
-  MBasicBlock* curBlock = nullptr;
-  if (!f.startTry(&curBlock)) {
-    return false;
-  }
-
-  f.iter().controlItem().setBlock(curBlock);
-  return true;
+  return f.startTry();
 }
 
 static bool EmitCatch(FunctionCompiler& f) {
@@ -4967,6 +5233,16 @@ static bool EmitCatchAll(FunctionCompiler& f) {
   return f.switchToCatch(f.iter().controlItem(), kind, CatchAllIndex);
 }
 
+static bool EmitTryTable(FunctionCompiler& f) {
+  ResultType params;
+  TryTableCatchVector catches;
+  if (!f.iter().readTryTable(&params, &catches)) {
+    return false;
+  }
+
+  return f.startTryTable(std::move(catches));
+}
+
 static bool EmitDelegate(FunctionCompiler& f) {
   uint32_t relativeDepth;
   ResultType resultType;
@@ -4977,15 +5253,18 @@ static bool EmitDelegate(FunctionCompiler& f) {
 
   Control& control = f.iter().controlItem();
   MBasicBlock* block = control.block;
+  MOZ_ASSERT(control.tryControl);
 
   // Unless the entire try-delegate is dead code, delegate any pad-patches from
   // this try to the next try-block above relativeDepth.
   if (block) {
-    ControlInstructionVector& delegatePadPatches = control.tryPadPatches;
+    ControlInstructionVector& delegatePadPatches =
+        control.tryControl->landingPadPatches;
     if (!f.delegatePadPatches(delegatePadPatches, relativeDepth)) {
       return false;
     }
   }
+  f.freeTryControl(std::move(control.tryControl));
   f.iter().popDelegate();
 
   // Push the results of the previous block, and join control flow with
@@ -5012,6 +5291,15 @@ static bool EmitThrow(FunctionCompiler& f) {
   }
 
   return f.emitThrow(tagIndex, argValues);
+}
+
+static bool EmitThrowRef(FunctionCompiler& f) {
+  MDefinition* exnRef;
+  if (!f.iter().readThrowRef(&exnRef)) {
+    return false;
+  }
+
+  return f.emitThrowRef(exnRef);
 }
 
 static bool EmitRethrow(FunctionCompiler& f) {
@@ -6977,27 +7265,12 @@ static bool EmitStructNew(FunctionCompiler& f) {
     return true;
   }
 
-  const StructType& structType = (*f.moduleEnv().types)[typeIndex].structType();
+  const TypeDef& typeDef = (*f.moduleEnv().types)[typeIndex];
+  const StructType& structType = typeDef.structType();
   MOZ_ASSERT(args.length() == structType.fields_.length());
 
-  // Allocate an uninitialized struct.  This requires the type definition
-  // for the struct.
-  MDefinition* typeDefData = f.loadTypeDefInstanceData(typeIndex);
-  if (!typeDefData) {
-    return false;
-  }
-
-  // Figure out whether we need an OOL storage area, and hence which routine
-  // to call.
-  SymbolicAddressSignature calleeSASig =
-      WasmStructObject::requiresOutlineBytes(structType.size_)
-          ? SASigStructNewOOL_false
-          : SASigStructNewIL_false;
-
-  // Create call: structObject = Instance::structNew{IL,OOL}<false>(typeDefData)
-  MDefinition* structObject;
-  if (!f.emitInstanceCall1(lineOrBytecode, calleeSASig, typeDefData,
-                           &structObject)) {
+  MDefinition* structObject = f.createStructObject(typeIndex, false);
+  if (!structObject) {
     return false;
   }
 
@@ -7646,8 +7919,8 @@ static bool EmitBrOnCast(FunctionCompiler& f, bool onSuccess) {
                           labelType, values);
 }
 
-static bool EmitExternInternalize(FunctionCompiler& f) {
-  // extern.internalize is a no-op because anyref and extern share the same
+static bool EmitAnyConvertExtern(FunctionCompiler& f) {
+  // any.convert_extern is a no-op because anyref and extern share the same
   // representation
   MDefinition* ref;
   if (!f.iter().readRefConversion(RefType::extern_(), RefType::any(), &ref)) {
@@ -7658,8 +7931,8 @@ static bool EmitExternInternalize(FunctionCompiler& f) {
   return true;
 }
 
-static bool EmitExternExternalize(FunctionCompiler& f) {
-  // extern.externalize is a no-op because anyref and extern share the same
+static bool EmitExternConvertAny(FunctionCompiler& f) {
+  // extern.convert_any is a no-op because anyref and extern share the same
   // representation
   MDefinition* ref;
   if (!f.iter().readRefConversion(RefType::any(), RefType::extern_(), &ref)) {
@@ -7672,42 +7945,55 @@ static bool EmitExternExternalize(FunctionCompiler& f) {
 
 #endif  // ENABLE_WASM_GC
 
-static bool EmitIntrinsic(FunctionCompiler& f) {
+static bool EmitCallBuiltinModuleFunc(FunctionCompiler& f) {
   // It's almost possible to use FunctionCompiler::emitInstanceCallN here.
   // Unfortunately not currently possible though, since ::emitInstanceCallN
   // expects an array of arguments along with a size, and that's not what is
   // available here.  It would be possible if we were prepared to copy
-  // `intrinsic->params` into a fixed-sized (16 element?) array, add
+  // `builtinModuleFunc->params` into a fixed-sized (16 element?) array, add
   // `memoryBase`, and make the call.
-  const Intrinsic* intrinsic;
+  const BuiltinModuleFunc* builtinModuleFunc;
 
   DefVector params;
-  if (!f.iter().readIntrinsic(&intrinsic, &params)) {
+  if (!f.iter().readCallBuiltinModuleFunc(&builtinModuleFunc, &params)) {
     return false;
   }
 
   uint32_t bytecodeOffset = f.readBytecodeOffset();
-  const SymbolicAddressSignature& callee = intrinsic->signature;
+  const SymbolicAddressSignature& callee = builtinModuleFunc->signature;
 
   CallCompileState args;
   if (!f.passInstance(callee.argTypes[0], &args)) {
     return false;
   }
 
-  if (!f.passArgs(params, intrinsic->params, &args)) {
+  if (!f.passArgs(params, builtinModuleFunc->params, &args)) {
     return false;
   }
 
-  MDefinition* memoryBase = f.memoryBase(0);
-  if (!f.passArg(memoryBase, MIRType::Pointer, &args)) {
-    return false;
+  if (builtinModuleFunc->usesMemory) {
+    MDefinition* memoryBase = f.memoryBase(0);
+    if (!f.passArg(memoryBase, MIRType::Pointer, &args)) {
+      return false;
+    }
   }
 
   if (!f.finishCall(&args)) {
     return false;
   }
 
-  return f.builtinInstanceMethodCall(callee, bytecodeOffset, args);
+  bool hasResult = builtinModuleFunc->result.isSome();
+  MDefinition* result = nullptr;
+  MDefinition** resultOutParam = hasResult ? &result : nullptr;
+  if (!f.builtinInstanceMethodCall(callee, bytecodeOffset, args,
+                                   resultOutParam)) {
+    return false;
+  }
+
+  if (hasResult) {
+    f.iter().setResult(result);
+  }
+  return true;
 }
 
 static bool EmitBodyExprs(FunctionCompiler& f) {
@@ -7785,6 +8071,16 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
           return f.iter().unrecognizedOpcode(&op);
         }
         CHECK(EmitRethrow(f));
+      case uint16_t(Op::ThrowRef):
+        if (!f.moduleEnv().exnrefEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitThrowRef(f));
+      case uint16_t(Op::TryTable):
+        if (!f.moduleEnv().exnrefEnabled()) {
+          return f.iter().unrecognizedOpcode(&op);
+        }
+        CHECK(EmitTryTable(f));
       case uint16_t(Op::Br):
         CHECK(EmitBr(f));
       case uint16_t(Op::BrIf):
@@ -8322,10 +8618,10 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitRefCast(f, /*nullable=*/false));
           case uint32_t(GcOp::RefCastNull):
             CHECK(EmitRefCast(f, /*nullable=*/true));
-          case uint16_t(GcOp::ExternInternalize):
-            CHECK(EmitExternInternalize(f));
-          case uint16_t(GcOp::ExternExternalize):
-            CHECK(EmitExternExternalize(f));
+          case uint16_t(GcOp::AnyConvertExtern):
+            CHECK(EmitAnyConvertExtern(f));
+          case uint16_t(GcOp::ExternConvertAny):
+            CHECK(EmitExternConvertAny(f));
           default:
             return f.iter().unrecognizedOpcode(&op);
         }  // switch (op.b1)
@@ -8919,11 +9215,11 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
 
       // asm.js-specific operators
       case uint16_t(Op::MozPrefix): {
-        if (op.b1 == uint32_t(MozOp::Intrinsic)) {
-          if (!f.moduleEnv().intrinsicsEnabled()) {
+        if (op.b1 == uint32_t(MozOp::CallBuiltinModuleFunc)) {
+          if (!f.moduleEnv().isBuiltinModule()) {
             return f.iter().unrecognizedOpcode(&op);
           }
-          CHECK(EmitIntrinsic(f));
+          CHECK(EmitCallBuiltinModuleFunc(f));
         }
 
         if (!f.moduleEnv().isAsmJS()) {

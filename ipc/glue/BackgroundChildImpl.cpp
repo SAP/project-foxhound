@@ -177,38 +177,6 @@ bool BackgroundChildImpl::DeallocPBackgroundIndexedDBUtilsChild(
   return true;
 }
 
-BackgroundChildImpl::PBackgroundSDBConnectionChild*
-BackgroundChildImpl::AllocPBackgroundSDBConnectionChild(
-    const PersistenceType& aPersistenceType,
-    const PrincipalInfo& aPrincipalInfo) {
-  MOZ_CRASH(
-      "PBackgroundSDBConnectionChild actor should be manually "
-      "constructed!");
-}
-
-bool BackgroundChildImpl::DeallocPBackgroundSDBConnectionChild(
-    PBackgroundSDBConnectionChild* aActor) {
-  MOZ_ASSERT(aActor);
-
-  delete aActor;
-  return true;
-}
-
-BackgroundChildImpl::PBackgroundLSDatabaseChild*
-BackgroundChildImpl::AllocPBackgroundLSDatabaseChild(
-    const PrincipalInfo& aPrincipalInfo, const uint32_t& aPrivateBrowsingId,
-    const uint64_t& aDatastoreId) {
-  MOZ_CRASH("PBackgroundLSDatabaseChild actor should be manually constructed!");
-}
-
-bool BackgroundChildImpl::DeallocPBackgroundLSDatabaseChild(
-    PBackgroundLSDatabaseChild* aActor) {
-  MOZ_ASSERT(aActor);
-
-  delete aActor;
-  return true;
-}
-
 BackgroundChildImpl::PBackgroundLSObserverChild*
 BackgroundChildImpl::AllocPBackgroundLSObserverChild(
     const uint64_t& aObserverId) {
@@ -295,23 +263,6 @@ IPCResult BackgroundChildImpl::RecvPRemoteWorkerConstructor(
   dom::RemoteWorkerChild* actor = static_cast<dom::RemoteWorkerChild*>(aActor);
   actor->ExecWorker(aData);
   return IPC_OK();
-}
-
-dom::PRemoteWorkerControllerChild*
-BackgroundChildImpl::AllocPRemoteWorkerControllerChild(
-    const dom::RemoteWorkerData& aRemoteWorkerData) {
-  MOZ_CRASH(
-      "PRemoteWorkerControllerChild actors must be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPRemoteWorkerControllerChild(
-    dom::PRemoteWorkerControllerChild* aActor) {
-  MOZ_ASSERT(aActor);
-
-  RefPtr<dom::RemoteWorkerControllerChild> actor =
-      dont_AddRef(static_cast<dom::RemoteWorkerControllerChild*>(aActor));
-  return true;
 }
 
 dom::PSharedWorkerChild* BackgroundChildImpl::AllocPSharedWorkerChild(
@@ -451,26 +402,6 @@ bool BackgroundChildImpl::DeallocPMessagePortChild(PMessagePortChild* aActor) {
       dont_AddRef(static_cast<dom::MessagePortChild*>(aActor));
   MOZ_ASSERT(child);
   return true;
-}
-
-BackgroundChildImpl::PQuotaChild* BackgroundChildImpl::AllocPQuotaChild() {
-  MOZ_CRASH("PQuotaChild actor should be manually constructed!");
-}
-
-bool BackgroundChildImpl::DeallocPQuotaChild(PQuotaChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete aActor;
-  return true;
-}
-
-mozilla::dom::PClientManagerChild*
-BackgroundChildImpl::AllocPClientManagerChild() {
-  return mozilla::dom::AllocClientManagerChild();
-}
-
-bool BackgroundChildImpl::DeallocPClientManagerChild(
-    mozilla::dom::PClientManagerChild* aActor) {
-  return mozilla::dom::DeallocClientManagerChild(aActor);
 }
 
 dom::PWebAuthnTransactionChild*

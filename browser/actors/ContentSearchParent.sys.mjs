@@ -251,7 +251,6 @@ export let ContentSearch = {
       data.healthReportKey,
       {
         selection: data.selection,
-        url: submission.uri,
       }
     );
   },
@@ -557,7 +556,7 @@ export let ContentSearch = {
    * Converts the engine's icon into an appropriate URL for display at
    */
   async _getEngineIconURL(engine) {
-    let url = engine.getIconURLBySize(16, 16);
+    let url = engine.getIconURL();
     if (!url) {
       return SEARCH_ENGINE_PLACEHOLDER_ICON;
     }

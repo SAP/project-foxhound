@@ -208,6 +208,13 @@ pref("pdfjs.enableXfa", true);
 // Enable adding an image in a pdf.
 pref("pdfjs.enableStampEditor", true);
 
+// Enable adding an image in a pdf.
+#if defined(EARLY_BETA_OR_EARLIER)
+  pref("pdfjs.enableHighlightEditor", true);
+#else
+  pref("pdfjs.enableHighlightEditor", false);
+#endif
+
 // Disable support for MathML
 pref("mathml.disabled",    false);
 
@@ -287,7 +294,7 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
     pref("media.peerconnection.sdp.parser", "sipcc");
     pref("media.peerconnection.sdp.alternate_parse_mode", "never");
     pref("media.peerconnection.sdp.strict_success", false);
-    pref("media.navigator.video.red_ulpfec_enabled", false);
+    pref("media.navigator.video.red_ulpfec_enabled", true);
   #endif
 
   pref("media.peerconnection.sdp.disable_stereo_fmtp", false);
@@ -376,9 +383,6 @@ pref("media.peerconnection.dtls.version.min", 771);
 #endif
 
 pref("media.getusermedia.audiocapture.enabled", false);
-
-// WebVTT pseudo element and class support.
-pref("media.webvtt.pseudo.enabled", true);
 
 // WebVTT debug logging.
 pref("media.webvtt.debug.logging", false);
@@ -823,12 +827,6 @@ pref("print.print_edge_bottom", 0);
   pref("print.print_in_color", true);
 #endif
 
-// List of domains of web apps which depend on Gecko's traditional join/split
-// node(s) behavior or Blink/WebKit compatible one in `contenteditable` or
-// `designMode`.
-pref("editor.join_split_direction.force_use_traditional_direction", "");
-pref("editor.join_split_direction.force_use_compatible_direction", "");
-
 // Scripts & Windows prefs
 pref("dom.beforeunload_timeout_ms",         1000);
 pref("dom.disable_window_flip",             false);
@@ -970,13 +968,13 @@ pref("javascript.options.mem.gc_parallel_marking", false);
 // JSGC_PARALLEL_MARKING_THRESHOLD_MB
 // Minimum heap size at which to use parallel marking, if enabled.
 #if defined(XP_WIN)
-pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 20);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 8);
 #elif defined(XP_MACOSX)
 pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 4);
 #elif defined(ANDROID)
-pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 200);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 16);
 #elif defined(XP_UNIX)
-pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 200);
+pref("javascript.options.mem.gc_parallel_marking_threshold_mb", 16);
 #endif
 
 // JSGC_HIGH_FREQUENCY_TIME_LIMIT
@@ -1086,6 +1084,8 @@ pref("network.protocol-handler.external.disk", false);
 pref("network.protocol-handler.external.disks", false);
 pref("network.protocol-handler.external.afp", false);
 pref("network.protocol-handler.external.moz-icon", false);
+pref("network.protocol-handler.external.firefox", false);
+pref("network.protocol-handler.external.firefox-private", false);
 
 // Don't allow  external protocol handlers for common typos
 pref("network.protocol-handler.external.ttp", false);  // http
@@ -1689,10 +1689,12 @@ pref("intl.hyphenation-alias.no-*", "nb");
 pref("intl.hyphenation-alias.nb-*", "nb");
 pref("intl.hyphenation-alias.nn-*", "nn");
 
-// In German, we allow hyphenation of capitalized words; otherwise not.
+// In German and Finnish, we allow hyphenation of capitalized words; otherwise not.
+// (Should this be extended to other languages? Should the default be changed?)
 pref("intl.hyphenate-capitalized.de-1996", true);
 pref("intl.hyphenate-capitalized.de-1901", true);
 pref("intl.hyphenate-capitalized.de-CH", true);
+pref("intl.hyphenate-capitalized.fi", true);
 
 // All prefs of default font should be "auto".
 pref("font.name.serif.ar", "");
@@ -1892,6 +1894,10 @@ pref("extensions.eventPages.enabled", true);
 pref("extensions.manifestV2.actionsPopupURLRestricted", false);
 // Whether "manifest_version: 3" extensions should be allowed to install successfully.
 pref("extensions.manifestV3.enabled", true);
+#ifndef MOZ_WEBEXT_WEBIDL_ENABLED
+  // Defined in StaticPrefList.yaml but overridden here to lock it.
+  pref("extensions.backgroundServiceWorker.enabled", false, locked);
+#endif
 // Whether to enable the updated openPopup API.
 #ifdef NIGHTLY_BUILD
   pref("extensions.openPopupWithoutUserGesture.enabled", true);
@@ -1977,9 +1983,6 @@ pref("mousewheel.with_shift.delta_multiplier_z", 100);
 // 2 = right
 // 3 = left
 pref("layout.scrollbar.side", 0);
-
-// pref to control whether layout warnings that are hit quite often are enabled
-pref("layout.spammy_warnings.enabled", false);
 
 // enable single finger gesture input (win7+ tablets)
 pref("gestures.enable_single_finger_input", true);
@@ -2659,7 +2662,6 @@ pref("font.size.monospace.x-math", 13);
 
   pref("font.weight-override.HelveticaNeue-Light", 300); // Ensure Light > Thin (200)
   pref("font.weight-override.HelveticaNeue-LightItalic", 300);
-  pref("font.weight-override.HelveticaNeue-MediumItalic", 500); // Harmonize MediumItalic with Medium
 
   // See bug 404131, topmost <panel> element wins to Dashboard on MacOSX.
   pref("ui.panel.default_level_parent", false);
@@ -2918,7 +2920,7 @@ pref("font.size.monospace.x-math", 13);
 #if defined(ANDROID)
   // We use the bundled Charis SIL Compact as serif font for Firefox for Android
 
-  pref("font.name-list.emoji", "Noto Color Emoji");
+  pref("font.name-list.emoji", "SamsungColorEmoji, Noto Color Emoji");
 
   pref("font.name-list.serif.ar", "Noto Naskh Arabic, Noto Serif, Droid Serif");
   pref("font.name-list.sans-serif.ar", "Noto Naskh Arabic, Roboto, Google Sans, Droid Sans");
@@ -3378,7 +3380,7 @@ pref("urlclassifier.features.emailtracking.datacollection.allowlistTables", "moz
 pref("urlclassifier.disallow_completions", "goog-downloadwhite-digest256,base-track-digest256,mozstd-trackwhite-digest256,content-track-digest256,mozplugin-block-digest256,mozplugin2-block-digest256,ads-track-digest256,social-track-digest256,analytics-track-digest256,base-fingerprinting-track-digest256,content-fingerprinting-track-digest256,base-cryptomining-track-digest256,content-cryptomining-track-digest256,fanboyannoyance-ads-digest256,fanboysocial-ads-digest256,easylist-ads-digest256,easyprivacy-ads-digest256,adguard-ads-digest256,social-tracking-protection-digest256,social-tracking-protection-facebook-digest256,social-tracking-protection-linkedin-digest256,social-tracking-protection-twitter-digest256,base-email-track-digest256,content-email-track-digest256");
 
 // Workaround for Google Recaptcha
-pref("urlclassifier.trackingAnnotationSkipURLs", "google.com/recaptcha/,*.google.com/recaptcha/");
+pref("urlclassifier.trackingAnnotationSkipURLs", "google.com/recaptcha/,*.google.com/recaptcha/,d3vox9szr7t2nm.cloudfront.net");
 pref("privacy.rejectForeign.allowList", "");
 
 // The list of email webapp sites
@@ -3627,6 +3629,10 @@ pref("browser.sanitizer.loglevel", "Warn");
 // engine https://browser.mt/. See Bug 971044. Note that this pref can be turned
 // on in different apps like Firefox Desktop, even if it's disabled by default here.
 pref("browser.translations.enable", false);
+// Enable Firefox Select translations powered by the Bergamot translations
+// engine https://browser.mt/. Note that this pref can be turned on in different apps
+// like Firefox Desktop, even if it's disabled by default here.
+pref("browser.translations.select.enable", false);
 // Set to "All" to see all logs, which are useful for debugging. Set to "Info" to see
 // the application logic logs, and not all of the translated messages, which can be
 // slow and overwhelming.
@@ -3695,10 +3701,6 @@ pref("toolkit.aboutProcesses.profileDuration", 5);
 #else
   pref("toolkit.crashreporter.include_context_heap", true);
 #endif
-
-// Don't create the hidden window during startup on
-// platforms that don't always need it.
-pref("toolkit.lazyHiddenWindow", true);
 
 // Support for legacy customizations that rely on checking the
 // user profile directory for these stylesheets:
@@ -3972,6 +3974,8 @@ pref("extensions.formautofill.addresses.enabled", true);
 pref("extensions.formautofill.addresses.capture.enabled", false);
 // This preference should be removed entirely once address capture v2 developing is finished
 pref("extensions.formautofill.addresses.capture.v2.enabled", false);
+// Defies the required address form fields to trigger the display of the address capture doorhanger
+pref("extensions.formautofill.addresses.capture.requiredFields", "street-address,postal-code,address-level1,address-level2");
 pref("extensions.formautofill.addresses.ignoreAutocompleteOff", true);
 // Supported countries need to follow ISO 3166-1 to align with "browser.search.region"
 pref("extensions.formautofill.addresses.supportedCountries", "US,CA");
@@ -3996,6 +4000,10 @@ pref("extensions.formautofill.creditCards.heuristics.fathom.highConfidenceThresh
 pref("extensions.formautofill.creditCards.heuristics.fathom.testConfidence", "0");
 
 pref("extensions.formautofill.loglevel", "Warn");
+
+// Temporary prefs that we will be removed when enabling capture on form removal and on page navigation in Fx123.
+pref("extensions.formautofill.heuristics.captureOnFormRemoval", false);
+pref("extensions.formautofill.heuristics.captureOnPageNavigation", false);
 // The interactivityCheckMode pref is only temporary.
 // It will be removed when we decide to only support the `focusability` mode
 pref("extensions.formautofill.heuristics.interactivityCheckMode", "focusability");

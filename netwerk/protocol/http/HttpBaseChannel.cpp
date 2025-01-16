@@ -261,6 +261,7 @@ HttpBaseChannel::HttpBaseChannel()
   StoreAllRedirectsSameOrigin(true);
   StoreAllRedirectsPassTimingAllowCheck(true);
   StoreUpgradableToSecure(true);
+  StoreIsUserAgentHeaderModified(false);
 
   this->mSelfAddr.inet = {};
   this->mPeerAddr.inet = {};
@@ -1947,6 +1948,11 @@ HttpBaseChannel::SetRequestHeader(const nsACString& aHeader,
     return NS_ERROR_INVALID_ARG;
   }
 
+  // Mark that the User-Agent header has been modified.
+  if (nsHttp::ResolveAtom(aHeader) == nsHttp::User_Agent) {
+    StoreIsUserAgentHeaderModified(true);
+  }
+
   return mRequestHead.SetHeader(aHeader, flatValue, aMerge);
 }
 
@@ -1978,6 +1984,11 @@ HttpBaseChannel::SetEmptyRequestHeader(const nsACString& aHeader) {
   // close to whats allowed in RFC 2616.
   if (!nsHttp::IsValidToken(flatHeader)) {
     return NS_ERROR_INVALID_ARG;
+  }
+
+  // Mark that the User-Agent header has been modified.
+  if (nsHttp::ResolveAtom(aHeader) == nsHttp::User_Agent) {
+    StoreIsUserAgentHeaderModified(true);
   }
 
   return mRequestHead.SetEmptyHeader(aHeader);
@@ -2092,6 +2103,19 @@ NS_IMETHODIMP
 HttpBaseChannel::SetIsOCSP(bool value) {
   ENSURE_CALLED_BEFORE_CONNECT();
   StoreIsOCSP(value);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetIsUserAgentHeaderModified(bool* value) {
+  NS_ENSURE_ARG_POINTER(value);
+  *value = LoadIsUserAgentHeaderModified();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetIsUserAgentHeaderModified(bool value) {
+  StoreIsUserAgentHeaderModified(value);
   return NS_OK;
 }
 
@@ -4564,14 +4588,25 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
             dom::ReferrerInfo::ReferrerPolicyFromHeaderString(tRPHeaderValue);
       }
 
-      if (referrerPolicy != dom::ReferrerPolicy::_empty) {
-        // We may reuse computed referrer in redirect, so if referrerPolicy
-        // changes, we must not use the old computed value, and have to compute
-        // again.
-        nsCOMPtr<nsIReferrerInfo> referrerInfo =
-            dom::ReferrerInfo::CreateFromOtherAndPolicyOverride(mReferrerInfo,
-                                                                referrerPolicy);
-        config.referrerInfo = referrerInfo;
+      // In case we are here because an upgrade happened through mixed content
+      // upgrading, CSP upgrade-insecure-requests, HTTPS-Only or HTTPS-First, we
+      // have to recalculate the referrer based on the original referrer to
+      // account for the different scheme. This does NOT apply to HSTS.
+      // See Bug 1857894 and order of https://fetch.spec.whatwg.org/#main-fetch.
+      // Otherwise, if we have a new referrer policy, we want to recalculate the
+      // referrer based on the old computed referrer (Bug 1678545).
+      bool wasNonHSTSUpgrade =
+          (aRedirectFlags & nsIChannelEventSink::REDIRECT_STS_UPGRADE) &&
+          (!mLoadInfo->GetHstsStatus());
+      if (wasNonHSTSUpgrade) {
+        nsCOMPtr<nsIURI> referrer = mReferrerInfo->GetOriginalReferrer();
+        config.referrerInfo =
+            new dom::ReferrerInfo(referrer, mReferrerInfo->ReferrerPolicy(),
+                                  mReferrerInfo->GetSendReferrer());
+      } else if (referrerPolicy != dom::ReferrerPolicy::_empty) {
+        nsCOMPtr<nsIURI> referrer = mReferrerInfo->GetComputedReferrer();
+        config.referrerInfo = new dom::ReferrerInfo(
+            referrer, referrerPolicy, mReferrerInfo->GetSendReferrer());
       } else {
         config.referrerInfo = mReferrerInfo;
       }
@@ -4968,6 +5003,13 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
       rv = httpChannel->SetRequestHeader("User-Agent"_ns, oldUserAgent, false);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
+  }
+
+  // convery the IsUserAgentHeaderModified value.
+  if (httpInternal) {
+    rv = httpInternal->SetIsUserAgentHeaderModified(
+        LoadIsUserAgentHeaderModified());
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
   // share the request context - see bug 1236650
@@ -6353,13 +6395,24 @@ static void CollectORBBlockTelemetry(
       Telemetry::AccumulateCategorical(
           Telemetry::LABELS_ORB_BLOCK_INITIATOR::WEB_TRANSPORT);
       break;
-    default:
+    case ExtContentPolicy::TYPE_WEB_IDENTITY:
+      // Don't bother extending the telemetry for this.
+      Telemetry::AccumulateCategorical(
+          Telemetry::LABELS_ORB_BLOCK_INITIATOR::OTHER);
+      break;
+    case ExtContentPolicy::TYPE_DOCUMENT:
+    case ExtContentPolicy::TYPE_SUBDOCUMENT:
+    case ExtContentPolicy::TYPE_OBJECT:
+    case ExtContentPolicy::TYPE_OBJECT_SUBREQUEST:
+    case ExtContentPolicy::TYPE_WEBSOCKET:
+    case ExtContentPolicy::TYPE_SAVEAS_DOWNLOAD:
       MOZ_ASSERT_UNREACHABLE("Shouldn't block this type");
       // DOCUMENT, SUBDOCUMENT, OBJECT, OBJECT_SUBREQUEST,
       // WEBSOCKET and SAVEAS_DOWNLOAD are excluded from ORB
       Telemetry::AccumulateCategorical(
           Telemetry::LABELS_ORB_BLOCK_INITIATOR::EXCLUDED);
       break;
+      // Do not add default: so that compilers can catch the missing case.
   }
 }
 

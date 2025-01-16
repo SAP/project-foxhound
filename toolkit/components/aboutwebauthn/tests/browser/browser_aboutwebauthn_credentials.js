@@ -53,8 +53,10 @@ async function send_authinfo_and_open_cred_section(ops) {
   reset_about_page(doc);
   send_auth_info_and_check_categories(doc, ops);
 
-  let button = doc.getElementById("pin-tab-button");
-  is(button.style.display, "none", "pin-tab-button in the sidebar not hidden");
+  ["pin-tab-button", "bio-enrollments-tab-button"].forEach(button_id => {
+    let button = doc.getElementById(button_id);
+    is(button.style.display, "none", button_id + " in the sidebar not hidden");
+  });
 
   if (ops.credMgmt !== null || ops.credentialMgmtPreview !== null) {
     let credentials_tab_button = doc.getElementById("credentials-tab-button");
@@ -180,6 +182,53 @@ add_task(async function cred_mgmt_real_data() {
   send_credential_list(REAL_DATA);
   buttons[2].click();
   check_cred_buttons_disabled(true);
+
+  // Confirmation section should now be open
+  let credential_section = doc.getElementById("credential-management-section");
+  is(
+    credential_section.style.display,
+    "none",
+    "credential section still visible"
+  );
+  let confirmation_section = doc.getElementById("confirm-deletion-section");
+  isnot(
+    confirmation_section.style.display,
+    "none",
+    "Confirmation section did not open."
+  );
+
+  // Check if the label displays the correct data
+  let confirmation_context = doc.getElementById("confirmation-context");
+  is(
+    confirmation_context.textContent,
+    "webauthn.io - hhhhhg",
+    "Deletion context show wrong credential name"
+  );
+  // Check if the delete-button has the correct context-data
+  let cmd = {
+    CredentialManagement: {
+      DeleteCredential: REAL_DATA[1].credentials[0].credential_id,
+    },
+  };
+  is(
+    confirmation_context.getAttribute("data-ctap-command"),
+    JSON.stringify(cmd),
+    "Confirm-button has the wrong context data"
+  );
+
+  let cancel_button = doc.getElementById("cancel-confirmation-button");
+  cancel_button.click();
+  isnot(
+    credential_section.style.display,
+    "none",
+    "credential section still visible"
+  );
+  is(
+    confirmation_section.style.display,
+    "none",
+    "Confirmation section did not open."
+  );
+  check_cred_buttons_disabled(false);
 });
 
 const REAL_DATA = [

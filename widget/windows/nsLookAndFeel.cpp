@@ -15,9 +15,7 @@
 #include "WindowsUIUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Telemetry.h"
-#include "gfxFontConstants.h"
-#include "gfxWindowsPlatform.h"
-#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/widget/WinRegistry.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -45,65 +43,27 @@ static bool SystemWantsDarkTheme() {
                            LookAndFeel::UseStandins::No));
   }
 
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsIWindowsRegKey> personalizeKey =
-      do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  WinRegistry::Key key(
+      HKEY_CURRENT_USER,
+      u"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"_ns,
+      WinRegistry::KeyMode::QueryValue);
+  if (NS_WARN_IF(!key)) {
     return false;
   }
-
-  rv = personalizeKey->Open(
-      nsIWindowsRegKey::ROOT_KEY_CURRENT_USER,
-      nsLiteralString(
-          u"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
-      nsIWindowsRegKey::ACCESS_QUERY_VALUE);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  uint32_t lightThemeEnabled;
-  rv =
-      personalizeKey->ReadIntValue(u"AppsUseLightTheme"_ns, &lightThemeEnabled);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-  return !lightThemeEnabled;
+  uint32_t light = key.GetValueAsDword(u"AppsUseLightTheme"_ns).valueOr(1);
+  return !light;
 }
 
-static int32_t SystemColorFilter() {
-  nsresult rv = NS_OK;
-  nsCOMPtr<nsIWindowsRegKey> colorFilteringKey =
-      do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+uint32_t nsLookAndFeel::SystemColorFilter() {
+  if (NS_WARN_IF(!mColorFilterWatcher)) {
     return 0;
   }
 
-  rv = colorFilteringKey->Open(
-      nsIWindowsRegKey::ROOT_KEY_CURRENT_USER,
-      u"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Accessibility\\ATConfig\\colorfiltering"_ns,
-      nsIWindowsRegKey::ACCESS_QUERY_VALUE);
-  if (NS_FAILED(rv)) {
+  const auto& key = mColorFilterWatcher->GetKey();
+  if (!key.GetValueAsDword(u"Active"_ns).valueOr(0)) {
     return 0;
   }
-
-  // The Active value is set to 1 when the "Turn on color filters" setting
-  // in the Color filters section of Windows' Ease of Access settings is turned
-  // on. If it is disabled (Active == 0 or does not exist), do not report having
-  // a color filter.
-  uint32_t active;
-  rv = colorFilteringKey->ReadIntValue(u"Active"_ns, &active);
-  if (NS_FAILED(rv) || active == 0) {
-    return 0;
-  }
-
-  // The FilterType value is set to whichever filter is enabled.
-  uint32_t filterType;
-  rv = colorFilteringKey->ReadIntValue(u"FilterType"_ns, &filterType);
-  if (NS_SUCCEEDED(rv)) {
-    return filterType;
-  }
-
-  return 0;
+  return key.GetValueAsDword(u"FilterType"_ns).valueOr(0);
 }
 
 nsLookAndFeel::nsLookAndFeel() {
@@ -253,6 +213,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozButtonhoverface:
     case ColorID::MozButtonactiveface:
     case ColorID::MozButtondisabledface:
+    case ColorID::MozColheader:
+    case ColorID::MozColheaderhover:
+    case ColorID::MozColheaderactive:
       idx = COLOR_BTNFACE;
       break;
     case ColorID::Buttonhighlight:
@@ -338,6 +301,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::Threedlightshadow:
     case ColorID::Buttonborder:
     case ColorID::MozDisabledfield:
+    case ColorID::MozSidebarborder:
       idx = COLOR_3DLIGHT;
       break;
     case ColorID::Threedshadow:
@@ -355,10 +319,12 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozEventreerow:
     case ColorID::MozOddtreerow:
     case ColorID::Field:
+    case ColorID::MozSidebar:
     case ColorID::MozCombobox:
       idx = COLOR_WINDOW;
       break;
     case ColorID::Fieldtext:
+    case ColorID::MozSidebartext:
     case ColorID::MozComboboxtext:
       idx = COLOR_WINDOWTEXT;
       break;
@@ -378,6 +344,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozDialogtext:
     case ColorID::MozColheadertext:
     case ColorID::MozColheaderhovertext:
+    case ColorID::MozColheaderactivetext:
       idx = COLOR_WINDOWTEXT;
       break;
     case ColorID::MozNativehyperlinktext:
@@ -579,12 +546,10 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     }
     case IntID::InvertedColors: {
-      int32_t colorFilter = SystemColorFilter();
-
       // Color filter values
       // 1: Inverted
       // 2: Grayscale inverted
-      aResult = colorFilter == 1 || colorFilter == 2 ? 1 : 0;
+      aResult = mCurrentColorFilter == 1 || mCurrentColorFilter == 2;
       break;
     }
     case IntID::PrimaryPointerCapabilities: {
@@ -598,7 +563,7 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     }
     case IntID::TouchDeviceSupportPresent:
-      aResult = WinUtils::IsTouchDeviceSupportPresent() ? 1 : 0;
+      aResult = !!WinUtils::IsTouchDeviceSupportPresent();
       break;
     case IntID::PanelAnimations:
       aResult = 1;
@@ -825,48 +790,33 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
                           *GenericDarkColor(ColorID::Inactivecaptiontext),
                           *GenericDarkColor(ColorID::Inactiveborder)};
 
-  nsCOMPtr<nsIWindowsRegKey> dwmKey =
-      do_CreateInstance("@mozilla.org/windows-registry-key;1");
-  if (!dwmKey) {
-    return result;
-  }
   // TODO(bug 1825241): Somehow get notified when this changes? Hopefully the
   // sys color notification is enough.
-  nsresult rv = dwmKey->Open(nsIWindowsRegKey::ROOT_KEY_CURRENT_USER,
-                             u"SOFTWARE\\Microsoft\\Windows\\DWM"_ns,
-                             nsIWindowsRegKey::ACCESS_QUERY_VALUE);
-  NS_ENSURE_SUCCESS(rv, result);
+  WinRegistry::Key dwmKey(HKEY_CURRENT_USER,
+                          u"SOFTWARE\\Microsoft\\Windows\\DWM"_ns,
+                          WinRegistry::KeyMode::QueryValue);
+  if (NS_WARN_IF(!dwmKey)) {
+    return result;
+  }
 
-  auto close = mozilla::MakeScopeExit([&] { dwmKey->Close(); });
-
-  auto ReadColor = [&](const nsAString& aName) -> Maybe<nscolor> {
-    uint32_t color;
-    if (NS_SUCCEEDED(dwmKey->ReadIntValue(aName, &color))) {
-      // The order of the color components in the DWORD stored in the registry
-      // happens to be the same order as we store the components in nscolor
-      // so we can just assign directly here.
-      return Some(color);
-    }
-    return Nothing();
-  };
-
-  result.mAccent = ReadColor(u"AccentColor"_ns);
+  // The order of the color components in the DWORD stored in the registry
+  // happens to be the same order as we store the components in nscolor
+  // so we can just assign directly here.
+  result.mAccent = dwmKey.GetValueAsDword(u"AccentColor"_ns);
   result.mAccentText = GetAccentColorText(result.mAccent);
 
   if (!result.mAccent) {
     return result;
   }
 
-  result.mAccentInactive = ReadColor(u"AccentColorInactive"_ns);
+  result.mAccentInactive = dwmKey.GetValueAsDword(u"AccentColorInactive"_ns);
   result.mAccentInactiveText = GetAccentColorText(result.mAccentInactive);
 
   // The ColorPrevalence value is set to 1 when the "Show color on title bar"
   // setting in the Color section of Window's Personalization settings is
   // turned on.
-  uint32_t prevalence = 0;
   result.mUseAccent =
-      NS_SUCCEEDED(dwmKey->ReadIntValue(u"ColorPrevalence"_ns, &prevalence)) &&
-      prevalence == 1;
+      dwmKey.GetValueAsDword(u"ColorPrevalence"_ns).valueOr(0) == 1;
   if (!result.mUseAccent) {
     return result;
   }
@@ -888,10 +838,6 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
     result.mInactiveLight.mFg = result.mInactiveDark.mFg =
         *result.mAccentInactiveText;
   } else {
-    // The 153 matches the .6 opacity the front-end uses, which was calculated
-    // to match the opacity change of Windows Explorer titlebar text change
-    // for inactive windows.
-    constexpr uint8_t kTextAlpha = 153;
     // This is hand-picked to .8 to change the accent color a bit but not too
     // much.
     constexpr uint8_t kBgAlpha = 208;
@@ -900,16 +846,11 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
       return NS_ComposeColors(
           aBg, NS_RGBA(NS_GET_R(aFg), NS_GET_G(aFg), NS_GET_B(aFg), aAlpha));
     };
-
     result.mInactiveLight.mBg =
         BlendWithAlpha(NS_RGB(255, 255, 255), *result.mAccent, kBgAlpha);
-    result.mInactiveLight.mFg =
-        BlendWithAlpha(*result.mAccent, *result.mAccentText, kTextAlpha);
-
     result.mInactiveDark.mBg =
         BlendWithAlpha(NS_RGB(0, 0, 0), *result.mAccent, kBgAlpha);
-    result.mInactiveDark.mFg =
-        BlendWithAlpha(*result.mAccent, *result.mAccentText, kTextAlpha);
+    result.mInactiveLight.mFg = result.mInactiveDark.mFg = *result.mAccentText;
   }
   return result;
 }
@@ -953,5 +894,23 @@ void nsLookAndFeel::EnsureInit() {
     return NS_RGB(0, 120, 215);
   }();
   mColorAccentText = GetAccentColorText(mColorAccent);
+
+  if (!mColorFilterWatcher) {
+    WinRegistry::Key key(
+        HKEY_CURRENT_USER, u"Software\\Microsoft\\ColorFiltering"_ns,
+        WinRegistry::KeyMode::QueryValue | WinRegistry::KeyMode::Notify);
+    if (key) {
+      mColorFilterWatcher = MakeUnique<WinRegistry::KeyWatcher>(
+          std::move(key), GetCurrentSerialEventTarget(), [this] {
+            MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+            if (mCurrentColorFilter != SystemColorFilter()) {
+              LookAndFeel::NotifyChangedAllWindows(
+                  widget::ThemeChangeKind::MediaQueriesOnly);
+            }
+          });
+    }
+  }
+  mCurrentColorFilter = SystemColorFilter();
+
   RecordTelemetry();
 }

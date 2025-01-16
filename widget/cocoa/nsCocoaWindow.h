@@ -55,7 +55,6 @@ typedef struct _nsCocoaWindowList {
 
   BOOL mBeingShown;
   BOOL mDrawTitle;
-  BOOL mUseMenuStyle;
   BOOL mIsAnimationSuppressed;
 
   nsTouchBar* mTouchBar;
@@ -108,23 +107,15 @@ typedef struct _nsCocoaWindowList {
 
 - (NSRect)getAndResetNativeDirtyRect;
 
-- (void)setUseMenuStyle:(BOOL)aValue;
-@property(nonatomic) mozilla::StyleWindowShadow shadowStyle;
+- (void)setEffectViewWrapperForStyle:(mozilla::WindowShadow)aStyle;
+@property(nonatomic) mozilla::WindowShadow shadowStyle;
 
 - (void)releaseJSObjects;
 
 @end
 
 @interface NSWindow (Undocumented)
-
-// If a window has been explicitly removed from the "window cache" (to
-// deactivate it), it's sometimes necessary to "reset" it to reactivate it
-// (and put it back in the "window cache").  One way to do this, which Apple
-// often uses, is to set the "window number" to '-1' and then back to its
-// original value.
-- (void)_setWindowNumber:(NSInteger)aNumber;
-
-- (BOOL)bottomCornerRounded;
+- (NSDictionary*)shadowParameters;
 
 // Present in the same form on OS X since at least OS X 10.5.
 - (NSRect)contentRectForFrameRect:(NSRect)windowFrame
@@ -317,7 +308,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual bool HasPendingInputEvent() override;
   virtual TransparencyMode GetTransparencyMode() override;
   virtual void SetTransparencyMode(TransparencyMode aMode) override;
-  virtual void SetWindowShadowStyle(mozilla::StyleWindowShadow aStyle) override;
+  virtual void SetWindowShadowStyle(mozilla::WindowShadow aStyle) override;
   virtual void SetWindowOpacity(float aOpacity) override;
   virtual void SetWindowTransform(
       const mozilla::gfx::Matrix& aTransform) override;
@@ -435,7 +426,7 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   // if this is a toplevel window, and there is any ongoing fullscreen
   // transition, it is the animation object.
   NSAnimation* mFullscreenTransitionAnimation;
-  mozilla::StyleWindowShadow mShadowStyle;
+  mozilla::WindowShadow mShadowStyle;
 
   CGFloat mBackingScaleFactor;
   CGFloat mAspectRatio;

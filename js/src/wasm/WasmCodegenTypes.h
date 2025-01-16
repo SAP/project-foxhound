@@ -298,6 +298,11 @@ struct TrapData {
 
   Trap trap;
   uint32_t bytecodeOffset;
+
+  // A return_call_indirect from the first function in an activation into
+  // a signature mismatch may leave us with only one frame. This frame is
+  // validly constructed, but has no debug frame yet.
+  bool failedUnwindSignatureMismatch;
 };
 
 // The (,Callable,Func)Offsets classes are used to record the offsets of
@@ -537,18 +542,19 @@ class CallSiteDesc {
       (1 << LINE_OR_BYTECODE_BITS_SIZE) - 1;
 
   enum Kind {
-    Func,          // pc-relative call to a specific function
-    Import,        // wasm import call
-    Indirect,      // dynamic callee called via register, context on stack
-    IndirectFast,  // dynamically determined to be same-instance
-    FuncRef,       // call using direct function reference
-    FuncRefFast,   // call using direct function reference within same-instance
-    ReturnFunc,    // return call to a specific function
-    ReturnStub,    // return call trampoline
-    Symbolic,      // call to a single symbolic callee
-    EnterFrame,    // call to a enter frame handler
-    LeaveFrame,    // call to a leave frame handler
-    Breakpoint     // call to instruction breakpoint
+    Func,           // pc-relative call to a specific function
+    Import,         // wasm import call
+    Indirect,       // dynamic callee called via register, context on stack
+    IndirectFast,   // dynamically determined to be same-instance
+    FuncRef,        // call using direct function reference
+    FuncRefFast,    // call using direct function reference within same-instance
+    ReturnFunc,     // return call to a specific function
+    ReturnStub,     // return call trampoline
+    Symbolic,       // call to a single symbolic callee
+    EnterFrame,     // call to a enter frame handler
+    LeaveFrame,     // call to a leave frame handler
+    CollapseFrame,  // call to a leave frame handler during tail call
+    Breakpoint      // call to instruction breakpoint
   };
   CallSiteDesc() : lineOrBytecode_(0), kind_(0) {}
   explicit CallSiteDesc(Kind kind) : lineOrBytecode_(0), kind_(kind) {

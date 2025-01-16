@@ -13,6 +13,10 @@
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/CanvasTranslator.h"
 #include "mozilla/layers/CompositorThread.h"
+#include "mozilla/layers/ISurfaceAllocator.h"
+#include "mozilla/layers/SharedSurfacesParent.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/webgpu/WebGPUParent.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
@@ -21,16 +25,14 @@ namespace mozilla::gfx {
 
 CanvasManagerParent::ManagerSet CanvasManagerParent::sManagers;
 
-StaticMonitor CanvasManagerParent::sReplayTexturesMonitor;
-nsTArray<CanvasManagerParent::ReplayTexture>
-    CanvasManagerParent::sReplayTextures;
-bool CanvasManagerParent::sReplayTexturesEnabled(true);
-
 /* static */ void CanvasManagerParent::Init(
-    Endpoint<PCanvasManagerParent>&& aEndpoint) {
+    Endpoint<PCanvasManagerParent>&& aEndpoint,
+    layers::SharedSurfacesHolder* aSharedSurfacesHolder,
+    const dom::ContentParentId& aContentId) {
   MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
 
-  auto manager = MakeRefPtr<CanvasManagerParent>();
+  auto manager =
+      MakeRefPtr<CanvasManagerParent>(aSharedSurfacesHolder, aContentId);
 
   nsCOMPtr<nsIThread> owningThread =
       gfx::CanvasRenderThread::GetCanvasRenderThread();
@@ -65,10 +67,6 @@ bool CanvasManagerParent::sReplayTexturesEnabled(true);
   for (auto const& actor : actors) {
     actor->Close();
   }
-
-  StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-  sReplayTextures.Clear();
-  lock.NotifyAll();
 }
 
 /* static */ void CanvasManagerParent::DisableRemoteCanvas() {
@@ -101,109 +99,16 @@ bool CanvasManagerParent::sReplayTexturesEnabled(true);
     }
   }
 
-  {
-    StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-    sReplayTexturesEnabled = false;
-    sReplayTextures.Clear();
-  }
-
   for (const auto& actor : actors) {
     Unused << NS_WARN_IF(!actor->SendDeactivate());
   }
-
-  {
-    StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-    lock.NotifyAll();
-  }
 }
 
-/* static */ void CanvasManagerParent::AddReplayTexture(
-    layers::CanvasTranslator* aOwner, int64_t aTextureId,
-    layers::TextureData* aTextureData) {
-  auto desc = MakeUnique<layers::SurfaceDescriptor>();
-  if (!aTextureData->Serialize(*desc)) {
-    MOZ_CRASH("Failed to serialize");
-  }
+CanvasManagerParent::CanvasManagerParent(
+    layers::SharedSurfacesHolder* aSharedSurfacesHolder,
+    const dom::ContentParentId& aContentId)
+    : mSharedSurfacesHolder(aSharedSurfacesHolder), mContentId(aContentId) {}
 
-  StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-  sReplayTextures.AppendElement(
-      ReplayTexture{aOwner, aTextureId, std::move(desc)});
-  lock.NotifyAll();
-}
-
-/* static */ void CanvasManagerParent::RemoveReplayTexture(
-    layers::CanvasTranslator* aOwner, int64_t aTextureId) {
-  StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-
-  auto i = sReplayTextures.Length();
-  while (i > 0) {
-    --i;
-    const auto& texture = sReplayTextures[i];
-    if (texture.mOwner == aOwner && texture.mId == aTextureId) {
-      sReplayTextures.RemoveElementAt(i);
-      break;
-    }
-  }
-}
-
-/* static */ void CanvasManagerParent::RemoveReplayTextures(
-    layers::CanvasTranslator* aOwner) {
-  StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-
-  auto i = sReplayTextures.Length();
-  while (i > 0) {
-    --i;
-    const auto& texture = sReplayTextures[i];
-    if (texture.mOwner == aOwner) {
-      sReplayTextures.RemoveElementAt(i);
-    }
-  }
-}
-
-/* static */ UniquePtr<layers::SurfaceDescriptor>
-CanvasManagerParent::TakeReplayTexture(base::ProcessId aOtherPid,
-                                       int64_t aTextureId) {
-  // While in theory this could be relatively expensive, the array is most
-  // likely very small as the textures are removed during each composite.
-  auto i = sReplayTextures.Length();
-  while (i > 0) {
-    --i;
-    const auto& texture = sReplayTextures[i];
-    if (texture.mOwner->OtherPid() == aOtherPid && texture.mId == aTextureId) {
-      UniquePtr<layers::SurfaceDescriptor> desc =
-          std::move(sReplayTextures[i].mDesc);
-      sReplayTextures.RemoveElementAt(i);
-      return desc;
-    }
-  }
-  return nullptr;
-}
-
-/* static */ UniquePtr<layers::SurfaceDescriptor>
-CanvasManagerParent::WaitForReplayTexture(base::ProcessId aOtherPid,
-                                          int64_t aTextureId) {
-  StaticMonitorAutoLock lock(sReplayTexturesMonitor);
-
-  UniquePtr<layers::SurfaceDescriptor> desc;
-  while (!(desc = TakeReplayTexture(aOtherPid, aTextureId))) {
-    if (NS_WARN_IF(!sReplayTexturesEnabled)) {
-      return nullptr;
-    }
-
-    TimeDuration timeout = TimeDuration::FromMilliseconds(
-        StaticPrefs::gfx_canvas_remote_texture_timeout_ms());
-    CVStatus status = lock.Wait(timeout);
-    if (status == CVStatus::Timeout) {
-      // If something has gone wrong and the texture has already been destroyed,
-      // it will have cleaned up its descriptor.
-      return nullptr;
-    }
-  }
-
-  return desc;
-}
-
-CanvasManagerParent::CanvasManagerParent() = default;
 CanvasManagerParent::~CanvasManagerParent() = default;
 
 void CanvasManagerParent::Bind(Endpoint<PCanvasManagerParent>&& aEndpoint) {
@@ -211,6 +116,13 @@ void CanvasManagerParent::Bind(Endpoint<PCanvasManagerParent>&& aEndpoint) {
     NS_WARNING("Failed to bind CanvasManagerParent!");
     return;
   }
+
+#ifdef DEBUG
+  for (CanvasManagerParent* i : sManagers) {
+    MOZ_ASSERT_IF(i->mContentId == mContentId,
+                  i->OtherPidMaybeInvalid() == OtherPidMaybeInvalid());
+  }
+#endif
 
   sManagers.Insert(this);
 }
@@ -220,12 +132,18 @@ void CanvasManagerParent::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 already_AddRefed<dom::PWebGLParent> CanvasManagerParent::AllocPWebGLParent() {
-  return MakeAndAddRef<dom::WebGLParent>();
+  if (NS_WARN_IF(!gfxVars::AllowWebglOop() &&
+                 !StaticPrefs::webgl_out_of_process_force())) {
+    MOZ_ASSERT_UNREACHABLE("AllocPWebGLParent without remote WebGL");
+    return nullptr;
+  }
+  return MakeAndAddRef<dom::WebGLParent>(mContentId);
 }
 
 already_AddRefed<webgpu::PWebGPUParent>
 CanvasManagerParent::AllocPWebGPUParent() {
-  if (!gfxVars::AllowWebGPU()) {
+  if (NS_WARN_IF(!gfxVars::AllowWebGPU())) {
+    MOZ_ASSERT_UNREACHABLE("AllocPWebGPUParent without WebGPU");
     return nullptr;
   }
 
@@ -246,7 +164,17 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvInitialize(
 
 already_AddRefed<layers::PCanvasParent>
 CanvasManagerParent::AllocPCanvasParent() {
-  return MakeAndAddRef<layers::CanvasTranslator>();
+  if (NS_WARN_IF(!gfx::gfxVars::RemoteCanvasEnabled() &&
+                 !gfx::gfxVars::UseAcceleratedCanvas2D())) {
+    MOZ_ASSERT_UNREACHABLE("AllocPCanvasParent without remote canvas");
+    return nullptr;
+  }
+  if (NS_WARN_IF(!mId)) {
+    MOZ_ASSERT_UNREACHABLE("AllocPCanvasParent without ID");
+    return nullptr;
+  }
+  return MakeAndAddRef<layers::CanvasTranslator>(mSharedSurfacesHolder,
+                                                 mContentId, mId);
 }
 
 mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
@@ -259,8 +187,7 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
 
   IProtocol* actor = nullptr;
   for (CanvasManagerParent* i : sManagers) {
-    if (i->OtherPidMaybeInvalid() == OtherPidMaybeInvalid() &&
-        i->mId == aManagerId) {
+    if (i->mContentId == mContentId && i->mId == aManagerId) {
       actor = i->Lookup(aProtocolId);
       break;
     }

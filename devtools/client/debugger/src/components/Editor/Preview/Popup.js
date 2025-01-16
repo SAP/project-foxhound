@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import React, { Component } from "react";
-import { div } from "react-dom-factories";
-import PropTypes from "prop-types";
-import { connect } from "../../../utils/connect";
+import React, { Component } from "devtools/client/shared/vendor/react";
+import { div } from "devtools/client/shared/vendor/react-dom-factories";
+import PropTypes from "devtools/client/shared/vendor/react-prop-types";
+import { connect } from "devtools/client/shared/vendor/react-redux";
 
 import Reps from "devtools/client/shared/components/reps/index";
 const {
@@ -22,10 +22,8 @@ const {
 
 import ExceptionPopup from "./ExceptionPopup";
 
-import actions from "../../../actions";
+import actions from "../../../actions/index";
 import Popover from "../../shared/Popover";
-
-import "./Popup.css";
 
 export class Popup extends Component {
   constructor(props) {
@@ -46,27 +44,39 @@ export class Popup extends Component {
   }
 
   componentDidMount() {
-    this.addHighlightToToken();
+    this.addHighlightToToken(this.props.preview.target);
   }
 
   componentWillUnmount() {
-    this.removeHighlightFromToken();
+    this.removeHighlightFromToken(this.props.preview.target);
   }
 
-  addHighlightToToken() {
+  componentDidUpdate(prevProps) {
     const { target } = this.props.preview;
-    if (target) {
-      target.classList.add("preview-token");
-      addHighlightToTargetSiblings(target, this.props);
+    if (prevProps.target == target) {
+      return;
     }
+
+    this.removeHighlightFromToken(prevProps.preview.target);
+    this.addHighlightToToken(target);
   }
 
-  removeHighlightFromToken() {
-    const { target } = this.props.preview;
-    if (target) {
-      target.classList.remove("preview-token");
-      removeHighlightForTargetSiblings(target);
+  addHighlightToToken(target) {
+    if (!target) {
+      return;
     }
+
+    target.classList.add("preview-token");
+    addHighlightToTargetSiblings(target, this.props);
+  }
+
+  removeHighlightFromToken(target) {
+    if (!target) {
+      return;
+    }
+
+    target.classList.remove("preview-token");
+    removeHighlightForTargetSiblings(target);
   }
 
   calculateMaxHeight = () => {

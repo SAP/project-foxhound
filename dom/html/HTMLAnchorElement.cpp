@@ -102,6 +102,7 @@ bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
 
   // cannot focus links if there is no link handler
   if (!OwnerDoc()->LinkHandlingEnabled()) {
+    *aTabIndex = -1;
     *aIsFocusable = false;
     return false;
   }
@@ -109,12 +110,8 @@ bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   // Links that are in an editable region should never be focusable, even if
   // they are in a contenteditable="false" region.
   if (nsContentUtils::IsNodeInEditableRegion(this)) {
-    if (aTabIndex) {
-      *aTabIndex = -1;
-    }
-
+    *aTabIndex = -1;
     *aIsFocusable = false;
-
     return true;
   }
 
@@ -123,22 +120,16 @@ bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
     if (!IsLink()) {
       // Not tabbable or focusable without href (bug 17605), unless
       // forced to be via presence of nonnegative tabindex attribute
-      if (aTabIndex) {
-        *aTabIndex = -1;
-      }
-
+      *aTabIndex = -1;
       *aIsFocusable = false;
-
       return false;
     }
   }
 
-  if (aTabIndex && (sTabFocusModel & eTabFocus_linksMask) == 0) {
+  if ((sTabFocusModel & eTabFocus_linksMask) == 0) {
     *aTabIndex = -1;
   }
-
   *aIsFocusable = true;
-
   return false;
 }
 

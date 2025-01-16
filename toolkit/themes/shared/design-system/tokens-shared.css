@@ -8,6 +8,7 @@
   /* Do not use base tokens directly as they don't carry any meaning and are used to set our base. Refer to Application tokens below. */
   /** Color **/
   --color-white: #ffffff;
+  --color-black-a10: rgba(0, 0, 0, 0.1);
   --color-blue-05: #deeafc;
   --color-blue-30: #73a7f3;
   --color-blue-50: #0060df;
@@ -21,6 +22,7 @@
   --color-gray-50: #bfbfc9;
   --color-gray-60: #8f8f9d;
   --color-gray-70: #5b5b66;
+  --color-gray-80: #23222b;
   --color-gray-90: #1c1b22;
   --color-gray-100: #15141a;
   --color-green-05: #d8eedc;
@@ -41,8 +43,13 @@
   /** Border **/
   --border-radius-circle: 9999px;
   --border-radius-small: 4px;
+  --border-radius-medium: 8px;
   --border-width: 1px;
   --border-interactive-color: unset;
+
+  /** Box **/
+  --box-background-color: light-dark(var(--color-white), var(--color-gray-80));
+  --box-shadow-10: 0 1px 4px var(--color-black-a10);
 
   /** Color **/
   --color-accent-primary: unset;
@@ -86,13 +93,17 @@
 
   /** Size **/
   --size-item-small: 16px;
+  --size-item-medium: 28px;
   --size-item-large: 32px;
+
+  /** Spacing **/
+  --spacing-small: 0.5rem;
 }
 
 @media not (prefers-contrast) {
   :root,
   :host(.anonymous-content-host) {
-    /* Color */
+    /** Color **/
     --color-background-information: light-dark(var(--color-blue-05), var(--color-blue-80));
     --color-background-success: light-dark(var(--color-green-05), var(--color-green-80));
     --color-background-warning: light-dark(var(--color-yellow-05), var(--color-yellow-80));
@@ -121,6 +132,9 @@
     --border-interactive-color-active: AccentColor;
     --border-interactive-color-disabled: GrayText;
 
+    /** Box **/
+    --box-background-color: var(--color-canvas);
+
     /* Button */
     --button-background-color: ButtonFace;
     --button-background-color-hover: ButtonFace;
@@ -133,7 +147,7 @@
     --link-color-active: ActiveText;
     --link-color-visited: var(--link-color);
 
-    /* Color */
+    /** Color **/
     --color-canvas: Canvas;
     --color-background-information: var(--color-canvas);
     --color-background-success: var(--color-canvas);
@@ -152,7 +166,7 @@
     --icon-color-warning: var(--icon-color);
     --icon-color-critical: var(--icon-color);
 
-    /* Text */
+    /** Text **/
     --text-color: CanvasText;
     --text-color-error: inherit;
     --text-color-deemphasized: inherit;
@@ -163,13 +177,13 @@
        TODO(emilio): These seem rather sketchy */
     :root,
     :host(.anonymous-content-host) {
-      /* Border */
+      /** Border **/
       --border-interactive-color: ButtonText;
       --border-interactive-color-hover: SelectedItem;
       --border-interactive-color-active: ButtonText;
       --border-interactive-color-disabled: GrayText;
 
-      /* Color */
+      /** Color **/
       --color-accent-primary: ButtonText;
       --color-accent-primary-hover: SelectedItem;
       --color-accent-primary-active: SelectedItem;

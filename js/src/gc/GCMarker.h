@@ -24,7 +24,12 @@ class GCMarker;
 class SliceBudget;
 class WeakMapBase;
 
+#ifdef DEBUG
+// Force stack resizing to ensure OOM test coverage in debug builds.
+static const size_t MARK_STACK_BASE_CAPACITY = 4;
+#else
 static const size_t MARK_STACK_BASE_CAPACITY = 4096;
+#endif
 
 enum class SlotsOrElementsKind {
   Unused = 0,  // Must match SlotsOrElementsRangeTag
@@ -59,10 +64,10 @@ struct EphemeronEdgeTableHashPolicy {
 // at the time the edge is traced through. The other source's color will be
 // given by the current mark color of the GCMarker.
 struct EphemeronEdge {
-  CellColor color;
+  MarkColor color;
   Cell* target;
 
-  EphemeronEdge(CellColor color_, Cell* cell) : color(color_), target(cell) {}
+  EphemeronEdge(MarkColor color_, Cell* cell) : color(color_), target(cell) {}
 };
 
 using EphemeronEdgeVector = Vector<EphemeronEdge, 2, js::SystemAllocPolicy>;
@@ -492,7 +497,7 @@ class GCMarker {
   // entities (eg a WeakMap and one of its keys), and push the target onto the
   // mark stack.
   void markEphemeronEdges(gc::EphemeronEdgeVector& edges,
-                          gc::CellColor srcColor);
+                          gc::MarkColor srcColor);
   friend class JS::Zone;
 
 #ifdef DEBUG
@@ -595,7 +600,7 @@ class MOZ_RAII AutoSetMarkColor {
   }
 
   AutoSetMarkColor(GCMarker& marker, CellColor newColor)
-      : AutoSetMarkColor(marker, newColor.asMarkColor()) {}
+      : AutoSetMarkColor(marker, AsMarkColor(newColor)) {}
 
   ~AutoSetMarkColor() { marker_.setMarkColor(initialColor_); }
 };

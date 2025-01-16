@@ -533,6 +533,8 @@ Debugger::Debugger(JSContext* cx, NativeObject* dbg)
       uncaughtExceptionHook(nullptr),
       allowUnobservedAsmJS(false),
       allowUnobservedWasm(false),
+      exclusiveDebuggerOnEval(false),
+      inspectNativeCallArguments(false),
       collectCoverageInfo(false),
       observedGCs(cx->zone()),
       allocationsLog(cx),
@@ -789,6 +791,12 @@ bool DebugAPI::debuggerObservesWasm(GlobalObject* global) {
 }
 
 /* static */
+bool DebugAPI::debuggerObservesNativeCall(GlobalObject* global) {
+  return DebuggerExists(
+      global, [=](Debugger* dbg) { return dbg->observesNativeCalls(); });
+}
+
+/* static */
 bool DebugAPI::hasExceptionUnwindHook(GlobalObject* global) {
   return Debugger::hasLiveHook(global, Debugger::OnExceptionUnwind);
 }
@@ -958,14 +966,7 @@ bool DebugAPI::slowPathOnResumeFrame(JSContext* cx, AbstractFramePtr frame) {
 NativeResumeMode DebugAPI::slowPathOnNativeCall(JSContext* cx,
                                                 const CallArgs& args,
                                                 CallReason reason) {
-  // "onNativeCall" only works consistently in the context of an explicit eval
-  // (or a function call via DebuggerObject.call/apply) that has set the
-  // "insideDebuggerEvaluationWithOnNativeCallHook" state
-  // on the JSContext, so we fast-path this hook to bail right away if that is
-  // not currently set. If this flag is set to a _different_ debugger, the
-  // standard "isHookCallAllowed" debugger logic will apply and only hooks on
-  // that debugger will be callable.
-  if (!cx->insideDebuggerEvaluationWithOnNativeCallHook) {
+  if (!cx->realm()->debuggerObservesNativeCall()) {
     return NativeResumeMode::Continue;
   }
 
@@ -2338,8 +2339,48 @@ bool Debugger::fireNativeCall(JSContext* cx, const CallArgs& args,
 
   RootedValue reasonval(cx, StringValue(reasonAtom));
 
+  bool ok = false;
   RootedValue rv(cx);
-  bool ok = js::Call(cx, fval, object, calleeval, reasonval, &rv);
+  if (inspectNativeCallArguments) {
+    RootedValue thisVal(cx, args.thisv());
+    // Ignore anything that may make wrapDebuggeeValue to throw
+    if (thisVal.isMagic() && thisVal.whyMagic() != JS_MISSING_ARGUMENTS &&
+        thisVal.whyMagic() != JS_UNINITIALIZED_LEXICAL) {
+      thisVal.setMagic(JS_OPTIMIZED_OUT);
+    }
+    if (!wrapDebuggeeValue(cx, &thisVal)) {
+      return false;
+    }
+
+    unsigned arrsize = args.length();
+    Rooted<ArrayObject*> arrobj(cx, NewDenseFullyAllocatedArray(cx, arrsize));
+    if (!arrobj) {
+      return false;
+    }
+    arrobj->ensureDenseInitializedLength(0, arrsize);
+    for (unsigned i = 0; i < arrsize; i++) {
+      RootedValue v(cx, args.get(i));
+      if (!wrapDebuggeeValue(cx, &v)) {
+        return false;
+      }
+      arrobj->setDenseElement(i, v);
+    }
+    RootedValue arrayval(cx, ObjectValue(*arrobj));
+    if (!wrapDebuggeeValue(cx, &arrayval)) {
+      return false;
+    }
+
+    FixedInvokeArgs<4> iargs(cx);
+    iargs[0].set(calleeval);
+    iargs[1].set(reasonval);
+    iargs[2].set(thisVal);
+    iargs[3].set(arrayval);
+
+    RootedValue thisv(cx, ObjectOrNullValue(object));
+    ok = js::Call(cx, fval, thisv, iargs, &rv);
+  } else {
+    ok = js::Call(cx, fval, object, calleeval, reasonval, &rv);
+  }
 
   return processHandlerResult(cx, ok, rv, NullFramePtr(), nullptr, resumeMode,
                               vp);
@@ -2552,15 +2593,8 @@ bool DebugAPI::onTrap(JSContext* cx) {
         continue;
       }
 
-      // There are two reasons we have to check whether dbg is debugging
-      // global.
-      //
-      // One is just that one breakpoint handler can disable other Debuggers
-      // or remove debuggees.
-      //
-      // The other has to do with non-compile-and-go scripts, which have no
-      // specific global--until they are executed. Only now do we know which
-      // global the script is running against.
+      // We have to check whether dbg is debugging this global here: a
+      // breakpoint handler can disable other Debuggers or remove debuggees.
       Debugger* dbg = bp->debugger;
       if (dbg->debuggees.has(global)) {
         EnterDebuggeeNoExecute nx(cx, *dbg, adjqi);
@@ -3157,7 +3191,7 @@ bool Debugger::updateExecutionObservabilityOfFrames(
 static inline void MarkJitScriptActiveIfObservable(
     JSScript* script, const DebugAPI::ExecutionObservableSet& obs) {
   if (obs.shouldRecompileOrInvalidate(script)) {
-    script->jitScript()->setActive();
+    script->jitScript()->icScript()->setActive();
   }
 }
 
@@ -3245,10 +3279,10 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
   // discard the BaselineScript on scripts that have no IonScript.
   for (size_t i = 0; i < scripts.length(); i++) {
     MOZ_ASSERT_IF(scripts[i]->isDebuggee(), observing);
-    if (!scripts[i]->jitScript()->active()) {
+    if (!scripts[i]->jitScript()->icScript()->active()) {
       FinishDiscardBaselineScript(gcx, scripts[i]);
     }
-    scripts[i]->jitScript()->resetActive();
+    scripts[i]->jitScript()->icScript()->resetActive();
   }
 
   // Iterate through all wasm instances to find ones that need to be updated.
@@ -3442,6 +3476,10 @@ Debugger::IsObserving Debugger::observesNativeCalls() const {
   return NotObserving;
 }
 
+bool Debugger::isExclusiveDebuggerOnEval() const {
+  return exclusiveDebuggerOnEval;
+}
+
 // Toggle whether this Debugger's debuggees observe all execution. This is
 // called when a hook that observes all execution is set or unset. See
 // hookObservesAllExecution.
@@ -3548,6 +3586,20 @@ void Debugger::updateObservesWasmOnDebuggees(IsObserving observing) {
     }
 
     realm->updateDebuggerObservesWasm();
+  }
+}
+
+void Debugger::updateObservesNativeCallOnDebuggees(IsObserving observing) {
+  for (WeakGlobalObjectSet::Range r = debuggees.all(); !r.empty();
+       r.popFront()) {
+    GlobalObject* global = r.front();
+    Realm* realm = global->realm();
+
+    if (realm->debuggerObservesNativeCall() == observing) {
+      continue;
+    }
+
+    realm->updateDebuggerObservesNativeCall();
   }
 }
 
@@ -4130,6 +4182,10 @@ struct MOZ_STACK_CLASS Debugger::CallData {
   bool setAllowUnobservedAsmJS();
   bool getAllowUnobservedWasm();
   bool setAllowUnobservedWasm();
+  bool getExclusiveDebuggerOnEval();
+  bool setExclusiveDebuggerOnEval();
+  bool getInspectNativeCallArguments();
+  bool setInspectNativeCallArguments();
   bool getCollectCoverageInfo();
   bool setCollectCoverageInfo();
   bool getMemory();
@@ -4200,6 +4256,15 @@ bool Debugger::setHookImpl(JSContext* cx, const CallArgs& args, Debugger& dbg,
                               JSMSG_NOT_CALLABLE_OR_UNDEFINED);
     return false;
   }
+
+  // Disallow simultaneous activation of OnEnterFrame and code coverage support;
+  // as they both use the execution observer flag. See Bug 1608891.
+  if (dbg.collectCoverageInfo && which == Hook::OnEnterFrame) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_DEBUG_EXCLUSIVE_FRAME_COVERAGE);
+    return false;
+  }
+
   uint32_t slot = JSSLOT_DEBUG_HOOK_START + std::underlying_type_t<Hook>(which);
   RootedValue oldHook(cx, dbg.object->getReservedSlot(slot));
   dbg.object->setReservedSlot(slot, args[0]);
@@ -4307,7 +4372,20 @@ bool Debugger::CallData::getOnNativeCall() {
 }
 
 bool Debugger::CallData::setOnNativeCall() {
-  return setHookImpl(cx, args, *dbg, OnNativeCall);
+  RootedObject oldHook(cx, dbg->getHook(OnNativeCall));
+
+  if (!setHookImpl(cx, args, *dbg, OnNativeCall)) {
+    return false;
+  }
+
+  JSObject* newHook = dbg->getHook(OnNativeCall);
+  if (!oldHook && newHook) {
+    dbg->updateObservesNativeCallOnDebuggees(Observing);
+  } else if (oldHook && !newHook) {
+    dbg->updateObservesNativeCallOnDebuggees(NotObserving);
+  }
+
+  return true;
 }
 
 bool Debugger::CallData::getOnNewGlobalObject() {
@@ -4398,6 +4476,36 @@ bool Debugger::CallData::setAllowUnobservedWasm() {
   return true;
 }
 
+bool Debugger::CallData::getExclusiveDebuggerOnEval() {
+  args.rval().setBoolean(dbg->exclusiveDebuggerOnEval);
+  return true;
+}
+
+bool Debugger::CallData::setExclusiveDebuggerOnEval() {
+  if (!args.requireAtLeast(cx, "Debugger.set exclusiveDebuggerOnEval", 1)) {
+    return false;
+  }
+  dbg->exclusiveDebuggerOnEval = ToBoolean(args[0]);
+
+  args.rval().setUndefined();
+  return true;
+}
+
+bool Debugger::CallData::getInspectNativeCallArguments() {
+  args.rval().setBoolean(dbg->inspectNativeCallArguments);
+  return true;
+}
+
+bool Debugger::CallData::setInspectNativeCallArguments() {
+  if (!args.requireAtLeast(cx, "Debugger.set inspectNativeCallArguments", 1)) {
+    return false;
+  }
+  dbg->inspectNativeCallArguments = ToBoolean(args[0]);
+
+  args.rval().setUndefined();
+  return true;
+}
+
 bool Debugger::CallData::getCollectCoverageInfo() {
   args.rval().setBoolean(dbg->collectCoverageInfo);
   return true;
@@ -4407,6 +4515,17 @@ bool Debugger::CallData::setCollectCoverageInfo() {
   if (!args.requireAtLeast(cx, "Debugger.set collectCoverageInfo", 1)) {
     return false;
   }
+
+  // Disallow simultaneous activation of OnEnterFrame and code coverage support;
+  // as they both use the execution observer flag. See Bug 1608891.
+  uint32_t slot = JSSLOT_DEBUG_HOOK_START +
+                  std::underlying_type_t<Hook>(Hook::OnEnterFrame);
+  if (!dbg->object->getReservedSlot(slot).isUndefined()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_DEBUG_EXCLUSIVE_FRAME_COVERAGE);
+    return false;
+  }
+
   dbg->collectCoverageInfo = ToBoolean(args[0]);
 
   IsObserving observing = dbg->collectCoverageInfo ? Observing : NotObserving;
@@ -6391,6 +6510,10 @@ const JSPropertySpec Debugger::properties[] = {
                   setAllowUnobservedWasm),
     JS_DEBUG_PSGS("collectCoverageInfo", getCollectCoverageInfo,
                   setCollectCoverageInfo),
+    JS_DEBUG_PSGS("exclusiveDebuggerOnEval", getExclusiveDebuggerOnEval,
+                  setExclusiveDebuggerOnEval),
+    JS_DEBUG_PSGS("inspectNativeCallArguments", getInspectNativeCallArguments,
+                  setInspectNativeCallArguments),
     JS_DEBUG_PSG("memory", getMemory),
     JS_STRING_SYM_PS(toStringTag, "Debugger", JSPROP_READONLY),
     JS_PS_END};

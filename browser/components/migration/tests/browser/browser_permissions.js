@@ -83,22 +83,19 @@ add_task(async function test_permissions() {
 
     let resourceList = shadow.querySelector(".resource-selection-details");
     Assert.ok(
-      BrowserTestUtils.is_hidden(resourceList),
+      BrowserTestUtils.isHidden(resourceList),
       "Resources list is hidden."
     );
     let importButton = shadow.querySelector("#import");
-    Assert.ok(
-      BrowserTestUtils.is_hidden(importButton),
-      "Import button hidden."
-    );
+    Assert.ok(BrowserTestUtils.isHidden(importButton), "Import button hidden.");
     let noPermissionsMessage = shadow.querySelector(".no-permissions-message");
     Assert.ok(
-      BrowserTestUtils.is_visible(noPermissionsMessage),
+      BrowserTestUtils.isVisible(noPermissionsMessage),
       "No permissions message shown."
     );
     let getPermissionButton = shadow.querySelector("#get-permissions");
     Assert.ok(
-      BrowserTestUtils.is_visible(getPermissionButton),
+      BrowserTestUtils.isVisible(getPermissionButton),
       "Get permissions button shown."
     );
 

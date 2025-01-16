@@ -10,6 +10,7 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 ChromeUtils.defineESModuleGetters(this, {
   // Only needed when SearchUtils.newSearchConfigEnabled is false.
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  AppConstants: "resource://gre/modules/AppConstants.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
@@ -596,5 +597,14 @@ class SearchConfigTest {
     if (!ObjectUtils.deepEqual(actual, expected)) {
       Assert.deepEqual(actual, expected, message);
     }
+  }
+}
+
+async function checkUISchemaValid(configSchema, uiSchema) {
+  for (let key of Object.keys(configSchema.properties)) {
+    Assert.ok(
+      uiSchema["ui:order"].includes(key),
+      `Should have ${key} listed at the top-level of the ui schema`
+    );
   }
 }

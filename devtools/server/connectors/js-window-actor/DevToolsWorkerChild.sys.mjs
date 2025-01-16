@@ -208,7 +208,7 @@ export class DevToolsWorkerChild extends JSWindowActorChild {
    * to the DevToolsWorkerParent via the DevToolsWorkerChild:workerTargetAvailable message.
    *
    * @param {Object} options
-   * @param {Integer} options.watcherActorID: The ID of the WatcherActor who requested to
+   * @param {String} options.watcherActorID: The ID of the WatcherActor who requested to
    *        observe and create these target actors.
    * @param {String} options.parentConnectionPrefix: The prefix of the DevToolsServerConnection
    *        of the Watcher Actor. This is used to compute a unique ID for the target actor.
@@ -255,18 +255,21 @@ export class DevToolsWorkerChild extends JSWindowActorChild {
       sessionData,
     });
 
-    await Promise.all(
-      Array.from(lazy.wdm.getWorkerDebuggerEnumerator())
-        .filter(dbg => this._shouldHandleWorker(dbg))
-        .map(dbg =>
-          this._createWorkerTargetActor({
-            dbg,
-            connection,
-            forwardingPrefix,
-            watcherActorID,
-          })
-        )
-    );
+    const promises = [];
+    for (const dbg of lazy.wdm.getWorkerDebuggerEnumerator()) {
+      if (!this._shouldHandleWorker(dbg)) {
+        continue;
+      }
+      promises.push(
+        this._createWorkerTargetActor({
+          dbg,
+          connection,
+          forwardingPrefix,
+          watcherActorID,
+        })
+      );
+    }
+    await Promise.all(promises);
   }
 
   _createConnection(forwardingPrefix) {

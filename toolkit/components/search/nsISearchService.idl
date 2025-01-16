@@ -93,22 +93,13 @@ interface nsISearchEngine : nsISupports
 
   /**
    * Returns a string with the URL to an engine's icon matching both width and
-   * height. Returns null if icon with specified dimensions is not found.
+   * height. Returns undefined if icon with specified dimensions is not found.
    *
-   * @param width
-   *        Width of the requested icon.
-   * @param height
-   *        Height of the requested icon.
+   * @param preferredWidth
+   *   Width of the requested icon. If not specified, it is assumed that
+   *   16x16 is desired.
    */
-  AString getIconURLBySize(in long width, in long height);
-
-  /**
-   * Gets an array of all available icons. Each entry is an object with
-   * width, height and url properties. width and height are numeric and
-   * represent the icon's dimensions. url is a string with the URL for
-   * the icon.
-   */
-  jsval getIcons();
+  jsval getIconURL([optional] in unsigned short preferredWidth);
 
   /**
    * Opens a speculative connection to the engine's search URI
@@ -152,11 +143,6 @@ interface nsISearchEngine : nsISupports
   attribute boolean hideOneOffButton;
 
   /**
-   * A nsIURI corresponding to the engine's icon, stored locally. May be null.
-   */
-  readonly attribute nsIURI iconURI;
-
-  /**
    * The display name of the search engine. This is a unique identifier.
    */
   readonly attribute AString name;
@@ -177,12 +163,6 @@ interface nsISearchEngine : nsISupports
    * https://example.org/ for the organic search page.
    */
   readonly attribute AString searchForm;
-
-  /**
-   * A boolean to indicate if we should send an attribution request to Mozilla's
-   * server.
-   */
-  readonly attribute boolean sendAttributionRequest;
 
   /**
    * The identifier to use for this engine when submitting to telemetry.
@@ -219,12 +199,18 @@ interface nsISearchEngine : nsISupports
   readonly attribute boolean isGeneralPurposeEngine;
 
   /**
-  * The domain from which search results are returned for this engine.
-  *
-  * @return the domain of the the search URL.
-  */
-readonly attribute AString searchUrlDomain;
+   * The domain from which search results are returned for this engine.
+   *
+   * @return the domain of the the search URL.
+   */
+  readonly attribute AString searchUrlDomain;
 
+  /**
+   * The URL to report the search to.
+   *
+   * @return the reporting URL.
+   */
+  readonly attribute AString clickUrl;
 };
 
 [scriptable, uuid(0dc93e51-a7bf-4a16-862d-4b3469ff6206)]

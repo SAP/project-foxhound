@@ -53,10 +53,10 @@ module.exports = {
       },
     },
     {
-      files: ["**/*.mjs", "**/*.jsm"],
+      files: ["**/*.mjs", "**/*.jsm", "**/?(*.)worker.?(m)js"],
       rules: {
-        // Modules are far easier to check for no-unused-vars on a global scope,
-        // than our content files. Hence we turn that on here.
+        // Modules and workers are far easier to check for no-unused-vars on a
+        // global scope, than our content files. Hence we turn that on here.
         "no-unused-vars": [
           "error",
           {
@@ -115,7 +115,12 @@ module.exports = {
         browser: false,
         worker: true,
       },
-      files: ["**/*.worker.js", "**/*.worker.mjs"],
+      files: [
+        // Most files should use the `.worker.` format to be consistent with
+        // other items like `.sys.mjs`, but we allow simply calling the file
+        // "worker" as well.
+        "**/?(*.)worker.?(m)js",
+      ],
     },
   ],
 
@@ -183,8 +188,10 @@ module.exports = {
     "mozilla/reject-scriptableunicodeconverter": "warn",
     "mozilla/rejects-requires-await": "error",
     "mozilla/use-cc-etc": "error",
+    "mozilla/use-chromeutils-definelazygetter": "error",
     "mozilla/use-chromeutils-generateqi": "error",
     "mozilla/use-chromeutils-import": "error",
+    "mozilla/use-console-createInstance": "error",
     "mozilla/use-default-preference-values": "error",
     "mozilla/use-includes-instead-of-indexOf": "error",
     "mozilla/use-isInstance": "error",
@@ -286,9 +293,6 @@ module.exports = {
 
     // Disallow use of event global.
     "no-restricted-globals": ["error", "event"],
-
-    // Disallows unnecessary `return await ...`.
-    "no-return-await": "error",
 
     // No unnecessary comparisons
     "no-self-compare": "error",

@@ -145,16 +145,9 @@
   </html:template>
 
   <html:template id="screenshotsPagePanelTemplate">
-    <panel id="screenshotsPagePanel"
-           type="arrow"
-           orient="vertical"
-           norolluponanchor="true"
-           consumeoutsideclicks="never"
-           level="parent"
-           noautohide="true"
-           tabspecific="true">
-           <screenshots-buttons></screenshots-buttons>
-    </panel>
+    <box id="screenshotsPagePanel" hidden="true">
+      <screenshots-buttons></screenshots-buttons>
+    </box>
   </html:template>
 
   <html:template id="invalidFormTemplate">
@@ -386,6 +379,8 @@
   </menupopup>
 
   <menupopup id="contentAreaContextMenu"
+# read by macOS cocoa code to enable the "services" menu here:
+             showservicesmenu="true"
              onpopupshowing="if (event.target != this)
                                return true;
                              gContextMenu = new nsContextMenu(this, event.shiftKey);
@@ -416,6 +411,8 @@
     <hbox id="ctrlTab-previews"/>
     <hbox id="ctrlTab-showAll-container" pack="center"/>
   </panel>
+
+  <html:tab-preview id="tabbrowser-tab-preview" hidden="true" />
 
   <html:template id="pageActionPanelTemplate">
     <panel id="pageActionPanel"
@@ -500,7 +497,6 @@
 #include ../../components/controlcenter/content/protectionsPanel.inc.xhtml
 #include ../../components/downloads/content/downloadsPanel.inc.xhtml
 #include ../../components/translations/content/translationsPanel.inc.xhtml
-#include ../../components/reportbrokensite/content/reportBrokenSitePanel.inc.xhtml
 #include browser-allTabsMenu.inc.xhtml
 
   <tooltip id="dynamic-shortcut-tooltip"

@@ -145,17 +145,17 @@ class QuotaManager final : public BackgroundThreadObject {
     return mInitializedOrigins.Contains(aOrigin);
   }
 
-  bool IsTemporaryStorageInitialized() const {
+  bool IsTemporaryStorageInitializedInternal() const {
     AssertIsOnIOThread();
 
-    return mTemporaryStorageInitialized;
+    return mTemporaryStorageInitializedInternal;
   }
 
   /**
    * For initialization of an origin where the directory already exists. This is
-   * used by EnsureTemporaryStorageIsInitialized/InitializeRepository once it
-   * has tallied origin usage by calling each of the QuotaClient InitOrigin
-   * methods.
+   * used by EnsureTemporaryStorageIsInitializedInternal/InitializeRepository
+   * once it has tallied origin usage by calling each of the QuotaClient
+   * InitOrigin methods.
    */
   void InitQuotaForOrigin(const FullOriginMetadata& aFullOriginMetadata,
                           const ClientUsageArray& aClientUsages,
@@ -322,6 +322,8 @@ class QuotaManager final : public BackgroundThreadObject {
   RefPtr<BoolPromise> InitializeStorage(
       RefPtr<UniversalDirectoryLock> aDirectoryLock);
 
+  RefPtr<BoolPromise> StorageInitialized();
+
   bool IsStorageInitialized() const {
     AssertIsOnOwningThread();
 
@@ -340,6 +342,8 @@ class QuotaManager final : public BackgroundThreadObject {
   {
   }
 #endif
+
+  RefPtr<BoolPromise> TemporaryStorageInitialized();
 
  private:
   nsresult EnsureStorageIsInitializedInternal();
@@ -376,7 +380,18 @@ class QuotaManager final : public BackgroundThreadObject {
   Result<std::pair<nsCOMPtr<nsIFile>, bool>, nsresult>
   EnsureTemporaryClientIsInitialized(const ClientMetadata& aClientMetadata);
 
-  nsresult EnsureTemporaryStorageIsInitialized();
+  RefPtr<BoolPromise> InitializeTemporaryStorage();
+
+  RefPtr<BoolPromise> InitializeTemporaryStorage(
+      RefPtr<UniversalDirectoryLock> aDirectoryLock);
+
+  bool IsTemporaryStorageInitialized() const {
+    AssertIsOnOwningThread();
+
+    return mTemporaryStorageInitialized;
+  }
+
+  nsresult EnsureTemporaryStorageIsInitializedInternal();
 
   RefPtr<BoolPromise> ClearStoragesForOrigin(
       const Maybe<PersistenceType>& aPersistenceType,
@@ -780,6 +795,7 @@ class QuotaManager final : public BackgroundThreadObject {
   uint64_t mShutdownStorageOpCount;
   bool mStorageInitialized;
   bool mTemporaryStorageInitialized;
+  bool mTemporaryStorageInitializedInternal;
   bool mCacheUsable;
 };
 

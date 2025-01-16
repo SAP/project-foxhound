@@ -965,31 +965,31 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
 
     unsafe fn draw(
         &mut self,
-        start_vertex: u32,
+        first_vertex: u32,
         vertex_count: u32,
-        start_instance: u32,
+        first_instance: u32,
         instance_count: u32,
     ) {
         let encoder = self.state.render.as_ref().unwrap();
-        if start_instance != 0 {
+        if first_instance != 0 {
             encoder.draw_primitives_instanced_base_instance(
                 self.state.raw_primitive_type,
-                start_vertex as _,
+                first_vertex as _,
                 vertex_count as _,
                 instance_count as _,
-                start_instance as _,
+                first_instance as _,
             );
         } else if instance_count != 1 {
             encoder.draw_primitives_instanced(
                 self.state.raw_primitive_type,
-                start_vertex as _,
+                first_vertex as _,
                 vertex_count as _,
                 instance_count as _,
             );
         } else {
             encoder.draw_primitives(
                 self.state.raw_primitive_type,
-                start_vertex as _,
+                first_vertex as _,
                 vertex_count as _,
             );
         }
@@ -997,16 +997,16 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
 
     unsafe fn draw_indexed(
         &mut self,
-        start_index: u32,
+        first_index: u32,
         index_count: u32,
         base_vertex: i32,
-        start_instance: u32,
+        first_instance: u32,
         instance_count: u32,
     ) {
         let encoder = self.state.render.as_ref().unwrap();
         let index = self.state.index.as_ref().unwrap();
-        let offset = index.offset + index.stride * start_index as wgt::BufferAddress;
-        if base_vertex != 0 || start_instance != 0 {
+        let offset = index.offset + index.stride * first_index as wgt::BufferAddress;
+        if base_vertex != 0 || first_instance != 0 {
             encoder.draw_indexed_primitives_instanced_base_instance(
                 self.state.raw_primitive_type,
                 index_count as _,
@@ -1015,7 +1015,7 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
                 offset,
                 instance_count as _,
                 base_vertex as _,
-                start_instance as _,
+                first_instance as _,
             );
         } else if instance_count != 1 {
             encoder.draw_indexed_primitives_instanced(
@@ -1215,6 +1215,24 @@ impl crate::CommandEncoder<super::Api> for super::CommandEncoder {
     unsafe fn dispatch_indirect(&mut self, buffer: &super::Buffer, offset: wgt::BufferAddress) {
         let encoder = self.state.compute.as_ref().unwrap();
         encoder.dispatch_thread_groups_indirect(&buffer.raw, offset, self.state.raw_wg_size);
+    }
+
+    unsafe fn build_acceleration_structures<'a, T>(
+        &mut self,
+        _descriptor_count: u32,
+        _descriptors: T,
+    ) where
+        super::Api: 'a,
+        T: IntoIterator<Item = crate::BuildAccelerationStructureDescriptor<'a, super::Api>>,
+    {
+        unimplemented!()
+    }
+
+    unsafe fn place_acceleration_structure_barrier(
+        &mut self,
+        _barriers: crate::AccelerationStructureBarrier,
+    ) {
+        unimplemented!()
     }
 }
 

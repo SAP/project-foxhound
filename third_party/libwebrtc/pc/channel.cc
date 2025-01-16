@@ -16,6 +16,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
 #include "api/rtp_parameters.h"
 #include "api/sequence_checker.h"
@@ -166,14 +167,17 @@ bool BaseChannel::ConnectToRtpTransport_n() {
   if (!rtp_transport_->RegisterRtpDemuxerSink(demuxer_criteria_, this)) {
     return false;
   }
-  rtp_transport_->SignalReadyToSend.connect(
-      this, &BaseChannel::OnTransportReadyToSend);
-  rtp_transport_->SignalNetworkRouteChanged.connect(
-      this, &BaseChannel::OnNetworkRouteChanged);
-  rtp_transport_->SignalWritableState.connect(this,
-                                              &BaseChannel::OnWritableState);
-  rtp_transport_->SignalSentPacket.connect(this,
-                                           &BaseChannel::SignalSentPacket_n);
+  rtp_transport_->SubscribeReadyToSend(
+      this, [this](bool ready) { OnTransportReadyToSend(ready); });
+  rtp_transport_->SubscribeNetworkRouteChanged(
+      this, [this](absl::optional<rtc::NetworkRoute> route) {
+        OnNetworkRouteChanged(route);
+      });
+  rtp_transport_->SubscribeWritableState(
+      this, [this](bool state) { OnWritableState(state); });
+  rtp_transport_->SubscribeSentPacket(
+      this,
+      [this](const rtc::SentPacket& packet) { SignalSentPacket_n(packet); });
   return true;
 }
 
@@ -181,10 +185,10 @@ void BaseChannel::DisconnectFromRtpTransport_n() {
   RTC_DCHECK(rtp_transport_);
   RTC_DCHECK(media_send_channel());
   rtp_transport_->UnregisterRtpDemuxerSink(this);
-  rtp_transport_->SignalReadyToSend.disconnect(this);
-  rtp_transport_->SignalNetworkRouteChanged.disconnect(this);
-  rtp_transport_->SignalWritableState.disconnect(this);
-  rtp_transport_->SignalSentPacket.disconnect(this);
+  rtp_transport_->UnsubscribeReadyToSend(this);
+  rtp_transport_->UnsubscribeNetworkRouteChanged(this);
+  rtp_transport_->UnsubscribeWritableState(this);
+  rtp_transport_->UnsubscribeSentPacket(this);
   rtp_transport_ = nullptr;
   media_send_channel()->SetInterface(nullptr);
   media_receive_channel()->SetInterface(nullptr);
@@ -888,7 +892,7 @@ bool VoiceChannel::SetLocalContent_w(const MediaContentDescription* content,
       webrtc::RtpTransceiverDirectionHasRecv(content->direction()),
       &recv_params);
 
-  if (!media_receive_channel()->SetRecvParameters(recv_params)) {
+  if (!media_receive_channel()->SetReceiverParameters(recv_params)) {
     error_desc = StringFormat(
         "Failed to set local audio description recv parameters for m-section "
         "with mid='%s'.",
@@ -941,7 +945,7 @@ bool VoiceChannel::SetRemoteContent_w(const MediaContentDescription* content,
   send_params.mid = mid();
 
   bool parameters_applied =
-      media_send_channel()->SetSendParameters(send_params);
+      media_send_channel()->SetSenderParameters(send_params);
   if (!parameters_applied) {
     error_desc = StringFormat(
         "Failed to set remote audio description send parameters for m-section "
@@ -1031,26 +1035,57 @@ bool VideoChannel::SetLocalContent_w(const MediaContentDescription* content,
 
   VideoSenderParameters send_params = last_send_params_;
 
+  // Ensure that there is a matching packetization for each send codec. If the
+  // other peer offered to exclusively send non-standard packetization but we
+  // only accept to receive standard packetization we effectively amend their
+  // offer by ignoring the packetiztion and fall back to standard packetization
+  // instead.
   bool needs_send_params_update = false;
   if (type == SdpType::kAnswer || type == SdpType::kPrAnswer) {
-    for (auto& send_codec : send_params.codecs) {
-      auto* recv_codec = FindMatchingCodec(recv_params.codecs, send_codec);
-      if (recv_codec) {
-        if (!recv_codec->packetization && send_codec.packetization) {
-          send_codec.packetization.reset();
-          needs_send_params_update = true;
-        } else if (recv_codec->packetization != send_codec.packetization) {
-          error_desc = StringFormat(
-              "Failed to set local answer due to invalid codec packetization "
-              "specified in m-section with mid='%s'.",
-              mid().c_str());
-          return false;
+    webrtc::flat_set<const VideoCodec*> matched_codecs;
+    for (VideoCodec& send_codec : send_params.codecs) {
+      if (absl::c_any_of(matched_codecs, [&](const VideoCodec* c) {
+            return send_codec.Matches(*c);
+          })) {
+        continue;
+      }
+
+      std::vector<const VideoCodec*> recv_codecs =
+          FindAllMatchingCodecs(recv_params.codecs, send_codec);
+      if (recv_codecs.empty()) {
+        continue;
+      }
+
+      bool may_ignore_packetization = false;
+      bool has_matching_packetization = false;
+      for (const VideoCodec* recv_codec : recv_codecs) {
+        if (!recv_codec->packetization.has_value() &&
+            send_codec.packetization.has_value()) {
+          may_ignore_packetization = true;
+        } else if (recv_codec->packetization == send_codec.packetization) {
+          has_matching_packetization = true;
+          break;
         }
+      }
+
+      if (may_ignore_packetization) {
+        send_codec.packetization = absl::nullopt;
+        needs_send_params_update = true;
+      } else if (!has_matching_packetization) {
+        error_desc = StringFormat(
+            "Failed to set local answer due to incompatible codec "
+            "packetization for pt='%d' specified in m-section with mid='%s'.",
+            send_codec.id, mid().c_str());
+        return false;
+      }
+
+      if (has_matching_packetization) {
+        matched_codecs.insert(&send_codec);
       }
     }
   }
 
-  if (!media_receive_channel()->SetRecvParameters(recv_params)) {
+  if (!media_receive_channel()->SetReceiverParameters(recv_params)) {
     error_desc = StringFormat(
         "Failed to set local video description recv parameters for m-section "
         "with mid='%s'.",
@@ -1069,7 +1104,7 @@ bool VideoChannel::SetLocalContent_w(const MediaContentDescription* content,
   last_recv_params_ = recv_params;
 
   if (needs_send_params_update) {
-    if (!media_send_channel()->SetSendParameters(send_params)) {
+    if (!media_send_channel()->SetSenderParameters(send_params)) {
       error_desc = StringFormat(
           "Failed to set send parameters for m-section with mid='%s'.",
           mid().c_str());
@@ -1116,26 +1151,57 @@ bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
 
   VideoReceiverParameters recv_params = last_recv_params_;
 
+  // Ensure that there is a matching packetization for each receive codec. If we
+  // offered to exclusively receive a non-standard packetization but the other
+  // peer only accepts to send standard packetization we effectively amend our
+  // offer by ignoring the packetiztion and fall back to standard packetization
+  // instead.
   bool needs_recv_params_update = false;
   if (type == SdpType::kAnswer || type == SdpType::kPrAnswer) {
-    for (auto& recv_codec : recv_params.codecs) {
-      auto* send_codec = FindMatchingCodec(send_params.codecs, recv_codec);
-      if (send_codec) {
-        if (!send_codec->packetization && recv_codec.packetization) {
-          recv_codec.packetization.reset();
-          needs_recv_params_update = true;
-        } else if (send_codec->packetization != recv_codec.packetization) {
-          error_desc = StringFormat(
-              "Failed to set remote answer due to invalid codec packetization "
-              "specifid in m-section with mid='%s'.",
-              mid().c_str());
-          return false;
+    webrtc::flat_set<const VideoCodec*> matched_codecs;
+    for (VideoCodec& recv_codec : recv_params.codecs) {
+      if (absl::c_any_of(matched_codecs, [&](const VideoCodec* c) {
+            return recv_codec.Matches(*c);
+          })) {
+        continue;
+      }
+
+      std::vector<const VideoCodec*> send_codecs =
+          FindAllMatchingCodecs(send_params.codecs, recv_codec);
+      if (send_codecs.empty()) {
+        continue;
+      }
+
+      bool may_ignore_packetization = false;
+      bool has_matching_packetization = false;
+      for (const VideoCodec* send_codec : send_codecs) {
+        if (!send_codec->packetization.has_value() &&
+            recv_codec.packetization.has_value()) {
+          may_ignore_packetization = true;
+        } else if (send_codec->packetization == recv_codec.packetization) {
+          has_matching_packetization = true;
+          break;
         }
+      }
+
+      if (may_ignore_packetization) {
+        recv_codec.packetization = absl::nullopt;
+        needs_recv_params_update = true;
+      } else if (!has_matching_packetization) {
+        error_desc = StringFormat(
+            "Failed to set remote answer due to incompatible codec "
+            "packetization for pt='%d' specified in m-section with mid='%s'.",
+            recv_codec.id, mid().c_str());
+        return false;
+      }
+
+      if (has_matching_packetization) {
+        matched_codecs.insert(&recv_codec);
       }
     }
   }
 
-  if (!media_send_channel()->SetSendParameters(send_params)) {
+  if (!media_send_channel()->SetSenderParameters(send_params)) {
     error_desc = StringFormat(
         "Failed to set remote video description send parameters for m-section "
         "with mid='%s'.",
@@ -1151,7 +1217,7 @@ bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
   last_send_params_ = send_params;
 
   if (needs_recv_params_update) {
-    if (!media_receive_channel()->SetRecvParameters(recv_params)) {
+    if (!media_receive_channel()->SetReceiverParameters(recv_params)) {
       error_desc = StringFormat(
           "Failed to set recv parameters for m-section with mid='%s'.",
           mid().c_str());

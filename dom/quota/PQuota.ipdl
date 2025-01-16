@@ -41,18 +41,6 @@ struct StorageNameParams
 {
 };
 
-struct StorageInitializedParams
-{
-};
-
-struct TemporaryStorageInitializedParams
-{
-};
-
-struct InitTemporaryStorageParams
-{
-};
-
 struct InitializePersistentOriginParams
 {
   PrincipalInfo principalInfo;
@@ -123,9 +111,6 @@ struct ListOriginsParams
 union RequestParams
 {
   StorageNameParams;
-  StorageInitializedParams;
-  TemporaryStorageInitializedParams;
-  InitTemporaryStorageParams;
   InitializePersistentOriginParams;
   InitializeTemporaryOriginParams;
   GetFullOriginMetadataParams;
@@ -136,7 +121,7 @@ union RequestParams
   ListOriginsParams;
 };
 
-[ManualDealloc, ChildImpl=virtual, ParentImpl=virtual]
+[ChildImpl=virtual, ParentImpl=virtual]
 protocol PQuota
 {
   manager PBackground;
@@ -151,6 +136,12 @@ parent:
 
   async PQuotaRequest(RequestParams params);
 
+  async StorageInitialized()
+      returns(BoolResponse response);
+
+  async TemporaryStorageInitialized()
+      returns(BoolResponse response);
+
   async InitializeStorage()
       returns(BoolResponse response);
 
@@ -161,6 +152,9 @@ parent:
   async InitializeTemporaryClient(PersistenceType persistenceType,
                                   PrincipalInfo principalInfo,
                                   Type clientType)
+      returns(BoolResponse response);
+
+  async InitializeTemporaryStorage()
       returns(BoolResponse response);
 
   async ClearStoragesForOrigin(PersistenceType? persistenceType,

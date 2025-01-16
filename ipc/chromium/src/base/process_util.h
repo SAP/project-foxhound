@@ -163,15 +163,16 @@ struct LaunchOptions {
   bool use_forkserver = false;
 #endif
 
-#if defined(XP_LINUX)
-  struct ForkDelegate {
-    virtual ~ForkDelegate() {}
-    virtual pid_t Fork() = 0;
-  };
-
-  // If non-null, the fork delegate will be called instead of fork().
-  // It is not required to call pthread_atfork hooks.
-  mozilla::UniquePtr<ForkDelegate> fork_delegate = nullptr;
+#if defined(XP_LINUX) && defined(MOZ_SANDBOX)
+  // These fields are used by the sandboxing code in SandboxLaunch.cpp.
+  // It's not ideal to have them here, but trying to abstract them makes
+  // it harder to serialize LaunchOptions for the fork server.
+  //
+  // (fork_flags holds extra flags for the clone() syscall, and
+  // sandbox_chroot indicates whether the child process will be given
+  // the ability to chroot() itself to an empty directory.)
+  int fork_flags = 0;
+  bool sandbox_chroot = false;
 #endif
 
 #ifdef XP_DARWIN
@@ -204,6 +205,8 @@ Result<Ok, LaunchError> LaunchApp(const std::wstring& cmdline,
                                   const LaunchOptions& options,
                                   ProcessHandle* process_handle);
 
+Result<Ok, LaunchError> LaunchApp(const CommandLine& cl, const LaunchOptions&,
+                                  ProcessHandle* process_handle);
 #else
 // Runs the application specified in argv[0] with the command line argv.
 //
@@ -213,7 +216,7 @@ Result<Ok, LaunchError> LaunchApp(const std::wstring& cmdline,
 // Note that the first argument in argv must point to the filename,
 // and must be fully specified (i.e., this will not search $PATH).
 Result<Ok, LaunchError> LaunchApp(const std::vector<std::string>& argv,
-                                  const LaunchOptions& options,
+                                  LaunchOptions&& options,
                                   ProcessHandle* process_handle);
 
 // Merge an environment map with the current environment.
@@ -240,7 +243,7 @@ class AppProcessBuilder {
   // This function will fork a new process for use as a
   // content processes.
   bool ForkProcess(const std::vector<std::string>& argv,
-                   const LaunchOptions& options, ProcessHandle* process_handle);
+                   LaunchOptions&& options, ProcessHandle* process_handle);
   // This function will be called in the child process to initializes
   // the environment of the content process.  It should be called
   // after the message loop of the main thread, to make sure the fork
@@ -269,11 +272,6 @@ void InitForkServerProcess();
  */
 void RegisterForkServerNoCloseFD(int aFd);
 #endif
-
-// Executes the application specified by cl. This function delegates to one
-// of the above two platform-specific functions.
-Result<Ok, LaunchError> LaunchApp(const CommandLine& cl, const LaunchOptions&,
-                                  ProcessHandle* process_handle);
 
 // Attempts to kill the process identified by the given process
 // entry structure, giving it the specified exit code.

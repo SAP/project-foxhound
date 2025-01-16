@@ -361,19 +361,19 @@ skip-if = ["os == 'linux' && tsan"] #Bug 1838736
 
 ["test_peerConnection_setRemoteOfferInHaveLocalOffer.html"]
 
+["test_peerConnection_sillyCodecPriorities.html"]
+
 ["test_peerConnection_simulcastAnswer.html"]
 skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastAnswer_lowResFirst.html"]
 skip-if = [
   "os == 'android'", # no simulcast support on android
-  "os == 'win'", # Bug 1834147
 ]
 
 ["test_peerConnection_simulcastAnswer_lowResFirst_oldSetParameters.html"]
 skip-if = [
   "os == 'android'", # no simulcast support on android
-  "os == 'win'", # Bug 1831695
 ]
 
 ["test_peerConnection_simulcastAnswer_oldSetParameters.html"]
@@ -391,13 +391,11 @@ skip-if = ["os == 'android'"] # no simulcast support on android
 ["test_peerConnection_simulcastOffer_lowResFirst.html"]
 skip-if = [
   "os == 'android'", # no simulcast support on android
-  "os == 'win'", # Bug 1834009
 ]
 
 ["test_peerConnection_simulcastOffer_lowResFirst_oldSetParameters.html"]
 skip-if = [
   "os == 'android'", # no simulcast support on android
-  "os == 'win'", # Bug 1833967
 ]
 
 ["test_peerConnection_simulcastOffer_oldSetParameters.html"]

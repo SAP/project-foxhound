@@ -346,6 +346,27 @@ function handleHelperResult(response) {
           );
           // early return as we already dispatched necessary messages.
           return;
+
+        // Sent when using ":command --help or :command --usage"
+        // to help discover command arguments.
+        //
+        // The remote runtime will tell us about the usage as it may
+        // be different from the client one.
+        case "usage":
+          dispatch(
+            messagesActions.messagesAdd([
+              {
+                resourceType: ResourceCommand.TYPES.PLATFORM_MESSAGE,
+                message: helperResult.message,
+              },
+            ])
+          );
+          break;
+
+        case "traceOutput":
+          // Nothing in particular to do.
+          // The JSTRACER_STATE resource will report the start/stop of the profiler.
+          break;
       }
     }
 
@@ -437,7 +458,6 @@ function terminalInputChanged(expression, force = false) {
       ),
       mapped,
       eager: true,
-      disableBreaks: true,
     });
 
     return dispatch({

@@ -101,6 +101,8 @@ exports.getCSSAtRuleTypeName = function (cssRule) {
  * @returns {String} A localized version of the given key.
  */
 exports.l10n = name => styleInspectorL10N.getStr(name);
+exports.l10nFormatStr = (name, ...args) =>
+  styleInspectorL10N.getFormatStr(name, ...args);
 
 /**
  * Is the given property sheet an author stylesheet?
@@ -151,35 +153,43 @@ exports.shortSource = function (sheet) {
     );
   }
 
+  let name = sheet.href;
+
   // If the sheet is a data URL, return a trimmed version of it.
   const dataUrl = sheet.href.trim().match(/^data:.*?,((?:.|\r|\n)*)$/);
   if (dataUrl) {
-    return dataUrl[1].length > MAX_DATA_URL_LENGTH
-      ? `${dataUrl[1].substr(0, MAX_DATA_URL_LENGTH - 1)}…`
-      : dataUrl[1];
-  }
-
-  // We try, in turn, the filename, filePath, query string, whole thing
-  let url = {};
-  try {
-    url = new URL(sheet.href);
-  } catch (ex) {
-    // Some UA-provided stylesheets are not valid URLs.
-  }
-
-  if (url.pathname) {
-    const index = url.pathname.lastIndexOf("/");
-    if (index !== -1 && index < url.pathname.length) {
-      return url.pathname.slice(index + 1);
+    name =
+      dataUrl[1].length > MAX_DATA_URL_LENGTH
+        ? `${dataUrl[1].substr(0, MAX_DATA_URL_LENGTH - 1)}…`
+        : dataUrl[1];
+  } else {
+    // We try, in turn, the filename, filePath, query string, whole thing
+    let url = {};
+    try {
+      url = new URL(sheet.href);
+    } catch (ex) {
+      // Some UA-provided stylesheets are not valid URLs.
     }
-    return url.pathname;
+
+    if (url.pathname) {
+      const index = url.pathname.lastIndexOf("/");
+      if (index !== -1 && index < url.pathname.length) {
+        name = url.pathname.slice(index + 1);
+      } else {
+        name = url.pathname;
+      }
+    } else if (url.query) {
+      name = url.query;
+    }
   }
 
-  if (url.query) {
-    return url.query;
+  try {
+    name = decodeURIComponent(name);
+  } catch (e) {
+    // This may still fail if the URL contains invalid % numbers (for ex)
   }
 
-  return sheet.href;
+  return name;
 };
 
 /**
@@ -810,3 +820,25 @@ function getXPath(ele) {
   return parts.length ? "/" + parts.reverse().join("/") : "";
 }
 exports.getXPath = getXPath;
+
+/**
+ * Build up a regular expression that matches a CSS variable token. This is an
+ * ident token that starts with two dashes "--".
+ *
+ * https://www.w3.org/TR/css-syntax-3/#ident-token-diagram
+ */
+var NON_ASCII = "[^\\x00-\\x7F]";
+var ESCAPE = "\\\\[^\n\r]";
+var VALID_CHAR = ["[_a-z0-9-]", NON_ASCII, ESCAPE].join("|");
+var IS_VARIABLE_TOKEN = new RegExp(`^--(${VALID_CHAR})*$`, "i");
+
+/**
+ * Check that this is a CSS variable.
+ *
+ * @param {String} input
+ * @return {Boolean}
+ */
+function isCssVariable(input) {
+  return !!input.match(IS_VARIABLE_TOKEN);
+}
+exports.isCssVariable = isCssVariable;

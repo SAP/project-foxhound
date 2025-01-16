@@ -9,6 +9,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  Region: "resource://gre/modules/Region.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
 });
@@ -43,7 +44,14 @@ export const SEARCH_TELEMETRY_SHARED = {
 
 const impressionIdsWithoutEngagementsSet = new Set();
 
-const maxDomainsToCategorize = 10;
+export const CATEGORIZATION_SETTINGS = {
+  HIGHEST_SCORE_THRESHOLD: 50,
+  MAX_DOMAINS_TO_CATEGORIZE: 10,
+  MINIMUM_SCORE: 0,
+  STARTING_RANK: 2,
+  IDLE_TIMEOUT_SECONDS: 60 * 60,
+  WAKE_TIMEOUT_MS: 60 * 60 * 1000,
+};
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   return console.createInstance({
@@ -66,10 +74,19 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "serpEventTelemetryCategorization",
   CATEGORIZATION_PREF,
-  false
+  false,
+  (aPreference, previousValue, newValue) => {
+    if (newValue) {
+      SearchSERPDomainToCategoriesMap.init();
+      SearchSERPCategorizationEventScheduler.init();
+    } else {
+      SearchSERPDomainToCategoriesMap.uninit();
+      SearchSERPCategorizationEventScheduler.uninit();
+    }
+  }
 );
 
-export var SearchSERPTelemetryUtils = {
+export const SearchSERPTelemetryUtils = {
   ACTIONS: {
     CLICKED: "clicked",
     EXPANDED: "expanded",
@@ -77,6 +94,7 @@ export var SearchSERPTelemetryUtils = {
   },
   COMPONENTS: {
     AD_CAROUSEL: "ad_carousel",
+    AD_IMAGE_ROW: "ad_image_row",
     AD_LINK: "ad_link",
     AD_SIDEBAR: "ad_sidebar",
     AD_SITELINK: "ad_sitelink",
@@ -99,6 +117,14 @@ export var SearchSERPTelemetryUtils = {
     INCONCLUSIVE: 0,
   },
 };
+
+const AD_COMPONENTS = [
+  SearchSERPTelemetryUtils.COMPONENTS.AD_CAROUSEL,
+  SearchSERPTelemetryUtils.COMPONENTS.AD_IMAGE_ROW,
+  SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+  SearchSERPTelemetryUtils.COMPONENTS.AD_SIDEBAR,
+  SearchSERPTelemetryUtils.COMPONENTS.AD_SITELINK,
+];
 
 /**
  * TelemetryHandler is the main class handling Search Engine Result Page (SERP)
@@ -496,6 +522,9 @@ class TelemetryHandler {
         urlToComponentMap: null,
         impressionInfo,
         searchBoxSubmitted: false,
+        categorizationInfo: null,
+        adsClicked: 0,
+        adsVisible: 0,
       });
       item.count++;
       item.source = source;
@@ -509,11 +538,18 @@ class TelemetryHandler {
           urlToComponentMap: null,
           impressionInfo,
           searchBoxSubmitted: false,
+          categorizationInfo: null,
+          adsClicked: 0,
+          adsVisible: 0,
         }),
         info,
         count: 1,
         source,
         newtabSessionId,
+        appVersion: Services.appinfo.version,
+        channel: lazy.SearchUtils.MODIFIED_APP_CHANNEL,
+        locale: Services.locale.appLocaleAsBCP47,
+        region: lazy.Region.home,
       });
     }
   }
@@ -532,10 +568,17 @@ class TelemetryHandler {
   stopTrackingBrowser(browser, abandonmentReason) {
     for (let [url, item] of this._browserInfoByURL) {
       if (item.browserTelemetryStateMap.has(browser)) {
-        let impressionId =
-          item.browserTelemetryStateMap.get(browser).impressionId;
+        let telemetryState = item.browserTelemetryStateMap.get(browser);
+        let impressionId = telemetryState.impressionId;
         if (impressionIdsWithoutEngagementsSet.has(impressionId)) {
           this.recordAbandonmentTelemetry(impressionId, abandonmentReason);
+        }
+
+        if (
+          lazy.serpEventTelemetryCategorization &&
+          telemetryState.categorizationInfo
+        ) {
+          SearchSERPCategorizationEventScheduler.sendCallback(browser);
         }
 
         item.browserTelemetryStateMap.delete(browser);
@@ -1173,22 +1216,41 @@ class ContentHandler {
       let telemetryState;
       let isFromNewtab = false;
       if (item.browserTelemetryStateMap.has(browser)) {
-        // Current browser is tracked.
+        // If the map contains the browser, then it means that the request is
+        // the SERP is going from one page to another. We know this because
+        // previous conditions prevent non-top level loads from occuring here.
         telemetryState = item.browserTelemetryStateMap.get(browser);
       } else if (browser) {
-        // Current browser might have been created by a browser in a
-        // different tab.
-        let tabBrowser = browser.getTabBrowser();
-        // A tab will not always have an openerTab, such as if a tab was
-        // created as a first tab in a new window. Bug 1866548: additional
-        // conditions need to be added in order to track clicks that open in
-        // new windows.
-        let tab = tabBrowser.getTabForBrowser(browser).openerTab;
-        if (tab) {
-          telemetryState = item.browserTelemetryStateMap.get(tab.linkedBrowser);
-          if (telemetryState) {
-            isFromNewtab = true;
+        // Alternatively, it could be the case that the request is occuring in
+        // a new tab but was triggered by one of the browsers in the state map.
+        // If only one browser exists in the state map, it must be that one.
+        if (item.count === 1) {
+          let sourceBrowsers = ChromeUtils.nondeterministicGetWeakMapKeys(
+            item.browserTelemetryStateMap
+          );
+          if (sourceBrowsers?.length) {
+            telemetryState = item.browserTelemetryStateMap.get(
+              sourceBrowsers[0]
+            );
           }
+        } else if (item.count > 1) {
+          // If the count is more than 1, then multiple open SERPs contain the
+          // same search term, so try to find the specific browser that opened
+          // the request.
+          let tabBrowser = browser.getTabBrowser();
+          let tab = tabBrowser.getTabForBrowser(browser).openerTab;
+          // A tab will not always have an openerTab, as first tabs in new
+          // windows don't have an openerTab.
+          // Bug 1867582: We should also handle the case where multiple tabs
+          // contain the same search term.
+          if (tab) {
+            telemetryState = item.browserTelemetryStateMap.get(
+              tab.linkedBrowser
+            );
+          }
+        }
+        if (telemetryState) {
+          isFromNewtab = true;
         }
       }
 
@@ -1261,6 +1323,9 @@ class ContentHandler {
 
         // Step 3: Record the engagement.
         impressionIdsWithoutEngagementsSet.delete(telemetryState.impressionId);
+        if (AD_COMPONENTS.includes(type)) {
+          telemetryState.adsClicked += 1;
+        }
         Glean.serp.engagement.record({
           impression_id: telemetryState.impressionId,
           action: SearchSERPTelemetryUtils.ACTIONS.CLICKED,
@@ -1373,6 +1438,8 @@ class ContentHandler {
       !telemetryState.adImpressionsReported
     ) {
       for (let [componentType, data] of info.adImpressions.entries()) {
+        telemetryState.adsVisible += data.adsVisible;
+
         lazy.logConsole.debug("Counting ad:", { type: componentType, ...data });
         Glean.serp.adImpression.record({
           impression_id: telemetryState.impressionId,
@@ -1490,9 +1557,9 @@ class ContentHandler {
    * @param {object} info
    *   The search provider infomation for the page.
    * @param {Set} info.nonAdDomains
-       The non-ad domains extracted from the page. 
+       The non-ad domains extracted from the page.
    * @param {Set} info.adDomains
-       The ad domains extracted from the page. 
+       The ad domains extracted from the page.
    * @param {object} browser
    *   The browser associated with the page.
    */
@@ -1500,63 +1567,120 @@ class ContentHandler {
     let item = this._findBrowserItemForURL(info.url);
     let telemetryState = item.browserTelemetryStateMap.get(browser);
     if (lazy.serpEventTelemetryCategorization && telemetryState) {
-      let provider = item?.info.provider;
-      if (provider) {
-        SearchSERPCategorization.maybeCategorizeAndReportDomainsFromProvider(
-          info.nonAdDomains,
-          info.adDomains,
-          provider
-        );
-        Services.obs.notifyObservers(
-          null,
-          "reported-page-with-categorized-domains"
-        );
+      let result = SearchSERPCategorization.maybeCategorizeSERP(
+        info.nonAdDomains,
+        info.adDomains,
+        item.info.provider
+      );
+      if (result) {
+        telemetryState.categorizationInfo = result;
+        let callback = () => {
+          let impressionInfo = telemetryState.impressionInfo;
+          SERPCategorizationRecorder.recordCategorizationTelemetry({
+            ...telemetryState.categorizationInfo,
+            app_version: item.appVersion,
+            channel: item.channel,
+            locale: item.locale,
+            region: item.region,
+            partner_code: impressionInfo.partnerCode,
+            provider: impressionInfo.provider,
+            tagged: impressionInfo.tagged,
+            num_ads_clicked: telemetryState.adsClicked,
+            num_ads_visible: telemetryState.adsVisible,
+          });
+        };
+        SearchSERPCategorizationEventScheduler.addCallback(browser, callback);
       }
     }
+    Services.obs.notifyObservers(
+      null,
+      "reported-page-with-categorized-domains"
+    );
   }
 }
 
 /**
+ * @typedef {object} CategorizationResult
+ * @property {string} organic_category
+ *  The category for the organic result.
+ * @property {number} organic_num_domains
+ *  The number of domains examined to determine the organic category result.
+ * @property {number} organic_num_inconclusive
+ *  The number of inconclusive domains when determining the organic result.
+ * @property {number} organic_num_unknown
+ *  The number of unknown domains when determining the organic result.
+ * @property {string} sponsored_category
+ *  The category for the organic result.
+ * @property {number} sponsored_num_domains
+ *  The number of domains examined to determine the sponsored category.
+ * @property {number} sponsored_num_inconclusive
+ *  The number of inconclusive domains when determining the sponsored category.
+ * @property {number} sponsored_num_unknown
+ *  The category for the sponsored result.
+ * @property {string} mappings_version
+ *  The category mapping version used to determine the categories.
+ */
+
+/**
+ * @typedef {object} CategorizationExtraParams
+ * @property {number} num_ads_clicked
+ *  The total number of ads clicked on a SERP.
+ * @property {number} num_ads_visible
+ *  The total number of ads visible to the user when categorization occured.
+ */
+
+/* eslint-disable jsdoc/valid-types */
+/**
+ * @typedef {CategorizationResult & CategorizationExtraParams} RecordCategorizationParameters
+ */
+/* eslint-enable jsdoc/valid-types */
+
+/**
  * Categorizes SERPs.
  */
-class DomainCategorizer {
+class SERPCategorizer {
   /**
-   * Categorizes and reports domains extracted from SERPs. Note that we don't
-   * process domains if the domain-to-categories map is empty (if the client
-   * couldn't download Remote Settings attachments, for example).
+   * Categorizes domains extracted from SERPs. Note that we don't process
+   * domains if the domain-to-categories map is empty (if the client couldn't
+   * download Remote Settings attachments, for example).
    *
    * @param {Set} nonAdDomains
-   *   The non-ad domains extracted from the page.
+   *   Domains from organic results extracted from the page.
    * @param {Set} adDomains
-   *   The ad domains extracted from the page.
+   *   Domains from ad results extracted from the page.
    * @param {string} provider
    *   The provider associated with the page.
+   * @returns {CategorizationResult | null}
+   *   The final categorization result. Returns null if the map was empty.
    */
-  maybeCategorizeAndReportDomainsFromProvider(
-    nonAdDomains,
-    adDomains,
-    provider
-  ) {
-    for (let domains of [nonAdDomains, adDomains]) {
-      // We don't want to generate and report telemetry if a client was unable
-      // to download the domain-to-categories mapping from Remote Settings.
-      if (SearchSERPDomainToCategoriesMap.empty) {
-        continue;
-      }
-      domains = this.processDomains(domains, provider);
-      // Per a request from Data Science, we need to limit the number of domains
-      // categorized to 10 non ad domains and 10 ad domains.
-      domains = new Set([...domains].slice(0, maxDomainsToCategorize));
-      let resultsToReport = this.applyCategorizationLogic(domains);
-      this.dummyLogger(
-        domains,
-        resultsToReport,
-        SearchSERPDomainToCategoriesMap.version
-      );
+  maybeCategorizeSERP(nonAdDomains, adDomains, provider) {
+    // Per DS, if the map was empty (e.g. because of a technical issue
+    // downloading the data), we shouldn't report telemetry.
+    // Thus, there is no point attempting to categorize the SERP.
+    if (SearchSERPDomainToCategoriesMap.empty) {
+      return null;
     }
+    let resultsToReport = {};
+
+    let processedDomains = this.processDomains(nonAdDomains, provider);
+    let results = this.applyCategorizationLogic(processedDomains);
+    resultsToReport.organic_category = results.category;
+    resultsToReport.organic_num_domains = results.num_domains;
+    resultsToReport.organic_num_unknown = results.num_unknown;
+    resultsToReport.organic_num_inconclusive = results.num_inconclusive;
+
+    processedDomains = this.processDomains(adDomains, provider);
+    results = this.applyCategorizationLogic(processedDomains);
+    resultsToReport.sponsored_category = results.category;
+    resultsToReport.sponsored_num_domains = results.num_domains;
+    resultsToReport.sponsored_num_unknown = results.num_unknown;
+    resultsToReport.sponsored_num_inconclusive = results.num_inconclusive;
+
+    resultsToReport.mappings_version = SearchSERPDomainToCategoriesMap.version;
+
+    return resultsToReport;
   }
 
-  // TODO: check with DS to get the final aggregation logic. (Bug 1854196)
   /**
    * Applies the logic for reducing extracted domains to a single category for
    * the SERP.
@@ -1568,49 +1692,63 @@ class DomainCategorizer {
    *   "num_unknown" and "num_inconclusive".
    */
   applyCategorizationLogic(domains) {
-    let totalScoresPerCategory = {};
+    let domainInfo = {};
     let domainsCount = 0;
     let unknownsCount = 0;
     let inconclusivesCount = 0;
+
+    // Per a request from Data Science, we need to limit the number of domains
+    // categorized to 10 non-ad domains and 10 ad domains.
+    domains = new Set(
+      [...domains].slice(0, CATEGORIZATION_SETTINGS.MAX_DOMAINS_TO_CATEGORIZE)
+    );
 
     for (let domain of domains) {
       domainsCount++;
 
       let categoryCandidates = SearchSERPDomainToCategoriesMap.get(domain);
+
       if (!categoryCandidates.length) {
         unknownsCount++;
         continue;
       }
 
-      for (let candidate of categoryCandidates) {
-        if (
-          candidate.category ==
-          SearchSERPTelemetryUtils.CATEGORIZATION.INCONCLUSIVE
-        ) {
-          inconclusivesCount++;
-          continue;
-        }
-
-        if (totalScoresPerCategory[candidate.category]) {
-          totalScoresPerCategory[candidate.category] += candidate.score;
-        } else {
-          totalScoresPerCategory[candidate.category] = candidate.score;
-        }
+      let isInconclusive =
+        (categoryCandidates.length == 1 &&
+          categoryCandidates[0].category ==
+            SearchSERPTelemetryUtils.CATEGORIZATION.INCONCLUSIVE) ||
+        categoryCandidates.some(
+          c =>
+            c.category ==
+              SearchSERPTelemetryUtils.CATEGORIZATION.INCONCLUSIVE &&
+            c.score >= CATEGORIZATION_SETTINGS.HIGHEST_SCORE_THRESHOLD
+        );
+      if (isInconclusive) {
+        inconclusivesCount++;
+        continue;
       }
+
+      domainInfo[domain] = categoryCandidates;
     }
 
     let finalCategory;
+    let topCategories = [];
     // Determine if all domains were unknown or inconclusive.
     if (unknownsCount + inconclusivesCount == domainsCount) {
-      finalCategory = "inconclusive";
+      finalCategory = SearchSERPTelemetryUtils.CATEGORIZATION.INCONCLUSIVE;
     } else {
-      let maxScore = Math.max(...Object.values(totalScoresPerCategory));
-      // Handles ties by randomly returning one of the categories with the
-      // maximum score.
-      let topCategories = [];
-      for (let category in totalScoresPerCategory) {
-        if (totalScoresPerCategory[category] == maxScore) {
-          topCategories.push(category);
+      let maxScore = CATEGORIZATION_SETTINGS.MINIMUM_SCORE;
+      let rank = CATEGORIZATION_SETTINGS.STARTING_RANK;
+      for (let categoryCandidates of Object.values(domainInfo)) {
+        for (let { category, score } of categoryCandidates) {
+          let adjustedScore = score / Math.log2(rank);
+          if (adjustedScore > maxScore) {
+            maxScore = adjustedScore;
+            topCategories = [category];
+          } else if (adjustedScore == maxScore) {
+            topCategories.push(Number(category));
+          }
+          rank++;
         }
       }
       finalCategory =
@@ -1625,17 +1763,6 @@ class DomainCategorizer {
       num_unknown: unknownsCount,
       num_inconclusive: inconclusivesCount,
     };
-  }
-
-  // TODO: replace this method once we know where to send the categorized
-  // domains and overall SERP category. (Bug 1854692)
-  dummyLogger(domains, resultsToReport, version) {
-    lazy.logConsole.debug("Version of the attachments:", version);
-    lazy.logConsole.debug("Domains extracted from SERP:", [...domains]);
-    lazy.logConsole.debug(
-      "Categorization results to report to Glean:",
-      resultsToReport
-    );
   }
 
   /**
@@ -1700,6 +1827,174 @@ class DomainCategorizer {
   #chooseRandomlyFrom(categories) {
     let randIdx = Math.floor(Math.random() * categories.length);
     return categories[randIdx];
+  }
+}
+
+/**
+ * Contains outstanding categorizations of browser objects that have yet to be
+ * scheduled to be reported into a Glean event.
+ * They are kept here until one of the conditions are met:
+ * 1. The browser that was tracked is no longer being tracked.
+ * 2. A user has been idle for IDLE_TIMEOUT_SECONDS
+ * 3. The user has awoken their computer and the time elapsed from the last
+ *    categorization event exceeds WAKE_TIMEOUT_MS.
+ */
+class CategorizationEventScheduler {
+  /**
+   * A WeakMap containing browser objects mapped to a callback.
+   *
+   * @type {WeakMap | null}
+   */
+  #browserToCallbackMap = null;
+
+  /**
+   * An instance of user idle service. Cached for testing purposes.
+   *
+   * @type {nsIUserIdleService | null}
+   */
+  #idleService = null;
+
+  /**
+   * Whether it has been initialized.
+   *
+   * @type {boolean}
+   */
+  #init = false;
+
+  /**
+   * The last Date.now() of a callback insertion.
+   *
+   * @type {number | null}
+   */
+  #mostRecentMs = null;
+
+  constructor() {
+    this.init();
+  }
+
+  init() {
+    if (!lazy.serpEventTelemetryCategorization || this.#init) {
+      return;
+    }
+
+    lazy.logConsole.debug("Initializing categorization event scheduler.");
+
+    this.#browserToCallbackMap = new WeakMap();
+
+    // In tests, we simulate idleness as it is more reliable and easier than
+    // trying to replicate idleness. The way to do is so it by creating
+    // an mock idle service and having the component subscribe to it. If we
+    // used a lazy instantiation of idle service, the test could only ever be
+    // subscribed to the real one.
+    this.#idleService = Cc["@mozilla.org/widget/useridleservice;1"].getService(
+      Ci.nsIUserIdleService
+    );
+
+    this.#idleService.addIdleObserver(
+      this,
+      CATEGORIZATION_SETTINGS.IDLE_TIMEOUT_SECONDS
+    );
+
+    Services.obs.addObserver(this, "quit-application");
+    Services.obs.addObserver(this, "wake_notification");
+
+    this.#init = true;
+  }
+
+  uninit() {
+    if (!this.#init) {
+      return;
+    }
+
+    this.#browserToCallbackMap = null;
+
+    lazy.logConsole.debug("Un-initializing categorization event scheduler.");
+    this.#idleService.removeIdleObserver(
+      this,
+      CATEGORIZATION_SETTINGS.IDLE_TIMEOUT_SECONDS
+    );
+
+    Services.obs.removeObserver(this, "quit-application");
+    Services.obs.removeObserver(this, "wake_notification");
+
+    this.#idleService = null;
+    this.#init = false;
+  }
+
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "idle":
+        lazy.logConsole.debug("Triggering all callbacks due to idle.");
+        this.#sendAllCallbacks();
+        break;
+      case "quit-application":
+        this.uninit();
+        break;
+      case "wake_notification":
+        if (
+          this.#mostRecentMs &&
+          Date.now() - this.#mostRecentMs >=
+            CATEGORIZATION_SETTINGS.WAKE_TIMEOUT_MS
+        ) {
+          lazy.logConsole.debug(
+            "Triggering all callbacks due to a wake notification."
+          );
+          this.#sendAllCallbacks();
+        }
+        break;
+    }
+  }
+
+  addCallback(browser, callback) {
+    lazy.logConsole.debug("Adding callback to queue.");
+    this.#mostRecentMs = Date.now();
+    this.#browserToCallbackMap?.set(browser, callback);
+  }
+
+  sendCallback(browser) {
+    let callback = this.#browserToCallbackMap?.get(browser);
+    if (callback) {
+      lazy.logConsole.debug("Triggering callback.");
+      callback();
+      Services.obs.notifyObservers(
+        null,
+        "recorded-single-categorization-event"
+      );
+      this.#browserToCallbackMap.delete(browser);
+    }
+  }
+
+  #sendAllCallbacks() {
+    let browsers = ChromeUtils.nondeterministicGetWeakMapKeys(
+      this.#browserToCallbackMap
+    );
+    if (browsers) {
+      lazy.logConsole.debug("Triggering all callbacks.");
+      for (let browser of browsers) {
+        this.sendCallback(browser);
+      }
+    }
+    this.#mostRecentMs = null;
+    Services.obs.notifyObservers(null, "recorded-all-categorization-events");
+  }
+}
+
+/**
+ * Handles reporting SERP categorization telemetry to Glean.
+ */
+class CategorizationRecorder {
+  /**
+   * Helper function for recording the SERP categorization event.
+   *
+   * @param {RecordCategorizationParameters} resultToReport
+   *  The object containing all the data required to report.
+   */
+  recordCategorizationTelemetry(resultToReport) {
+    lazy.logConsole.debug(
+      "Reporting the following categorization result:",
+      resultToReport
+    );
+    // TODO: Bug 1868476 - Report result to Glean.
   }
 }
 
@@ -1773,51 +2068,25 @@ class DomainToCategoriesMap {
   #downloadRetries = 0;
 
   /**
-   * Runs at application startup with startup idle tasks. Creates a listener
-   * to changes of the SERP categorization preference. Additionally, if the
-   * SERP categorization preference is enabled, it creates a Remote Settings
+   * Runs at application startup with startup idle tasks. If the SERP
+   * categorization preference is enabled, it creates a Remote Settings
    * client to listen to updates, and populates the map.
    */
   async init() {
-    if (this.#init) {
+    if (!lazy.serpEventTelemetryCategorization || this.#init) {
       return;
     }
-
-    Services.prefs.addObserver(CATEGORIZATION_PREF, this);
+    lazy.logConsole.debug("Initializing domain-to-categories map.");
+    this.#setupClientAndMap();
     this.#init = true;
-
-    if (lazy.serpEventTelemetryCategorization) {
-      this.#setupClientAndMap();
-    }
   }
 
-  /**
-   * Predominantly a test-only function.
-   */
   uninit() {
-    lazy.logConsole.debug("Un-initialize domain-to-categories map.");
     if (this.#init) {
-      if (this.#map) {
-        this.#clearClientAndMap();
-      } else {
-        this.#cancelAndNullifyTimer();
-      }
+      lazy.logConsole.debug("Un-initializing domain-to-categories map.");
+      this.#clearClientAndMap();
+      this.#cancelAndNullifyTimer();
       this.#init = false;
-      Services.prefs.removeObserver(CATEGORIZATION_PREF, this);
-    }
-  }
-
-  observe(subject, topic, data) {
-    if (topic != "nsPref:changed") {
-      return;
-    }
-    if (data == CATEGORIZATION_PREF) {
-      if (lazy.serpEventTelemetryCategorization) {
-        this.#setupClientAndMap();
-      } else {
-        this.#cancelAndNullifyTimer();
-        this.#clearClientAndMap();
-      }
     }
   }
 
@@ -1888,7 +2157,7 @@ class DomainToCategoriesMap {
     if (this.#client && !this.empty) {
       return;
     }
-    lazy.logConsole.debug("Initializing domain-to-categories map.");
+    lazy.logConsole.debug("Setting up domain-to-categories map.");
     this.#client = lazy.RemoteSettings(TELEMETRY_CATEGORIZATION_KEY);
 
     this.#onSettingsSync = event => this.#sync(event.data);
@@ -2086,4 +2355,7 @@ function randomInteger(min, max) {
 
 export var SearchSERPDomainToCategoriesMap = new DomainToCategoriesMap();
 export var SearchSERPTelemetry = new TelemetryHandler();
-export var SearchSERPCategorization = new DomainCategorizer();
+export var SearchSERPCategorization = new SERPCategorizer();
+export var SERPCategorizationRecorder = new CategorizationRecorder();
+export var SearchSERPCategorizationEventScheduler =
+  new CategorizationEventScheduler();

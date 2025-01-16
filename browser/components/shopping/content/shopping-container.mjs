@@ -28,6 +28,12 @@ import "chrome://browser/content/shopping/recommended-ad.mjs";
 // top of the sidebar to show the header box shadow.
 const HEADER_SCROLL_PIXEL_OFFSET = 8;
 
+const SIDEBAR_CLOSED_COUNT_PREF =
+  "browser.shopping.experience2023.sidebarClosedCount";
+const SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF =
+  "browser.shopping.experience2023.showKeepSidebarClosedMessage";
+const SHOPPING_SIDEBAR_ACTIVE_PREF = "browser.shopping.experience2023.active";
+
 export class ShoppingContainer extends MozLitElement {
   static properties = {
     data: { type: Object },
@@ -42,6 +48,9 @@ export class ShoppingContainer extends MozLitElement {
     isAnalysisInProgress: { type: Boolean },
     analysisProgress: { type: Number },
     isOverflow: { type: Boolean },
+    autoOpenEnabled: { type: Boolean },
+    autoOpenEnabledByUser: { type: Boolean },
+    showingKeepClosedMessage: { type: Boolean },
   };
 
   static get queries() {
@@ -55,6 +64,8 @@ export class ShoppingContainer extends MozLitElement {
       shoppingMessageBarEl: "shopping-message-bar",
       recommendedAdEl: "recommended-ad",
       loadingEl: "#loading-wrapper",
+      closeButtonEl: "#close-button",
+      keepClosedMessageBarEl: "#keep-closed-message-bar",
     };
   }
 
@@ -73,6 +84,9 @@ export class ShoppingContainer extends MozLitElement {
     window.document.addEventListener("scroll", this);
     window.document.addEventListener("UpdateRecommendations", this);
     window.document.addEventListener("UpdateAnalysisProgress", this);
+    window.document.addEventListener("autoOpenEnabledByUserChanged", this);
+    window.document.addEventListener("ShowKeepClosedMessage", this);
+    window.document.addEventListener("HideKeepClosedMessage", this);
 
     window.dispatchEvent(
       new CustomEvent("ContentReady", {
@@ -80,6 +94,12 @@ export class ShoppingContainer extends MozLitElement {
         composed: true,
       })
     );
+  }
+
+  updated() {
+    if (this.focusCloseButton) {
+      this.closeButtonEl.focus();
+    }
   }
 
   async _update({
@@ -91,6 +111,9 @@ export class ShoppingContainer extends MozLitElement {
     adsEnabledByUser,
     isAnalysisInProgress,
     analysisProgress,
+    focusCloseButton,
+    autoOpenEnabled,
+    autoOpenEnabledByUser,
   }) {
     // If we're not opted in or there's no shopping URL in the main browser,
     // the actor will pass `null`, which means this will clear out any existing
@@ -104,6 +127,9 @@ export class ShoppingContainer extends MozLitElement {
     this.adsEnabled = adsEnabled;
     this.adsEnabledByUser = adsEnabledByUser;
     this.analysisProgress = analysisProgress;
+    this.focusCloseButton = focusCloseButton;
+    this.autoOpenEnabled = autoOpenEnabled;
+    this.autoOpenEnabledByUser = autoOpenEnabledByUser;
   }
 
   _updateRecommendations({ recommendationData }) {
@@ -156,15 +182,53 @@ export class ShoppingContainer extends MozLitElement {
       case "UpdateAnalysisProgress":
         this._updateAnalysisProgress(event.detail);
         break;
+      case "autoOpenEnabledByUserChanged":
+        this.autoOpenEnabledByUser = event.detail?.autoOpenEnabledByUser;
+        break;
+      case "ShowKeepClosedMessage":
+        this.showingKeepClosedMessage = true;
+        break;
+      case "HideKeepClosedMessage":
+        this.showingKeepClosedMessage = false;
+        break;
+    }
+  }
+
+  getHostnameFromProductUrl() {
+    let hostname;
+    try {
+      hostname = new URL(this.productUrl)?.hostname;
+      return hostname;
+    } catch (e) {
+      console.error(`Unknown product url ${this.productUrl}.`);
+      return null;
     }
   }
 
   getAnalysisDetailsTemplate() {
+    /* At present, en is supported as the default language for reviews. As we support more sites,
+     * update `lang` accordingly if highlights need to be displayed in other languages. */
+    let lang;
+    let hostname = this.getHostnameFromProductUrl();
+
+    switch (hostname) {
+      case "www.amazon.fr":
+        lang = "fr";
+        break;
+      case "www.amazon.de":
+        lang = "de";
+        break;
+      default:
+        lang = "en";
+    }
     return html`
       <review-reliability letter=${this.data.grade}></review-reliability>
-      <adjusted-rating rating=${this.data.adjusted_rating}></adjusted-rating>
+      <adjusted-rating
+        rating=${ifDefined(this.data.adjusted_rating)}
+      ></adjusted-rating>
       <review-highlights
         .highlights=${this.data.highlights}
+        lang=${lang}
       ></review-highlights>
     `;
   }
@@ -214,7 +278,7 @@ export class ShoppingContainer extends MozLitElement {
     }
 
     if (this.data.needs_analysis) {
-      if (!this.data.product_id) {
+      if (!this.data.product_id || typeof this.data.grade != "string") {
         // Product is new to us.
         return html`<unanalyzed-product-card
           productUrl=${ifDefined(this.productUrl)}
@@ -308,19 +372,21 @@ export class ShoppingContainer extends MozLitElement {
           </header>
           <button
             id="close-button"
-            class="ghost-button"
+            class="ghost-button shopping-button"
             data-l10n-id="shopping-close-button"
-            @click=${this.handleClick}
+            @click=${this.handleCloseButtonClick}
           ></button>
         </div>
-        <div id="content" aria-busy=${!this.data}>
+        <div id="content" aria-live="polite" aria-busy=${!this.data}>
           <slot name="multi-stage-message-slot"></slot>
-          ${sidebarContent} ${!hideFooter ? this.getFooterTemplate() : null}
+          ${this.keepClosedMessageTemplate()}${sidebarContent}
+          ${!hideFooter ? this.getFooterTemplate() : null}
         </div>
       </div>`;
   }
 
   getFooterTemplate() {
+    let hostname = this.getHostnameFromProductUrl();
     return html`
       <analysis-explainer
         productUrl=${ifDefined(this.productUrl)}
@@ -329,8 +395,26 @@ export class ShoppingContainer extends MozLitElement {
       <shopping-settings
         ?adsEnabled=${this.adsEnabled}
         ?adsEnabledByUser=${this.adsEnabledByUser}
+        ?autoOpenEnabled=${this.autoOpenEnabled}
+        ?autoOpenEnabledByUser=${this.autoOpenEnabledByUser}
+        .hostname=${hostname}
       ></shopping-settings>
     `;
+  }
+
+  keepClosedMessageTemplate() {
+    if (
+      this.autoOpenEnabled &&
+      this.autoOpenEnabledByUser &&
+      this.showingKeepClosedMessage &&
+      RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, true)
+    ) {
+      return html`<shopping-message-bar
+        id="keep-closed-message-bar"
+        type="keep-closed"
+      ></shopping-message-bar>`;
+    }
+    return null;
   }
 
   render() {
@@ -358,8 +442,28 @@ export class ShoppingContainer extends MozLitElement {
     return this.renderContainer(content, hideFooter);
   }
 
-  handleClick() {
-    RPMSetPref("browser.shopping.experience2023.active", false);
+  handleCloseButtonClick() {
+    if (this.autoOpenEnabled && this.autoOpenEnabledByUser) {
+      let sidebarClosedCount = RPMGetIntPref(SIDEBAR_CLOSED_COUNT_PREF, 0);
+      if (
+        !this.showingKeepClosedMessage &&
+        sidebarClosedCount >= 4 &&
+        RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, true)
+      ) {
+        this.showingKeepClosedMessage = true;
+        return;
+      }
+
+      this.showingKeepClosedMessage = false;
+
+      if (sidebarClosedCount >= 6) {
+        RPMSetPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false);
+      }
+
+      RPMSetPref(SIDEBAR_CLOSED_COUNT_PREF, sidebarClosedCount + 1);
+    }
+
+    RPMSetPref(SHOPPING_SIDEBAR_ACTIVE_PREF, false);
     Glean.shopping.surfaceClosed.record({ source: "closeButton" });
   }
 }

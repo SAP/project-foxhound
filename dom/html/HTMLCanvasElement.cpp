@@ -63,7 +63,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Canvas)
 namespace mozilla::dom {
 
 class RequestedFrameRefreshObserver : public nsARefreshObserver {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RequestedFrameRefreshObserver, override)
+  NS_INLINE_DECL_REFCOUNTING(RequestedFrameRefreshObserver, override)
 
  public:
   RequestedFrameRefreshObserver(HTMLCanvasElement* const aOwningElement,
@@ -535,6 +535,9 @@ HTMLCanvasElement::CreateContext(CanvasContextType aContextType) {
   // Note that the compositor backend will be LAYERS_NONE if there is no widget.
   RefPtr<nsICanvasRenderingContextInternal> ret =
       CreateContextHelper(aContextType, GetCompositorBackendType());
+  if (NS_WARN_IF(!ret)) {
+    return nullptr;
+  }
 
   // Add Observer for webgl canvas.
   if (aContextType == CanvasContextType::WebGL1 ||
@@ -817,7 +820,6 @@ class CanvasCaptureTrackSource : public MediaStreamTrackSource {
 
   void Stop() override {
     if (!mCaptureStream) {
-      NS_ERROR("No stream");
       return;
     }
 

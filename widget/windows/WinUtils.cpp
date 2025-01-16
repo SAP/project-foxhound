@@ -492,54 +492,6 @@ void WinUtils::WaitForMessage(DWORD aTimeoutMs) {
 }
 
 /* static */
-bool WinUtils::GetRegistryKey(HKEY aRoot, char16ptr_t aKeyName,
-                              char16ptr_t aValueName, wchar_t* aBuffer,
-                              DWORD aBufferLength) {
-  MOZ_ASSERT(aKeyName, "The key name is NULL");
-
-  HKEY key;
-  LONG result =
-      ::RegOpenKeyExW(aRoot, aKeyName, 0, KEY_READ | KEY_WOW64_32KEY, &key);
-  if (result != ERROR_SUCCESS) {
-    result =
-        ::RegOpenKeyExW(aRoot, aKeyName, 0, KEY_READ | KEY_WOW64_64KEY, &key);
-    if (result != ERROR_SUCCESS) {
-      return false;
-    }
-  }
-
-  DWORD type;
-  result = ::RegQueryValueExW(key, aValueName, nullptr, &type, (BYTE*)aBuffer,
-                              &aBufferLength);
-  ::RegCloseKey(key);
-  if (result != ERROR_SUCCESS || (type != REG_SZ && type != REG_EXPAND_SZ)) {
-    return false;
-  }
-  if (aBuffer) {
-    aBuffer[aBufferLength / sizeof(*aBuffer) - 1] = 0;
-  }
-  return true;
-}
-
-/* static */
-bool WinUtils::HasRegistryKey(HKEY aRoot, char16ptr_t aKeyName) {
-  MOZ_ASSERT(aRoot, "aRoot must not be NULL");
-  MOZ_ASSERT(aKeyName, "aKeyName must not be NULL");
-  HKEY key;
-  LONG result =
-      ::RegOpenKeyExW(aRoot, aKeyName, 0, KEY_READ | KEY_WOW64_32KEY, &key);
-  if (result != ERROR_SUCCESS) {
-    result =
-        ::RegOpenKeyExW(aRoot, aKeyName, 0, KEY_READ | KEY_WOW64_64KEY, &key);
-    if (result != ERROR_SUCCESS) {
-      return false;
-    }
-  }
-  ::RegCloseKey(key);
-  return true;
-}
-
-/* static */
 HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
                                bool aStopIfNotPopup) {
   HWND curWnd = aWnd;
@@ -1093,25 +1045,32 @@ nsresult FaviconHelper::ObtainCachedIconFile(
   return rv;
 }
 
-nsresult FaviconHelper::HashURI(nsCOMPtr<nsICryptoHash>& aCryptoHash,
-                                nsIURI* aUri, nsACString& aUriHash) {
-  if (!aUri) return NS_ERROR_INVALID_ARG;
-
+// Hash a URI using a cryptographic hash function (currently SHA-256)
+// Output will be a base64-encoded string of the hash.
+static nsresult HashURI(nsIURI* aUri, nsACString& aUriHash) {
   nsAutoCString spec;
   nsresult rv = aUri->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!aCryptoHash) {
-    aCryptoHash = do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
+  nsCOMPtr<nsICryptoHash> cryptoHash =
+      do_CreateInstance(NS_CRYPTO_HASH_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = aCryptoHash->Init(nsICryptoHash::MD5);
+  rv = cryptoHash->Init(nsICryptoHash::SHA256);
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = aCryptoHash->Update(
-      reinterpret_cast<const uint8_t*>(spec.BeginReading()), spec.Length());
+
+  // Add some context to the hash to even further reduce the chances of
+  // collision. Note that we are hashing this string with its null-terminator.
+  const char kHashUriContext[] = "firefox-uri";
+  rv = cryptoHash->Update(reinterpret_cast<const uint8_t*>(kHashUriContext),
+                          sizeof(kHashUriContext));
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = aCryptoHash->Finish(true, aUriHash);
+
+  rv = cryptoHash->Update(reinterpret_cast<const uint8_t*>(spec.BeginReading()),
+                          spec.Length());
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = cryptoHash->Finish(true, aUriHash);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
@@ -1120,13 +1079,15 @@ nsresult FaviconHelper::HashURI(nsCOMPtr<nsICryptoHash>& aCryptoHash,
 // (static) Obtains the ICO file for the favicon at page aFaviconPageURI
 // If successful, the file path on disk is in the format:
 // <ProfLDS>\jumpListCache\<hash(aFaviconPageURI)>.ico
+//
+// We generate the name with a cryptographically secure hash function in order
+// to ensure that malicious websites can't intentionally craft URLs to collide
+// with legitimate websites.
 nsresult FaviconHelper::GetOutputIconPath(nsCOMPtr<nsIURI> aFaviconPageURI,
                                           nsCOMPtr<nsIFile>& aICOFile,
                                           bool aURLShortcut) {
-  // Hash the input URI and replace any / with _
   nsAutoCString inputURIHash;
-  nsCOMPtr<nsICryptoHash> cryptoHash;
-  nsresult rv = HashURI(cryptoHash, aFaviconPageURI, inputURIHash);
+  nsresult rv = HashURI(aFaviconPageURI, inputURIHash);
   NS_ENSURE_SUCCESS(rv, rv);
   char* cur = inputURIHash.BeginWriting();
   char* end = inputURIHash.EndWriting();
@@ -1505,26 +1466,14 @@ static bool IsTabletDevice() {
   return false;
 }
 
-static bool IsMousePresent() {
-  if (!::GetSystemMetrics(SM_MOUSEPRESENT)) {
-    return false;
-  }
-
-  DWORD count = InputDeviceUtils::CountMouseDevices();
-  if (!count) {
-    return false;
-  }
-
-  // If there is a mouse device and if this machine is a tablet or has a
-  // digitizer, that's counted as the mouse device.
-  // FIXME: Bug 1495938:  We should drop this heuristic way once we find out a
-  // reliable way to tell there is no mouse or not.
-  if (count == 1 &&
-      (WinUtils::IsTouchDeviceSupportPresent() || IsTabletDevice())) {
-    return false;
-  }
-
-  return true;
+static bool SystemHasMouse() {
+  // As per MSDN, this value is rarely false because of virtual mice, and
+  // some machines report the existance of a mouse port as a mouse.
+  //
+  // We probably could try to distinguish if we wanted, but a virtual mouse
+  // might be there for a reason, and maybe we shouldn't assume we know
+  // better.
+  return !!::GetSystemMetrics(SM_MOUSEPRESENT);
 }
 
 /* static */
@@ -1533,7 +1482,7 @@ PointerCapabilities WinUtils::GetPrimaryPointerCapabilities() {
     return PointerCapabilities::Coarse;
   }
 
-  if (IsMousePresent()) {
+  if (SystemHasMouse()) {
     return PointerCapabilities::Fine | PointerCapabilities::Hover;
   }
 
@@ -1554,16 +1503,6 @@ static bool SystemHasPenDigitizer() {
   int digitizerMetrics = ::GetSystemMetrics(SM_DIGITIZER);
   return (digitizerMetrics & NID_INTEGRATED_PEN) ||
          (digitizerMetrics & NID_EXTERNAL_PEN);
-}
-
-static bool SystemHasMouse() {
-  // As per MSDN, this value is rarely false because of virtual mice, and
-  // some machines report the existance of a mouse port as a mouse.
-  //
-  // We probably could try to distinguish if we wanted, but a virtual mouse
-  // might be there for a reason, and maybe we shouldn't assume we know
-  // better.
-  return !!::GetSystemMetrics(SM_MOUSEPRESENT);
 }
 
 /* static */

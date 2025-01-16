@@ -22,25 +22,24 @@ import {
   uninstall,
 } from '@puppeteer/browsers';
 
-import {Browser} from '../api/Browser.js';
-import {BrowserConnectOptions} from '../common/BrowserConnector.js';
-import {Configuration} from '../common/Configuration.js';
-import {Product} from '../common/Product.js';
-import {
-  CommonPuppeteerSettings,
+import type {Browser} from '../api/Browser.js';
+import type {Configuration} from '../common/Configuration.js';
+import type {
   ConnectOptions,
-  Puppeteer,
-} from '../common/Puppeteer.js';
+  BrowserConnectOptions,
+} from '../common/ConnectOptions.js';
+import type {Product} from '../common/Product.js';
+import {type CommonPuppeteerSettings, Puppeteer} from '../common/Puppeteer.js';
 import {PUPPETEER_REVISIONS} from '../revisions.js';
 
 import {ChromeLauncher} from './ChromeLauncher.js';
 import {FirefoxLauncher} from './FirefoxLauncher.js';
-import {
+import type {
   BrowserLaunchArgumentOptions,
   ChromeReleaseChannel,
   LaunchOptions,
 } from './LaunchOptions.js';
-import {ProductLauncher} from './ProductLauncher.js';
+import type {ProductLauncher} from './ProductLauncher.js';
 
 /**
  * @public
@@ -173,7 +172,7 @@ export class PuppeteerNode extends Puppeteer {
    * for a description of the differences between Chromium and Chrome.
    * {@link https://chromium.googlesource.com/chromium/src/+/lkgr/docs/chromium_browser_vs_google_chrome.md | This article}
    * describes some differences for Linux users. See
-   * {@link https://goo.gle/chrome-for-testing | this doc} for the description
+   * {@link https://developer.chrome.com/blog/chrome-for-testing/ | this doc} for the description
    * of Chrome for Testing.
    *
    * @param options - Options to configure launching behavior.

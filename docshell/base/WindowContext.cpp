@@ -364,11 +364,11 @@ void WindowContext::DidSet(FieldIndex<IDX_SHEntryHasUserInteraction>,
   }
 }
 
-void WindowContext::DidSet(FieldIndex<IDX_UserActivationState>) {
+void WindowContext::DidSet(FieldIndex<IDX_UserActivationStateAndModifiers>) {
   MOZ_ASSERT_IF(!IsInProcess(), mUserGestureStart.IsNull());
-  USER_ACTIVATION_LOG("Set user gesture activation %" PRIu8
+  USER_ACTIVATION_LOG("Set user gesture activation 0x%02" PRIu8
                       " for %s browsing context 0x%08" PRIx64,
-                      static_cast<uint8_t>(GetUserActivationState()),
+                      GetUserActivationStateAndModifiers(),
                       XRE_IsParentProcess() ? "Parent" : "Child", Id());
   if (IsInProcess()) {
     USER_ACTIVATION_LOG(
@@ -483,12 +483,19 @@ void WindowContext::AddSecurityState(uint32_t aStateFlags) {
   }
 }
 
-void WindowContext::NotifyUserGestureActivation() {
-  Unused << SetUserActivationState(UserActivation::State::FullActivated);
+void WindowContext::NotifyUserGestureActivation(
+    UserActivation::Modifiers
+        aModifiers /* = UserActivation::Modifiers::None() */) {
+  UserActivation::StateAndModifiers stateAndModifiers;
+  stateAndModifiers.SetState(UserActivation::State::FullActivated);
+  stateAndModifiers.SetModifiers(aModifiers);
+  Unused << SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
 }
 
 void WindowContext::NotifyResetUserGestureActivation() {
-  Unused << SetUserActivationState(UserActivation::State::None);
+  UserActivation::StateAndModifiers stateAndModifiers;
+  stateAndModifiers.SetState(UserActivation::State::None);
+  Unused << SetUserActivationStateAndModifiers(stateAndModifiers.GetRawData());
 }
 
 bool WindowContext::HasBeenUserGestureActivated() {
@@ -534,11 +541,26 @@ bool WindowContext::ConsumeTransientUserGestureActivation() {
     WindowContext* windowContext = aBrowsingContext->GetCurrentWindowContext();
     if (windowContext && windowContext->GetUserActivationState() ==
                              UserActivation::State::FullActivated) {
-      Unused << windowContext->SetUserActivationState(
-          UserActivation::State::HasBeenActivated);
+      auto stateAndModifiers = UserActivation::StateAndModifiers(
+          GetUserActivationStateAndModifiers());
+      stateAndModifiers.SetState(UserActivation::State::HasBeenActivated);
+      Unused << windowContext->SetUserActivationStateAndModifiers(
+          stateAndModifiers.GetRawData());
     }
   });
 
+  return true;
+}
+
+bool WindowContext::GetTransientUserGestureActivationModifiers(
+    UserActivation::Modifiers* aModifiers) {
+  if (!HasValidTransientUserGestureActivation()) {
+    return false;
+  }
+
+  auto stateAndModifiers =
+      UserActivation::StateAndModifiers(GetUserActivationStateAndModifiers());
+  *aModifiers = stateAndModifiers.GetModifiers();
   return true;
 }
 

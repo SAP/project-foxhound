@@ -95,12 +95,12 @@ namespace xsimd
         template <class A>
         inline batch<float, A> bitofsign(batch<float, A> const& self, requires_arch<generic>) noexcept
         {
-            return self & constants::minuszero<batch<float, A>>();
+            return self & constants::signmask<batch<float, A>>();
         }
         template <class A>
         inline batch<double, A> bitofsign(batch<double, A> const& self, requires_arch<generic>) noexcept
         {
-            return self & constants::minuszero<batch<double, A>>();
+            return self & constants::signmask<batch<double, A>>();
         }
 
         // bitwise_cast
@@ -974,12 +974,8 @@ namespace xsimd
         template <class A, class T>
         inline batch<std::complex<T>, A> polar(const batch<T, A>& r, const batch<T, A>& theta, requires_arch<generic>) noexcept
         {
-#ifndef EMSCRIPTEN
             auto sincosTheta = sincos(theta);
             return { r * sincosTheta.second, r * sincosTheta.first };
-#else
-            return { r * cos(theta), r * sin(theta) };
-#endif
         }
 
         // fdim
@@ -1946,14 +1942,13 @@ namespace xsimd
         {
             using batch_type = batch<T, A>;
             const auto zero = batch_type(0.);
-            auto negx = self < zero;
-            auto iszero = self == zero;
-            constexpr T e = static_cast<T>(2.718281828459045);
-            auto adj_self = select(iszero, batch_type(e), abs(self));
+            auto negself = self < zero;
+            auto iszeropowpos = self == zero && other >= zero;
+            auto adj_self = select(iszeropowpos, batch_type(1), abs(self));
             batch_type z = exp(other * log(adj_self));
-            z = select(iszero, zero, z);
-            z = select(is_odd(other) && negx, -z, z);
-            auto invalid = negx && !(is_flint(other) || isinf(other));
+            z = select(iszeropowpos, zero, z);
+            z = select(is_odd(other) && negself, -z, z);
+            auto invalid = negself && !(is_flint(other) || isinf(other));
             return select(invalid, constants::nan<batch_type>(), z);
         }
 

@@ -72,6 +72,14 @@ export function getJavascriptTracingLogMethod(state) {
   return state.ui.javascriptTracingLogMethod;
 }
 
+export function getJavascriptTracingValues(state) {
+  return state.ui.javascriptTracingValues;
+}
+
+export function getJavascriptTracingOnNextInteraction(state) {
+  return state.ui.javascriptTracingOnNextInteraction;
+}
+
 export function getSearchOptions(state, searchKey) {
   return state.ui.mutableSearchOptions[searchKey];
 }
@@ -86,8 +94,4 @@ export function getHideIgnoredSources(state) {
 
 export function isSourceMapIgnoreListEnabled(state) {
   return state.ui.sourceMapIgnoreListEnabled;
-}
-
-export function supportsDebuggerStatementIgnore(state) {
-  return state.ui.supportsDebuggerStatementIgnore;
 }

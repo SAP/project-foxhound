@@ -534,6 +534,8 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         test_summary,
         subtest_name_filters,
         handle_custom_data,
+        support_class,
+        submetric_summary_method,
         **kwargs,
     ):
         """
@@ -662,6 +664,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             ("fcp", ["paintTiming", "first-contentful-paint"]),
             ("dcf", "timeToDomContentFlushed"),
             ("loadtime", "loadEventEnd"),
+            ("largestContentfulPaint", ["largestContentfulPaint", "renderTime"]),
         )
 
         def _get_raptor_val(mdict, mname, retval=False):
@@ -696,7 +699,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
         # one results entry with all replicates within. When running warm page-load, there will
         # be one results entry for every warm page-load iteration; with one single replicate
         # inside each.
-        if cold:
+        if cold or handle_custom_data:
             if len(raw_btresults) == 0:
                 raise MissingResultsError(
                     "Missing results for all cold browser cycles."
@@ -708,13 +711,18 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
         # now parse out the values
         page_counter = 0
-        for raw_result in raw_btresults:
+        last_result = False
+        for i, raw_result in enumerate(raw_btresults):
             if not raw_result["browserScripts"]:
                 raise MissingResultsError("Browsertime cycle produced no measurements.")
 
             if raw_result["browserScripts"][0].get("timings") is None:
                 raise MissingResultsError("Browsertime cycle is missing all timings")
 
+            if i == (len(raw_btresults) - 1):
+                # Used to tell custom support scripts when the last result
+                # is being parsed. This lets them finalize any overall measurements.
+                last_result = True
             # Desktop chrome doesn't have `browser` scripts data available for now
             bt_browser = raw_result["browserScripts"][0].get("browser", None)
             bt_ver = raw_result["info"]["browsertime"]["version"]
@@ -735,6 +743,8 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 "measurements": {},
                 "statistics": {},
             }
+            if submetric_summary_method is not None:
+                bt_result["submetric_summary_method"] = submetric_summary_method
 
             def _extract_cpu_vals():
                 # Bug 1806402 - Handle chrome cpu data properly
@@ -746,7 +756,15 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 ):
                     bt_result["measurements"].setdefault("cpuTime", []).extend(cpu_vals)
 
-            if any(raw_result["extras"]):
+            if support_class:
+                bt_result["custom_data"] = True
+                support_class.handle_result(
+                    bt_result,
+                    raw_result,
+                    conversion=conversion,
+                    last_result=last_result,
+                )
+            elif any(raw_result["extras"]):
                 # Each entry here is a separate cold pageload iteration
                 for custom_types in raw_result["extras"]:
                     for custom_type in custom_types:
@@ -1084,6 +1102,8 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 test.get("test_summary", "pageload"),
                 test.get("subtest_name_filters", ""),
                 test.get("custom_data", False) == "true",
+                test.get("support_class", None),
+                test.get("submetric_summary_method", None),
                 gather_cpuTime=test.get("gather_cpuTime", None),
             ):
 
@@ -1120,6 +1140,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     if self.chimera and "run=2" in new_result["url"][0]:
                         new_result["extra_options"].remove("cold")
                         new_result["extra_options"].append("warm")
+
+                    # Add the support class to the result
+                    new_result["support_class"] = test.get("support_class", None)
 
                     return new_result
 

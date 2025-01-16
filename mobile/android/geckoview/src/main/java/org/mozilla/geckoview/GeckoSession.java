@@ -567,6 +567,9 @@ public class GeckoSession {
           } else if ("GeckoView:FocusRequest".equals(event)) {
             delegate.onFocusRequest(GeckoSession.this);
           } else if ("GeckoView:DOMWindowClose".equals(event)) {
+            if (getSelectionActionDelegate() != null) {
+              getSelectionActionDelegate().onDismissClipboardPermissionRequest(GeckoSession.this);
+            }
             delegate.onCloseRequest(GeckoSession.this);
           } else if ("GeckoView:FullScreenEnter".equals(event)) {
             delegate.onFullScreen(GeckoSession.this, true);
@@ -618,19 +621,6 @@ public class GeckoSession {
                     callback.sendError("Failed to create response");
                   }
                 });
-          } else if ("GeckoView:GetNimbusFeature".equals(event) && callback != null) {
-            final String featureId = message.getString("featureId");
-            final JSONObject res = delegate.onGetNimbusFeature(GeckoSession.this, featureId);
-            if (res == null) {
-              callback.sendError("No Nimbus data for the feature " + featureId);
-              return;
-            }
-            try {
-              callback.sendSuccess(GeckoBundle.fromJSONObject(res));
-            } catch (final JSONException e) {
-              callback.sendError(
-                  "No Nimbus data for the feature " + featureId + ": conversion failed.");
-            }
           } else if ("GeckoView:OnProductUrl".equals(event)) {
             delegate.onProductUrl(GeckoSession.this);
           }
@@ -651,7 +641,7 @@ public class GeckoSession {
             case 0: // OPEN_DEFAULTWINDOW
             case 1: // OPEN_CURRENTWINDOW
               return NavigationDelegate.TARGET_WINDOW_CURRENT;
-            default: // OPEN_NEWWINDOW, OPEN_NEWTAB
+            default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND
               return NavigationDelegate.TARGET_WINDOW_NEW;
           }
         }
@@ -995,6 +985,9 @@ public class GeckoSession {
             final EventCallback callback) {
           Log.d(LOGTAG, "handleMessage " + event + " uri=" + message.getString("uri"));
           if ("GeckoView:PageStart".equals(event)) {
+            if (getSelectionActionDelegate() != null) {
+              getSelectionActionDelegate().onDismissClipboardPermissionRequest(GeckoSession.this);
+            }
             delegate.onPageStart(GeckoSession.this, message.getString("uri"));
           } else if ("GeckoView:PageStop".equals(event)) {
             delegate.onPageStop(GeckoSession.this, message.getBoolean("success"));
@@ -2640,6 +2633,8 @@ public class GeckoSession {
    */
   @AnyThread
   public void setFocused(final boolean focused) {
+    mEventDispatcher.dispatch("GeckoView:DismissClipboardPermissionRequest", null);
+
     final GeckoBundle msg = new GeckoBundle(1);
     msg.putBoolean("focused", focused);
     mEventDispatcher.dispatch("GeckoView:SetFocused", msg);
@@ -3028,10 +3023,13 @@ public class GeckoSession {
    * @return a {@link GeckoResult} result of status of analysis.
    */
   @AnyThread
-  public @NonNull GeckoResult<String> requestAnalysisCreationStatus(@NonNull final String url) {
+  public @NonNull GeckoResult<AnalysisStatusResponse> requestAnalysisStatus(
+      @NonNull final String url) {
     final GeckoBundle bundle = new GeckoBundle(1);
     bundle.putString("url", url);
-    return mEventDispatcher.queryString("GeckoView:RequestAnalysisCreationStatus", bundle);
+    return mEventDispatcher
+        .queryBundle("GeckoView:RequestAnalysisStatus", bundle)
+        .map(statusBundle -> new AnalysisStatusResponse(statusBundle.getBundle("status")));
   }
 
   /**
@@ -3074,6 +3072,19 @@ public class GeckoSession {
   }
 
   /**
+   * Send a placement event to the Ad Attribution API.
+   *
+   * @param aid Ad id of the recommended product.
+   * @return a {@link GeckoResult} result of whether or not sending the event was successful.
+   */
+  @AnyThread
+  public @NonNull GeckoResult<Boolean> sendPlacementAttributionEvent(@NonNull final String aid) {
+    final GeckoBundle bundle = new GeckoBundle(1);
+    bundle.putString("aid", aid);
+    return mEventDispatcher.queryBoolean("GeckoView:SendPlacementAttributionEvent", bundle);
+  }
+
+  /**
    * Request product recommendations given a specific product url.
    *
    * @param url The URL of the product page.
@@ -3097,6 +3108,20 @@ public class GeckoSession {
               }
               return recArray;
             });
+  }
+
+  /**
+   * Report that a product is back in stock.
+   *
+   * @param url The URL of the product page.
+   * @return a {@link GeckoResult} result of whether reporting a product is back in stock was
+   *     successful.
+   */
+  @AnyThread
+  public @NonNull GeckoResult<String> reportBackInStock(@NonNull final String url) {
+    final GeckoBundle bundle = new GeckoBundle(1);
+    bundle.putString("url", url);
+    return mEventDispatcher.queryString("GeckoView:ReportBackInStock", bundle);
   }
 
   // This is the GeckoDisplay acquired via acquireDisplay(), if any.
@@ -3686,10 +3711,10 @@ public class GeckoSession {
      * @param builder A ReviewAnalysis.Builder instance
      */
     protected ReviewAnalysis(final @NonNull Builder builder) {
-      adjustedRating = builder.mAdjustedRating;
       analysisURL = builder.mAnalysisUrl;
       productId = builder.mProductId;
       grade = builder.mGrade;
+      adjustedRating = builder.mAdjustedRating;
       needsAnalysis = builder.mNeedsAnalysis;
       pageNotSupported = builder.mPageNotSupported;
       notEnoughReviews = builder.mNotEnoughReviews;
@@ -4118,6 +4143,79 @@ public class GeckoSession {
     }
   }
 
+  /** Contains information about a product's analysis status response. */
+  @AnyThread
+  public static class AnalysisStatusResponse {
+    /** Status of the analysis. */
+    @NonNull public final String status;
+
+    /** Indicates the progress of the analysis. */
+    @NonNull public final Double progress;
+
+    /* package */ AnalysisStatusResponse(@NonNull final GeckoBundle message) {
+      status = message.getString("status");
+      progress = message.getDoubleObject("progress", 0.0);
+    }
+
+    /**
+     * Initialize AnalysisStatusResponse with a builder object
+     *
+     * @param builder A AnalysisStatusResponse.Builder instance
+     */
+    protected AnalysisStatusResponse(final @NonNull Builder builder) {
+      status = builder.mStatus;
+      progress = builder.mProgress;
+    }
+
+    /** This is a Builder used by AnalysisStatusResponse class */
+    public static class Builder {
+      /* package */ String mStatus = "";
+      /* package */ Double mProgress = 0.0;
+
+      /**
+       * Construct a Builder instance with the specified AnalysisStatusResponse status.
+       *
+       * @param status A status String.
+       */
+      public Builder(final @NonNull String status) {
+        status(status);
+      }
+
+      /**
+       * Set the status.
+       *
+       * @param status A status String.
+       * @return This Builder instance.
+       */
+      @AnyThread
+      public @NonNull AnalysisStatusResponse.Builder status(final @NonNull String status) {
+        mStatus = status;
+        return this;
+      }
+
+      /**
+       * Set the progress.
+       *
+       * @param progress Indicates the progress of the analysis.
+       * @return This Builder instance.
+       */
+      @AnyThread
+      public @NonNull AnalysisStatusResponse.Builder progress(final @NonNull Double progress) {
+        mProgress = progress;
+        return this;
+      }
+
+      /**
+       * @return A {@link AnalysisStatusResponse} constructed with the values from this Builder
+       *     instance.
+       */
+      @AnyThread
+      public @NonNull AnalysisStatusResponse build() {
+        return new AnalysisStatusResponse(this);
+      }
+    }
+  }
+
   public interface ContentDelegate {
     /**
      * A page title was discovered in the content or updated after the content loaded.
@@ -4433,25 +4531,6 @@ public class GeckoSession {
      */
     @AnyThread
     default void onCookieBannerHandled(@NonNull final GeckoSession session) {}
-
-    /**
-     * This method is scheduled for deprecation, see Bug 1846074 for details. Please switch to the
-     * [ExperimentDelegate.onGetExperimentFeature] for the same functionality.
-     *
-     * <p>This method is called when GeckoView is requesting a specific Nimbus feature in using
-     * message `GeckoView:GetNimbusFeature`.
-     *
-     * @param session GeckoSession that initiated the callback.
-     * @param featureId Nimbus feature id of the collected data.
-     * @return A {@link JSONObject} with the feature.
-     */
-    @Deprecated
-    @DeprecationSchedule(version = 122, id = "session-nimbus")
-    @AnyThread
-    default @Nullable JSONObject onGetNimbusFeature(
-        @NonNull final GeckoSession session, @NonNull final String featureId) {
-      return null;
-    }
   }
 
   public interface SelectionActionDelegate {
@@ -4914,7 +4993,7 @@ public class GeckoSession {
           case 0: // OPEN_DEFAULTWINDOW
           case 1: // OPEN_CURRENTWINDOW
             return TARGET_WINDOW_CURRENT;
-          default: // OPEN_NEWWINDOW, OPEN_NEWTAB
+          default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_NEWTAB_BACKGROUND
             return TARGET_WINDOW_NEW;
         }
       }

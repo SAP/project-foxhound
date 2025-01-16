@@ -69,6 +69,7 @@ EXTRA_JS_MODULES["urlbar/private"] += [
     "private/SuggestBackendJs.sys.mjs",
     "private/SuggestBackendRust.sys.mjs",
     "private/Weather.sys.mjs",
+    "private/YelpSuggestions.sys.mjs",
 ]
 
 TESTING_JS_MODULES += [
@@ -87,8 +88,8 @@ BROWSER_CHROME_MANIFESTS += [
     "tests/quicksuggest/browser/browser.toml",
 ]
 XPCSHELL_TESTS_MANIFESTS += [
-    "tests/quicksuggest/unit/xpcshell.ini",
-    "tests/unit/xpcshell.ini",
+    "tests/quicksuggest/unit/xpcshell.toml",
+    "tests/unit/xpcshell.toml",
 ]
 
 SPHINX_TREES["/browser/urlbar"] = "docs"

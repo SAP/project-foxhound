@@ -7,12 +7,12 @@
 # Due to duplicate file names, we compile libavutil/x86 in its own
 # moz.build file.
 if CONFIG['FFVPX_ASFLAGS']:
-    if CONFIG['CPU_ARCH'] == 'x86' or CONFIG['CPU_ARCH'] == 'x86_64':
+    if CONFIG['TARGET_CPU'] == 'x86' or CONFIG['TARGET_CPU'] == 'x86_64':
         DIRS += ['x86']
-    elif CONFIG['CPU_ARCH'] == 'arm':
+    elif CONFIG['TARGET_CPU'] == 'arm':
         DIRS += ['arm']
 
-if CONFIG['CPU_ARCH'] == 'aarch64':
+if CONFIG['TARGET_CPU'] == 'aarch64':
     DIRS += ['aarch64']
 
 LOCAL_INCLUDES += ['/modules/fdlibm/inexact-math-override']
@@ -94,7 +94,11 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
         'golomb.c',
         'h264pred.c',
         'imgconvert.c',
+        'libaom.c',
+        'libaomenc.c',
         'libdav1d.c',
+        'libvpxdec.c',
+        'libvpxenc.c',
         'mathtables.c',
         'qsv_api.c',
         'raw.c',
@@ -138,6 +142,12 @@ LOCAL_INCLUDES += [
     '/media/libopus/include',
     '/media/libvorbis',
 ]
+
+if not CONFIG["MOZ_SYSTEM_LIBVPX"]:
+  LOCAL_INCLUDES += ['/media/libvpx']
+else:
+  CXXFLAGS += CONFIG["MOZ_LIBVPX_CFLAGS"]
+  OS_LIBS += CONFIG["MOZ_LIBVPX_LIBS"]
 
 if CONFIG['MOZ_LIBAV_FFT']:
     SOURCES += [

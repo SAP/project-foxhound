@@ -498,16 +498,15 @@ class IDLExposureMixins:
         # they don't include any globals, and we don't really want to go through
         # and add global interfaces and [Exposed] annotations to all those
         # tests.
-        if len(scope.globalNames) != 0:
-            if len(self._exposureGlobalNames) == 0 and not self.isPseudoInterface():
-                raise WebIDLError(
-                    (
-                        "'%s' is not exposed anywhere even though we have "
-                        "globals to be exposed to"
-                    )
-                    % self,
-                    [self.location],
+        if len(scope.globalNames) != 0 and len(self._exposureGlobalNames) == 0:
+            raise WebIDLError(
+                (
+                    "'%s' is not exposed anywhere even though we have "
+                    "globals to be exposed to"
                 )
+                % self,
+                [self.location],
+            )
 
         globalNameSetToExposureSet(scope, self._exposureGlobalNames, self.exposureSet)
 
@@ -1031,8 +1030,6 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
         self.interfacesBasedOnSelf = set([self])
         self._hasChildInterfaces = False
         self._isOnGlobalProtoChain = False
-        # Pseudo interfaces aren't exposed anywhere, and so shouldn't issue warnings
-        self._isPseudo = False
 
         # Tracking of the number of reserved slots we need for our
         # members and those of ancestor interfaces.
@@ -1802,14 +1799,13 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
     def hasInterfaceObject(self):
         if self.isCallback():
             return self.hasConstants()
-        return not hasattr(self, "_noInterfaceObject") and not self.isPseudoInterface()
+        return not hasattr(self, "_noInterfaceObject")
 
     def hasInterfacePrototypeObject(self):
         return (
             not self.isCallback()
             and not self.isNamespace()
             and self.getUserData("hasConcreteDescendant", False)
-            and not self.isPseudoInterface()
         )
 
     def addIncludedMixin(self, includedMixin):
@@ -1872,9 +1868,6 @@ class IDLInterfaceOrNamespace(IDLInterfaceOrInterfaceMixinOrNamespace):
 
     def isOnGlobalProtoChain(self):
         return self._isOnGlobalProtoChain
-
-    def isPseudoInterface(self):
-        return self._isPseudo
 
     def _getDependentObjects(self):
         deps = set(self.members)
@@ -2980,7 +2973,12 @@ class IDLRecordType(IDLParametrizedType):
     def __init__(self, location, keyType, valueType):
         assert keyType.isString()
         assert keyType.isComplete()
-        assert not valueType.isUndefined()
+
+        if valueType.isUndefined():
+            raise WebIDLError(
+                "We don't support undefined as a Record's values' type",
+                [location, valueType.location],
+            )
 
         IDLParametrizedType.__init__(self, location, valueType.name, valueType)
         self.keyType = keyType
@@ -3524,8 +3522,11 @@ class IDLWrapperType(IDLType):
         ):
             return self.isNonCallbackInterface()
 
-        # Not much else |other| can be
-        assert other.isObject()
+        # Not much else |other| can be.
+        # any is the union of all non-union types, so it's not distinguishable
+        # from other unions (because it is a union itself), or from all
+        # non-union types (because it has all of them as its members).
+        assert other.isAny() or other.isObject()
         return False
 
     def isExposedInAllOf(self, exposureSet):
@@ -6345,16 +6346,27 @@ class IDLMethod(IDLInterfaceMember, IDLScope):
             )
 
         # Can't overload special things!
-        assert not self.isGetter()
-        assert not method.isGetter()
-        assert not self.isSetter()
-        assert not method.isSetter()
-        assert not self.isDeleter()
-        assert not method.isDeleter()
-        assert not self.isStringifier()
-        assert not method.isStringifier()
-        assert not self.isHTMLConstructor()
-        assert not method.isHTMLConstructor()
+        if (
+            self.isGetter()
+            or method.isGetter()
+            or self.isSetter()
+            or method.isSetter()
+            or self.isDeleter()
+            or method.isDeleter()
+            or self.isStringifier()
+            or method.isStringifier()
+        ):
+            raise WebIDLError(
+                ("Can't overload a special operation"),
+                [self.location, method.location],
+            )
+        if self.isHTMLConstructor() or method.isHTMLConstructor():
+            raise WebIDLError(
+                (
+                    "An interface must contain only a single operation annotated with HTMLConstructor, and no others"
+                ),
+                [self.location, method.location],
+            )
 
         return self
 
@@ -7065,7 +7077,7 @@ class Tokenizer(object):
                     lexer=self.lexer,
                     lineno=self.lexer.lineno,
                     lexpos=self.lexer.lexpos,
-                    filename=self.filename,
+                    filename=self._filename,
                 )
             ],
         )

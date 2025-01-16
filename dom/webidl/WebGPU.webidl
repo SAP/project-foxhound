@@ -157,6 +157,7 @@ interface GPUDevice : EventTarget {
     GPUPipelineLayout createPipelineLayout(GPUPipelineLayoutDescriptor descriptor);
     GPUBindGroup createBindGroup(GPUBindGroupDescriptor descriptor);
 
+    [Throws]
     GPUShaderModule createShaderModule(GPUShaderModuleDescriptor descriptor);
     GPUComputePipeline createComputePipeline(GPUComputePipelineDescriptor descriptor);
     GPURenderPipeline createRenderPipeline(GPURenderPipelineDescriptor descriptor);
@@ -893,6 +894,11 @@ interface GPUCommandEncoder {
         GPUImageCopyTexture destination,
         GPUExtent3D copySize);
 
+    undefined clearBuffer(
+        GPUBuffer buffer,
+        optional GPUSize64 offset = 0,
+        optional GPUSize64 size);
+
     GPUCommandBuffer finish(optional GPUCommandBufferDescriptor descriptor = {});
 };
 GPUCommandEncoder includes GPUObjectBase;
@@ -922,7 +928,6 @@ interface GPUComputePassEncoder {
     [Pref="dom.webgpu.indirect-dispatch.enabled"]
     undefined dispatchWorkgroupsIndirect(GPUBuffer indirectBuffer, GPUSize64 indirectOffset);
 
-    [Throws]
     undefined end();
 };
 GPUComputePassEncoder includes GPUObjectBase;
@@ -951,7 +956,6 @@ interface GPURenderPassEncoder {
     //undefined endOcclusionQuery();
 
     undefined executeBundles(sequence<GPURenderBundle> bundles);
-    [Throws]
     undefined end();
 };
 GPURenderPassEncoder includes GPUObjectBase;

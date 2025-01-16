@@ -62,6 +62,7 @@ pub fn map_texture_format_failable(format: wgt::TextureFormat) -> Option<dxgifor
         Tf::Depth24PlusStencil8 => DXGI_FORMAT_D24_UNORM_S8_UINT,
         Tf::Depth32Float => DXGI_FORMAT_D32_FLOAT,
         Tf::Depth32FloatStencil8 => DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+        Tf::NV12 => DXGI_FORMAT_NV12,
         Tf::Bc1RgbaUnorm => DXGI_FORMAT_BC1_UNORM,
         Tf::Bc1RgbaUnormSrgb => DXGI_FORMAT_BC1_UNORM_SRGB,
         Tf::Bc2RgbaUnorm => DXGI_FORMAT_BC2_UNORM,
@@ -139,9 +140,11 @@ pub fn map_texture_format_for_srv_uav(
             crate::FormatAspects::STENCIL,
         ) => dxgiformat::DXGI_FORMAT_X24_TYPELESS_G8_UINT,
 
-        (format, crate::FormatAspects::COLOR) => map_texture_format(format),
+        (_, crate::FormatAspects::DEPTH)
+        | (_, crate::FormatAspects::STENCIL)
+        | (_, crate::FormatAspects::DEPTH_STENCIL) => return None,
 
-        _ => return None,
+        _ => map_texture_format(format),
     })
 }
 

@@ -79,7 +79,7 @@ static const char sPrintSettingsServiceContractID[] =
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebBrowserChrome.h"
 #include "mozilla/ReflowInput.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "nsIDocumentViewerPrint.h"
 
 #include "nsFocusManager.h"
@@ -621,12 +621,12 @@ void nsPrintJob::FirePrintingErrorEvent(nsresult aPrintError) {
     mPrintPreviewCallback = nullptr;
   }
 
-  nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
-  if (NS_WARN_IF(!cv)) {
+  nsCOMPtr<nsIDocumentViewer> viewer = do_QueryInterface(mDocViewerPrint);
+  if (NS_WARN_IF(!viewer)) {
     return;
   }
 
-  const RefPtr<Document> doc = cv->GetDocument();
+  const RefPtr<Document> doc = viewer->GetDocument();
   const RefPtr<CustomEvent> event = NS_NewDOMCustomEvent(doc, nullptr, nullptr);
 
   MOZ_ASSERT(event);
@@ -967,8 +967,8 @@ void nsPrintJob::FirePrintPreviewUpdateEvent() {
   // Dispatch the event only while in PrintPreview. When printing, there is no
   // listener bound to this event and therefore no need to dispatch it.
   if (mCreatedForPrintPreview && !mIsDoingPrinting) {
-    nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
-    if (Document* document = cv->GetDocument()) {
+    nsCOMPtr<nsIDocumentViewer> viewer = do_QueryInterface(mDocViewerPrint);
+    if (Document* document = viewer->GetDocument()) {
       AsyncEventDispatcher::RunDOMEventWhenSafe(
           *document, u"printPreviewUpdate"_ns, CanBubble::eYes,
           ChromeOnlyDispatch::eYes);
@@ -1183,8 +1183,9 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
 
 nsView* nsPrintJob::GetParentViewForRoot() {
   if (mIsCreatingPrintPreview) {
-    if (nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint)) {
-      return cv->FindContainerView();
+    if (nsCOMPtr<nsIDocumentViewer> viewer =
+            do_QueryInterface(mDocViewerPrint)) {
+      return viewer->FindContainerView();
     }
   }
   return nullptr;
@@ -1307,7 +1308,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
   // scenario). For some pages-per-sheet values, the pages are orthogonal to
   // the sheet; we adjust for that here by swapping the width with the height.
   nsSize pageSize = adjSize;
-  if (mPrintSettings->HasOrthogonalSheetsAndPages()) {
+  if (mPrintSettings->HasOrthogonalPagesPerSheet()) {
     std::swap(pageSize.width, pageSize.height);
   }
   // XXXalaskanemily: Is this actually necessary? We set it again before the
@@ -1316,11 +1317,12 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
 
   int32_t p2a = aPO->mPresContext->DeviceContext()->AppUnitsPerDevPixel();
   if (documentIsTopLevel && mIsCreatingPrintPreview) {
-    if (nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint)) {
+    if (nsCOMPtr<nsIDocumentViewer> viewer =
+            do_QueryInterface(mDocViewerPrint)) {
       // If we're print-previewing and the top level document, use the bounds
       // from our doc viewer. Page bounds is not what we want.
       nsIntRect bounds;
-      cv->GetBounds(bounds);
+      viewer->GetBounds(bounds);
       adjSize = nsSize(bounds.width * p2a, bounds.height * p2a);
     }
   }
@@ -1372,19 +1374,14 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
 
   RefPtr<PresShell> presShell = aPO->mPresShell;
   {
-    // Get the initial page name. Even though we haven't done any page-name
-    // fragmentation (that happens during block reflow), this will still be
-    // valid to find the first page's name.
-    const nsAtom* firstPageName = nsGkAtoms::_empty;
-    if (const Element* const rootElement = aPO->mDocument->GetRootElement()) {
-      if (const nsIFrame* const rootFrame = rootElement->GetPrimaryFrame()) {
-        firstPageName = rootFrame->ComputePageValue();
-      }
-    }
-
-    const ServoStyleSet::FirstPageSizeAndOrientation sizeAndOrientation =
-        presShell->StyleSet()->GetFirstPageSizeAndOrientation(firstPageName);
-    if (mPrintSettings->GetUsePageRuleSizeAsPaperSize()) {
+    const ServoStyleSet::PageSizeAndOrientation sizeAndOrientation =
+        presShell->StyleSet()->GetDefaultPageSizeAndOrientation();
+    // XXX Should we enable this for known save-to-PDF pseudo-printers once
+    // bug 1826301 is fixed?
+    if (mPrintSettings->GetOutputFormat() ==
+            nsIPrintSettings::kOutputFormatPDF &&
+        StaticPrefs::
+            print_save_as_pdf_use_page_rule_size_as_paper_size_enabled()) {
       mMaybeCSSPageSize = sizeAndOrientation.size;
       if (sizeAndOrientation.size) {
         pageSize = sizeAndOrientation.size.value();
@@ -2051,9 +2048,9 @@ nsresult nsPrintJob::StartPagePrintTimer(const UniquePtr<nsPrintObject>& aPO) {
     // this gives the user more time to press cancel
     int32_t printPageDelay = mPrintSettings->GetPrintPageDelay();
 
-    nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
-    NS_ENSURE_TRUE(cv, NS_ERROR_FAILURE);
-    nsCOMPtr<Document> doc = cv->GetDocument();
+    nsCOMPtr<nsIDocumentViewer> viewer = do_QueryInterface(mDocViewerPrint);
+    NS_ENSURE_TRUE(viewer, NS_ERROR_FAILURE);
+    nsCOMPtr<Document> doc = viewer->GetDocument();
     NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
     mPagePrintTimer =
@@ -2092,9 +2089,9 @@ class nsPrintCompletionEvent : public Runnable {
 void nsPrintJob::FirePrintCompletionEvent() {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIRunnable> event = new nsPrintCompletionEvent(mDocViewerPrint);
-  nsCOMPtr<nsIContentViewer> cv = do_QueryInterface(mDocViewerPrint);
-  NS_ENSURE_TRUE_VOID(cv);
-  nsCOMPtr<Document> doc = cv->GetDocument();
+  nsCOMPtr<nsIDocumentViewer> viewer = do_QueryInterface(mDocViewerPrint);
+  NS_ENSURE_TRUE_VOID(viewer);
+  nsCOMPtr<Document> doc = viewer->GetDocument();
   NS_ENSURE_TRUE_VOID(doc);
   NS_ENSURE_SUCCESS_VOID(doc->Dispatch(event.forget()));
 }

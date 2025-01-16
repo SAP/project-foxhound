@@ -46,7 +46,6 @@ skip-if = ["verify && debug && os == 'win'"]
 ["browser_rules_add-property_01.js"]
 
 ["browser_rules_add-property_02.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_add-rule-and-property.js"]
 
@@ -182,7 +181,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_content_02.js"]
 
 ["browser_rules_copy_styles.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_cssom.js"]
 
@@ -208,14 +206,13 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property-commit.js"]
 
 ["browser_rules_edit-property-computed.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+skip-if = ["a11y_checks"] # Bugs 1849028 and 1858041 clicked span.ruleview-expander.theme-twisty is inconsistently not accessible
 
 ["browser_rules_edit-property-increments.js"]
 
 ["browser_rules_edit-property-nested-rules.js"]
 
 ["browser_rules_edit-property-order.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_edit-property-remove_01.js"]
 skip-if = ["verify && debug && os == 'win'"]
@@ -230,17 +227,14 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property_01.js"]
 
 ["browser_rules_edit-property_02.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_edit-property_03.js"]
 
 ["browser_rules_edit-property_04.js"]
 
 ["browser_rules_edit-property_05.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_edit-property_06.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_edit-property_07.js"]
 
@@ -268,7 +262,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-selector_03.js"]
 
 ["browser_rules_edit-selector_04.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_edit-selector_05.js"]
 
@@ -304,7 +297,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-variable.js"]
 
 ["browser_rules_editable-field-focus_01.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_rules_editable-field-focus_02.js"]
 

@@ -373,10 +373,33 @@ PlainDateObject* js::temporal::CreateTemporalDate(
 }
 
 /**
+ * CreateTemporalDate ( isoYear, isoMonth, isoDay, calendar [ , newTarget ] )
+ */
+bool js::temporal::CreateTemporalDate(
+    JSContext* cx, const PlainDate& date, Handle<CalendarValue> calendar,
+    MutableHandle<PlainDateWithCalendar> result) {
+  // Step 1.
+  if (!ThrowIfInvalidISODate(cx, date)) {
+    return false;
+  }
+
+  // Step 2.
+  if (!ISODateTimeWithinLimits(date)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_PLAIN_DATE_INVALID);
+    return false;
+  }
+
+  // Steps 3-9.
+  result.set(PlainDateWithCalendar{date, calendar});
+  return true;
+}
+
+/**
  * ToTemporalDate ( item [ , options ] )
  */
 static Wrapped<PlainDateObject*> ToTemporalDate(
-    JSContext* cx, Handle<JSObject*> item, Handle<JSObject*> maybeOptions) {
+    JSContext* cx, Handle<JSObject*> item, Handle<PlainObject*> maybeOptions) {
   // Step 1-2. (Not applicable in our implementation.)
 
   // Step 3.a.
@@ -405,13 +428,13 @@ static Wrapped<PlainDateObject*> ToTemporalDate(
       }
     }
 
-    // Steps 3.b.ii-iii.
+    // Steps 3.b.ii-iv.
     PlainDateTime dateTime;
     if (!GetPlainDateTimeFor(cx, timeZone, epochInstant, &dateTime)) {
       return nullptr;
     }
 
-    // Step 3.b.iv.
+    // Step 3.b.v.
     return CreateTemporalDate(cx, dateTime.date, calendar);
   }
 
@@ -436,12 +459,23 @@ static Wrapped<PlainDateObject*> ToTemporalDate(
   }
 
   // Step 3.d.
-  Rooted<CalendarValue> calendar(cx);
-  if (!GetTemporalCalendarWithISODefault(cx, item, &calendar)) {
+  Rooted<CalendarValue> calendarValue(cx);
+  if (!GetTemporalCalendarWithISODefault(cx, item, &calendarValue)) {
     return nullptr;
   }
 
   // Step 3.e.
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::DateFromFields,
+                                       CalendarMethod::Fields,
+                                   },
+                                   &calendar)) {
+    return nullptr;
+  }
+
+  // Step 3.f.
   JS::RootedVector<PropertyKey> fieldNames(cx);
   if (!CalendarFields(cx, calendar,
                       {CalendarField::Day, CalendarField::Month,
@@ -450,14 +484,17 @@ static Wrapped<PlainDateObject*> ToTemporalDate(
     return nullptr;
   }
 
-  // Step 4.f.
+  // Step 3.g.
   Rooted<PlainObject*> fields(cx, PrepareTemporalFields(cx, item, fieldNames));
   if (!fields) {
     return nullptr;
   }
 
-  // Step 4.g.
-  return ::CalendarDateFromFields(cx, calendar, fields, maybeOptions);
+  // Step 3.h.
+  if (maybeOptions) {
+    return temporal::CalendarDateFromFields(cx, calendar, fields, maybeOptions);
+  }
+  return temporal::CalendarDateFromFields(cx, calendar, fields);
 }
 
 /**
@@ -531,40 +568,6 @@ static Wrapped<PlainDateObject*> ToTemporalDate(JSContext* cx,
 /**
  * ToTemporalDate ( item [ , options ] )
  */
-PlainDateObject* js::temporal::ToTemporalDate(
-    JSContext* cx, Handle<Wrapped<ZonedDateTimeObject*>> item) {
-  // Step 3.b.
-  auto* zonedDateTime = item.unwrap(cx);
-  if (!zonedDateTime) {
-    return nullptr;
-  }
-
-  auto epochInstant = ToInstant(zonedDateTime);
-  Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
-  Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
-
-  if (!timeZone.wrap(cx)) {
-    return nullptr;
-  }
-  if (!calendar.wrap(cx)) {
-    return nullptr;
-  }
-
-  // Step 3.b.i. (Not applicable)
-
-  // Steps 3.b.ii-iii.
-  PlainDateTime dateTime;
-  if (!GetPlainDateTimeFor(cx, timeZone, epochInstant, &dateTime)) {
-    return nullptr;
-  }
-
-  // Step 3.b.iv.
-  return CreateTemporalDate(cx, dateTime.date, calendar);
-}
-
-/**
- * ToTemporalDate ( item [ , options ] )
- */
 bool js::temporal::ToTemporalDate(JSContext* cx, Handle<Value> item,
                                   PlainDate* result) {
   auto obj = ::ToTemporalDate(cx, item, nullptr);
@@ -580,16 +583,20 @@ bool js::temporal::ToTemporalDate(JSContext* cx, Handle<Value> item,
  * ToTemporalDate ( item [ , options ] )
  */
 bool js::temporal::ToTemporalDate(JSContext* cx, Handle<Value> item,
-                                  PlainDate* result,
-                                  MutableHandle<CalendarValue> calendar) {
+                                  MutableHandle<PlainDateWithCalendar> result) {
   auto* obj = ::ToTemporalDate(cx, item, nullptr).unwrapOrNull();
   if (!obj) {
     return false;
   }
 
-  *result = ToPlainDate(obj);
-  calendar.set(obj->calendar());
-  return calendar.wrap(cx);
+  auto date = ToPlainDate(obj);
+  Rooted<CalendarValue> calendar(cx, obj->calendar());
+  if (!calendar.wrap(cx)) {
+    return false;
+  }
+
+  result.set(PlainDateWithCalendar{date, calendar});
+  return true;
 }
 
 /**
@@ -941,6 +948,308 @@ static PlainDate AddISODate(const PlainDate& date,
   return ::ConstrainISODate({year, month, date.day});
 }
 
+static bool HasYearsMonthsOrWeeks(const Duration& duration) {
+  return duration.years != 0 || duration.months != 0 || duration.weeks != 0;
+}
+
+static bool AddDate(JSContext* cx, const PlainDate& date,
+                    const Duration& duration, Handle<JSObject*> maybeOptions,
+                    PlainDate* result) {
+  MOZ_ASSERT(!HasYearsMonthsOrWeeks(duration));
+
+  // Steps 1-3. (Not applicable)
+
+  // Step 4.
+  auto overflow = TemporalOverflow::Constrain;
+  if (maybeOptions) {
+    if (!ToTemporalOverflow(cx, maybeOptions, &overflow)) {
+      return false;
+    }
+  }
+
+  // Step 5.
+  TimeDuration daysDuration;
+  if (!BalanceTimeDuration(cx, duration, TemporalUnit::Day, &daysDuration)) {
+    return false;
+  }
+
+  // Step 6.
+  return AddISODate(cx, date, {0, 0, 0, daysDuration.days}, overflow, result);
+}
+
+static bool AddDate(JSContext* cx, Handle<Wrapped<PlainDateObject*>> date,
+                    const Duration& duration, Handle<JSObject*> maybeOptions,
+                    PlainDate* result) {
+  auto* unwrappedDate = date.unwrap(cx);
+  if (!unwrappedDate) {
+    return false;
+  }
+  return ::AddDate(cx, ToPlainDate(unwrappedDate), duration, maybeOptions,
+                   result);
+}
+
+static PlainDateObject* AddDate(JSContext* cx, Handle<CalendarRecord> calendar,
+                                Handle<Wrapped<PlainDateObject*>> date,
+                                const Duration& duration,
+                                Handle<JSObject*> maybeOptions) {
+  // Steps 1-3. (Not applicable)
+
+  // Steps 4-6.
+  PlainDate resultDate;
+  if (!::AddDate(cx, date, duration, maybeOptions, &resultDate)) {
+    return nullptr;
+  }
+
+  // Step 7.
+  return CreateTemporalDate(cx, resultDate, calendar.receiver());
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> js::temporal::AddDate(
+    JSContext* cx, Handle<CalendarRecord> calendar,
+    Handle<Wrapped<PlainDateObject*>> date, const Duration& duration,
+    Handle<JSObject*> options) {
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return temporal::CalendarDateAdd(cx, calendar, date, duration, options);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, calendar, date, duration, options);
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> js::temporal::AddDate(
+    JSContext* cx, Handle<CalendarRecord> calendar,
+    Handle<Wrapped<PlainDateObject*>> date, const Duration& duration) {
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return CalendarDateAdd(cx, calendar, date, duration);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, calendar, date, duration, nullptr);
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> js::temporal::AddDate(
+    JSContext* cx, Handle<CalendarRecord> calendar,
+    Handle<Wrapped<PlainDateObject*>> date,
+    Handle<Wrapped<DurationObject*>> durationObj) {
+  auto* unwrappedDuration = durationObj.unwrap(cx);
+  if (!unwrappedDuration) {
+    return nullptr;
+  }
+  auto duration = ToDuration(unwrappedDuration);
+
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return CalendarDateAdd(cx, calendar, date, durationObj);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, calendar, date, duration, nullptr);
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+Wrapped<PlainDateObject*> js::temporal::AddDate(
+    JSContext* cx, Handle<CalendarRecord> calendar,
+    Handle<Wrapped<PlainDateObject*>> date,
+    Handle<Wrapped<DurationObject*>> durationObj, Handle<JSObject*> options) {
+  auto* unwrappedDuration = durationObj.unwrap(cx);
+  if (!unwrappedDuration) {
+    return nullptr;
+  }
+  auto duration = ToDuration(unwrappedDuration);
+
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return temporal::CalendarDateAdd(cx, calendar, date, durationObj, options);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, calendar, date, duration, options);
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+bool js::temporal::AddDate(JSContext* cx, Handle<CalendarRecord> calendar,
+                           const PlainDate& date, const Duration& duration,
+                           Handle<JSObject*> options, PlainDate* result) {
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return temporal::CalendarDateAdd(cx, calendar, date, duration, options,
+                                     result);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, date, duration, options, result);
+}
+
+/**
+ * AddDate ( calendarRec, plainDate, duration [ , options ] )
+ */
+bool js::temporal::AddDate(JSContext* cx, Handle<CalendarRecord> calendar,
+                           Handle<Wrapped<PlainDateObject*>> date,
+                           const Duration& duration, PlainDate* result) {
+  // Step 1.
+  MOZ_ASSERT(
+      CalendarMethodsRecordHasLookedUp(calendar, CalendarMethod::DateAdd));
+
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  if (HasYearsMonthsOrWeeks(duration)) {
+    return CalendarDateAdd(cx, calendar, date, duration, result);
+  }
+
+  // Steps 4-7.
+  return ::AddDate(cx, date, duration, nullptr, result);
+}
+
+/**
+ * DifferenceDate ( calendarRec, one, two, options )
+ */
+bool js::temporal::DifferenceDate(JSContext* cx,
+                                  Handle<CalendarRecord> calendar,
+                                  Handle<Wrapped<PlainDateObject*>> one,
+                                  Handle<Wrapped<PlainDateObject*>> two,
+                                  Handle<PlainObject*> options,
+                                  Duration* result) {
+  auto* unwrappedOne = one.unwrap(cx);
+  if (!unwrappedOne) {
+    return false;
+  }
+  auto oneDate = ToPlainDate(unwrappedOne);
+
+  auto* unwrappedTwo = two.unwrap(cx);
+  if (!unwrappedTwo) {
+    return false;
+  }
+  auto twoDate = ToPlainDate(unwrappedTwo);
+
+  // Steps 1-2. (Not applicable in our implementation.)
+
+  // Step 3.
+  MOZ_ASSERT(options->staticPrototype() == nullptr);
+
+  // Step 4.
+  MOZ_ASSERT(options->containsPure(cx->names().largestUnit));
+
+  // Step 5.
+  if (oneDate == twoDate) {
+    *result = {};
+    return true;
+  }
+
+  // Step 6.
+  Rooted<JS::Value> largestUnit(cx);
+  if (!GetProperty(cx, options, options, cx->names().largestUnit,
+                   &largestUnit)) {
+    return false;
+  }
+
+  if (largestUnit.isString()) {
+    bool isDay;
+    if (!EqualStrings(cx, largestUnit.toString(), cx->names().day, &isDay)) {
+      return false;
+    }
+
+    if (isDay) {
+      // Step 6.a.
+      int32_t days = DaysUntil(oneDate, twoDate);
+
+      // Step 6.b.
+      *result = {0, 0, 0, double(days)};
+      return true;
+    }
+  }
+
+  // Step 7.
+  return CalendarDateUntil(cx, calendar, one, two, options, result);
+}
+
+/**
+ * DifferenceDate ( calendarRec, one, two, options )
+ */
+bool js::temporal::DifferenceDate(JSContext* cx,
+                                  Handle<CalendarRecord> calendar,
+                                  Handle<Wrapped<PlainDateObject*>> one,
+                                  Handle<Wrapped<PlainDateObject*>> two,
+                                  TemporalUnit largestUnit, Duration* result) {
+  auto* unwrappedOne = one.unwrap(cx);
+  if (!unwrappedOne) {
+    return false;
+  }
+  auto oneDate = ToPlainDate(unwrappedOne);
+
+  auto* unwrappedTwo = two.unwrap(cx);
+  if (!unwrappedTwo) {
+    return false;
+  }
+  auto twoDate = ToPlainDate(unwrappedTwo);
+
+  // Steps 1-4. (Not applicable in our implementation.)
+
+  // Step 5.
+  if (oneDate == twoDate) {
+    *result = {};
+    return true;
+  }
+
+  // Step 6.
+  if (largestUnit == TemporalUnit::Day) {
+    // Step 6.a.
+    int32_t days = DaysUntil(oneDate, twoDate);
+
+    // Step 6.b.
+    *result = {0, 0, 0, double(days)};
+    return true;
+  }
+
+  // Step 7.
+  return CalendarDateUntil(cx, calendar, one, two, largestUnit, result);
+}
+
 /**
  * CompareISODate ( y1, m1, d1, y2, m2, d2 )
  */
@@ -1190,7 +1499,7 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
                                         const CallArgs& args) {
   Rooted<PlainDateObject*> temporalDate(
       cx, &args.thisv().toObject().as<PlainDateObject>());
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
 
   // Step 1. (Not applicable in our implementation)
 
@@ -1199,21 +1508,23 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
   if (!wrappedOther) {
     return false;
   }
-  Rooted<Wrapped<PlainDateObject*>> other(cx, wrappedOther);
+  auto* unwrappedOther = &wrappedOther.unwrap();
+  auto otherDate = ToPlainDate(unwrappedOther);
 
-  Rooted<CalendarValue> otherCalendar(cx, wrappedOther.unwrap().calendar());
+  Rooted<Wrapped<PlainDateObject*>> other(cx, wrappedOther);
+  Rooted<CalendarValue> otherCalendar(cx, unwrappedOther->calendar());
   if (!otherCalendar.wrap(cx)) {
     return false;
   }
 
   // Step 3.
-  if (!CalendarEqualsOrThrow(cx, calendar, otherCalendar)) {
+  if (!CalendarEqualsOrThrow(cx, calendarValue, otherCalendar)) {
     return false;
   }
 
-  // Steps 4-7.
+  // Steps 4-5.
   DifferenceSettings settings;
-  Duration duration;
+  Rooted<PlainObject*> resolvedOptions(cx);
   if (args.hasDefined(1)) {
     Rooted<JSObject*> options(
         cx, RequireObjectArg(cx, "options", ToName(operation), args[1]));
@@ -1222,8 +1533,7 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
     }
 
     // Step 4.
-    Rooted<PlainObject*> resolvedOptions(cx,
-                                         SnapshotOwnProperties(cx, options));
+    resolvedOptions = SnapshotOwnProperties(cx, options);
     if (!resolvedOptions) {
       return false;
     }
@@ -1234,8 +1544,42 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
                                TemporalUnit::Day, &settings)) {
       return false;
     }
+  } else {
+    // Steps 4-5.
+    settings = {
+        TemporalUnit::Day,
+        TemporalUnit::Day,
+        TemporalRoundingMode::Trunc,
+        Increment{1},
+    };
+  }
 
-    // Step 6.
+  // Step 6.
+  if (ToPlainDate(temporalDate) == otherDate) {
+    auto* obj = CreateTemporalDuration(cx, {});
+    if (!obj) {
+      return false;
+    }
+
+    args.rval().setObject(*obj);
+    return true;
+  }
+
+  // Step 7.
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::DateAdd,
+                                       CalendarMethod::DateUntil,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
+
+  // Steps 8-9.
+  Duration duration;
+  if (resolvedOptions) {
+    // Step 8.
     Rooted<Value> largestUnitValue(
         cx, StringValue(TemporalUnitToString(cx, settings.largestUnit)));
     if (!DefineDataProperty(cx, resolvedOptions, cx->names().largestUnit,
@@ -1243,44 +1587,49 @@ static bool DifferenceTemporalPlainDate(JSContext* cx,
       return false;
     }
 
-    // Step 7.
+    // Step 9.
     Duration result;
-    if (!CalendarDateUntil(cx, calendar, temporalDate, other, resolvedOptions,
-                           &result)) {
+    if (!DifferenceDate(cx, calendar, temporalDate, other, resolvedOptions,
+                        &result)) {
       return false;
     }
     duration = result.date();
   } else {
-    // Steps 4-6.
-    settings = {
-        TemporalUnit::Day,
-        TemporalUnit::Day,
-        TemporalRoundingMode::Trunc,
-        Increment{1},
-    };
-
-    // Step 7.
+    // Steps 8-9.
     Duration result;
-    if (!CalendarDateUntil(cx, calendar, temporalDate, other,
-                           settings.largestUnit, &result)) {
+    if (!DifferenceDate(cx, calendar, temporalDate, other, settings.largestUnit,
+                        &result)) {
       return false;
     }
     duration = result.date();
   }
 
-  // Step 8.
-  if (settings.smallestUnit != TemporalUnit::Day ||
-      settings.roundingIncrement != Increment{1}) {
-    // Steps 8.a-b.
+  // Step 10.
+  bool roundingGranularityIsNoop = settings.smallestUnit == TemporalUnit::Day &&
+                                   settings.roundingIncrement == Increment{1};
+
+  // Step 11.
+  if (!roundingGranularityIsNoop) {
+    // Steps 11.a-b.
+    Duration roundResult;
     if (!temporal::RoundDuration(cx, duration.date(),
                                  settings.roundingIncrement,
                                  settings.smallestUnit, settings.roundingMode,
-                                 temporalDate, &duration)) {
+                                 temporalDate, calendar, &roundResult)) {
       return false;
     }
+
+    // Step 11.c.
+    DateDuration balanceResult;
+    if (!temporal::BalanceDateDurationRelative(
+            cx, roundResult.date(), settings.largestUnit, settings.smallestUnit,
+            temporalDate, calendar, &balanceResult)) {
+      return false;
+    }
+    duration = balanceResult.toDuration();
   }
 
-  // Step 9.
+  // Step 12.
   if (operation == TemporalDifference::Since) {
     duration = duration.negate();
   }
@@ -1736,9 +2085,18 @@ static bool PlainDate_inLeapYear(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDate_toPlainYearMonth(JSContext* cx, const CallArgs& args) {
   Rooted<PlainDateObject*> temporalDate(
       cx, &args.thisv().toObject().as<PlainDateObject>());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
 
   // Step 3.
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::Fields,
+                                       CalendarMethod::YearMonthFromFields,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
 
   // Step 4.
   JS::RootedVector<PropertyKey> fieldNames(cx);
@@ -1782,9 +2140,7 @@ static bool PlainDate_toPlainYearMonth(JSContext* cx, unsigned argc,
 static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
   Rooted<PlainDateObject*> temporalDate(
       cx, &args.thisv().toObject().as<PlainDateObject>());
-
-  // Step 3.
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
 
   // Example for the optimisation described in TemporalFields.cpp
 
@@ -1795,8 +2151,8 @@ static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
         CalendarField::Day, CalendarField::MonthCode};
 
     // Step 5.
-    if (calendar.isObject()) {
-      Rooted<JSObject*> calendarObj(cx, calendar.toObject());
+    if (calendarValue.isObject()) {
+      Rooted<JSObject*> calendarObj(cx, calendarValue.toObject());
       if (!calendarObj->is<CalendarObject>()) {
         break;
       }
@@ -1804,10 +2160,6 @@ static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
 
       // Step 5.
       if (!IsBuiltinAccess(cx, builtinCalendar, fieldNames)) {
-        break;
-      }
-    } else {
-      if (!IsBuiltinAccessForStringCalendar(cx)) {
         break;
       }
     }
@@ -1819,7 +2171,7 @@ static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
     auto date = ToPlainDate(temporalDate);
     auto result = PlainDate{1972 /* referenceISOYear */, date.month, date.day};
 
-    auto* obj = CreateTemporalMonthDay(cx, result, calendar);
+    auto* obj = CreateTemporalMonthDay(cx, result, calendarValue);
     if (!obj) {
       return false;
     }
@@ -1827,6 +2179,17 @@ static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
     args.rval().setObject(*obj);
     return true;
   } while (false);
+
+  // Step 3.
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::Fields,
+                                       CalendarMethod::MonthDayFromFields,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
 
   // Step 4.
   JS::RootedVector<PropertyKey> fieldNames(cx);
@@ -1843,7 +2206,7 @@ static bool PlainDate_toPlainMonthDay(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Step 6.
+  // Steps 6-7.
   auto obj = CalendarMonthDayFromFields(cx, calendar, fields);
   if (!obj) {
     return false;
@@ -1983,7 +2346,7 @@ static bool PlainDate_getCalendar(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDate_add(JSContext* cx, const CallArgs& args) {
   Rooted<PlainDateObject*> temporalDate(
       cx, &args.thisv().toObject().as<PlainDateObject>());
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
 
   // Step 3.
   Rooted<Wrapped<DurationObject*>> duration(
@@ -2004,7 +2367,17 @@ static bool PlainDate_add(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 5.
-  auto result = CalendarDateAdd(cx, calendar, temporalDate, duration, options);
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::DateAdd,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
+
+  // Step 6.
+  auto result = AddDate(cx, calendar, temporalDate, duration, options);
   if (!result) {
     return false;
   }
@@ -2028,7 +2401,7 @@ static bool PlainDate_add(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDate_subtract(JSContext* cx, const CallArgs& args) {
   Rooted<PlainDateObject*> temporalDate(
       cx, &args.thisv().toObject().as<PlainDateObject>());
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
 
   // Step 3.
   Duration duration;
@@ -2051,8 +2424,18 @@ static bool PlainDate_subtract(JSContext* cx, const CallArgs& args) {
   auto negatedDuration = duration.negate();
 
   // Step 6.
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::DateAdd,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
+
+  // Step 7.
   auto result =
-      CalendarDateAdd(cx, calendar, temporalDate, negatedDuration, options);
+      temporal::AddDate(cx, calendar, temporalDate, negatedDuration, options);
   if (!result) {
     return false;
   }
@@ -2106,7 +2489,17 @@ static bool PlainDate_with(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 6.
-  Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
+  Rooted<CalendarValue> calendarValue(cx, temporalDate->calendar());
+  Rooted<CalendarRecord> calendar(cx);
+  if (!CreateCalendarMethodsRecord(cx, calendarValue,
+                                   {
+                                       CalendarMethod::DateFromFields,
+                                       CalendarMethod::Fields,
+                                       CalendarMethod::MergeFields,
+                                   },
+                                   &calendar)) {
+    return false;
+  }
 
   // Step 7.
   JS::RootedVector<PropertyKey> fieldNames(cx);
@@ -2145,7 +2538,8 @@ static bool PlainDate_with(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 12.
-  auto result = ::CalendarDateFromFields(cx, calendar, fields, resolvedOptions);
+  auto result =
+      temporal::CalendarDateFromFields(cx, calendar, fields, resolvedOptions);
   if (!result) {
     return false;
   }
@@ -2238,19 +2632,15 @@ static bool PlainDate_equals(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, temporalDate->calendar());
 
   // Step 3.
-  PlainDate other;
-  Rooted<CalendarValue> otherCalendar(cx);
-  if (!ToTemporalDate(cx, args.get(0), &other, &otherCalendar)) {
+  Rooted<PlainDateWithCalendar> other(cx);
+  if (!ToTemporalDate(cx, args.get(0), &other)) {
     return false;
   }
 
   // Steps 4-7.
-  bool equals = false;
-  if (date.year == other.year && date.month == other.month &&
-      date.day == other.day) {
-    if (!CalendarEquals(cx, calendar, otherCalendar, &equals)) {
-      return false;
-    }
+  bool equals = date == other.date();
+  if (equals && !CalendarEquals(cx, calendar, other.calendar(), &equals)) {
+    return false;
   }
 
   args.rval().setBoolean(equals);
@@ -2338,36 +2728,28 @@ static bool PlainDate_toZonedDateTime(JSContext* cx, const CallArgs& args) {
     temporalTime.setUndefined();
   }
 
-  // Steps 5-6.
-  Rooted<PlainDateTimeObject*> temporalDateTime(cx);
-  if (temporalTime.isUndefined()) {
-    // Step 5.a.
-    temporalDateTime = CreateTemporalDateTime(cx, {date, {}}, calendar);
-    if (!temporalDateTime) {
-      return false;
-    }
-  } else {
-    // Step 6.a.
-    PlainTime time;
+  // Step 6.a.
+  PlainTime time = {};
+  if (!temporalTime.isUndefined()) {
     if (!ToTemporalTime(cx, temporalTime, &time)) {
-      return false;
-    }
-
-    // Step 6.b.
-    temporalDateTime = CreateTemporalDateTime(cx, {date, time}, calendar);
-    if (!temporalDateTime) {
       return false;
     }
   }
 
-  // Step 7.
+  // Steps 5.a and 6.b
+  Rooted<PlainDateTimeWithCalendar> temporalDateTime(cx);
+  if (!CreateTemporalDateTime(cx, {date, time}, calendar, &temporalDateTime)) {
+    return false;
+  }
+
+  // Steps 7-8.
   Instant instant;
   if (!GetInstantFor(cx, timeZone, temporalDateTime,
                      TemporalDisambiguation::Compatible, &instant)) {
     return false;
   }
 
-  // Step 8.
+  // Step 9.
   auto* result = CreateTemporalZonedDateTime(cx, instant, timeZone, calendar);
   if (!result) {
     return false;
@@ -2576,7 +2958,7 @@ static PlainDateNameAndNative GetPlainDateNameAndNative(
 }
 
 bool js::temporal::IsBuiltinAccess(
-    JSContext* cx, JS::Handle<PlainDateObject*> date,
+    JSContext* cx, Handle<PlainDateObject*> date,
     std::initializer_list<CalendarField> fieldNames) {
   // Don't optimize when the object has any own properties which may shadow the
   // built-in methods.

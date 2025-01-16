@@ -447,6 +447,8 @@ skip-if = ["os == 'android'"]
 
 ["test_htmleditor_tab_key_handling.html"]
 
+["test_htmleditor_toggle_text_direction.html"]
+
 ["test_initial_selection_and_caret_of_designMode.html"]
 
 ["test_inlineTableEditing.html"]
@@ -470,6 +472,9 @@ skip-if = ["os == 'android'"]
 ["test_middle_click_paste.html"]
 skip-if = ["headless"]
 
+["test_native_key_bindings_in_shadow.html"]
+skip-if = ["os != 'linux' && os != 'mac'"] # Depends on NativeKeyBindings used only on Linux and macOS
+
 ["test_nested_editor.html"]
 
 ["test_new_plaintext_mail_with_plaintext_signature.html"]
@@ -485,11 +490,15 @@ skip-if = ["xorigin"] # Testing internal API for comm-central
 
 ["test_nsIEditor_clearUndoRedo.html"]
 
+["test_nsIEditor_deleteNode.html"]
+
 ["test_nsIEditor_documentCharacterSet.html"]
 
 ["test_nsIEditor_documentIsEmpty.html"]
 
 ["test_nsIEditor_insertLineBreak.html"]
+
+["test_nsIEditor_insertNode.html"]
 
 ["test_nsIEditor_isSelectionEditable.html"]
 

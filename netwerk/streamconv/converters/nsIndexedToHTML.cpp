@@ -619,14 +619,7 @@ nsIndexedToHTML::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aInput,
 
 NS_IMETHODIMP
 nsIndexedToHTML::OnDataFinished(nsresult aStatus) {
-  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
-      do_QueryInterface(mListener);
-
-  if (listener) {
-    return listener->OnDataFinished(aStatus);
-  }
-
-  return NS_OK;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
@@ -643,7 +636,8 @@ static nsresult FormatTime(
   // instead of local time zone name (e.g. CEST).
   // To avoid this case when ResistFingerprinting is disabled, use
   // |FormatPRTime| to show exact time zone name.
-  if (!nsContentUtils::ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)) {
+  if (!nsContentUtils::ShouldResistFingerprinting(true,
+                                                  RFPTarget::JSDateTimeUTC)) {
     return mozilla::intl::AppDateTimeFormat::Format(aStyleBag, aPrTime,
                                                     aStringOut);
   }

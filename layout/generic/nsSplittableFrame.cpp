@@ -16,6 +16,10 @@
 
 using namespace mozilla;
 
+NS_QUERYFRAME_HEAD(nsSplittableFrame)
+  NS_QUERYFRAME_ENTRY(nsSplittableFrame)
+NS_QUERYFRAME_TAIL_INHERITING(nsIFrame)
+
 void nsSplittableFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                              nsIFrame* aPrevInFlow) {
   if (aPrevInFlow) {
@@ -59,7 +63,9 @@ void nsSplittableFrame::SetNextContinuation(nsIFrame* aFrame) {
   NS_ASSERTION(!IsInNextContinuationChain(aFrame, this),
                "creating a loop in continuation chain!");
   mNextContinuation = aFrame;
-  if (aFrame) aFrame->RemoveStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
+  if (mNextContinuation) {
+    mNextContinuation->RemoveStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
+  }
 }
 
 nsIFrame* nsSplittableFrame::FirstContinuation() const {
@@ -135,7 +141,9 @@ void nsSplittableFrame::SetNextInFlow(nsIFrame* aFrame) {
   NS_ASSERTION(!IsInNextContinuationChain(aFrame, this),
                "creating a loop in continuation chain!");
   mNextContinuation = aFrame;
-  if (aFrame) aFrame->AddStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
+  if (mNextContinuation) {
+    mNextContinuation->AddStateBits(NS_FRAME_IS_FLUID_CONTINUATION);
+  }
 }
 
 nsIFrame* nsSplittableFrame::FirstInFlow() const {

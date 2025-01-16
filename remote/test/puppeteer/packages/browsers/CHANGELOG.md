@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.9.0](https://github.com/puppeteer/puppeteer/compare/browsers-v1.8.0...browsers-v1.9.0) (2023-12-05)
+
+
+### Features
+
+* implement the Puppeteer CLI ([#11344](https://github.com/puppeteer/puppeteer/issues/11344)) ([53fb69b](https://github.com/puppeteer/puppeteer/commit/53fb69bf7f2bf06fa4fd7bb6d3cf21382386f6e7))
+
+
+### Bug Fixes
+
+* ng-schematics install Windows ([#11487](https://github.com/puppeteer/puppeteer/issues/11487)) ([02af748](https://github.com/puppeteer/puppeteer/commit/02af7482d9bf2163b90dfe623b0af18c513d5a3b))
+* remove CDP-specific preferences from defaults for Firefox ([#11477](https://github.com/puppeteer/puppeteer/issues/11477)) ([f8c9469](https://github.com/puppeteer/puppeteer/commit/f8c94699c7f5b15c7bb96f299c2c8217d74230cd))
+
+## [1.8.0](https://github.com/puppeteer/puppeteer/compare/browsers-v1.7.1...browsers-v1.8.0) (2023-10-20)
+
+
+### Features
+
+* enable tab targets ([#11099](https://github.com/puppeteer/puppeteer/issues/11099)) ([8324c16](https://github.com/puppeteer/puppeteer/commit/8324c1634883d97ed83f32a1e62acc9b5e64e0bd))
+
+## [1.7.1](https://github.com/puppeteer/puppeteer/compare/browsers-v1.7.0...browsers-v1.7.1) (2023-09-13)
+
+
+### Bug Fixes
+
+* use supported node range for types ([#10896](https://github.com/puppeteer/puppeteer/issues/10896)) ([2d851c1](https://github.com/puppeteer/puppeteer/commit/2d851c1398e5efcdabdb5304dc78e68cbd3fadd2))
+
 ## [1.7.0](https://github.com/puppeteer/puppeteer/compare/browsers-v1.6.0...browsers-v1.7.0) (2023-08-18)
 
 

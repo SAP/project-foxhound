@@ -586,10 +586,8 @@ Result<nsCOMPtr<nsIFileURL>, nsresult> GetDatabaseFileURL(
   // - from DeleteDatabaseOp::LoadPreviousVersion, since this might require
   //   temporarily exceeding the quota limit before the database can be
   //   deleted.
-  const auto directoryLockIdClause =
-      aDirectoryLockId >= 0
-          ? "&directoryLockId="_ns + IntToCString(aDirectoryLockId)
-          : EmptyCString();
+  const nsCString directoryLockIdClause =
+      "&directoryLockId="_ns + IntToCString(aDirectoryLockId);
 
   const auto keyClause = [&aMaybeKey] {
     nsAutoCString keyClause;
@@ -2108,13 +2106,6 @@ class Factory final : public PBackgroundIDBFactoryParent,
 
   bool DeallocPBackgroundIDBFactoryRequestParent(
       PBackgroundIDBFactoryRequestParent* aActor) override;
-
-  PBackgroundIDBDatabaseParent* AllocPBackgroundIDBDatabaseParent(
-      const DatabaseSpec& aSpec,
-      NotNull<PBackgroundIDBFactoryRequestParent*> aRequest) override;
-
-  bool DeallocPBackgroundIDBDatabaseParent(
-      PBackgroundIDBDatabaseParent* aActor) override;
 };
 
 class WaitForTransactionsHelper final : public Runnable {
@@ -2211,6 +2202,13 @@ class Database final
       MOZ_ASSERT(mInvalidated);
     }
 #endif
+  }
+
+  NS_IMETHOD_(MozExternalRefCountType) AddRef() override {
+    return AtomicSafeRefCounted<Database>::AddRef();
+  }
+  NS_IMETHOD_(MozExternalRefCountType) Release() override {
+    return AtomicSafeRefCounted<Database>::Release();
   }
 
   MOZ_DECLARE_REFCOUNTED_TYPENAME(mozilla::dom::indexedDB::Database)
@@ -5526,7 +5524,7 @@ nsresult DeleteFilesNoQuota(nsIFile* aDirectory, const nsAString& aFilename) {
   // don't update the size of origin. Adding this assertion for preventing from
   // misusing.
   DebugOnly<QuotaManager*> quotaManager = QuotaManager::Get();
-  MOZ_ASSERT(!quotaManager->IsTemporaryStorageInitialized());
+  MOZ_ASSERT(!quotaManager->IsTemporaryStorageInitializedInternal());
 
   QM_TRY_INSPECT(const auto& file, CloneFileAndAppend(*aDirectory, aFilename));
 
@@ -9103,23 +9101,6 @@ bool Factory::DeallocPBackgroundIDBFactoryRequestParent(
   return true;
 }
 
-PBackgroundIDBDatabaseParent* Factory::AllocPBackgroundIDBDatabaseParent(
-    const DatabaseSpec& aSpec,
-    NotNull<PBackgroundIDBFactoryRequestParent*> aRequest) {
-  MOZ_CRASH(
-      "PBackgroundIDBDatabaseParent actors should be constructed "
-      "manually!");
-}
-
-bool Factory::DeallocPBackgroundIDBDatabaseParent(
-    PBackgroundIDBDatabaseParent* aActor) {
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aActor);
-
-  RefPtr<Database> database = dont_AddRef(static_cast<Database*>(aActor));
-  return true;
-}
-
 /*******************************************************************************
  * WaitForTransactionsHelper
  ******************************************************************************/
@@ -9312,10 +9293,6 @@ void Database::SetActorAlive() {
   MOZ_ASSERT(!mActorDestroyed);
 
   mActorWasAlive.Flip();
-
-  // This reference will be absorbed by IPDL and released when the actor is
-  // destroyed.
-  AddRef();
 }
 
 void Database::MapBlob(const IPCBlob& aIPCBlob,
@@ -12307,7 +12284,7 @@ nsresult QuotaClient::GetUsageForOriginInternal(
               ([&directory,
                 &subdirName](const nsresult) -> Result<Ok, nsresult> {
                 // XXX It seems if we really got here, we can fail the
-                // MOZ_ASSERT(!quotaManager->IsTemporaryStorageInitialized());
+                // MOZ_ASSERT(!quotaManager->IsTemporaryStorageInitializedInternal());
                 // assertion in DeleteFilesNoQuota.
                 QM_TRY(MOZ_TO_RESULT(DeleteFilesNoQuota(directory, subdirName)),
                        Err(NS_ERROR_UNEXPECTED));
@@ -13022,7 +12999,8 @@ nsresult Maintenance::DirectoryWork() {
   // repository can still
   // be processed.
   const bool initTemporaryStorageFailed = [&quotaManager] {
-    QM_TRY(MOZ_TO_RESULT(quotaManager->EnsureTemporaryStorageIsInitialized()),
+    QM_TRY(MOZ_TO_RESULT(
+               quotaManager->EnsureTemporaryStorageIsInitializedInternal()),
            true);
     return false;
   }();
@@ -13146,7 +13124,7 @@ nsresult Maintenance::DirectoryWork() {
                 // We have to check that all persistent origins are cleaned up,
                 // but there's no way to do that by one call, we need to
                 // initialize (and possibly clean up) them one by one
-                // (EnsureTemporaryStorageIsInitialized cleans up only
+                // (EnsureTemporaryStorageIsInitializedInternal cleans up only
                 // non-persistent origins).
 
                 QM_TRY_UNWRAP(
@@ -14195,10 +14173,14 @@ nsresult DatabaseOperationBase::DeleteObjectStoreDataTableRowsWithIndexes(
 
   const bool singleRowOnly = aKeyRange.isSome() && aKeyRange.ref().isOnly();
 
+  const auto keyRangeClause =
+      MaybeGetBindingClauseForKeyRange(aKeyRange, kColumnNameKey);
+
   Key objectStoreKey;
   QM_TRY_INSPECT(
       const auto& selectStmt,
-      ([singleRowOnly, &aConnection, &objectStoreKey, &aKeyRange]()
+      ([singleRowOnly, &aConnection, &objectStoreKey, &aKeyRange,
+        &keyRangeClause]()
            -> Result<CachingDatabaseConnection::BorrowedStatement, nsresult> {
         if (singleRowOnly) {
           QM_TRY_UNWRAP(auto selectStmt,
@@ -14216,9 +14198,6 @@ nsresult DatabaseOperationBase::DeleteObjectStoreDataTableRowsWithIndexes(
 
           return selectStmt;
         }
-
-        const auto keyRangeClause =
-            MaybeGetBindingClauseForKeyRange(aKeyRange, kColumnNameKey);
 
         QM_TRY_UNWRAP(
             auto selectStmt,
@@ -14242,15 +14221,9 @@ nsresult DatabaseOperationBase::DeleteObjectStoreDataTableRowsWithIndexes(
 
   QM_TRY(CollectWhileHasResult(
       *selectStmt,
-      [singleRowOnly, aObjectStoreId, &objectStoreKey, &aConnection,
-       &resultCountDEBUG, indexValues = IndexDataValuesAutoArray{},
-       deleteStmt = DatabaseConnection::LazyStatement{
-           *aConnection,
-           "DELETE FROM object_data "
-           "WHERE object_store_id = :"_ns +
-               kStmtParamNameObjectStoreId + " AND key = :"_ns +
-               kStmtParamNameKey +
-               ";"_ns}](auto& selectStmt) mutable -> Result<Ok, nsresult> {
+      [singleRowOnly, &objectStoreKey, &aConnection, &resultCountDEBUG,
+       indexValues = IndexDataValuesAutoArray{}](
+          auto& selectStmt) mutable -> Result<Ok, nsresult> {
         if (!singleRowOnly) {
           QM_TRY(
               MOZ_TO_RESULT(objectStoreKey.SetFromStatement(&selectStmt, 1)));
@@ -14263,20 +14236,28 @@ nsresult DatabaseOperationBase::DeleteObjectStoreDataTableRowsWithIndexes(
         QM_TRY(MOZ_TO_RESULT(DeleteIndexDataTableRows(
             aConnection, objectStoreKey, indexValues)));
 
-        QM_TRY_INSPECT(const auto& borrowedDeleteStmt, deleteStmt.Borrow());
-
-        QM_TRY(MOZ_TO_RESULT(borrowedDeleteStmt->BindInt64ByName(
-            kStmtParamNameObjectStoreId, aObjectStoreId)));
-        QM_TRY(MOZ_TO_RESULT(objectStoreKey.BindToStatement(
-            &*borrowedDeleteStmt, kStmtParamNameKey)));
-        QM_TRY(MOZ_TO_RESULT(borrowedDeleteStmt->Execute()));
-
         resultCountDEBUG++;
 
         return Ok{};
       }));
 
   MOZ_ASSERT_IF(singleRowOnly, resultCountDEBUG <= 1);
+
+  QM_TRY_UNWRAP(
+      auto deleteManyStmt,
+      aConnection->BorrowCachedStatement(
+          "DELETE FROM object_data "_ns + "WHERE object_store_id = :"_ns +
+          kStmtParamNameObjectStoreId + keyRangeClause + ";"_ns));
+
+  QM_TRY(MOZ_TO_RESULT(deleteManyStmt->BindInt64ByName(
+      kStmtParamNameObjectStoreId, aObjectStoreId)));
+
+  if (aKeyRange.isSome()) {
+    QM_TRY(MOZ_TO_RESULT(
+        BindKeyRangeToStatement(aKeyRange.ref(), &*deleteManyStmt)));
+  }
+
+  QM_TRY(MOZ_TO_RESULT(deleteManyStmt->Execute()));
 
   return NS_OK;
 }
@@ -15158,8 +15139,8 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
               mOriginMetadata));
         }
 
-        QM_TRY(
-            MOZ_TO_RESULT(quotaManager->EnsureTemporaryStorageIsInitialized()));
+        QM_TRY(MOZ_TO_RESULT(
+            quotaManager->EnsureTemporaryStorageIsInitializedInternal()));
         QM_TRY_RETURN(quotaManager->EnsureTemporaryOriginIsInitialized(
             persistenceType, mOriginMetadata));
       }()
@@ -15983,7 +15964,6 @@ nsresult OpenDatabaseOp::EnsureDatabaseActorIsAlive() {
 
   QM_TRY_INSPECT(const auto& spec, MetadataToSpec());
 
-  // Transfer ownership to IPDL.
   mDatabase->SetActorAlive();
 
   if (!factory->SendPBackgroundIDBDatabaseConstructor(

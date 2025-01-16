@@ -632,8 +632,6 @@ void RenderThread::HandleFrameOneDocInner(wr::WindowId aWindowId, bool aRender,
   TimeDuration compositeDuration = TimeStamp::Now() - frame.mStartTime;
   mozilla::Telemetry::Accumulate(mozilla::Telemetry::COMPOSITE_TIME,
                                  uint32_t(compositeDuration.ToMilliseconds()));
-  mozilla::glean::fog_validation::gvsv_composite_time.AccumulateRawDuration(
-      {compositeDuration});
   PerfStats::RecordMeasurement(PerfStats::Metric::Compositing,
                                compositeDuration);
 }
@@ -1114,7 +1112,6 @@ void RenderThread::UnregisterExternalImageDuringShutdown(
   MOZ_ASSERT(IsInRenderThread());
   MutexAutoLock lock(mRenderTextureMapLock);
   MOZ_ASSERT(mHasShutdown);
-  MOZ_ASSERT(mRenderTextures.find(aExternalImageId) != mRenderTextures.end());
   mRenderTextures.erase(aExternalImageId);
 }
 
@@ -1284,6 +1281,7 @@ void RenderThread::NotifyWebRenderError(WebRenderError aError) {
 }
 
 void RenderThread::HandleWebRenderError(WebRenderError aError) {
+  MOZ_ASSERT(IsInRenderThread());
   if (mHandlingWebRenderError) {
     return;
   }
@@ -1358,7 +1356,12 @@ void RenderThread::ClearSingletonGL() {
     mProgramsForCompositorOGL->Clear();
     mProgramsForCompositorOGL = nullptr;
   }
-  mShaders = nullptr;
+  if (mShaders) {
+    if (mSingletonGL) {
+      mSingletonGL->MakeCurrent();
+    }
+    mShaders = nullptr;
+  }
   mSingletonGL = nullptr;
 }
 

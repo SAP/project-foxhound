@@ -26,6 +26,10 @@ void MacroAssembler::moveGPRToFloat32(Register src, FloatRegister dest) {
   vmovd(src, dest);
 }
 
+void MacroAssembler::move8ZeroExtend(Register src, Register dest) {
+  movzbl(src, dest);
+}
+
 void MacroAssembler::move8SignExtend(Register src, Register dest) {
   movsbl(src, dest);
 }
@@ -1135,6 +1139,12 @@ void MacroAssembler::testBigIntSet(Condition cond, const T& src,
   emitSet(cond, dest);
 }
 
+void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Imm32 rhs,
+                                 Register src, Register dest) {
+  cmp32(lhs, rhs);
+  cmovCCl(cond, src, dest);
+}
+
 void MacroAssembler::cmp32Move32(Condition cond, Register lhs, Register rhs,
                                  Register src, Register dest) {
   cmp32(lhs, rhs);
@@ -1494,6 +1504,44 @@ void MacroAssembler::rightShiftSimd128(Imm32 count, FloatRegister src,
                                        FloatRegister dest) {
   src = moveSimd128IntIfNotAVX(src, dest);
   vpsrldq(count, src, dest);
+}
+
+// Zero extend int values.
+
+void MacroAssembler::zeroExtend8x16To16x8(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxbw(Operand(src), dest);
+}
+
+void MacroAssembler::zeroExtend8x16To32x4(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxbd(Operand(src), dest);
+}
+
+void MacroAssembler::zeroExtend8x16To64x2(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxbq(Operand(src), dest);
+}
+
+void MacroAssembler::zeroExtend16x8To32x4(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxwd(Operand(src), dest);
+}
+
+void MacroAssembler::zeroExtend16x8To64x2(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxwq(Operand(src), dest);
+}
+
+void MacroAssembler::zeroExtend32x4To64x2(FloatRegister src,
+                                          FloatRegister dest) {
+  src = moveSimd128IntIfNotAVX(src, dest);
+  vpmovzxdq(Operand(src), dest);
 }
 
 // Reverse bytes in lanes.

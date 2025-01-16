@@ -232,7 +232,6 @@ class ModuleLoaderBase : public nsISupports {
   // Called by HostImportModuleDynamically hook.
   virtual already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
       JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
-      JS::Handle<JS::Value> aReferencingPrivate,
       JS::Handle<JSString*> aSpecifier, JS::Handle<JSObject*> aPromise) = 0;
 
   // Check whether we can load a module. May return false with |aRvOut| set to
@@ -350,8 +349,6 @@ class ModuleLoaderBase : public nsISupports {
   static bool HostImportModuleDynamically(
       JSContext* aCx, JS::Handle<JS::Value> aReferencingPrivate,
       JS::Handle<JSObject*> aModuleRequest, JS::Handle<JSObject*> aPromise);
-  static bool HostGetSupportedImportAssertions(
-      JSContext* aCx, JS::ImportAssertionVector& aValues);
 
   ResolveResult ResolveModuleSpecifier(LoadedScript* aScript,
                                        const nsAString& aSpecifier);

@@ -146,17 +146,15 @@ NS_IMPL_ISUPPORTS(nsSynthVoiceRegistry, nsISynthVoiceRegistry)
 nsSynthVoiceRegistry::nsSynthVoiceRegistry()
     : mSpeechSynthChild(nullptr), mUseGlobalQueue(false), mIsSpeaking(false) {
   if (XRE_IsContentProcess()) {
-    mSpeechSynthChild = new SpeechSynthesisChild();
-    ContentChild::GetSingleton()->SendPSpeechSynthesisConstructor(
-        mSpeechSynthChild);
+    RefPtr<SpeechSynthesisChild> actor = new SpeechSynthesisChild();
+    if (ContentChild::GetSingleton()->SendPSpeechSynthesisConstructor(actor)) {
+      mSpeechSynthChild = actor;
+    }
   }
 }
 
 nsSynthVoiceRegistry::~nsSynthVoiceRegistry() {
   LOG(LogLevel::Debug, ("~nsSynthVoiceRegistry"));
-
-  // mSpeechSynthChild's lifecycle is managed by the Content protocol.
-  mSpeechSynthChild = nullptr;
 
   mUriVoiceMap.Clear();
 }

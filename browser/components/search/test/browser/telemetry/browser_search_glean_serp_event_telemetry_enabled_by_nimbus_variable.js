@@ -46,8 +46,9 @@ async function verifyEventsRecorded() {
     gBrowser,
     getSERPUrl("searchTelemetryAd.html")
   );
+  await waitForPageWithAdImpressions();
 
-  assertImpressionEvents([
+  assertSERPTelemetry([
     {
       impression: {
         provider: "example",
@@ -58,27 +59,43 @@ async function verifyEventsRecorded() {
         is_private: "false",
         shopping_tab_displayed: "false",
       },
-    },
-  ]);
-
-  await waitForPageWithAdImpressions();
-
-  assertAdImpressionEvents([
-    {
-      component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
-      ads_loaded: "2",
-      ads_visible: "2",
-      ads_hidden: "0",
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
     },
   ]);
 
   BrowserTestUtils.removeTab(tab);
 
-  assertAbandonmentEvent({
-    abandonment: {
-      reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,
+  assertSERPTelemetry([
+    {
+      impression: {
+        provider: "example",
+        tagged: "true",
+        partner_code: "ff",
+        source: "unknown",
+        is_shopping_page: "false",
+        is_private: "false",
+        shopping_tab_displayed: "false",
+      },
+      adImpressions: [
+        {
+          component: SearchSERPTelemetryUtils.COMPONENTS.AD_LINK,
+          ads_loaded: "2",
+          ads_visible: "2",
+          ads_hidden: "0",
+        },
+      ],
+      abandonment: {
+        reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,
+      },
     },
-  });
+  ]);
 }
 
 add_setup(async function () {
@@ -88,10 +105,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.log", true]],
-  });
 
   registerCleanupFunction(async () => {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();

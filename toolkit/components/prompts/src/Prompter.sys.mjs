@@ -7,6 +7,11 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 // This is redefined below, for strange and unfortunate reasons.
 import { PromptUtils } from "resource://gre/modules/PromptUtils.sys.mjs";
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  ClipboardContextMenu: "resource://gre/modules/ClipboardContextMenu.sys.mjs",
+});
+
 const {
   MODAL_TYPE_TAB,
   MODAL_TYPE_CONTENT,
@@ -652,6 +657,19 @@ Prompter.prototype = {
     let p = this.pickPrompter({ browsingContext, modalType, async: true });
     return p.promptAuth(...promptArgs);
   },
+
+  /**
+   * Displays a contextmenu to get user confirmation for clipboard read. Only
+   * one context menu can be opened at a time.
+   *
+   * @param {WindowContext} windowContext - The window context that initiates
+   *        the clipboard operation.
+   * @returns {Promise<nsIPropertyBag<{ ok: Boolean }>>}
+   *          A promise which resolves when the contextmenu is dismissed.
+   */
+  confirmUserPaste() {
+    return lazy.ClipboardContextMenu.confirmUserPaste(...arguments);
+  },
 };
 
 // Common utils not specific to a particular prompter style.
@@ -1142,7 +1160,7 @@ class ModalPrompter {
     }
     if (IS_CONTENT) {
       let docShell = this.browsingContext.docShell;
-      let inPermitUnload = docShell?.contentViewer?.inPermitUnload;
+      let inPermitUnload = docShell?.docViewer?.inPermitUnload;
       args.inPermitUnload = inPermitUnload;
       let eventDetail = Cu.cloneInto(
         {
@@ -1453,6 +1471,10 @@ class ModalPrompter {
           args.button2Label = label2;
         }
       }
+    }
+
+    if (flags & Ci.nsIPrompt.SHOW_SPINNER) {
+      args.showSpinner = true;
     }
 
     if (this.async) {

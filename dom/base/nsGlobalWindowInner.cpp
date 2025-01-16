@@ -144,6 +144,7 @@
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PartitionedLocalStorage.h"
 #include "mozilla/dom/Performance.h"
+#include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/dom/PopStateEvent.h"
 #include "mozilla/dom/PopStateEventBinding.h"
 #include "mozilla/dom/PopupBlocker.h"
@@ -1274,6 +1275,13 @@ void nsGlobalWindowInner::FreeInnerObjects() {
     mLocalStorage = nullptr;
   }
   mSessionStorage = nullptr;
+  if (mPerformance) {
+    // Since window is dying, nothing is going to be painted
+    // with meaningful sizes, so these temp data for LCP is
+    // no longer needed.
+    static_cast<PerformanceMainThread*>(mPerformance.get())
+        ->ClearGeneratedTempDataForLCP();
+  }
   mPerformance = nullptr;
 
   mContentMediaController = nullptr;
@@ -2123,20 +2131,11 @@ void nsGlobalWindowInner::FireFrameLoadEvent() {
     event.mFlags.mBubbles = false;
     event.mFlags.mCancelable = false;
 
-    if (mozilla::dom::DocGroup::TryToLoadIframesInBackground()) {
-      nsDocShell* ds = nsDocShell::Cast(GetDocShell());
-
-      if (ds && !ds->HasFakeOnLoadDispatched()) {
-        EventDispatcher::Dispatch(element, nullptr, &event, nullptr, &status);
-      }
-    } else {
-      // Most of the time we could get a pres context to pass in here,
-      // but not always (i.e. if this window is not shown there won't
-      // be a pres context available). Since we're not firing a GUI
-      // event we don't need a pres context anyway so we just pass
-      // null as the pres context all the time here.
-      EventDispatcher::Dispatch(element, nullptr, &event, nullptr, &status);
-    }
+    // Most of the time we could get a pres context to pass in here, but not
+    // always (i.e. if this window is not shown there won't be a pres context
+    // available). Since we're not firing a GUI event we don't need a pres
+    // context anyway so we just pass null as the pres context all the time.
+    EventDispatcher::Dispatch(element, nullptr, &event, nullptr, &status);
     return;
   }
 
@@ -2146,7 +2145,8 @@ void nsGlobalWindowInner::FireFrameLoadEvent() {
   // case.
   RefPtr<BrowserChild> browserChild =
       BrowserChild::GetFrom(static_cast<nsPIDOMWindowInner*>(this));
-  if (browserChild) {
+  if (browserChild &&
+      !GetBrowsingContext()->GetParentWindowContext()->IsInProcess()) {
     // Double-check that our outer window is actually at the root of this
     // `BrowserChild`, in case we're in an odd maybe-unhosted situation like a
     // print preview dialog.
@@ -3831,7 +3831,7 @@ void nsGlobalWindowInner::ScrollTo(const ScrollToOptions& aOptions) {
   nsIScrollableFrame* sf = GetScrollFrame();
 
   if (sf) {
-    CSSIntPoint scrollPos = sf->GetScrollPositionCSSPixels();
+    CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
     if (aOptions.mLeft.WasPassed()) {
       scrollPos.x = static_cast<int32_t>(
           mozilla::ToZeroIfNonfinite(aOptions.mLeft.Value()));
@@ -6720,21 +6720,20 @@ void nsGlobalWindowInner::AddSizeOfIncludingThis(
 void nsGlobalWindowInner::RegisterDataDocumentForMemoryReporting(
     Document* aDocument) {
   aDocument->SetAddedToMemoryReportAsDataDocument();
-  mDataDocumentsForMemoryReporting.AppendElement(
-      do_GetWeakReference(aDocument));
+  mDataDocumentsForMemoryReporting.AppendElement(aDocument);
 }
 
 void nsGlobalWindowInner::UnregisterDataDocumentForMemoryReporting(
     Document* aDocument) {
-  nsWeakPtr doc = do_GetWeakReference(aDocument);
-  MOZ_ASSERT(mDataDocumentsForMemoryReporting.Contains(doc));
-  mDataDocumentsForMemoryReporting.RemoveElement(doc);
+  DebugOnly<bool> found =
+      mDataDocumentsForMemoryReporting.RemoveElement(aDocument);
+  MOZ_ASSERT(found);
 }
 
 void nsGlobalWindowInner::CollectDOMSizesForDataDocuments(
     nsWindowSizes& aSize) const {
-  for (const nsWeakPtr& ptr : mDataDocumentsForMemoryReporting) {
-    if (nsCOMPtr<Document> doc = do_QueryReferent(ptr)) {
+  for (Document* doc : mDataDocumentsForMemoryReporting) {
+    if (doc) {
       doc->DocAddSizeOfIncludingThis(aSize);
     }
   }

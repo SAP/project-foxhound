@@ -8,15 +8,17 @@
 
 #include "mozilla/DataMutex.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/Mutex.h"
 #include "nsIContentAnalysis.h"
 #include "nsProxyRelease.h"
 #include "nsString.h"
+#include "nsTHashMap.h"
 
+#include <atomic>
 #include <string>
 
 namespace content_analysis::sdk {
 class Client;
+class ContentAnalysisRequest;
 class ContentAnalysisResponse;
 }  // namespace content_analysis::sdk
 
@@ -27,10 +29,12 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTENTANALYSISREQUEST
 
-  ContentAnalysisRequest(unsigned long aAnalysisType, nsString&& aString,
-                         bool aStringIsFilePath, nsCString&& aSha256Digest,
-                         nsString&& aUrl, unsigned long aResourceNameType,
+  ContentAnalysisRequest(AnalysisType aAnalysisType, nsString aString,
+                         bool aStringIsFilePath, nsCString aSha256Digest,
+                         nsString aUrl, OperationType aOperationType,
                          dom::WindowGlobalParent* aWindowGlobalParent);
+  static nsresult GetFileDigest(const nsAString& aFilePath,
+                                nsCString& aDigestString);
 
  private:
   ~ContentAnalysisRequest() = default;
@@ -39,7 +43,7 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   ContentAnalysisRequest& operator=(ContentAnalysisRequest&) = delete;
 
   // See nsIContentAnalysisRequest for values
-  unsigned long mAnalysisType;
+  AnalysisType mAnalysisType;
 
   // Text content to analyze.  Only one of textContent or filePath is defined.
   nsString mTextContent;
@@ -64,7 +68,7 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   nsCString mRequestToken;
 
   // Type of text to display, see nsIContentAnalysisRequest for values
-  unsigned long mOperationTypeForDisplay;
+  OperationType mOperationTypeForDisplay;
 
   // String to display if mOperationTypeForDisplay is
   // OPERATION_CUSTOMDISPLAYSTRING
@@ -73,29 +77,83 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   RefPtr<dom::WindowGlobalParent> mWindowGlobalParent;
 };
 
+#define CONTENTANALYSIS_IID                          \
+  {                                                  \
+    0xa37bed74, 0x4b50, 0x443a, {                    \
+      0xbf, 0x58, 0xf4, 0xeb, 0xbd, 0x30, 0x67, 0xb4 \
+    }                                                \
+  }
+
 class ContentAnalysisResponse;
 class ContentAnalysis final : public nsIContentAnalysis {
  public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(CONTENTANALYSIS_IID)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICONTENTANALYSIS
 
-  ContentAnalysis() = default;
+  ContentAnalysis();
 
  private:
   ~ContentAnalysis();
   // Remove unneeded copy constructor/assignment
   ContentAnalysis(const ContentAnalysis&) = delete;
   ContentAnalysis& operator=(ContentAnalysis&) = delete;
-  nsresult EnsureContentAnalysisClient();
-  nsresult RunAnalyzeRequestTask(RefPtr<nsIContentAnalysisRequest> aRequest,
-                                 RefPtr<nsIContentAnalysisCallback> aCallback);
+  nsresult CreateContentAnalysisClient(nsCString&& aPipePathName,
+                                       bool aIsPerUser);
+  nsresult RunAnalyzeRequestTask(
+      const RefPtr<nsIContentAnalysisRequest>& aRequest, bool aAutoAcknowledge,
+      const RefPtr<nsIContentAnalysisCallback>& aCallback);
   nsresult RunAcknowledgeTask(
       nsIContentAnalysisAcknowledgement* aAcknowledgement,
       const nsACString& aRequestToken);
+  nsresult CancelWithError(nsCString aRequestToken, nsresult aResult);
+  static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
+  static void DoAnalyzeRequest(
+      nsCString aRequestToken,
+      content_analysis::sdk::ContentAnalysisRequest&& aRequest,
+      const std::shared_ptr<content_analysis::sdk::Client>& aClient);
 
-  static StaticDataMutex<UniquePtr<content_analysis::sdk::Client>> sCaClient;
+  using ClientPromise =
+      MozPromise<std::shared_ptr<content_analysis::sdk::Client>, nsresult,
+                 false>;
+  RefPtr<ClientPromise::Private> mCaClientPromise;
+  // Only accessed from the main thread
+  bool mClientCreationAttempted;
+
+  class CallbackData final {
+   public:
+    CallbackData(
+        nsMainThreadPtrHandle<nsIContentAnalysisCallback>&& aCallbackHolder,
+        bool aAutoAcknowledge)
+        : mCallbackHolder(aCallbackHolder),
+          mAutoAcknowledge(aAutoAcknowledge) {}
+
+    nsMainThreadPtrHandle<nsIContentAnalysisCallback> TakeCallbackHolder() {
+      return std::move(mCallbackHolder);
+    }
+    bool AutoAcknowledge() const { return mAutoAcknowledge; }
+    void SetCanceled() { mCallbackHolder = nullptr; }
+    bool Canceled() const { return !mCallbackHolder; }
+
+   private:
+    nsMainThreadPtrHandle<nsIContentAnalysisCallback> mCallbackHolder;
+    bool mAutoAcknowledge;
+  };
+  DataMutex<nsTHashMap<nsCString, CallbackData>> mCallbackMap;
+
+  struct WarnResponseData {
+    WarnResponseData(CallbackData&& aCallbackData,
+                     RefPtr<ContentAnalysisResponse> aResponse)
+        : mCallbackData(std::move(aCallbackData)), mResponse(aResponse) {}
+    ContentAnalysis::CallbackData mCallbackData;
+    RefPtr<ContentAnalysisResponse> mResponse;
+  };
+  DataMutex<nsTHashMap<nsCString, WarnResponseData>> mWarnResponseDataMap;
+
   friend class ContentAnalysisResponse;
 };
+
+NS_DEFINE_STATIC_IID_ACCESSOR(ContentAnalysis, CONTENTANALYSIS_IID)
 
 class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
  public:
@@ -103,7 +161,7 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   NS_DECL_NSICONTENTANALYSISRESPONSE
 
   static RefPtr<ContentAnalysisResponse> FromAction(
-      unsigned long aAction, const nsACString& aRequestToken);
+      Action aAction, const nsACString& aRequestToken);
 
   void SetOwner(RefPtr<ContentAnalysis> aOwner);
 
@@ -114,13 +172,14 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   ContentAnalysisResponse& operator=(ContentAnalysisResponse&) = delete;
   explicit ContentAnalysisResponse(
       content_analysis::sdk::ContentAnalysisResponse&& aResponse);
-  ContentAnalysisResponse(unsigned long aAction,
-                          const nsACString& aRequestToken);
+  ContentAnalysisResponse(Action aAction, const nsACString& aRequestToken);
   static already_AddRefed<ContentAnalysisResponse> FromProtobuf(
       content_analysis::sdk::ContentAnalysisResponse&& aResponse);
 
-  // See nsIContentAnalysisResponse for values
-  uint32_t mAction;
+  void ResolveWarnAction(bool aAllowContent);
+
+  // Action requested by the agent
+  Action mAction;
 
   // Identifier for the corresponding nsIContentAnalysisRequest
   nsCString mRequestToken;
@@ -129,7 +188,25 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   // the transaction.
   RefPtr<ContentAnalysis> mOwner;
 
+  // Whether the response has been acknowledged
+  bool mHasAcknowledged;
+
   friend class ContentAnalysis;
+};
+
+class ContentAnalysisAcknowledgement final
+    : public nsIContentAnalysisAcknowledgement {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSICONTENTANALYSISACKNOWLEDGEMENT
+
+  ContentAnalysisAcknowledgement(Result aResult, FinalAction aFinalAction);
+
+ private:
+  ~ContentAnalysisAcknowledgement() = default;
+
+  Result mResult;
+  FinalAction mFinalAction;
 };
 
 class ContentAnalysisCallback final : public nsIContentAnalysisCallback {

@@ -131,6 +131,7 @@ FEDORA_DISTROS = (
     "rocky",
     "nobara",
     "oracle",
+    "fedora-asahi-remix",
 )
 
 ADD_GIT_CINNABAR_PATH = """
@@ -160,6 +161,74 @@ You are running an older version of git ("{old_version}").
 We recommend upgrading to at least version "{minimum_recommended_version}" to improve
 performance.
 """.strip()
+
+
+def check_for_hgrc_state_dir_mismatch(state_dir):
+    ignore_hgrc_state_dir_mismatch = os.environ.get(
+        "MACH_IGNORE_HGRC_STATE_DIR_MISMATCH", ""
+    )
+    if ignore_hgrc_state_dir_mismatch:
+        return
+
+    import subprocess
+
+    result = subprocess.run(
+        ["hg", "config", "--source", "-T", "json"], capture_output=True, text=True
+    )
+
+    if result.returncode:
+        print("Failed to run 'hg config'. hg configuration checks will be skipped.")
+        return
+
+    import json
+
+    try:
+        json_data = json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        print(
+            f"Error parsing 'hg config' JSON: {e}\n\n"
+            f"hg configuration checks will be skipped."
+        )
+        return
+
+    mismatched_paths = []
+    pattern = re.compile(r"(.*\.mozbuild)[\\/](.*)")
+    for entry in json_data:
+        if not entry["name"].startswith("extensions."):
+            continue
+
+        extension_path = entry["value"]
+        match = pattern.search(extension_path)
+        if match:
+            extension = entry["name"]
+            source_path = entry["source"]
+            state_dir_from_hgrc = Path(match.group(1))
+            extension_suffix = match.group(2)
+
+            if state_dir != state_dir_from_hgrc.expanduser():
+                expected_extension_path = state_dir / extension_suffix
+
+                mismatched_paths.append(
+                    f"Extension: '{extension}' found in config file '{source_path}'\n"
+                    f" Current: {extension_path}\n"
+                    f" Expected: {expected_extension_path}\n"
+                )
+
+    if mismatched_paths:
+        hgrc_state_dir_mismatch_error_message = (
+            f"Paths for extensions in your hgrc file appear to be referencing paths that are not in "
+            f"the current '.mozbuild' state directory.\nYou may have set the `MOZBUILD_STATE_PATH` "
+            f"environment variable and/or moved the `.mozbuild` directory. You should update the "
+            f"paths for the following extensions manually to be inside '{state_dir}'\n"
+            f"(If you instead wish to hide this error, set 'MACH_IGNORE_HGRC_STATE_DIR_MISMATCH=1' "
+            f"in your environment variables and restart your shell before rerunning mach).\n\n"
+            f"You can either use the command 'hg config --edit' to make changes to your hg "
+            f"configuration or manually edit the 'config file' specified for each extension "
+            f"below:\n\n"
+        )
+        hgrc_state_dir_mismatch_error_message += "".join(mismatched_paths)
+
+        raise Exception(hgrc_state_dir_mismatch_error_message)
 
 
 class Bootstrapper(object):
@@ -285,6 +354,14 @@ class Bootstrapper(object):
         subprocess.check_call((sys.executable, str(mach_binary), "install-moz-phab"))
 
     def bootstrap(self, settings):
+        state_dir = Path(get_state_dir())
+
+        hg = to_optional_path(which("hg"))
+        hg_installed = bool(hg)
+
+        if hg_installed:
+            check_for_hgrc_state_dir_mismatch(state_dir)
+
         if self.choice is None:
             applications = APPLICATIONS
             # Like ['1. Firefox for Desktop', '2. Firefox for Android Artifact Mode', ...].
@@ -330,10 +407,7 @@ class Bootstrapper(object):
                 )
                 return 1
 
-        state_dir = Path(get_state_dir())
         self.instance.state_dir = state_dir
-
-        hg = to_optional_path(which("hg"))
 
         # We need to enable the loading of hgrc in case extensions are
         # required to open the repo.
@@ -362,7 +436,6 @@ class Bootstrapper(object):
 
         # Possibly configure Mercurial, but not if the current checkout or repo
         # type is Git.
-        hg_installed = bool(hg)
         if checkout_type == "hg":
             hg_installed, hg_modern = self.instance.ensure_mercurial_modern()
 
@@ -632,10 +705,21 @@ def update_git_tools(git: Optional[Path], root_state_dir: Path):
     if sys.platform.startswith(("win32", "msys")):
         cinnabar_exe = cinnabar_exe.with_suffix(".exe")
 
-    # Previously, this script would do a full clone of the git-cinnabar
-    # repository. It now only downloads prebuilt binaries, so if we are
-    # updating from an old setup, remove the repository and start over.
-    if (cinnabar_dir / ".git").exists():
+    # Older versions of git-cinnabar can't do self-update. So if we start
+    # from such a version, we remove it and start over.
+    # The first version that supported self-update is also the first version
+    # that wasn't a python script, so we can just look for a hash-bang.
+    # Or, on Windows, the .exe didn't exist.
+    start_over = cinnabar_dir.exists() and not cinnabar_exe.exists()
+    if cinnabar_exe.exists():
+        try:
+            with cinnabar_exe.open("rb") as fh:
+                start_over = fh.read(2) == b"#!"
+        except Exception:
+            # If we couldn't read the binary, let's just try to start over.
+            start_over = True
+
+    if start_over:
         # git sets pack files read-only, which causes problems removing
         # them on Windows. To work around that, we use an error handler
         # on rmtree that retries to remove the file after chmod'ing it.

@@ -384,7 +384,7 @@ bool DebuggerScript::CallData::getStartColumn() {
         return JS::LimitedColumnNumberOneOrigin(
             JS::WasmFunctionIndex::DefaultBinarySourceColumnNumberOneOrigin);
       });
-  args.rval().setNumber(column.zeroOriginValue());
+  args.rval().setNumber(column.oneOriginValue());
   return true;
 }
 
@@ -691,7 +691,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
       return false;
     }
 
-    value = NumberValue(colno.zeroOriginValue());
+    value = NumberValue(colno.oneOriginValue());
     if (!DefineDataProperty(cx_, entry, cx_->names().columnNumber, value)) {
       return false;
     }
@@ -731,7 +731,10 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
     if (!parseIntValueImpl(value, &tmp)) {
       return false;
     }
-    *result = JS::LimitedColumnNumberOneOrigin::fromZeroOrigin(tmp);
+    if (tmp == 0) {
+      return false;
+    }
+    *result->addressOfValueForTranscode() = tmp;
     return true;
   }
   bool parseSizeTValue(HandleValue value, size_t* result) {
@@ -862,7 +865,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
       if (!parseColumnValue(minColumnValue, &minColumn)) {
         JS_ReportErrorNumberASCII(
             cx_, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
-            "getPossibleBreakpoints' 'minColumn'", "not an integer");
+            "getPossibleBreakpoints' 'minColumn'", "not a positive integer");
         return false;
       }
     }
@@ -888,7 +891,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
       if (!parseColumnValue(maxColumnValue, &maxColumn)) {
         JS_ReportErrorNumberASCII(
             cx_, GetErrorMessage, nullptr, JSMSG_UNEXPECTED_TYPE,
-            "getPossibleBreakpoints' 'maxColumn'", "not an integer");
+            "getPossibleBreakpoints' 'maxColumn'", "not a positive integer");
         return false;
       }
     }
@@ -942,16 +945,7 @@ class DebuggerScript::GetPossibleBreakpointsMatcher {
 
     for (uint32_t i = 0; i < offsets.length(); i++) {
       uint32_t lineno = offsets[i].lineno;
-      // FIXME: wasm::ExprLoc::column contains "1". which is "1 in 1-origin",
-      //        but currently the debugger API returns 0-origin column number,
-      //        and the value becomes "0 in 0-origin".
-      //        the existing wasm debug functionality expects the observable
-      //        column number be "1", so it is "1 in 0-origin".
-      //        Once the debugger API is rewritten to use 1-origin, this
-      //        part also needs to be rewritten to directly pass the
-      //        "1 in 1-origin" (bug 1863878).
-      JS::LimitedColumnNumberOneOrigin column =
-          JS::LimitedColumnNumberOneOrigin::fromZeroOrigin(offsets[i].column);
+      JS::LimitedColumnNumberOneOrigin column(offsets[i].column);
       size_t offset = offsets[i].offset;
       if (!maybeAppendEntry(offset, lineno, column, true)) {
         return false;
@@ -1030,7 +1024,7 @@ class DebuggerScript::GetOffsetMetadataMatcher {
       return false;
     }
 
-    value = NumberValue(r.frontColumnNumber().zeroOriginValue());
+    value = NumberValue(r.frontColumnNumber().oneOriginValue());
     if (!DefineDataProperty(cx_, result_, cx_->names().columnNumber, value)) {
       return false;
     }
@@ -1369,7 +1363,7 @@ class DebuggerScript::GetOffsetLocationMatcher {
       return false;
     }
 
-    value = NumberValue(column.zeroOriginValue());
+    value = NumberValue(column.oneOriginValue());
     if (!DefineDataProperty(cx_, result_, cx_->names().columnNumber, value)) {
       return false;
     }
@@ -1837,7 +1831,7 @@ class DebuggerScript::GetAllColumnOffsetsMatcher {
       return false;
     }
 
-    value = NumberValue(column.zeroOriginValue());
+    value = NumberValue(column.oneOriginValue());
     if (!DefineDataProperty(cx_, entry, cx_->names().columnNumber, value)) {
       return false;
     }
@@ -1906,9 +1900,7 @@ class DebuggerScript::GetAllColumnOffsetsMatcher {
 
     for (uint32_t i = 0; i < offsets.length(); i++) {
       uint32_t lineno = offsets[i].lineno;
-      // See the comment in GetPossibleBreakpointsMatcher::parseQuery.
-      JS::LimitedColumnNumberOneOrigin column =
-          JS::LimitedColumnNumberOneOrigin::fromZeroOrigin(offsets[i].column);
+      JS::LimitedColumnNumberOneOrigin column(offsets[i].column);
       size_t offset = offsets[i].offset;
       if (!appendColumnOffsetEntry(lineno, column, offset)) {
         return false;
@@ -2429,8 +2421,7 @@ bool DebuggerScript::CallData::getOffsetsCoverage() {
 
     offsetValue.setNumber(double(offset));
     lineNumberValue.setNumber(double(r.frontLineNumber()));
-    columnNumberValue.setNumber(
-        double(r.frontColumnNumber().zeroOriginValue()));
+    columnNumberValue.setNumber(double(r.frontColumnNumber().oneOriginValue()));
     countValue.setNumber(double(hits));
 
     // Create a new object with the offset, line number, column number, the

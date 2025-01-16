@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
-import { getSymbols } from "../../selectors";
+import { getSymbols } from "../../selectors/index";
 
 import { PROMISE } from "../utils/middleware/promise";
 import { loadSourceText } from "./loadSourceText";
@@ -36,6 +36,14 @@ export const setSymbols = memoizeableAction("setSymbols", {
   createKey: location => location.source.id,
   action: (location, thunkArgs) => doSetSymbols(location, thunkArgs),
 });
+
+export function getOriginalFunctionDisplayName(location) {
+  return async ({ parserWorker, dispatch }) => {
+    // Make sure the source for the symbols exist in the parser worker.
+    await dispatch(loadSourceText(location.source, location.sourceActor));
+    return parserWorker.getClosestFunctionName(location);
+  };
+}
 
 export function getFunctionSymbols(location, maxResults) {
   return async ({ parserWorker, dispatch }) => {

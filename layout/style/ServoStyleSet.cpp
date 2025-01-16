@@ -662,11 +662,11 @@ StyleSheet* ServoStyleSet::SheetAt(Origin aOrigin, size_t aIndex) const {
       Servo_StyleSet_GetSheetAt(mRawData.get(), aOrigin, aIndex));
 }
 
-ServoStyleSet::FirstPageSizeAndOrientation
-ServoStyleSet::GetFirstPageSizeAndOrientation(const nsAtom* aFirstPageName) {
-  FirstPageSizeAndOrientation retval;
+ServoStyleSet::PageSizeAndOrientation
+ServoStyleSet::GetDefaultPageSizeAndOrientation() {
+  PageSizeAndOrientation retval;
   const RefPtr<ComputedStyle> style =
-      ResolvePageContentStyle(aFirstPageName, StylePagePseudoClassFlags::FIRST);
+      ResolvePageContentStyle(nullptr, StylePagePseudoClassFlags::NONE);
   const StylePageSize& pageSize = style->StylePage()->mSize;
 
   if (pageSize.IsSize()) {
@@ -1010,6 +1010,9 @@ void ServoStyleSet::RuleChangedInternal(StyleSheet& aSheet, css::Rule& aRule,
       // FIXME: We should probably just forward to the parent @keyframes rule? I
       // think that'd do the right thing, but meanwhile...
       return MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
+    case StyleCssRuleType::Margin:
+      // Margin rules not implemented yet, see bug 1864737
+      break;
   }
 
 #undef CASE_FOR
@@ -1432,16 +1435,16 @@ void ServoStyleSet::MaybeInvalidateForElementInsertion(
                                                              &aElement);
 }
 
-void ServoStyleSet::MaybeInvalidateForElementAppend(const Element& aElement) {
+void ServoStyleSet::MaybeInvalidateForElementAppend(
+    const nsIContent& aFirstContent) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorForAppend(mRawData.get(),
-                                                          &aElement);
+                                                          &aFirstContent);
 }
 
 void ServoStyleSet::MaybeInvalidateForElementRemove(
-    const Element& aElement, const Element* aPrevSibling,
-    const Element* aNextSibling) {
+    const Element& aElement, const nsIContent* aFollowingSibling) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(
-      mRawData.get(), &aElement, aPrevSibling, aNextSibling);
+      mRawData.get(), &aElement, aFollowingSibling);
 }
 
 bool ServoStyleSet::MightHaveNthOfAttributeDependency(
@@ -1507,6 +1510,7 @@ void ServoStyleSet::RegisterProperty(const PropertyDefinition& aDefinition,
               root, RestyleHint::RecascadeSubtree(), nsChangeHint(0));
         }
       }
+      mDocument->PostCustomPropertyRegistered(aDefinition);
       break;
     case Result::InvalidName:
       return aRv.ThrowSyntaxError("Invalid name");

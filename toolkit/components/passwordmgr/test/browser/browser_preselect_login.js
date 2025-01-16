@@ -27,7 +27,7 @@ const waitForAppMenu = async () => {
   const appMenu = document.getElementById("appMenu-popup");
   const appMenuButton = document.getElementById("PanelUI-menu-button");
   await TestUtils.waitForCondition(
-    () => BrowserTestUtils.is_visible(appMenuButton),
+    () => BrowserTestUtils.isVisible(appMenuButton),
     "App menu button should be visible."
   );
 
@@ -193,15 +193,15 @@ add_task(async function test_new_login_url_has_correct_hash() {
       await SpecialPowers.spawn(gBrowser, [], async () => {
         const loginList =
           content.document.querySelector("login-list").shadowRoot;
-        const createLoginButton = loginList.querySelector(
-          "login-command-button.create-login-button"
-        );
+        const createLoginButton = loginList
+          .querySelector("create-login-button")
+          .shadowRoot.querySelector("button");
 
         createLoginButton.click();
 
         await ContentTaskUtils.waitForCondition(
           () =>
-            ContentTaskUtils.is_visible(
+            ContentTaskUtils.isVisible(
               loginList.querySelector("#new-login-list-item")
             ),
           "Wait for new login-list-item to become visible"

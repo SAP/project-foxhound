@@ -1910,3 +1910,78 @@ async function closeContextMenu() {
 
   await contextmenuClosedPromise;
 }
+
+// Get a list of prefs which should be used for a subtest which wants to
+// generate a smooth scroll animation using an input event. The smooth
+// scroll animation is slowed down so the test can perform other actions
+// while it's still in progress.
+function getSmoothScrollPrefs(aInputType, aMsdPhysics) {
+  let result = [["apz.test.logging_enabled", true]];
+  // Some callers just want the default and don't pass in aMsdPhysics.
+  if (aMsdPhysics !== undefined) {
+    result.push(["general.smoothScroll.msdPhysics.enabled", aMsdPhysics]);
+  } else {
+    aMsdPhysics = SpecialPowers.getBoolPref(
+      "general.smoothScroll.msdPhysics.enabled"
+    );
+  }
+  if (aInputType == "wheel") {
+    // We want to test real wheel events rather than pan events.
+    result.push(["apz.test.mac.synth_wheel_input", true]);
+  } /* keyboard input */ else {
+    // The default verticalScrollDistance (which is 3) is too small for native
+    // keyboard scrolling, it sometimes produces same scroll offsets in the early
+    // stages of the smooth animation.
+    result.push(["toolkit.scrollbox.verticalScrollDistance", 5]);
+  }
+  // Use a longer animation duration to avoid the situation that the
+  // animation stops accidentally in between each arrow input event.
+  // If the situation happens, scroll offsets will not change at the moment.
+  if (aMsdPhysics) {
+    // Prefs for MSD physics (applicable to any input type).
+    result.push(
+      ...[
+        ["general.smoothScroll.msdPhysics.motionBeginSpringConstant", 20],
+        ["general.smoothScroll.msdPhysics.regularSpringConstant", 20],
+        ["general.smoothScroll.msdPhysics.slowdownMinDeltaRatio", 0.1],
+        ["general.smoothScroll.msdPhysics.slowdownSpringConstant", 20],
+      ]
+    );
+  } else if (aInputType == "wheel") {
+    // Prefs for Bezier physics with wheel input.
+    result.push(
+      ...[
+        ["general.smoothScroll.mouseWheel.durationMaxMS", 1500],
+        ["general.smoothScroll.mouseWheel.durationMinMS", 1500],
+      ]
+    );
+  } else {
+    // Prefs for Bezier physics with keyboard input.
+    result.push(
+      ...[
+        ["general.smoothScroll.lines.durationMaxMS", 1500],
+        ["general.smoothScroll.lines.durationMinMS", 1500],
+      ]
+    );
+  }
+  return result;
+}
+
+function buildRelativeScrollSmoothnessVariants(aInputType, aScrollMethods) {
+  let subtests = [];
+  for (let scrollMethod of aScrollMethods) {
+    subtests.push({
+      file: `helper_relative_scroll_smoothness.html?input-type=${aInputType}&scroll-method=${scrollMethod}&strict=true`,
+      prefs: getSmoothScrollPrefs(aInputType, /* Bezier physics */ false),
+    });
+    // For MSD physics, run the test with strict=false. The shape of the
+    // animation curve is highly timing dependent, and we can't guarantee
+    // that an animation will run long enough until the next input event
+    // arrives.
+    subtests.push({
+      file: `helper_relative_scroll_smoothness.html?input-type=${aInputType}&scroll-method=${scrollMethod}&strict=false`,
+      prefs: getSmoothScrollPrefs(aInputType, /* MSD physics */ true),
+    });
+  }
+  return subtests;
+}

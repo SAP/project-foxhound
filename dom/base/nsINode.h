@@ -1424,6 +1424,12 @@ class nsINode : public mozilla::dom::EventTarget {
   inline bool IsEditable() const;
 
   /**
+   * Check if this node is an editing host. For avoiding confusion, this always
+   * returns false if the node is in the design mode document.
+   */
+  inline bool IsEditingHost() const;
+
+  /**
    * Check if this node is in design mode or not.  When this returns true and:
    * - if this is a Document node, it's the design mode root.
    * - if this is a content node, it's connected, it's not in a shadow tree
@@ -1504,7 +1510,7 @@ class nsINode : public mozilla::dom::EventTarget {
    *
    * @return The shadow host, if this is in shadow tree, or null.
    */
-  nsIContent* GetContainingShadowHost() const;
+  mozilla::dom::Element* GetContainingShadowHost() const;
 
   bool IsInSVGUseShadowTree() const {
     return !!GetContainingSVGUseShadowHost();

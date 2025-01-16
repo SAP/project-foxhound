@@ -91,12 +91,6 @@ export var webrtcUI = {
 
       XPCOMUtils.defineLazyPreferenceGetter(
         this,
-        "useLegacyGlobalIndicator",
-        "privacy.webrtc.legacyGlobalIndicator",
-        true
-      );
-      XPCOMUtils.defineLazyPreferenceGetter(
-        this,
         "deviceGracePeriodTimeoutMs",
         "privacy.webrtc.deviceGracePeriodTimeoutMs"
       );
@@ -876,10 +870,7 @@ export var webrtcUI = {
         }
       }
     } else if (gIndicatorWindow) {
-      if (
-        !webrtcUI.useLegacyGlobalIndicator &&
-        gIndicatorWindow.closingInternally
-      ) {
+      if (gIndicatorWindow.closingInternally) {
         // Before calling .close(), we call .closingInternally() to allow us to
         // differentiate between situations where the indicator closes because
         // we no longer want to show the indicator (this case), and cases where
@@ -979,35 +970,16 @@ export var webrtcUI = {
 };
 
 function getGlobalIndicator() {
-  if (!webrtcUI.useLegacyGlobalIndicator) {
-    const INDICATOR_CHROME_URI =
-      "chrome://browser/content/webrtcIndicator.xhtml";
-    let features = "chrome,titlebar=no,alwaysontop,minimizable,dialog";
+  const INDICATOR_CHROME_URI = "chrome://browser/content/webrtcIndicator.xhtml";
+  let features = "chrome,titlebar=no,alwaysontop,minimizable,dialog";
 
-    return Services.ww.openWindow(
-      null,
-      INDICATOR_CHROME_URI,
-      "_blank",
-      features,
-      null
-    );
-  }
-
-  if (AppConstants.platform != "macosx") {
-    const LEGACY_INDICATOR_CHROME_URI =
-      "chrome://browser/content/webrtcLegacyIndicator.xhtml";
-    const features = "chrome,dialog=yes,titlebar=no,popup=yes";
-
-    return Services.ww.openWindow(
-      null,
-      LEGACY_INDICATOR_CHROME_URI,
-      "_blank",
-      features,
-      null
-    );
-  }
-
-  return new MacOSWebRTCStatusbarIndicator();
+  return Services.ww.openWindow(
+    null,
+    INDICATOR_CHROME_URI,
+    "_blank",
+    features,
+    null
+  );
 }
 
 /**
@@ -1077,137 +1049,6 @@ export function showStreamSharingMenu(win, event, inclWindow = false) {
       controlItem.stream = stream;
       controlItem.addEventListener("command", this);
       menu.appendChild(controlItem);
-    }
-  }
-}
-
-/**
- * Controls the visibility of screen, camera and microphone sharing indicators
- * in the macOS global menu bar. This class should only ever be instantiated
- * on macOS.
- *
- * The public methods on this class intentionally match the interface for the
- * WebRTC global sharing indicator, because the MacOSWebRTCStatusbarIndicator
- * acts as the indicator when in the legacy indicator configuration.
- */
-export class MacOSWebRTCStatusbarIndicator {
-  constructor() {
-    this._camera = null;
-    this._microphone = null;
-    this._screen = null;
-
-    this._hiddenDoc = Services.appShell.hiddenDOMWindow.document;
-    this._statusBar = Cc["@mozilla.org/widget/systemstatusbar;1"].getService(
-      Ci.nsISystemStatusBar
-    );
-
-    this.updateIndicatorState();
-  }
-
-  /**
-   * Public method that will determine the most appropriate
-   * set of indicators to show, and then show them or hide
-   * them as necessary.
-   */
-  updateIndicatorState() {
-    this._setIndicatorState("Camera", webrtcUI.showCameraIndicator);
-    this._setIndicatorState("Microphone", webrtcUI.showMicrophoneIndicator);
-    this._setIndicatorState("Screen", webrtcUI.showScreenSharingIndicator);
-  }
-
-  /**
-   * Public method that will hide all indicators.
-   */
-  close() {
-    this._setIndicatorState("Camera", false);
-    this._setIndicatorState("Microphone", false);
-    this._setIndicatorState("Screen", false);
-  }
-
-  handleEvent(event) {
-    switch (event.type) {
-      case "popupshowing": {
-        this._popupShowing(event);
-        break;
-      }
-      case "popuphiding": {
-        this._popupHiding(event);
-        break;
-      }
-      case "command": {
-        this._command(event);
-        break;
-      }
-    }
-  }
-
-  /**
-   * Handler for command events fired by the <menuitem> elements
-   * inside any of the indicator <menu>'s.
-   *
-   * @param {Event} aEvent - The command event for the <menuitem>.
-   */
-  _command(aEvent) {
-    webrtcUI.showSharingDoorhanger(aEvent.target.stream, aEvent);
-  }
-
-  /**
-   * Handler for the popupshowing event for one of the status
-   * bar indicator menus.
-   *
-   * @param {Event} aEvent - The popupshowing event for the <menu>.
-   */
-  _popupShowing(aEvent) {
-    const menu = aEvent.target;
-    showStreamSharingMenu(menu.ownerGlobal, aEvent);
-    return true;
-  }
-
-  /**
-   * Handler for the popuphiding event for one of the status
-   * bar indicator menus.
-   *
-   * @param {Event} aEvent - The popuphiding event for the <menu>.
-   */
-  _popupHiding(aEvent) {
-    let menu = aEvent.target;
-    while (menu.firstChild) {
-      menu.firstChild.remove();
-    }
-  }
-
-  /**
-   * Updates the status bar to show or hide a screen, camera or
-   * microphone indicator.
-   *
-   * @param {String} aName - One of the following: "screen", "camera",
-   *   "microphone"
-   * @param {boolean} aState - True to show the indicator for the aName
-   *   type of stream, false ot hide it.
-   */
-  _setIndicatorState(aName, aState) {
-    let field = "_" + aName.toLowerCase();
-    if (aState && !this[field]) {
-      let menu = this._hiddenDoc.createXULElement("menu");
-      menu.setAttribute("id", "webRTC-sharing" + aName + "-menu");
-
-      // The CSS will only be applied if the menu is actually inserted in the DOM.
-      this._hiddenDoc.documentElement.appendChild(menu);
-
-      this._statusBar.addItem(menu);
-
-      let menupopup = this._hiddenDoc.createXULElement("menupopup");
-      menupopup.setAttribute("type", aName);
-      menupopup.addEventListener("popupshowing", this);
-      menupopup.addEventListener("popuphiding", this);
-      menupopup.addEventListener("command", this);
-      menu.appendChild(menupopup);
-
-      this[field] = menu;
-    } else if (this[field] && !aState) {
-      this._statusBar.removeItem(this[field]);
-      this[field].remove();
-      this[field] = null;
     }
   }
 }

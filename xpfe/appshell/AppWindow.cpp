@@ -26,7 +26,7 @@
 #include "nsGlobalWindowOuter.h"
 #include "nsIAppShell.h"
 #include "nsIAppShellService.h"
-#include "nsIContentViewer.h"
+#include "nsIDocumentViewer.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "nsPIDOMWindow.h"
@@ -332,10 +332,10 @@ NS_IMETHODIMP AppWindow::SetZLevel(uint32_t aLevel) {
   mediator->SetZLevel(this, aLevel);
   PersistentAttributesDirty(PersistentAttribute::Misc, Sync);
 
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  if (cv) {
-    RefPtr<dom::Document> doc = cv->GetDocument();
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  mDocShell->GetDocViewer(getter_AddRefs(viewer));
+  if (viewer) {
+    RefPtr<dom::Document> doc = viewer->GetDocument();
     if (doc) {
       ErrorResult rv;
       RefPtr<dom::Event> event =
@@ -476,16 +476,6 @@ AppWindow::GetLiveResizeListeners() {
   return listeners;
 }
 
-NS_IMETHODIMP AppWindow::AddChildWindow(nsIAppWindow* aChild) {
-  // we're not really keeping track of this right now
-  return NS_OK;
-}
-
-NS_IMETHODIMP AppWindow::RemoveChildWindow(nsIAppWindow* aChild) {
-  // we're not really keeping track of this right now
-  return NS_OK;
-}
-
 NS_IMETHODIMP AppWindow::ShowModal() {
   AUTO_PROFILER_LABEL("AppWindow::ShowModal", OTHER);
 
@@ -500,11 +490,13 @@ NS_IMETHODIMP AppWindow::ShowModal() {
   nsCOMPtr<nsIAppWindow> tempRef = this;
 
 #ifdef USE_NATIVE_MENUS
-  // macOS only: For modals created early in startup.
-  // (e.g. ProfileManager/ProfileDowngrade) this creates a fallback menu for
-  // the menu bar which only contains a "Quit" menu item.
-  // This allows the user to quit the application in a regular way with cmd+Q.
-  widget::NativeMenuSupport::CreateNativeMenuBar(mWindow, nullptr);
+  if (!gfxPlatform::IsHeadless()) {
+    // macOS only: For modals created early in startup.
+    // (e.g. ProfileManager/ProfileDowngrade) this creates a fallback menu for
+    // the menu bar which only contains a "Quit" menu item.
+    // This allows the user to quit the application in a regular way with cmd+Q.
+    widget::NativeMenuSupport::CreateNativeMenuBar(mWindow, nullptr);
+  }
 #endif
 
   window->SetModal(true);
@@ -577,11 +569,9 @@ NS_IMETHODIMP AppWindow::Destroy() {
   nsCOMPtr<nsIAppShellService> appShell(
       do_GetService(NS_APPSHELLSERVICE_CONTRACTID));
   NS_ASSERTION(appShell, "Couldn't get appShell... xpcom shutdown?");
-  if (appShell)
+  if (appShell) {
     appShell->UnregisterTopLevelWindow(static_cast<nsIAppWindow*>(this));
-
-  nsCOMPtr<nsIAppWindow> parentWindow(do_QueryReferent(mParentWindow));
-  if (parentWindow) parentWindow->RemoveChildWindow(this);
+  }
 
   // Remove modality (if any) and hide while destroying. More than
   // a convenience, the hide prevents user interaction with the partially
@@ -1714,6 +1704,11 @@ static void ConvertWindowSize(nsIAppWindow* aWin, const nsAtom* aAttr,
 }
 
 nsresult AppWindow::GetPersistentValue(const nsAtom* aAttr, nsAString& aValue) {
+  if (!XRE_IsParentProcess()) {
+    // The XULStore is only available in the parent process.
+    return NS_ERROR_UNEXPECTED;
+  }
+
   nsCOMPtr<dom::Element> docShellElement = GetWindowDOMElement();
   if (!docShellElement) {
     return NS_ERROR_FAILURE;
@@ -1951,6 +1946,11 @@ nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
 
 nsresult AppWindow::SetPersistentValue(const nsAtom* aAttr,
                                        const nsAString& aValue) {
+  if (!XRE_IsParentProcess()) {
+    // The XULStore is only available in the parent process.
+    return NS_ERROR_UNEXPECTED;
+  }
+
   nsAutoString uri;
   nsAutoString windowElementId;
   nsresult rv = GetDocXulStoreKeys(uri, windowElementId);
@@ -2134,11 +2134,11 @@ NS_IMETHODIMP AppWindow::GetWindowDOMWindow(mozIDOMWindowProxy** aDOMWindow) {
 dom::Element* AppWindow::GetWindowDOMElement() const {
   NS_ENSURE_TRUE(mDocShell, nullptr);
 
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  NS_ENSURE_TRUE(cv, nullptr);
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  mDocShell->GetDocViewer(getter_AddRefs(viewer));
+  NS_ENSURE_TRUE(viewer, nullptr);
 
-  const dom::Document* document = cv->GetDocument();
+  const dom::Document* document = viewer->GetDocument();
   NS_ENSURE_TRUE(document, nullptr);
 
   return document->GetRootElement();
@@ -2641,9 +2641,9 @@ void AppWindow::LoadPersistentWindowState() {
 void AppWindow::IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
                                        int32_t& aSpecWidth,
                                        int32_t& aSpecHeight) {
-  nsCOMPtr<nsIContentViewer> cv;
-  mDocShell->GetContentViewer(getter_AddRefs(cv));
-  if (!cv) {
+  nsCOMPtr<nsIDocumentViewer> viewer;
+  mDocShell->GetDocViewer(getter_AddRefs(viewer));
+  if (!viewer) {
     return;
   }
   RefPtr<nsDocShell> docShell = mDocShell;
@@ -2666,11 +2666,12 @@ void AppWindow::IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
     }
   }
 
-  Maybe<CSSIntSize> size = cv->GetContentSize(maxWidth, maxHeight, prefWidth);
+  Maybe<CSSIntSize> size =
+      viewer->GetContentSize(maxWidth, maxHeight, prefWidth);
   if (!size) {
     return;
   }
-  nsPresContext* pc = cv->GetPresContext();
+  nsPresContext* pc = viewer->GetPresContext();
   MOZ_ASSERT(pc, "Should have pres context");
 
   int32_t width = pc->CSSPixelsToDevPixels(size->width);
@@ -3313,10 +3314,10 @@ AppWindow::OnStateChange(nsIWebProgress* aProgress, nsIRequest* aRequest,
   // commands
   ///////////////////////////////
   if (!gfxPlatform::IsHeadless()) {
-    nsCOMPtr<nsIContentViewer> cv;
-    mDocShell->GetContentViewer(getter_AddRefs(cv));
-    if (cv) {
-      RefPtr<Document> menubarDoc = cv->GetDocument();
+    nsCOMPtr<nsIDocumentViewer> viewer;
+    mDocShell->GetDocViewer(getter_AddRefs(viewer));
+    if (viewer) {
+      RefPtr<Document> menubarDoc = viewer->GetDocument();
       if (menubarDoc) {
         if (mIsHiddenWindow || sHiddenWindowLoadedNativeMenus) {
           BeginLoadNativeMenus(menubarDoc, mWindow);
@@ -3379,10 +3380,10 @@ bool AppWindow::ExecuteCloseHandler() {
   }
 
   if (eventTarget) {
-    nsCOMPtr<nsIContentViewer> contentViewer;
-    mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
-    if (contentViewer) {
-      RefPtr<nsPresContext> presContext = contentViewer->GetPresContext();
+    nsCOMPtr<nsIDocumentViewer> viewer;
+    mDocShell->GetDocViewer(getter_AddRefs(viewer));
+    if (viewer) {
+      RefPtr<nsPresContext> presContext = viewer->GetPresContext();
 
       nsEventStatus status = nsEventStatus_eIgnore;
       WidgetMouseEvent event(true, eClose, nullptr, WidgetMouseEvent::eReal);

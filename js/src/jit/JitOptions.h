@@ -26,6 +26,12 @@ enum IonRegisterAllocator {
 // for baseRegForLocals in JitOptions.cpp for more information.
 enum class BaseRegForAddress { Default, FP, SP };
 
+enum class UseMonomorphicInlining : uint8_t {
+  Default,
+  Always,
+  Never,
+};
+
 static inline mozilla::Maybe<IonRegisterAllocator> LookupRegisterAllocator(
     const char* name) {
   if (!strcmp(name, "backtracking")) {
@@ -55,6 +61,7 @@ struct DefaultJitOptions {
   bool disablePruning;
   bool disableInstructionReordering;
   bool disableIteratorIndices;
+  bool disableMarkLoadsUsedAsPropertyKeys;
   bool disableRangeAnalysis;
   bool disableRecoverIns;
   bool disableScalarReplacement;
@@ -79,7 +86,6 @@ struct DefaultJitOptions {
   bool wasmFoldOffsets;
   bool wasmDelayTier2;
   bool lessDebugCode;
-  bool enableWatchtowerMegamorphic;
   bool onlyInlineSelfHosted;
   bool enableICFramePointers;
   bool enableWasmJitExit;
@@ -94,6 +100,7 @@ struct DefaultJitOptions {
   uint32_t baselineJitWarmUpThreshold;
   uint32_t trialInliningWarmUpThreshold;
   uint32_t trialInliningInitialWarmUpCount;
+  UseMonomorphicInlining monomorphicInlining = UseMonomorphicInlining::Default;
   uint32_t normalIonWarmUpThreshold;
   uint32_t regexpWarmUpThreshold;
 #ifdef ENABLE_PORTABLE_BASELINE_INTERP

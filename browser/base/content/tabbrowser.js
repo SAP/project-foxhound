@@ -784,11 +784,12 @@
         const animations = Array.from(
           aTab.container.getElementsByTagName("tab")
         )
+          .filter(tab => tab.hasAttribute("busy"))
           .map(tab => {
             const throbber = tab.throbber;
             return throbber ? throbber.getAnimations({ subtree: true }) : [];
           })
-          .reduce((a, b) => a.concat(b))
+          .reduce((a, b) => a.concat(b), [])
           .filter(
             anim =>
               CSSAnimation.isInstance(anim) &&
@@ -976,7 +977,8 @@
       aTab,
       aIconURL = "",
       aOriginalURL = aIconURL,
-      aLoadingPrincipal = null
+      aLoadingPrincipal = null,
+      aClearImageFirst = false
     ) {
       let makeString = url => (url instanceof Ci.nsIURI ? url.spec : url);
 
@@ -1000,6 +1002,9 @@
       browser.mIconURL = aIconURL;
 
       if (aIconURL != aTab.getAttribute("image")) {
+        if (aClearImageFirst) {
+          aTab.removeAttribute("image");
+        }
         if (aIconURL) {
           if (aLoadingPrincipal) {
             aTab.setAttribute("iconloadingprincipal", aLoadingPrincipal);
@@ -3056,7 +3061,7 @@
         // Unless we know for sure we're not inheriting principals,
         // force the about:blank viewer to have the right principal:
         if (!uri || doGetProtocolFlags(uri) & URI_INHERITS_SECURITY_CONTEXT) {
-          browser.createAboutBlankContentViewer(
+          browser.createAboutBlankDocumentViewer(
             originPrincipal,
             originStoragePrincipal
           );
@@ -4599,6 +4604,10 @@
         aOtherTab.dispatchEvent(event);
       }
 
+      if (otherBrowser.isDistinctProductPageVisit) {
+        ourBrowser.isDistinctProductPageVisit = true;
+      }
+
       SitePermissions.copyTemporaryPermissions(otherBrowser, ourBrowser);
 
       // If the other tab is pending (i.e. has not been restored, yet)
@@ -4733,8 +4742,22 @@
           this.shouldActivateDocShell(ourBrowser);
       }
 
+      let ourBrowserContainer =
+        ourBrowser.ownerDocument.getElementById("browser");
+      let otherBrowserContainer =
+        aOtherBrowser.ownerDocument.getElementById("browser");
+      let ourBrowserContainerWasHidden = ourBrowserContainer.hidden;
+      let otherBrowserContainerWasHidden = otherBrowserContainer.hidden;
+
+      // #browser is hidden in Customize Mode; this breaks docshell swapping,
+      // so we need to toggle 'hidden' to make swapping work in this case.
+      ourBrowserContainer.hidden = otherBrowserContainer.hidden = false;
+
       // Swap the docshells
       ourBrowser.swapDocShells(aOtherBrowser);
+
+      ourBrowserContainer.hidden = ourBrowserContainerWasHidden;
+      otherBrowserContainer.hidden = otherBrowserContainerWasHidden;
 
       // Swap permanentKey properties.
       let ourPermanentKey = ourBrowser.permanentKey;
@@ -5143,8 +5166,6 @@
       if (!createLazyBrowser) {
         // Stop the about:blank load.
         newBrowser.stop();
-        // Make sure it has a docshell.
-        newBrowser.docShell;
       }
 
       if (!this.swapBrowsersAndCloseOther(newTab, aTab)) {

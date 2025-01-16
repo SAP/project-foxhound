@@ -725,6 +725,10 @@ Tester.prototype = {
 
       Services.obs.notifyObservers(null, "test-complete");
 
+      // Ensure to reset the clipboard in case the test has modified it,
+      // so it won't affect the next tests.
+      window.SpecialPowers.clipboardCopyString("");
+
       if (
         this.currentTest.passCount === 0 &&
         this.currentTest.failCount === 0 &&
@@ -1035,7 +1039,7 @@ Tester.prototype = {
             let sidebar = document.getElementById("sidebar");
             if (sidebar) {
               sidebar.setAttribute("src", "data:text/html;charset=utf-8,");
-              sidebar.docShell.createAboutBlankContentViewer(null, null);
+              sidebar.docShell.createAboutBlankDocumentViewer(null, null);
               sidebar.setAttribute("src", "about:blank");
             }
           }
@@ -1213,7 +1217,7 @@ Tester.prototype = {
 
     this.SimpleTest.reset();
     // Reset accessibility environment.
-    this.AccessibilityUtils.reset(this.a11y_checks);
+    this.AccessibilityUtils.reset(this.a11y_checks, this.currentTest.path);
 
     // Load the tests into a testscope
     let currentScope = (this.currentTest.scope = new testScope(
@@ -1437,7 +1441,11 @@ Tester.prototype = {
             );
             self.currentTest.timedOut = true;
             self.currentTest.scope.__waitTimer = null;
-            self.nextTest();
+            if (gConfig.timeoutAsPass) {
+              self.nextTest();
+            } else {
+              self.finish();
+            }
           },
           gTimeoutSeconds * 1000,
         ]);

@@ -678,6 +678,25 @@
     "n_buckets": 100,
     "description": "Counts how long to generate canvas random noises."
   },
+  "FIREFOX_VIEW_CUMULATIVE_SEARCHES": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "expires_in_version": "never",
+    "alert_emails": ["firefoxview@mozilla.com"],
+    "releaseChannelCollection": "opt-out",
+    "bug_numbers": [1869765],
+    "kind": "enumerated",
+    "n_values": 100,
+    "description": "Cumulative no. of searches performed before selecting a resulting tab.",
+    "keyed": true,
+    "keys": [
+      "recentbrowsing",
+      "opentabs",
+      "recentlyclosed",
+      "history",
+      "syncedtabs"
+    ]
+  },
   "FORCED_DEVICE_RESET_REASON": {
     "record_in_processes": ["main", "content", "gpu"],
     "products": ["firefox", "fennec"],
@@ -1434,20 +1453,6 @@
     "n_buckets": 100,
     "description": "GPU process initialization (excluding XPCOM and fork time) time in milliseconds"
   },
-  "GPU_PROCESS_CRASH_FALLBACKS": {
-    "record_in_processes": ["main", "content"],
-    "products": ["firefox", "fennec"],
-    "alert_emails": [
-      "gfx-telemetry-alerts@mozilla.com",
-      "gsquelart@mozilla.com"
-    ],
-    "expires_in_version": "70",
-    "bug_numbers": [1338011],
-    "kind": "enumerated",
-    "releaseChannelCollection": "opt-out",
-    "n_values": 10,
-    "description": "Count how often we use different fallbacks when the GPU process crashes: None=0, GPUProcessDecodingDisabled=1, GPUProcessDisabled=2"
-  },
   "MEMORY_RESIDENT_FAST": {
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
@@ -1457,8 +1462,9 @@
     "low": 32768,
     "high": 16777216,
     "n_buckets": 100,
-    "bug_numbers": [1226196],
-    "description": "Resident memory size (KB)"
+    "bug_numbers": [1226196, 1870550],
+    "description": "Resident memory size (KB)",
+    "releaseChannelCollection": "opt-out"
   },
   "MEMORY_RESIDENT_PEAK": {
     "record_in_processes": ["main", "content"],
@@ -1472,8 +1478,9 @@
     "low": 32768,
     "high": 16777216,
     "n_buckets": 100,
-    "bug_numbers": [1551648],
-    "description": "Peak resident memory size (KB)"
+    "bug_numbers": [1551648, 1870550],
+    "description": "Peak resident memory size (KB)",
+    "releaseChannelCollection": "opt-out"
   },
   "MEMORY_TOTAL": {
     "record_in_processes": ["main"],
@@ -1507,13 +1514,14 @@
     "record_in_processes": ["main", "content"],
     "products": ["firefox", "fennec"],
     "alert_emails": ["memshrink-telemetry-alerts@mozilla.com"],
-    "bug_numbers": [1198209],
+    "bug_numbers": [1198209, 1870550],
     "expires_in_version": "never",
     "kind": "exponential",
     "low": 32768,
     "high": 16777216,
     "n_buckets": 100,
-    "description": "Unique Set Size (KB)"
+    "description": "Unique Set Size (KB)",
+    "releaseChannelCollection": "opt-out"
   },
   "MEMORY_UNIQUE_CONTENT_STARTUP": {
     "record_in_processes": ["content"],
@@ -2928,31 +2936,6 @@
     "keyed": true,
     "description": "The time between navigationStart and the first contentful paint of a foreground http or https root content document, in milliseconds. The contentful paint timestamp is taken during display list building and does not include rasterization or compositing of that paint. This is collected only on page load where the main document uses or suppports HTTP3"
   },
-  "HTTP3_UPLOAD_TIME_10M_100M": {
-    "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox", "fennec"],
-    "bug_numbers": [1675496, 1712441],
-    "expires_in_version": "103",
-    "kind": "exponential",
-    "high": 120000,
-    "n_buckets": 100,
-    "keyed": true,
-    "description": "HTTP transaction upload time (ms) (keys: uses_http3_10_50 (load size 10M to 50M), uses_http3_50_100 (load size 50M to 100M), supports_http3_10_50, supports_http3_50_100)"
-  },
-  "HTTP3_UPLOAD_TIME_GT_100M": {
-    "alert_emails": ["necko@mozilla.com", "ddamjanovic@mozilla.com"],
-    "record_in_processes": ["main", "socket"],
-    "products": ["firefox", "fennec"],
-    "bug_numbers": [1712441],
-    "expires_in_version": "103",
-    "kind": "exponential",
-    "low": 30000,
-    "high": 240000,
-    "n_buckets": 100,
-    "keyed": true,
-    "description": "HTTP transaction upload time for resources larger than 100M (ms) (keys: uses_http3, supports_http3)"
-  },
   "HTTPS_RR_OPEN_TO_FIRST_SENT": {
     "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
     "record_in_processes": ["main", "content"],
@@ -3358,6 +3341,114 @@
     "n_buckets": 100,
     "bug_numbers": [1858256],
     "description": "The upload throughput for http/3 requests larger than 10MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_10_50": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/1.0, http/1.1 request size between 10MB and 50MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_50_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/1.0, http/1.1 request size between 50MB and 100MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_1_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/1.0, http/1.1 requests larger than 100MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_10_50": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/2 request size between 10MB and 50MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_50_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/2 request size between 50MB and 100MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_2_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/2 requests larger than 100MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_10_50": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/3 request size between 10MB and 50MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_50_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/3 request size between 50MB and 100MB. Measured in megabits per second, Mbps."
+  },
+  "HTTP_UPLOAD_THROUGHPUT_MBPS_HTTP_3_100": {
+    "record_in_processes": ["main"],
+    "products": ["firefox"],
+    "alert_emails": ["necko@mozilla.com", "kershaw@mozilla.com"],
+    "expires_in_version": "never",
+    "releaseChannelCollection": "opt-out",
+    "kind": "exponential",
+    "high": 5000,
+    "n_buckets": 100,
+    "bug_numbers": [1866739, 1858256],
+    "description": "The upload throughput for http/3 requests larger than 100MB. Measured in megabits per second, Mbps."
   },
   "NETWORK_RACE_CACHE_WITH_NETWORK_USAGE_2": {
     "record_in_processes": ["main", "content"],
@@ -8870,18 +8961,6 @@
     "keyed": true,
     "description": "How long it took to import logins (passwords) from another browser, keyed by the name of the browser. The time for users to unlock Keychain on macOS is included in this time."
   },
-  "PWMGR_IMPORT_LOGINS_FROM_FILE_MS": {
-    "record_in_processes": ["main"],
-    "products": ["firefox"],
-    "bug_numbers": [1688653, 1749882, 1777397, 1850888],
-    "alert_emails": ["passwords-dev@mozilla.org"],
-    "expires_in_version": "124",
-    "kind": "exponential",
-    "n_buckets": 70,
-    "high": 100000,
-    "releaseChannelCollection": "opt-out",
-    "description": "How long it took to import logins (passwords) from a CSV/TSV file. The time for users to unlock Keychain on macOS is included in this time."
-  },
   "FX_MIGRATION_BOOKMARKS_JANK_MS": {
     "record_in_processes": ["main"],
     "products": ["firefox"],
@@ -12796,10 +12875,17 @@
     "products": ["firefox"],
     "expires_in_version": "never",
     "kind": "categorical",
-    "labels": ["read_error", "decode_error", "write_error", "quarantine_error"],
-    "description": "Count for the number of errors encountered trying to determine attribution data: on Windows, from the installers (stub and full); on macOS, from the quarantine database.",
+    "labels": [
+      "read_error",
+      "decode_error",
+      "write_error",
+      "quarantine_error",
+      "empty_error",
+      "null_error"
+    ],
+    "description": "Count for the number of errors encountered trying to determine attribution data: on Windows, from the installers (stub and full); on macOS, from an extended attributed on the .app bundle.",
     "releaseChannelCollection": "opt-out",
-    "bug_numbers": [1621402, 1525076],
+    "bug_numbers": [1621402, 1525076, 1874944],
     "alert_emails": ["aoprea@mozilla.com"],
     "operating_systems": ["mac", "windows"]
   },
@@ -18163,15 +18249,28 @@
     "bug_numbers": [1833105],
     "description": "The decrease in the length of the URL when strip on share is used, only if at least one parameter is stripped"
   },
-  "GVSV_AUDIO_STREAM_INITS": {
-    "bug_numbers": [1858954],
-    "description": "Incremented when an audio stream is initialized. For use as part of the GeckoView Streaming Validation.",
-    "expires_in_version": "123",
-    "kind": "categorical",
-    "alert_emails": ["pmcmanis@mozilla.com"],
-    "products": ["firefox", "geckoview_streaming"],
-    "record_in_processes": ["all"],
-    "labels": ["inits"],
-    "releaseChannelCollection": "opt-out"
+  "SCREENWAKELOCK_HELD_DURATION_MS": {
+    "record_in_processes": ["content"],
+    "products": ["firefox"],
+    "alert_emails": ["vhilla@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "exponential",
+    "low": 240000,
+    "high": 28800000,
+    "n_buckets": 50,
+    "bug_numbers": [1589554],
+    "description": "How long a screen wake lock was held in ms"
+  },
+  "SCREENWAKELOCK_RELEASE_BATTERY_LEVEL_DISCHARGING": {
+    "record_in_processes": ["content"],
+    "products": ["firefox"],
+    "alert_emails": ["vhilla@mozilla.com"],
+    "expires_in_version": "never",
+    "kind": "linear",
+    "low": 1,
+    "high": 100,
+    "n_buckets": 50,
+    "bug_numbers": [1589554],
+    "description": "Battery level when discharging and the wake lock was released"
   }
 }

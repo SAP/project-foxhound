@@ -59,6 +59,7 @@ const {
   CanOfAPIs,
   SchemaAPIManager,
   defineLazyGetter,
+  redefineGetter,
   runSafeSyncWithoutClone,
 } = ExtensionCommon;
 
@@ -142,7 +143,7 @@ class CacheMap extends DefaultMap {
       super.get(url).timer.cancel();
     }
 
-    super.delete(url);
+    return super.delete(url);
   }
 
   clear(timeout = SCRIPT_CLEAR_TIMEOUT_MS) {
@@ -160,16 +161,17 @@ class CacheMap extends DefaultMap {
 
 class ScriptCache extends CacheMap {
   constructor(options, extension) {
-    super(SCRIPT_EXPIRY_TIMEOUT_MS, null, extension);
-    this.options = options;
-  }
-
-  defaultConstructor(url) {
-    let promise = ChromeUtils.compileScript(url, this.options);
-    promise.then(script => {
-      promise.script = script;
-    });
-    return promise;
+    super(
+      SCRIPT_EXPIRY_TIMEOUT_MS,
+      url => {
+        let promise = ChromeUtils.compileScript(url, options);
+        promise.then(script => {
+          promise.script = script;
+        });
+        return promise;
+      },
+      extension
+    );
   }
 }
 
@@ -207,7 +209,7 @@ class BaseCSSCache extends CacheMap {
       }
     }
 
-    super.delete(key);
+    return super.delete(key);
   }
 }
 
@@ -473,7 +475,7 @@ class Script {
    * Tries to inject this script into the given window and sandbox, if
    * there are pending operations for the window's current load state.
    *
-   * @param {BaseContext} context
+   * @param {ContentScriptContextChild} context
    *        The content script context into which to inject the scripts.
    * @param {boolean} reportExceptions
    *        Defaults to true and reports any exception directly to the console
@@ -606,7 +608,7 @@ class Script {
    *  Get the compiled scripts (if they are already precompiled and cached) or a promise which resolves
    *  to the precompiled scripts (once they have been compiled and cached).
    *
-   * @param {BaseContext} context
+   * @param {ContentScriptContextChild} context
    *        The document to block the parsing on, if the scripts are not yet precompiled and cached.
    *
    * @returns {Array<PreloadedScript> | Promise<Array<PreloadedScript>>}
@@ -907,13 +909,6 @@ class ContentScriptContextChild extends BaseContext {
 
     this.url = contentWindow.location.href;
 
-    defineLazyGetter(this, "chromeObj", () => {
-      let chromeObj = Cu.createObjectIn(this.sandbox);
-
-      this.childManager.inject(chromeObj);
-      return chromeObj;
-    });
-
     lazy.Schemas.exportLazyGetter(
       this.sandbox,
       "browser",
@@ -993,31 +988,28 @@ class ContentScriptContextChild extends BaseContext {
 
     this.sandbox = null;
   }
-}
 
-defineLazyGetter(ContentScriptContextChild.prototype, "messenger", function () {
-  return new Messenger(this);
-});
-
-defineLazyGetter(
-  ContentScriptContextChild.prototype,
-  "childManager",
-  function () {
+  get childManager() {
     apiManager.lazyInit();
-
-    let localApis = {};
-    let can = new CanOfAPIs(this, apiManager, localApis);
-
+    let can = new CanOfAPIs(this, apiManager, {});
     let childManager = new ChildAPIManager(this, this.messageManager, can, {
       envType: "content_parent",
       url: this.url,
     });
-
     this.callOnClose(childManager);
-
-    return childManager;
+    return redefineGetter(this, "childManager", childManager);
   }
-);
+
+  get chromeObj() {
+    let chromeObj = Cu.createObjectIn(this.sandbox);
+    this.childManager.inject(chromeObj);
+    return redefineGetter(this, "chromeObj", chromeObj);
+  }
+
+  get messenger() {
+    return redefineGetter(this, "messenger", new Messenger(this));
+  }
+}
 
 // Responsible for creating ExtensionContexts and injecting content
 // scripts into them when new documents are created.
@@ -1067,6 +1059,11 @@ DocumentManager = {
     },
   },
 
+  /**
+   * @param {object} subject
+   * @param {keyof typeof DocumentManager.observers} topic
+   * @param {any} data
+   */
   observe(subject, topic, data) {
     this.observers[topic].call(this, subject, topic, data);
   },

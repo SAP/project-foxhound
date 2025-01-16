@@ -76,7 +76,7 @@ static bool IsAtomicElement(nsIFrame* aFrame, LayoutFrameType aFrameType) {
              "unexpected block frame");
   MOZ_ASSERT(aFrameType != LayoutFrameType::Placeholder,
              "unexpected placeholder frame");
-  return !aFrame->IsFrameOfType(nsIFrame::eLineParticipant);
+  return !aFrame->IsLineParticipant();
 }
 
 static bool IsFullyClipped(nsTextFrame* aFrame, nscoord aLeft, nscoord aRight,
@@ -244,8 +244,9 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(gfxContext* aCtx,
       NS_ASSERTION(!textRun->IsRightToLeft(),
                    "Ellipsis textruns should always be LTR!");
       gfx::Point gfxPt(pt.x, pt.y);
+      auto& paletteCache = mFrame->PresContext()->FontPaletteCache();
       textRun->Draw(gfxTextRun::Range(textRun), gfxPt,
-                    gfxTextRun::DrawParams(aCtx));
+                    gfxTextRun::DrawParams(aCtx, paletteCache));
     }
   } else {
     RefPtr<nsFontMetrics> fm =

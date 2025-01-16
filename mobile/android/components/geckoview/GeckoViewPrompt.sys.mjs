@@ -9,6 +9,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   GeckoViewPrompter: "resource://gre/modules/GeckoViewPrompter.sys.mjs",
+  GeckoViewClipboardPermission:
+    "resource://gre/modules/GeckoViewClipboardPermission.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("GeckoViewPrompt");
@@ -22,7 +24,10 @@ export class PromptFactory {
     switch (aEvent.type) {
       case "mozshowdropdown":
       case "mozshowdropdown-sourcetouch":
-        this._handleSelect(aEvent.composedTarget, /* aIsDropDown = */ true);
+        this._handleSelect(
+          aEvent.composedTarget,
+          aEvent.composedTarget.isCombobox
+        );
         break;
       case "MozOpenDateTimePicker":
         this._handleDateTime(aEvent.composedTarget);
@@ -99,6 +104,8 @@ export class PromptFactory {
         } else if (win.HTMLOptionElement.isInstance(child)) {
           item.label = child.label || child.text;
           item.selected = child.selected;
+        } else if (win.HTMLHRElement.isInstance(child)) {
+          item.separator = true;
         } else {
           continue;
         }
@@ -419,6 +426,9 @@ export class PromptFactory {
   }
   asyncPromptAuth() {
     return this.callProxy("asyncPromptAuth", arguments);
+  }
+  confirmUserPaste() {
+    return lazy.GeckoViewClipboardPermission.confirmUserPaste(...arguments);
   }
 }
 

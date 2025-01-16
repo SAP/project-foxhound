@@ -661,6 +661,28 @@ public class GeckoViewActivity extends AppCompatActivity
         }
       };
 
+  private final BooleanSetting mGlobalPrivacyControlEnabled =
+      new BooleanSetting(
+          R.string.key_global_privacy_control_enabled,
+          R.bool.global_privacy_control_enabled_default,
+          /* reloadCurrentSession */ true) {
+        @Override
+        public void setValue(final GeckoRuntimeSettings settings, final Boolean value) {
+          settings.setGlobalPrivacyControl(value);
+        }
+      };
+
+  private final BooleanSetting mEtbPrivateModeEnabled =
+      new BooleanSetting(
+          R.string.key_etb_private_mode_enabled,
+          R.bool.etb_private_mode_enabled_default,
+          /* reloadCurrentSession */ true) {
+        @Override
+        public void setValue(final GeckoRuntimeSettings settings, final Boolean value) {
+          settings.getContentBlocking().setEmailTrackerBlockingPrivateBrowsing(value);
+        }
+      };
+
   private final BooleanSetting mExtensionsProcessEnabled =
       new BooleanSetting(
           R.string.key_extensions_process_enabled,
@@ -848,12 +870,14 @@ public class GeckoViewActivity extends AppCompatActivity
                   .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
                   .cookieBehaviorPrivateMode(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
                   .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
+                  .emailTrackerBlockingPrivateMode(mEtbPrivateModeEnabled.value())
                   .build())
           .crashHandler(ExampleCrashHandler.class)
           .preferredColorScheme(mPreferredColorScheme.value())
           .telemetryDelegate(new ExampleTelemetryDelegate())
           .javaScriptEnabled(mJavascriptEnabled.value())
           .extensionsProcessEnabled(mExtensionsProcessEnabled.value())
+          .globalPrivacyControlEnabled(mGlobalPrivacyControlEnabled.value())
           .aboutConfigEnabled(true);
 
       sGeckoRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
@@ -1317,6 +1341,9 @@ public class GeckoViewActivity extends AppCompatActivity
       case R.id.poll_shopping_analysis_status:
         pollForAnalysisCompleted(session, mCurrentUri);
         break;
+      case R.id.report_back_in_stock:
+        reportBackInStock(session, mCurrentUri);
+        break;
       case R.id.translate:
         translate(session);
         break;
@@ -1359,7 +1386,7 @@ public class GeckoViewActivity extends AppCompatActivity
                     final WebExtensionController controller =
                         sGeckoRuntime.getWebExtensionController();
                     controller.setPromptDelegate(sExtensionManager);
-                    return controller.install(uri);
+                    return controller.install(uri, null);
                   })
               .then(
                   extension ->
@@ -2432,10 +2459,11 @@ public class GeckoViewActivity extends AppCompatActivity
 
   public void requestAnalysisCreationStatus(
       @NonNull final GeckoSession session, @NonNull final String url) {
-    GeckoResult<String> result = session.requestAnalysisCreationStatus(url);
+    GeckoResult<GeckoSession.AnalysisStatusResponse> result = session.requestAnalysisStatus(url);
     result.map(
         status -> {
-          Log.d(LOGTAG, "Shopping Analysis Status: " + status);
+          Log.d(LOGTAG, "Shopping Analysis Status: " + status.status);
+          Log.d(LOGTAG, "Shopping Analysis Status Progress: " + status.progress);
           return status;
         });
   }
@@ -2448,6 +2476,16 @@ public class GeckoViewActivity extends AppCompatActivity
         status -> {
           Log.d(LOGTAG, "Shopping Analysis Status: " + status);
           return status;
+        });
+  }
+
+  public void reportBackInStock(@NonNull final GeckoSession session, @NonNull final String url) {
+    Log.d(LOGTAG, "Report shopping product is back in stock");
+    GeckoResult<String> result = session.reportBackInStock(url);
+    result.map(
+        message -> {
+          Log.d(LOGTAG, "Shopping Analysis back in stock status: " + message);
+          return message;
         });
   }
 
@@ -2473,7 +2511,6 @@ public class GeckoViewActivity extends AppCompatActivity
                         return null;
                       }
                     });
-
             session
                 .sendImpressionAttributionEvent(aids.get(0))
                 .then(
@@ -2483,6 +2520,18 @@ public class GeckoViewActivity extends AppCompatActivity
                         Log.d(
                             LOGTAG,
                             "Success of shopping impression attribution event: " + isSuccessful);
+                        return null;
+                      }
+                    });
+            session
+                .sendPlacementAttributionEvent(aids.get(0))
+                .then(
+                    new GeckoResult.OnValueListener<Boolean, Void>() {
+                      @Override
+                      public GeckoResult<Void> onValue(final Boolean isSuccessful) {
+                        Log.d(
+                            LOGTAG,
+                            "Success of shopping placement attribution event: " + isSuccessful);
                         return null;
                       }
                     });

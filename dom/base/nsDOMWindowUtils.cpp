@@ -133,6 +133,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IMEContentObserver.h"
 #include "mozilla/WheelHandlingHelper.h"
+#include "mozilla/AnimatedPropertyID.h"
 
 #ifdef XP_WIN
 #  include <direct.h>
@@ -410,12 +411,12 @@ nsDOMWindowUtils::UpdateLayerTree() {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetContentViewerSize(uint32_t* aDisplayWidth,
-                                       uint32_t* aDisplayHeight) {
+nsDOMWindowUtils::GetDocumentViewerSize(uint32_t* aDisplayWidth,
+                                        uint32_t* aDisplayHeight) {
   PresShell* presShell = GetPresShell();
   LayoutDeviceIntSize displaySize;
 
-  if (!presShell || !nsLayoutUtils::GetContentViewerSize(
+  if (!presShell || !nsLayoutUtils::GetDocumentViewerSize(
                         presShell->GetPresContext(), displaySize)) {
     return NS_ERROR_FAILURE;
   }
@@ -3043,31 +3044,6 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     return NS_OK;
   }
 
-  bool shouldSkip = [&] {
-    nsIFrame* frame = element->GetPrimaryFrame();
-    if (!frame) {
-      return true;
-    }
-
-    // Skip zooming to focused inputs in fixed subtrees, as we'd scroll to the
-    // top unnecessarily, see bug 1627734.
-    //
-    // We could try to teach apz to zoom to a rect only without panning, or
-    // maybe we could give it a rect offsetted by the root scroll position, if
-    // we wanted to do this.
-    for (; frame; frame = nsLayoutUtils::GetCrossDocParentFrame(frame)) {
-      if (frame->PresShell() == presShell) {
-        // Note that we only do this if the frame belongs to `presShell` (that
-        // is, we still zoom in fixed elements in subdocuments, as they're not
-        // fixed to the root content document).
-        return nsLayoutUtils::IsInPositionFixedSubtree(frame);
-      }
-      frame = frame->PresShell()->GetRootFrame();
-    }
-
-    return false;
-  }();
-
   // The content may be inside a scrollable subframe inside a non-scrollable
   // root content document. In this scenario, we want to ensure that the
   // main-thread side knows to scroll the content into view before we get
@@ -3076,10 +3052,6 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
       element, ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
       ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
       ScrollFlags::ScrollOverflowHidden);
-
-  if (shouldSkip) {
-    return NS_OK;
-  }
 
   RefPtr<Document> document = presShell->GetDocument();
   if (!document) {
@@ -3140,6 +3112,8 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     return NS_OK;
   }
 
+  bounds -= CSSPoint::FromAppUnits(rootScrollFrame->GetScrollPosition());
+
   bool waitForRefresh = false;
   for (nsIScrollableFrame* scrollAncestor :
        CollectScrollableAncestors(element->GetPrimaryFrame())) {
@@ -3178,11 +3152,16 @@ nsDOMWindowUtils::ComputeAnimationDistance(Element* aElement,
                                            double* aResult) {
   NS_ENSURE_ARG_POINTER(aElement);
 
-  nsCSSPropertyID property =
+  nsCSSPropertyID propertyID =
       nsCSSProps::LookupProperty(NS_ConvertUTF16toUTF8(aProperty));
-  if (property == eCSSProperty_UNKNOWN || nsCSSProps::IsShorthand(property)) {
+  if (propertyID == eCSSProperty_UNKNOWN ||
+      nsCSSProps::IsShorthand(propertyID)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
+
+  AnimatedPropertyID property = propertyID == eCSSPropertyExtra_variable
+                                    ? AnimatedPropertyID(NS_Atomize(aProperty))
+                                    : AnimatedPropertyID(propertyID);
 
   AnimationValue v1 = AnimationValue::FromString(
       property, NS_ConvertUTF16toUTF8(aValue1), aElement);
@@ -3192,7 +3171,7 @@ nsDOMWindowUtils::ComputeAnimationDistance(Element* aElement,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  *aResult = v1.ComputeDistance(property, v2);
+  *aResult = v1.ComputeDistance(v2);
   return NS_OK;
 }
 
@@ -3212,6 +3191,9 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
       nsCSSProps::IsShorthand(propertyID)) {
     return NS_ERROR_INVALID_ARG;
   }
+  AnimatedPropertyID property = propertyID == eCSSPropertyExtra_variable
+                                    ? AnimatedPropertyID(NS_Atomize(aProperty))
+                                    : AnimatedPropertyID(propertyID);
 
   switch (aFlushType) {
     case FLUSH_NONE:
@@ -3243,7 +3225,7 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
   }
 
   RefPtr<StyleAnimationValue> value =
-      Servo_ComputedValues_ExtractAnimationValue(computedStyle, propertyID)
+      Servo_ComputedValues_ExtractAnimationValue(computedStyle, &property)
           .Consume();
   if (!value) {
     return NS_ERROR_FAILURE;
@@ -3252,7 +3234,7 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_FAILURE;
   }
   nsAutoCString result;
-  Servo_AnimationValue_Serialize(value, propertyID,
+  Servo_AnimationValue_Serialize(value, &property,
                                  presShell->StyleSet()->RawData(), &result);
   CopyUTF8toUTF16(result, aResult);
   return NS_OK;
@@ -3597,21 +3579,22 @@ static void PrepareForFullscreenChange(nsIDocShell* aDocShell,
     rd->ScheduleViewManagerFlush();
   }
   if (!aSize.IsEmpty()) {
-    nsCOMPtr<nsIContentViewer> cv;
-    aDocShell->GetContentViewer(getter_AddRefs(cv));
-    if (cv) {
-      nsIntRect cvBounds;
-      cv->GetBounds(cvBounds);
+    nsCOMPtr<nsIDocumentViewer> viewer;
+    aDocShell->GetDocViewer(getter_AddRefs(viewer));
+    if (viewer) {
+      nsIntRect viewerBounds;
+      viewer->GetBounds(viewerBounds);
       nscoord auPerDev = presShell->GetPresContext()->AppUnitsPerDevPixel();
       if (aOldSize) {
         *aOldSize = LayoutDeviceIntSize::ToAppUnits(
-            LayoutDeviceIntSize::FromUnknownSize(cvBounds.Size()), auPerDev);
+            LayoutDeviceIntSize::FromUnknownSize(viewerBounds.Size()),
+            auPerDev);
       }
       LayoutDeviceIntSize newSize =
           LayoutDeviceIntSize::FromAppUnitsRounded(aSize, auPerDev);
 
-      cvBounds.SizeTo(newSize.width, newSize.height);
-      cv->SetBounds(cvBounds);
+      viewerBounds.SizeTo(newSize.width, newSize.height);
+      viewer->SetBounds(viewerBounds);
     }
   }
 }
@@ -4431,16 +4414,16 @@ nsDOMWindowUtils::GetDirectionFromText(const nsAString& aString,
   Directionality dir =
       ::GetDirectionFromText(aString.BeginReading(), aString.Length(), nullptr);
   switch (dir) {
-    case eDir_NotSet:
+    case Directionality::Unset:
       *aRetval = nsIDOMWindowUtils::DIRECTION_NOT_SET;
       break;
-    case eDir_RTL:
+    case Directionality::Rtl:
       *aRetval = nsIDOMWindowUtils::DIRECTION_RTL;
       break;
-    case eDir_LTR:
+    case Directionality::Ltr:
       *aRetval = nsIDOMWindowUtils::DIRECTION_LTR;
       break;
-    case eDir_Auto:
+    case Directionality::Auto:
       MOZ_ASSERT_UNREACHABLE(
           "GetDirectionFromText should never return this value");
       return NS_ERROR_FAILURE;

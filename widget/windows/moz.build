@@ -52,6 +52,7 @@ EXPORTS.mozilla.widget += [
     "CompositorWidgetChild.h",
     "CompositorWidgetParent.h",
     "InProcessWinCompositorWidget.h",
+    "JumpListBuilder.h",
     "nsWindowLoggedMessages.h",
     "WinCompositorWidget.h",
     "WinCompositorWindowThread.h",
@@ -60,6 +61,7 @@ EXPORTS.mozilla.widget += [
     "WinEventObserver.h",
     "WinMessages.h",
     "WinModifierKeyState.h",
+    "WinRegistry.h",
     "WinTaskbar.h",
     "WinWindowOcclusionTracker.h",
 ]
@@ -71,8 +73,9 @@ UNIFIED_SOURCES += [
     "GfxInfo.cpp",
     "IEnumFE.cpp",
     "IMMHandler.cpp",
-    "JumpListItem.cpp",
+    "JumpListBuilder.cpp",
     "KeyboardLayout.cpp",
+    "LegacyJumpListItem.cpp",
     "LSPAnnotator.cpp",
     "nsAppShell.cpp",
     "nsClipboard.cpp",
@@ -110,6 +113,7 @@ UNIFIED_SOURCES += [
     "WinEventObserver.cpp",
     "WinIMEHandler.cpp",
     "WinPointerEvents.cpp",
+    "WinRegistry.cpp",
     "WinTaskbar.cpp",
     "WinTextEventDispatcherListener.cpp",
     "WinUtils.cpp",
@@ -120,7 +124,7 @@ UNIFIED_SOURCES += [
 SOURCES += [
     "CompositorWidgetParent.cpp",
     "InProcessWinCompositorWidget.cpp",
-    "JumpListBuilder.cpp",
+    "LegacyJumpListBuilder.cpp",
     "MediaKeysEventSourceFactory.cpp",
     "nsBidiKeyboard.cpp",
     "nsFilePicker.cpp",
@@ -173,6 +177,7 @@ LOCAL_INCLUDES += [
     "/layout/generic",
     "/layout/style",
     "/layout/xul",
+    "/toolkit/components/jsoncpp/include",
     "/toolkit/xre",
     "/widget",
     "/widget/headless",
@@ -187,6 +192,10 @@ DEFINES["MOZ_TOAST_APP_NAME"] = '"%s"' % CONFIG["MOZ_APP_NAME"].title()
 for var in ("MOZ_ENABLE_D3D10_LAYER",):
     if CONFIG[var]:
         DEFINES[var] = True
+
+USE_LIBS += [
+    "jsoncpp",
+]
 
 OS_LIBS += [
     "ktmw32",

@@ -319,7 +319,7 @@ class MozperftestGatherer(FrameworkGatherer):
 
     def get_test_list(self):
         """
-        Returns a dictionary containing the tests that are in perftest.ini manifest.
+        Returns a dictionary containing the tests that are in perftest.toml manifest.
 
         :return dict: A dictionary with the following structure: {
                 "suite_name": {
@@ -328,7 +328,7 @@ class MozperftestGatherer(FrameworkGatherer):
                 },
             }
         """
-        for path in pathlib.Path(self.workspace_dir).rglob("perftest.ini"):
+        for path in list(pathlib.Path(self.workspace_dir).rglob("perftest.toml")):
             if "obj-" in str(path):
                 continue
             suite_name = str(path.parent).replace(str(self.workspace_dir), "")
@@ -342,7 +342,7 @@ class MozperftestGatherer(FrameworkGatherer):
             # because mozperftest tests exist in multiple places in-tree
             PerfDocLogger.PATHS.append(suite_name)
 
-            # Get the tests from perftest.ini
+            # Get the tests from perftest.toml
             test_manifest = TestManifest([str(path)], strict=False)
             test_list = test_manifest.active_tests(exists=False, disabled=False)
             for test in test_list:

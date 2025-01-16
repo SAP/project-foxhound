@@ -18,7 +18,12 @@
 #include "modules/video_capture/video_capture_defines.h"
 #include "video/render/incoming_video_stream.h"
 
+class WebrtcLogSinkHandle;
 class nsIThread;
+
+namespace mozilla {
+class VideoCaptureFactory;
+}
 
 namespace mozilla::camera {
 
@@ -52,8 +57,9 @@ class CamerasParent final : public PCamerasParent,
                             private webrtc::VideoInputFeedBack {
  public:
   using ShutdownMozPromise = media::ShutdownBlockingTicket::ShutdownMozPromise;
-  using CameraAccessRequestPromise =
-      MozPromise<nsresult, nsresult, /* IsExclusive = */ false>;
+
+  using CameraAccessRequestPromise = MozPromise<CamerasAccessStatus, void_t,
+                                                /* IsExclusive = */ false>;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_EVENT_TARGET(
       CamerasParent, mPBackgroundEventTarget)
@@ -65,16 +71,17 @@ class CamerasParent final : public PCamerasParent,
 
   /**
    * Request camera access
-   *   Currently used only on desktop. This will make an xdg-desktop-portal
-   *   call to request access to camera when PipeWire is used, otherwise it
-   *   automatically grants access for other implementations.
-   *
-   *    1) NS_ERROR_DOM_MEDIA_NOT_ALLOWED_ERR - access to camera has been
-   *       rejected by the user.
-   *    2) NS_ERROR_FAILURE - generic error, for instance with pipewire most
-   *       likely the xdg-desktop-portal request failed.
+   *   Currently only used on desktop. If @value
+   *   aAllowPermissionRequest is true, a request for full camera access may be
+   *   made and the returned promise may be blocked on user input on a modal
+   *   dialog. If @value aAllowPermissionRequest is false, only a request to
+   *   check camera device presence will be made. If any camera device is
+   *   present, we will enumerate a single placeholder device until a successful
+   *   RequestCameraAccess with a true aAllowPermissionRequest.
+   *   The returned promise will never be rejected.
    */
-  static RefPtr<CameraAccessRequestPromise> RequestCameraAccess();
+  static RefPtr<CameraAccessRequestPromise> RequestCameraAccess(
+      bool aAllowPermissionRequest);
 
   // Messages received from the child. These run on the IPC/PBackground thread.
   mozilla::ipc::IPCResult RecvPCamerasConstructor();
@@ -154,6 +161,10 @@ class CamerasParent final : public PCamerasParent,
   // Reference to same VideoEngineArray as sEngines. Video capture thread only.
   const RefPtr<VideoEngineArray> mEngines;
 
+  // Reference to same VideoCaptureFactory as sVideoCaptureFactory. Video
+  // capture thread only.
+  const RefPtr<VideoCaptureFactory> mVideoCaptureFactory;
+
   // image buffers
   ShmemPool mShmemPool;
 
@@ -165,6 +176,10 @@ class CamerasParent final : public PCamerasParent,
 
   std::map<nsCString, std::map<uint32_t, webrtc::VideoCaptureCapability>>
       mAllCandidateCapabilities;
+
+  // While alive, ensure webrtc logging is hooked up to MOZ_LOG. Main thread
+  // only.
+  nsMainThreadPtrHandle<WebrtcLogSinkHandle> mLogHandle;
 };
 
 }  // namespace mozilla::camera

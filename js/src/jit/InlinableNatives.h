@@ -70,6 +70,9 @@
   _(IntlGuardToNumberFormat)                       \
   _(IntlGuardToPluralRules)                        \
   _(IntlGuardToRelativeTimeFormat)                 \
+  _(IntlGuardToSegmenter)                          \
+  _(IntlGuardToSegments)                           \
+  _(IntlGuardToSegmentIterator)                    \
                                                    \
   _(MapGet)                                        \
   _(MapHas)                                        \
@@ -136,11 +139,16 @@
   _(StringFromCharCode)                            \
   _(StringFromCodePoint)                           \
   _(StringCharAt)                                  \
+  _(StringIncludes)                                \
   _(StringIndexOf)                                 \
+  _(StringLastIndexOf)                             \
   _(StringStartsWith)                              \
   _(StringEndsWith)                                \
   _(StringToLowerCase)                             \
   _(StringToUpperCase)                             \
+  _(StringTrim)                                    \
+  _(StringTrimStart)                               \
+  _(StringTrimEnd)                                 \
                                                    \
   _(IntrinsicStringReplaceString)                  \
   _(IntrinsicStringSplitString)                    \
@@ -149,6 +157,7 @@
   _(ObjectCreate)                                  \
   _(ObjectIs)                                      \
   _(ObjectIsPrototypeOf)                           \
+  _(ObjectKeys)                                    \
   _(ObjectToString)                                \
                                                    \
   _(TestBailout)                                   \

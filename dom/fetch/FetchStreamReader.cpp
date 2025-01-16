@@ -31,24 +31,11 @@ namespace mozilla::dom {
 NS_IMPL_CYCLE_COLLECTING_ADDREF(FetchStreamReader)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(FetchStreamReader)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(FetchStreamReader)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FetchStreamReader)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReader)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FetchStreamReader)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReader)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(FetchStreamReader)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION(FetchStreamReader, mGlobal, mReader)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FetchStreamReader)
   NS_INTERFACE_MAP_ENTRY(nsIOutputStreamCallback)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIOutputStreamCallback)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 /* static */
@@ -67,53 +54,54 @@ nsresult FetchStreamReader::Create(JSContext* aCx, nsIGlobalObject* aGlobal,
   NS_NewPipe2(getter_AddRefs(pipeIn), getter_AddRefs(streamReader->mPipeOut),
               true, true, 0, 0);
 
-  if (!NS_IsMainThread()) {
-    WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
-    MOZ_ASSERT(workerPrivate);
-
-    RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
-        workerPrivate, "FetchStreamReader", [streamReader]() {
-          MOZ_ASSERT(streamReader);
-
-          // mAsyncWaitWorkerRef may keep the (same) StrongWorkerRef alive even
-          // when mWorkerRef has already been nulled out by a previous call to
-          // CloseAndRelease, we can just safely ignore this callback then
-          // (as would the CloseAndRelease do on a second call).
-          if (streamReader->mWorkerRef) {
-            streamReader->CloseAndRelease(
-                streamReader->mWorkerRef->Private()->GetJSContext(),
-                NS_ERROR_DOM_INVALID_STATE_ERR);
-          } else {
-            MOZ_DIAGNOSTIC_ASSERT(streamReader->mAsyncWaitWorkerRef);
-          }
-        });
-
-    if (NS_WARN_IF(!workerRef)) {
-      streamReader->mPipeOut->CloseWithStatus(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return NS_ERROR_DOM_INVALID_STATE_ERR;
-    }
-
-    // These 2 objects create a ref-cycle here that is broken when the stream is
-    // closed or the worker shutsdown.
-    streamReader->mWorkerRef = std::move(workerRef);
-  }
-
   pipeIn.forget(aInputStream);
   streamReader.forget(aStreamReader);
+  return NS_OK;
+}
+
+nsresult FetchStreamReader::MaybeGrabStrongWorkerRef(JSContext* aCx) {
+  if (NS_IsMainThread()) {
+    return NS_OK;
+  }
+
+  WorkerPrivate* workerPrivate = GetWorkerPrivateFromContext(aCx);
+  MOZ_ASSERT(workerPrivate);
+
+  RefPtr<StrongWorkerRef> workerRef = StrongWorkerRef::Create(
+      workerPrivate, "FetchStreamReader", [streamReader = RefPtr(this)]() {
+        MOZ_ASSERT(streamReader);
+
+        // mAsyncWaitWorkerRef may keep the (same) StrongWorkerRef alive even
+        // when mWorkerRef has already been nulled out by a previous call to
+        // CloseAndRelease, we can just safely ignore this callback then
+        // (as would the CloseAndRelease do on a second call).
+        if (streamReader->mWorkerRef) {
+          streamReader->CloseAndRelease(
+              streamReader->mWorkerRef->Private()->GetJSContext(),
+              NS_ERROR_DOM_INVALID_STATE_ERR);
+        } else {
+          MOZ_DIAGNOSTIC_ASSERT(streamReader->mAsyncWaitWorkerRef);
+        }
+      });
+
+  if (NS_WARN_IF(!workerRef)) {
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
+  }
+
+  // These 2 objects create a ref-cycle here that is broken when the stream is
+  // closed or the worker shutsdown.
+  mWorkerRef = std::move(workerRef);
+
   return NS_OK;
 }
 
 FetchStreamReader::FetchStreamReader(nsIGlobalObject* aGlobal)
     : mGlobal(aGlobal), mOwningEventTarget(mGlobal->SerialEventTarget()) {
   MOZ_ASSERT(aGlobal);
-
-  mozilla::HoldJSObjects(this);
 }
 
 FetchStreamReader::~FetchStreamReader() {
   CloseAndRelease(nullptr, NS_BASE_STREAM_CLOSED);
-
-  mozilla::DropJSObjects(this);
 }
 
 // If a context is provided, an attempt will be made to cancel the reader.  The
@@ -181,6 +169,16 @@ void FetchStreamReader::StartConsuming(JSContext* aCx, ReadableStream* aStream,
                                        ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(!mReader);
   MOZ_DIAGNOSTIC_ASSERT(aStream);
+  MOZ_ASSERT(!aStream->MaybeGetInputStreamIfUnread(),
+             "FetchStreamReader is for JS streams but we got a stream based on "
+             "nsIInputStream here. Extract nsIInputStream and read it instead "
+             "to reduce overhead.");
+
+  aRv = MaybeGrabStrongWorkerRef(aCx);
+  if (aRv.Failed()) {
+    CloseAndRelease(aCx, NS_ERROR_DOM_INVALID_STATE_ERR);
+    return;
+  }
 
   // Step 2: Let reader be the result of getting a reader for body’s stream.
   RefPtr<ReadableStreamDefaultReader> reader = aStream->GetReader(aRv);

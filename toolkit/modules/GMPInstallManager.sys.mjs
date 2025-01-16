@@ -5,8 +5,6 @@
 // 1 day default
 const DEFAULT_SECONDS_BETWEEN_CHECKS = 60 * 60 * 24;
 
-import { PromiseUtils } from "resource://gre/modules/PromiseUtils.sys.mjs";
-
 import { Log } from "resource://gre/modules/Log.sys.mjs";
 import {
   GMPPrefs,
@@ -299,7 +297,7 @@ GMPInstallManager.prototype = {
       return { usedFallback: true, addons: [] };
     }
 
-    this._deferred = PromiseUtils.defer();
+    this._deferred = Promise.withResolvers();
     let deferredPromise = this._deferred.promise;
 
     // Should content signature checking of Balrog replies be used? If so this
@@ -715,14 +713,14 @@ GMPExtractor.prototype = {
    *         See GMPInstallManager.installAddon for resolve/rejected info
    */
   install() {
-    this._deferred = PromiseUtils.defer();
+    this._deferred = Promise.withResolvers();
     let deferredPromise = this._deferred;
     let { zipPath, relativeInstallPath } = this;
     // Escape the zip path since the worker will use it as a URI
     let zipFile = new lazy.FileUtils.File(zipPath);
     let zipURI = Services.io.newFileURI(zipFile).spec;
     let worker = new ChromeWorker(
-      "resource://gre/modules/GMPExtractorWorker.js"
+      "resource://gre/modules/GMPExtractor.worker.js"
     );
     worker.onmessage = function (msg) {
       let log = getScopedLogger("GMPExtractor");

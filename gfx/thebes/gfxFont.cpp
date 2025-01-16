@@ -32,6 +32,7 @@
 #include "gfxHarfBuzzShaper.h"
 #include "gfxUserFontSet.h"
 #include "nsCRT.h"
+#include "nsContentUtils.h"
 #include "nsSpecialCasingData.h"
 #include "nsTextRunTransformations.h"
 #include "nsUGenCategory.h"
@@ -728,10 +729,30 @@ void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
   // preceding letter by any letter-spacing or justification.
   const char16_t kBengaliVirama = 0x09CD;
   const char16_t kBengaliYa = 0x09AF;
+  // Characters treated as hyphens for the purpose of "emergency" breaking
+  // when the content would otherwise overflow.
+  auto isHyphen = [](char16_t c) {
+    return c == char16_t('-') ||  // HYPHEN-MINUS
+           c == 0x2010 ||         // HYPHEN
+           c == 0x2012 ||         // FIGURE DASH
+           c == 0x2013 ||         // EN DASH
+           c == 0x058A;           // ARMENIAN HYPHEN
+  };
+  bool prevWasHyphen = false;
   while (pos < aLength) {
     const char16_t ch = aString[pos];
+    if (prevWasHyphen) {
+      if (nsContentUtils::IsAlphanumeric(ch)) {
+        glyphs[pos].SetCanBreakBefore(
+            CompressedGlyph::FLAG_BREAK_TYPE_EMERGENCY_WRAP);
+      }
+      prevWasHyphen = false;
+    }
     if (ch == char16_t(' ') || ch == kIdeographicSpace) {
       glyphs[pos].SetIsSpace();
+    } else if (isHyphen(ch) && pos &&
+               nsContentUtils::IsAlphanumeric(aString[pos - 1])) {
+      prevWasHyphen = true;
     } else if (ch == kBengaliYa) {
       // Unless we're at the start, check for a preceding virama.
       if (pos > 0 && aString[pos - 1] == kBengaliVirama) {
@@ -753,14 +774,25 @@ void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
                                            const uint8_t* aString,
                                            uint32_t aLength) {
   CompressedGlyph* glyphs = GetCharacterGlyphs() + aOffset;
-  const uint8_t* limit = aString + aLength;
-
-  while (aString < limit) {
-    if (*aString == uint8_t(' ')) {
-      glyphs->SetIsSpace();
+  uint32_t pos = 0;
+  bool prevWasHyphen = false;
+  while (pos < aLength) {
+    uint8_t ch = aString[pos];
+    if (prevWasHyphen) {
+      if (nsContentUtils::IsAlphanumeric(ch)) {
+        glyphs->SetCanBreakBefore(
+            CompressedGlyph::FLAG_BREAK_TYPE_EMERGENCY_WRAP);
+      }
+      prevWasHyphen = false;
     }
-    aString++;
-    glyphs++;
+    if (ch == uint8_t(' ')) {
+      glyphs->SetIsSpace();
+    } else if (ch == uint8_t('-') && pos &&
+               nsContentUtils::IsAlphanumeric(aString[pos - 1])) {
+      prevWasHyphen = true;
+    }
+    ++pos;
+    ++glyphs;
   }
 }
 
@@ -1715,7 +1747,8 @@ bool gfxFont::HasFeatureSet(uint32_t aFeature, bool& aFeatureOn) {
 
 already_AddRefed<mozilla::gfx::ScaledFont> gfxFont::GetScaledFont(
     mozilla::gfx::DrawTarget* aDrawTarget) {
-  TextRunDrawParams params;
+  mozilla::gfx::PaletteCache dummy;
+  TextRunDrawParams params(dummy);
   return GetScaledFont(params);
 }
 
@@ -2233,7 +2266,7 @@ void gfxFont::DrawEmphasisMarks(const gfxTextRun* aShapedText, gfx::Point* aPt,
                                 const EmphasisMarkDrawParams& aParams) {
   float& inlineCoord = aParams.isVertical ? aPt->y.value : aPt->x.value;
   gfxTextRun::Range markRange(aParams.mark);
-  gfxTextRun::DrawParams params(aParams.context);
+  gfxTextRun::DrawParams params(aParams.context, aParams.paletteCache);
 
   float clusterStart = -std::numeric_limits<float>::infinity();
   bool shouldDrawEmphasisMark = false;
@@ -2263,23 +2296,6 @@ void gfxFont::DrawEmphasisMarks(const gfxTextRun* aShapedText, gfx::Point* aPt,
       inlineCoord += aParams.direction * aParams.spacing[i].mAfter;
     }
   }
-}
-
-nsTArray<mozilla::gfx::sRGBColor>* TextRunDrawParams::GetPaletteFor(
-    const gfxFont* aFont) {
-  auto entry = mPaletteCache.Lookup(aFont);
-  if (!entry) {
-    CacheData newData;
-    newData.mKey = aFont;
-
-    gfxFontEntry* fe = aFont->GetFontEntry();
-    gfxFontEntry::AutoHBFace face = fe->GetHBFace();
-    newData.mPalette = COLRFonts::SetupColorPalette(
-        face, paletteValueSet, fontPalette, fe->FamilyName());
-
-    entry.Set(std::move(newData));
-  }
-  return entry.Data().mPalette.get();
 }
 
 void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
@@ -2317,7 +2333,8 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     fontParams.currentColor = aRunParams.context->GetDeviceColor(ctxColor)
                                   ? sRGBColor::FromABGR(ctxColor.ToABGR())
                                   : sRGBColor::OpaqueBlack();
-    fontParams.palette = aRunParams.GetPaletteFor(this);
+    fontParams.palette = aRunParams.paletteCache.GetPaletteFor(
+        GetFontEntry(), aRunParams.fontPalette);
   }
 
   if (textDrawer) {

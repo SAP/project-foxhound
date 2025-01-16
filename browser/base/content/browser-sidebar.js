@@ -88,7 +88,7 @@ var SidebarUI = {
    */
   _observer: null,
 
-  _initDeferred: PromiseUtils.defer(),
+  _initDeferred: Promise.withResolvers(),
 
   get promiseInitialized() {
     return this._initDeferred.promise;
@@ -625,7 +625,7 @@ var SidebarUI = {
     // until about:blank has loaded (which does not happen as long as the
     // element is hidden).
     this.browser.setAttribute("src", "about:blank");
-    this.browser.docShell.createAboutBlankContentViewer(null, null);
+    this.browser.docShell.createAboutBlankDocumentViewer(null, null);
 
     this._box.removeAttribute("checked");
     this._box.hidden = this._splitter.hidden = true;

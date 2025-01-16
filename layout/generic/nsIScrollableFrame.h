@@ -146,15 +146,14 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * GetScrolledRect is designed to encapsulate deciding which
    * directions of overflow should be reachable by scrolling and which
    * should not.  Callers should NOT depend on it having any particular
-   * behavior (although nsXULScrollFrame currently does).
+   * behavior.
    *
    * This should only be called when the scrolled frame has been
    * reflowed with the scroll port size given in mScrollPort.
    *
    * Currently it allows scrolling down and to the right for
-   * nsHTMLScrollFrames with LTR directionality and for all
-   * nsXULScrollFrames, and allows scrolling down and to the left for
-   * nsHTMLScrollFrames with RTL directionality.
+   * nsHTMLScrollFrames with LTR directionality, and allows scrolling down and
+   * to the left for nsHTMLScrollFrames with RTL directionality.
    */
   virtual nsRect GetScrolledRect() const = 0;
   /**
@@ -170,7 +169,11 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    */
   virtual nsPoint GetScrollPosition() const = 0;
   /**
-   * As GetScrollPosition(), but uses the top-right as origin for RTL frames.
+   * For LTR frames, the logical scroll position is the offset of the top left
+   * corner of the frame from the top left corner of the scroll port (same as
+   * GetScrollPosition).
+   * For RTL frames, it is the offset of the top right corner of the frame from
+   * the top right corner of the scroll port.
    */
   virtual nsPoint GetLogicalScrollPosition() const = 0;
 
@@ -262,21 +265,21 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * aScrollPosition.x/y is different from the current CSS pixel position,
    * makes sure we only move in the direction given by the difference.
    *
-   * When aMode is SMOOTH, INSTANT, or NORMAL, GetScrollPositionCSSPixels (the
-   * scroll position after rounding to CSS pixels) will be exactly
+   * When aMode is SMOOTH, INSTANT, or NORMAL, GetRoundedScrollPositionCSSPixels
+   * (the scroll position after rounding to CSS pixels) will be exactly
    * aScrollPosition at the end of the scroll animation.
    *
    * When aMode is SMOOTH_MSD, intermediate animation frames may be outside the
-   * range and / or moving in any direction; GetScrollPositionCSSPixels will be
-   * exactly aScrollPosition at the end of the scroll animation unless the
-   * SMOOTH_MSD animation is interrupted.
+   * range and / or moving in any direction; GetRoundedScrollPositionCSSPixels
+   * will be exactly aScrollPosition at the end of the scroll animation unless
+   * the SMOOTH_MSD animation is interrupted.
    */
   virtual void ScrollToCSSPixels(const CSSIntPoint& aScrollPosition,
                                  ScrollMode aMode = ScrollMode::Instant) = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Scrolls to a particular position in float CSS pixels.
-   * This does not guarantee that GetScrollPositionCSSPixels equals
+   * This does not guarantee that GetRoundedScrollPositionCSSPixels equals
    * aScrollPosition afterward. It tries to scroll as close to
    * aScrollPosition as possible while scrolling by an integer
    * number of layer pixels (so the operation is fast and looks clean).
@@ -289,7 +292,7 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * Returns the scroll position in integer CSS pixels, rounded to the nearest
    * pixel.
    */
-  virtual CSSIntPoint GetScrollPositionCSSPixels() = 0;
+  virtual CSSIntPoint GetRoundedScrollPositionCSSPixels() = 0;
   /**
    * @note This method might destroy the frame, pres shell and other objects.
    * Modifies the current scroll position by aDelta units given by aUnit,

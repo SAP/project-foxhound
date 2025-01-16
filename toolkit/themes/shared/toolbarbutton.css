@@ -15,17 +15,6 @@ toolbarbutton {
     padding-inline: 2px;
   }
 
-  &:where([disabled="true"]) {
-    color: GrayText;
-    text-shadow: none;
-  }
-
-  @media not (prefers-contrast) {
-    :root[lwtheme-image] & {
-      text-shadow: none;
-    }
-  }
-
   @media (-moz-platform: windows) {
     &:focus-visible {
       outline: var(--default-focusring);
@@ -37,13 +26,14 @@ toolbarbutton {
     &:where(:hover) {
       color: -moz-buttonhovertext;
     }
-    &:where(
-      [checked="true"],
-      :hover:active:not([disabled="true"]),
-      [open="true"]
-    ) {
+    &:where([checked="true"], :hover:active, [open="true"]) {
       color: ButtonText;
     }
+  }
+
+  &:where([disabled="true"]) {
+    color: GrayText;
+    text-shadow: none;
   }
 }
 
