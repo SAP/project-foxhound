@@ -6,6 +6,8 @@
 
 #include "vm/PropMap-inl.h"
 
+#include "mozilla/Sprintf.h"
+
 #include "gc/HashUtil.h"
 #include "js/GCVector.h"
 #include "js/Printer.h"  // js::GenericPrinter, js::Fprinter
@@ -1030,7 +1032,7 @@ bool LinkedPropMap::createTable(JSContext* cx) {
   return true;
 }
 
-#if defined(DEBUG) || defined(JS_JITSPEW)
+#if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 void PropMap::dump() const {
   Fprinter out(stderr);
   dump(out);
@@ -1243,7 +1245,7 @@ JS::UniqueChars PropMap::getPropertyNameAt(uint32_t index) const {
 
   return sp.release();
 }
-#endif  // defined(DEBUG) || defined(JS_JITSPEW)
+#endif  // defined(DEBUG) || defined(JS_JITSPEW)|| defined(JS_TAINTSPEW)
 
 #ifdef DEBUG
 void PropMap::checkConsistency(NativeObject* obj) const {

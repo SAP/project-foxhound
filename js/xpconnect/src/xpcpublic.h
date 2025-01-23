@@ -430,6 +430,7 @@ class XPCStringConvert {
         //       nsStringBuffer::FromData takes void*.
         AssignFromStringBuffer(
             nsStringBuffer::FromData(const_cast<DestCharT*>(chars)), len, dest);
+        dest.AssignTaint(JS_GetStringTaint(s));
         return true;
       }
     } else if (callbacks == &sLiteralExternalString) {
@@ -442,6 +443,7 @@ class XPCStringConvert {
       // The characters represent a literal string constant
       // compiled into libxul; we can just use it as-is.
       dest.AssignLiteral(chars, len);
+      dest.AssignTaint(JS_GetStringTaint(s));
       return true;
     }
 

@@ -1,0 +1,65 @@
+<!DOCTYPE HTML>
+ <html>
+   <head>
+     <meta charset="utf-8">
+     <title>Test HTML Message Port Taint Sink</title>
+     <script src="/tests/SimpleTest/SimpleTest.js"></script>
+     <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+     <script>
+      class SessionStorageManager {
+        constructor(storageKey) {
+            this.storageKey = storageKey;
+            this.storage = window.sessionStorage;
+            this.items = [];
+        }
+
+        get(key, factory) {
+            const newItem = factory(key);
+            this.items.push(newItem);
+            return newItem;
+        }
+
+        set() {
+            if (this.storage) {
+                var jsonString = JSON.stringify(this.items);
+                var encoded2=btoa(jsonString);
+                this.storage.setItem(this.storageKey, encoded2);
+                this.storage.setItem(this.storageKey, jsonString);
+            }
+        }
+      }
+
+      let string_content = "hello";
+      let number_of_tainted_flows = 4;
+      let i = 0;
+
+      SimpleTest.waitForExplicitFinish();
+      addEventListener("__taintreport", (report) => {
+          is(report.detail.str, string_content, "Check sink string content");
+          i += 1;
+          if (i >= number_of_tainted_flows) {
+            SimpleTest.finish();
+          }
+      }, false);
+
+      let taint_string = String.tainted(string_content);
+      const storageManager = new SessionStorageManager('myAppData');
+      function itemFactory(key) {
+          return { key, data: "thing" };
+      }
+
+      const item1 = storageManager.get('item1', itemFactory);
+      item1.data=[taint_string]
+      storageManager.set();
+      const item2 = storageManager.get('item2', itemFactory);
+      item2.data=[taint_string]
+      storageManager.set();
+     </script>
+   </head>
+   <body>
+     <p id="display"></p>
+     <div id="content" style="display: none"></div>
+     <p id="test"></p>
+     <button id="btn"></button>
+   </body>
+ </html>
