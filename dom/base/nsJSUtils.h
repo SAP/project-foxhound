@@ -171,6 +171,7 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 
   MOZ_ASSERT(read == JS::GetStringLength(s));
   handle.Finish(written, kAllowShrinking);
+  dest.AssignTaint(JS_GetStringTaint(s));
   return true;
 }
 
