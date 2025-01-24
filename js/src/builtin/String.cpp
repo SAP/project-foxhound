@@ -125,6 +125,8 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
 
 static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp);
 
+static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp);
+
 /*
  * Global string methods
  */
@@ -734,6 +736,7 @@ static const JSFunctionSpec string_functions[] = {
     JS_FN("decodeURIComponent", str_decodeURI_Component, 1, JSPROP_RESOLVING),
     JS_FN("encodeURIComponent", str_encodeURI_Component, 1, JSPROP_RESOLVING),
     JS_FN("foxhound", str_foxhound, 1, JSPROP_RESOLVING),
+    JS_FN("foxhound_sink", foxhound_sink, 2, JSPROP_RESOLVING),
     JS_FS_END,
 };
 
@@ -5333,6 +5336,25 @@ JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
     return NewStringCopyN<CanGC>(cx, chars, length);
   }
   return sb.finishString();
+}
+
+static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "foxhound_sink");
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedString str(cx, ArgToLinearString(cx, args, 0));
+  if (!str) {
+    return false;
+  }
+
+  RootedString sink(cx, ArgToLinearString(cx, args, 1));
+  if (!sink) {
+    return false;
+  }
+  UniqueChars sinkchars = JS_EncodeStringToUTF8(cx, sink);
+  JS_ReportTaintSink(cx, str, sinkchars.get());
+
+  args.rval().setUndefined();
+  return true;
 }
 
 static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp) {
