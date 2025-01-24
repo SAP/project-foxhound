@@ -141,9 +141,17 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   if (!str || str->length() == 0)
     return false;
 
+  std::string source("manual taint source");
+  if(args.length() >= 2 && args.hasDefined(1)) {
+    RootedString src_str(cx, ArgToLinearString(cx, args, 1));
+    if (src_str && src_str->length() > 0) {
+      UniqueChars src = JS_EncodeStringToUTF8(cx, src_str);
+      source = std::string(src.get());
+    }
+  }
   // We store the string as argument for a manual taint operation. This way it's easy to see what
   // the original value of a manually tainted string was for debugging/testing.
-  TaintOperation op = TaintOperation("manual taint source", true, TaintLocationFromContext(cx), { taintarg(cx, str) });
+  TaintOperation op = TaintOperation(source.c_str(), true, TaintLocationFromContext(cx), { taintarg(cx, str) });
   op.setSource();
   SafeStringTaint taint(0, str->length(), op);
 
