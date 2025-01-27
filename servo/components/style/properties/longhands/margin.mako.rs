@@ -4,7 +4,6 @@
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 <% from data import ALL_SIDES, DEFAULT_RULES_AND_PAGE, maybe_moz_logical_alias %>
-<% data.new_style_struct("Margin", inherited=False) %>
 
 % for side in ALL_SIDES:
     <%
@@ -16,7 +15,7 @@
         "margin-%s" % side[0],
         "LengthPercentageOrAuto",
         "computed::LengthPercentageOrAuto::zero()",
-        engines="gecko servo-2013 servo-2020",
+        engines="gecko servo",
         aliases=maybe_moz_logical_alias(engine, side, "-moz-margin-%s"),
         allow_quirks="No" if side[1] else "Yes",
         animation_value_type="ComputedValue",

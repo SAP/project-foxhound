@@ -89,7 +89,7 @@ XULStore.prototype = {
     this.readFile();
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     this.writeFile();
     if (topic == "profile-before-change") {
       this._saveAllowed = false;
@@ -153,7 +153,7 @@ XULStore.prototype = {
     }
 
     const uri = node.ownerDocument.documentURI;
-    const value = node.getAttribute(attr);
+    const value = node.getAttribute(attr) || "";
 
     if (node.localName == "window") {
       this.log("Persisting attributes to windows is handled by AppWindow.");

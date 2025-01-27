@@ -126,15 +126,17 @@
   border-color: color-mix(in srgb, currentColor 20%, transparent);
 }
 
-#urlbar-input:-moz-lwtheme::selection,
-.searchbar-textbox:-moz-lwtheme::selection {
-  background-color: var(--lwt-toolbar-field-highlight, Highlight);
-  color: var(--lwt-toolbar-field-highlight-text, HighlightText);
-}
+:root[lwtheme] {
+  #urlbar-input::selection,
+  .searchbar-textbox::selection {
+    background-color: var(--lwt-toolbar-field-highlight, Highlight);
+    color: var(--lwt-toolbar-field-highlight-text, HighlightText);
+  }
 
-#urlbar-input:not(:focus):-moz-lwtheme::selection,
-.searchbar-textbox:not(:focus-within):-moz-lwtheme::selection {
-  background-color: var(--lwt-toolbar-field-highlight, text-select-disabled-background);
+  #urlbar-input:not(:focus)::selection,
+  .searchbar-textbox:not(:focus-within)::selection {
+    background-color: var(--lwt-toolbar-field-highlight, text-select-disabled-background);
+  }
 }
 
 #urlbar:not([focused="true"]) {
@@ -193,13 +195,11 @@
   position: absolute;
   width: 100%;
   height: var(--urlbar-height);
-  top: calc((var(--urlbar-toolbar-height) - var(--urlbar-height)) / 2);
-  left: 0;
-}
 
-#urlbar[breakout] > #urlbar-input-container {
-  width: 100%;
-  height: 100%;
+  > #urlbar-input-container {
+    width: 100%;
+    height: 100%;
+  }
 }
 
 #urlbar:not([open]) > .urlbarView,
@@ -219,12 +219,12 @@
   top: 0;
   left: calc(-1 * var(--urlbar-margin-inline));
   width: calc(100% + 2 * var(--urlbar-margin-inline));
-}
 
-#urlbar[breakout][breakout-extend] > #urlbar-input-container {
-  height: var(--urlbar-toolbar-height);
-  padding-block: calc((var(--urlbar-toolbar-height) - var(--urlbar-height)) / 2 + var(--urlbar-container-padding));
-  padding-inline: calc(var(--urlbar-margin-inline) + var(--urlbar-container-padding));
+  > #urlbar-input-container {
+    height: var(--urlbar-container-height);
+    padding-block: calc((var(--urlbar-container-height) - var(--urlbar-height)) / 2 + var(--urlbar-container-padding));
+    padding-inline: calc(var(--urlbar-margin-inline) + var(--urlbar-container-padding));
+  }
 }
 
 #urlbar.searchButton[breakout][breakout-extend] > #urlbar-input-container > #urlbar-search-button {
@@ -376,7 +376,7 @@
 
   /* As above, but for the default theme in dark mode, which suffers from the same issue */
   @media (prefers-color-scheme: dark) {
-    &:not(:-moz-lwtheme) {
+    :root:not([lwtheme]) & {
       filter: grayscale(100%) brightness(20%) invert();
     }
   }
@@ -791,7 +791,7 @@
   margin: var(--arrowpanel-menuitem-margin);
   width: auto;
 
-  & > #searchbar:-moz-lwtheme {
+  :root[lwtheme] & > #searchbar {
     /* Theme authors usually only consider contrast against the toolbar when
        picking a border color for the search bar. Since the search bar can be
        dragged into the overflow panel, we need to show a high-contrast border

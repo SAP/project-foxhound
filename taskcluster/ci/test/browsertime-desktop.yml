@@ -16,8 +16,6 @@ job-defaults:
         by-app:
             chrome:
                 - .*shippable.*
-            chromium:
-                - .*shippable.*
             safari:
                 - .*macos.*shippable.*
             custom-car:
@@ -84,8 +82,6 @@ browsertime-tp6:
             by-app:
                 chrome:
                     - .*shippable.*
-                chromium:
-                    - .*shippable.*
                 safari:
                     - .*macos.*shippable.*
                 custom-car:
@@ -99,11 +95,6 @@ browsertime-tp6:
             extra-options:
                 by-test-platform:
                     windows10-64.*shippable.*-qr.*:
-                        - --chimera
-                        - --browsertime-no-ffwindowrecorder
-                        - --conditioned-profile=settled
-                        - --extra-profiler-run
-                    macosx1015.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -184,11 +175,6 @@ browsertime-responsiveness:
                     - --browsertime-no-ffwindowrecorder
                     - --conditioned-profile=settled
                     - --extra-profiler-run
-                macosx1015.*:
-                    - --cold
-                    - --browsertime-no-ffwindowrecorder
-                    - --conditioned-profile=settled
-                    - --extra-profiler-run
                 default:
                     - --cold
                     - --conditioned-profile=settled
@@ -217,11 +203,6 @@ browsertime-tp6-essential:
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
                         - --collect-perfstats
-                        - --extra-profiler-run
-                    macosx1015.*:
-                        - --chimera
-                        - --browsertime-no-ffwindowrecorder
-                        - --conditioned-profile=settled
                         - --extra-profiler-run
                     default:
                         - --chimera
@@ -298,13 +279,6 @@ browsertime-tp6-bytecode:
                     - --conditioned-profile=settled
                     - --test-bytecode-cache
                     - --extra-profiler-run
-                macosx1015.*:
-                    - --chimera
-                    - --browsertime
-                    - --browsertime-no-ffwindowrecorder
-                    - --conditioned-profile=settled
-                    - --test-bytecode-cache
-                    - --extra-profiler-run
                 default:
                     - --chimera
                     - --browsertime
@@ -316,6 +290,51 @@ browsertime-tp6-bytecode:
             firefox: 2
             default: 3
     treeherder-symbol: Btime-cache(tp6)
+
+browsertime-tp7:
+    <<: &tp7-defaults
+        description: Raptor (browsertime) tp7 page-load tests
+        limit-platforms:
+            by-app:
+                chrome:
+                    - .*shippable.*
+                safari:
+                    - .*macos.*shippable.*
+                custom-car:
+                    - .*64.*shippable.*
+                default: []
+        max-run-time:
+            by-subtest:
+                imgur: 4800
+                default: 4000
+        mozharness:
+            extra-options:
+                by-test-platform:
+                    windows10-64.*shippable.*-qr.*:
+                        - --chimera
+                        - --browsertime-no-ffwindowrecorder
+                        - --conditioned-profile=settled
+                        - --extra-profiler-run
+                    default:
+                        - --chimera
+                        - --conditioned-profile=settled
+                        - --extra-profiler-run
+        run-on-projects: []
+        treeherder-symbol: Btime(tp7)
+    raptor:
+        apps: [firefox, chrome]
+        test: tp7
+        run-visual-metrics: true
+        subtests:
+            - tiktok
+            - openai
+            - samsung
+            - weather
+            - docomo
+    tier:
+        by-app:
+            firefox: 3
+            default: 3
 
 browsertime-benchmark:
     description: Raptor (browsertime) Benchmark tests
@@ -363,7 +382,7 @@ browsertime-benchmark:
                             # - [speedometer3, sp3] Perma fails on osx 10.15.x machines (Bug 1809535)
                             - [stylebench, sb]
                             - [sunspider, ss]
-                            - [unity-webgl, ugl]
+                            # - [unity-webgl, ugl] Almost Perma failing on osx 10.15.x machines (Bug 1888398)
                             - [webaudio, wa]
                         custom-car:
                             - [speedometer, sp]
@@ -901,11 +920,6 @@ browsertime-tp6-webextensions:
                     - --browsertime
                     - --browsertime-no-ffwindowrecorder
                     - --conditioned-profile=settled-webext
-                macosx1015.*:
-                    - --chimera
-                    - --browsertime-no-ffwindowrecorder
-                    - --conditioned-profile=settled
-                    - --extra-profiler-run
                 default:
                     - --chimera
                     - --browsertime
@@ -922,13 +936,11 @@ browsertime-indexeddb:
         by-app:
             chrome:
                 - .*shippable.*
-            chromium:
-                - .*shippable.*
             custom-car:
                 - .*64.*shippable.*
             default: []
     raptor:
-        apps: [firefox, chrome, chromium]
+        apps: [firefox, chrome]
         run-visual-metrics: false
         subtests:
             - addMab1

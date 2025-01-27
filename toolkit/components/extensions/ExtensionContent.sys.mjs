@@ -7,6 +7,7 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -39,8 +40,10 @@ const ScriptError = Components.Constructor(
 );
 
 import {
+  ChildAPIManager,
   ExtensionChild,
   ExtensionActivityLogChild,
+  Messenger,
 } from "resource://gre/modules/ExtensionChild.sys.mjs";
 import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
@@ -62,8 +65,6 @@ const {
   redefineGetter,
   runSafeSyncWithoutClone,
 } = ExtensionCommon;
-
-const { BrowserExtensionContent, ChildAPIManager, Messenger } = ExtensionChild;
 
 ChromeUtils.defineLazyGetter(lazy, "isContentScriptProcess", () => {
   return (
@@ -164,6 +165,7 @@ class ScriptCache extends CacheMap {
     super(
       SCRIPT_EXPIRY_TIMEOUT_MS,
       url => {
+        /** @type {Promise<PrecompiledScript> & { script?: PrecompiledScript }} */
         let promise = ChromeUtils.compileScript(url, options);
         promise.then(script => {
           promise.script = script;
@@ -282,49 +284,37 @@ class CSSCodeCache extends BaseCSSCache {
   }
 }
 
-defineLazyGetter(
-  BrowserExtensionContent.prototype,
-  "staticScripts",
-  function () {
-    return new ScriptCache({ hasReturnValue: false }, this);
-  }
-);
+defineLazyGetter(ExtensionChild.prototype, "staticScripts", function () {
+  return new ScriptCache({ hasReturnValue: false }, this);
+});
 
-defineLazyGetter(
-  BrowserExtensionContent.prototype,
-  "dynamicScripts",
-  function () {
-    return new ScriptCache({ hasReturnValue: true }, this);
-  }
-);
+defineLazyGetter(ExtensionChild.prototype, "dynamicScripts", function () {
+  return new ScriptCache({ hasReturnValue: true }, this);
+});
 
-defineLazyGetter(BrowserExtensionContent.prototype, "userCSS", function () {
+defineLazyGetter(ExtensionChild.prototype, "userCSS", function () {
   return new CSSCache(Ci.nsIStyleSheetService.USER_SHEET, this);
 });
 
-defineLazyGetter(BrowserExtensionContent.prototype, "authorCSS", function () {
+defineLazyGetter(ExtensionChild.prototype, "authorCSS", function () {
   return new CSSCache(Ci.nsIStyleSheetService.AUTHOR_SHEET, this);
 });
 
 // These two caches are similar to the above but specialized to cache the cssCode
 // using an hash computed from the cssCode string as the key (instead of the generated data
 // URI which can be pretty long for bigger injected cssCode).
-defineLazyGetter(BrowserExtensionContent.prototype, "userCSSCode", function () {
+defineLazyGetter(ExtensionChild.prototype, "userCSSCode", function () {
   return new CSSCodeCache(Ci.nsIStyleSheetService.USER_SHEET, this);
 });
 
-defineLazyGetter(
-  BrowserExtensionContent.prototype,
-  "authorCSSCode",
-  function () {
-    return new CSSCodeCache(Ci.nsIStyleSheetService.AUTHOR_SHEET, this);
-  }
-);
+defineLazyGetter(ExtensionChild.prototype, "authorCSSCode", function () {
+  return new CSSCodeCache(Ci.nsIStyleSheetService.AUTHOR_SHEET, this);
+});
 
 // Represents a content script.
 class Script {
   /**
-   * @param {BrowserExtensionContent} extension
+   * @param {ExtensionChild} extension
    * @param {WebExtensionContentScript|object} matcher
    *        An object with a "matchesWindowGlobal" method and content script
    *        execution details. This is usually a plain WebExtensionContentScript
@@ -611,7 +601,7 @@ class Script {
    * @param {ContentScriptContextChild} context
    *        The document to block the parsing on, if the scripts are not yet precompiled and cached.
    *
-   * @returns {Array<PreloadedScript> | Promise<Array<PreloadedScript>>}
+   * @returns {PrecompiledScript[] | Promise<PrecompiledScript[]>}
    *          Returns an array of preloaded scripts if they are already available, or a promise which
    *          resolves to the array of the preloaded scripts once they are precompiled and cached.
    */
@@ -667,7 +657,7 @@ class Script {
 // Represents a user script.
 class UserScript extends Script {
   /**
-   * @param {BrowserExtensionContent} extension
+   * @param {ExtensionChild} extension
    * @param {WebExtensionContentScript|object} matcher
    *        An object with a "matchesWindowGlobal" method and content script
    *        execution details.
@@ -1014,7 +1004,7 @@ class ContentScriptContextChild extends BaseContext {
 // Responsible for creating ExtensionContexts and injecting content
 // scripts into them when new documents are created.
 DocumentManager = {
-  // Map[windowId -> Map[ExtensionChild -> ContentScriptContextChild]]
+  /** @type {Map<number, Map<ExtensionChild, ContentScriptContextChild>>} */
   contexts: new Map(),
 
   initialized: false,
@@ -1115,8 +1105,6 @@ DocumentManager = {
 };
 
 export var ExtensionContent = {
-  BrowserExtensionContent,
-
   contentScripts,
 
   shutdownExtension(extension) {

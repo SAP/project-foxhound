@@ -494,7 +494,7 @@ load 1463940.html
 HTTP load 1464641.html
 load 1464737.html
 load 1466638.html
-pref(layout.css.motion-path-ray.enabled,true) asserts(1-1) load 1467519.html # bogus size
+asserts(1-1) load 1467519.html # bogus size
 load 1467688.html
 load 1467964.html
 load 1469354.html
@@ -547,7 +547,7 @@ load 1599532.html
 pref(layout.accessiblecaret.enabled,true) load 1606492.html
 load 1654315.html
 load 1676301-1.html
-pref(apz.mvm.force-enabled,false) pref(dom.meta-viewport.enabled,false) pref(apz.allow_zooming,false) pref(layout.dynamic-toolbar-max-height,100) load 1689371.html
+pref(dom.meta-viewport.enabled,false) pref(apz.allow_zooming,false) pref(layout.dynamic-toolbar-max-height,100) load 1689371.html
 load 1685146.html
 load 1689912.html
 load 1690163.html

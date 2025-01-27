@@ -1247,7 +1247,7 @@ NS_IMPL_ISUPPORTS(PageFaultsHardReporter, nsIMemoryReporter)
 #ifdef HAVE_JEMALLOC_STATS
 
 static size_t HeapOverhead(const jemalloc_stats_t& aStats) {
-  return aStats.waste + aStats.bookkeeping + aStats.page_cache +
+  return aStats.waste + aStats.bookkeeping + aStats.pages_dirty +
          aStats.bin_unused;
 }
 
@@ -1278,7 +1278,7 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
 
     // clang-format off
     MOZ_COLLECT_REPORT(
-      "heap-committed/allocated", KIND_OTHER, UNITS_BYTES, stats.allocated,
+      "heap/committed/allocated", KIND_OTHER, UNITS_BYTES, stats.allocated,
 "Memory mapped by the heap allocator that is currently allocated to the "
 "application.  This may exceed the amount of memory requested by the "
 "application because the allocator regularly rounds up request sizes. (The "
@@ -1286,14 +1286,14 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
 
     MOZ_COLLECT_REPORT(
       "heap-allocated", KIND_OTHER, UNITS_BYTES, stats.allocated,
-"The same as 'heap-committed/allocated'.");
+"The same as 'heap/committed/allocated'.");
 
-    // We mark this and the other heap-overhead reporters as KIND_NONHEAP
+    // We mark this and the other heap/committed/overhead reporters as KIND_NONHEAP
     // because KIND_HEAP memory means "counted in heap-allocated", which
     // this is not.
     for (auto& bin : bin_stats) {
       MOZ_ASSERT(bin.size);
-      nsPrintfCString path("explicit/heap-overhead/bin-unused/bin-%zu",
+      nsPrintfCString path("heap/committed/bin-unused/bin-%zu",
           bin.size);
       aHandleReport->Callback(EmptyCString(), path, KIND_NONHEAP, UNITS_BYTES,
         bin.bytes_unused,
@@ -1304,36 +1304,63 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
 
     if (stats.waste > 0) {
       MOZ_COLLECT_REPORT(
-        "explicit/heap-overhead/waste", KIND_NONHEAP, UNITS_BYTES,
+        "heap/committed/waste", KIND_NONHEAP, UNITS_BYTES,
         stats.waste,
 "Committed bytes which do not correspond to an active allocation and which the "
 "allocator is not intentionally keeping alive (i.e., not "
-"'explicit/heap-overhead/{bookkeeping,page-cache,bin-unused}').");
+"'heap/{bookkeeping,unused-pages,bin-unused}').");
     }
 
     MOZ_COLLECT_REPORT(
-      "explicit/heap-overhead/bookkeeping", KIND_NONHEAP, UNITS_BYTES,
+      "heap/committed/bookkeeping", KIND_NONHEAP, UNITS_BYTES,
       stats.bookkeeping,
 "Committed bytes which the heap allocator uses for internal data structures.");
 
     MOZ_COLLECT_REPORT(
-      "explicit/heap-overhead/page-cache", KIND_NONHEAP, UNITS_BYTES,
-      stats.page_cache,
+      "heap/committed/unused-pages/dirty", KIND_NONHEAP, UNITS_BYTES,
+      stats.pages_dirty,
 "Memory which the allocator could return to the operating system, but hasn't. "
 "The allocator keeps this memory around as an optimization, so it doesn't "
 "have to ask the OS the next time it needs to fulfill a request. This value "
 "is typically not larger than a few megabytes.");
 
     MOZ_COLLECT_REPORT(
-      "heap-committed/overhead", KIND_OTHER, UNITS_BYTES,
-      HeapOverhead(stats),
-"The sum of 'explicit/heap-overhead/*'.");
-
+      "heap/decommitted/unused-pages/fresh", KIND_OTHER, UNITS_BYTES, stats.pages_fresh,
+"Amount of memory currently mapped but has never been used.");
+    // A duplicate entry in the decommitted part of the tree.
     MOZ_COLLECT_REPORT(
-      "heap-mapped", KIND_OTHER, UNITS_BYTES, stats.mapped,
-"Amount of memory currently mapped. Includes memory that is uncommitted, i.e. "
-"neither in physical memory nor paged to disk.");
+      "decommitted/heap/unused-pages/fresh", KIND_OTHER, UNITS_BYTES, stats.pages_fresh,
+"Amount of memory currently mapped but has never been used.");
 
+// On MacOS madvised memory is still counted in the resident set until the OS
+// actually decommits it.
+#ifdef XP_MACOSX
+#define MADVISED_GROUP "committed"
+#else
+#define MADVISED_GROUP "decommitted"
+#endif
+    MOZ_COLLECT_REPORT(
+      "heap/" MADVISED_GROUP "/unused-pages/madvised", KIND_OTHER, UNITS_BYTES,
+      stats.pages_madvised,
+"Amount of memory currently mapped, not used and that the OS should remove "
+"from the application's resident set.");
+    // A duplicate entry in the decommitted part of the tree.
+    MOZ_COLLECT_REPORT(
+      "decommitted/heap/unused-pages/madvised", KIND_OTHER, UNITS_BYTES, stats.pages_madvised,
+"Amount of memory currently mapped, not used and that the OS should remove "
+"from the application's resident set.");
+
+    {
+      size_t decommitted = stats.mapped - stats.allocated - stats.waste - stats.pages_dirty - stats.pages_fresh - stats.bookkeeping - stats.bin_unused;
+      MOZ_COLLECT_REPORT(
+        "heap/decommitted/unmapped", KIND_OTHER, UNITS_BYTES, decommitted,
+  "Amount of memory currently mapped but not committed, "
+  "neither in physical memory nor paged to disk.");
+      MOZ_COLLECT_REPORT(
+        "decommitted/heap/decommitted", KIND_OTHER, UNITS_BYTES, decommitted,
+  "Amount of memory currently mapped but not committed, "
+  "neither in physical memory nor paged to disk.");
+    }
     MOZ_COLLECT_REPORT(
       "heap-chunksize", KIND_OTHER, UNITS_BYTES, stats.chunksize,
       "Size of chunks.");
@@ -1343,11 +1370,11 @@ class JemallocHeapReporter final : public nsIMemoryReporter {
     mozilla::phc::PHCMemoryUsage(usage);
 
     MOZ_COLLECT_REPORT(
-      "explicit/heap-overhead/phc/metadata", KIND_NONHEAP, UNITS_BYTES,
+      "explicit/phc/metadata", KIND_NONHEAP, UNITS_BYTES,
       usage.mMetadataBytes,
 "Memory used by PHC to store stacks and other metadata for each allocation");
     MOZ_COLLECT_REPORT(
-      "explicit/heap-overhead/phc/fragmentation", KIND_NONHEAP, UNITS_BYTES,
+      "explicit/phc/fragmentation", KIND_NONHEAP, UNITS_BYTES,
       usage.mFragmentationBytes,
 "The amount of memory lost due to rounding up allocations to the next page "
 "size. "

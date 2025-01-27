@@ -80,6 +80,8 @@ MSG_DEF(JSMSG_SPREAD_TOO_LARGE,        0, JSEXN_RANGEERR, "array too large due t
 MSG_DEF(JSMSG_BAD_WEAKMAP_KEY,         0, JSEXN_TYPEERR, "cannot use the given object as a weak map key")
 MSG_DEF(JSMSG_WEAKMAP_KEY_CANT_BE_HELD_WEAKLY, 1, JSEXN_TYPEERR, "WeakMap key {0} must be an object or an unregistered symbol")
 MSG_DEF(JSMSG_WEAKSET_VAL_CANT_BE_HELD_WEAKLY, 1, JSEXN_TYPEERR, "WeakSet value {0} must be an object or an unregistered symbol")
+MSG_DEF(JSMSG_WEAKMAP_KEY_MUST_BE_AN_OBJECT, 1, JSEXN_TYPEERR, "WeakMap key {0} must be an object")
+MSG_DEF(JSMSG_WEAKSET_VAL_MUST_BE_AN_OBJECT, 1, JSEXN_TYPEERR, "WeakSet value {0} must be an object")
 MSG_DEF(JSMSG_BAD_GETTER_OR_SETTER,    1, JSEXN_TYPEERR, "invalid {0} usage")
 MSG_DEF(JSMSG_BAD_ARRAY_LENGTH,        0, JSEXN_RANGEERR, "invalid array length")
 MSG_DEF(JSMSG_SOURCE_ARRAY_TOO_LONG,   0, JSEXN_RANGEERR, "source array is too long")
@@ -137,6 +139,9 @@ MSG_DEF(JSMSG_CONSTRUCTOR_DISABLED,    1, JSEXN_TYPEERR, "{0} is disabled")
 // JSON
 MSG_DEF(JSMSG_JSON_BAD_PARSE,          3, JSEXN_SYNTAXERR, "JSON.parse: {0} at line {1} column {2} of the JSON data")
 MSG_DEF(JSMSG_JSON_CYCLIC_VALUE,       0, JSEXN_TYPEERR, "cyclic object value")
+MSG_DEF(JSMSG_JSON_RAW_EMPTY,       0, JSEXN_SYNTAXERR, "JSON.rawJSON: argument cannot be empty when converted to string")
+MSG_DEF(JSMSG_JSON_RAW_ARRAY_OR_OBJECT,       0, JSEXN_SYNTAXERR, "JSON.rawJSON: outermost value must not be an array or object")
+MSG_DEF(JSMSG_JSON_RAW_WHITESPACE,       0, JSEXN_SYNTAXERR, "JSON.rawJSON: first or last character cannot be any of tab, line feed, carriage return, or space")
 
 // Runtime errors
 MSG_DEF(JSMSG_ASSIGN_TO_CALL,          0, JSEXN_REFERENCEERR, "cannot assign to function call")
@@ -669,6 +674,15 @@ MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_OFFSET_MISALIGNED, 2, JSEXN_RANGEERR, "buffe
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_OFFSET_LENGTH_BOUNDS, 1, JSEXN_RANGEERR, "size of buffer is too small for {0}Array with byteOffset")
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_ARRAY_LENGTH_BOUNDS, 1, JSEXN_RANGEERR, "attempting to construct out-of-bounds {0}Array on ArrayBuffer")
 MSG_DEF(JSMSG_TYPED_ARRAY_CONSTRUCT_TOO_LARGE, 1, JSEXN_RANGEERR, "{0}Array too large")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_HEX_STRING_LENGTH, 0, JSEXN_SYNTAXERR, "hex-string must have an even number of characters")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_HEX_DIGIT, 1, JSEXN_SYNTAXERR, "'{0}' is not a valid hex-digit")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_BASE64_ALPHABET, 0, JSEXN_TYPEERR, "\"alphabet\" option must be one of \"base64\" or \"base64url\"")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_BASE64_LAST_CHUNK_HANDLING, 0, JSEXN_TYPEERR, "\"lastChunkHandling\" option must be one of \"loose\", \"strict\", or \"stop-before-partial\"")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_BASE64_CHAR, 1, JSEXN_SYNTAXERR, "'{0}' is not a valid base64 character")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_INCOMPLETE_CHUNK, 0, JSEXN_SYNTAXERR, "unexpected incomplete base64 chunk")
+MSG_DEF(JSMSG_TYPED_ARRAY_BAD_BASE64_AFTER_PADDING, 1, JSEXN_SYNTAXERR, "unexpected '{0}' after base64 padding")
+MSG_DEF(JSMSG_TYPED_ARRAY_MISSING_BASE64_PADDING, 0, JSEXN_SYNTAXERR, "missing padding '=' character")
+MSG_DEF(JSMSG_TYPED_ARRAY_EXTRA_BASE64_BITS, 0, JSEXN_SYNTAXERR, "unexpected extra bits in last character")
 
 MSG_DEF(JSMSG_TYPED_ARRAY_CALL_OR_CONSTRUCT, 1, JSEXN_TYPEERR, "cannot directly {0} builtin %TypedArray%")
 MSG_DEF(JSMSG_NON_TYPED_ARRAY_RETURNED, 0, JSEXN_TYPEERR, "constructor didn't return TypedArray object")
@@ -714,10 +728,9 @@ MSG_DEF(JSMSG_CANT_DELETE_SUPER, 0, JSEXN_REFERENCEERR, "invalid delete involvin
 MSG_DEF(JSMSG_REINIT_THIS,       0, JSEXN_REFERENCEERR, "super() called twice in derived class constructor")
 
 // Modules
-MSG_DEF(JSMSG_MISSING_INDIRECT_EXPORT,      0, JSEXN_SYNTAXERR, "indirect export not found")
-MSG_DEF(JSMSG_AMBIGUOUS_INDIRECT_EXPORT,    0, JSEXN_SYNTAXERR, "ambiguous indirect export")
-MSG_DEF(JSMSG_MISSING_IMPORT,               0, JSEXN_SYNTAXERR, "import not found")
-MSG_DEF(JSMSG_AMBIGUOUS_IMPORT,             0, JSEXN_SYNTAXERR, "ambiguous import")
+MSG_DEF(JSMSG_MODULE_NO_EXPORT,             2, JSEXN_SYNTAXERR, "The requested module '{0}' doesn't provide an export named: '{1}'")
+MSG_DEF(JSMSG_MODULE_CIRCULAR_IMPORT,       2, JSEXN_SYNTAXERR, "The requested module '{0}' contains circular import: '{1}'")
+MSG_DEF(JSMSG_MODULE_AMBIGUOUS,             4, JSEXN_SYNTAXERR, "The requested module '{0}' contains ambiguous star export: '{1}' from '{2}' and '{3}'")
 MSG_DEF(JSMSG_MISSING_EXPORT,               1, JSEXN_SYNTAXERR, "local binding for export '{0}' not found")
 MSG_DEF(JSMSG_BAD_MODULE_STATUS,            1, JSEXN_INTERNALERR, "module record has unexpected status: {0}")
 MSG_DEF(JSMSG_DYNAMIC_IMPORT_FAILED,        1, JSEXN_TYPEERR, "error loading dynamically imported module: {0}")

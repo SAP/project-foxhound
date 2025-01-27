@@ -300,12 +300,10 @@ RefPtr<CubebHandle> GetCubeb() {
 
 // This is only exported when running tests.
 void ForceSetCubebContext(cubeb* aCubebContext) {
+  RefPtr<CubebHandle> oldHandle;  // For release without sMutex
   StaticMutexAutoLock lock(sMutex);
-  if (aCubebContext) {
-    sCubebHandle = new CubebHandle(aCubebContext);
-  } else {
-    sCubebHandle = nullptr;
-  }
+  oldHandle = sCubebHandle.forget();
+  sCubebHandle = aCubebContext ? new CubebHandle(aCubebContext) : nullptr;
   sCubebState = CubebState::Initialized;
 }
 
@@ -384,10 +382,33 @@ int CubebStreamInit(cubeb* context, cubeb_stream** stream,
   if (ms) {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   }
-  return cubeb_stream_init(context, stream, stream_name, input_device,
-                           input_stream_params, output_device,
-                           output_stream_params, latency_frames, data_callback,
-                           state_callback, user_ptr);
+  cubeb_stream_params inputParamData;
+  cubeb_stream_params outputParamData;
+  cubeb_stream_params* inputParamPtr = input_stream_params;
+  cubeb_stream_params* outputParamPtr = output_stream_params;
+  if (input_stream_params && !output_stream_params) {
+    inputParamData = *input_stream_params;
+    inputParamData.rate = llround(
+        static_cast<double>(StaticPrefs::media_cubeb_input_drift_factor()) *
+        inputParamData.rate);
+    MOZ_LOG(
+        gCubebLog, LogLevel::Info,
+        ("CubebStreamInit input stream rate %" PRIu32, inputParamData.rate));
+    inputParamPtr = &inputParamData;
+  } else if (output_stream_params && !input_stream_params) {
+    outputParamData = *output_stream_params;
+    outputParamData.rate = llround(
+        static_cast<double>(StaticPrefs::media_cubeb_output_drift_factor()) *
+        outputParamData.rate);
+    MOZ_LOG(
+        gCubebLog, LogLevel::Info,
+        ("CubebStreamInit output stream rate %" PRIu32, outputParamData.rate));
+    outputParamPtr = &outputParamData;
+  }
+
+  return cubeb_stream_init(
+      context, stream, stream_name, input_device, inputParamPtr, output_device,
+      outputParamPtr, latency_frames, data_callback, state_callback, user_ptr);
 }
 
 void InitBrandName() {
@@ -655,15 +676,20 @@ uint32_t GetCubebMTGLatencyInFrames(cubeb_stream_params* params) {
 }
 
 static const char* gInitCallbackPrefs[] = {
-    PREF_VOLUME_SCALE,           PREF_CUBEB_OUTPUT_DEVICE,
-    PREF_CUBEB_LATENCY_PLAYBACK, PREF_CUBEB_LATENCY_MTG,
-    PREF_CUBEB_BACKEND,          PREF_CUBEB_FORCE_NULL_CONTEXT,
-    PREF_CUBEB_SANDBOX,          PREF_AUDIOIPC_STACK_SIZE,
-    PREF_AUDIOIPC_SHM_AREA_SIZE, nullptr,
+    PREF_VOLUME_SCALE,
+    PREF_CUBEB_OUTPUT_DEVICE,
+    PREF_CUBEB_LATENCY_PLAYBACK,
+    PREF_CUBEB_LATENCY_MTG,
+    PREF_CUBEB_BACKEND,
+    PREF_CUBEB_FORCE_SAMPLE_RATE,
+    PREF_CUBEB_FORCE_NULL_CONTEXT,
+    PREF_CUBEB_SANDBOX,
+    PREF_AUDIOIPC_STACK_SIZE,
+    PREF_AUDIOIPC_SHM_AREA_SIZE,
+    nullptr,
 };
 
 static const char* gCallbackPrefs[] = {
-    PREF_CUBEB_FORCE_SAMPLE_RATE,
     // We don't want to call the callback on startup, because the pref is the
     // empty string by default ("", which means "logging disabled"). Because the
     // logging can be enabled via environment variables (MOZ_LOG="module:5"),

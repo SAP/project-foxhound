@@ -228,7 +228,6 @@ enum EventNameType {
   EventNameType_SVGSVG = 0x0008,      // the svg element
   EventNameType_SMIL = 0x0010,        // smil elements
   EventNameType_HTMLBodyOrFramesetOnly = 0x0020,
-  EventNameType_HTMLMarqueeOnly = 0x0040,
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
@@ -519,6 +518,13 @@ class nsContentUtils {
   }
 
   /**
+   * Returns the common flattened tree ancestor from the point of view of
+   * the selection system, if any, for two given content nodes.
+   */
+  static nsIContent* GetCommonFlattenedTreeAncestorForSelection(
+      nsIContent* aContent1, nsIContent* aContent2);
+
+  /**
    * Returns the common flattened tree ancestor from the point of view of the
    * style system, if any, for two given content nodes.
    */
@@ -784,6 +790,10 @@ class nsContentUtils {
    * Returns true if aChar is of class L*, N* or S* (for first-letter).
    */
   static bool IsAlphanumericOrSymbol(uint32_t aChar);
+  /**
+   * Returns true if aChar is a kind of hyphen.
+   */
+  static bool IsHyphen(uint32_t aChar);
 
   /*
    * Is the character an HTML whitespace character?

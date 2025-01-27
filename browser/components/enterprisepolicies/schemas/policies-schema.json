@@ -253,6 +253,12 @@
         "DenyUrlRegexList": {
           "type": "string"
         },
+        "AgentName": {
+          "type": "string"
+        },
+        "ClientSignature": {
+          "type": "string"
+        },
         "IsPerUser": {
           "type": "boolean"
         },
@@ -662,6 +668,9 @@
               "items": {
                 "type": "string"
               }
+            },
+            "temporarily_allow_weak_signatures": {
+              "type": "boolean"
             }
           }
         }
@@ -691,6 +700,9 @@
             "default_area": {
               "type": "string",
               "enum": ["navbar", "menupanel"]
+            },
+            "temporarily_allow_weak_signatures": {
+              "type": "boolean"
             }
           }
         }
@@ -1420,6 +1432,10 @@
         }
       },
       "required": ["Title", "URL"]
+    },
+
+    "TranslateEnabled": {
+      "type": "boolean"
     },
 
     "UserMessaging": {

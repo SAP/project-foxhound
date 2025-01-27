@@ -18,6 +18,7 @@
 #include "mozilla/Result.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/VideoEncoderBinding.h"
+#include "mozilla/dom/AudioEncoderBinding.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsStringFwd.h"
@@ -81,10 +82,8 @@ class EncoderTemplate : public DOMEventTargetHelper {
     RefPtr<ConfigTypeInternal> Config() { return mConfig; }
     nsCString ToString() const override {
       nsCString rv;
-      rv.AppendPrintf(
-          "ConfigureMessage(#%zu): %s", this->mMessageId,
-          mConfig ? NS_ConvertUTF16toUTF8(mConfig->ToString().get()).get()
-                  : "null cfg");
+      rv.AppendPrintf("ConfigureMessage(#%zu): %s", this->mMessageId,
+                      mConfig ? mConfig->ToString().get() : "null cfg");
       return rv;
     }
 
@@ -149,10 +148,14 @@ class EncoderTemplate : public DOMEventTargetHelper {
   void StartBlockingMessageQueue();
   void StopBlockingMessageQueue();
 
+  MOZ_CAN_RUN_SCRIPT
+  void OutputEncodedData(const nsTArray<RefPtr<MediaRawData>>&& aData);
+
   CodecState State() const { return mState; };
 
   uint32_t EncodeQueueSize() const { return mEncodeQueueSize; };
 
+  MOZ_CAN_RUN_SCRIPT
   void Configure(const ConfigType& aConfig, ErrorResult& aRv);
 
   void EncodeAudioData(InputType& aInput, ErrorResult& aRv);
@@ -170,10 +173,13 @@ class EncoderTemplate : public DOMEventTargetHelper {
   /* Type conversion functions for the Encoder implementation */
  protected:
   virtual RefPtr<OutputType> EncodedDataToOutputType(
-      nsIGlobalObject* aGlobalObject, RefPtr<MediaRawData>& aData) = 0;
+      nsIGlobalObject* aGlobalObject, const RefPtr<MediaRawData>& aData) = 0;
   virtual OutputConfigType EncoderConfigToDecoderConfig(
       nsIGlobalObject* aGlobalObject, const RefPtr<MediaRawData>& aData,
       const ConfigTypeInternal& aOutputConfig) const = 0;
+  template <typename T, typename U>
+  void CopyExtradataToDescriptionIfNeeded(nsIGlobalObject* aGlobal,
+                                          const T& aConfigInternal, U& aConfig);
   /* Internal member variables and functions */
  protected:
   // EncoderTemplate can run on either main thread or worker thread.
@@ -182,21 +188,17 @@ class EncoderTemplate : public DOMEventTargetHelper {
   }
 
   Result<Ok, nsresult> ResetInternal(const nsresult& aResult);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  Result<Ok, nsresult> CloseInternal(const nsresult& aResult);
+  MOZ_CAN_RUN_SCRIPT
+  Result<Ok, nsresult> CloseInternalWithAbort();
+  MOZ_CAN_RUN_SCRIPT
+  void CloseInternal(const nsresult& aResult);
 
   MOZ_CAN_RUN_SCRIPT void ReportError(const nsresult& aResult);
-  MOZ_CAN_RUN_SCRIPT void OutputEncodedData(
-      nsTArray<RefPtr<MediaRawData>>&& aData);
 
-  class ErrorRunnable;
-  void ScheduleReportError(const nsresult& aResult);
-
-  class OutputRunnable;
-  void ScheduleOutputEncodedData(nsTArray<RefPtr<MediaRawData>>&& aData,
-                                 const nsACString& aLabel);
-
-  void ScheduleClose(const nsresult& aResult);
+  MOZ_CAN_RUN_SCRIPT void OutputEncodedVideoData(
+      const nsTArray<RefPtr<MediaRawData>>&& aData);
+  MOZ_CAN_RUN_SCRIPT void OutputEncodedAudioData(
+      const nsTArray<RefPtr<MediaRawData>>&& aData);
 
   void ScheduleDequeueEvent();
   nsresult FireEvent(nsAtom* aTypeWithOn, const nsAString& aEventType);
@@ -206,6 +208,9 @@ class EncoderTemplate : public DOMEventTargetHelper {
 
   void ProcessControlMessageQueue();
   void CancelPendingControlMessages(const nsresult& aResult);
+
+  template <typename Func>
+  void QueueATask(const char* aName, Func&& aSteps);
 
   MessageProcessedResult ProcessConfigureMessage(
       RefPtr<ConfigureMessage> aMessage);
@@ -244,14 +249,14 @@ class EncoderTemplate : public DOMEventTargetHelper {
   // used as the FlushMessage's Id.
   size_t mFlushCounter;
 
-  // EncoderAgent will be created the first time "configure" is being processed,
-  // and will be destroyed when "reset" is called. If another "configure" is
-  // called, either it's possible to reconfigure the underlying encoder without
-  // tearing eveyrthing down (e.g. a bitrate change), or it's not possible, and
-  // the current encoder will be destroyed and a new one create.
-  // In both cases, the encoder is implicitely flushed before the configuration
-  // change.
-  // See CanReconfigure on the {Audio,Video}EncoderConfigInternal
+  // EncoderAgent will be created the first time "configure" is being
+  // processed, and will be destroyed when "reset" is called. If another
+  // "configure" is called, either it's possible to reconfigure the underlying
+  // encoder without tearing everything down (e.g. a bitrate change), or it's
+  // not possible, and the current encoder will be destroyed and a new one
+  // create. In both cases, the encoder is implicitely flushed before the
+  // configuration change. See CanReconfigure on the
+  // {Audio,Video}EncoderConfigInternal
   RefPtr<EncoderAgent> mAgent;
   RefPtr<ConfigTypeInternal> mActiveConfig;
   // This is true when a configure call has just been processed, and it's
@@ -283,6 +288,7 @@ class EncoderTemplate : public DOMEventTargetHelper {
   // TODO: Use StrongWorkerRef instead if this is always used in the same
   // thread?
   RefPtr<ThreadSafeWorkerRef> mWorkerRef;
+  uint64_t mPacketsOutput = 0;
 };
 
 }  // namespace mozilla::dom

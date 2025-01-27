@@ -1,0 +1,25 @@
+{
+  "ui:order": [
+    "telemetryId",
+    "searchPageMatches",
+    "searchPageRegexp",
+    "queryParamNames",
+    "queryParamName",
+    "codeParamName",
+    "taggedCodes",
+    "expectedOrganicCodes",
+    "organicCodes",
+    "followOnParamNames",
+    "followOnCookies",
+    "ignoreLinkRegexps",
+    "extraAdServersRegexps",
+    "adServerAttributes",
+    "components",
+    "nonAdsLinkRegexps",
+    "nonAdsLinkQueryParamNames",
+    "shoppingTab",
+    "domainExtraction",
+    "isSPA",
+    "defaultPageQueryParam"
+  ]
+}

@@ -31,6 +31,17 @@
   --newtab-background-color: #F9F9FB;
 
   --fxview-card-header-font-weight: 500;
+
+  /* Make the attention dot color match the browser UI on Linux, and on HCM
+   * with a lightweight theme. */
+  &[lwtheme] {
+    --attention-dot-color: light-dark(#2ac3a2, #54ffbd);
+  }
+  @media (-moz-platform: linux) {
+    &:not([lwtheme]) {
+      --attention-dot-color: AccentColor;
+    }
+  }
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,7 +58,7 @@
   }
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   :root {
     --fxview-element-background-hover: ButtonText;
     --fxview-element-background-active: ButtonText;
@@ -56,6 +67,12 @@
     --newtab-primary-action-background: LinkText;
     --newtab-background-color: Canvas;
     --newtab-background-color-secondary: Canvas;
+  }
+}
+
+@media (prefers-contrast) {
+  :root {
+    --fxview-border: var(--border-color);
   }
 }
 

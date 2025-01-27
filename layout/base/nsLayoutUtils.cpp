@@ -717,12 +717,9 @@ bool nsLayoutUtils::AllowZoomingForDocument(
     return false;
   }
   // True if we allow zooming for all documents on this platform, or if we are
-  // in RDM and handling meta viewports, which force zoom under some
-  // circumstances.
-  BrowsingContext* bc = aDocument ? aDocument->GetBrowsingContext() : nullptr;
-  return StaticPrefs::apz_allow_zooming() ||
-         (bc && bc->InRDMPane() &&
-          nsLayoutUtils::ShouldHandleMetaViewport(aDocument));
+  // in RDM.
+  BrowsingContext* bc = aDocument->GetBrowsingContext();
+  return StaticPrefs::apz_allow_zooming() || (bc && bc->InRDMPane());
 }
 
 static bool HasVisibleAnonymousContents(Document* aDoc) {
@@ -4679,7 +4676,7 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
       horizontalAxis ? stylePos->mMaxWidth : stylePos->mMaxHeight;
 
   PhysicalAxis ourInlineAxis =
-      aFrame->GetWritingMode().PhysicalAxis(eLogicalAxisInline);
+      aFrame->GetWritingMode().PhysicalAxis(LogicalAxis::Inline);
   const bool isInlineAxis = aAxis == ourInlineAxis;
 
   auto resetIfKeywords = [](StyleSize& aSize, StyleSize& aMinSize,
@@ -4900,8 +4897,8 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
           // We are computing the size of |aFrame|, so we use the inline & block
           // dimensions of |aFrame|.
           result = ratio.ComputeRatioDependentSize(
-              isInlineAxis ? eLogicalAxisInline : eLogicalAxisBlock, childWM, h,
-              *contentBoxSizeToBoxSizingAdjust);
+              isInlineAxis ? LogicalAxis::Inline : LogicalAxis::Block, childWM,
+              h, *contentBoxSizeToBoxSizingAdjust);
           // We have get the inlineSizeForAspectRatio value, so we don't have to
           // recompute this again below.
           inlineSizeFromAspectRatio.emplace(result);
@@ -4913,8 +4910,8 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
              GetPercentBSize(styleMaxBSize, aFrame, horizontalAxis, h))) {
           h = std::max(0, h - bSizeTakenByBoxSizing);
           nscoord maxISize = ratio.ComputeRatioDependentSize(
-              isInlineAxis ? eLogicalAxisInline : eLogicalAxisBlock, childWM, h,
-              *contentBoxSizeToBoxSizingAdjust);
+              isInlineAxis ? LogicalAxis::Inline : LogicalAxis::Block, childWM,
+              h, *contentBoxSizeToBoxSizingAdjust);
           if (maxISize < result) {
             result = maxISize;
           }
@@ -4929,8 +4926,8 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
              GetPercentBSize(styleMinBSize, aFrame, horizontalAxis, h))) {
           h = std::max(0, h - bSizeTakenByBoxSizing);
           nscoord minISize = ratio.ComputeRatioDependentSize(
-              isInlineAxis ? eLogicalAxisInline : eLogicalAxisBlock, childWM, h,
-              *contentBoxSizeToBoxSizingAdjust);
+              isInlineAxis ? LogicalAxis::Inline : LogicalAxis::Block, childWM,
+              h, *contentBoxSizeToBoxSizingAdjust);
           if (minISize > result) {
             result = minISize;
           }
@@ -4993,9 +4990,9 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
           GetDefiniteSizeTakenByBoxSizing(boxSizingForAR, aFrame, !isInlineAxis,
                                           ignorePadding, aPercentageBasis);
       bSize -= bSizeTakenByBoxSizing;
-      inlineSizeFromAspectRatio.emplace(ar.ComputeRatioDependentSize(
-          LogicalAxis::eLogicalAxisInline, childWM, bSize,
-          *contentBoxSizeToBoxSizingAdjust));
+      inlineSizeFromAspectRatio.emplace(
+          ar.ComputeRatioDependentSize(LogicalAxis::Inline, childWM, bSize,
+                                       *contentBoxSizeToBoxSizingAdjust));
     }
   }
 
@@ -5030,7 +5027,7 @@ nscoord nsLayoutUtils::IntrinsicForContainer(gfxContext* aRenderingContext,
   MOZ_ASSERT(aFrame && aFrame->GetParent());
   // We want the size aFrame will contribute to its parent's inline-size.
   PhysicalAxis axis =
-      aFrame->GetParent()->GetWritingMode().PhysicalAxis(eLogicalAxisInline);
+      aFrame->GetParent()->GetWritingMode().PhysicalAxis(LogicalAxis::Inline);
   return IntrinsicForAxis(axis, aRenderingContext, aFrame, aType, Nothing(),
                           aFlags);
 }
@@ -5059,7 +5056,7 @@ nscoord nsLayoutUtils::MinSizeContributionForAxis(
   StyleMaxSize maxSize =
       aAxis == eAxisHorizontal ? stylePos->mMaxWidth : stylePos->mMaxHeight;
   auto childWM = aFrame->GetWritingMode();
-  PhysicalAxis ourInlineAxis = childWM.PhysicalAxis(eLogicalAxisInline);
+  PhysicalAxis ourInlineAxis = childWM.PhysicalAxis(LogicalAxis::Inline);
   // According to the spec, max-content and min-content should behave as the
   // property's initial values in block axis.
   // It also make senses to use the initial values for -moz-fit-content and
@@ -5326,7 +5323,6 @@ nscoord nsLayoutUtils::MinISizeFromInline(nsIFrame* aFrame,
                "should not be container for font size inflation");
 
   nsIFrame::InlineMinISizeData data;
-  DISPLAY_MIN_INLINE_SIZE(aFrame, data.mPrevLines);
   aFrame->AddInlineMinISize(aRenderingContext, &data);
   data.ForceBreak();
   return data.mPrevLines;
@@ -5339,7 +5335,6 @@ nscoord nsLayoutUtils::PrefISizeFromInline(nsIFrame* aFrame,
                "should not be container for font size inflation");
 
   nsIFrame::InlinePrefISizeData data;
-  DISPLAY_PREF_INLINE_SIZE(aFrame, data.mPrevLines);
   aFrame->AddInlinePrefISize(aRenderingContext, &data);
   data.ForceBreak();
   return data.mPrevLines;
@@ -7452,7 +7447,7 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
 
 SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
     HTMLVideoElement* aElement, uint32_t aSurfaceFlags,
-    RefPtr<DrawTarget>& aTarget) {
+    RefPtr<DrawTarget>& aTarget, bool aOptimizeSourceSurface) {
   SurfaceFromElementResult result;
   result.mAlphaType = gfxAlphaType::Opaque;  // Assume opaque.
 
@@ -7487,7 +7482,7 @@ SurfaceFromElementResult nsLayoutUtils::SurfaceFromElement(
   result.mIsWriteOnly = CanvasUtils::CheckWriteOnlySecurity(
       result.mCORSUsed, result.mPrincipal, result.mHadCrossOriginRedirects);
 
-  if (aTarget) {
+  if (aTarget && aOptimizeSourceSurface) {
     // They gave us a DrawTarget to optimize for, so even though we have a
     // layers::Image, we should unconditionally try to grab a SourceSurface and
     // try to optimize it.
@@ -9772,24 +9767,8 @@ void nsLayoutUtils::ComputeSystemFont(nsFont* aSystemFont,
 
 /* static */
 bool nsLayoutUtils::ShouldHandleMetaViewport(const Document* aDocument) {
-  auto metaViewportOverride = nsIDocShell::META_VIEWPORT_OVERRIDE_NONE;
-  if (aDocument) {
-    if (nsIDocShell* docShell = aDocument->GetDocShell()) {
-      metaViewportOverride = docShell->GetMetaViewportOverride();
-    }
-  }
-  switch (metaViewportOverride) {
-    case nsIDocShell::META_VIEWPORT_OVERRIDE_ENABLED:
-      return true;
-    case nsIDocShell::META_VIEWPORT_OVERRIDE_DISABLED:
-      return false;
-    default:
-      MOZ_ASSERT(metaViewportOverride ==
-                 nsIDocShell::META_VIEWPORT_OVERRIDE_NONE);
-      // The META_VIEWPORT_OVERRIDE_NONE case means that there is no override
-      // and we rely solely on the StaticPrefs.
-      return StaticPrefs::dom_meta_viewport_enabled();
-  }
+  BrowsingContext* bc = aDocument->GetBrowsingContext();
+  return StaticPrefs::dom_meta_viewport_enabled() || (bc && bc->InRDMPane());
 }
 
 /* static */

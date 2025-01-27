@@ -724,7 +724,7 @@ class StyleRuleActor extends Actor {
       const cssText = await this.pageStyle.styleSheetsManager.getText(
         resourceId
       );
-      const { text } = getRuleText(cssText, this.line, this.column);
+      const text = getRuleText(cssText, this.line, this.column);
       // Cache the result on the rule actor to avoid parsing again next time
       this._failedToGetRuleText = false;
       this.authoredText = text;
@@ -823,19 +823,32 @@ class StyleRuleActor extends Actor {
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
           this._parentSheet
         );
-      let cssText = await this.pageStyle.styleSheetsManager.getText(resourceId);
 
-      const { offset, text } = getRuleText(cssText, this.line, this.column);
-      cssText =
-        cssText.substring(0, offset) +
-        newText +
-        cssText.substring(offset + text.length);
-
-      await this.pageStyle.styleSheetsManager.setStyleSheetText(
-        resourceId,
-        cssText,
-        { kind: UPDATE_PRESERVING_RULES }
+      const sheetText = await this.pageStyle.styleSheetsManager.getText(
+        resourceId
       );
+      const cssText = InspectorUtils.replaceBlockRuleBodyTextInStylesheet(
+        sheetText,
+        this.line,
+        this.column,
+        newText
+      );
+
+      if (typeof cssText !== "string") {
+        throw new Error(
+          "Error in InspectorUtils.replaceBlockRuleBodyTextInStylesheet"
+        );
+      }
+
+      // setStyleSheetText will parse the stylesheet which can be costly, so only do it
+      // if the text has actually changed.
+      if (sheetText !== newText) {
+        await this.pageStyle.styleSheetsManager.setStyleSheetText(
+          resourceId,
+          cssText,
+          { kind: UPDATE_PRESERVING_RULES }
+        );
+      }
     }
 
     this.authoredText = newText;

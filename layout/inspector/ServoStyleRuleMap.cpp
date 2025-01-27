@@ -86,7 +86,9 @@ void ServoStyleRuleMap::RuleRemoved(StyleSheet& aStyleSheet,
     case StyleCssRuleType::Supports:
     case StyleCssRuleType::LayerBlock:
     case StyleCssRuleType::Container:
-    case StyleCssRuleType::Document: {
+    case StyleCssRuleType::Document:
+    case StyleCssRuleType::Scope:
+    case StyleCssRuleType::StartingStyle: {
       // See the comment in SheetRemoved.
       mTable.Clear();
       break;
@@ -124,7 +126,9 @@ void ServoStyleRuleMap::FillTableFromRule(css::Rule& aRule) {
     case StyleCssRuleType::Media:
     case StyleCssRuleType::Supports:
     case StyleCssRuleType::Container:
-    case StyleCssRuleType::Document: {
+    case StyleCssRuleType::Document:
+    case StyleCssRuleType::Scope:
+    case StyleCssRuleType::StartingStyle: {
       auto& rule = static_cast<css::GroupRule&>(aRule);
       FillTableFromRuleList(*rule.CssRules());
       break;

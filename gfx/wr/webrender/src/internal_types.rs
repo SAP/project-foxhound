@@ -6,7 +6,6 @@ use api::{ColorF, DocumentId, ExternalImageId, PrimitiveFlags, Parameter, Render
 use api::{ImageFormat, NotificationRequest, Shadow, FilterOp, ImageBufferKind};
 use api::FramePublishId;
 use api::units::*;
-use api;
 use crate::render_api::DebugCommand;
 use crate::composite::NativeSurfaceOperation;
 use crate::device::TextureFilter;
@@ -692,7 +691,6 @@ impl ResourceUpdateList {
 /// Wraps a frame_builder::Frame, but conceptually could hold more information
 pub struct RenderedDocument {
     pub frame: Frame,
-    pub is_new_scene: bool,
     pub profile: TransactionProfile,
     pub render_reasons: RenderReasons,
     pub frame_stats: Option<FullFrameStats>

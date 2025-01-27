@@ -813,8 +813,6 @@ nscoord nsBlockFrame::GetMinISize(gfxContext* aRenderingContext) {
     return firstInFlow->GetMinISize(aRenderingContext);
   }
 
-  DISPLAY_MIN_INLINE_SIZE(this, mCachedMinISize);
-
   CheckIntrinsicCacheAgainstShrinkWrapState();
 
   if (mCachedMinISize != NS_INTRINSIC_ISIZE_UNKNOWN) {
@@ -901,8 +899,6 @@ nscoord nsBlockFrame::GetPrefISize(gfxContext* aRenderingContext) {
   if (firstInFlow != this) {
     return firstInFlow->GetPrefISize(aRenderingContext);
   }
-
-  DISPLAY_PREF_INLINE_SIZE(this, mCachedPrefISize);
 
   CheckIntrinsicCacheAgainstShrinkWrapState();
 
@@ -1348,7 +1344,6 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
 
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsBlockFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aMetrics, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
 #ifdef DEBUG
@@ -1453,14 +1448,18 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   // maintain when doing text-wrap: balance.
   struct BalanceTarget {
     // If line-clamp is in effect, mContent and mOffset indicate the starting
-    // position of the first line after the clamp limit. If line-clamp is not
-    // in use, mContent is null and mOffset is the total number of lines that
-    // the block must contain.
+    // position of the first line after the clamp limit, and mBlockCoord is the
+    // block-axis offset of its position.
+    // If line-clamp is not in use, mContent is null, mOffset is the total
+    // number of lines that the block must contain, and mBlockCoord is its end
+    // edge in the block direction.
     nsIContent* mContent = nullptr;
     int32_t mOffset = -1;
+    nscoord mBlockCoord = 0;
 
     bool operator==(const BalanceTarget& aOther) const {
-      return mContent == aOther.mContent && mOffset == aOther.mOffset;
+      return mContent == aOther.mContent && mOffset == aOther.mOffset &&
+             mBlockCoord == aOther.mBlockCoord;
     }
     bool operator!=(const BalanceTarget& aOther) const {
       return !(*this == aOther);
@@ -1506,7 +1505,7 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       auto* textFrame = static_cast<nsTextFrame*>(firstChild);
       offset = textFrame->GetContentOffset();
     }
-    return BalanceTarget{content, offset};
+    return BalanceTarget{content, offset, iter.get()->BStart()};
   };
 
   // "balancing" is implemented by shortening the effective inline-size of the
@@ -1545,6 +1544,7 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
         // no balancing is needed; just break from the balance loop.
         break;
       }
+      balanceTarget.mBlockCoord = mLines.back()->BEnd();
       // Initialize the amount of inset to try, and the iteration step size.
       balanceStep = aReflowInput.ComputedISize() / balanceTarget.mOffset;
       trialState.ResetForBalance(balanceStep);
@@ -1581,7 +1581,8 @@ void nsBlockFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
       }
       int32_t numLines =
           countLinesUpTo(StaticPrefs::layout_css_text_wrap_balance_limit());
-      return numLines == balanceTarget.mOffset;
+      return numLines == balanceTarget.mOffset &&
+             mLines.back()->BEnd() == balanceTarget.mBlockCoord;
     };
 
     // If we're in the process of a balance operation, check whether we've
@@ -2817,7 +2818,7 @@ void nsBlockFrame::PropagateFloatDamage(BlockReflowState& aState,
 
 static bool LineHasClear(nsLineBox* aLine) {
   return aLine->IsBlock()
-             ? (aLine->HasForcedLineBreakBefore() ||
+             ? (aLine->HasFloatClearTypeBefore() ||
                 aLine->mFirstChild->HasAnyStateBits(
                     NS_BLOCK_HAS_CLEAR_CHILDREN) ||
                 !nsBlockFrame::BlockCanIntersectFloats(aLine->mFirstChild))
@@ -2984,7 +2985,7 @@ bool nsBlockFrame::ReflowDirtyLines(BlockReflowState& aState) {
     // We have to reflow the line if it's a block whose clearance
     // might have changed, so detect that.
     if (!line->IsDirty() &&
-        (line->HasForcedLineBreakBefore() || floatAvoidingBlock)) {
+        (line->HasFloatClearTypeBefore() || floatAvoidingBlock)) {
       nscoord curBCoord = aState.mBCoord;
       // See where we would be after applying any clearance due to
       // BRs.
@@ -3934,9 +3935,9 @@ bool nsBlockFrame::IsSelfEmpty() {
   const nsStyleBorder* border = StyleBorder();
   const nsStylePadding* padding = StylePadding();
 
-  if (border->GetComputedBorderWidth(wm.PhysicalSide(eLogicalSideBStart)) !=
+  if (border->GetComputedBorderWidth(wm.PhysicalSide(LogicalSide::BStart)) !=
           0 ||
-      border->GetComputedBorderWidth(wm.PhysicalSide(eLogicalSideBEnd)) != 0 ||
+      border->GetComputedBorderWidth(wm.PhysicalSide(LogicalSide::BEnd)) != 0 ||
       !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetBStart(wm)) ||
       !nsLayoutUtils::IsPaddingZero(padding->mPadding.GetBEnd(wm))) {
     return false;
@@ -4051,7 +4052,7 @@ void nsBlockFrame::ReflowBlockFrame(BlockReflowState& aState,
   // Clear past floats before the block if the clear style is not none
   aLine->ClearForcedLineBreak();
   if (clearType != StyleClear::None) {
-    aLine->SetForcedLineBreakBefore(clearType);
+    aLine->SetFloatClearTypeBefore(clearType);
   }
 
   // See if we should apply the block-start margin. If the block frame being

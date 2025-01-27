@@ -1,6 +1,7 @@
 [DEFAULT]
 prefs = [
   "layout.css.basic-shape-rect.enabled=true",
+  "layout.css.basic-shape-shape.enabled=true",
   "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.properties-and-values.enabled=true",
   "layout.css.transition-behavior.enabled=true",
@@ -77,6 +78,8 @@ skip-if = ["os == 'android'"]
 ["test_parseStyleSheetImport.html"]
 
 ["test_parseStyleSheet_nested.html"]
+
+["test_replaceBlockRuleBodyTextInStylesheet.html"]
 
 ["test_rgba_to_color_name.html"]
 

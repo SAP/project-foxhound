@@ -744,22 +744,8 @@ LayoutDeviceIntRect LocalAccessible::Bounds() const {
 void LocalAccessible::SetSelected(bool aSelect) {
   if (!HasOwnContent()) return;
 
-  LocalAccessible* select = nsAccUtils::GetSelectableContainer(this, State());
-  if (select) {
-    if (select->State() & states::MULTISELECTABLE) {
-      if (mContent->IsElement() && ARIARoleMap()) {
-        if (aSelect) {
-          mContent->AsElement()->SetAttr(
-              kNameSpaceID_None, nsGkAtoms::aria_selected, u"true"_ns, true);
-        } else {
-          mContent->AsElement()->UnsetAttr(kNameSpaceID_None,
-                                           nsGkAtoms::aria_selected, true);
-        }
-      }
-      return;
-    }
-
-    if (aSelect) TakeFocus();
+  if (nsAccUtils::GetSelectableContainer(this, State()) && aSelect) {
+    TakeFocus();
   }
 }
 
@@ -1819,27 +1805,7 @@ double LocalAccessible::CurValue() const {
   return checkValue;
 }
 
-bool LocalAccessible::SetCurValue(double aValue) {
-  const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
-  if (!roleMapEntry || roleMapEntry->valueRule == eNoValue) return false;
-
-  const uint32_t kValueCannotChange = states::READONLY | states::UNAVAILABLE;
-  if (State() & kValueCannotChange) return false;
-
-  double checkValue = MinValue();
-  if (!std::isnan(checkValue) && aValue < checkValue) return false;
-
-  checkValue = MaxValue();
-  if (!std::isnan(checkValue) && aValue > checkValue) return false;
-
-  nsAutoString strValue;
-  strValue.AppendFloat(aValue);
-
-  if (!mContent->IsElement()) return true;
-
-  return NS_SUCCEEDED(mContent->AsElement()->SetAttr(
-      kNameSpaceID_None, nsGkAtoms::aria_valuenow, strValue, true));
-}
+bool LocalAccessible::SetCurValue(double aValue) { return false; }
 
 role LocalAccessible::FindNextValidARIARole(
     std::initializer_list<nsStaticAtom*> aRolesToSkip) const {
@@ -1925,6 +1891,16 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
       return roles::COMBOBOX_OPTION;
     }
 
+    // Orphaned option outside the context of a listbox.
+    const Accessible* listbox = FindAncestorIf([](const Accessible& aAcc) {
+      const role accRole = aAcc.Role();
+      return accRole == roles::LISTBOX    ? AncestorSearchOption::Found
+             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
+                                          : AncestorSearchOption::NotFound;
+    });
+    if (!listbox) {
+      return NativeRole();
+    }
   } else if (aRole == roles::MENUITEM) {
     // Menuitem has a submenu.
     if (mContent->IsElement() &&
@@ -1934,6 +1910,30 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
       return roles::PARENT_MENUITEM;
     }
 
+    // Orphaned menuitem outside the context of a menu/menubar.
+    const Accessible* menu = FindAncestorIf([](const Accessible& aAcc) {
+      const role accRole = aAcc.Role();
+      return (accRole == roles::MENUBAR || accRole == roles::MENUPOPUP)
+                 ? AncestorSearchOption::Found
+             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
+                                          : AncestorSearchOption::NotFound;
+    });
+    if (!menu) {
+      return NativeRole();
+    }
+  } else if (aRole == roles::RADIO_MENU_ITEM ||
+             aRole == roles::CHECK_MENU_ITEM) {
+    // Orphaned radio/checkbox menuitem outside the context of a menu/menubar.
+    const Accessible* menu = FindAncestorIf([](const Accessible& aAcc) {
+      const role accRole = aAcc.Role();
+      return (accRole == roles::MENUBAR || accRole == roles::MENUPOPUP)
+                 ? AncestorSearchOption::Found
+             : accRole == roles::GROUPING ? AncestorSearchOption::Continue
+                                          : AncestorSearchOption::NotFound;
+    });
+    if (!menu) {
+      return NativeRole();
+    }
   } else if (aRole == roles::CELL) {
     // A cell inside an ancestor table element that has a grid role needs a
     // gridcell role
@@ -1941,6 +1941,63 @@ role LocalAccessible::ARIATransformRole(role aRole) const {
     const LocalAccessible* table = nsAccUtils::TableFor(this);
     if (table && table->IsARIARole(nsGkAtoms::grid)) {
       return roles::GRID_CELL;
+    }
+  } else if (aRole == roles::ROW) {
+    // Orphaned rows outside the context of a table.
+    const LocalAccessible* table = nsAccUtils::TableFor(this);
+    if (!table) {
+      return NativeRole();
+    }
+  } else if (aRole == roles::ROWGROUP) {
+    // Orphaned rowgroups outside the context of a table.
+    const Accessible* table = FindAncestorIf([](const Accessible& aAcc) {
+      return aAcc.IsTable() ? AncestorSearchOption::Found
+                            : AncestorSearchOption::NotFound;
+    });
+    if (!table) {
+      return NativeRole();
+    }
+  } else if (aRole == roles::GRID_CELL || aRole == roles::ROWHEADER ||
+             aRole == roles::COLUMNHEADER) {
+    // Orphaned gridcell/rowheader/columnheader outside the context of a row.
+    const Accessible* row = FindAncestorIf([](const Accessible& aAcc) {
+      return aAcc.IsTableRow() ? AncestorSearchOption::Found
+                               : AncestorSearchOption::NotFound;
+    });
+    if (!row) {
+      return NativeRole();
+    }
+  } else if (aRole == roles::LISTITEM) {
+    // doc-biblioentry and doc-endnote should not be treated as listitems.
+    const nsRoleMapEntry* roleMapEntry = ARIARoleMap();
+    if (!roleMapEntry || (roleMapEntry->roleAtom != nsGkAtoms::docBiblioentry &&
+                          roleMapEntry->roleAtom != nsGkAtoms::docEndnote)) {
+      // Orphaned listitem outside the context of a list.
+      const Accessible* list = FindAncestorIf([](const Accessible& aAcc) {
+        return aAcc.IsList() ? AncestorSearchOption::Found
+                             : AncestorSearchOption::Continue;
+      });
+      if (!list) {
+        return NativeRole();
+      }
+    }
+  } else if (aRole == roles::PAGETAB) {
+    // Orphaned tab outside the context of a tablist.
+    const Accessible* tablist = FindAncestorIf([](const Accessible& aAcc) {
+      return aAcc.Role() == roles::PAGETABLIST ? AncestorSearchOption::Found
+                                               : AncestorSearchOption::NotFound;
+    });
+    if (!tablist) {
+      return NativeRole();
+    }
+  } else if (aRole == roles::OUTLINEITEM) {
+    // Orphaned treeitem outside the context of a tree.
+    const Accessible* tree = FindAncestorIf([](const Accessible& aAcc) {
+      return aAcc.Role() == roles::OUTLINE ? AncestorSearchOption::Found
+                                           : AncestorSearchOption::Continue;
+    });
+    if (!tree) {
+      return NativeRole();
     }
   }
 
@@ -2149,12 +2206,14 @@ Relation LocalAccessible::RelationByType(RelationType aType) const {
       if (roleMapEntry && (roleMapEntry->role == roles::OUTLINEITEM ||
                            roleMapEntry->role == roles::LISTITEM ||
                            roleMapEntry->role == roles::ROW)) {
-        Accessible* parent = const_cast<LocalAccessible*>(this)
-                                 ->GetOrCreateGroupInfo()
-                                 ->ConceptualParent();
-        if (parent) {
-          MOZ_ASSERT(parent->IsLocal());
-          rel.AppendTarget(parent->AsLocal());
+        AccGroupInfo* groupInfo =
+            const_cast<LocalAccessible*>(this)->GetOrCreateGroupInfo();
+        if (groupInfo) {
+          Accessible* parent = groupInfo->ConceptualParent();
+          if (parent) {
+            MOZ_ASSERT(parent->IsLocal());
+            rel.AppendTarget(parent->AsLocal());
+          }
         }
       }
 
@@ -2274,7 +2333,7 @@ Relation LocalAccessible::RelationByType(RelationType aType) const {
         }
         // If this node is an anchor element, query its hash to find the
         // target.
-        nsAutoString hash;
+        nsAutoCString hash;
         anchor->GetHash(hash);
         if (hash.IsEmpty()) {
           return rel;
@@ -2282,11 +2341,11 @@ Relation LocalAccessible::RelationByType(RelationType aType) const {
 
         // GetHash returns an ID or name with a leading '#', trim it so we can
         // search the doc by ID or name alone.
-        hash.Trim("#");
-        if (dom::Element* elm = mContent->OwnerDoc()->GetElementById(hash)) {
+        NS_ConvertUTF8toUTF16 hash16(Substring(hash, 1));
+        if (dom::Element* elm = mContent->OwnerDoc()->GetElementById(hash16)) {
           rel.AppendTarget(mDoc->GetAccessibleOrContainer(elm));
         } else if (nsCOMPtr<nsINodeList> list =
-                       mContent->OwnerDoc()->GetElementsByName(hash)) {
+                       mContent->OwnerDoc()->GetElementsByName(hash16)) {
           // Loop through the named nodes looking for the first anchor
           uint32_t length = list->Length();
           for (uint32_t i = 0; i < length; i++) {
@@ -3069,15 +3128,7 @@ LocalAccessible* LocalAccessible::CurrentItem() const {
   return nullptr;
 }
 
-void LocalAccessible::SetCurrentItem(const LocalAccessible* aItem) {
-  nsAtom* id = aItem->GetContent()->GetID();
-  if (id) {
-    nsAutoString idStr;
-    id->ToString(idStr);
-    mContent->AsElement()->SetAttr(
-        kNameSpaceID_None, nsGkAtoms::aria_activedescendant, idStr, true);
-  }
-}
+void LocalAccessible::SetCurrentItem(const LocalAccessible* aItem) {}
 
 LocalAccessible* LocalAccessible::ContainerWidget() const {
   if (HasARIARole() && mContent->HasID()) {

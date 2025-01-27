@@ -398,8 +398,7 @@ bool nsHTTPSOnlyUtils::ShouldUpgradeHttpsFirstRequest(nsIURI* aURI,
 
   // 4. Don't upgrade if upgraded previously or exempt from upgrades
   uint32_t httpsOnlyStatus = aLoadInfo->GetHttpsOnlyStatus();
-  if (httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST ||
-      httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_EXEMPT) {
+  if (httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_EXEMPT) {
     return false;
   }
 
@@ -617,6 +616,18 @@ nsHTTPSOnlyUtils::PotentiallyDowngradeHttpsFirstRequest(
         if (timing) {
           mozilla::glean::httpsfirst::downgrade_time.AccumulateRawDuration(
               duration);
+        }
+      }
+
+      nsresult channelStatus;
+      channel->GetStatus(&channelStatus);
+      if (channelStatus == NS_ERROR_NET_TIMEOUT_EXTERNAL) {
+        if (loadInfo->GetWasSchemelessInput() &&
+            !nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
+          mozilla::glean::httpsfirst::downgraded_on_timer_schemeless
+              .AddToNumerator();
+        } else {
+          mozilla::glean::httpsfirst::downgraded_on_timer.AddToNumerator();
         }
       }
     }
@@ -891,6 +902,13 @@ bool nsHTTPSOnlyUtils::IsEqualURIExceptSchemeAndRef(nsIURI* aHTTPSSchemeURI,
 
   return uriEquals;
 }
+
+/* static */
+uint32_t nsHTTPSOnlyUtils::GetStatusForSubresourceLoad(
+    uint32_t aHttpsOnlyStatus) {
+  return aHttpsOnlyStatus & ~nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST;
+}
+
 /////////////////////////////////////////////////////////////////////
 // Implementation of TestHTTPAnswerRunnable
 
@@ -992,19 +1010,6 @@ TestHTTPAnswerRunnable::OnStartRequest(nsIRequest* aRequest) {
       nsresult httpsOnlyChannelStatus;
       httpsOnlyChannel->GetStatus(&httpsOnlyChannelStatus);
       if (httpsOnlyChannelStatus == NS_OK) {
-        bool isPrivateWin =
-            loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-        if (!nsHTTPSOnlyUtils::IsHttpsOnlyModeEnabled(isPrivateWin)) {
-          // Record HTTPS-First Telemetry
-          if (loadInfo->GetWasSchemelessInput() &&
-              !nsHTTPSOnlyUtils::IsHttpsFirstModeEnabled(isPrivateWin)) {
-            mozilla::glean::httpsfirst::downgraded_on_timer_schemeless
-                .AddToNumerator();
-          } else {
-            mozilla::glean::httpsfirst::downgraded_on_timer.AddToNumerator();
-          }
-        }
-
         httpsOnlyChannel->Cancel(NS_ERROR_NET_TIMEOUT_EXTERNAL);
       }
     }

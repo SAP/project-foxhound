@@ -171,8 +171,8 @@ add_task(async function urlbar_context() {
   let contextMenu = document.getElementById("toolbar-context-menu");
   let shownPromise = popupShown(contextMenu);
   let urlBarContainer = document.getElementById("urlbar-container");
-  // Need to make sure not to click within an edit field.
-  EventUtils.synthesizeMouse(urlBarContainer, 100, 1, {
+  // This clicks in the urlbar container margin, to avoid hitting the urlbar field.
+  EventUtils.synthesizeMouse(urlBarContainer, -2, 4, {
     type: "contextmenu",
     button: 2,
   });
@@ -549,7 +549,7 @@ add_task(async function custom_context_menus() {
   await startCustomizing();
   is(
     widget.getAttribute("context"),
-    "",
+    null,
     "Should not have own context menu in the toolbar now that we're customizing."
   );
   is(
@@ -562,7 +562,7 @@ add_task(async function custom_context_menus() {
   simulateItemDrag(widget, panel);
   is(
     widget.getAttribute("context"),
-    "",
+    null,
     "Should not have own context menu when in the panel."
   );
   is(
@@ -577,7 +577,7 @@ add_task(async function custom_context_menus() {
   );
   is(
     widget.getAttribute("context"),
-    "",
+    null,
     "Should not have own context menu when back in toolbar because we're still customizing."
   );
   is(

@@ -146,6 +146,7 @@ file-whitespace:
         - python/mozperftest/perfdocs/running.rst
         - python/mozperftest/perfdocs/vision.rst
         - python/mozperftest/perfdocs/writing.rst
+
     extensions:
         - .c
         - .cc

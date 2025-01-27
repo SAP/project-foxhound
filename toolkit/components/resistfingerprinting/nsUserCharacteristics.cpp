@@ -1,25 +1,34 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "nsUserCharacteristics.h"
 
 #include "nsID.h"
 #include "nsIUUIDGenerator.h"
+#include "nsIUserCharacteristicsPageService.h"
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/Logging.h"
 #include "mozilla/glean/GleanPings.h"
 #include "mozilla/glean/GleanMetrics.h"
 
+#include "jsapi.h"
+#include "mozilla/Components.h"
+#include "mozilla/dom/Promise-inl.h"
+
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_general.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_widget.h"
 
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/PreferenceSheet.h"
 #include "mozilla/RelativeLuminanceUtils.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/dom/ScreenBinding.h"
+#include "mozilla/intl/OSPreferences.h"
 #include "mozilla/intl/TimeZone.h"
 #include "mozilla/widget/ScreenManager.h"
 
@@ -33,7 +42,9 @@
 #  include "nsMacUtilsImpl.h"
 #endif
 
-static mozilla::LazyLogModule gUserCharacteristicsLog("UserCharacteristics");
+using namespace mozilla;
+
+static LazyLogModule gUserCharacteristicsLog("UserCharacteristics");
 
 // ==================================================================
 namespace testing {
@@ -41,9 +52,9 @@ extern "C" {
 
 int MaxTouchPoints() {
 #if defined(XP_WIN)
-  return mozilla::widget::WinUtils::GetMaxTouchPoints();
+  return widget::WinUtils::GetMaxTouchPoints();
 #elif defined(MOZ_WIDGET_ANDROID)
-  return mozilla::java::GeckoAppShell::GetMaxTouchPoints();
+  return java::GeckoAppShell::GetMaxTouchPoints();
 #else
   return 0;
 #endif
@@ -53,84 +64,113 @@ int MaxTouchPoints() {
 };  // namespace testing
 
 // ==================================================================
-void PopulateCSSProperties() {
-  mozilla::glean::characteristics::video_dynamic_range.Set(
-      mozilla::LookAndFeel::GetInt(
-          mozilla::LookAndFeel::IntID::VideoDynamicRange));
-  mozilla::glean::characteristics::prefers_reduced_transparency.Set(
-      mozilla::LookAndFeel::GetInt(
-          mozilla::LookAndFeel::IntID::PrefersReducedTransparency));
-  mozilla::glean::characteristics::prefers_reduced_motion.Set(
-      mozilla::LookAndFeel::GetInt(
-          mozilla::LookAndFeel::IntID::PrefersReducedMotion));
-  mozilla::glean::characteristics::inverted_colors.Set(
-      mozilla::LookAndFeel::GetInt(
-          mozilla::LookAndFeel::IntID::InvertedColors));
-  mozilla::glean::characteristics::color_scheme.Set(
-      (int)mozilla::PreferenceSheet::ContentPrefs().mColorScheme);
+// ==================================================================
+already_AddRefed<mozilla::dom::Promise> ContentPageStuff() {
+  nsCOMPtr<nsIUserCharacteristicsPageService> ucp =
+      do_GetService("@mozilla.org/user-characteristics-page;1");
+  MOZ_ASSERT(ucp);
 
-  mozilla::StylePrefersContrast prefersContrast = [] {
+  RefPtr<mozilla::dom::Promise> promise;
+  nsresult rv = ucp->CreateContentPage(getter_AddRefs(promise));
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
+            ("Could not create Content Page"));
+    return nullptr;
+  }
+  MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+          ("Created Content Page"));
+
+  return promise.forget();
+}
+
+void PopulateCSSProperties() {
+  glean::characteristics::prefers_reduced_transparency.Set(
+      LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedTransparency));
+  glean::characteristics::prefers_reduced_motion.Set(
+      LookAndFeel::GetInt(LookAndFeel::IntID::PrefersReducedMotion));
+  glean::characteristics::inverted_colors.Set(
+      LookAndFeel::GetInt(LookAndFeel::IntID::InvertedColors));
+  glean::characteristics::color_scheme.Set(
+      (int)PreferenceSheet::ContentPrefs().mColorScheme);
+
+  StylePrefersContrast prefersContrast = [] {
     // Replicates Gecko_MediaFeatures_PrefersContrast but without a Document
-    if (!mozilla::PreferenceSheet::ContentPrefs().mUseAccessibilityTheme &&
-        mozilla::PreferenceSheet::ContentPrefs().mUseDocumentColors) {
-      return mozilla::StylePrefersContrast::NoPreference;
+    if (!PreferenceSheet::ContentPrefs().mUseAccessibilityTheme &&
+        PreferenceSheet::ContentPrefs().mUseDocumentColors) {
+      return StylePrefersContrast::NoPreference;
     }
 
-    const auto& colors = mozilla::PreferenceSheet::ContentPrefs().ColorsFor(
-        mozilla::ColorScheme::Light);
-    float ratio = mozilla::RelativeLuminanceUtils::ContrastRatio(
+    const auto& colors =
+        PreferenceSheet::ContentPrefs().ColorsFor(ColorScheme::Light);
+    float ratio = RelativeLuminanceUtils::ContrastRatio(
         colors.mDefaultBackground, colors.mDefault);
     // https://www.w3.org/TR/WCAG21/#contrast-minimum
     if (ratio < 4.5f) {
-      return mozilla::StylePrefersContrast::Less;
+      return StylePrefersContrast::Less;
     }
     // https://www.w3.org/TR/WCAG21/#contrast-enhanced
     if (ratio >= 7.0f) {
-      return mozilla::StylePrefersContrast::More;
+      return StylePrefersContrast::More;
     }
-    return mozilla::StylePrefersContrast::Custom;
+    return StylePrefersContrast::Custom;
   }();
-  mozilla::glean::characteristics::prefers_contrast.Set((int)prefersContrast);
+  glean::characteristics::prefers_contrast.Set((int)prefersContrast);
 }
 
 void PopulateScreenProperties() {
-  auto& screenManager = mozilla::widget::ScreenManager::GetSingleton();
-  RefPtr<mozilla::widget::Screen> screen = screenManager.GetPrimaryScreen();
+  auto& screenManager = widget::ScreenManager::GetSingleton();
+  RefPtr<widget::Screen> screen = screenManager.GetPrimaryScreen();
   MOZ_ASSERT(screen);
 
-  mozilla::dom::ScreenColorGamut colorGamut;
+  dom::ScreenColorGamut colorGamut;
   screen->GetColorGamut(&colorGamut);
-  mozilla::glean::characteristics::color_gamut.Set((int)colorGamut);
+  glean::characteristics::color_gamut.Set((int)colorGamut);
 
   int32_t colorDepth;
   screen->GetColorDepth(&colorDepth);
-  mozilla::glean::characteristics::color_depth.Set(colorDepth);
+  glean::characteristics::color_depth.Set(colorDepth);
 
-  mozilla::glean::characteristics::color_gamut.Set((int)colorGamut);
-  mozilla::glean::characteristics::color_depth.Set(colorDepth);
-  const mozilla::LayoutDeviceIntRect rect = screen->GetRect();
-  mozilla::glean::characteristics::screen_height.Set(rect.Height());
-  mozilla::glean::characteristics::screen_width.Set(rect.Width());
+  glean::characteristics::color_gamut.Set((int)colorGamut);
+  glean::characteristics::color_depth.Set(colorDepth);
+  const LayoutDeviceIntRect rect = screen->GetRect();
+  glean::characteristics::screen_height.Set(rect.Height());
+  glean::characteristics::screen_width.Set(rect.Width());
+
+  glean::characteristics::video_dynamic_range.Set(screen->GetIsHDR());
 }
 
 void PopulateMissingFonts() {
   nsCString aMissingFonts;
   gfxPlatformFontList::PlatformFontList()->GetMissingFonts(aMissingFonts);
 
-  mozilla::glean::characteristics::missing_fonts.Set(aMissingFonts);
+  glean::characteristics::missing_fonts.Set(aMissingFonts);
 }
 
 void PopulatePrefs() {
   nsAutoCString acceptLang;
-  mozilla::Preferences::GetLocalizedCString("intl.accept_languages",
-                                            acceptLang);
-  mozilla::glean::characteristics::prefs_intl_accept_languages.Set(acceptLang);
+  Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
+  glean::characteristics::prefs_intl_accept_languages.Set(acceptLang);
 
-  mozilla::glean::characteristics::prefs_media_eme_enabled.Set(
-      mozilla::StaticPrefs::media_eme_enabled());
+  glean::characteristics::prefs_media_eme_enabled.Set(
+      StaticPrefs::media_eme_enabled());
 
-  mozilla::glean::characteristics::prefs_zoom_text_only.Set(
-      !mozilla::Preferences::GetBool("browser.zoom.full"));
+  glean::characteristics::prefs_zoom_text_only.Set(
+      !Preferences::GetBool("browser.zoom.full"));
+
+  glean::characteristics::prefs_privacy_donottrackheader_enabled.Set(
+      StaticPrefs::privacy_donottrackheader_enabled());
+  glean::characteristics::prefs_privacy_globalprivacycontrol_enabled.Set(
+      StaticPrefs::privacy_globalprivacycontrol_enabled());
+
+  glean::characteristics::prefs_general_autoscroll.Set(
+      Preferences::GetBool("general.autoScroll"));
+  glean::characteristics::prefs_general_smoothscroll.Set(
+      StaticPrefs::general_smoothScroll());
+  glean::characteristics::prefs_overlay_scrollbars.Set(
+      StaticPrefs::widget_gtk_overlay_scrollbars_enabled());
+
+  glean::characteristics::prefs_block_popups.Set(
+      StaticPrefs::dom_disable_open_during_load());
 }
 
 // ==================================================================
@@ -138,12 +178,16 @@ void PopulatePrefs() {
 // metric is set, this variable should be incremented. It'll be a lot. It's
 // okay. We're going to need it to know (including during development) what is
 // the source of the data we are looking at.
-const int kSubmissionSchema = 0;
+const int kSubmissionSchema = 1;
+
+const auto* const kLastVersionPref =
+    "toolkit.telemetry.user_characteristics_ping.last_version_sent";
+const auto* const kCurrentVersionPref =
+    "toolkit.telemetry.user_characteristics_ping.current_version";
 
 /* static */
 void nsUserCharacteristics::MaybeSubmitPing() {
-  MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
-          ("In MaybeSubmitPing()"));
+  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug, ("In MaybeSubmitPing()"));
   MOZ_ASSERT(XRE_IsParentProcess());
 
   /**
@@ -161,14 +205,8 @@ void nsUserCharacteristics::MaybeSubmitPing() {
    * Sent = Current Version.
    *
    */
-  const auto* const kLastVersionPref =
-      "toolkit.telemetry.user_characteristics_ping.last_version_sent";
-  const auto* const kCurrentVersionPref =
-      "toolkit.telemetry.user_characteristics_ping.current_version";
-
-  auto lastSubmissionVersion =
-      mozilla::Preferences::GetInt(kLastVersionPref, 0);
-  auto currentVersion = mozilla::Preferences::GetInt(kCurrentVersionPref, 0);
+  auto lastSubmissionVersion = Preferences::GetInt(kLastVersionPref, 0);
+  auto currentVersion = Preferences::GetInt(kCurrentVersionPref, 0);
 
   MOZ_ASSERT(currentVersion == -1 || lastSubmissionVersion <= currentVersion,
              "lastSubmissionVersion is somehow greater than currentVersion "
@@ -176,46 +214,40 @@ void nsUserCharacteristics::MaybeSubmitPing() {
 
   if (lastSubmissionVersion < 0) {
     // This is a way for users to opt out of this ping specifically.
-    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
             ("Returning, User Opt-out"));
     return;
   }
   if (currentVersion == 0) {
     // Do nothing. We do not want any pings.
-    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
             ("Returning, currentVersion == 0"));
     return;
   }
   if (currentVersion == -1) {
     // currentVersion = -1 is a development value to force a ping submission
-    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Debug,
             ("Force-Submitting Ping"));
-    if (NS_SUCCEEDED(PopulateData())) {
-      SubmitPing();
-    }
+    PopulateDataAndEventuallySubmit(false);
     return;
   }
   if (lastSubmissionVersion > currentVersion) {
     // This is an unexpected scneario that indicates something is wrong. We
     // asserted against it (in debug, above) We will try to sanity-correct
     // ourselves by setting it to the current version.
-    mozilla::Preferences::SetInt(kLastVersionPref, currentVersion);
-    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Warning,
+    Preferences::SetInt(kLastVersionPref, currentVersion);
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
             ("Returning, lastSubmissionVersion > currentVersion"));
     return;
   }
   if (lastSubmissionVersion == currentVersion) {
     // We are okay, we've already submitted the most recent ping
-    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Warning,
+    MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning,
             ("Returning, lastSubmissionVersion == currentVersion"));
     return;
   }
   if (lastSubmissionVersion < currentVersion) {
-    if (NS_SUCCEEDED(PopulateData())) {
-      if (NS_SUCCEEDED(SubmitPing())) {
-        mozilla::Preferences::SetInt(kLastVersionPref, currentVersion);
-      }
-    }
+    PopulateDataAndEventuallySubmit(false);
   } else {
     MOZ_ASSERT_UNREACHABLE("Should never reach here");
   }
@@ -225,73 +257,128 @@ const auto* const kUUIDPref =
     "toolkit.telemetry.user_characteristics_ping.uuid";
 
 /* static */
-nsresult nsUserCharacteristics::PopulateData(bool aTesting /* = false */) {
-  MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Warning,
-          ("Populating Data"));
+void nsUserCharacteristics::PopulateDataAndEventuallySubmit(
+    bool aUpdatePref /* = true */, bool aTesting /* = false */
+) {
+  MOZ_LOG(gUserCharacteristicsLog, LogLevel::Warning, ("Populating Data"));
   MOZ_ASSERT(XRE_IsParentProcess());
-  mozilla::glean::characteristics::submission_schema.Set(kSubmissionSchema);
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (!obs) {
+    return;
+  }
+
+  // This notification tells us to register the actor
+  obs->NotifyObservers(nullptr, "user-characteristics-populating-data",
+                       nullptr);
+
+  glean::characteristics::submission_schema.Set(kSubmissionSchema);
 
   nsAutoCString uuidString;
-  nsresult rv = mozilla::Preferences::GetCString(kUUIDPref, uuidString);
+  nsresult rv = Preferences::GetCString(kUUIDPref, uuidString);
   if (NS_FAILED(rv) || uuidString.Length() == 0) {
     nsCOMPtr<nsIUUIDGenerator> uuidgen =
         do_GetService("@mozilla.org/uuid-generator;1", &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    if (NS_FAILED(rv)) {
+      return;
+    }
 
     nsIDToCString id(nsID::GenerateUUID());
     uuidString = id.get();
-    mozilla::Preferences::SetCString(kUUIDPref, uuidString);
+    Preferences::SetCString(kUUIDPref, uuidString);
   }
-  mozilla::glean::characteristics::client_identifier.Set(uuidString);
 
-  mozilla::glean::characteristics::max_touch_points.Set(
-      testing::MaxTouchPoints());
+  glean::characteristics::client_identifier.Set(uuidString);
 
-  if (aTesting) {
+  glean::characteristics::max_touch_points.Set(testing::MaxTouchPoints());
+
+  // ------------------------------------------------------------------------
+
+  if (!aTesting) {
     // Many of the later peices of data do not work in a gtest
-    // so just populate something, and return
-    return NS_OK;
-  }
+    // so skip populating them
 
-  PopulateMissingFonts();
-  PopulateCSSProperties();
-  PopulateScreenProperties();
-  PopulatePrefs();
+    // ------------------------------------------------------------------------
 
-  mozilla::glean::characteristics::target_frame_rate.Set(
-      gfxPlatform::TargetFrameRate());
+    PopulateMissingFonts();
+    PopulateCSSProperties();
+    PopulateScreenProperties();
+    PopulatePrefs();
 
-  int32_t processorCount = 0;
+    glean::characteristics::target_frame_rate.Set(
+        gfxPlatform::TargetFrameRate());
+
+    int32_t processorCount = 0;
 #if defined(XP_MACOSX)
-  if (nsMacUtilsImpl::IsTCSMAvailable()) {
-    // On failure, zero is returned from GetPhysicalCPUCount()
-    // and we fallback to PR_GetNumberOfProcessors below.
-    processorCount = nsMacUtilsImpl::GetPhysicalCPUCount();
-  }
+    if (nsMacUtilsImpl::IsTCSMAvailable()) {
+      // On failure, zero is returned from GetPhysicalCPUCount()
+      // and we fallback to PR_GetNumberOfProcessors below.
+      processorCount = nsMacUtilsImpl::GetPhysicalCPUCount();
+    }
 #endif
-  if (processorCount == 0) {
-    processorCount = PR_GetNumberOfProcessors();
-  }
-  mozilla::glean::characteristics::processor_count.Set(processorCount);
+    if (processorCount == 0) {
+      processorCount = PR_GetNumberOfProcessors();
+    }
+    glean::characteristics::processor_count.Set(processorCount);
 
-  AutoTArray<char16_t, 128> tzBuffer;
-  auto result = mozilla::intl::TimeZone::GetDefaultTimeZone(tzBuffer);
-  if (result.isOk()) {
-    NS_ConvertUTF16toUTF8 timeZone(
-        nsDependentString(tzBuffer.Elements(), tzBuffer.Length()));
-    mozilla::glean::characteristics::timezone.Set(timeZone);
+    AutoTArray<char16_t, 128> tzBuffer;
+    auto result = intl::TimeZone::GetDefaultTimeZone(tzBuffer);
+    if (result.isOk()) {
+      NS_ConvertUTF16toUTF8 timeZone(
+          nsDependentString(tzBuffer.Elements(), tzBuffer.Length()));
+      glean::characteristics::timezone.Set(timeZone);
+    } else {
+      glean::characteristics::timezone.Set("<error>"_ns);
+    }
+
+    nsAutoCString locale;
+    intl::OSPreferences::GetInstance()->GetSystemLocale(locale);
+    glean::characteristics::system_locale.Set(locale);
+  }
+
+  // When this promise resolves, everything succeeded and we can submit.
+  RefPtr<mozilla::dom::Promise> promise = ContentPageStuff();
+
+  // ------------------------------------------------------------------------
+
+  auto fulfillSteps = [aUpdatePref, aTesting](
+                          JSContext* aCx, JS::Handle<JS::Value> aPromiseResult,
+                          mozilla::ErrorResult& aRv) {
+    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+            ("ContentPageStuff Promise Resolved"));
+
+    if (!aTesting) {
+      nsUserCharacteristics::SubmitPing();
+    }
+
+    if (aUpdatePref) {
+      MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Debug,
+              ("Updating preference"));
+      auto current_version =
+          mozilla::Preferences::GetInt(kCurrentVersionPref, 0);
+      mozilla::Preferences::SetInt(kLastVersionPref, current_version);
+    }
+  };
+
+  // Something failed in the Content Page...
+  auto rejectSteps = [](JSContext* aCx, JS::Handle<JS::Value> aReason,
+                        mozilla::ErrorResult& aRv) {
+    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
+            ("ContentPageStuff Promise Rejected"));
+  };
+
+  if (promise) {
+    promise->AddCallbacksWithCycleCollectedArgs(std::move(fulfillSteps),
+                                                std::move(rejectSteps));
   } else {
-    mozilla::glean::characteristics::timezone.Set("<error>"_ns);
+    MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Error,
+            ("Did not get a Promise back from ContentPageStuff"));
   }
-
-  return NS_OK;
 }
 
 /* static */
-nsresult nsUserCharacteristics::SubmitPing() {
+void nsUserCharacteristics::SubmitPing() {
   MOZ_LOG(gUserCharacteristicsLog, mozilla::LogLevel::Warning,
           ("Submitting Ping"));
-  mozilla::glean_pings::UserCharacteristics.Submit();
-
-  return NS_OK;
+  glean_pings::UserCharacteristics.Submit();
 }

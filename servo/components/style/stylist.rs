@@ -31,7 +31,7 @@ use crate::rule_collector::RuleCollector;
 use crate::rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
 use crate::sharing::RevalidationResult;
 use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, SelectorMap, SelectorMapEntry};
-use crate::selector_parser::{PerPseudoElementMap, PseudoElement, SelectorImpl, SnapshotMap};
+use crate::selector_parser::{PerPseudoElementMap, PseudoElement, SelectorImpl, NonTSPseudoClass, SnapshotMap};
 use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
 use crate::stylesheet_set::{DataValidity, DocumentStylesheetSet, SheetRebuildKind};
 use crate::stylesheet_set::{DocumentStylesheetFlusher, SheetCollectionFlusher};
@@ -48,7 +48,7 @@ use crate::stylesheets::{
     PerOriginIter,
 };
 use crate::stylesheets::{StyleRule, StylesheetContents, StylesheetInDocument};
-use crate::values::computed;
+use crate::values::{computed, AtomIdent};
 use crate::AllocErr;
 use crate::{Atom, LocalName, Namespace, ShrinkIfNeeded, WeakAtom};
 use dom::{DocumentState, ElementState};
@@ -113,8 +113,6 @@ unsafe impl Send for CascadeDataCacheKey {}
 unsafe impl Sync for CascadeDataCacheKey {}
 
 trait CascadeDataCacheEntry: Sized {
-    /// Returns a reference to the cascade data.
-    fn cascade_data(&self) -> &CascadeData;
     /// Rebuilds the cascade data for the new stylesheet collection. The
     /// collection is guaranteed to be dirty.
     fn rebuild<S>(
@@ -269,10 +267,6 @@ lazy_static! {
 }
 
 impl CascadeDataCacheEntry for UserAgentCascadeData {
-    fn cascade_data(&self) -> &CascadeData {
-        &self.cascade_data
-    }
-
     fn rebuild<S>(
         device: &Device,
         quirks_mode: QuirksMode,
@@ -2023,6 +2017,11 @@ struct StylistSelectorVisitor<'a> {
     /// selectors.
     nth_of_attribute_dependencies: &'a mut PrecomputedHashSet<LocalName>,
 
+    /// The filter with the local names of custom states in selectors for
+    /// within the selector list of :nth-child(... of <selector list>)
+    /// selectors.
+    nth_of_custom_state_dependencies: &'a mut PrecomputedHashSet<AtomIdent>,
+
     /// All the states selectors in the page reference.
     state_dependencies: &'a mut ElementState,
 
@@ -2144,6 +2143,16 @@ impl<'a> SelectorVisitor for StylistSelectorVisitor<'a> {
             component_needs_revalidation(s, self.passed_rightmost_selector);
 
         match *s {
+            Component::NonTSPseudoClass(NonTSPseudoClass::CustomState(ref name)) => {
+                // CustomStateSet is special cased as it is a functional pseudo
+                // class with unbounded inner values. This is different to
+                // other psuedo class like :emtpy or :dir() which can be packed
+                // into the ElementState bitflags. For CustomState, however,
+                // the state name should be checked for presence in the selector.
+                if self.in_selector_list_of.relevant_to_nth_of_dependencies() {
+                    self.nth_of_custom_state_dependencies.insert(name.0.clone());
+                }
+            },
             Component::NonTSPseudoClass(ref p) => {
                 self.state_dependencies.insert(p.state_flag());
                 self.document_state_dependencies
@@ -2377,6 +2386,11 @@ pub struct CascadeData {
     /// an element when an irrelevant attribute changes.
     nth_of_attribute_dependencies: PrecomputedHashSet<LocalName>,
 
+    /// The custom states that appear in the selector list of
+    /// :nth-child(... of <selector list>). Used to avoid restyling siblings of
+    /// an element when an irrelevant custom state changes.
+    nth_of_custom_state_dependencies: PrecomputedHashSet<AtomIdent>,
+
     /// The element state bits that are relied on by selectors.  Like
     /// `attribute_dependencies`, this is used to avoid taking element snapshots
     /// when an irrelevant element state bit changes.
@@ -2456,6 +2470,7 @@ impl CascadeData {
             nth_of_mapped_ids: PrecomputedHashSet::default(),
             nth_of_class_dependencies: PrecomputedHashSet::default(),
             nth_of_attribute_dependencies: PrecomputedHashSet::default(),
+            nth_of_custom_state_dependencies: PrecomputedHashSet::default(),
             nth_of_state_dependencies: ElementState::empty(),
             attribute_dependencies: PrecomputedHashSet::default(),
             state_dependencies: ElementState::empty(),
@@ -2533,6 +2548,13 @@ impl CascadeData {
     #[inline]
     pub fn has_state_dependency(&self, state: ElementState) -> bool {
         self.state_dependencies.intersects(state)
+    }
+
+    /// Returns whether the given Custom State is relied upon by a selector
+    /// of some rule in the selector list of :nth-child(... of <selector list>).
+    #[inline]
+    pub fn has_nth_of_custom_state_dependency(&self, state: &AtomIdent) -> bool {
+        self.nth_of_custom_state_dependencies.contains(state)
     }
 
     /// Returns whether the given ElementState bit is relied upon by a selector
@@ -2664,6 +2686,7 @@ impl CascadeData {
         self.relative_selector_invalidation_map.shrink_if_needed();
         self.attribute_dependencies.shrink_if_needed();
         self.nth_of_attribute_dependencies.shrink_if_needed();
+        self.nth_of_custom_state_dependencies.shrink_if_needed();
         self.nth_of_class_dependencies.shrink_if_needed();
         self.nth_of_mapped_ids.shrink_if_needed();
         self.mapped_ids.shrink_if_needed();
@@ -2859,6 +2882,8 @@ impl CascadeData {
                                 nth_of_class_dependencies: &mut self.nth_of_class_dependencies,
                                 nth_of_attribute_dependencies: &mut self
                                     .nth_of_attribute_dependencies,
+                                nth_of_custom_state_dependencies: &mut self
+                                    .nth_of_custom_state_dependencies,
                                 state_dependencies: &mut self.state_dependencies,
                                 nth_of_state_dependencies: &mut self.nth_of_state_dependencies,
                                 document_state_dependencies: &mut self.document_state_dependencies,
@@ -3234,7 +3259,9 @@ impl CascadeData {
                 CssRule::LayerBlock(..) |
                 CssRule::LayerStatement(..) |
                 CssRule::FontPaletteValues(..) |
-                CssRule::FontFeatureValues(..) => {
+                CssRule::FontFeatureValues(..) |
+                CssRule::Scope(..) |
+                CssRule::StartingStyle(..) => {
                     // Not affected by device changes.
                     continue;
                 },
@@ -3323,6 +3350,7 @@ impl CascadeData {
         self.relative_selector_invalidation_map.clear();
         self.attribute_dependencies.clear();
         self.nth_of_attribute_dependencies.clear();
+        self.nth_of_custom_state_dependencies.clear();
         self.nth_of_class_dependencies.clear();
         self.state_dependencies = ElementState::empty();
         self.nth_of_state_dependencies = ElementState::empty();
@@ -3335,10 +3363,6 @@ impl CascadeData {
 }
 
 impl CascadeDataCacheEntry for CascadeData {
-    fn cascade_data(&self) -> &CascadeData {
-        self
-    }
-
     fn rebuild<S>(
         device: &Device,
         quirks_mode: QuirksMode,
@@ -3482,6 +3506,7 @@ pub fn needs_revalidation_for_testing(s: &Selector<SelectorImpl>) -> bool {
     let mut attribute_dependencies = Default::default();
     let mut nth_of_class_dependencies = Default::default();
     let mut nth_of_attribute_dependencies = Default::default();
+    let mut nth_of_custom_state_dependencies = Default::default();
     let mut state_dependencies = ElementState::empty();
     let mut nth_of_state_dependencies = ElementState::empty();
     let mut document_state_dependencies = DocumentState::empty();
@@ -3494,6 +3519,7 @@ pub fn needs_revalidation_for_testing(s: &Selector<SelectorImpl>) -> bool {
         attribute_dependencies: &mut attribute_dependencies,
         nth_of_class_dependencies: &mut nth_of_class_dependencies,
         nth_of_attribute_dependencies: &mut nth_of_attribute_dependencies,
+        nth_of_custom_state_dependencies: &mut nth_of_custom_state_dependencies,
         state_dependencies: &mut state_dependencies,
         nth_of_state_dependencies: &mut nth_of_state_dependencies,
         document_state_dependencies: &mut document_state_dependencies,

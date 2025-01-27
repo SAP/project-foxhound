@@ -120,7 +120,7 @@ const XPI_PERMISSION = "install";
 
 const XPI_SIGNATURE_CHECK_PERIOD = 24 * 60 * 60;
 
-const DB_SCHEMA = 35;
+const DB_SCHEMA = 36;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -1598,7 +1598,7 @@ var XPIStates = {
    *
    * @returns {XPIState?}
    */
-  findAddon(aId, aFilter = location => true) {
+  findAddon(aId, aFilter = () => true) {
     // Fortunately the Map iterator returns in order of insertion, which is
     // also our highest -> lowest priority order.
     for (let location of this.locations()) {
@@ -2706,7 +2706,7 @@ export var XPIProvider = {
           "profile-before-change",
           "test-load-xpi-database",
         ];
-        let observer = (subject, topic, data) => {
+        let observer = (subject, topic) => {
           if (
             topic == "xul-window-visible" &&
             !Services.wm.getMostRecentWindow("devtools:toolbox")

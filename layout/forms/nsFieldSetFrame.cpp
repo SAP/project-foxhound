@@ -58,7 +58,7 @@ nsRect nsFieldSetFrame::VisualBorderRectRelativeToSelf() const {
     auto legendMargin = legend->GetLogicalUsedMargin(wm);
     nscoord legendStartMargin = legendMargin.BStart(wm);
     nscoord legendEndMargin = legendMargin.BEnd(wm);
-    nscoord border = GetUsedBorder().Side(wm.PhysicalSide(eLogicalSideBStart));
+    nscoord border = GetUsedBorder().Side(wm.PhysicalSide(LogicalSide::BStart));
     // Calculate the offset from the border area block-axis start edge needed to
     // center-align our border with the legend's border-box (in the block-axis).
     nscoord off = (legendStartMargin + legendSize / 2) - border / 2;
@@ -348,19 +348,11 @@ nscoord nsFieldSetFrame::GetIntrinsicISize(gfxContext* aRenderingContext,
 }
 
 nscoord nsFieldSetFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-
-  result = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::MinISize);
-  return result;
+  return GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::MinISize);
 }
 
 nscoord nsFieldSetFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-
-  result = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::PrefISize);
-  return result;
+  return GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::PrefISize);
 }
 
 /* virtual */
@@ -372,7 +364,6 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
 
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsFieldSetFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_WARNING_ASSERTION(aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE,
                        "Should have a precomputed inline-size!");

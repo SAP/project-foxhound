@@ -169,7 +169,8 @@ function gen_rtcd_header {
 # $1 - Header file directory.
 # $2 - Config command line.
 function gen_config_files {
-  ./configure $2 > /dev/null
+  ./configure $2 --log=$BASE_DIR/$LIBVPX_CONFIG_DIR/$1/config.log > /dev/null
+  echo "Log file: $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/config.log"
 
   # Disable HAVE_UNISTD_H.
   ( echo '/HAVE_UNISTD_H'; echo 'd' ; echo 'w' ; echo 'q' ) | ed -s vpx_config.h
@@ -203,6 +204,7 @@ all_platforms="${all_platforms} --disable-avx512"
 x86_platforms="--enable-postproc --enable-vp9-postproc --as=yasm"
 arm_platforms="--enable-runtime-cpu-detect --enable-realtime-only"
 arm64_platforms="--enable-realtime-only"
+disable_sve="--disable-sve" # Bug 1885585
 
 gen_config_files linux/x64 "--target=x86_64-linux-gcc ${all_platforms} ${x86_platforms}"
 gen_config_files linux/ia32 "--target=x86-linux-gcc ${all_platforms} ${x86_platforms}"
@@ -213,7 +215,7 @@ gen_config_files win/ia32 "--target=x86-win32-gcc ${all_platforms} ${x86_platfor
 
 gen_config_files linux/arm "--target=armv7-linux-gcc ${all_platforms} ${arm_platforms}"
 gen_config_files linux/arm64 "--target=arm64-linux-gcc ${all_platforms} ${arm64_platforms}"
-gen_config_files win/aarch64 "--target=arm64-win64-vs15 ${all_platforms} ${arm64_platforms}"
+gen_config_files win/aarch64 "--target=arm64-win64-vs15 ${all_platforms} ${arm64_platforms} ${disable_sve}" # Bug 1885585
 
 gen_config_files generic "--target=generic-gnu ${all_platforms}"
 
@@ -236,7 +238,7 @@ gen_rtcd_header win/ia32 x86
 
 gen_rtcd_header linux/arm armv7
 gen_rtcd_header linux/arm64 arm64
-gen_rtcd_header win/aarch64 arm64
+gen_rtcd_header win/aarch64 arm64 $disable_sve # Bug 1885585
 
 gen_rtcd_header generic generic
 
@@ -275,6 +277,7 @@ config=$(print_config linux/arm64)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
 convert_srcs_to_project_files libvpx_srcs.txt ARM64
+# Bug 1885585: The sve files will be excluded from the win/aarch64 build in moz.build.
 
 echo "Generate generic source list."
 config=$(print_config generic)

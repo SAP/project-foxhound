@@ -166,6 +166,10 @@ class Editor extends EventEmitter {
   #ownerDoc;
   #prefObserver;
   #win;
+  #lineGutterMarkers = new Map();
+  #lineContentMarkers = new Map();
+
+  #updateListener = null;
 
   constructor(config) {
     super();
@@ -412,6 +416,12 @@ class Editor extends EventEmitter {
     }
   }
 
+  // This update listener allows listening to the changes
+  // to the codemiror editor.
+  setUpdateListener(listener = null) {
+    this.#updateListener = listener;
+  }
+
   /**
    * Do the actual appending and configuring of the CodeMirror instance. This is
    * used by both append functions above, and does all the hard work to
@@ -614,11 +624,17 @@ class Editor extends EventEmitter {
     const tabSizeCompartment = new Compartment();
     const indentCompartment = new Compartment();
     const lineWrapCompartment = new Compartment();
+    const lineNumberCompartment = new Compartment();
+    const lineNumberMarkersCompartment = new Compartment();
+    const lineContentMarkerCompartment = new Compartment();
 
     this.#compartments = {
       tabSizeCompartment,
       indentCompartment,
       lineWrapCompartment,
+      lineNumberCompartment,
+      lineNumberMarkersCompartment,
+      lineContentMarkerCompartment,
     };
 
     const indentStr = (this.config.indentWithTabs ? "\t" : " ").repeat(
@@ -632,6 +648,7 @@ class Editor extends EventEmitter {
         this.config.lineWrapping ? EditorView.lineWrapping : []
       ),
       EditorState.readOnly.of(this.config.readOnly),
+      lineNumberCompartment.of(this.config.lineNumbers ? lineNumbers() : []),
       codemirrorLanguage.codeFolding({
         placeholderText: "↔",
       }),
@@ -645,6 +662,21 @@ class Editor extends EventEmitter {
         },
       }),
       codemirrorLanguage.syntaxHighlighting(lezerHighlight.classHighlighter),
+      EditorView.updateListener.of(v => {
+        if (v.viewportChanged || v.docChanged) {
+          // reset line gutter markers for the new visible ranges
+          // when the viewport changes(e.g when the page is scrolled).
+          if (this.#lineGutterMarkers.size > 0) {
+            this.setLineGutterMarkers();
+          }
+        }
+        // Any custom defined update listener should be called
+        if (typeof this.#updateListener == "function") {
+          this.#updateListener(v);
+        }
+      }),
+      lineNumberMarkersCompartment.of([]),
+      lineContentMarkerCompartment.of(this.#lineContentMarkersExtension([])),
       // keep last so other extension take precedence
       codemirror.minimalSetup,
     ];
@@ -653,16 +685,225 @@ class Editor extends EventEmitter {
       extensions.push(codemirrorLangJavascript.javascript());
     }
 
-    if (this.config.lineNumbers) {
-      extensions.push(lineNumbers());
-    }
-
     const cm = new EditorView({
       parent: el,
       extensions,
     });
 
     editors.set(this, cm);
+  }
+
+  /**
+   * This creates the extension used to manage the rendering of markers
+   * for in editor line content.
+   * @param   {Array}             markers                    - The current list of markers
+   * @returns {Array<ViewPlugin>} showLineContentDecorations - An extension which is an array containing the view
+   *                                                           which manages the rendering of the line content markers.
+   */
+  #lineContentMarkersExtension(markers) {
+    const {
+      codemirrorView: { Decoration, ViewPlugin },
+      codemirrorState: { RangeSetBuilder },
+    } = this.#CodeMirror6;
+
+    // Build and return the decoration set
+    function buildDecorations(view) {
+      const builder = new RangeSetBuilder();
+      for (const { from, to } of view.visibleRanges) {
+        for (let pos = from; pos <= to; ) {
+          const line = view.state.doc.lineAt(pos);
+          for (const { lineClassName, condition } of markers) {
+            if (condition(line.number)) {
+              builder.add(
+                line.from,
+                line.from,
+                Decoration.line({ class: lineClassName })
+              );
+            }
+          }
+          pos = line.to + 1;
+        }
+      }
+      return builder.finish();
+    }
+
+    // The view which handles rendering and updating the
+    // markers decorations
+    const showLineContentDecorations = ViewPlugin.fromClass(
+      class {
+        decorations;
+        constructor(view) {
+          this.decorations = buildDecorations(view);
+        }
+        update(update) {
+          if (update.docChanged || update.viewportChanged) {
+            this.decorations = buildDecorations(update.view);
+          }
+        }
+      },
+      { decorations: v => v.decorations }
+    );
+
+    return [showLineContentDecorations];
+  }
+
+  /**
+   * This adds a marker used to add classes to editor line based on a condition.
+   *   @property {object}     marker           - The rule rendering a marker or class.
+   *   @property {object}     marker.id       - The unique identifier for this marker
+   *   @property {string}     marker.lineClassName - The css class to add to the line
+   *   @property {function}   marker.condition - The condition that decides if the marker/class gets added or removed.
+   *                                             The line is passed as an argument.
+   */
+  setLineContentMarker(marker) {
+    const cm = editors.get(this);
+    this.#lineContentMarkers.set(marker.id, marker);
+
+    cm.dispatch({
+      effects: this.#compartments.lineContentMarkerCompartment.reconfigure(
+        this.#lineContentMarkersExtension(
+          Array.from(this.#lineContentMarkers.values())
+        )
+      ),
+    });
+  }
+
+  /**
+   * This removes the marker which has the specified className
+   * @param {string} markerId - The unique identifier for this marker
+   */
+  removeLineContentMarker(markerId) {
+    const cm = editors.get(this);
+    this.#lineContentMarkers.delete(markerId);
+
+    cm.dispatch({
+      effects: this.#compartments.lineContentMarkerCompartment.reconfigure(
+        this.#lineContentMarkersExtension(
+          Array.from(this.#lineContentMarkers.values())
+        )
+      ),
+    });
+  }
+
+  /**
+   * Set event listeners for the line gutter
+   * @param {Object} domEventHandlers
+   *
+   * example usage:
+   *  const domEventHandlers = { click(event) { console.log(event);} }
+   */
+  setGutterEventListeners(domEventHandlers) {
+    const cm = editors.get(this);
+    const {
+      codemirrorView: { lineNumbers },
+    } = this.#CodeMirror6;
+
+    for (const eventName in domEventHandlers) {
+      const handler = domEventHandlers[eventName];
+      domEventHandlers[eventName] = (view, line, event) => {
+        line = view.state.doc.lineAt(line.from);
+        handler(event, view, line.number);
+      };
+    }
+
+    cm.dispatch({
+      effects: this.#compartments.lineWrapCompartment.reconfigure(
+        lineNumbers({ domEventHandlers })
+      ),
+    });
+  }
+
+  /**
+   * This supports adding/removing of line classes or markers on the
+   * line number gutter based on the defined conditions. This only supports codemirror 6.
+   *
+   *   @param {Array<Marker>} markers         - The list of marker objects which defines the rules
+   *                                            for rendering each marker.
+   *   @property {object}     marker - The rule rendering a marker or class. This is required.
+   *   @property {string}     marker.id - The unique identifier for this marker.
+   *   @property {string}     marker.lineClassName - The css class to add to the line. This is required.
+   *   @property {function}   marker.condition - The condition that decides if the marker/class  gets added or removed.
+   *   @property {function=}  marker.createLineElementNode - This gets the line as an argument and should return the DOM element which
+   *                                            is used for the marker. This is optional.
+   */
+  setLineGutterMarkers(markers) {
+    const cm = editors.get(this);
+
+    if (markers) {
+      // Cache the markers for use later. See next comment
+      for (const marker of markers) {
+        if (!marker.id) {
+          throw new Error("Marker has no unique identifier");
+        }
+        this.#lineGutterMarkers.set(marker.id, marker);
+      }
+    }
+    // When no markers are passed, the cached markers are used to update the line gutters.
+    // This is useful for re-rendering the line gutters when the viewport changes
+    // (note: the visible ranges will be different) in this case, mainly when the editor is scrolled.
+    else if (!this.#lineGutterMarkers.size) {
+      return;
+    }
+    markers = Array.from(this.#lineGutterMarkers.values());
+
+    const {
+      codemirrorView: { lineNumberMarkers, GutterMarker },
+      codemirrorState: { RangeSetBuilder },
+    } = this.#CodeMirror6;
+
+    // This creates a new GutterMarker https://codemirror.net/docs/ref/#view.GutterMarker
+    // to represents how each line gutter is rendered in the view.
+    // This is set as the value for the Range https://codemirror.net/docs/ref/#state.Range
+    // which represents the line.
+    class LineGutterMarker extends GutterMarker {
+      constructor(className, lineNumber, createElementNode) {
+        super();
+        this.elementClass = className || null;
+        this.toDOM = createElementNode
+          ? () => createElementNode(lineNumber)
+          : null;
+      }
+    }
+
+    // Loop through the visible ranges https://codemirror.net/docs/ref/#view.EditorView.visibleRanges
+    // (representing the lines in the current viewport) and generate a new rangeset for updating the line gutter
+    // based on the conditions defined in the markers(for each line) provided.
+    const builder = new RangeSetBuilder();
+    for (const { from, to } of cm.visibleRanges) {
+      for (let pos = from; pos <= to; ) {
+        const line = cm.state.doc.lineAt(pos);
+        for (const {
+          lineClassName,
+          condition,
+          createLineElementNode,
+        } of markers) {
+          if (typeof condition !== "function") {
+            throw new Error("The `condition` is not a valid function");
+          }
+          if (condition(line.number)) {
+            builder.add(
+              line.from,
+              line.to,
+              new LineGutterMarker(
+                lineClassName,
+                line.number,
+                createLineElementNode
+              )
+            );
+          }
+        }
+        pos = line.to + 1;
+      }
+    }
+
+    // To update the state with the newly generated marker range set, a dispatch is called on the view
+    // with an transaction effect created by the lineNumberMarkersCompartment, which is used to update the
+    // lineNumberMarkers extension configuration.
+    cm.dispatch({
+      effects: this.#compartments.lineNumberMarkersCompartment.reconfigure(
+        lineNumberMarkers.of(builder.finish())
+      ),
+    });
   }
 
   /**
@@ -1658,6 +1899,8 @@ class Editor extends EventEmitter {
     this.config = null;
     this.version = null;
     this.#ownerDoc = null;
+    this.#updateListener = null;
+    this.#lineGutterMarkers.clear();
 
     if (this.#prefObserver) {
       this.#prefObserver.off(KEYMAP_PREF, this.setKeyMap);

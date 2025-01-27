@@ -41,9 +41,6 @@
       both "content" and "skin" packages, which bug 1385444 will unify later. -->
   <link rel="stylesheet" href="chrome://global/skin/global.css" />
 
-  <link rel="stylesheet" href="chrome://global/content/tabprompts.css" />
-  <link rel="stylesheet" href="chrome://global/skin/tabprompts.css" />
-
   <link rel="stylesheet" href="chrome://browser/content/browser.css" />
   <link rel="stylesheet" href="chrome://browser/content/tabbrowser.css" />
   <link
@@ -101,6 +98,7 @@
   <link rel="localization" href="preview/select-translations.ftl"/>
   <link rel="localization" href="browser/shopping.ftl"/>
   <link rel="localization" href="preview/shopping.ftl"/>
+  <link rel="localization" href="preview/sidebar.ftl"/>
   <link rel="localization" href="preview/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
 
@@ -122,7 +120,7 @@
     Services.scriptloader.loadSubScript("chrome://browser/content/browser-development-helpers.js", this);
   }
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-pageActions.js", this);
-  Services.scriptloader.loadSubScript("chrome://browser/content/browser-sidebar.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/sidebar/browser-sidebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-tabsintitlebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-unified-extensions.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser.js", this);

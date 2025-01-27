@@ -21,6 +21,7 @@ import { XPIExports } from "resource://gre/modules/addons/XPIExports.sys.mjs";
 import {
   computeSha256HashAsString,
   getHashStringForCrypto,
+  hasStrongSignature,
 } from "resource://gre/modules/addons/crypto-utils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import {
@@ -94,6 +95,9 @@ const PREF_XPI_ENABLED = "xpinstall.enabled";
 const PREF_XPI_DIRECT_WHITELISTED = "xpinstall.whitelist.directRequest";
 const PREF_XPI_FILE_WHITELISTED = "xpinstall.whitelist.fileRequest";
 const PREF_XPI_WHITELIST_REQUIRED = "xpinstall.whitelist.required";
+const PREF_XPI_WEAK_SIGNATURES_ALLOWED =
+  "xpinstall.signatures.weakSignaturesTemporarilyAllowed";
+const PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT = true;
 
 const PREF_SELECTED_THEME = "extensions.activeThemeID";
 
@@ -230,7 +234,15 @@ class Package {
 
     let root = Ci.nsIX509CertDB.AddonsPublicRoot;
     if (
-      !AppConstants.MOZ_REQUIRE_SIGNING &&
+      (!AppConstants.MOZ_REQUIRE_SIGNING ||
+        // Allow mochitests to switch to dev-root on all channels.
+        Cu.isInAutomation ||
+        // Allow xpcshell tests to switch to dev-root on all channels,
+        // included tests where "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer"
+        // pref is set to false and Cu.isInAutomation is going to be false (e.g. test_signed_langpack.js).
+        // TODO(Bug 1598804): we should be able to remove the following checks once Cu.isAutomation is fixed.
+        (Services.env.exists("XPCSHELL_TEST_PROFILE_DIR") &&
+          Services.appinfo.name === "XPCShell")) &&
       Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)
     ) {
       root = Ci.nsIX509CertDB.AddonsStageRoot;
@@ -287,7 +299,7 @@ DirPackage = class DirPackage extends Package {
     return IOUtils.read(PathUtils.join(this.filePath, ...path));
   }
 
-  async verifySignedStateForRoot(addonId, root) {
+  async verifySignedStateForRoot() {
     return { signedState: AddonManager.SIGNEDSTATE_UNKNOWN, cert: null };
   }
 };
@@ -341,8 +353,11 @@ XPIPackage = class XPIPackage extends Package {
             aZipReader.close();
           }
           resolve({
-            signedState: getSignedStatus(aRv, cert, addonId),
             cert,
+            signedState: getSignedStatus(aRv, cert, addonId),
+            signedTypes: aSignatureInfos?.map(
+              signatureInfo => signatureInfo.signatureAlgorithm
+            ),
           });
         },
       };
@@ -511,17 +526,18 @@ async function loadManifestFromWebManifest(aPackage, aLocation) {
     addon.siteOrigin = manifest.install_origins[0];
   }
 
-  if (manifest.options_ui) {
+  const { optionsPageProperties } = extension;
+  if (optionsPageProperties) {
     // Store just the relative path here, the AddonWrapper getURL
     // wrapper maps this to a full URL.
-    addon.optionsURL = manifest.options_ui.page;
-    if (manifest.options_ui.open_in_tab) {
+    addon.optionsURL = optionsPageProperties.page;
+    if (optionsPageProperties.open_in_tab) {
       addon.optionsType = AddonManager.OPTIONS_TYPE_TAB;
     } else {
       addon.optionsType = AddonManager.OPTIONS_TYPE_INLINE_BROWSER;
     }
 
-    addon.optionsBrowserStyle = manifest.options_ui.browser_style;
+    addon.optionsBrowserStyle = optionsPageProperties.browser_style;
   }
 
   // WebExtensions don't use iconURLs
@@ -693,9 +709,13 @@ var loadManifest = async function (aPackage, aLocation, aOldAddon) {
   addon.rootURI = aPackage.rootURI.spec;
   addon.location = aLocation;
 
-  let { signedState, cert } = verifiedSignedState;
+  let { cert, signedState, signedTypes } = verifiedSignedState;
   addon.signedState = signedState;
   addon.signedDate = cert?.validity?.notBefore / 1000 || null;
+  // An array of the algorithms used by the signatures found in the signed XPI files,
+  // as an array of integers (see nsIAppSignatureInfo_SignatureAlgorithm enum defined
+  // in nsIX509CertDB.idl).
+  addon.signedTypes = signedTypes;
 
   if (!addon.id) {
     if (cert) {
@@ -909,18 +929,21 @@ function shouldVerifySignedState(aAddonType, aLocation) {
  *        The nsIFile for the bundle to check, either a directory or zip file.
  * @param {AddonInternal} aAddon
  *        The add-on object to verify.
- * @returns {Promise<number>}
- *        A Promise that resolves to an AddonManager.SIGNEDSTATE_* constant.
+ * @returns {Promise<{ signedState: number, signedTypes: Array<number>}>?}
+ *        A Promise that resolves to object including a signedState property set to
+ *        an AddonManager.SIGNEDSTATE_* constant and a signedTypes property set to
+ *        either an array of Ci.nsIAppSignatureInfo SignatureAlgorithm enum values
+ *        or undefined if the file wasn't signed.
  */
 export var verifyBundleSignedState = async function (aBundle, aAddon) {
   let pkg = Package.get(aBundle);
   try {
-    let { signedState } = await pkg.verifySignedState(
+    let { signedState, signedTypes } = await pkg.verifySignedState(
       aAddon.id,
       aAddon.type,
       aAddon.location
     );
-    return signedState;
+    return { signedState, signedTypes };
   } finally {
     pkg.close();
   }
@@ -1633,6 +1656,49 @@ class AddonInstall {
             "signature verification failed",
           ]);
         }
+
+        // Restrict install for signed extension only signed with weak signature algorithms, unless the
+        // restriction is explicitly disabled through prefs or enterprise policies.
+        if (
+          !XPIInstall.isWeakSignatureInstallAllowed() &&
+          this.addon.signedDate &&
+          !hasStrongSignature(this.addon)
+        ) {
+          const addonAllowedByPolicies = Services.policies.getExtensionSettings(
+            this.addon.id
+          )?.temporarily_allow_weak_signatures;
+
+          const globallyAllowedByPolicies =
+            Services.policies.getExtensionSettings(
+              "*"
+            )?.temporarily_allow_weak_signatures;
+
+          const allowedByPolicies =
+            (globallyAllowedByPolicies &&
+              (addonAllowedByPolicies || addonAllowedByPolicies == null)) ||
+            addonAllowedByPolicies;
+
+          if (
+            !allowedByPolicies &&
+            (!this.existingAddon || hasStrongSignature(this.existingAddon))
+          ) {
+            // Reject if it is a new install or installing over an existing addon including
+            // strong cryptographic signatures.
+            return Promise.reject([
+              AddonManager.ERROR_CORRUPT_FILE,
+              "install rejected due to the package not including a strong cryptographic signature",
+            ]);
+          }
+
+          // Still allow installs using weak signatures to install if either:
+          // - it is explicitly allowed through Enterprise Policies Settings
+          // - or there is an existing addon with a weak signature.
+          logger.warn(
+            allowedByPolicies
+              ? `Allow weak signature install for ${this.addon.id} XPI due to Enterprise Policies`
+              : `Allow weak signature install over existing "${this.existingAddon.id}" XPI`
+          );
+        }
       }
     } finally {
       pkg.close();
@@ -2321,7 +2387,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  observe(aSubject, aTopic, aData) {
+  observe() {
     // Network is going offline
     this.cancel();
   }
@@ -2592,7 +2658,7 @@ var DownloadAddonInstall = class extends AddonInstall {
               new UpdateChecker(
                 this.addon,
                 {
-                  onUpdateFinished: aAddon => this.downloadCompleted(),
+                  onUpdateFinished: () => this.downloadCompleted(),
                 },
                 AddonManager.UPDATE_WHEN_ADDON_INSTALLED
               );
@@ -3880,7 +3946,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
   }
 
   // old system add-on upgrade dirs get automatically removed
-  uninstallAddon(aAddon) {}
+  uninstallAddon() {}
 }
 
 var AppUpdate = {
@@ -4342,6 +4408,17 @@ export var XPIInstall = {
   isFileRequestWhitelisted() {
     // Default to whitelisted if the preference does not exist.
     return Services.prefs.getBoolPref(PREF_XPI_FILE_WHITELISTED, true);
+  },
+
+  isWeakSignatureInstallAllowed() {
+    return Services.prefs.getBoolPref(
+      PREF_XPI_WEAK_SIGNATURES_ALLOWED,
+      PREF_XPI_WEAK_SIGNATURES_ALLOWED_DEFAULT
+    );
+  },
+
+  getWeakSignatureInstallPrefName() {
+    return PREF_XPI_WEAK_SIGNATURES_ALLOWED;
   },
 
   /**

@@ -250,8 +250,7 @@ toolbar[customizing] > .overflow-button {
   display: none;
 }
 
-toolbar[customizing] #ion-button,
-toolbar[customizing] #whats-new-menu-button {
+toolbar[customizing] #ion-button {
   display: none;
 }
 
@@ -382,7 +381,7 @@ toolbarpaletteitem {
   toolbar[brighttext] & {
     list-style-image: var(--webextension-toolbar-image-light, inherit);
   }
-  toolbar:not([brighttext]) &:-moz-lwtheme {
+  :root[lwtheme] toolbar:not([brighttext]) & {
     list-style-image: var(--webextension-toolbar-image-dark, inherit);
   }
   toolbaritem:is([overflowedItem="true"], [cui-areatype="panel"]) > & {
@@ -478,12 +477,6 @@ toolbar:not(#TabsToolbar) > #personal-bookmarks {
 /* Ensure stop-button and reload-button are displayed correctly when in the overflow menu */
 .widget-overflow-list > #stop-reload-button > .toolbarbutton-1 {
   flex: 1;
-}
-
-@media (-moz-platform: macos) {
-  :root[inFullscreen="true"] {
-    padding-top: 0; /* override drawintitlebar="true" */
-  }
 }
 
 /* Hide menu elements intended for keyboard access support */
@@ -916,7 +909,7 @@ menupopup[emptyplacesresult="true"] > .hide-if-empty-places-result {
   position: absolute;
 }
 
-browser[tabmodalPromptShowing], browser[tabDialogShowing] {
+browser[tabDialogShowing] {
   -moz-user-focus: none !important;
 }
 

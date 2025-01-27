@@ -150,6 +150,7 @@ dictionary MediaDecoderStateMachineDebugInfo {
   boolean videoCompleted = false;
   MediaDecoderStateMachineDecodingStateDebugInfo stateObj = {};
   MediaSinkDebugInfo mediaSink = {};
+  double totalBufferingTimeMs = 0;
 };
 
 dictionary MediaStateDebugInfo {
@@ -195,6 +196,8 @@ dictionary MediaFormatReaderDebugInfo {
   MediaStateDebugInfo audioState = {};
   MediaStateDebugInfo videoState = {};
   MediaFrameStats frameStats = {};
+  double totalReadMetadataTimeMs = 0.0;
+  double totalWaitingForVideoDataTimeMs = 0.0;
 };
 
 dictionary BufferRange {

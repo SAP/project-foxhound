@@ -15,8 +15,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const RESULT_MENU_COMMAND = {
-  HELP: "help",
   INACCURATE_LOCATION: "inaccurate_location",
+  MANAGE: "manage",
   NOT_INTERESTED: "not_interested",
   NOT_RELEVANT: "not_relevant",
   SHOW_LESS_FREQUENTLY: "show_less_frequently",
@@ -168,9 +168,9 @@ export class YelpSuggestions extends BaseFeature {
       },
       { name: "separator" },
       {
-        name: RESULT_MENU_COMMAND.HELP,
+        name: RESULT_MENU_COMMAND.MANAGE,
         l10n: {
-          id: "urlbar-result-menu-learn-more-about-firefox-suggest",
+          id: "urlbar-result-menu-manage-firefox-suggest",
         },
       }
     );
@@ -180,8 +180,8 @@ export class YelpSuggestions extends BaseFeature {
 
   handleCommand(view, result, selType, searchString) {
     switch (selType) {
-      case RESULT_MENU_COMMAND.HELP:
-        // "help" is handled by UrlbarInput, no need to do anything here.
+      case RESULT_MENU_COMMAND.MANAGE:
+        // "manage" is handled by UrlbarInput, no need to do anything here.
         break;
       case RESULT_MENU_COMMAND.INACCURATE_LOCATION:
         // Currently the only way we record this feedback is in the Glean
@@ -227,19 +227,11 @@ export class YelpSuggestions extends BaseFeature {
   }
 
   get #minKeywordLength() {
-    // It's unusual to get both a Nimbus variable and its fallback pref at the
-    // same time, but we have a good reason. To recap, if a variable doesn't
-    // have a value, then the value of its fallback will be returned; otherwise
-    // the variable value will be returned. That's usually what we want, but for
-    // Yelp, we set the pref each time the user clicks "show less frequently",
-    // and we want the variable to act only as an initial min length. In other
-    // words, if the pref has a user value (because we set it), use it;
-    // otherwise use the initial value defined by the variable.
-    return Math.max(
-      lazy.UrlbarPrefs.get("yelpMinKeywordLength") || 0,
-      lazy.UrlbarPrefs.get("yelp.minKeywordLength") || 0,
-      0
-    );
+    let minLength =
+      lazy.UrlbarPrefs.get("yelp.minKeywordLength") ||
+      lazy.UrlbarPrefs.get("yelpMinKeywordLength") ||
+      0;
+    return Math.max(minLength, 0);
   }
 
   async #fetchCity() {

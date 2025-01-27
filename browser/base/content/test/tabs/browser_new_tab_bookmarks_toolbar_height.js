@@ -12,7 +12,7 @@ async function expectHeightChanges(tab, expectedNewHeightChanges, msg) {
   let contentObservedHeightChanges = await ContentTask.spawn(
     tab.linkedBrowser,
     null,
-    async args => {
+    async () => {
       await new Promise(resolve => content.requestAnimationFrame(resolve));
       return content.document.body.innerText;
     }
@@ -109,7 +109,7 @@ add_task(async function () {
   info("Opening a new tab, making the previous tab non-selected");
   await expectBmToolbarVisibilityChange(
     () => {
-      BrowserOpenTab();
+      BrowserCommands.openTab();
       ok(
         !tab.selected,
         "non-new tab is in the background (not the selected tab)"

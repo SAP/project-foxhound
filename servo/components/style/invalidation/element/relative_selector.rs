@@ -53,12 +53,12 @@ impl DomMutationOperation {
     fn accept<E: TElement>(&self, d: &Dependency, e: E) -> bool {
         match self {
             Self::Insert | Self::Append | Self::Remove => {
-                e.relative_selector_search_direction().is_some()
+                !e.relative_selector_search_direction().is_empty()
             },
             // `:has(+ .a + .b)` with `.anchor + .a + .remove + .b` - `.a` would be present
             // in the search path.
             Self::SideEffectPrevSibling => {
-                e.relative_selector_search_direction().is_some() &&
+                !e.relative_selector_search_direction().is_empty() &&
                     d.right_combinator_is_next_sibling()
             },
             // If an element is being removed and would cause next-sibling match to happen,
@@ -499,6 +499,19 @@ where
             },
             None => (),
         });
+        element.each_custom_state(|v| {
+            match map.map.custom_state_affecting_selectors.get(v) {
+                Some(v) => {
+                    for dependency in v {
+                        if !operation.accept(dependency, element) {
+                            continue;
+                        }
+                        self.add_dependency(dependency, element, scope);
+                    }
+                },
+                None => (),
+            }
+        });
         element.each_attr_name(
             |v| match map.map.other_attribute_affecting_selectors.get(v) {
                 Some(v) => {
@@ -782,11 +795,7 @@ where
 
     /// Is this element in the direction of the given relative selector search path?
     fn in_search_direction(element: &E, desired: ElementSelectorFlags) -> bool {
-        if let Some(direction) = element.relative_selector_search_direction() {
-            direction.intersects(desired)
-        } else {
-            false
-        }
+        element.relative_selector_search_direction().intersects(desired)
     }
 
     /// Handle a potential relative selector anchor.
@@ -1145,7 +1154,7 @@ where
         dep: &'a Dependency,
     ) {
         debug_assert!(dep.parent.is_some(), "Orphaned inners selector?");
-        if element.relative_selector_search_direction().is_none() {
+        if element.relative_selector_search_direction().is_empty() {
             return;
         }
         self.invalidations.push((

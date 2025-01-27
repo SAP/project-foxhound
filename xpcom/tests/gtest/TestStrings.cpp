@@ -34,12 +34,6 @@
     }                                                 \
   });
 
-// Disable the C++ 2a warning. See bug #1509926
-#if defined(__clang__) && (__clang_major__ >= 6)
-#  pragma clang diagnostic push
-#  pragma clang diagnostic ignored "-Wc++2a-compat"
-#endif
-
 namespace TestStrings {
 
 using mozilla::BlackBox;
@@ -1290,6 +1284,32 @@ TEST_F(Strings, string_tointeger) {
     EXPECT_EQ(rv, t->rv);
     EXPECT_EQ(result, t->result);
     result = nsAutoCString(t->str).ToInteger(&rv, t->radix);
+    EXPECT_EQ(rv, t->rv);
+    EXPECT_EQ(result, t->result);
+  }
+}
+
+struct ToUnsignedIntegerTest {
+  const char* str;
+  uint32_t radix;
+  uint32_t result;
+  nsresult rv;
+};
+
+static const ToUnsignedIntegerTest kToUnsignedIntegerTests[] = {
+    {"123", 10, 123, NS_OK},
+    {"7b", 16, 123, NS_OK},
+    {"90194313659", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+    {"ffffffff", 16, 0xffffffff, NS_OK},
+    {"4294967295", 10, 4294967295, NS_OK},
+    {"8abc1234", 16, 0x8abc1234, NS_OK},
+    {"-194313659", 10, 0, NS_ERROR_ILLEGAL_VALUE},
+    {nullptr, 0, 0, NS_OK}};
+
+TEST_F(Strings, string_to_unsigned_integer) {
+  nsresult rv;
+  for (const ToUnsignedIntegerTest* t = kToUnsignedIntegerTests; t->str; ++t) {
+    uint32_t result = nsAutoCString(t->str).ToUnsignedInteger(&rv, t->radix);
     EXPECT_EQ(rv, t->rv);
     EXPECT_EQ(result, t->result);
   }
@@ -2795,7 +2815,3 @@ static_assert(*testStringA.EndReading() == 0);
 static_assert(testStringA.EndReading() - testStringA.BeginReading() == 1);
 
 }  // namespace TestStrings
-
-#if defined(__clang__) && (__clang_major__ >= 6)
-#  pragma clang diagnostic pop
-#endif

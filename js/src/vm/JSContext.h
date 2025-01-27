@@ -89,11 +89,14 @@ class InternalJobQueue : public JS::JobQueue {
                          JS::HandleObject incumbentGlobal) override;
   void runJobs(JSContext* cx) override;
   bool empty() const override;
+  bool isDrainingStopped() const override { return interrupted_; }
 
   // If we are currently in a call to runJobs(), make that call stop processing
   // jobs once the current one finishes, and return. If we are not currently in
   // a call to runJobs, make all future calls return immediately.
   void interrupt() { interrupted_ = true; }
+
+  void uninterrupt() { interrupted_ = false; }
 
   // Return the front element of the queue, or nullptr if the queue is empty.
   // This is only used by shell testing functions.
@@ -425,6 +428,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 #ifdef DEBUG
   js::ContextData<uint32_t> inUnsafeCallWithABI;
   js::ContextData<bool> hasAutoUnsafeCallWithABI;
+  js::ContextData<uint32_t> liveArraySortDataInstances;
 #endif
 
 #ifdef JS_SIMULATOR
@@ -505,6 +509,9 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   static constexpr size_t offsetOfRegExpSearcherLastLimit() {
     return offsetof(JSContext, regExpSearcherLastLimit);
   }
+
+  // Whether we are currently executing the top level of a module.
+  js::ContextData<uint32_t> isEvaluatingModule;
 
  private:
   // Pools used for recycling name maps and vectors when parsing and
@@ -718,6 +725,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    * attached.
    */
   js::SavedFrame* getPendingExceptionStack();
+
+#ifdef DEBUG
+  /**
+   * Return the pending exception (without wrapping).
+   */
+  const JS::Value& getPendingExceptionUnwrapped();
+#endif
 
   bool isThrowingDebuggeeWouldRun();
   bool isClosingGenerator();

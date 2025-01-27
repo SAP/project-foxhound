@@ -517,7 +517,12 @@ void BaselineStackBuilder::setNextCallee(
     //
     // Also use the callee's own ICScript if we purged callee ICScripts.
     icScript_ = nextCallee->nonLazyScript()->jitScript()->icScript();
+
     if (trialInliningState != TrialInliningState::MonomorphicInlined) {
+      // Don't use specialized ICScripts for any of the callees if we had an
+      // inlining failure. We're now using the generic ICScript but compilation
+      // might have used the trial-inlined ICScript and these can have very
+      // different inlining graphs.
       canUseTrialInlinedICScripts_ = false;
     }
   }
@@ -1567,6 +1572,7 @@ bool jit::BailoutIonToBaseline(JSContext* cx, JitActivation* activation,
              prevFrameType == FrameType::IonJS ||
              prevFrameType == FrameType::BaselineStub ||
              prevFrameType == FrameType::Rectifier ||
+             prevFrameType == FrameType::TrampolineNative ||
              prevFrameType == FrameType::IonICCall ||
              prevFrameType == FrameType::BaselineJS ||
              prevFrameType == FrameType::BaselineInterpreterEntry);
@@ -1965,14 +1971,6 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
     UnwindEnvironment(cx, ei, bailoutInfo->tryPC);
   }
 
-  // Check for interrupts now because we might miss an interrupt check in JIT
-  // code when resuming in the prologue, after the stack/interrupt check.
-  if (!cx->isExceptionPending()) {
-    if (!CheckForInterrupt(cx)) {
-      return false;
-    }
-  }
-
   BailoutKind bailoutKind = *bailoutInfo->bailoutKind;
   JitSpew(JitSpew_BaselineBailouts,
           "  Restored outerScript=(%s:%u:%u,%u) innerScript=(%s:%u:%u,%u) "
@@ -2169,7 +2167,17 @@ bool jit::FinishBailoutToBaseline(BaselineBailoutInfo* bailoutInfoArg) {
         ionScript->incNumFixableBailouts();
         if (ionScript->shouldInvalidate()) {
 #ifdef DEBUG
-          if (saveFailedICHash && !JitOptions.disableBailoutLoopCheck) {
+          // To detect bailout loops, we save a hash of the CacheIR used to
+          // compile this script, and assert that we don't recompile with the
+          // exact same inputs.  Some of our bailout detection strategies, like
+          // LICM and stub folding, rely on bailing out, updating some state
+          // when we hit the baseline fallback, and using that information when
+          // we invalidate. If the frequentBailoutThreshold is set too low, we
+          // will instead invalidate the first time we bail out, so we don't
+          // have the chance to make those decisions. That doesn't happen in
+          // regular code, so we just skip bailout loop detection in that case.
+          if (saveFailedICHash && !JitOptions.disableBailoutLoopCheck &&
+              JitOptions.frequentBailoutThreshold > 1) {
             outerScript->jitScript()->setFailedICHash(ionScript->icHash());
           }
 #endif

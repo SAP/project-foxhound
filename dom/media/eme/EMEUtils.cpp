@@ -10,8 +10,10 @@
 #include "MediaData.h"
 #include "KeySystemConfig.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/KeySystemNames.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsContentUtils.h"
 
 #ifdef MOZ_WMF_CDM
 #  include "mozilla/PMFCDM.h"
@@ -49,37 +51,33 @@ bool IsWidevineKeySystem(const nsAString& aKeySystem) {
 }
 
 #ifdef MOZ_WMF_CDM
-bool IsPlayReadyKeySystemAndSupported(const nsAString& aKeySystem) {
-  if (!StaticPrefs::media_eme_playready_enabled()) {
-    return false;
-  }
+bool IsPlayReadyEnabled() {
   // 1=enabled encrypted and clear, 2=enabled encrytped.
-  if (StaticPrefs::media_wmf_media_engine_enabled() != 1 &&
-      StaticPrefs::media_wmf_media_engine_enabled() != 2) {
-    return false;
-  }
-  return IsPlayReadyKeySystem(aKeySystem);
+  return StaticPrefs::media_eme_playready_enabled() &&
+         (StaticPrefs::media_wmf_media_engine_enabled() == 1 ||
+          StaticPrefs::media_wmf_media_engine_enabled() == 2);
 }
 
-bool IsPlayReadyKeySystem(const nsAString& aKeySystem) {
+bool IsPlayReadyKeySystemAndSupported(const nsAString& aKeySystem) {
+  if (!IsPlayReadyEnabled()) {
+    return false;
+  }
   return aKeySystem.EqualsLiteral(kPlayReadyKeySystemName) ||
          aKeySystem.EqualsLiteral(kPlayReadyKeySystemHardware) ||
          aKeySystem.EqualsLiteral(kPlayReadyHardwareClearLeadKeySystemName);
 }
 
-bool IsWidevineExperimentKeySystemAndSupported(const nsAString& aKeySystem) {
-  if (!StaticPrefs::media_eme_widevine_experiment_enabled()) {
-    return false;
-  }
+bool IsWidevineHardwareDecryptionEnabled() {
   // 1=enabled encrypted and clear, 2=enabled encrytped.
-  if (StaticPrefs::media_wmf_media_engine_enabled() != 1 &&
-      StaticPrefs::media_wmf_media_engine_enabled() != 2) {
-    return false;
-  }
-  return IsWidevineExperimentKeySystem(aKeySystem);
+  return StaticPrefs::media_eme_widevine_experiment_enabled() &&
+         (StaticPrefs::media_wmf_media_engine_enabled() == 1 ||
+          StaticPrefs::media_wmf_media_engine_enabled() == 2);
 }
 
-bool IsWidevineExperimentKeySystem(const nsAString& aKeySystem) {
+bool IsWidevineExperimentKeySystemAndSupported(const nsAString& aKeySystem) {
+  if (!IsWidevineHardwareDecryptionEnabled()) {
+    return false;
+  }
   return aKeySystem.EqualsLiteral(kWidevineExperimentKeySystemName) ||
          aKeySystem.EqualsLiteral(kWidevineExperiment2KeySystemName);
 }
@@ -120,26 +118,6 @@ nsString KeySystemToProxyName(const nsAString& aKeySystem) {
   MOZ_ASSERT_UNREACHABLE("Not supported key system!");
   return u""_ns;
 }
-
-#define ENUM_TO_STR(enumVal) \
-  case enumVal:              \
-    return #enumVal
-
-const char* ToMediaKeyStatusStr(dom::MediaKeyStatus aStatus) {
-  switch (aStatus) {
-    ENUM_TO_STR(dom::MediaKeyStatus::Usable);
-    ENUM_TO_STR(dom::MediaKeyStatus::Expired);
-    ENUM_TO_STR(dom::MediaKeyStatus::Released);
-    ENUM_TO_STR(dom::MediaKeyStatus::Output_restricted);
-    ENUM_TO_STR(dom::MediaKeyStatus::Output_downscaled);
-    ENUM_TO_STR(dom::MediaKeyStatus::Status_pending);
-    ENUM_TO_STR(dom::MediaKeyStatus::Internal_error);
-    default:
-      return "Undefined MediaKeyStatus!";
-  }
-}
-
-#undef ENUM_TO_STR
 
 bool IsHardwareDecryptionSupported(
     const dom::MediaKeySystemConfiguration& aConfig) {
@@ -223,7 +201,9 @@ void MFCDMCapabilitiesIPDLToKeySystemConfig(
     aKeySystemConfig.mEncryptionSchemes.AppendElement(
         NS_ConvertUTF8toUTF16(EncryptionSchemeStr(scheme)));
   }
-  aKeySystemConfig.mIsHDCP22Compatible = aCDMConfig.isHDCP22Compatible();
+  aKeySystemConfig.mIsHDCP22Compatible = aCDMConfig.isHDCP22Compatible()
+                                             ? *aCDMConfig.isHDCP22Compatible()
+                                             : false;
   EME_LOG("New Capabilities=%s",
           NS_ConvertUTF16toUTF8(aKeySystemConfig.GetDebugInfo()).get());
 }
@@ -268,6 +248,23 @@ bool DoesKeySystemSupportHardwareDecryption(const nsAString& aKeySystem) {
   }
 #endif
   return false;
+}
+
+void DeprecationWarningLog(const dom::Document* aDocument,
+                           const char* aMsgName) {
+  if (!aDocument || !aMsgName) {
+    return;
+  }
+  EME_LOG("DeprecationWarning Logging deprecation warning '%s' to WebConsole.",
+          aMsgName);
+  nsTHashMap<nsCharPtrHashKey, bool> warnings;
+  warnings.InsertOrUpdate(aMsgName, true);
+  AutoTArray<nsString, 1> params;
+  nsString& uri = *params.AppendElement();
+  Unused << aDocument->GetDocumentURI(uri);
+  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Media"_ns,
+                                  aDocument, nsContentUtils::eDOM_PROPERTIES,
+                                  aMsgName, params);
 }
 
 }  // namespace mozilla

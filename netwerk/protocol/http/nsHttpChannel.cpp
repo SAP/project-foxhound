@@ -15,11 +15,13 @@
 #include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/StoragePrincipalHelper.h"
 
+#include "nsCOMPtr.h"
 #include "nsContentSecurityUtils.h"
 #include "nsHttp.h"
 #include "nsHttpChannel.h"
 #include "nsHttpChannelAuthProvider.h"
 #include "nsHttpHandler.h"
+#include "nsIStreamConverter.h"
 #include "nsString.h"
 #include "nsICacheStorageService.h"
 #include "nsICacheStorage.h"
@@ -481,6 +483,25 @@ void nsHttpChannel::HandleContinueCancellingByURLClassifier(
   LOG(("nsHttpChannel::HandleContinueCancellingByURLClassifier [this=%p]\n",
        this));
   ContinueCancellingByURLClassifier(aErrorCode);
+}
+
+void nsHttpChannel::SetPriorityHeader() {
+  uint8_t urgency = nsHttpHandler::UrgencyFromCoSFlags(mClassOfService.Flags());
+  bool incremental = mClassOfService.Incremental();
+
+  nsPrintfCString value(
+      "%s", urgency != 3 ? nsPrintfCString("u=%d", urgency).get() : "");
+
+  if (incremental) {
+    if (!value.IsEmpty()) {
+      value.Append(", ");
+    }
+    value.Append("i");
+  }
+
+  if (!value.IsEmpty()) {
+    SetRequestHeader("Priority"_ns, value, false);
+  }
 }
 
 nsresult nsHttpChannel::OnBeforeConnect() {
@@ -1202,6 +1223,10 @@ nsresult nsHttpChannel::SetupTransaction() {
 
   mozilla::MutexAutoLock lock(mRCWNLock);
 
+  if (StaticPrefs::network_http_priority_header_enabled()) {
+    SetPriorityHeader();
+  }
+
   // If we're racing cache with network, conditional or byte range header
   // could be added in OnCacheEntryCheck. We cannot send conditional request
   // without having the entry, so we need to remove the headers here and
@@ -1810,6 +1835,7 @@ nsresult nsHttpChannel::CallOnStartRequest() {
                  "converter in this case.");
       mListener = listener;
       mCompressListener = listener;
+
       StoreHasAppliedConversion(true);
     }
   }
@@ -7665,6 +7691,7 @@ static nsLiteralCString ContentTypeToTelemetryLabel(nsHttpChannel* aChannel) {
       return "proxy"_ns;
     }
     if (contentType.EqualsLiteral(APPLICATION_BROTLI) ||
+        contentType.EqualsLiteral(APPLICATION_ZSTD) ||
         contentType.Find("zip") != kNotFound ||
         contentType.Find("compress") != kNotFound) {
       return "compressed"_ns;

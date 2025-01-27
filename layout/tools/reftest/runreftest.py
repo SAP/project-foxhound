@@ -462,6 +462,9 @@ class RefTest(object):
         # config specific flags
         prefs["sandbox.apple_silicon"] = mozinfo.info.get("apple_silicon", False)
 
+        prefs["sandbox.mozinfo"] = json.dumps(mozinfo.info)
+        prefs["sandbox.os_version"] = mozinfo.info.get("os_version", "")
+
         # Set tests to run or manifests to parse.
         if tests:
             testlist = os.path.join(profile.profile, "reftests.json")
@@ -481,22 +484,6 @@ class RefTest(object):
                 prefs["reftest.totalChunks"] = options.totalChunks
             if options.thisChunk:
                 prefs["reftest.thisChunk"] = options.thisChunk
-
-        # Bug 1262954: For winXP + e10s disable acceleration
-        if (
-            platform.system() in ("Windows", "Microsoft")
-            and "5.1" in platform.version()
-            and options.e10s
-        ):
-            prefs["layers.acceleration.disabled"] = True
-
-        # Bug 1300355: Disable canvas cache for win7 as it uses
-        # too much memory and causes OOMs.
-        if (
-            platform.system() in ("Windows", "Microsoft")
-            and "6.1" in platform.version()
-        ):
-            prefs["reftest.nocache"] = True
 
         if options.marionette:
             # options.marionette can specify host:port

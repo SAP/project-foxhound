@@ -23,6 +23,7 @@
 #  include "mozilla/gfx/Rect.h"
 #  include "nsString.h"
 #  include "nsTArray.h"
+#  include "EncoderConfig.h"
 
 namespace mozilla {
 
@@ -379,7 +380,7 @@ class NullData : public MediaData {
   static const Type sType = Type::NULL_DATA;
 };
 
-// Holds chunk a decoded audio frames.
+// Holds chunk a decoded interleaved audio frames.
 class AudioData : public MediaData {
  public:
   AudioData(int64_t aOffset, const media::TimeUnit& aTime,
@@ -388,6 +389,8 @@ class AudioData : public MediaData {
 
   static const Type sType = Type::AUDIO_DATA;
   static const char* sTypeName;
+
+  nsCString ToString() const;
 
   // Access the buffer as a Span.
   Span<AudioDataValue> Data() const;
@@ -720,6 +723,9 @@ class MediaRawData final : public MediaData {
   // If it's true, the `mCrypto` should be copied into the remote data as well.
   // Currently this is only used for the media engine DRM playback.
   bool mShouldCopyCryptoToRemoteRawData = false;
+
+  // Config used to encode this packet.
+  UniquePtr<const EncoderConfig> mConfig;
 
   // It's only used when the remote decoder reconstructs the media raw data.
   CryptoSample& GetWritableCrypto() { return mCryptoInternal; }

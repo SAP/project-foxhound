@@ -78,7 +78,7 @@ CalleeToken JSJitFrameIter::calleeToken() const {
 }
 
 JSFunction* JSJitFrameIter::callee() const {
-  MOZ_ASSERT(isScripted());
+  MOZ_ASSERT(isScripted() || isTrampolineNative());
   MOZ_ASSERT(isFunctionFrame());
   return CalleeTokenToFunction(calleeToken());
 }
@@ -110,7 +110,7 @@ bool JSJitFrameIter::isFunctionFrame() const {
 
 JSScript* JSJitFrameIter::script() const {
   MOZ_ASSERT(isScripted());
-  JSScript* script = ScriptFromCalleeToken(calleeToken());
+  JSScript* script = MaybeForwardedScriptFromCalleeToken(calleeToken());
   MOZ_ASSERT(script);
   return script;
 }
@@ -381,6 +381,10 @@ void JSJitFrameIter::dump() const {
       break;
     case FrameType::Rectifier:
       fprintf(stderr, " Rectifier frame\n");
+      fprintf(stderr, "  Caller frame ptr: %p\n", current()->callerFramePtr());
+      break;
+    case FrameType::TrampolineNative:
+      fprintf(stderr, " TrampolineNative frame\n");
       fprintf(stderr, "  Caller frame ptr: %p\n", current()->callerFramePtr());
       break;
     case FrameType::IonICCall:
@@ -707,47 +711,47 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
    * |
    * ^--- WasmToJSJit <---- (other wasm frames, not handled by this iterator)
    * |
-   * ^--- Arguments Rectifier
-   * |    ^
-   * |    |
-   * |    ^--- Ion
-   * |    |
-   * |    ^--- Baseline Stub <---- Baseline
-   * |    |
-   * |    ^--- WasmToJSJit <--- (other wasm frames)
-   * |    |
-   * |    ^--- Entry Frame (CppToJSJit)
+   * ^--- Entry Frame (BaselineInterpreter) (unwrapped)
+   * |
+   * ^--- Arguments Rectifier (unwrapped)
+   * |
+   * ^--- Trampoline Native (unwrapped)
    * |
    * ^--- Entry Frame (CppToJSJit)
-   * |
-   * ^--- Entry Frame (BaselineInterpreter)
-   * |    ^
-   * |    |
-   * |    ^--- Ion
-   * |    |
-   * |    ^--- Baseline Stub <---- Baseline
-   * |    |
-   * |    ^--- WasmToJSJit <--- (other wasm frames)
-   * |    |
-   * |    ^--- Entry Frame (CppToJSJit)
-   * |    |
-   * |    ^--- Arguments Rectifier
    *
    * NOTE: Keep this in sync with JitRuntime::generateProfilerExitFrameTailStub!
    */
 
-  // Unwrap baseline interpreter entry frame.
-  if (frame->prevType() == FrameType::BaselineInterpreterEntry) {
-    frame = GetPreviousRawFrame<BaselineInterpreterEntryFrameLayout*>(frame);
-  }
+  while (true) {
+    // Unwrap baseline interpreter entry frame.
+    if (frame->prevType() == FrameType::BaselineInterpreterEntry) {
+      frame = GetPreviousRawFrame<BaselineInterpreterEntryFrameLayout*>(frame);
+      continue;
+    }
 
-  // Unwrap rectifier frames.
-  if (frame->prevType() == FrameType::Rectifier) {
-    frame = GetPreviousRawFrame<RectifierFrameLayout*>(frame);
-    MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
-               frame->prevType() == FrameType::BaselineStub ||
-               frame->prevType() == FrameType::WasmToJSJit ||
-               frame->prevType() == FrameType::CppToJSJit);
+    // Unwrap rectifier frames.
+    if (frame->prevType() == FrameType::Rectifier) {
+      frame = GetPreviousRawFrame<RectifierFrameLayout*>(frame);
+      MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
+                 frame->prevType() == FrameType::BaselineStub ||
+                 frame->prevType() == FrameType::TrampolineNative ||
+                 frame->prevType() == FrameType::WasmToJSJit ||
+                 frame->prevType() == FrameType::CppToJSJit);
+      continue;
+    }
+
+    // Unwrap TrampolineNative frames.
+    if (frame->prevType() == FrameType::TrampolineNative) {
+      frame = GetPreviousRawFrame<TrampolineNativeFrameLayout*>(frame);
+      MOZ_ASSERT(frame->prevType() == FrameType::IonJS ||
+                 frame->prevType() == FrameType::BaselineStub ||
+                 frame->prevType() == FrameType::Rectifier ||
+                 frame->prevType() == FrameType::WasmToJSJit ||
+                 frame->prevType() == FrameType::CppToJSJit);
+      continue;
+    }
+
+    break;
   }
 
   FrameType prevType = frame->prevType();
@@ -773,24 +777,31 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
     }
 
     case FrameType::WasmToJSJit:
-      // No previous js jit frame, this is a transition frame, used to
-      // pass a wasm iterator the correct value of FP.
+      // No previous JS JIT frame. Set fp_ to nullptr to indicate the
+      // JSJitProfilingFrameIterator is done(). Also set wasmCallerFP_ so that
+      // the caller can pass it to a Wasm frame iterator.
       resumePCinCurrentFrame_ = nullptr;
-      fp_ = GetPreviousRawFrame<uint8_t*>(frame);
+      fp_ = nullptr;
       type_ = FrameType::WasmToJSJit;
-      MOZ_ASSERT(!done());
+      MOZ_ASSERT(!wasmCallerFP_);
+      wasmCallerFP_ = GetPreviousRawFrame<uint8_t*>(frame);
+      MOZ_ASSERT(wasmCallerFP_);
+      MOZ_ASSERT(done());
       return;
 
     case FrameType::CppToJSJit:
-      // No previous frame, set to nullptr to indicate that
+      // No previous JS JIT frame. Set fp_ to nullptr to indicate the
       // JSJitProfilingFrameIterator is done().
       resumePCinCurrentFrame_ = nullptr;
       fp_ = nullptr;
       type_ = FrameType::CppToJSJit;
+      MOZ_ASSERT(!wasmCallerFP_);
+      MOZ_ASSERT(done());
       return;
 
     case FrameType::BaselineInterpreterEntry:
     case FrameType::Rectifier:
+    case FrameType::TrampolineNative:
     case FrameType::Exit:
     case FrameType::Bailout:
     case FrameType::JSJitToWasm:

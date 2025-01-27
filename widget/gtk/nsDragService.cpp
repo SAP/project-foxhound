@@ -607,6 +607,14 @@ nsDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   mTargetDragContextForRemote = nullptr;
   mTargetWindow = nullptr;
   mPendingWindow = nullptr;
+  mPendingDragContext = nullptr;
+  mPendingWindowPoint = {};
+  mScheduledTask = eDragTaskNone;
+  if (mTaskSource) {
+    g_source_remove(mTaskSource);
+    mTaskSource = 0;
+  }
+  mPendingTime = 0;
   mCachedDragContext = 0;
 
   return nsBaseDragService::EndDragSession(aDoneDrag, aKeyModifiers);
@@ -712,7 +720,7 @@ nsDragService::GetNumDropItems(uint32_t* aNumItems) {
         *aNumItems = 0;
         return NS_OK;
       }
-      GetTargetDragData(gdkFlavor, dragFlavors);
+      GetTargetDragData(gdkFlavor, dragFlavors, false /* resetTargetData */);
     }
 
     // application/vnd.portal.filetransfer
@@ -722,7 +730,7 @@ nsDragService::GetNumDropItems(uint32_t* aNumItems) {
         *aNumItems = 0;
         return NS_OK;
       }
-      GetTargetDragData(gdkFlavor, dragFlavors);
+      GetTargetDragData(gdkFlavor, dragFlavors, false /* resetTargetData */);
     }
 
     if (mTargetDragUris) {
@@ -875,7 +883,7 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
       LOGDRAGSERVICE("  file not found, proceed with %s flavor\n", gPortalFile);
       gdkFlavor = gdk_atom_intern(gPortalFile, FALSE);
       if (gdkFlavor) {
-        GetTargetDragData(gdkFlavor, dragFlavors);
+        GetTargetDragData(gdkFlavor, dragFlavors, false /* resetTargetData */);
         GetReachableFileFromUriList(mTargetDragUris.get(), aItemIndex, file);
       }
     }
@@ -886,7 +894,7 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
                      gPortalFileTransfer);
       gdkFlavor = gdk_atom_intern(gPortalFileTransfer, FALSE);
       if (gdkFlavor) {
-        GetTargetDragData(gdkFlavor, dragFlavors);
+        GetTargetDragData(gdkFlavor, dragFlavors, false /* resetTargetData */);
         GetReachableFileFromUriList(mTargetDragUris.get(), aItemIndex, file);
       }
     }
@@ -899,7 +907,7 @@ nsDragService::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
 
       gdkFlavor = gdk_atom_intern(gTextUriListType, FALSE);
       if (gdkFlavor) {
-        GetTargetDragData(gdkFlavor, dragFlavors);
+        GetTargetDragData(gdkFlavor, dragFlavors, false /* resetTargetData */);
         GetReachableFileFromUriList(mTargetDragUris.get(), aItemIndex, file);
       }
     }
@@ -1208,19 +1216,57 @@ void nsDragService::TargetDataReceived(GtkWidget* aWidget,
   GdkAtom target = gtk_selection_data_get_target(aSelectionData);
   GUniquePtr<gchar> name(gdk_atom_name(target));
   nsDependentCString flavor(name.get());
-
   if (gtk_targets_include_uri(&target, 1)) {
-    GUniquePtr<gchar*> uris(gtk_selection_data_get_uris(aSelectionData));
+    // For the vnd.portal.filetransfer and vnd.portal.files we receive numeric
+    // id when it's a local file. The numeric id is then used by
+    // gtk_selection_data_get_uris implementation to get the actual file
+    // available in the flatpak environment.
+    //
+    // However due to GTK implementation also for example the uris like https
+    // are also provided by the vnd.portal.filetransfer target. In this case the
+    // call  gtk_selection_data_get_uris fails. This is a bug in the gtk.
+    // To workaround it we try to create the valid uri and only if we fail
+    // we try to use the gtk_selection_data_get_uris. We ignore the valid uris
+    // for the vnd.portal.file* targets.
+    // See: https://gitlab.gnome.org/GNOME/gtk/-/issues/6563
+    if (flavor.Equals(gPortalFile) || flavor.Equals(gPortalFileTransfer)) {
+      const guchar* data = gtk_selection_data_get_data(aSelectionData);
+      if (!data || data[0] == '\0') {
+        LOGDRAGSERVICE("  Empty data!\n");
+        return;
+      }
+      nsCOMPtr<nsIURI> sourceURI;
+      nsresult rv =
+          NS_NewURI(getter_AddRefs(sourceURI), (const gchar*)data, nullptr);
+      if (NS_FAILED(rv)) {
+        // We're unable to get the URI, we'll use the
+        // gtk_selection_data_get_uris to get the actual file location
+        // accessible from the Firefox runtime.
+        GUniquePtr<gchar*> uris(gtk_selection_data_get_uris(aSelectionData));
+        uris.swap(mTargetDragUris);
+      } else {
+        LOGDRAGSERVICE(
+            "  got valid uri for MIME %s - this is bug in GTK - expected "
+            "numeric value for portal, got %s\n",
+            flavor.get(), data);
+        return;
+      }
+
+    } else {
+      GUniquePtr<gchar*> uris(gtk_selection_data_get_uris(aSelectionData));
+      uris.swap(mTargetDragUris);
+    }
 #ifdef MOZ_LOGGING
     if (MOZ_LOG_TEST(gWidgetDragLog, mozilla::LogLevel::Debug)) {
-      gchar** uri = uris.get();
+      gchar** uri = mTargetDragUris.get();
       while (uri && *uri) {
         LOGDRAGSERVICE("  got uri %s, MIME %s", *uri, flavor.get());
         uri++;
       }
     }
+
 #endif
-    uris.swap(mTargetDragUris);
+
     if (mTargetDragUris) {
       mCachedUris.InsertOrUpdate(
           flavor, GUniquePtr<gchar*>(g_strdupv(mTargetDragUris.get())));
@@ -1290,13 +1336,16 @@ bool nsDragService::IsTargetContextList(void) {
 // DispatchMotionEvents().
 // Can lead to another round of drag_motion events.
 void nsDragService::GetTargetDragData(GdkAtom aFlavor,
-                                      nsTArray<nsCString>& aDropFlavors) {
+                                      nsTArray<nsCString>& aDropFlavors,
+                                      bool aResetTargetData) {
   LOGDRAGSERVICE("nsDragService::GetTargetDragData(%p) '%s'\n",
                  mTargetDragContext.get(),
                  GUniquePtr<gchar>(gdk_atom_name(aFlavor)).get());
 
   // reset our target data areas
-  TargetResetData();
+  if (aResetTargetData) {
+    TargetResetData();
+  }
 
   GUniquePtr<gchar> name(gdk_atom_name(aFlavor));
   nsDependentCString flavor(name.get());
@@ -2554,6 +2603,7 @@ gboolean nsDragService::RunScheduledTask() {
     // Nothing more to do
     // Returning false removes the task source from the event loop.
     mTaskSource = 0;
+    mPendingDragContext = nullptr;
     return FALSE;
   }
 

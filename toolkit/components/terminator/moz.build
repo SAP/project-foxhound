@@ -21,12 +21,10 @@ EXTRA_COMPONENTS += [
     "terminator.manifest",
 ]
 
-EXTRA_JS_MODULES += [
-    "TerminatorTelemetry.sys.mjs",
+XPIDL_SOURCES += [
+    "nsITerminatorTest.idl",
 ]
 
-XPCOM_MANIFESTS += [
-    "components.conf",
-]
+XPIDL_MODULE = "toolkit_terminator"
 
 FINAL_LIBRARY = "xul"

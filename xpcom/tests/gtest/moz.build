@@ -26,6 +26,7 @@ UNIFIED_SOURCES += [
     "TestGCPostBarriers.cpp",
     "TestID.cpp",
     "TestIDUtils.cpp",
+    "TestINIParser.cpp",
     "TestInputStreamLengthHelper.cpp",
     "TestJSHolderMap.cpp",
     "TestLogCommandLineHandler.cpp",
@@ -61,6 +62,7 @@ UNIFIED_SOURCES += [
     "TestSynchronization.cpp",
     "TestTArray.cpp",
     "TestTArray2.cpp",
+    "TestTaskController.cpp",
     "TestTaskQueue.cpp",
     "TestTextFormatter.cpp",
     "TestThreadManager.cpp",
@@ -143,10 +145,8 @@ if (
         "TestSTLWrappers.cpp",
     ]
 
-# Compile TestAllocReplacement separately so Windows headers don't pollute
-# the global namespace for other files.
 if CONFIG["MOZ_MEMORY"]:
-    SOURCES += [
+    UNIFIED_SOURCES += [
         "TestAllocReplacement.cpp",
     ]
 

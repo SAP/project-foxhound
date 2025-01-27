@@ -34,11 +34,6 @@ static const nsAttrValue::EnumTable kDirectionTable[] = {
 // Default direction value is "left".
 static const nsAttrValue::EnumTable* kDefaultDirection = &kDirectionTable[0];
 
-bool HTMLMarqueeElement::IsEventAttributeNameInternal(nsAtom* aName) {
-  return nsContentUtils::IsEventAttributeName(
-      aName, EventNameType_HTML | EventNameType_HTMLMarqueeOnly);
-}
-
 JSObject* HTMLMarqueeElement::WrapNode(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {
   return dom::HTMLMarqueeElement_Binding::Wrap(aCx, this, aGivenProto);
@@ -110,19 +105,6 @@ bool HTMLMarqueeElement::ParseAttribute(int32_t aNamespaceID,
 
   return nsGenericHTMLElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
                                               aMaybeScriptedPrincipal, aResult);
-}
-
-void HTMLMarqueeElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
-                                      const nsAttrValue* aValue,
-                                      const nsAttrValue* aOldValue,
-                                      nsIPrincipal* aMaybeScriptedPrincipal,
-                                      bool aNotify) {
-  if (IsInComposedDoc() && aNameSpaceID == kNameSpaceID_None &&
-      aName == nsGkAtoms::direction) {
-    NotifyUAWidgetSetupOrChange();
-  }
-  return nsGenericHTMLElement::AfterSetAttr(
-      aNameSpaceID, aName, aValue, aOldValue, aMaybeScriptedPrincipal, aNotify);
 }
 
 void HTMLMarqueeElement::MapAttributesIntoRule(

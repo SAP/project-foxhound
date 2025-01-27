@@ -2,10 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const DEBUG = false;
-function debug(s) {
-  dump("-*- NotificationStorage.js: " + s + "\n");
-}
+const lazy = {};
+
+ChromeUtils.defineLazyGetter(lazy, "console", () => {
+  return console.createInstance({
+    prefix: "NotificationStorage",
+    maxLogLevelPref: "dom.webnotifications.loglevel",
+  });
+});
 
 const kMessageNotificationGetAllOk = "Notification:GetAll:Return:OK";
 const kMessageNotificationGetAllKo = "Notification:GetAll:Return:KO";
@@ -19,38 +23,36 @@ const kMessages = [
   kMessageNotificationDeleteKo,
 ];
 
-export function NotificationStorage() {
-  this._requests = {};
-  this._requestCount = 0;
+export class NotificationStorage {
+  #requests = {};
+  #requestCount = 0;
 
-  Services.obs.addObserver(this, "xpcom-shutdown");
+  constructor() {
+    Services.obs.addObserver(this, "xpcom-shutdown");
 
-  // Register for message listeners.
-  this.registerListeners();
-}
+    // Register for message listeners.
+    this.registerListeners();
+  }
 
-NotificationStorage.prototype = {
   registerListeners() {
     for (let message of kMessages) {
       Services.cpmm.addMessageListener(message, this);
     }
-  },
+  }
 
   unregisterListeners() {
     for (let message of kMessages) {
       Services.cpmm.removeMessageListener(message, this);
     }
-  },
+  }
 
   observe(aSubject, aTopic) {
-    if (DEBUG) {
-      debug("Topic: " + aTopic);
-    }
+    lazy.console.debug(`Topic: ${aTopic}`);
     if (aTopic === "xpcom-shutdown") {
       Services.obs.removeObserver(this, "xpcom-shutdown");
       this.unregisterListeners();
     }
-  },
+  }
 
   put(
     origin,
@@ -66,9 +68,7 @@ NotificationStorage.prototype = {
     behavior,
     serviceWorkerRegistrationScope
   ) {
-    if (DEBUG) {
-      debug("PUT: " + origin + " " + id + ": " + title);
-    }
+    lazy.console.debug(`PUT: ${origin} ${id}: ${title}`);
     var notification = {
       id,
       title,
@@ -89,83 +89,74 @@ NotificationStorage.prototype = {
       origin,
       notification,
     });
-  },
+  }
 
   get(origin, tag, callback) {
-    if (DEBUG) {
-      debug("GET: " + origin + " " + tag);
-    }
-    this._fetchFromDB(origin, tag, callback);
-  },
+    lazy.console.debug(`GET: ${origin} ${tag}`);
+    this.#fetchFromDB(origin, tag, callback);
+  }
 
   delete(origin, id) {
-    if (DEBUG) {
-      debug("DELETE: " + id);
-    }
+    lazy.console.debug(`DELETE: ${id}`);
     Services.cpmm.sendAsyncMessage("Notification:Delete", {
       origin,
       id,
     });
-  },
+  }
 
   receiveMessage(message) {
-    var request = this._requests[message.data.requestID];
+    var request = this.#requests[message.data.requestID];
 
     switch (message.name) {
       case kMessageNotificationGetAllOk:
-        delete this._requests[message.data.requestID];
-        this._returnNotifications(
-          message.data.notifications,
-          request.origin,
-          request.tag,
-          request.callback
-        );
+        delete this.#requests[message.data.requestID];
+        this.#returnNotifications(message.data.notifications, request.callback);
         break;
 
       case kMessageNotificationGetAllKo:
-        delete this._requests[message.data.requestID];
+        delete this.#requests[message.data.requestID];
         try {
           request.callback.done();
         } catch (e) {
-          debug("Error calling callback done: " + e);
+          lazy.console.debug(`Error calling callback done: ${e}`);
         }
         break;
       case kMessageNotificationSaveKo:
       case kMessageNotificationDeleteKo:
-        if (DEBUG) {
-          debug(
-            "Error received when treating: '" +
-              message.name +
-              "': " +
-              message.data.errorMsg
-          );
-        }
+        lazy.console.debug(
+          `Error received when treating: '${message.name}': ${message.data.errorMsg}`
+        );
         break;
 
       default:
-        if (DEBUG) {
-          debug("Unrecognized message: " + message.name);
-        }
+        lazy.console.debug(`Unrecognized message: ${message.name}`);
         break;
     }
-  },
+  }
 
-  _fetchFromDB(origin, tag, callback) {
+  #getUniqueRequestID() {
+    // This assumes the count will never go above MAX_SAFE_INTEGER, as
+    // notifications are not supposed to happen that frequently.
+    this.#requestCount += 1;
+    return this.#requestCount;
+  }
+
+  #fetchFromDB(origin, tag, callback) {
     var request = {
       origin,
       tag,
       callback,
     };
-    var requestID = this._requestCount++;
-    this._requests[requestID] = request;
+    var requestID = this.#getUniqueRequestID();
+    this.#requests[requestID] = request;
     Services.cpmm.sendAsyncMessage("Notification:GetAll", {
       origin,
       tag,
       requestID,
     });
-  },
+  }
 
-  _returnNotifications(notifications, origin, tag, callback) {
+  #returnNotifications(notifications, callback) {
     // Pass each notification back separately.
     // The callback is called asynchronously to match the behaviour when
     // fetching from the database.
@@ -187,19 +178,15 @@ NotificationStorage.prototype = {
           )
         );
       } catch (e) {
-        if (DEBUG) {
-          debug("Error calling callback handle: " + e);
-        }
+        lazy.console.debug(`Error calling callback handle: ${e}`);
       }
     });
     try {
       Services.tm.dispatchToMainThread(callback.done);
     } catch (e) {
-      if (DEBUG) {
-        debug("Error calling callback done: " + e);
-      }
+      lazy.console.debug(`Error calling callback done: ${e}`);
     }
-  },
+  }
 
-  QueryInterface: ChromeUtils.generateQI(["nsINotificationStorage"]),
-};
+  QueryInterface = ChromeUtils.generateQI(["nsINotificationStorage"]);
+}

@@ -1056,10 +1056,7 @@ class GlobalObject : public NativeObject {
   void setSourceURLsHolder(ArrayObject* holder) {
     data().sourceURLsHolder = holder;
   }
-  void clearSourceURLSHolder() {
-    // This is called at the start of shrinking GCs, so avoids barriers.
-    data().sourceURLsHolder.unbarrieredSet(nullptr);
-  }
+  void clearSourceURLSHolder() { setSourceURLsHolder(nullptr); }
 
   SharedShape* maybeArrayShapeWithDefaultProto() const {
     return data().arrayShapeWithDefaultProto;

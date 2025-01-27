@@ -19,7 +19,7 @@ use crate::bloom::each_relevant_element_hash;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use crate::gecko::selector_parser::{CustomState, NonTSPseudoClass, PseudoElement, SelectorImpl};
+use crate::gecko::selector_parser::{NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::gecko::snapshot_helpers;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::bindings::Gecko_ElementHasAnimations;
@@ -889,7 +889,11 @@ impl<'le> GeckoElement<'le> {
             AnimationValue::from_computed_values(property_declaration_id, before_change_style);
         let to = AnimationValue::from_computed_values(property_declaration_id, after_change_style);
 
-        debug_assert_eq!(to.is_some(), from.is_some());
+        // If the declaration contains a custom property and getComputedValue was previously called
+        // before that custom property was defined, `from` will be `None` here.
+        debug_assert!(
+            to.is_some() == from.is_some() || matches!(to, Some(AnimationValue::Custom(..)))
+        );
 
         from != to
     }
@@ -1237,20 +1241,6 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn has_custom_state(&self, state: &CustomState) -> bool {
-        if !self.is_html_element() {
-            return false;
-        }
-        let check_state_ptr: *const nsAtom = state.0.as_ptr();
-        self.extended_slots().map_or(false, |slot| {
-            (&slot.mCustomStates).iter().any(|setstate| {
-                let setstate_ptr: *const nsAtom = setstate.mRawPtr;
-                setstate_ptr == check_state_ptr
-            })
-        })
-    }
-
-    #[inline]
     fn has_part_attr(&self) -> bool {
         self.as_node()
             .get_bool_flag(nsINode_BooleanFlag::ElementHasPart)
@@ -1289,6 +1279,20 @@ impl<'le> TElement for GeckoElement<'le> {
         };
 
         snapshot_helpers::each_class_or_part(attr, callback)
+    }
+
+    #[inline]
+    fn each_custom_state<F>(&self, mut callback: F)
+    where
+        F: FnMut(&AtomIdent),
+    {
+        if let Some(slots) = self.extended_slots() {
+            unsafe {
+                for atom in slots.mCustomStates.iter() {
+                    AtomIdent::with(atom.mRawPtr, &mut callback)
+                }
+            }
+        }
     }
 
     #[inline]
@@ -1551,14 +1555,13 @@ impl<'le> TElement for GeckoElement<'le> {
 
         let mut transitions_to_keep = PropertyDeclarationIdSet::default();
         for transition_property in after_change_style.transition_properties() {
-            let physical_longhand = PropertyDeclarationId::Longhand(
-                transition_property
-                    .longhand_id
-                    .to_physical(after_change_style.writing_mode),
-            );
-            transitions_to_keep.insert(physical_longhand);
+            let physical_property = transition_property
+                .property
+                .as_borrowed()
+                .to_physical(after_change_style.writing_mode);
+            transitions_to_keep.insert(physical_property);
             if self.needs_transitions_update_per_property(
-                physical_longhand,
+                physical_property,
                 after_change_ui_style
                     .transition_combined_duration_at(transition_property.index)
                     .seconds(),
@@ -1791,17 +1794,17 @@ impl<'le> TElement for GeckoElement<'le> {
         self.as_node().selector_flags() & node_flags == node_flags
     }
 
-    fn relative_selector_search_direction(&self) -> Option<ElementSelectorFlags> {
+    fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
         use crate::gecko_bindings::structs::NodeSelectorFlags;
         let flags = self.as_node().selector_flags();
         if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestorSibling.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING
         } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestor.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR
         } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionSibling.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING
         } else {
-            None
+            ElementSelectorFlags::empty()
         }
     }
 }
@@ -2042,15 +2045,14 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
-            // TODO: This applying only to HTML elements is weird.
             NonTSPseudoClass::Dir(ref dir) => {
-                self.is_html_element() && self.state().intersects(dir.element_state())
+                self.state().intersects(dir.element_state())
             },
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
             },
-            NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(state),
+            NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(&state.0),
             NonTSPseudoClass::Visited => {
                 self.is_link() && context.visited_handling().matches_visited()
             },
@@ -2101,7 +2103,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 bindings::Gecko_IsSelectListBox(self.0)
             },
             NonTSPseudoClass::MozIsHTML => self.as_node().owner_doc().is_html_document(),
-            NonTSPseudoClass::MozLWTheme |
             NonTSPseudoClass::MozLocaleDir(..) |
             NonTSPseudoClass::MozWindowInactive => {
                 let state_bit = pseudo_class.document_state_flag();
@@ -2183,6 +2184,20 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         };
 
         snapshot_helpers::has_class_or_part(name, case_sensitivity, attr)
+    }
+
+    #[inline]
+    fn has_custom_state(&self, state: &AtomIdent) -> bool {
+        if !self.is_html_element() {
+            return false;
+        }
+        let check_state_ptr: *const nsAtom = state.as_ptr();
+        self.extended_slots().map_or(false, |slot| {
+            (&slot.mCustomStates).iter().any(|setstate| {
+                let setstate_ptr: *const nsAtom = setstate.mRawPtr;
+                setstate_ptr == check_state_ptr
+            })
+        })
     }
 
     #[inline]

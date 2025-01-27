@@ -2215,9 +2215,7 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().symmetricDifference))) {
     return true;
   }
-#endif
 
-#ifdef NIGHTLY_BUILD
   if (key == JSProto_ArrayBuffer && !JS::Prefs::arraybuffer_transfer() &&
       (id == NameToId(cx->names().transfer) ||
        id == NameToId(cx->names().transferToFixedLength) ||
@@ -2238,6 +2236,33 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       (id == NameToId(cx->names().maxByteLength) ||
        id == NameToId(cx->names().growable) ||
        id == NameToId(cx->names().grow))) {
+    return true;
+  }
+
+  if (key == JSProto_Uint8Array &&
+      !JS::Prefs::experimental_uint8array_base64() &&
+      (id == NameToId(cx->names().setFromBase64) ||
+       id == NameToId(cx->names().setFromHex) ||
+       id == NameToId(cx->names().toBase64) ||
+       id == NameToId(cx->names().toHex))) {
+    return true;
+  }
+
+  // It's gently surprising that this is JSProto_Function, but the trick
+  // to realize is that this is a -constructor function-, not a function
+  // on the prototype; and the proto of the constructor is JSProto_Function.
+  if (key == JSProto_Function && !JS::Prefs::experimental_uint8array_base64() &&
+      (id == NameToId(cx->names().fromBase64) ||
+       id == NameToId(cx->names().fromHex))) {
+    return true;
+  }
+#endif
+
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  if (key == JSProto_JSON &&
+      !JS::Prefs::experimental_json_parse_with_source() &&
+      (id == NameToId(cx->names().isRawJSON) ||
+       id == NameToId(cx->names().rawJSON))) {
     return true;
   }
 #endif
@@ -3165,19 +3190,8 @@ js::gc::AllocKind JSObject::allocKindForTenure(
       return as<JSFunction>().getAllocKind();
     }
 
-    // Fixed length typed arrays in the nursery may have a lazily allocated
-    // buffer, make sure there is room for the array's fixed data when moving
-    // the array.
-    if (is<FixedLengthTypedArrayObject>() &&
-        !as<FixedLengthTypedArrayObject>().hasBuffer()) {
-      gc::AllocKind allocKind;
-      if (as<FixedLengthTypedArrayObject>().hasInlineElements()) {
-        size_t nbytes = as<FixedLengthTypedArrayObject>().byteLength();
-        allocKind = FixedLengthTypedArrayObject::AllocKindForLazyBuffer(nbytes);
-      } else {
-        allocKind = GetGCObjectKind(getClass());
-      }
-      return ForegroundToBackgroundAllocKind(allocKind);
+    if (is<FixedLengthTypedArrayObject>()) {
+      return as<FixedLengthTypedArrayObject>().allocKindForTenure();
     }
 
     return as<NativeObject>().allocKindForTenure();

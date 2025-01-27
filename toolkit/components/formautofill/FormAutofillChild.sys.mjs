@@ -124,33 +124,18 @@ export class FormAutofillChild extends JSWindowActorChild {
     lazy.AutoCompleteChild.removePopupStateListener(this);
   }
 
-  popupStateChanged(messageName, data, _target) {
-    let docShell;
-    try {
-      docShell = this.docShell;
-    } catch (ex) {
-      lazy.AutoCompleteChild.removePopupStateListener(this);
-      return;
-    }
-
+  popupStateChanged(messageName, _data, _target) {
     if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
-    const { chromeEventHandler } = docShell;
-
     switch (messageName) {
-      case "FormAutoComplete:PopupClosed": {
-        this.onPopupClosed(data.selectedRowStyle);
-        Services.tm.dispatchToMainThread(() => {
-          chromeEventHandler.removeEventListener("keydown", this, true);
-        });
-
+      case "AutoComplete:PopupClosed": {
+        this.onPopupClosed();
         break;
       }
-      case "FormAutoComplete:PopupOpened": {
+      case "AutoComplete:PopupOpened": {
         this.onPopupOpened();
-        chromeEventHandler.addEventListener("keydown", this, true);
         break;
       }
     }
@@ -385,10 +370,6 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     switch (evt.type) {
-      case "keydown": {
-        this._onKeyDown(evt);
-        break;
-      }
       case "focusin": {
         if (lazy.FormAutofill.isAutofillEnabled) {
           this.onFocusIn(evt);
@@ -497,11 +478,9 @@ export class FormAutofillChild extends JSWindowActorChild {
       return;
     }
 
-    const doc = this.document;
-
     switch (message.name) {
       case "FormAutofill:PreviewProfile": {
-        this.previewProfile(doc);
+        this.previewProfile(message.data.selectedIndex);
         break;
       }
       case "FormAutofill:ClearForm": {
@@ -677,9 +656,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
-  previewProfile(doc) {
-    let docWin = doc.ownerGlobal;
-    let selectedIndex = lazy.ProfileAutocomplete._getSelectedIndex(docWin);
+  previewProfile(selectedIndex) {
     let lastAutoCompleteResult =
       lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
     let focusedInput = this.activeInput;
@@ -688,55 +665,17 @@ export class FormAutofillChild extends JSWindowActorChild {
       selectedIndex === -1 ||
       !focusedInput ||
       !lastAutoCompleteResult ||
-      lastAutoCompleteResult.getStyleAt(selectedIndex) != "autofill-profile"
+      lastAutoCompleteResult.getStyleAt(selectedIndex) != "autofill"
     ) {
-      this.sendAsyncMessage("FormAutofill:UpdateWarningMessage", {});
-
       lazy.ProfileAutocomplete._clearProfilePreview();
     } else {
-      let focusedInputDetails = this.activeFieldDetail;
-      let profile = JSON.parse(
-        lastAutoCompleteResult.getCommentAt(selectedIndex)
-      );
-      let allFieldNames = this.activeSection.allFieldNames;
-      let profileFields = allFieldNames.filter(
-        fieldName => !!profile[fieldName]
-      );
-
-      let focusedCategory = lazy.FormAutofillUtils.getCategoryFromFieldName(
-        focusedInputDetails.fieldName
-      );
-      let categories =
-        lazy.FormAutofillUtils.getCategoriesFromFieldNames(profileFields);
-      this.sendAsyncMessage("FormAutofill:UpdateWarningMessage", {
-        focusedCategory,
-        categories,
-      });
-
       lazy.ProfileAutocomplete._previewSelectedProfile(selectedIndex);
     }
   }
 
-  onPopupClosed(selectedRowStyle) {
+  onPopupClosed() {
     this.debug("Popup has closed.");
     lazy.ProfileAutocomplete._clearProfilePreview();
-
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
-    if (
-      lastAutoCompleteResult &&
-      this._keyDownEnterForInput &&
-      focusedInput === this._keyDownEnterForInput &&
-      focusedInput ===
-        lazy.ProfileAutocomplete.lastProfileAutoCompleteFocusedInput
-    ) {
-      if (selectedRowStyle == "autofill-footer") {
-        this.sendAsyncMessage("FormAutofill:OpenPreferences");
-      } else if (selectedRowStyle == "autofill-clear-button") {
-        this.clearForm();
-      }
-    }
   }
 
   onPopupOpened() {
@@ -763,22 +702,5 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     formFillController.markAsAutofillField(field);
-  }
-
-  _onKeyDown(e) {
-    delete this._keyDownEnterForInput;
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
-    if (
-      e.keyCode != e.DOM_VK_RETURN ||
-      !lastAutoCompleteResult ||
-      !focusedInput ||
-      focusedInput !=
-        lazy.ProfileAutocomplete.lastProfileAutoCompleteFocusedInput
-    ) {
-      return;
-    }
-    this._keyDownEnterForInput = focusedInput;
   }
 }

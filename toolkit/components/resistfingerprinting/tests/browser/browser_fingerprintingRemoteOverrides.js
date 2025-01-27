@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -19,6 +19,18 @@ const TARGET_PointerEvents = 0x00000002;
 const TARGET_CanvasRandomization = 0x000000100;
 const TARGET_WindowOuterSize = 0x002000000;
 const TARGET_Gamepad = 0x00800000;
+
+const TEST_PAGE =
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.com"
+  ) + "empty.html";
+
+const TEST_ANOTHER_PAGE =
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.net"
+  ) + "empty.html";
 
 // A helper function to filter high 32 bits.
 function extractLow32Bits(value) {
@@ -403,4 +415,50 @@ add_task(async function test_pref_override_remote_settings() {
   );
 
   db.clear();
+});
+
+// Bug 1873682 - Verify that a third-party beacon request won't hit the
+// assertion in nsRFPService::GetOverriddenFingerprintingSettingsForChannel().
+add_task(async function test_beacon_request() {
+  // Open an empty page.
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PAGE);
+
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [TEST_ANOTHER_PAGE],
+    async url => {
+      // Create a third-party iframe
+      let ifr = content.document.createElement("iframe");
+
+      await new content.Promise(resolve => {
+        ifr.onload = resolve;
+        content.document.body.appendChild(ifr);
+        ifr.src = url;
+      });
+
+      await SpecialPowers.spawn(ifr, [url], url => {
+        // Sending the beacon request right before the tab navigates away.
+        content.addEventListener("unload", _ => {
+          let value = ["text"];
+          let blob = new Blob(value, {
+            type: "application/x-www-form-urlencoded",
+          });
+          content.navigator.sendBeacon(url, blob);
+        });
+      });
+
+      // Navigate the tab to another page.
+      content.location = url;
+    }
+  );
+
+  await BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    TEST_ANOTHER_PAGE
+  );
+
+  ok(true, "Successfully navigates away.");
+
+  BrowserTestUtils.removeTab(tab);
 });

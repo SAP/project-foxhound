@@ -6,6 +6,7 @@ import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs"
 
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -462,7 +463,6 @@ export class ExtensionShortcuts {
         let win = event.target.ownerGlobal;
         action.triggerAction(win);
       } else {
-        this.extension.tabManager.addActiveTabPermission();
         this.onCommand(name);
       }
     });

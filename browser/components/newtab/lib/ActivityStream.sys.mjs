@@ -36,6 +36,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TelemetryFeed: "resource://activity-stream/lib/TelemetryFeed.sys.mjs",
   TopSitesFeed: "resource://activity-stream/lib/TopSitesFeed.sys.mjs",
   TopStoriesFeed: "resource://activity-stream/lib/TopStoriesFeed.sys.mjs",
+  WallpaperFeed: "resource://activity-stream/lib/WallpaperFeed.sys.mjs",
 });
 
 // NB: Eagerly load modules that will be loaded/constructed/initialized in the
@@ -43,7 +44,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 import {
   actionCreators as ac,
   actionTypes as at,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 
 const REGION_BASIC_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
@@ -230,6 +231,27 @@ export const PREFS_CONFIG = new Map([
     {
       title: "The rendering order for the sections",
       value: "topsites,topstories,highlights",
+    },
+  ],
+  [
+    "newtabWallpapers.enabled",
+    {
+      title: "Boolean flag to turn wallpaper functionality on and off",
+      value: true,
+    },
+  ],
+  [
+    "newtabWallpapers.wallpaper-light",
+    {
+      title: "Currently set light wallpaper",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.wallpaper-dark",
+    {
+      title: "Currently set dark wallpaper",
+      value: "",
     },
   ],
   [
@@ -522,6 +544,12 @@ const FEEDS_DATA = [
     name: "discoverystreamfeed",
     factory: () => new lazy.DiscoveryStreamFeed(),
     title: "Handles new pocket ui for the new tab page",
+    value: true,
+  },
+  {
+    name: "wallpaperfeed",
+    factory: () => new lazy.WallpaperFeed(),
+    title: "Handles fetching and managing wallpaper data from RemoteSettings",
     value: true,
   },
 ];

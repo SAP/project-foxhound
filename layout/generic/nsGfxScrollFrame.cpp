@@ -173,7 +173,7 @@ class nsHTMLScrollFrame::ScrollEvent : public Runnable {
 class nsHTMLScrollFrame::ScrollEndEvent : public Runnable {
  public:
   NS_DECL_NSIRUNNABLE
-  explicit ScrollEndEvent(nsHTMLScrollFrame* aHelper);
+  explicit ScrollEndEvent(nsHTMLScrollFrame* aHelper, bool aDelayed);
   void Revoke() { mHelper = nullptr; }
 
  private:
@@ -1268,17 +1268,7 @@ nsMargin nsHTMLScrollFrame::ComputeStableScrollbarGutter(
 
 // Legacy, this sucks!
 static bool IsMarqueeScrollbox(const nsIFrame& aScrollFrame) {
-  if (!aScrollFrame.GetContent()) {
-    return false;
-  }
-  if (MOZ_LIKELY(!aScrollFrame.GetContent()->HasBeenInUAWidget())) {
-    return false;
-  }
-  MOZ_ASSERT(aScrollFrame.GetParent() &&
-             aScrollFrame.GetParent()->GetContent());
-  return aScrollFrame.GetParent() &&
-         HTMLMarqueeElement::FromNodeOrNull(
-             aScrollFrame.GetParent()->GetContent());
+  return HTMLMarqueeElement::FromNodeOrNull(aScrollFrame.GetContent());
 }
 
 /* virtual */
@@ -1293,7 +1283,6 @@ nscoord nsHTMLScrollFrame::GetMinISize(gfxContext* aRenderingContext) {
     return mScrolledFrame->GetMinISize(aRenderingContext);
   }();
 
-  DISPLAY_MIN_INLINE_SIZE(this, result);
   return result + IntrinsicScrollbarGutterSizeAtInlineEdges();
 }
 
@@ -1303,7 +1292,6 @@ nscoord nsHTMLScrollFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result = containISize
                        ? *containISize
                        : mScrolledFrame->GetPrefISize(aRenderingContext);
-  DISPLAY_PREF_INLINE_SIZE(this, result);
   return NSCoordSaturatingAdd(result,
                               IntrinsicScrollbarGutterSizeAtInlineEdges());
 }
@@ -1500,7 +1488,6 @@ void nsHTMLScrollFrame::Reflow(nsPresContext* aPresContext,
                                nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsHTMLScrollFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   HandleScrollbarStyleSwitching();
@@ -5432,23 +5419,31 @@ nsresult nsHTMLScrollFrame::FireScrollPortEvent() {
   return EventDispatcher::Dispatch(content, presContext, &event);
 }
 
-void nsHTMLScrollFrame::PostScrollEndEvent() {
+void nsHTMLScrollFrame::PostScrollEndEvent(bool aDelayed) {
   if (mScrollEndEvent) {
     return;
   }
 
   // The ScrollEndEvent constructor registers itself with the refresh driver.
-  mScrollEndEvent = new ScrollEndEvent(this);
+  mScrollEndEvent = new ScrollEndEvent(this, aDelayed);
 }
 
 void nsHTMLScrollFrame::FireScrollEndEvent() {
-  MOZ_ASSERT(GetContent());
-  MOZ_ASSERT(mScrollEndEvent);
+  RefPtr<nsIContent> content = GetContent();
+  MOZ_ASSERT(content);
 
-  RefPtr<nsPresContext> presContext = PresContext();
+  MOZ_ASSERT(mScrollEndEvent);
   mScrollEndEvent->Revoke();
   mScrollEndEvent = nullptr;
 
+  if (content->GetComposedDoc() &&
+      content->GetComposedDoc()->EventHandlingSuppressed()) {
+    content->GetComposedDoc()->SetHasDelayedRefreshEvent();
+    PostScrollEndEvent(/* aDelayed = */ true);
+    return;
+  }
+
+  RefPtr<nsPresContext> presContext = PresContext();
   nsEventStatus status = nsEventStatus_eIgnore;
   WidgetGUIEvent event(true, eScrollend, nullptr);
   event.mFlags.mBubbles = mIsRoot;
@@ -5898,9 +5893,10 @@ nsHTMLScrollFrame::ScrollEvent::Run() {
   return NS_OK;
 }
 
-nsHTMLScrollFrame::ScrollEndEvent::ScrollEndEvent(nsHTMLScrollFrame* aHelper)
+nsHTMLScrollFrame::ScrollEndEvent::ScrollEndEvent(nsHTMLScrollFrame* aHelper,
+                                                  bool aDelayed)
     : Runnable("nsHTMLScrollFrame::ScrollEndEvent"), mHelper(aHelper) {
-  mHelper->PresContext()->RefreshDriver()->PostScrollEvent(this);
+  mHelper->PresContext()->RefreshDriver()->PostScrollEvent(this, aDelayed);
 }
 
 MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP

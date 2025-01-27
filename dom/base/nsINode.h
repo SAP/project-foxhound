@@ -1099,7 +1099,7 @@ class nsINode : public mozilla::dom::EventTarget {
                             : nullptr;
   }
 
-  enum FlattenedParentType { eNotForStyle, eForStyle };
+  enum FlattenedParentType { eNormal, eForStyle, eForSelection };
 
   /**
    * Returns the node that is the parent of this node in the flattened
@@ -1120,6 +1120,15 @@ class nsINode : public mozilla::dom::EventTarget {
    * scroll frame.
    */
   inline nsINode* GetFlattenedTreeParentNodeForStyle() const;
+
+  /**
+   * Similar to GetFlattenedTreeParentNode, it does two things differently
+   *   1. For contents that are not in the flattened tree, use its
+   *   parent rather than nullptr.
+   *   2. For contents that are slotted into a UA shadow tree, use its
+   *   parent rather than the slot element.
+   */
+  inline nsIContent* GetFlattenedTreeParentNodeForSelection() const;
 
   inline mozilla::dom::Element* GetFlattenedTreeParentElement() const;
   inline mozilla::dom::Element* GetFlattenedTreeParentElementForStyle() const;
@@ -1629,7 +1638,7 @@ class nsINode : public mozilla::dom::EventTarget {
    * not in same subtree, this returns the root content of the closeset subtree.
    */
   MOZ_CAN_RUN_SCRIPT nsIContent* GetSelectionRootContent(
-      mozilla::PresShell* aPresShell);
+      mozilla::PresShell* aPresShell, bool aAllowCrossShadowBoundary = false);
 
   nsINodeList* ChildNodes();
 
@@ -2073,6 +2082,14 @@ class nsINode : public mozilla::dom::EventTarget {
   void ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
     ClearBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
   }
+
+  mozilla::dom::ShadowRoot* GetShadowRoot() const;
+
+  // Return the shadow root of the node if it is a shadow host and
+  // it meets the requirements for being a shadow host of a selection.
+  // For example, <details>, <video> and <use> elements are not valid
+  // shadow host for selection.
+  mozilla::dom::ShadowRoot* GetShadowRootForSelection() const;
 
  protected:
   void SetParentIsContent(bool aValue) { SetBoolFlag(ParentIsContent, aValue); }

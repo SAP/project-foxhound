@@ -342,8 +342,7 @@ skip-if(useDrawSnapshot) == 306660-2.html 306660-2-ref.html
 == 306660-3.html 306660-3-ref.html
 == 307076-1.html 307076-1-ref.html
 == 307102-1.html 307102-1-ref.html
-== 307102-2.html 307102-2-ref.html
-== 307102-3.html 307102-3-ref.html
+random == 307102-3.html 307102-3-ref.html
 == 307102-4.html 307102-4-ref.html
 == 308406-1.html 308406-1-ref.html
 == 308406-2.html 308406-2-ref.html
@@ -725,8 +724,6 @@ fuzzy(0-2,0-5) == 381507-1.html 381507-1-ref.html
 fuzzy(0-1,0-600) == 385823-2a.html 385823-2-ref.html
 fails == 385823-2b.html 385823-2-ref.html
 fuzzy(0-1,0-600) == 385823-2c.html 385823-2-ref.html
-fuzzy(0-2,0-11) == 385870-1.html 385870-1-ref.html
-fuzzy(0-2,0-3) == 385870-2.html 385870-2-ref.html
 == 386014-1a.html 386014-1-ref.html
 == 386014-1b.html 386014-1-ref.html
 == 386014-1c.html 386014-1-ref.html
@@ -2165,3 +2162,4 @@ fuzzy-if(!useDrawSnapshot,18-19,294-322) == 1840747-1.html about:blank
 # here. That's tracked in bug 1840747.
 fuzzy-if(!useDrawSnapshot&&!swgl,254-255,110-121) fuzzy-if(useDrawSnapshot,18-18,93-93) fuzzy-if(swgl,19-19,58-58) == 1841355-1.html about:blank
 skip-if(((AddressSanitizer||ThreadSanitizer)&&gtkWidget)||(isDebugBuild&&Android)) fuzzy(0-123,0-1425) == 1878294-1.html 1878294-1-ref.html
+== 1888941-text-transform-emergency-wrap.html 1888941-text-transform-emergency-wrap-ref.html

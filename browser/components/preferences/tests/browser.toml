@@ -10,6 +10,11 @@ support-files = [
   "addons/set_homepage.xpi",
   "addons/set_newtab.xpi",
 ]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # manifest runs too long
+  "os == 'linux' && os_version == '18.04' && tsan", # manifest runs too long
+  "win11_2009 && asan", # manifest runs too long
+]
 
 ["browser_about_settings.js"]
 
@@ -276,7 +281,6 @@ support-files = [
   "subdialog.xhtml",
   "subdialog2.xhtml",
 ]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked label.dialogTitle, vbox#dialogTemplate.dialogOverlay may not be focusable
 
 ["browser_sync_chooseWhatToSync.js"]
 

@@ -9,6 +9,7 @@
 #import <objc/message.h>
 
 #include "nsChildView.h"
+#include "mozilla/StaticPrefs_widget.h"
 
 using namespace mozilla;
 
@@ -30,18 +31,34 @@ static NSVisualEffectState VisualEffectStateForVibrancyType(
       // Tooltip and menu windows are never "key", so we need to tell the
       // vibrancy effect to look active regardless of window state.
       return NSVisualEffectStateActive;
-    default:
-      return NSVisualEffectStateFollowsWindowActiveState;
+    case VibrancyType::TITLEBAR:
+      break;
   }
+  return NSVisualEffectStateFollowsWindowActiveState;
 }
 
 static NSVisualEffectMaterial VisualEffectMaterialForVibrancyType(
-    VibrancyType aType, BOOL* aOutIsEmphasized) {
+    VibrancyType aType) {
   switch (aType) {
     case VibrancyType::TOOLTIP:
       return (NSVisualEffectMaterial)NSVisualEffectMaterialToolTip;
     case VibrancyType::MENU:
       return NSVisualEffectMaterialMenu;
+    case VibrancyType::TITLEBAR:
+      return NSVisualEffectMaterialTitlebar;
+  }
+}
+
+static NSVisualEffectBlendingMode VisualEffectBlendingModeForVibrancyType(
+    VibrancyType aType) {
+  switch (aType) {
+    case VibrancyType::TOOLTIP:
+    case VibrancyType::MENU:
+      return NSVisualEffectBlendingModeBehindWindow;
+    case VibrancyType::TITLEBAR:
+      return StaticPrefs::widget_macos_titlebar_blend_mode_behind_window()
+                 ? NSVisualEffectBlendingModeBehindWindow
+                 : NSVisualEffectBlendingModeWithinWindow;
   }
 }
 
@@ -53,11 +70,9 @@ static NSVisualEffectMaterial VisualEffectMaterialForVibrancyType(
 
   self.appearance = nil;
   self.state = VisualEffectStateForVibrancyType(mType);
-
-  BOOL isEmphasized = NO;
-  self.material = VisualEffectMaterialForVibrancyType(mType, &isEmphasized);
-  self.emphasized = isEmphasized;
-
+  self.material = VisualEffectMaterialForVibrancyType(mType);
+  self.blendingMode = VisualEffectBlendingModeForVibrancyType(mType);
+  self.emphasized = NO;
   return self;
 }
 
@@ -89,7 +104,7 @@ bool VibrancyManager::UpdateVibrantRegion(
   }
   auto& vr = *mVibrantRegions.GetOrInsertNew(uint32_t(aType));
   return vr.UpdateRegion(aRegion, mCoordinateConverter, mContainerView, ^() {
-    return this->CreateEffectView(aType);
+    return CreateEffectView(aType);
   });
 }
 

@@ -458,27 +458,6 @@ void EventListenerManager::AddEventListenerInternal(
           window->SetHasFormSelectEventListeners();
         }
         break;
-      case eMarqueeStart:
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->SetUseCounter(eUseCounter_custom_onstart);
-          }
-        }
-        break;
-      case eMarqueeBounce:
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->SetUseCounter(eUseCounter_custom_onbounce);
-          }
-        }
-        break;
-      case eMarqueeFinish:
-        if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
-          if (Document* doc = window->GetExtantDoc()) {
-            doc->SetUseCounter(eUseCounter_custom_onfinish);
-          }
-        }
-        break;
       case eScrollPortOverflow:
         if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
           if (Document* doc = window->GetExtantDoc()) {
@@ -608,18 +587,6 @@ void EventListenerManager::AddEventListenerInternal(
                                      ToChar(resolvedEventMessage))
                          .get());
         NS_ASSERTION(aTypeAtom != nsGkAtoms::onselect,
-                     nsPrintfCString("resolvedEventMessage=%s",
-                                     ToChar(resolvedEventMessage))
-                         .get());
-        NS_ASSERTION(aTypeAtom != nsGkAtoms::onstart,
-                     nsPrintfCString("resolvedEventMessage=%s",
-                                     ToChar(resolvedEventMessage))
-                         .get());
-        NS_ASSERTION(aTypeAtom != nsGkAtoms::onbounce,
-                     nsPrintfCString("resolvedEventMessage=%s",
-                                     ToChar(resolvedEventMessage))
-                         .get());
-        NS_ASSERTION(aTypeAtom != nsGkAtoms::onfinish,
                      nsPrintfCString("resolvedEventMessage=%s",
                                      ToChar(resolvedEventMessage))
                          .get());
@@ -1420,10 +1387,10 @@ already_AddRefed<nsPIDOMWindowInner> EventListenerManager::WindowFromListener(
       if (global) {
         innerWindow = global->GetAsInnerWindow();  // Can be nullptr
       }
-    } else {
+    } else if (mTarget) {
       // This ensures `window.event` can be set properly for
       // nsWindowRoot to handle KeyPress event.
-      if (aListener && aTypeAtom == nsGkAtoms::onkeypress && mTarget &&
+      if (aListener && aTypeAtom == nsGkAtoms::onkeypress &&
           mTarget->IsRootWindow()) {
         nsPIWindowRoot* root = mTarget->AsWindowRoot();
         if (nsPIDOMWindowOuter* outerWindow = root->GetWindow()) {
@@ -1434,7 +1401,9 @@ already_AddRefed<nsPIDOMWindowInner> EventListenerManager::WindowFromListener(
         // listener->mListener.GetXPCOMCallback().
         // In most cases, it would be the same as for
         // the target, so let's do that.
-        innerWindow = GetInnerWindowForTarget();  // Can be nullptr
+        if (nsIGlobalObject* global = mTarget->GetOwnerGlobal()) {
+          innerWindow = global->GetAsInnerWindow();
+        }
       }
     }
   }

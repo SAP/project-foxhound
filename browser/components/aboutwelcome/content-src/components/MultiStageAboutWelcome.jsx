@@ -463,9 +463,21 @@ export class WelcomeScreen extends React.PureComponent {
         action.theme === "<event>"
           ? event.currentTarget.value
           : this.props.initialTheme || action.theme;
-
       this.props.setActiveTheme(themeToUse);
-      window.AWSelectTheme(themeToUse);
+      if (props.content.tiles?.category?.type === "wallpaper") {
+        const theme = themeToUse.split("-")?.[1];
+        let actionWallpaper = { ...props.content.tiles.category.action };
+        actionWallpaper.data.actions.forEach(async wpAction => {
+          if (wpAction.data.pref.name?.includes("dark")) {
+            wpAction.data.pref.value = `dark-${theme}`;
+          } else {
+            wpAction.data.pref.value = `light-${theme}`;
+          }
+          await AboutWelcomeUtils.handleUserAction(actionWallpaper);
+        });
+      } else {
+        window.AWSelectTheme(themeToUse);
+      }
     }
 
     // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme

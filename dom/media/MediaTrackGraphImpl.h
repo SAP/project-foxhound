@@ -571,7 +571,12 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   void SetMaxOutputChannelCount(uint32_t aMaxChannelCount);
 
   double AudioOutputLatency();
-
+  /* Return whether the clock for the audio output device used for the AEC
+   * reverse stream might drift from the clock for this MediaTrackGraph. */
+  bool OutputForAECMightDrift() {
+    AssertOnGraphThread();
+    return mOutputDeviceForAEC != PrimaryOutputDeviceID();
+  }
   /**
    * The audio input channel count for a MediaTrackGraph is the max of all the
    * channel counts requested by the listeners. The max channel count is
@@ -1115,12 +1120,14 @@ class MediaTrackGraphImpl : public MediaTrackGraph,
   const float mGlobalVolume;
 
 #ifdef DEBUG
+ protected:
   /**
    * Used to assert when AppendMessage() runs control messages synchronously.
    */
   bool mCanRunMessagesSynchronously;
 #endif
 
+ private:
   /**
    * The graph's main-thread observable graph time.
    * Updated by the stable state runnable after each iteration.

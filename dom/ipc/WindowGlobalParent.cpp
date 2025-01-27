@@ -39,6 +39,7 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Variant.h"
 #include "mozilla/ipc/ProtocolUtils.h"
+#include "MMPrinter.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
@@ -230,8 +231,8 @@ void WindowGlobalParent::OriginCounter::UpdateSiteOriginsFrom(
 }
 
 void WindowGlobalParent::OriginCounter::Accumulate() {
-  mozilla::glean::geckoview::per_document_site_origins.AccumulateSamples(
-      {mMaxOrigins});
+  mozilla::glean::geckoview::per_document_site_origins.AccumulateSingleSample(
+      mMaxOrigins);
 
   mMaxOrigins = 0;
   mOriginMap.Clear();
@@ -398,26 +399,20 @@ IPCResult WindowGlobalParent::RecvUpdateDocumentURI(NotNull<nsIURI*> aURI) {
       return IPC_FAIL(this, "Setting DocumentURI with unknown protocol.");
     }
 
-    auto isLoadableViaInternet = [](nsIURI* uri) {
-      return (uri && (net::SchemeIsHTTP(uri) || net::SchemeIsHTTPS(uri)));
-    };
-
-    if (isLoadableViaInternet(aURI)) {
-      nsCOMPtr<nsIURI> principalURI = mDocumentPrincipal->GetURI();
-      if (mDocumentPrincipal->GetIsNullPrincipal()) {
-        nsCOMPtr<nsIPrincipal> precursor =
-            mDocumentPrincipal->GetPrecursorPrincipal();
-        if (precursor) {
-          principalURI = precursor->GetURI();
-        }
+    nsCOMPtr<nsIURI> principalURI = mDocumentPrincipal->GetURI();
+    if (mDocumentPrincipal->GetIsNullPrincipal()) {
+      nsCOMPtr<nsIPrincipal> precursor =
+          mDocumentPrincipal->GetPrecursorPrincipal();
+      if (precursor) {
+        principalURI = precursor->GetURI();
       }
+    }
 
-      if (isLoadableViaInternet(principalURI) &&
-          !nsScriptSecurityManager::SecurityCompareURIs(principalURI, aURI)) {
-        return IPC_FAIL(this,
-                        "Setting DocumentURI with a different Origin than "
-                        "principal URI");
-      }
+    if (nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(principalURI,
+                                                             aURI)) {
+      return IPC_FAIL(this,
+                      "Setting DocumentURI with a different Origin than "
+                      "principal URI");
     }
   }
 
@@ -570,6 +565,8 @@ IPCResult WindowGlobalParent::RecvRawMessage(
     stack.emplace();
     stack->BorrowFromClonedMessageData(*aStack);
   }
+  MMPrinter::Print("WindowGlobalParent::RecvRawMessage", aMeta.actorName(),
+                   aMeta.messageName(), aData);
   ReceiveRawMessage(aMeta, std::move(data), std::move(stack));
   return IPC_OK();
 }

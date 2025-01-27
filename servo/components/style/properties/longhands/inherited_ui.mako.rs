@@ -4,13 +4,11 @@
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
 
-<% data.new_style_struct("InheritedUI", inherited=True, gecko_name="UI") %>
-
 ${helpers.predefined_type(
     "cursor",
     "Cursor",
     "computed::Cursor::auto()",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_specified_value="specified::Cursor::auto()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ui/#cursor",
@@ -23,7 +21,7 @@ ${helpers.predefined_type(
 ${helpers.single_keyword(
     "pointer-events",
     "auto none",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     animation_value_type="discrete",
     extra_gecko_values="visiblepainted visiblefill visiblestroke visible painted fill stroke all",
     spec="https://svgwg.org/svg2-draft/interact.html#PointerEventsProperty",

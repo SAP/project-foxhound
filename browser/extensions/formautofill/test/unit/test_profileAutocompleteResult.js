@@ -51,6 +51,15 @@ let allFieldNames = [
   "tel",
 ];
 
+function makeAddressLabel({ primary, secondary, status }) {
+  return JSON.stringify({
+    primary,
+    secondary,
+    status,
+    ariaLabel: primary + " " + secondary + " " + status,
+  });
+}
+
 let addressTestCases = [
   {
     description: "Focus on an `organization` field",
@@ -65,21 +74,23 @@ let addressTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "Sesame Street",
             secondary: "123 Sesame Street.",
+            status: "Also autofills address, name, phone",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "Mozilla",
             secondary: "331 E. Evelyn Avenue",
+            status: "Also autofills address, name, phone",
           }),
           image: "",
         },
@@ -99,31 +110,34 @@ let addressTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "1-345-345-3456.",
             secondary: "123 Sesame Street.",
+            status: "Also autofills address, name, organization",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "1-650-903-0800",
             secondary: "331 E. Evelyn Avenue",
+            status: "Also autofills address, name, organization",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[2]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "1-000-000-0000",
             secondary: "321, No Name St. 2nd line 3rd line",
+            status: "Also autofills address",
           }),
           image: "",
         },
@@ -143,31 +157,34 @@ let addressTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "123 Sesame Street.",
             secondary: "Timothy Berners-Lee",
+            status: "Also autofills name, organization, phone",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "331 E. Evelyn Avenue",
             secondary: "John Doe",
+            status: "Also autofills name, organization, phone",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[2]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "321, No Name St. 2nd line 3rd line",
             secondary: "1-000-000-0000",
+            status: "Also autofills phone",
           }),
           image: "",
         },
@@ -187,31 +204,34 @@ let addressTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "123 Sesame Street.",
             secondary: "Timothy Berners-Lee",
+            status: "Also autofills name, organization, phone",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "331 E. Evelyn Avenue",
             secondary: "John Doe",
+            status: "Also autofills name, organization, phone",
           }),
           image: "",
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[2]),
-          label: JSON.stringify({
+          label: makeAddressLabel({
             primary: "321, No Name St.",
             secondary: "1-000-000-0000",
+            status: "Also autofills phone",
           }),
           image: "",
         },
@@ -287,11 +307,11 @@ let creditCardTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
           label: JSON.stringify({
             primary: "Timothy Berners-Lee",
-            secondary: "****6785",
+            secondary: "••••6785",
             ariaLabel: "Visa Timothy Berners-Lee ****6785",
             image: "chrome://formautofill/content/third-party/cc-logo-visa.svg",
           }),
@@ -299,11 +319,11 @@ let creditCardTestCases = [
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
           label: JSON.stringify({
             primary: "John Doe",
-            secondary: "****1234",
+            secondary: "••••1234",
             ariaLabel: "American Express John Doe ****1234",
             image: "chrome://formautofill/content/third-party/cc-logo-amex.png",
           }),
@@ -325,10 +345,10 @@ let creditCardTestCases = [
       items: [
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[0]),
           label: JSON.stringify({
-            primary: "****6785",
+            primary: "••••6785",
             secondary: "Timothy Berners-Lee",
             ariaLabel: "Visa 6785 Timothy Berners-Lee",
             image: "chrome://formautofill/content/third-party/cc-logo-visa.svg",
@@ -337,10 +357,10 @@ let creditCardTestCases = [
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[1]),
           label: JSON.stringify({
-            primary: "****1234",
+            primary: "••••1234",
             secondary: "John Doe",
             ariaLabel: "American Express 1234 John Doe",
             image: "chrome://formautofill/content/third-party/cc-logo-amex.png",
@@ -349,10 +369,10 @@ let creditCardTestCases = [
         },
         {
           value: "",
-          style: "autofill-profile",
+          style: "autofill",
           comment: JSON.stringify(matchingProfiles[2]),
           label: JSON.stringify({
-            primary: "****5678",
+            primary: "••••5678",
             secondary: "",
             ariaLabel: "5678",
             image: "chrome://formautofill/content/icon-credit-card-generic.svg",
@@ -416,7 +436,14 @@ add_task(async function test_all_patterns() {
       let expectedItemLength = expectedValue.items.length;
       // If the last item shows up as a footer, we expect one more item
       // than expected.
-      if (actual.getStyleAt(actual.matchCount - 1) == "autofill-footer") {
+      if (actual.getStyleAt(actual.matchCount - 1) == "action") {
+        expectedItemLength++;
+      }
+      // Add one row for the status.
+      if (
+        actual.matchCount > 2 &&
+        actual.getStyleAt(actual.matchCount - 2) == "status"
+      ) {
         expectedItemLength++;
       }
 

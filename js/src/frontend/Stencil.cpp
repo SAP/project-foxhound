@@ -759,6 +759,29 @@ void ScopeContext::cacheEnclosingScope(const InputScope& enclosingScope) {
   MOZ_CRASH("Malformed scope chain");
 }
 
+// Given an input scope, possibly refine this to a more precise scope.
+// This is used during eval in the debugger to provide the appropriate scope and
+// ThisBinding kind and environment, which is key to making private field eval
+// work correctly.
+//
+// The trick here is that an eval may have a non-syntatic scope but nevertheless
+// have an 'interesting' environment which can be traversed to find the
+// appropriate scope the the eval to function as desired. See the diagram below.
+//
+// Eval Scope    Eval Env         Frame Env    Frame Scope
+// ============  =============    =========    =============
+//
+// NonSyntactic
+//    |
+//    v
+//   null        DebugEnvProxy                 LexicalScope
+//                     |                            |
+//                     v                            v
+//               DebugEnvProxy --> CallObj --> FunctionScope
+//                     |              |             |
+//                     v              v             v
+//                    ...            ...           ...
+//
 InputScope ScopeContext::determineEffectiveScope(InputScope& scope,
                                                  JSObject* environment) {
   MOZ_ASSERT(effectiveScopeHops == 0);
@@ -4286,8 +4309,8 @@ void js::DumpFunctionFlagsItems(js::JSONPrinter& json,
         case FunctionFlags::Flags::LAMBDA:
           json.value("LAMBDA");
           break;
-        case FunctionFlags::Flags::WASM_JIT_ENTRY:
-          json.value("WASM_JIT_ENTRY");
+        case FunctionFlags::Flags::NATIVE_JIT_ENTRY:
+          json.value("NATIVE_JIT_ENTRY");
           break;
         case FunctionFlags::Flags::HAS_INFERRED_NAME:
           json.value("HAS_INFERRED_NAME");

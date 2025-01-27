@@ -3513,7 +3513,7 @@ a:is(.toolbarButton, .secondaryToolbarButton)[href="#"]{
   transition-property:none;
 
   .loadingInput:has(> &.loading)::after{
-    display: block;
+    display:block;
     visibility:visible;
 
     transition-property:visibility;
@@ -3525,7 +3525,7 @@ a:is(.toolbarButton, .secondaryToolbarButton)[href="#"]{
   &::after{
     position:absolute;
     visibility:hidden;
-    display: none;
+    display:none;
     top:calc(50% - 8px);
     width:16px;
     height:16px;

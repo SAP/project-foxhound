@@ -102,13 +102,12 @@
         },
         "applications": {
           "title": "Application Identifiers",
-          "description": "The application(s) this section applies to (default/not specified is everywhere).",
+          "description": "The application(s) this section applies to (default/not specified is everywhere). `firefox` relates to Firefox Desktop.",
           "type": "array",
           "items": {
             "type": "string",
             "pattern": "^[a-z-]{0,100}$",
             "enum": [
-              "",
               "firefox",
               "firefox-android",
               "firefox-ios",
@@ -129,12 +128,23 @@
           "description": "The maximum application version this section applies to (less-than comparison).",
           "type": "string",
           "pattern": "^[0-9a-z.]{0,20}$"
+        },
+        "deviceType": {
+          "title": "Device Type",
+          "description": "The device type(s) this section applies to. On desktop when this property is specified and non-empty, the associated section will be ignored.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z-]{0,100}$",
+            "enum": ["smartphone", "tablet"]
+          },
+          "uniqueItems": true
         }
       }
     },
     "partnerCode": {
       "title": "Partner Code",
-      "description": "The partner code for the engine or variant. This will be inserted into parameters which include '{pc}'",
+      "description": "The partner code for the engine or variant. This will be inserted into parameters which include '{partnerCode}'",
       "type": "string",
       "pattern": "^[a-zA-Z0-9-_]*$"
     },
@@ -191,7 +201,7 @@
               },
               "value": {
                 "title": "Value",
-                "description": "The parameter value, this may be a static value, or additionally contain a parameter replacement, e.g. {inputEncoding}. For the partner code parameter, this field should be {pc}.",
+                "description": "The parameter value, this may be a static value, or additionally contain a parameter replacement, e.g. {inputEncoding}. For the partner code parameter, this field should be {partnerCode}.",
                 "type": "string",
                 "pattern": "^[a-zA-Z0-9-_{}]*$"
               },
@@ -327,7 +337,7 @@
           },
           "variants": {
             "title": "Variants",
-            "description": "This section describes variations of this search engine that may occur depending on the user's environment. If multiple sections match a user's environment, then all matching sections are applied cumulatively in the order in the array.",
+            "description": "This section describes variations of this search engine that may occur depending on the user's environment. The last variant that matches the user's environment will be applied to the engine, subvariants may also be applied.",
             "type": "array",
             "items": {
               "type": "object",
@@ -345,18 +355,46 @@
                 },
                 "telemetrySuffix": {
                   "title": "Telemetry Suffix",
-                  "description": "Suffix that is appended to the search engine identifier following a dash, i.e. `<identifier>-<suffix>`. There should always be a suffix supplied if the partner code is different.",
+                  "description": "Suffix that is appended to the search engine identifier following a dash, i.e. `<identifier>-<suffix>`. There should always be a suffix supplied if the partner code is different for a reason other than being on a different platform.",
                   "type": "string",
                   "pattern": "^[a-zA-Z0-9-]*$"
                 },
                 "urls": {
                   "$ref": "#/definitions/urls"
+                },
+                "subVariants": {
+                  "title": "Subvariants",
+                  "description": "This section describes subvariations of this search engine that may occur depending on the user's environment. The last subvariant that matches the user's environment will be applied to the engine.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "environment": {
+                        "$ref": "#/definitions/environment"
+                      },
+                      "partnerCode": {
+                        "$ref": "#/definitions/partnerCode"
+                      },
+                      "optional": {
+                        "title": "Optional",
+                        "description": "This search engine is presented as an option that the user may enable. It is not included in the initial list of search engines. If not specified, defaults to false.",
+                        "type": "boolean"
+                      },
+                      "telemetrySuffix": {
+                        "title": "Telemetry Suffix",
+                        "description": "Suffix that is appended to the search engine identifier following a dash, i.e. `<identifier>-<suffix>`. There should always be a suffix supplied if the partner code is different for a reason other than being on a different platform.",
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9-]*$"
+                      },
+                      "urls": {
+                        "$ref": "#/definitions/urls"
+                      }
+                    },
+                    "required": ["environment"]
+                  }
                 }
               },
-              "required": ["environment"],
-              "dependencies": {
-                "partnerCode": ["telemetrySuffix"]
-              }
+              "required": ["environment"]
             }
           }
         },

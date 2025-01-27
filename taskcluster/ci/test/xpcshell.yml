@@ -51,6 +51,11 @@ xpcshell:
         - socketprocess_networking
         - no-fission
         - msix
+        - geckoview-no-fission-ship
+    instance-size:
+        by-variant:
+            conditioned_profile: large
+            default: large-noscratch
     run-on-projects:
         by-variant:
             conditioned_profile:
@@ -61,27 +66,32 @@ xpcshell:
                     default: []
             socketprocess_networking+no-fission:
                 by-test-platform:
-                    linux1804-64.*: ['trunk']
+                    linux1804-64.*: ['mozilla-central']
                     default: []
             socketprocess_networking:
                 by-test-platform:
-                    (linux1804-64|macosx).*: ['trunk']  # All Linux & Mac variants
+                    macosx1015.*: ['trunk']  # All Mac variants
                     ^(?!.*asan).*windows11.*: ['trunk']   # All Windows11 except ASAN
                     default: []
             no-fission:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug-isolated-process: []
                     android.*: built-projects
-                    linux1804-64.*: ['trunk']
+                    linux1804-64.*: ['mozilla-central']
                     default: []
             msix:
                 by-test-platform:
                     windows11-64-2009(-shippable)?-qr/opt: built-projects
                     windows11-64-2009-qr/debug: built-projects
                     default: []
+            geckoview-no-fission-ship:
+                by-test-platform:
+                    android-em-7.0-x86_64-qr/debug-isolated-process: []
+                    android-em.*: built-projects
+                    default: []
             default:
                 by-test-platform:
-                    android.*: []
+                    android.*: built-projects
                     .*wayland.*: []
                     windows.*-asan-qr/opt: []  # No XPCShell on ASAN yet
                     default: built-projects
@@ -89,7 +99,7 @@ xpcshell:
         by-test-platform:
             .*-asan-qr/opt: 4
             .*-ccov.*/.*: 8
-            .*-tsan-qr/opt: 8
+            .*-tsan-qr/opt: 10
             (android-em-7.*|macosx.*|linux1804-64.*/opt): 2
             default: 4
     max-run-time:
@@ -103,10 +113,20 @@ xpcshell:
                     default: 5400
     allow-software-gl-layers: false
     tier:
-        by-test-platform:
-            windows.*-asan.*: 3
-            android-em-7.0-x86_64-qr/debug-isolated-process: 3
-            default: default
+        by-variant:
+            no-fission:
+                by-test-platform:
+                    linux.*: 2
+                    default: default
+            socketprocess_networking+no-fission:
+                by-test-platform:
+                    linux.*: 2
+                    default: default
+            default:
+                by-test-platform:
+                    windows.*-asan.*: 3
+                    android-em-7.0-x86_64-qr/debug-isolated-process: 3
+                    default: default
     mozharness:
         extra-options:
             by-test-platform:
@@ -138,6 +158,7 @@ xpcshell:
                     - android-emulator-linux
                     - linux64-node
                     - linux64-minidump-stackwalk
+                    - linux64-hostutils
 
 xpcshell-failures:
     description: "xpcshell specific failures test run"

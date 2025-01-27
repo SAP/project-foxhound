@@ -24,7 +24,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 var logConsole;
-function log(msg) {
+function log(...msgs) {
   if (!logConsole) {
     logConsole = console.createInstance({
       prefix: "Sanitizer",
@@ -32,7 +32,7 @@ function log(msg) {
     });
   }
 
-  logConsole.log(msg);
+  logConsole.log(...msgs);
 }
 
 // Used as unique id for pending sanitizations.
@@ -164,6 +164,7 @@ export var Sanitizer = {
     // First, collect pending sanitizations from the last session, before we
     // add pending sanitizations for this session.
     let pendingSanitizations = getAndClearPendingSanitizations();
+    log("Pending sanitizations:", pendingSanitizations);
 
     // Check if we should sanitize on shutdown.
     this.shouldSanitizeOnShutdown = Services.prefs.getBoolPref(
@@ -759,7 +760,7 @@ export var Sanitizer = {
           // closes) and/or run too late (and not have a fully-formed window yet
           // in existence). See bug 1088137.
           let newWindowOpened = false;
-          let onWindowOpened = function (subject, topic, data) {
+          let onWindowOpened = function (subject) {
             if (subject != newWindow) {
               return;
             }
@@ -811,7 +812,7 @@ export var Sanitizer = {
     },
 
     pluginData: {
-      async clear(range) {},
+      async clear() {},
     },
 
     // Combine History and Form Data clearing for the
@@ -923,25 +924,13 @@ export var Sanitizer = {
           await maybeSanitizeSessionPrincipals(
             progress,
             principalsForShutdownClearing,
-            Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
-              Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
-              Ci.nsIClearDataService.CLEAR_AUTH_CACHE |
-              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
-              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
+            Ci.nsIClearDataService.CLEAR_COOKIES_AND_SITE_DATA
           );
         } else {
           // Not on shutdown
           await clearData(
             range,
-            Ci.nsIClearDataService.CLEAR_COOKIES |
-              Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
-              Ci.nsIClearDataService.CLEAR_DOM_STORAGES |
-              Ci.nsIClearDataService.CLEAR_AUTH_TOKENS |
-              Ci.nsIClearDataService.CLEAR_AUTH_CACHE |
-              Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
-              Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE
+            Ci.nsIClearDataService.CLEAR_COOKIES_AND_SITE_DATA
           );
         }
         await clearData(range, Ci.nsIClearDataService.CLEAR_MEDIA_DEVICES);
@@ -1018,6 +1007,7 @@ async function sanitizeInternal(items, aItemsToClear, options) {
   // Array of objects in form { name, promise }.
   // `name` is the item's name and `promise` may be a promise, if the
   // sanitization is asynchronous, or the function return value, otherwise.
+  log("Running sanitization for:", itemsToClear);
   let handles = [];
   for (let name of itemsToClear) {
     progress[name] = "blocking";
@@ -1046,7 +1036,7 @@ async function sanitizeInternal(items, aItemsToClear, options) {
   }
   await Promise.all(handles.map(h => h.promise));
 
-  // Sanitization is complete.
+  log("All sanitizations are complete");
   TelemetryStopwatch.finish("FX_SANITIZE_TOTAL", refObj);
   if (!progress.isShutdown) {
     removePendingSanitization(uid);

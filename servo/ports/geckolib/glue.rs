@@ -138,8 +138,8 @@ use style::stylesheets::{
     CssRules, CssRulesHelpers, DocumentRule, FontFaceRule, FontFeatureValuesRule,
     FontPaletteValuesRule, ImportRule, KeyframesRule, LayerBlockRule, LayerStatementRule,
     MediaRule, NamespaceRule, Origin, OriginSet, PagePseudoClassFlags, PageRule, PropertyRule,
-    SanitizationData, SanitizationKind, StyleRule, StylesheetContents,
-    StylesheetLoader as StyleStylesheetLoader, SupportsRule, UrlExtraData,
+    SanitizationData, SanitizationKind, StartingStyleRule, StyleRule, StylesheetContents,
+    StylesheetLoader as StyleStylesheetLoader, SupportsRule, UrlExtraData, ScopeRule,
 };
 use style::stylist::{add_size_of_ua_cache, AuthorStylesEnabled, RuleInclusion, Stylist};
 use style::thread_state;
@@ -227,7 +227,12 @@ pub unsafe extern "C" fn Servo_Shutdown() {
 
 #[inline(always)]
 unsafe fn dummy_url_data() -> &'static UrlExtraData {
-    UrlExtraData::from_ptr_ref(&DUMMY_URL_DATA)
+    UrlExtraData::from_ptr_ref(std::ptr::addr_of!(DUMMY_URL_DATA).as_ref().unwrap())
+}
+
+#[inline(always)]
+unsafe fn dummy_chrome_url_data() -> &'static UrlExtraData {
+    UrlExtraData::from_ptr_ref(std::ptr::addr_of!(DUMMY_CHROME_URL_DATA).as_ref().unwrap())
 }
 
 #[allow(dead_code)]
@@ -1211,6 +1216,11 @@ fn is_transitionable(prop: PropertyDeclarationId, behavior: computed::Transition
     if !prop.is_animatable() {
         return false;
     }
+    // TODO(bug 1885995): Return `false` in is_discrete_animatable for interpolatable custom
+    // property types.
+    if matches!(prop, PropertyDeclarationId::Custom(..)) {
+        return true;
+    }
 
     match behavior {
         computed::TransitionBehavior::Normal => !prop.is_discrete_animatable(),
@@ -2157,6 +2167,7 @@ pub extern "C" fn Servo_CssRules_InsertRule(
     rule: &nsACString,
     index: u32,
     containing_rule_types: u32,
+    parse_relative_rule_type: Option<&CssRuleType>,
     loader: *mut Loader,
     allow_import_rules: AllowImportRules,
     gecko_stylesheet: *mut DomStyleSheet,
@@ -2184,6 +2195,7 @@ pub extern "C" fn Servo_CssRules_InsertRule(
         contents,
         index as usize,
         CssRuleTypes::from_bits(containing_rule_types),
+        parse_relative_rule_type.cloned(),
         loader,
         allow_import_rules,
     );
@@ -2397,7 +2409,8 @@ impl_basic_rule_funcs! { (Namespace, NamespaceRule, NamespaceRule),
     changed: Servo_StyleSet_NamespaceRuleChanged,
 }
 
-impl_basic_rule_funcs! { (Page, PageRule, Locked<PageRule>),
+impl_group_rule_funcs! { (Page, PageRule, Locked<PageRule>),
+    get_rules: Servo_PageRule_GetRules,
     getter: Servo_CssRules_GetPageRuleAt,
     debug: Servo_PageRule_Debug,
     to_css: Servo_PageRule_GetCssText,
@@ -2476,6 +2489,22 @@ impl_basic_rule_funcs! { (CounterStyle, CounterStyleRule, Locked<CounterStyleRul
     debug: Servo_CounterStyleRule_Debug,
     to_css: Servo_CounterStyleRule_GetCssText,
     changed: Servo_StyleSet_CounterStyleRuleChanged,
+}
+
+impl_group_rule_funcs! { (Scope, ScopeRule, ScopeRule),
+    get_rules: Servo_ScopeRule_GetRules,
+    getter: Servo_CssRules_GetScopeRuleAt,
+    debug: Servo_ScopeRule_Debug,
+    to_css: Servo_ScopeRule_GetCssText,
+    changed: Servo_StyleSet_ScopeRuleChanged,
+}
+
+impl_group_rule_funcs! { (StartingStyle, StartingStyleRule, StartingStyleRule),
+    get_rules: Servo_StartingStyleRule_GetRules,
+    getter: Servo_CssRules_GetStartingStyleRuleAt,
+    debug: Servo_StartingStyleRule_Debug,
+    to_css: Servo_StartingStyleRule_GetCssText,
+    changed: Servo_StyleSet_StartingStyleRuleChanged,
 }
 
 #[no_mangle]
@@ -5825,11 +5854,11 @@ pub extern "C" fn Servo_CSSSupports(
         Origin::Author
     };
     let url_data = unsafe {
-        UrlExtraData::from_ptr_ref(if chrome_sheet {
-            &DUMMY_CHROME_URL_DATA
+        if chrome_sheet {
+            dummy_chrome_url_data()
         } else {
-            &DUMMY_URL_DATA
-        })
+            dummy_url_data()
+        }
     };
     let quirks_mode = if quirks {
         QuirksMode::Quirks
@@ -6963,18 +6992,15 @@ fn inherit_relative_selector_search_direction(
 ) -> ElementSelectorFlags {
     let mut inherited = ElementSelectorFlags::empty();
     if let Some(parent) = parent {
-        if let Some(direction) = parent.relative_selector_search_direction() {
-            inherited |= direction
-                .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR);
-        }
+        inherited |= parent
+            .relative_selector_search_direction()
+            .intersection(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR);
     }
     if let Some(sibling) = prev_sibling {
-        if let Some(direction) = sibling.relative_selector_search_direction() {
-            // Inherit both, for e.g. a sibling with `:has(~.sibling .descendant)`
-            inherited |= direction.intersection(
-                ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING,
-            );
-        }
+        // Inherit both, for e.g. a sibling with `:has(~.sibling .descendant)`
+        inherited |= sibling.relative_selector_search_direction().intersection(
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING,
+        );
     }
     inherited
 }
@@ -7147,6 +7173,41 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorStateDependency(
     );
 }
 
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorCustomStateDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    state: *mut nsAtom,
+    snapshots: &ServoElementSnapshotTable,
+) {
+    let data = raw_data.borrow();
+    let element = GeckoElement(element);
+
+    let quirks_mode: QuirksMode = data.stylist.quirks_mode();
+    let invalidator = RelativeSelectorInvalidator {
+        element,
+        quirks_mode,
+        snapshot_table: Some(snapshots),
+        invalidated: relative_selector_invalidated_at,
+        sibling_traversal_map: SiblingTraversalMap::default(),
+        _marker: std::marker::PhantomData,
+    };
+
+    invalidator.invalidate_relative_selectors_for_this(
+        &data.stylist,
+        |element, scope, data, _quirks_mode, collector| {
+            let invalidation_map = data.relative_selector_invalidation_map();
+            relative_selector_dependencies_for_custom_state(
+                state,
+                *element,
+                scope,
+                &invalidation_map,
+                collector,
+            );
+        },
+    );
+}
+
 fn invalidate_relative_selector_prev_sibling_side_effect(
     prev_sibling: GeckoElement,
     quirks_mode: QuirksMode,
@@ -7304,13 +7365,9 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForInsertion(
     ) {
         (Some(prev_sibling), Some(next_sibling)) => 'sibling: {
             // If the prev sibling is not on the sibling search path, skip.
-            if prev_sibling
+            if !prev_sibling
                 .relative_selector_search_direction()
-                .map_or(true, |direction| {
-                    !direction.intersects(
-                        ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING,
-                    )
-                })
+                .intersects(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING)
             {
                 break 'sibling;
             }
@@ -7429,7 +7486,7 @@ pub extern "C" fn Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(
     // This element was in-tree, so we can safely say that if it was not on
     // the relative selector search path, its removal will not invalidate any
     // relative selector.
-    if element.relative_selector_search_direction().is_none() {
+    if element.relative_selector_search_direction().is_empty() {
         return;
     }
     let following_node = following_node.map(GeckoNode);
@@ -7491,6 +7548,21 @@ pub extern "C" fn Servo_StyleSet_HasStateDependency(
     data.stylist
         .any_applicable_rule_data(element, |data| data.has_state_dependency(state))
 }
+
+#[no_mangle]
+pub extern "C" fn Servo_StyleSet_HasNthOfCustomStateDependency(
+    raw_data: &PerDocumentStyleData,
+    element: &RawGeckoElement,
+    state: *mut nsAtom,
+) -> bool {
+    let element = GeckoElement(element);
+    let data = raw_data.borrow();
+    data.stylist
+        .any_applicable_rule_data(element, |data| unsafe {
+            AtomIdent::with(state, |atom| data.has_nth_of_custom_state_dependency(atom))
+        })
+}
+
 
 #[no_mangle]
 pub extern "C" fn Servo_StyleSet_HasNthOfStateDependency(
@@ -7680,6 +7752,31 @@ fn relative_selector_dependencies_for_class<'a>(
             None => (),
         };
     });
+}
+
+fn relative_selector_dependencies_for_custom_state<'a>(
+    state: *const nsAtom,
+    element: GeckoElement<'a>,
+    scope: Option<OpaqueElement>,
+    invalidation_map: &'a RelativeSelectorInvalidationMap,
+    collector: &mut RelativeSelectorDependencyCollector<'a, GeckoElement<'a>>,
+) {
+    unsafe {
+        AtomIdent::with(state, |atom| {
+            match invalidation_map
+                .map
+                .custom_state_affecting_selectors
+                .get(atom)
+            {
+                Some(v) => {
+                    for dependency in v {
+                        collector.add_dependency(dependency, element, scope);
+                    }
+                },
+                None => (),
+            };
+        })
+    }
 }
 
 fn process_relative_selector_invalidations(
@@ -7880,11 +7977,11 @@ pub unsafe extern "C" fn Servo_SelectorList_Parse(
 ) -> *mut SelectorList {
     use style::selector_parser::SelectorParser;
 
-    let url_data = UrlExtraData::from_ptr_ref(if is_chrome {
-        &DUMMY_CHROME_URL_DATA
+    let url_data = if is_chrome {
+        dummy_chrome_url_data()
     } else {
-        &DUMMY_URL_DATA
-    });
+        dummy_url_data()
+    };
 
     let input = selector_list.as_str_unchecked();
     let selector_list = match SelectorParser::parse_author_origin_no_namespace(&input, url_data) {
@@ -8647,6 +8744,24 @@ pub extern "C" fn Servo_LayerBlockRule_GetName(rule: &LayerBlockRule, result: &m
 }
 
 #[no_mangle]
+pub extern "C" fn Servo_ScopeRule_GetStart(rule: &ScopeRule, result: &mut nsACString) {
+    if let Some(v) = rule.bounds.start.as_ref() {
+        v.to_css(&mut CssWriter::new(result)).unwrap();
+    } else {
+        result.set_is_void(true);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ScopeRule_GetEnd(rule: &ScopeRule, result: &mut nsACString) {
+    if let Some(v) = rule.bounds.end.as_ref() {
+        v.to_css(&mut CssWriter::new(result)).unwrap();
+    } else {
+        result.set_is_void(true);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn Servo_LayerStatementRule_GetNameCount(rule: &LayerStatementRule) -> usize {
     rule.names.len()
 }
@@ -9006,23 +9121,20 @@ pub extern "C" fn Servo_GetSelectorWarnings(
 }
 
 #[no_mangle]
-pub extern "C" fn Servo_GetRuleBodyTextOffsets(
+pub extern "C" fn Servo_GetRuleBodyText(
     initial_text: &nsACString,
-    result_start_offset: &mut u32,
-    result_end_offset: &mut u32,
-) -> bool {
+    ret_val: &mut nsACString,
+) {
     let css_text = unsafe { initial_text.as_str_unchecked() };
     let mut input = ParserInput::new(&css_text);
     let mut input = Parser::new(&mut input);
 
-    let mut start_offset = 0;
     let mut found_start = false;
 
     // Search forward for the opening brace.
     while let Ok(token) = input.next() {
         match *token {
             Token::CurlyBracketBlock => {
-                start_offset = input.position().byte_index();
                 found_start = true;
                 break;
             },
@@ -9030,13 +9142,14 @@ pub extern "C" fn Servo_GetRuleBodyTextOffsets(
         }
 
         if token.is_parse_error() {
-            return false;
+            break;
         }
     }
 
 
     if !found_start {
-        return false;
+        ret_val.set_is_void(true);
+        return;
     }
 
     let token_start = input.position();
@@ -9046,16 +9159,121 @@ pub extern "C" fn Servo_GetRuleBodyTextOffsets(
             Ok(())
         }
     );
-    let mut end_offset = input.position().byte_index();
+
+    // We're not guaranteed to have a closing bracket, but when we do, we need to move
+    // the end offset before it.
+    let mut token_slice = input.slice_from(token_start);
+    if token_slice.ends_with("}") {
+        token_slice = token_slice.strip_suffix("}").unwrap();
+    }
+    ret_val.assign(token_slice);
+}
+
+#[no_mangle]
+pub extern "C" fn Servo_ReplaceBlockRuleBodyTextInStylesheetText(
+    stylesheet_text: &nsACString,
+    line: u32,
+    column: u32,
+    new_body_text: &nsACString,
+    ret_val: &mut nsACString,
+) {
+    let css_text = unsafe { stylesheet_text.as_str_unchecked() };
+
+    let Some(rule_start_index) = get_byte_index_from_line_and_column(css_text, line, column) else {
+        ret_val.set_is_void(true);
+        return;
+    };
+
+    let mut input = ParserInput::new(&css_text[rule_start_index..]);
+    let mut input = Parser::new(&mut input);
+    let mut found_start = false;
+
+    // Search forward for the opening brace.
+    while let Ok(token) = input.next() {
+        if matches!(*token, Token::CurlyBracketBlock) {
+            found_start = true;
+            break;
+        }
+
+        if token.is_parse_error() {
+            break;
+        }
+    }
+
+    if !found_start {
+        ret_val.set_is_void(true);
+        return;
+    }
+
+    let token_start = input.position();
+    let rule_body_start = rule_start_index + token_start.byte_index();
+    // Parse the nested block to move the parser to the end of the block
+    let _ = input.parse_nested_block(
+        |_i| -> Result<(), CssParseError<'_, BasicParseError>> {
+            Ok(())
+        }
+    );
+    let mut rule_body_end = rule_start_index + input.position().byte_index();
+
     // We're not guaranteed to have a closing bracket, but when we do, we need to move
     // the end offset before it.
     let token_slice = input.slice_from(token_start);
     if token_slice.ends_with("}") {
-        end_offset = end_offset - 1;
+        rule_body_end -= 1;
     }
 
-    *result_start_offset = start_offset as u32;
-    *result_end_offset = end_offset as u32;
+    ret_val.append(&css_text[..rule_body_start]);
+    ret_val.append(new_body_text);
+    ret_val.append(&css_text[rule_body_end..]);
+}
 
-    return true;
+/// Find css_text byte position corresponding to the passed line and column
+fn get_byte_index_from_line_and_column(
+    css_text: &str,
+    line: u32,
+    column: u32,
+) -> Option<usize> {
+    // Find the byte index of the start of the passed line within css_text
+    let mut line_byte_index = Some(0);
+    if line != 1 {
+        let mut current_line = 1;
+        let mut last_byte = None;
+        let mut bytes_iter = css_text.bytes();
+        line_byte_index = bytes_iter.position(|byte| {
+            // We want to get the position _after_ the EOF sequence
+            let on_expected_line = current_line == line;
+            let is_previous_byte_carriage_return = last_byte == Some(b'\r');
+            last_byte = Some(byte);
+
+            if byte == b'\r' {
+                current_line += 1;
+            } else if byte == b'\n' {
+                if !is_previous_byte_carriage_return {
+                    current_line += 1;
+                } else {
+                    return false;
+                }
+            }
+            on_expected_line
+        });
+    }
+
+    if line_byte_index.is_none() {
+        return None;
+    }
+
+    if column == 1 {
+        return line_byte_index;
+    }
+
+    let line_byte_index = line_byte_index.unwrap();
+    let mut current_column = 1;
+    for (byte_index, _char) in css_text[line_byte_index..].char_indices() {
+        if current_column == column {
+            return Some(line_byte_index + byte_index);
+        }
+        current_column += 1;
+    }
+
+    None
 }

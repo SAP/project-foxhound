@@ -5,14 +5,14 @@
 function test() {
   waitForExplicitFinish();
 
-  function testState(aPinned) {
+  function testState() {
     function elemAttr(id, attr) {
       return document.getElementById(id).getAttribute(attr);
     }
 
     is(
       elemAttr("key_close", "disabled"),
-      "",
+      null,
       "key_closed should always be enabled"
     );
     is(

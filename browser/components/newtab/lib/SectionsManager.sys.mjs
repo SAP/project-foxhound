@@ -15,7 +15,7 @@ const { EventEmitter } = ChromeUtils.importESModule(
 import {
   actionCreators as ac,
   actionTypes as at,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 import { getDefaultOptions } from "resource://activity-stream/lib/ActivityStreamStorage.sys.mjs";
 
 const lazy = {};
@@ -389,7 +389,7 @@ export const SectionsManager = {
 
   /**
    * Sets each card in highlights' context menu options based on the card's type.
-   * (See types.js for a list of types)
+   * (See types.mjs for a list of types)
    *
    * @param rows section rows containing a type for each card
    */

@@ -32,6 +32,7 @@ from taskgraph.util.yaml import load_yaml
 
 from . import GECKO
 from .actions import render_actions_json
+from .files_changed import get_changed_files
 from .parameters import get_app_version, get_version
 from .try_option_syntax import parse_message
 from .util.backstop import BACKSTOP_INDEX, is_backstop
@@ -308,6 +309,9 @@ def get_decision_parameters(graph_config, options):
     parameters["hg_branch"] = get_hg_revision_branch(
         GECKO, revision=parameters["head_rev"]
     )
+    parameters["files_changed"] = sorted(
+        get_changed_files(parameters["head_repository"], parameters["head_rev"])
+    )
     parameters["next_version"] = None
     parameters["optimize_strategies"] = None
     parameters["optimize_target_tasks"] = True
@@ -448,14 +452,17 @@ def set_try_config(parameters, task_config_file):
 def set_decision_indexes(decision_task_id, params, graph_config):
     index_paths = []
     if params["backstop"]:
-        index_paths.append(BACKSTOP_INDEX)
+        # When two Decision tasks run at nearly the same time, it's possible
+        # they both end up being backstops if the second checks the backstop
+        # index before the first inserts it. Insert this index first to reduce
+        # the chances of that happening.
+        index_paths.insert(0, BACKSTOP_INDEX)
 
     subs = params.copy()
     subs["trust-domain"] = graph_config["trust-domain"]
 
-    index_paths = [i.format(**subs) for i in index_paths]
     for index_path in index_paths:
-        insert_index(index_path, decision_task_id, use_proxy=True)
+        insert_index(index_path.format(**subs), decision_task_id, use_proxy=True)
 
 
 def write_artifact(filename, data):

@@ -616,7 +616,7 @@ impl StylesheetInvalidationSet {
                 return self.invalidate_fully();
             },
             Document(..) | Import(..) | Media(..) | Supports(..) | Container(..) |
-            LayerBlock(..) => {
+            LayerBlock(..) | StartingStyle(..) => {
                 // Do nothing, relevant nested rules are visited as part of rule iteration.
             },
             FontFace(..) => {
@@ -644,6 +644,11 @@ impl StylesheetInvalidationSet {
             },
             CounterStyle(..) | Property(..) | FontFeatureValues(..) | FontPaletteValues(..) => {
                 debug!(" > Found unsupported rule, marking the whole subtree invalid.");
+                self.invalidate_fully();
+            },
+            Scope(..) => {
+                // Addition/removal of @scope requires re-evaluation of scope proximity to properly
+                // figure out the styling order.
                 self.invalidate_fully();
             },
         }

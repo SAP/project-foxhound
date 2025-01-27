@@ -474,7 +474,7 @@ class MainThreadFetchRunnable : public Runnable {
 };
 
 already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
-                                       const RequestOrUSVString& aInput,
+                                       const RequestOrUTF8String& aInput,
                                        const RequestInit& aInit,
                                        CallerType aCallerType,
                                        ErrorResult& aRv) {
@@ -508,7 +508,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
   }
 
   // Taintfox: Sink: Add fetch sink here...
-  nsAutoString url;
+  nsAutoCString url;
   request->GetUrl(url);
   ReportTaintSink(url, "fetch.url");
 

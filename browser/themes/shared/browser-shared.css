@@ -18,6 +18,7 @@
 @import url("chrome://browser/skin/places/editBookmarkPanel.css");
 @import url("chrome://browser/skin/sidebar.css");
 @import url("chrome://browser/skin/tabs.css");
+@import url("chrome://browser/content/tabpreview/tabpreview.css");
 @import url("chrome://browser/skin/fullscreen/warning.css");
 @import url("chrome://browser/skin/ctrlTab.css");
 @import url("chrome://browser/skin/customizableui/customizeMode.css");
@@ -39,9 +40,8 @@
   --toolbarbutton-border-radius: 4px;
 
   --chrome-content-separator-color: ThreeDShadow;
-
-  --tabs-navbar-shadow-size: 1px;
-  --tabs-navbar-shadow-color: ThreeDShadow;
+  --tabs-navbar-separator-color: ThreeDShadow;
+  --tabs-navbar-separator-style: solid;
 
   --panelui-subview-transition-duration: 150ms;
 
@@ -104,12 +104,13 @@
     --toolbox-non-lwt-textcolor-inactive: InactiveCaptionText;
   }
 
-  &:-moz-lwtheme {
+  &[lwtheme] {
     color: var(--lwt-text-color);
 
     --link-color: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
     --chrome-content-separator-color: rgba(0,0,0,.3);
-    --tabs-navbar-shadow-color: light-dark(rgba(0,0,0,.1), rgba(0,0,0,.3));
+    --tabs-navbar-separator-color: light-dark(rgba(0,0,0,.1), rgba(0,0,0,.3));
+    --attention-dot-color: light-dark(#2ac3a2, #54ffbd);
 
     @media not (prefers-contrast) {
       --focus-outline-color: light-dark(#0061E0, #00DDFF);
@@ -139,21 +140,13 @@
   @media (prefers-reduced-motion) {
     --inactive-window-transition: 0s;
   }
-
-  @media (min-resolution: 1.5dppx) {
-    --tabs-navbar-shadow-size: 0.5px;
-  }
-
-  @media (min-resolution: 3dppx) {
-    --tabs-navbar-shadow-size: 0.33px;
-  }
 }
 
 #navigator-toolbox {
   appearance: none;
 
   /* Toolbar / content area border */
-  border-bottom: 1px solid var(--chrome-content-separator-color);
+  border-bottom: 0.01px solid var(--chrome-content-separator-color);
 
   background-color: var(--toolbox-non-lwt-bgcolor);
   color: var(--toolbox-non-lwt-textcolor);
@@ -170,7 +163,7 @@
     border-bottom-style: none;
   }
 
-  &:-moz-lwtheme {
+  :root[lwtheme] & {
     background-image: var(--lwt-additional-images);
     background-repeat: var(--lwt-background-tiling);
     background-position: var(--lwt-background-alignment);
@@ -218,15 +211,19 @@
   padding-inline-start: var(--toolbar-start-end-padding);
 }
 
-:root[sessionrestored] #nav-bar:-moz-lwtheme {
-  transition: var(--ext-theme-background-transition);
-}
-
-#nav-bar:not([tabs-hidden="true"]) {
-  /* The toolbar buttons that animate are only visible when the #TabsToolbar is not collapsed.
-     The animations use position:absolute and require a positioned #nav-bar. */
+#nav-bar {
+  /* The toolbar buttons that animate use position:absolute and require a
+   * positioned #nav-bar. */
   position: relative;
-  box-shadow: 0 calc(-1 * var(--tabs-navbar-shadow-size)) 0 var(--tabs-navbar-shadow-color);
+  border-top: 0.01px var(--tabs-navbar-separator-style) var(--tabs-navbar-separator-color);
+
+  &[tabs-hidden] {
+    border-top-style: none;
+  }
+
+  :root[sessionrestored][lwtheme] & {
+    transition: var(--ext-theme-background-transition);
+  }
 }
 
 /* Bookmarks toolbar */
@@ -480,22 +477,22 @@ menupopup::part(drop-indicator) {
   color-scheme: var(--toolbar-color-scheme);
   border-top-color: var(--chrome-content-separator-color, ThreeDShadow);
 
-  &:-moz-lwtheme {
+  :root[lwtheme] & {
     background-color: var(--lwt-accent-color);
     background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor)), var(--lwt-additional-images);
     background-repeat: no-repeat, var(--lwt-background-tiling);
     background-position: right bottom, var(--lwt-background-alignment);
     background-position-y: bottom !important;
+  }
 
-    :root:not([lwtheme-image]) &:-moz-window-inactive {
-      background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
-    }
+  :root[lwtheme]:not([lwtheme-image]) &:-moz-window-inactive {
+    background-color: var(--lwt-accent-color-inactive, var(--lwt-accent-color));
+  }
 
-    :root[lwtheme-image] & {
-      background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor)), var(--lwt-header-image), var(--lwt-additional-images);
-      background-repeat: no-repeat, no-repeat, var(--lwt-background-tiling);
-      background-position: center, right bottom, var(--lwt-background-alignment);
-    }
+  :root[lwtheme-image] & {
+    background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor)), var(--lwt-header-image), var(--lwt-additional-images);
+    background-repeat: no-repeat, no-repeat, var(--lwt-background-tiling);
+    background-position: center, right bottom, var(--lwt-background-alignment);
   }
 }
 

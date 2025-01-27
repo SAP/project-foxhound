@@ -55,6 +55,7 @@ module.exports = {
       files: ["**/*.sys.mjs", "**/*.jsm"],
       rules: {
         "mozilla/lazy-getter-object-name": "error",
+        "mozilla/reject-chromeutils-import": "error",
         "mozilla/reject-eager-module-in-lazy-getter": "error",
         "mozilla/reject-global-this": "error",
         "mozilla/reject-globalThis-modification": "error",
@@ -76,7 +77,7 @@ module.exports = {
         "no-unused-vars": [
           "error",
           {
-            args: "none",
+            argsIgnorePattern: "^_",
             vars: "all",
           },
         ],
@@ -142,7 +143,7 @@ module.exports = {
   },
 
   // When adding items to this file please check for effects on sub-directories.
-  plugins: ["fetch-options", "html", "json", "no-unsanitized"],
+  plugins: ["html", "json", "no-unsanitized"],
 
   // When adding items to this file please check for effects on all of toolkit
   // and browser
@@ -162,10 +163,6 @@ module.exports = {
 
     // Encourage the use of dot notation whenever possible.
     "dot-notation": "error",
-
-    // XXX This rule should be enabled, see Bug 1557040
-    // No credentials submitted with fetch calls
-    "fetch-options/no-fetch-credentials": "off",
 
     // Maximum depth callbacks can be nested.
     "max-nested-callbacks": ["error", 10],
@@ -317,7 +314,7 @@ module.exports = {
     "no-unused-vars": [
       "error",
       {
-        args: "none",
+        argsIgnorePattern: "^_",
         vars: "local",
       },
     ],

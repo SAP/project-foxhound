@@ -696,17 +696,6 @@ int32_t NS_GetDefaultPort(const char* scheme,
   return NS_SUCCEEDED(rv) ? port : -1;
 }
 
-/**
- * This function is a helper function to apply the ToAscii conversion
- * to a string
- */
-bool NS_StringToACE(const nsACString& idn, nsACString& result) {
-  nsCOMPtr<nsIIDNService> idnSrv = do_GetService(NS_IDNSERVICE_CONTRACTID);
-  if (!idnSrv) return false;
-  nsresult rv = idnSrv->ConvertUTF8toACE(idn, result);
-  return NS_SUCCEEDED(rv);
-}
-
 int32_t NS_GetRealPort(nsIURI* aURI) {
   int32_t port;
   nsresult rv = aURI->GetPort(&port);
@@ -722,6 +711,20 @@ int32_t NS_GetRealPort(nsIURI* aURI) {
   if (NS_FAILED(rv)) return -1;
 
   return NS_GetDefaultPort(scheme.get());
+}
+
+nsresult NS_DomainToASCII(const nsACString& aHost, nsACString& aASCII) {
+  return nsStandardURL::GetIDNService()->ConvertUTF8toACE(aHost, aASCII);
+}
+
+nsresult NS_DomainToDisplay(const nsACString& aHost, nsACString& aDisplay) {
+  bool ignored;
+  return nsStandardURL::GetIDNService()->ConvertToDisplayIDN(aHost, &ignored,
+                                                             aDisplay);
+}
+
+nsresult NS_DomainToUnicode(const nsACString& aHost, nsACString& aUnicode) {
+  return nsStandardURL::GetIDNService()->ConvertACEtoUTF8(aHost, aUnicode);
 }
 
 nsresult NS_NewInputStreamChannelInternal(
@@ -1820,6 +1823,26 @@ class TlsAutoIncrement {
   T& mVar;
 };
 
+static nsTHashSet<nsCString> sSimpleURISchemes;
+static StaticRWLock sSchemeLock;
+
+namespace mozilla::net {
+
+void ParseSimpleURISchemes(const nsACString& schemeList) {
+  StaticAutoWriteLock lock(sSchemeLock);
+
+  sSimpleURISchemes.Clear();
+  for (const auto& scheme : schemeList.Split(',')) {
+    nsAutoCString s(scheme);
+    s.CompressWhitespace();
+    if (!s.IsEmpty()) {
+      sSimpleURISchemes.Insert(s);
+    }
+  }
+}
+
+}  // namespace mozilla::net
+
 nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
                    const char* aCharset /* = nullptr */,
                    nsIURI* aBaseURI /* = nullptr */) {
@@ -2007,6 +2030,14 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   }
 #endif
 
+  auto mustUseSimpleURI = [](const nsCString& scheme) -> bool {
+    if (!StaticPrefs::network_url_some_schemes_bypass_defaultURI_fallback()) {
+      return false;
+    }
+    StaticAutoReadLock lock(sSchemeLock);
+    return sSimpleURISchemes.Contains(scheme);
+  };
+
   if (aBaseURI) {
     nsAutoCString newSpec;
     rv = aBaseURI->Resolve(aSpec, newSpec);
@@ -2020,6 +2051,12 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
     }
 
     if (StaticPrefs::network_url_useDefaultURI()) {
+      if (mustUseSimpleURI(scheme)) {
+        return NS_MutateURI(new nsSimpleURI::Mutator())
+            .SetSpec(newSpec)
+            .Finalize(aURI);
+      }
+
       return NS_MutateURI(new DefaultURI::Mutator())
           .SetSpec(newSpec)
           .Finalize(aURI);
@@ -2031,6 +2068,11 @@ nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
   }
 
   if (StaticPrefs::network_url_useDefaultURI()) {
+    if (mustUseSimpleURI(scheme)) {
+      return NS_MutateURI(new nsSimpleURI::Mutator())
+          .SetSpec(aSpec)
+          .Finalize(aURI);
+    }
     return NS_MutateURI(new DefaultURI::Mutator())
         .SetSpec(aSpec)
         .Finalize(aURI);
@@ -3416,25 +3458,24 @@ bool IsSchemeChangePermitted(nsIURI* aOldURI, const nsACString& newScheme) {
 }
 
 already_AddRefed<nsIURI> TryChangeProtocol(nsIURI* aURI,
-                                           const nsAString& aProtocol) {
+                                           const nsACString& aProtocol) {
   MOZ_ASSERT(aURI);
 
-  nsAString::const_iterator start;
+  nsACString::const_iterator start;
   aProtocol.BeginReading(start);
 
-  nsAString::const_iterator end;
+  nsACString::const_iterator end;
   aProtocol.EndReading(end);
 
-  nsAString::const_iterator iter(start);
+  nsACString::const_iterator iter(start);
   FindCharInReadable(':', iter, end);
 
   // Changing the protocol of a URL, changes the "nature" of the URI
   // implementation. In order to do this properly, we have to serialize the
   // existing URL and reparse it in a new object.
   nsCOMPtr<nsIURI> clone;
-  nsresult rv = NS_MutateURI(aURI)
-                    .SetScheme(NS_ConvertUTF16toUTF8(Substring(start, iter)))
-                    .Finalize(clone);
+  nsresult rv =
+      NS_MutateURI(aURI).SetScheme(Substring(start, iter)).Finalize(clone);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }

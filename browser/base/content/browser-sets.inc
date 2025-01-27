@@ -16,12 +16,12 @@
 
   <commandset id="mainCommandSet">
     <command id="cmd_newNavigator" oncommand="OpenBrowserWindow()"/>
-    <command id="cmd_handleBackspace" oncommand="BrowserHandleBackspace();" />
-    <command id="cmd_handleShiftBackspace" oncommand="BrowserHandleShiftBackspace();" />
+    <command id="cmd_handleBackspace" oncommand="BrowserCommands.handleBackspace();" />
+    <command id="cmd_handleShiftBackspace" oncommand="BrowserCommands.handleShiftBackspace();" />
 
-    <command id="cmd_newNavigatorTab" oncommand="BrowserOpenTab({ event });"/>
-    <command id="cmd_newNavigatorTabNoEvent" oncommand="BrowserOpenTab();"/>
-    <command id="Browser:OpenFile"  oncommand="BrowserOpenFileWindow();"/>
+    <command id="cmd_newNavigatorTab" oncommand="BrowserCommands.openTab({ event });"/>
+    <command id="cmd_newNavigatorTabNoEvent" oncommand="BrowserCommands.openTab();"/>
+    <command id="Browser:OpenFile"  oncommand="BrowserCommands.openFileWindow();"/>
     <command id="Browser:SavePage" oncommand="saveBrowser(gBrowser.selectedBrowser);"/>
 
     <command id="Browser:SendLink"
@@ -32,17 +32,17 @@
     <command id="cmd_printPreviewToggle" oncommand="PrintUtils.togglePrintPreview(gBrowser.selectedBrowser.browsingContext);"/>
     <command id="cmd_file_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, { entrypoint: MigrationUtils.MIGRATION_ENTRYPOINTS.FILE_MENU });"/>
     <command id="cmd_help_importFromAnotherBrowser" oncommand="MigrationUtils.showMigrationWizard(window, { entrypoint: MigrationUtils.MIGRATION_ENTRYPOINTS.HELP_MENU });"/>
-    <command id="cmd_close" oncommand="BrowserCloseTabOrWindow(event);"/>
-    <command id="cmd_closeWindow" oncommand="BrowserTryToCloseWindow(event)"/>
+    <command id="cmd_close" oncommand="BrowserCommands.closeTabOrWindow(event);"/>
+    <command id="cmd_closeWindow" oncommand="BrowserCommands.tryToCloseWindow(event)"/>
     <command id="cmd_toggleMute" oncommand="gBrowser.toggleMuteAudioOnMultiSelectedTabs(gBrowser.selectedTab)"/>
     <command id="cmd_CustomizeToolbars" oncommand="gCustomizeMode.enter()"/>
     <command id="cmd_toggleOfflineStatus" oncommand="BrowserOffline.toggleOfflineStatus();"/>
     <command id="cmd_quitApplication" oncommand="goQuitApplication(event)"/>
 
     <command id="View:AboutProcesses" oncommand="switchToTabHavingURI('about:processes', true)"/>
-    <command id="View:PageSource" oncommand="BrowserViewSource(window.gBrowser.selectedBrowser);"/>
-    <command id="View:PageInfo" oncommand="BrowserPageInfo();"/>
-    <command id="View:FullScreen" oncommand="BrowserFullScreen();"/>
+    <command id="View:PageSource" oncommand="BrowserCommands.viewSource(window.gBrowser.selectedBrowser);"/>
+    <command id="View:PageInfo" oncommand="BrowserCommands.pageInfo();"/>
+    <command id="View:FullScreen" oncommand="BrowserCommands.fullScreen();"/>
     <command id="View:ReaderView" oncommand="AboutReaderParent.toggleReaderMode(event);"/>
     <command id="View:PictureInPicture" oncommand="PictureInPicture.onCommand(event);"/>
     <command id="cmd_find" oncommand="gLazyFindCommand('onFindCommand')"/>
@@ -60,20 +60,20 @@
             oncommand="PlacesCommandHook.searchBookmarks();"/>
     <command id="Browser:BookmarkAllTabs"
              oncommand="PlacesCommandHook.bookmarkTabs();"/>
-    <command id="Browser:Back"    oncommand="BrowserBack();" disabled="true"/>
-    <command id="Browser:BackOrBackDuplicate" oncommand="BrowserBack(event);" disabled="true">
+    <command id="Browser:Back"    oncommand="BrowserCommands.back();" disabled="true"/>
+    <command id="Browser:BackOrBackDuplicate" oncommand="BrowserCommands.back(event);" disabled="true">
       <observes element="Browser:Back" attribute="disabled"/>
     </command>
-    <command id="Browser:Forward" oncommand="BrowserForward();" disabled="true"/>
-    <command id="Browser:ForwardOrForwardDuplicate" oncommand="BrowserForward(event);" disabled="true">
+    <command id="Browser:Forward" oncommand="BrowserCommands.forward();" disabled="true"/>
+    <command id="Browser:ForwardOrForwardDuplicate" oncommand="BrowserCommands.forward(event);" disabled="true">
       <observes element="Browser:Forward" attribute="disabled"/>
     </command>
-    <command id="Browser:Stop"    oncommand="BrowserStop();" disabled="true"/>
-    <command id="Browser:Reload"  oncommand="if (event.shiftKey) BrowserReloadSkipCache(); else BrowserReload()" disabled="true"/>
-    <command id="Browser:ReloadOrDuplicate" oncommand="BrowserReloadOrDuplicate(event)" disabled="true">
+    <command id="Browser:Stop"    oncommand="BrowserCommands.stop();" disabled="true"/>
+    <command id="Browser:Reload"  oncommand="if (event.shiftKey) BrowserCommands.reloadSkipCache(); else BrowserCommands.reload()" disabled="true"/>
+    <command id="Browser:ReloadOrDuplicate" oncommand="BrowserCommands.reloadOrDuplicate(event)" disabled="true">
       <observes element="Browser:Reload" attribute="disabled"/>
     </command>
-    <command id="Browser:ReloadSkipCache" oncommand="BrowserReloadSkipCache()" disabled="true">
+    <command id="Browser:ReloadSkipCache" oncommand="BrowserCommands.reloadSkipCache()" disabled="true">
       <observes element="Browser:Reload" attribute="disabled"/>
     </command>
     <command id="Browser:NextTab" oncommand="gBrowser.tabContainer.advanceSelectedTab(1, true);"/>
@@ -216,7 +216,7 @@
     <key id="goBackKb2" data-l10n-id="nav-back-shortcut-alt" command="Browser:Back" modifiers="accel"/>
     <key id="goForwardKb2" data-l10n-id="nav-fwd-shortcut-alt" command="Browser:Forward" modifiers="accel"/>
 #endif
-    <key id="goHome" keycode="VK_HOME" oncommand="BrowserHome();" modifiers="alt"/>
+    <key id="goHome" keycode="VK_HOME" oncommand="BrowserCommands.home();" modifiers="alt"/>
     <key keycode="VK_F5" command="Browser:Reload"/>
 #ifndef XP_MACOSX
     <key id="showAllHistoryKb" data-l10n-id="history-show-all-shortcut" command="Browser:ShowAllHistory" modifiers="accel,shift"/>

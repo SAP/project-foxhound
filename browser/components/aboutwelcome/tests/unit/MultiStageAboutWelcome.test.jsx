@@ -383,6 +383,72 @@ describe("MultiStageAboutWelcome module", () => {
         );
       });
     });
+
+    describe("Wallpaper screen", () => {
+      let WALLPAPER_SCREEN_PROPS;
+      beforeEach(() => {
+        WALLPAPER_SCREEN_PROPS = {
+          content: {
+            title: "test title",
+            subtitle: "test subtitle",
+            tiles: {
+              type: "theme",
+              category: {
+                type: "wallpaper",
+                action: {
+                  type: "MULTI_ACTION",
+                  data: {
+                    actions: [
+                      {
+                        type: "SET_PREF",
+                        data: {
+                          pref: {
+                            name: "test-dark",
+                          },
+                        },
+                      },
+                      {
+                        type: "SET_PREF",
+                        data: {
+                          pref: {
+                            name: "test-light",
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+              action: {
+                theme: "<event>",
+              },
+              data: [
+                {
+                  theme: "mountain",
+                  type: "light",
+                },
+              ],
+            },
+            primary_button: {
+              action: {},
+              label: "test button",
+            },
+          },
+          navigate: sandbox.stub(),
+          setActiveTheme: sandbox.stub(),
+        };
+        sandbox.stub(AboutWelcomeUtils, "handleUserAction").resolves();
+      });
+      it("should handle wallpaper click", () => {
+        const wrapper = mount(<WelcomeScreen {...WALLPAPER_SCREEN_PROPS} />);
+        const wallpaperOptions = wrapper.find(
+          ".tiles-theme-section .theme input[name='mountain']"
+        );
+        wallpaperOptions.simulate("click");
+        assert.calledTwice(AboutWelcomeUtils.handleUserAction);
+      });
+    });
+
     describe("#handleAction", () => {
       let SCREEN_PROPS;
       let TEST_ACTION;

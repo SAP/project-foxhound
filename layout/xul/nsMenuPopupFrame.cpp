@@ -491,19 +491,13 @@ void nsMenuPopupFrame::TweakMinPrefISize(nscoord& aSize) {
 }
 
 nscoord nsMenuPopupFrame::GetMinISize(gfxContext* aRC) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-
-  result = nsBlockFrame::GetMinISize(aRC);
+  nscoord result = nsBlockFrame::GetMinISize(aRC);
   TweakMinPrefISize(result);
   return result;
 }
 
 nscoord nsMenuPopupFrame::GetPrefISize(gfxContext* aRC) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-
-  result = nsBlockFrame::GetPrefISize(aRC);
+  nscoord result = nsBlockFrame::GetPrefISize(aRC);
   TweakMinPrefISize(result);
   return result;
 }
@@ -514,7 +508,6 @@ void nsMenuPopupFrame::Reflow(nsPresContext* aPresContext,
                               nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsMenuPopupFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   const auto wm = GetWritingMode();
@@ -2186,6 +2179,12 @@ nsMargin nsMenuPopupFrame::GetMargin() const {
     margin.left += auOffset.x;
     margin.right += auOffset.x;
   }
+  if (mPopupType == PopupType::Tooltip && !IsAnchored()) {
+    const auto auOffset =
+        CSSPixel::ToAppUnits(LookAndFeel::TooltipOffsetVertical());
+    margin.top += auOffset;
+    margin.bottom += auOffset;
+  }
   return margin;
 }
 
@@ -2246,7 +2245,8 @@ void nsMenuPopupFrame::MoveTo(const CSSPoint& aPos, bool aUpdateAttrs,
 void nsMenuPopupFrame::MoveToAnchor(nsIContent* aAnchorContent,
                                     const nsAString& aPosition, int32_t aXPos,
                                     int32_t aYPos, bool aAttributesOverride) {
-  NS_ASSERTION(IsVisible(), "popup must be visible to move it");
+  NS_ASSERTION(IsVisibleOrShowing(),
+               "popup must be visible or showing to move it");
 
   nsPopupState oldstate = mPopupState;
   InitializePopup(aAnchorContent, mTriggerContent, aPosition, aXPos, aYPos,

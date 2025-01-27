@@ -37,6 +37,7 @@ import {
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { ShortcutUtils } from "resource://gre/modules/ShortcutUtils.sys.mjs";
 
 const STATES = {
   CROSSHAIRS: "crosshairs",
@@ -49,7 +50,7 @@ const STATES = {
 const lazy = {};
 
 ChromeUtils.defineLazyGetter(lazy, "overlayLocalization", () => {
-  return new Localization(["browser/screenshotsOverlay.ftl"], true);
+  return new Localization(["browser/screenshots.ftl"], true);
 });
 
 const SCREENSHOTS_LAST_SAVED_METHOD_PREF =
@@ -79,13 +80,33 @@ export class ScreenshotsOverlay {
   #methodsUsed;
 
   get markup() {
-    let [cancel, instructions, download, copy] =
-      lazy.overlayLocalization.formatMessagesSync([
-        { id: "screenshots-overlay-cancel-button" },
-        { id: "screenshots-overlay-instructions" },
-        { id: "screenshots-overlay-download-button" },
-        { id: "screenshots-overlay-copy-button" },
-      ]);
+    let accelString = ShortcutUtils.getModifierString("accel");
+    let copyShorcut = accelString + this.copyKey;
+    let downloadShortcut = accelString + this.downloadKey;
+
+    let [
+      cancelLabel,
+      cancelAttributes,
+      instructions,
+      downloadLabel,
+      downloadAttributes,
+      copyLabel,
+      copyAttributes,
+    ] = lazy.overlayLocalization.formatMessagesSync([
+      { id: "screenshots-cancel-button" },
+      { id: "screenshots-component-cancel-button" },
+      { id: "screenshots-instructions" },
+      { id: "screenshots-component-download-button-label" },
+      {
+        id: "screenshots-component-download-button",
+        args: { shortcut: downloadShortcut },
+      },
+      { id: "screenshots-component-copy-button-label" },
+      {
+        id: "screenshots-component-copy-button",
+        args: { shortcut: copyShorcut },
+      },
+    ]);
 
     return `
       <template>
@@ -98,7 +119,7 @@ export class ScreenshotsOverlay {
               <div class="face"></div>
             </div>
             <div class="preview-instructions">${instructions.value}</div>
-            <button class="screenshots-button ghost-button" id="screenshots-cancel-button">${cancel.value}</button>
+            <button class="screenshots-button ghost-button" id="screenshots-cancel-button" title="${cancelAttributes.attributes[0].value}" aria-label="${cancelAttributes.attributes[1].value}">${cancelLabel.value}</button>
           </div>
           <div id="hover-highlight" hidden></div>
           <div id="selection-container" hidden>
@@ -138,9 +159,9 @@ export class ScreenshotsOverlay {
           </div>
           <div id="buttons-container" hidden>
             <div class="buttons-wrapper">
-              <button id="cancel" class="screenshots-button" title="${cancel.value}" aria-label="${cancel.value}" tabindex="0"><img/></button>
-              <button id="copy" class="screenshots-button" title="${copy.value}" aria-label="${copy.value}" tabindex="0"><img/>${copy.value}</button>
-              <button id="download" class="screenshots-button primary" title="${download.value}" aria-label="${download.value}" tabindex="0"><img/>${download.value}</button>
+              <button id="cancel" class="screenshots-button" title="${cancelAttributes.attributes[0].value}" aria-label="${cancelAttributes.attributes[1].value}"><img/></button>
+              <button id="copy" class="screenshots-button" title="${copyAttributes.attributes[0].value}" aria-label="${copyAttributes.attributes[1].value}"><img/><label>${copyLabel.value}</label></button>
+              <button id="download" class="screenshots-button primary" title="${downloadAttributes.attributes[0].value}" aria-label="${downloadAttributes.attributes[1].value}"><img/><label>${downloadLabel.value}</label></button>
             </div>
           </div>
         </div>
@@ -180,6 +201,14 @@ export class ScreenshotsOverlay {
     this.selectionRegion = new Region(this.windowDimensions);
     this.hoverElementRegion = new Region(this.windowDimensions);
     this.resetMethodsUsed();
+
+    let [downloadKey, copyKey] = lazy.overlayLocalization.formatMessagesSync([
+      { id: "screenshots-component-download-key" },
+      { id: "screenshots-component-copy-key" },
+    ]);
+
+    this.downloadKey = downloadKey.value;
+    this.copyKey = copyKey.value;
   }
 
   get content() {
@@ -204,6 +233,9 @@ export class ScreenshotsOverlay {
     this.#content.root.appendChild(this.fragment);
 
     this.initializeElements();
+    this.screenshotsContainer.dir = Services.locale.isAppLocaleRTL
+      ? "rtl"
+      : "ltr";
     await this.updateWindowDimensions();
 
     this.#setState(STATES.CROSSHAIRS);
@@ -290,10 +322,6 @@ export class ScreenshotsOverlay {
   }
 
   handleEvent(event) {
-    if (event.button > 0) {
-      return;
-    }
-
     switch (event.type) {
       case "click":
         this.handleClick(event);
@@ -316,21 +344,46 @@ export class ScreenshotsOverlay {
     }
   }
 
+  /**
+   * If the event came from the primary button, return false as we should not
+   * early return in the event handler function.
+   * If the event had another button, set to the crosshairs or selected state
+   * and return true to early return from the event handler function.
+   * @param {PointerEvent} event
+   * @returns true if the event button(s) was the non primary button
+   *          false otherwise
+   */
+  preEventHandler(event) {
+    if (event.button > 0 || event.buttons > 1) {
+      switch (this.#state) {
+        case STATES.DRAGGING_READY:
+          this.#setState(STATES.CROSSHAIRS);
+          break;
+        case STATES.DRAGGING:
+        case STATES.RESIZING:
+          this.#setState(STATES.SELECTED);
+          break;
+      }
+      return true;
+    }
+    return false;
+  }
+
   handleClick(event) {
+    if (this.preEventHandler(event)) {
+      return;
+    }
+
     switch (event.originalTarget.id) {
       case "screenshots-cancel-button":
       case "cancel":
         this.maybeCancelScreenshots();
         break;
       case "copy":
-        this.#dispatchEvent("Screenshots:Copy", {
-          region: this.selectionRegion.dimensions,
-        });
+        this.copySelectedRegion();
         break;
       case "download":
-        this.#dispatchEvent("Screenshots:Download", {
-          region: this.selectionRegion.dimensions,
-        });
+        this.downloadSelectedRegion();
         break;
     }
   }
@@ -351,6 +404,16 @@ export class ScreenshotsOverlay {
    * @param {Event} event The pointerown event
    */
   handlePointerDown(event) {
+    // Early return if the event target is not within the screenshots component
+    // element.
+    if (!event.originalTarget.closest("#screenshots-component")) {
+      return;
+    }
+
+    if (this.preEventHandler(event)) {
+      return;
+    }
+
     if (
       event.originalTarget.id === "screenshots-cancel-button" ||
       event.originalTarget.closest("#buttons-container") ===
@@ -379,6 +442,10 @@ export class ScreenshotsOverlay {
    * @param {Event} event The pointermove event
    */
   handlePointerMove(event) {
+    if (this.preEventHandler(event)) {
+      return;
+    }
+
     const { pageX, pageY, clientX, clientY } =
       this.getCoordinatesFromEvent(event);
 
@@ -449,6 +516,18 @@ export class ScreenshotsOverlay {
         break;
       case "Escape":
         this.maybeCancelScreenshots();
+        break;
+      case this.copyKey.toLowerCase():
+        if (this.state === "selected" && this.getAccelKey(event)) {
+          event.preventDefault();
+          this.copySelectedRegion();
+        }
+        break;
+      case this.downloadKey.toLowerCase():
+        if (this.state === "selected" && this.getAccelKey(event)) {
+          event.preventDefault();
+          this.downloadSelectedRegion();
+        }
         break;
     }
   }
@@ -780,9 +859,9 @@ export class ScreenshotsOverlay {
    */
   setFocusToActionButton() {
     if (lazy.SCREENSHOTS_LAST_SAVED_METHOD === "copy") {
-      this.copyButton.focus({ focusVisible: true });
+      this.copyButton.focus({ focusVisible: true, preventScroll: true });
     } else {
-      this.downloadButton.focus({ focusVisible: true });
+      this.downloadButton.focus({ focusVisible: true, preventScroll: true });
     }
   }
 
@@ -866,6 +945,18 @@ export class ScreenshotsOverlay {
         break;
       }
     }
+  }
+
+  copySelectedRegion() {
+    this.#dispatchEvent("Screenshots:Copy", {
+      region: this.selectionRegion.dimensions,
+    });
+  }
+
+  downloadSelectedRegion() {
+    this.#dispatchEvent("Screenshots:Download", {
+      region: this.selectionRegion.dimensions,
+    });
   }
 
   /**
@@ -1285,17 +1376,21 @@ export class ScreenshotsOverlay {
     this.updateSelectionSizeText();
   }
 
+  /**
+   * Update the size of the selected region. Use the zoom to correctly display
+   * the region dimensions.
+   */
   updateSelectionSizeText() {
-    let dpr = this.windowDimensions.devicePixelRatio;
     let { width, height } = this.selectionRegion.dimensions;
+    let zoom = Math.round(this.window.browsingContext.fullZoom * 100) / 100;
 
     let [selectionSizeTranslation] =
       lazy.overlayLocalization.formatMessagesSync([
         {
-          id: "screenshots-overlay-selection-region-size",
+          id: "screenshots-overlay-selection-region-size-2",
           args: {
-            width: Math.floor(width * dpr),
-            height: Math.floor(height * dpr),
+            width: Math.floor(width * zoom),
+            height: Math.floor(height * zoom),
           },
         },
       ]);

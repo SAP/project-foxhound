@@ -7,6 +7,7 @@ loader: gecko_taskgraph.loader.test:loader
 kind-dependencies:
     - build
     - build-signing
+    - signing-apk
     - repackage-signing-shippable-l10n-msix
     - repackage-signing-msix
     - repackage-signing
@@ -45,6 +46,7 @@ jobs-from:
 job-defaults:
     attributes:
         retrigger: true
+    use-python: default
     require-signed-extensions:
         by-release-type:
             release|esr.*: true
@@ -83,6 +85,11 @@ job-defaults:
                     - android-emulator-linux
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
+                    - linux64-hostutils
+                android-hw.*:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-hostutils
                 default:
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks

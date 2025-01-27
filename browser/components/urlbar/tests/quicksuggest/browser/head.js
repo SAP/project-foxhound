@@ -12,7 +12,7 @@ Services.scriptloader.loadSubScript(
 
 ChromeUtils.defineESModuleGetters(this, {
   CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.jsm",
+    "resource:///modules/PartnerLinkAttribution.sys.mjs",
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarProviderQuickSuggest:
@@ -520,6 +520,45 @@ async function doCommandTest({
   await PlacesUtils.history.clear();
 
   info("Finished command test: " + JSON.stringify({ commandOrArray }));
+}
+
+/*
+ * Do test the "Manage" result menu item.
+ *
+ * @param {object} options
+ *   Options
+ * @param {number} options.index
+ *   The index of the suggestion that will be checked in the results list.
+ * @param {number} options.input
+ *   The input value on the urlbar.
+ */
+async function doManageTest({ index, input }) {
+  await BrowserTestUtils.withNewTab({ gBrowser }, async browser => {
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: input,
+    });
+
+    const managePage = "about:preferences#search";
+    let onManagePageLoaded = BrowserTestUtils.browserLoaded(
+      browser,
+      false,
+      managePage
+    );
+    // Click the command.
+    await UrlbarTestUtils.openResultMenuAndClickItem(window, "manage", {
+      resultIndex: index,
+    });
+    await onManagePageLoaded;
+
+    Assert.equal(
+      browser.currentURI.spec,
+      managePage,
+      "The manage page is loaded"
+    );
+
+    await UrlbarTestUtils.promisePopupClose(window);
+  });
 }
 
 /**

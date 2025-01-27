@@ -48,9 +48,6 @@ nsTableCellFrame::nsTableCellFrame(ComputedStyle* aStyle,
                                    nsTableFrame* aTableFrame, ClassID aID)
     : nsContainerFrame(aStyle, aTableFrame->PresContext(), aID),
       mDesiredSize(aTableFrame->GetWritingMode()) {
-  mColIndex = 0;
-  mPriorAvailISize = 0;
-
   SetContentEmpty(false);
 }
 
@@ -392,9 +389,14 @@ LogicalSides nsTableCellFrame::GetLogicalSkipSides() const {
 /* virtual */
 nsMargin nsTableCellFrame::GetBorderOverflow() { return nsMargin(0, 0, 0, 0); }
 
-// Align the cell's child frame within the cell
+void nsTableCellFrame::BlockDirAlignChild(
+    WritingMode aWM, nscoord aMaxAscent,
+    ForceAlignTopForTableCell aForceAlignTop) {
+  MOZ_ASSERT(aForceAlignTop != ForceAlignTopForTableCell::Yes ||
+                 PresContext()->IsPaginated(),
+             "We shouldn't force table-cells to do 'vertical-align:top' if "
+             "we're not in printing!");
 
-void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent) {
   /* It's the 'border-collapse' on the table that matters */
   const LogicalMargin border = GetLogicalUsedBorder(GetWritingMode())
                                    .ApplySkipSides(GetLogicalSkipSides())
@@ -413,8 +415,11 @@ void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent) {
   nscoord childBSize = kidRect.BSize(aWM);
 
   // Vertically align the child
+  const auto verticalAlign = aForceAlignTop == ForceAlignTopForTableCell::Yes
+                                 ? StyleVerticalAlignKeyword::Top
+                                 : GetVerticalAlign();
   nscoord kidBStart = 0;
-  switch (GetVerticalAlign()) {
+  switch (verticalAlign) {
     case StyleVerticalAlignKeyword::Baseline:
       if (!GetContentEmpty()) {
         // Align the baselines of the child frame with the baselines of
@@ -590,26 +595,18 @@ nsIScrollableFrame* nsTableCellFrame::GetScrollTargetFrame() const {
 
 /* virtual */
 nscoord nsTableCellFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-
   nsIFrame* inner = mFrames.FirstChild();
-  result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
-                                                IntrinsicISizeType::MinISize,
-                                                nsLayoutUtils::IGNORE_PADDING);
-  return result;
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
+                                              IntrinsicISizeType::MinISize,
+                                              nsLayoutUtils::IGNORE_PADDING);
 }
 
 /* virtual */
 nscoord nsTableCellFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result = 0;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-
   nsIFrame* inner = mFrames.FirstChild();
-  result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
-                                                IntrinsicISizeType::PrefISize,
-                                                nsLayoutUtils::IGNORE_PADDING);
-  return result;
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, inner,
+                                              IntrinsicISizeType::PrefISize,
+                                              nsLayoutUtils::IGNORE_PADDING);
 }
 
 /* virtual */ nsIFrame::IntrinsicSizeOffsetData
@@ -675,7 +672,6 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
                               nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsTableCellFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   if (aReflowInput.mFlags.mSpecialBSizeReflow) {
@@ -708,14 +704,12 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
     if (aReflowInput.mFlags.mSpecialBSizeReflow) {
       const_cast<ReflowInput&>(aReflowInput)
           .SetComputedBSize(BSize(wm) - bp.BStartEnd(wm));
-      DISPLAY_REFLOW_CHANGE();
     } else {
       const nscoord computedUnpaginatedBSize =
           CalcUnpaginatedBSize(*this, *tableFrame, bp.BStartEnd(wm));
       if (computedUnpaginatedBSize > 0) {
         const_cast<ReflowInput&>(aReflowInput)
             .SetComputedBSize(computedUnpaginatedBSize);
-        DISPLAY_REFLOW_CHANGE();
       }
     }
   }
@@ -977,11 +971,11 @@ LogicalMargin nsBCTableCellFrame::GetBorderWidth(WritingMode aWM) const {
 
 BCPixelSize nsBCTableCellFrame::GetBorderWidth(LogicalSide aSide) const {
   switch (aSide) {
-    case eLogicalSideBStart:
+    case LogicalSide::BStart:
       return BC_BORDER_END_HALF(mBStartBorder);
-    case eLogicalSideIEnd:
+    case LogicalSide::IEnd:
       return BC_BORDER_START_HALF(mIEndBorder);
-    case eLogicalSideBEnd:
+    case LogicalSide::BEnd:
       return BC_BORDER_START_HALF(mBEndBorder);
     default:
       return BC_BORDER_END_HALF(mIStartBorder);
@@ -990,13 +984,13 @@ BCPixelSize nsBCTableCellFrame::GetBorderWidth(LogicalSide aSide) const {
 
 void nsBCTableCellFrame::SetBorderWidth(LogicalSide aSide, BCPixelSize aValue) {
   switch (aSide) {
-    case eLogicalSideBStart:
+    case LogicalSide::BStart:
       mBStartBorder = aValue;
       break;
-    case eLogicalSideIEnd:
+    case LogicalSide::IEnd:
       mIEndBorder = aValue;
       break;
-    case eLogicalSideBEnd:
+    case LogicalSide::BEnd:
       mBEndBorder = aValue;
       break;
     default:

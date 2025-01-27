@@ -384,9 +384,13 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
         static_assert(JSString::LINEAR_IS_EXTENSIBLE_BIT ==
                       JSString::INLINE_IS_FAT_BIT);
         if (str->isLinear()) {
-          known("EXTENSIBLE");
-        } else if (str->isInline()) {
-          known("FAT");
+          if (str->isInline()) {
+            known("FAT");
+          } else if (!str->isAtom()) {
+            known("EXTENSIBLE");
+          } else {
+            unknown(i);
+          }
         } else {
           unknown(i);
         }
@@ -411,9 +415,6 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
       case JSString::INDEX_VALUE_BIT:
         known("INDEX_VALUE_BIT");
         break;
-      case JSString::NON_DEDUP_BIT:
-        known("NON_DEDUP_BIT");
-        break;
       case JSString::IN_STRING_TO_ATOM_CACHE:
         known("IN_STRING_TO_ATOM_CACHE");
         break;
@@ -421,7 +422,7 @@ void ForEachStringFlag(const JSString* str, uint32_t flags, KnownF known,
         if (str->isRope()) {
           known("FLATTEN_VISIT_RIGHT");
         } else {
-          unknown(i);
+          known("NON_DEDUP_BIT");
         }
         break;
       case JSString::FLATTEN_FINISH_NODE:
@@ -642,11 +643,20 @@ static MOZ_ALWAYS_INLINE JSString::OwnedChars<CharT> AllocChars(JSContext* cx,
     MOZ_ASSERT(cx->nursery().isEnabled());
     auto [buffer, isMalloced] = cx->nursery().allocateBuffer(
         cx->zone(), length * sizeof(CharT), js::StringBufferArena);
+    if (!buffer) {
+      ReportOutOfMemory(cx);
+      return {nullptr, 0, false, false};
+    }
 
     return {static_cast<CharT*>(buffer), length, isMalloced, isMalloced};
   }
 
   auto buffer = cx->make_pod_arena_array<CharT>(js::StringBufferArena, length);
+  if (!buffer) {
+    ReportOutOfMemory(cx);
+    return {nullptr, 0, false, false};
+  }
+
   return {std::move(buffer), length, true};
 }
 
@@ -911,6 +921,14 @@ JSLinearString* JSRope::flattenInternal(JSRope* root) {
    * JSDependentStrings pointing to them already. Stealing the buffer doesn't
    * change its address, only its owning JSExtensibleString, so all chars()
    * pointers in the JSDependentStrings are still valid.
+   *
+   * This chain of dependent strings could be problematic if the base string
+   * moves, either because it was initially allocated in the nursery or it
+   * gets deduplicated, because you might have a dependent ->
+   * tenured dependent -> nursery base string, and the store buffer would
+   * only capture the latter edge. Prevent this case from happening by
+   * marking the root as nondeduplicatable if the extensible string
+   * optimization applied.
    */
 
   const size_t wholeLength = root->length();
@@ -1064,8 +1082,12 @@ finish_root:
     left.setLengthAndFlags(left.length(), StringFlagsForCharType<CharT>(flags));
     left.d.s.u3.base = &root->asLinear();
     if (left.isTenured() && !root->isTenured()) {
-      // leftmost child -> root is a tenured -> nursery edge.
+      // leftmost child -> root is a tenured -> nursery edge. Put the leftmost
+      // child in the store buffer and prevent the root's chars from moving or
+      // being freed (because the leftmost child may have a tenured dependent
+      // string that cannot be updated.)
       root->storeBuffer()->putWholeCell(&left);
+      root->setNonDeduplicatable();
     }
   }
 
@@ -1489,15 +1511,17 @@ uint32_t JSAtom::getIndexSlow() const {
                           : AtomCharsToIndex(twoByteChars(nogc), len);
 }
 
-static void MarkStringAndBasesNonDeduplicatable(JSLinearString* s) {
-  while (true) {
-    if (!s->isTenured()) {
-      s->setNonDeduplicatable();
-    }
-    if (!s->hasBase()) {
-      break;
-    }
+// Prevent the actual owner of the string's characters from being deduplicated
+// (and thus freeing its characters, which would invalidate the ASSC's chars
+// pointer). Intermediate dependent strings on the chain can be deduplicated,
+// since the base will be updated to the root base during tenuring anyway and
+// the intermediates won't matter.
+void PreventRootBaseDeduplication(JSLinearString* s) {
+  while (s->hasBase()) {
     s = s->base();
+  }
+  if (!s->isTenured()) {
+    s->setNonDeduplicatable();
   }
 }
 
@@ -1526,7 +1550,7 @@ bool AutoStableStringChars::init(JSContext* cx, JSString* s) {
     twoByteChars_ = linearString->rawTwoByteChars();
   }
 
-  MarkStringAndBasesNonDeduplicatable(linearString);
+  PreventRootBaseDeduplication(linearString);
 
   s_ = linearString;
   return true;
@@ -1552,7 +1576,7 @@ bool AutoStableStringChars::initTwoByte(JSContext* cx, JSString* s) {
   state_ = TwoByte;
   twoByteChars_ = linearString->rawTwoByteChars();
 
-  MarkStringAndBasesNonDeduplicatable(linearString);
+  PreventRootBaseDeduplication(linearString);
 
   s_ = linearString;
   return true;

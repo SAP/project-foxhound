@@ -161,11 +161,16 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                                     int nb_channels);
   void (*av_channel_layout_from_mask)(AVChannelLayout* ch_layout,
                                       uint64_t mask);
+  int (*av_channel_layout_copy)(AVChannelLayout* dst, AVChannelLayout* src);
   int (*av_dict_set)(AVDictionary** pm, const char* key, const char* value,
                      int flags);
   void (*av_dict_free)(AVDictionary** m);
   int (*av_opt_set)(void* obj, const char* name, const char* val,
                     int search_flags);
+  int (*av_opt_set_double)(void* obj, const char* name, double val,
+                           int search_flags);
+  int (*av_opt_set_int)(void* obj, const char* name, int64_t val,
+                        int search_flags);
 
   // libavutil v55 and later only
   AVFrame* (*av_frame_alloc)();

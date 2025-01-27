@@ -37,7 +37,7 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"android-geckoview-docs",
     r"android-hw",
     # Windows tasks
-    r"windows10-64-ref-hw",
+    r"windows11-64-2009-hw-ref",
     r"windows10-aarch64-qr",
     # Linux tasks
     r"linux-",  # hide all linux32 tasks by default - bug 1599197
@@ -52,6 +52,9 @@ UNCOMMON_TRY_TASK_LABELS = [
     # Hide shippable versions of tests we have opt versions of because the non-shippable
     # versions are faster to run. This is mostly perf tests.
     r"-shippable(?!.*(awsy|browsertime|marionette-headless|mochitest-devtools-chrome-fis|raptor|talos|web-platform-tests-wdspec-headless|mochitest-plain-headless))",  # noqa - too long
+    r"nightly-simulation",
+    # Can't actually run on try
+    r"notarization",
 ]
 
 
@@ -622,12 +625,6 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
     mozilla_{beta,release} tasks, plus l10n, beetmover, balrog, etc."""
 
     def filter(task):
-        # Bug 1758507 - geckoview ships in the promote phase
-        if not parameters["release_type"].startswith("esr") and is_geckoview(
-            task, parameters
-        ):
-            return True
-
         if task.attributes.get("shipping_product") != parameters["release_product"]:
             return False
 
@@ -643,14 +640,6 @@ def target_tasks_promote_desktop(full_task_graph, parameters, graph_config):
             return True
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
-
-
-def is_geckoview(task, parameters):
-    return (
-        task.attributes.get("shipping_product") == "fennec"
-        and task.kind in ("beetmover-geckoview", "upload-symbols")
-        and parameters["release_product"] == "firefox"
-    )
 
 
 @_target_task("push_desktop")
@@ -771,35 +760,6 @@ def target_tasks_kaios(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("ship_geckoview")
-def target_tasks_ship_geckoview(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required to ship geckoview nightly. The
-    nightly build process involves a pipeline of builds and an upload to
-    maven.mozilla.org."""
-    index_path = (
-        f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
-        f"{parameters['head_rev']}.taskgraph.decision-ship-geckoview"
-    )
-    if os.environ.get("MOZ_AUTOMATION") and retry(
-        index_exists,
-        args=(index_path,),
-        kwargs={
-            "reason": "to avoid triggering multiple nightlies off the same revision",
-        },
-    ):
-        return []
-
-    def filter(task):
-        # XXX Starting 69, we don't ship Fennec Nightly anymore. We just want geckoview to be
-        # uploaded
-        return task.attributes.get("shipping_product") == "fennec" and task.kind in (
-            "beetmover-geckoview",
-            "upload-symbols",
-        )
-
-    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
-
-
 @_target_task("custom-car_perf_testing")
 def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_config):
     """Select tasks required for running daily performance tests for custom chromium-as-release."""
@@ -844,6 +804,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         if "tp6-bench" in try_name:
             return False
 
+        if "tp7" in try_name:
+            return False
+
         # Bug 1867669 - Temporarily disable all live site tests
         if "live" in try_name and "sheriffed" not in try_name:
             return False
@@ -856,11 +819,7 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     if "tp6" in try_name and "essential" not in try_name:
                         return False
                     return True
-                if "chromium" in try_name:
-                    if "tp6" in try_name and "essential" not in try_name:
-                        return False
-                    return True
-                # chromium-as-release has it's own cron
+                # chromium-as-release has its own cron
                 if "custom-car" in try_name:
                     return False
                 if "-live" in try_name:
@@ -920,8 +879,13 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 # Don't run android CaR sp tests as we already have a cron for this.
                 if "m-car" in try_name:
                     return False
+                if "fenix" in try_name:
+                    return False
                 if "speedometer" in try_name:
                     return True
+                if "motionmark" in try_name and "1-3" in try_name:
+                    if "chrome-m" in try_name:
+                        return True
         return False
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
@@ -976,7 +940,7 @@ def target_tasks_nightly_linux(full_task_graph, parameters, graph_config):
     nightly build process involves a pipeline of builds, signing,
     and, eventually, uploading the tasks to balrog."""
     filter = make_desktop_nightly_filter(
-        {"linux64-shippable", "linux-shippable", "linux-aarch64-shippable"}
+        {"linux64-shippable", "linux-shippable", "linux64-aarch64-shippable"}
     )
     return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
 
@@ -1075,6 +1039,28 @@ def target_tasks_nightly_desktop(full_task_graph, parameters, graph_config):
         | set(target_tasks_nightly_linux(full_task_graph, parameters, graph_config))
         | set(target_tasks_nightly_asan(full_task_graph, parameters, graph_config))
         | set(release_tasks)
+    )
+
+
+@_target_task("nightly_all")
+def target_tasks_nightly_all(full_task_graph, parameters, graph_config):
+    """Select the set of tasks required for a nightly build of firefox desktop and android"""
+    index_path = (
+        f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
+        f"{parameters['head_rev']}.taskgraph.decision-nightly-all"
+    )
+    if os.environ.get("MOZ_AUTOMATION") and retry(
+        index_exists,
+        args=(index_path,),
+        kwargs={
+            "reason": "to avoid triggering multiple nightlies off the same revision",
+        },
+    ):
+        return []
+
+    return list(
+        set(target_tasks_nightly_desktop(full_task_graph, parameters, graph_config))
+        | set(target_tasks_nightly_android(full_task_graph, parameters, graph_config))
     )
 
 
@@ -1456,7 +1442,6 @@ def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
                 "browsertime" in try_name
                 and "amazon" in try_name
                 and "search" not in try_name
-                and "fenix" in try_name
             ):
                 return True
 
@@ -1592,16 +1577,6 @@ def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
 
 
-@_target_task("are-we-esmified-yet")
-def target_tasks_are_we_esmified_yet(full_task_graph, parameters, graph_config):
-    """
-    select the task to track the progress of the esmification project
-    """
-    return [
-        l for l, t in full_task_graph.tasks.items() if t.kind == "are-we-esmified-yet"
-    ]
-
-
 @_target_task("eslint-build")
 def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
     """Select the task to run additional ESLint rules which require a build."""
@@ -1632,3 +1607,49 @@ def target_tasks_snap_upstream_tests(full_task_graph, parameters, graph_config):
     for name, task in full_task_graph.tasks.items():
         if "snap-upstream-test" in name and not "-try" in name:
             yield name
+
+
+@_target_task("nightly-android")
+def target_tasks_nightly_android(full_task_graph, parameters, graph_config):
+    def filter(task, parameters):
+        # geckoview
+        if task.attributes.get("shipping_product") == "fennec" and task.kind in (
+            "beetmover-geckoview",
+            "upload-symbols",
+        ):
+            return True
+
+        # fenix/focus/a-c
+        build_type = task.attributes.get("build-type", "")
+        return build_type in (
+            "nightly",
+            "focus-nightly",
+            "fenix-nightly",
+            "fenix-nightly-firebase",
+            "focus-nightly-firebase",
+        )
+
+    index_path = (
+        f"{graph_config['trust-domain']}.v2.{parameters['project']}.branch."
+        f"{parameters['head_ref']}.revision.{parameters['head_rev']}.taskgraph.decision-nightly-android"
+    )
+    if os.environ.get("MOZ_AUTOMATION") and retry(
+        index_exists,
+        args=(index_path,),
+        kwargs={
+            "reason": "to avoid triggering multiple nightlies off the same revision",
+        },
+    ):
+        return []
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t, parameters)]
+
+
+@_target_task("android-l10n-import")
+def target_tasks_android_l10n_import(full_task_graph, parameters, graph_config):
+    return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-import"]
+
+
+@_target_task("android-l10n-sync")
+def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
+    return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-sync"]

@@ -124,8 +124,6 @@
         this.shadowRoot.appendChild(document.createElement("slot"));
       }
 
-      this.mSelectedInternal = null;
-      this.mAttributeObserver = null;
       this.setInitialSelection();
     }
 
@@ -153,7 +151,7 @@
 
     // nsIDOMXULSelectControlElement
     get value() {
-      return this.getAttribute("value");
+      return this.getAttribute("value") || "";
     }
 
     // nsIDOMXULMenuListElement
@@ -163,12 +161,12 @@
 
     // nsIDOMXULMenuListElement
     get image() {
-      return this.getAttribute("image");
+      return this.getAttribute("image") || "";
     }
 
     // nsIDOMXULMenuListElement
     get label() {
-      return this.getAttribute("label");
+      return this.getAttribute("label") || "";
     }
 
     set description(val) {
@@ -176,7 +174,7 @@
     }
 
     get description() {
-      return this.getAttribute("description");
+      return this.getAttribute("description") || "";
     }
 
     // nsIDOMXULMenuListElement
@@ -292,6 +290,10 @@
       if (this.getAttribute("noinitialselection") === "true") {
         return;
       }
+
+      this.mSelectedInternal = null;
+      this.mAttributeObserver = null;
+
       var popup = this.menupopup;
       if (popup) {
         var arr = popup.getElementsByAttribute("selected", "true");

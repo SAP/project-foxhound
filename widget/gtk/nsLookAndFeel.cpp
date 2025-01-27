@@ -800,6 +800,7 @@ nsresult nsLookAndFeel::PerThemeData::GetColor(ColorID aID,
     case ColorID::SpellCheckerUnderline:
     case ColorID::Mark:
     case ColorID::Marktext:
+    case ColorID::MozAutofillBackground:
       aColor = GetStandinForNativeColor(
           aID, mIsDark ? ColorScheme::Dark : ColorScheme::Light);
       break;
@@ -862,9 +863,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     case IntID::CaretWidth:
       aResult = 1;
-      break;
-    case IntID::ShowCaretDuringSelection:
-      aResult = 0;
       break;
     case IntID::SelectTextfieldsOnKeyFocus: {
       GtkSettings* settings;

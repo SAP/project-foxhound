@@ -6,28 +6,29 @@ import React from "react";
 import { Localized } from "./MSLocalized";
 
 export const Themes = props => {
+  const category = props.content.tiles?.category?.type;
   return (
     <div className="tiles-theme-container">
       <div>
-        <fieldset className="tiles-theme-section">
+        <fieldset className={`tiles-theme-section ${category}`}>
           <Localized text={props.content.subtitle}>
             <legend className="sr-only" />
           </Localized>
           {props.content.tiles.data.map(
-            ({ theme, label, tooltip, description }) => (
+            ({ theme, label, tooltip, description, type }) => (
               <Localized
                 key={theme + label}
                 text={typeof tooltip === "object" ? tooltip : {}}
               >
                 {/* eslint-disable-next-line jsx-a11y/label-has-associated-control */}
-                <label className="theme" title={theme + label}>
+                <label className={`theme ${type}`} title={theme + label}>
                   <Localized
                     text={typeof description === "object" ? description : {}}
                   >
                     <input
                       type="radio"
                       value={theme}
-                      name="theme"
+                      name={category === "wallpaper" ? theme : "theme"}
                       checked={theme === props.activeTheme}
                       className="sr-only input"
                       onClick={props.handleAction}

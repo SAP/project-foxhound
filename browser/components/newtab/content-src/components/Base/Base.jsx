@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  actionCreators as ac,
-  actionTypes as at,
-} from "common/Actions.sys.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { DiscoveryStreamAdmin } from "content-src/components/DiscoveryStreamAdmin/DiscoveryStreamAdmin";
 import { ConfirmDialog } from "content-src/components/ConfirmDialog/ConfirmDialog";
 import { connect } from "react-redux";
@@ -15,6 +12,9 @@ import { CustomizeMenu } from "content-src/components/CustomizeMenu/CustomizeMen
 import React from "react";
 import { Search } from "content-src/components/Search/Search";
 import { Sections } from "content-src/components/Sections/Sections";
+
+const VISIBLE = "visible";
+const VISIBILITY_CHANGE_EVENT = "visibilitychange";
 
 export const PrefsButton = ({ onClick, icon }) => (
   <div className="prefs-button">
@@ -76,7 +76,7 @@ export class _Base extends React.PureComponent {
     ]
       .filter(v => v)
       .join(" ");
-    global.document.body.className = bodyClassName;
+    globalThis.document.body.className = bodyClassName;
   }
 
   render() {
@@ -110,17 +110,75 @@ export class BaseContent extends React.PureComponent {
     this.handleOnKeyDown = this.handleOnKeyDown.bind(this);
     this.onWindowScroll = debounce(this.onWindowScroll.bind(this), 5);
     this.setPref = this.setPref.bind(this);
-    this.state = { fixedSearch: false };
+    this.updateWallpaper = this.updateWallpaper.bind(this);
+    this.prefersDarkQuery = null;
+    this.handleColorModeChange = this.handleColorModeChange.bind(this);
+    this.state = {
+      fixedSearch: false,
+      firstVisibleTimestamp: null,
+      colorMode: "",
+    };
+  }
+
+  setFirstVisibleTimestamp() {
+    if (!this.state.firstVisibleTimestamp) {
+      this.setState({
+        firstVisibleTimestamp: Date.now(),
+      });
+    }
   }
 
   componentDidMount() {
     global.addEventListener("scroll", this.onWindowScroll);
     global.addEventListener("keydown", this.handleOnKeyDown);
+    if (this.props.document.visibilityState === VISIBLE) {
+      this.setFirstVisibleTimestamp();
+    } else {
+      this._onVisibilityChange = () => {
+        if (this.props.document.visibilityState === VISIBLE) {
+          this.setFirstVisibleTimestamp();
+          this.props.document.removeEventListener(
+            VISIBILITY_CHANGE_EVENT,
+            this._onVisibilityChange
+          );
+          this._onVisibilityChange = null;
+        }
+      };
+      this.props.document.addEventListener(
+        VISIBILITY_CHANGE_EVENT,
+        this._onVisibilityChange
+      );
+    }
+    // track change event to dark/light mode
+    this.prefersDarkQuery = globalThis.matchMedia(
+      "(prefers-color-scheme: dark)"
+    );
+
+    this.prefersDarkQuery.addEventListener(
+      "change",
+      this.handleColorModeChange
+    );
+    this.handleColorModeChange();
+  }
+
+  handleColorModeChange() {
+    const colorMode = this.prefersDarkQuery?.matches ? "dark" : "light";
+    this.setState({ colorMode });
   }
 
   componentWillUnmount() {
+    this.prefersDarkQuery?.removeEventListener(
+      "change",
+      this.handleColorModeChange
+    );
     global.removeEventListener("scroll", this.onWindowScroll);
     global.removeEventListener("keydown", this.handleOnKeyDown);
+    if (this._onVisibilityChange) {
+      this.props.document.removeEventListener(
+        VISIBILITY_CHANGE_EVENT,
+        this._onVisibilityChange
+      );
+    }
   }
 
   onWindowScroll() {
@@ -160,11 +218,79 @@ export class BaseContent extends React.PureComponent {
     this.props.dispatch(ac.SetPref(pref, value));
   }
 
+  renderWallpaperAttribution() {
+    const { wallpaperList } = this.props.Wallpapers;
+    const activeWallpaper =
+      this.props.Prefs.values[
+        `newtabWallpapers.wallpaper-${this.state.colorMode}`
+      ];
+    const selected = wallpaperList.find(wp => wp.title === activeWallpaper);
+    // make sure a wallpaper is selected and that the attribution also exists
+    if (!selected?.attribution) {
+      return null;
+    }
+
+    const { name, webpage } = selected.attribution;
+    if (activeWallpaper && wallpaperList && name.url) {
+      return (
+        <p
+          className={`wallpaper-attribution`}
+          key={name}
+          data-l10n-id="newtab-wallpaper-attribution"
+          data-l10n-args={JSON.stringify({
+            author_string: name.string,
+            author_url: name.url,
+            webpage_string: webpage.string,
+            webpage_url: webpage.url,
+          })}
+        >
+          <a data-l10n-name="name-link" href={name.url}>
+            {name.string}
+          </a>
+          <a data-l10n-name="webpage-link" href={webpage.url}>
+            {webpage.string}
+          </a>
+        </p>
+      );
+    }
+    return null;
+  }
+
+  async updateWallpaper() {
+    const prefs = this.props.Prefs.values;
+    const { wallpaperList } = this.props.Wallpapers;
+
+    if (wallpaperList) {
+      const lightWallpaper =
+        wallpaperList.find(
+          wp => wp.title === prefs["newtabWallpapers.wallpaper-light"]
+        ) || "";
+      const darkWallpaper =
+        wallpaperList.find(
+          wp => wp.title === prefs["newtabWallpapers.wallpaper-dark"]
+        ) || "";
+      global.document?.body.style.setProperty(
+        `--newtab-wallpaper-light`,
+        `url(${lightWallpaper?.wallpaperUrl || ""})`
+      );
+
+      global.document?.body.style.setProperty(
+        `--newtab-wallpaper-dark`,
+        `url(${darkWallpaper?.wallpaperUrl || ""})`
+      );
+    }
+  }
+
   render() {
     const { props } = this;
     const { App } = props;
     const { initialized, customizeMenuVisible } = App;
     const prefs = props.Prefs.values;
+
+    const activeWallpaper =
+      prefs[`newtabWallpapers.wallpaper-${this.state.colorMode}`];
+    const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+
     const { pocketConfig } = prefs;
 
     const isDiscoveryStream =
@@ -215,6 +341,9 @@ export class BaseContent extends React.PureComponent {
     ]
       .filter(v => v)
       .join(" ");
+    if (wallpapersEnabled) {
+      this.updateWallpaper();
+    }
 
     return (
       <div>
@@ -224,6 +353,8 @@ export class BaseContent extends React.PureComponent {
           openPreferences={this.openPreferences}
           setPref={this.setPref}
           enabledSections={enabledSections}
+          wallpapersEnabled={wallpapersEnabled}
+          activeWallpaper={activeWallpaper}
           pocketRegion={pocketRegion}
           mayHaveSponsoredTopSites={mayHaveSponsoredTopSites}
           mayHaveSponsoredStories={mayHaveSponsoredStories}
@@ -252,6 +383,7 @@ export class BaseContent extends React.PureComponent {
                   <DiscoveryStreamBase
                     locale={props.App.locale}
                     mayHaveSponsoredStories={mayHaveSponsoredStories}
+                    firstVisibleTimestamp={this.state.firstVisibleTimestamp}
                   />
                 </ErrorBoundary>
               ) : (
@@ -259,6 +391,7 @@ export class BaseContent extends React.PureComponent {
               )}
             </div>
             <ConfirmDialog />
+            {wallpapersEnabled && this.renderWallpaperAttribution()}
           </main>
         </div>
       </div>
@@ -266,10 +399,15 @@ export class BaseContent extends React.PureComponent {
   }
 }
 
+BaseContent.defaultProps = {
+  document: global.document,
+};
+
 export const Base = connect(state => ({
   App: state.App,
   Prefs: state.Prefs,
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
   Search: state.Search,
+  Wallpapers: state.Wallpapers,
 }))(_Base);

@@ -1,7 +1,7 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-// Tests the UrlbarProvider.onEngagement() method.
+// Tests the UrlbarProvider.onLegacyEngagement() method.
 
 "use strict";
 
@@ -110,32 +110,21 @@ async function doTest({
   let provider = new TestProvider();
   UrlbarProvidersManager.registerProvider(provider);
 
-  let startPromise = provider.promiseEngagement();
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window: win,
     value: "test",
     fireInputEvent: true,
   });
 
-  let [state, queryContext, details, controller] = await startPromise;
-  Assert.equal(
-    controller.input.isPrivate,
-    expectedIsPrivate,
-    "Start isPrivate"
-  );
-  Assert.equal(state, "start", "Start state");
-
-  // `queryContext` isn't always defined for `start`, and `onEngagement`
-  // shouldn't rely on it being defined on start, but there's no good reason to
-  // assert that it's not defined here.
-
-  // Similarly, `details` is never defined for `start`, but there's no good
-  // reason to assert that it's not defined.
-
   let endPromise = provider.promiseEngagement();
   let { result, element } = (await endEngagement()) ?? {};
 
-  [state, queryContext, details, controller] = await endPromise;
+  let [state, queryContext, details, controller] = await endPromise;
+
+  Assert.ok(
+    ["engagement", "abandonment"].includes(state),
+    "State should be either 'engagement' or 'abandonment'"
+  );
   Assert.equal(controller.input.isPrivate, expectedIsPrivate, "End isPrivate");
   Assert.equal(state, expectedEndState, "End state");
   Assert.ok(queryContext, "End queryContext");
@@ -179,7 +168,7 @@ async function doTest({
 }
 
 /**
- * Test provider that resolves promises when onEngagement is called.
+ * Test provider that resolves promises when onLegacyEngagement is called.
  */
 class TestProvider extends UrlbarTestUtils.TestProvider {
   _resolves = [];
@@ -197,7 +186,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     });
   }
 
-  onEngagement(...args) {
+  onLegacyEngagement(...args) {
     let resolve = this._resolves.shift();
     if (resolve) {
       resolve(args);

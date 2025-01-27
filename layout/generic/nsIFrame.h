@@ -937,6 +937,8 @@ class nsIFrame : public nsQueryFrame {
   already_AddRefed<ComputedStyle> ComputeHighlightSelectionStyle(
       nsAtom* aHighlightName);
 
+  already_AddRefed<ComputedStyle> ComputeTargetTextStyle() const;
+
   /**
    * Accessor functions for geometric parent.
    */
@@ -1584,6 +1586,11 @@ class nsIFrame : public nsQueryFrame {
   bool GetContentBoxBorderRadii(nscoord aRadii[8]) const;
   bool GetBoxBorderRadii(nscoord aRadii[8], const nsMargin& aOffset) const;
   bool GetShapeBoxBorderRadii(nscoord aRadii[8]) const;
+
+  /**
+   * Returns one em unit, adjusted for font inflation if needed, in app units.
+   */
+  nscoord OneEmInAppUnits() const;
 
   /**
    * `GetNaturalBaselineBOffset`, but determines the baseline sharing group
@@ -3932,6 +3939,9 @@ class nsIFrame : public nsQueryFrame {
  public:
   // given a frame five me the first/last leaf available
   // XXX Robert O'Callahan wants to move these elsewhere
+  // FIXME: Only GetLastLeaf() never returns a leaf frame in native anonymous
+  // subtrees under aFrame.  However, GetFirstLeaf() may return a leaf frame
+  // in a native anonymous subtree.
   static void GetLastLeaf(nsIFrame** aFrame);
   static void GetFirstLeaf(nsIFrame** aFrame);
 
@@ -5481,25 +5491,6 @@ class nsIFrame : public nsQueryFrame {
   // Helper function that verifies that each frame in the list has the
   // NS_FRAME_IS_DIRTY bit set
   static void VerifyDirtyBitSet(const nsFrameList& aFrameList);
-
-  // Display Reflow Debugging
-  static void* DisplayReflowEnter(nsPresContext* aPresContext, nsIFrame* aFrame,
-                                  const ReflowInput& aReflowInput);
-  static void* DisplayLayoutEnter(nsIFrame* aFrame);
-  static void* DisplayIntrinsicISizeEnter(nsIFrame* aFrame, const char* aType);
-  static void* DisplayIntrinsicSizeEnter(nsIFrame* aFrame, const char* aType);
-  static void DisplayReflowExit(nsPresContext* aPresContext, nsIFrame* aFrame,
-                                ReflowOutput& aMetrics,
-                                const nsReflowStatus& aStatus,
-                                void* aFrameTreeNode);
-  static void DisplayLayoutExit(nsIFrame* aFrame, void* aFrameTreeNode);
-  static void DisplayIntrinsicISizeExit(nsIFrame* aFrame, const char* aType,
-                                        nscoord aResult, void* aFrameTreeNode);
-  static void DisplayIntrinsicSizeExit(nsIFrame* aFrame, const char* aType,
-                                       nsSize aResult, void* aFrameTreeNode);
-
-  static void DisplayReflowStartup();
-  static void DisplayReflowShutdown();
 
   static mozilla::LazyLogModule sFrameLogModule;
 #endif

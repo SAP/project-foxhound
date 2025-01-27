@@ -268,6 +268,220 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForResult(controller.uninstall(extension))
     }
 
+    @Test
+    fun updateOptionalPermissions() {
+        var extension = sessionRule.waitForResult(
+            controller.ensureBuiltIn(
+                "resource://android/assets/web_extensions/optional-permission-request/",
+                "optional-permission-request@example.com",
+            ),
+        )
+
+        assertEquals("optional-permission-request@example.com", extension.id)
+
+        var grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        var grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        // Without adding any optional permissions.
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+
+        // Only adding an origin permission.
+        extension = sessionRule.waitForResult(
+            controller.addOptionalPermissions(
+                extension.id,
+                arrayOf(),
+                arrayOf("*://example.com/*"),
+            ),
+        )
+
+        grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // Adding "nothing" to verify that nothing gets changed.
+        extension = sessionRule.waitForResult(
+            controller.addOptionalPermissions(
+                extension.id,
+                arrayOf(),
+                arrayOf(),
+            ),
+        )
+
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // Adding an optional permission.
+        extension = sessionRule.waitForResult(
+            controller.addOptionalPermissions(
+                extension.id,
+                arrayOf("activeTab"),
+                arrayOf(),
+            ),
+        )
+
+        grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        // Both optional and origin permissions must be granted.
+        assertThat(
+            "grantedOptionalPermissions must be 1.",
+            grantedOptionalPermissions.size,
+            equalTo(1),
+        )
+        assertThat(
+            "grantedOptionalPermissions must be activeTab.",
+            grantedOptionalPermissions.first(),
+            equalTo("activeTab"),
+        )
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // Removing "nothing" to verify that nothing gets changed.
+        extension = sessionRule.waitForResult(
+            controller.removeOptionalPermissions(
+                extension.id,
+                arrayOf(),
+                arrayOf(),
+            ),
+        )
+
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // Remove an activeTab optional permission.
+        extension = sessionRule.waitForResult(
+            controller.removeOptionalPermissions(
+                extension.id,
+                arrayOf("activeTab"),
+                arrayOf(),
+            ),
+        )
+
+        grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 1.", grantedOptionalOrigins.size, equalTo(1))
+        assertThat(
+            "grantedOptionalOrigins must be *://example.com/*.",
+            grantedOptionalOrigins.first(),
+            equalTo("*://example.com/*"),
+        )
+
+        // Remove an `*://example.com/*` origin permission.
+        extension = sessionRule.waitForResult(
+            controller.removeOptionalPermissions(
+                extension.id,
+                arrayOf(),
+                arrayOf("*://example.com/*"),
+            ),
+        )
+
+        grantedOptionalPermissions = extension.metaData.grantedOptionalPermissions
+        grantedOptionalOrigins = extension.metaData.grantedOptionalOrigins
+
+        assertThat(
+            "grantedOptionalPermissions must be 0.",
+            grantedOptionalPermissions.size,
+            equalTo(0),
+        )
+        assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+
+        // Missing origins from the manifest.
+        // Must throw!
+        try {
+            extension = sessionRule.waitForResult(
+                controller.addOptionalPermissions(
+                    extension.id,
+                    arrayOf(),
+                    arrayOf("*://missing-origins.com/*"),
+                ),
+            )
+            fail()
+        } catch (_: Exception) {
+            assertThat(
+                "grantedOptionalPermissions must be 0.",
+                grantedOptionalPermissions.size,
+                equalTo(0),
+            )
+            assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+        }
+
+        // Permission no in the manifest.
+        // Must throw!
+        try {
+            extension = sessionRule.waitForResult(
+                controller.addOptionalPermissions(
+                    extension.id,
+                    arrayOf("clipboardRead"),
+                    arrayOf(),
+                ),
+            )
+            fail()
+        } catch (_: Exception) {
+            assertThat(
+                "grantedOptionalPermissions must be 0.",
+                grantedOptionalPermissions.size,
+                equalTo(0),
+            )
+            assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+        }
+
+        // Missing origins from the manifest.
+        // Must throw!
+        try {
+            extension = sessionRule.waitForResult(
+                controller.addOptionalPermissions(
+                    extension.id,
+                    arrayOf(),
+                    arrayOf("<all_urls>"),
+                ),
+            )
+            fail()
+        } catch (_: Exception) {
+            assertThat(
+                "grantedOptionalPermissions must be 0.",
+                grantedOptionalPermissions.size,
+                equalTo(0),
+            )
+            assertThat("grantedOptionalOrigins must be 0.", grantedOptionalOrigins.size, equalTo(0))
+        }
+
+        sessionRule.waitForResult(controller.uninstall(extension))
+    }
+
     private fun assertBodyBorderEqualTo(expected: String) {
         val color = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat(
@@ -589,7 +803,7 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    fun optionsPageMetadata() {
+    fun optionsUIPageMetadata() {
         // dummy.xpi is not signed, but it could be
         sessionRule.setPrefsUntilTestEnd(
             mapOf(
@@ -611,6 +825,7 @@ class WebExtensionTest : BaseSessionTest() {
                     assertTrue(extension.metaData.baseUrl.matches("^moz-extension://[0-9a-f\\-]*/$".toRegex()))
                     assertNotNull(extension.metaData.optionsPageUrl)
                     assertTrue((extension.metaData.optionsPageUrl ?: "").matches("^moz-extension://[0-9a-f\\-]*/options.html$".toRegex()))
+                    assertEquals(true, extension.metaData.openOptionsPageInTab)
                     onReadyResult.complete(null)
                     super.onReady(extension)
                 }
@@ -637,6 +852,41 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.waitForResult(onReadyResult)
         sessionRule.waitForResult(controller.uninstall(dummy))
+    }
+
+    @Test
+    fun optionsPageAliasMetadata() {
+        // NOTE: This test case tests options_page is considered an alternative alias for
+        // options_ui.page and the metadata to be set so that it is opened in a tab.
+
+        // Wait for the onReady AddonManagerDelegate method to be called, and assert
+        // that the baseUrl and optionsPageUrl are both available as expected.
+        val onReadyResult = GeckoResult<Void>()
+        sessionRule.addExternalDelegateUntilTestEnd(
+            WebExtensionController.AddonManagerDelegate::class,
+            { delegate -> controller.setAddonManagerDelegate(delegate) },
+            { controller.setAddonManagerDelegate(null) },
+            object : WebExtensionController.AddonManagerDelegate {
+                @AssertCalled(count = 1)
+                override fun onReady(extension: WebExtension) {
+                    assertNotNull(extension.metaData.baseUrl)
+                    assertTrue(extension.metaData.baseUrl.matches("^moz-extension://[0-9a-f\\-]*/$".toRegex()))
+                    assertEquals("${extension.metaData.baseUrl}dummy.html", extension.metaData.optionsPageUrl)
+                    assertEquals(true, extension.metaData.openOptionsPageInTab)
+                    onReadyResult.complete(null)
+                    super.onReady(extension)
+                }
+            },
+        )
+
+        val testExt = sessionRule.waitForResult(
+            controller.installBuiltIn(
+                "resource://android/assets/web_extensions/options_page_alias/",
+            ),
+        )
+
+        sessionRule.waitForResult(onReadyResult)
+        sessionRule.waitForResult(controller.uninstall(testExt))
     }
 
     @Test

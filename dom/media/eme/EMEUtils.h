@@ -23,7 +23,8 @@ struct KeySystemConfig;
 
 namespace dom {
 class ArrayBufferViewOrArrayBuffer;
-}
+class Document;
+}  // namespace dom
 
 #ifndef EME_LOG
 LogModule* GetEMELog();
@@ -61,13 +62,13 @@ bool IsClearkeyKeySystem(const nsAString& aKeySystem);
 bool IsWidevineKeySystem(const nsAString& aKeySystem);
 
 #ifdef MOZ_WMF_CDM
+bool IsPlayReadyEnabled();
+
 bool IsPlayReadyKeySystemAndSupported(const nsAString& aKeySystem);
 
-bool IsPlayReadyKeySystem(const nsAString& aKeySystem);
+bool IsWidevineHardwareDecryptionEnabled();
 
 bool IsWidevineExperimentKeySystemAndSupported(const nsAString& aKeySystem);
-
-bool IsWidevineExperimentKeySystem(const nsAString& aKeySystem);
 
 bool IsWMFClearKeySystemAndSupported(const nsAString& aKeySystem);
 #endif
@@ -106,6 +107,9 @@ bool CheckIfHarewareDRMConfigExists(
     const nsTArray<dom::MediaKeySystemConfiguration>& aConfigs);
 
 bool DoesKeySystemSupportHardwareDecryption(const nsAString& aKeySystem);
+
+void DeprecationWarningLog(const dom::Document* aDocument,
+                           const char* aMsgName);
 
 }  // namespace mozilla
 
