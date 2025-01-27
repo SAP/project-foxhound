@@ -44,7 +44,7 @@ jobs:
 
       - name: Bootstrap
         run: |
-          bash bash build.sh -u -v
+          bash build.sh -u -v
 
       - name: Build
         run: |
