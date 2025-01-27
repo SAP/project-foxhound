@@ -16,7 +16,7 @@ jobs:
 
   # Test applying playwright patches and installing dependencies
   patch:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-jammy
 
     steps:
       - name: Install Dependencies
