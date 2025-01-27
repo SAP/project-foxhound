@@ -39,17 +39,21 @@ jobs:
 
       - name: Dry Run
         run: |
+          df -h
           cp taintfox_mozconfig_ubuntu .mozconfig
           bash build.sh -p -n
 
       - name: Bootstrap
         run: |
+          df -h
           bash build.sh -u -v
 
       - name: Build
         run: |
+          df -h
           bash build.sh -s -v
 
       - name: Package
         run: |
+          df -h
           bash build.sh -s -u
