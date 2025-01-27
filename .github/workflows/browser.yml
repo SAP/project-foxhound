@@ -42,6 +42,10 @@ jobs:
           cp taintfox_mozconfig_ubuntu .mozconfig
           bash build.sh -p -n
 
+      - name: Bootstrap
+        run: |
+          bash bash build.sh -u -v
+
       - name: Build
         run: |
           bash build.sh -s -v
