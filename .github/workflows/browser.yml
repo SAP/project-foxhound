@@ -16,7 +16,7 @@ jobs:
 
   # Test applying playwright patches and installing dependencies
   patch:
-    runs-on: ubuntu-jammy
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Install Dependencies
