@@ -82,7 +82,7 @@ jobs:
       - name: Download mozbuild
         run: |
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe
-          .\MozillabuildSetup-Latest.exe
+          .\MozillaBuildSetup-Latest.exe
     
       - name: Checkout release branch
         uses: actions/checkout@v4
