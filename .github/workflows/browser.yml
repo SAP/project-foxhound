@@ -95,4 +95,13 @@ jobs:
 
       - name: Bootstrap
         run: |
-          .\mach.ps1 bootstrap
+          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
+
+      - name: Build
+        run: |
+          cp "taintfox_mozconfig_ubuntu" ".mozconfig"
+          .\mach.ps1 build
+
+      - name: Package
+        run: |
+          .\mach.ps1 package
