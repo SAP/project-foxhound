@@ -147,7 +147,7 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   if(args.length() >= 2 && args.hasDefined(1)) {
     RootedString src_str(cx, ArgToLinearString(cx, args, 1));
     if (src_str && src_str->length() > 0) {
-      UniqueChars src = JS_EncodeStringToUTF8(cx, src_str);
+      UniqueChars src = JS_EncodeStringToLatin1(cx, src_str);
       source = std::string(src.get());
     }
   }
@@ -5350,7 +5350,7 @@ static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp) {
   if (!sink) {
     return false;
   }
-  UniqueChars sinkchars = JS_EncodeStringToUTF8(cx, sink);
+  UniqueChars sinkchars = JS_EncodeStringToLatin1(cx, sink);
   JS_ReportTaintSink(cx, str, sinkchars.get());
 
   args.rval().setUndefined();
