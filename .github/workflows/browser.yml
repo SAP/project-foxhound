@@ -78,11 +78,19 @@ jobs:
     runs-on: windows-latest
 
     steps:
+
+      - name: Download mozbuild
+        run: |
+          wget https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe
+          .\MozillabuildSetup-Latest.exe
+    
       - name: Checkout release branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Download mozbuild
+
+
+      - name: Bootstrap
         run: |
-          .\mach bootstrap
+          .\mach.ps1 bootstrap
