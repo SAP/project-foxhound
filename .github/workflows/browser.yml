@@ -14,8 +14,8 @@ on:
 
 jobs:
 
-  # Test applying playwright patches and installing dependencies
-  patch:
+  # Test complete build on Ubuntu
+  ubuntu-build:
     runs-on: ubuntu-22.04
 
     steps:
@@ -72,3 +72,17 @@ jobs:
         run: |
           df -h
           bash build.sh -s -u
+
+  # Test complete build on Windows
+  windows-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download mozbuild
+        run: |
+          .\mach bootstrap
