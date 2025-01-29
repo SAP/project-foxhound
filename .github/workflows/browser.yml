@@ -81,12 +81,13 @@ jobs:
 
       - name: Download mozbuild
         run: |
+          Set-PSDebug -Trace 1
           mkdir -p C:\mozilla-build
           cd C:\mozilla-build
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
           &'C:\Program Files\7-Zip\7z.exe' e -r -y .\MozillaBuildSetup-Latest.exe
           pwd
-          &'C:\mozilla-build\start-shell.bat' --help
+          cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
     
       - name: Checkout release branch
         uses: actions/checkout@v4
