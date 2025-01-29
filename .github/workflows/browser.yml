@@ -90,8 +90,11 @@ jobs:
           ls
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
 
+      - name: Setup Msys2
+      - uses: msys2/setup-msys2@v2
+
       - name: Test Mozbuild
-        shell: bash
+        shell: msys2 {0}
         run: |
           ls /c/mozilla-build
   
@@ -101,17 +104,17 @@ jobs:
           fetch-depth: 1
   
       - name: Bootstrap
-        shell: bash
+        shell: msys2 {0}
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
           ./mach --no-interactive bootstrap --application-choice=browser
     
       - name: Build
-        shell: bash
+        shell: msys2 {0}
         run: |
           ./mach build
     
       - name: Package
-        shell: bash
+        shell: msys2 {0}
         run: |
           ./mach package
