@@ -86,8 +86,7 @@ jobs:
           cd C:\mozilla-build
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
           &'C:\Program Files\7-Zip\7z.exe' e -r -y .\MozillaBuildSetup-Latest.exe
-          ls
-          echo "ls" | C:\mozilla-build\start-shell.bat
+          C:\mozilla-build\start-shell.bat --help
     
       - name: Checkout release branch
         uses: actions/checkout@v4
