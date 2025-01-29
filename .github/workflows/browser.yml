@@ -86,7 +86,7 @@ jobs:
           cd C:\mozilla-build
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
           &'C:\Program Files\7-Zip\7z.exe' e -r -y .\MozillaBuildSetup-Latest.exe 
-          echo "ls /" | C:\mozilla-build\start-shell.bat
+          echo "ls" | C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound
     
       - name: Checkout release branch
         uses: actions/checkout@v4
@@ -95,13 +95,13 @@ jobs:
 
       - name: Bootstrap
         run: |
-          echo "ls / && cd /d/a/project-foxhound/ && ./mach --no-interactive bootstrap --application-choice=browser" | C:\mozilla-build\start-shell.bat 
+          echo "./mach --no-interactive bootstrap --application-choice=browser" | C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound
     
       - name: Build
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
-          echo "cd /d/a/project-foxhound/ && ./mach build" | C:\mozilla-build\start-shell.bat          
+          echo "./mach build" | C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound          
 
       - name: Package
         run: |
-          echo "cd /d/a/project-foxhound/ && ./mach package" | C:\mozilla-build\start-shell.bat   
+          echo "./mach package" | C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound   
