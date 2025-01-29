@@ -85,8 +85,9 @@ jobs:
           mkdir -p C:\mozilla-build
           cd C:\mozilla-build
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
-          &'C:\Program Files\7-Zip\7z.exe' e -r -y .\MozillaBuildSetup-Latest.exe 
-          echo "ls" | C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound
+          &'C:\Program Files\7-Zip\7z.exe' e -r -y .\MozillaBuildSetup-Latest.exe
+          ls
+          echo "ls" | "C:\mozilla-build\start-shell.bat"
     
       - name: Checkout release branch
         uses: actions/checkout@v4
