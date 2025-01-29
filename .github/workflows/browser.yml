@@ -91,27 +91,27 @@ jobs:
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
 
       - name: Test Mozbuild
-        shell: cmd /c C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c '{0}'
+        shell: bash
         run: |
           ls /c/mozilla-build
   
- #     - name: Checkout release branch
- #       uses: actions/checkout@v4
- #       with:
- #         fetch-depth: 1
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
   
- #     - name: Bootstrap
- #       shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
- #       run: |
- #         cp "taintfox_mozconfig_ubuntu" ".mozconfig"
- #         ./mach --no-interactive bootstrap --application-choice=browser
+      - name: Bootstrap
+        shell: bash
+        run: |
+          cp "taintfox_mozconfig_ubuntu" ".mozconfig"
+          ./mach --no-interactive bootstrap --application-choice=browser
     
- #     - name: Build
- #       shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
- #       run: |
- #         ./mach build
+      - name: Build
+        shell: bash
+        run: |
+          ./mach build
     
- #     - name: Package
- #       shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
- #       run: |
- #         ./mach package
+      - name: Package
+        shell: bash
+        run: |
+          ./mach package
