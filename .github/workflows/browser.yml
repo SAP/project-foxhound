@@ -94,16 +94,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-
+  
       - name: Bootstrap
         run: |
-          echo "./mach --no-interactive bootstrap --application-choice=browser" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
-    
+          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
       - name: Build
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
-          echo "./mach build" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
-
+          .\mach.ps1 build
       - name: Package
         run: |
-          echo "./mach package" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
+          .\mach.ps1 package
