@@ -89,7 +89,12 @@ jobs:
           pwd
           ls
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
-    
+
+      - name: Test Mozbuild
+        shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}
+        run: |
+          ls
+  
       - name: Checkout release branch
         uses: actions/checkout@v4
         with:
