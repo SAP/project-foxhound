@@ -102,23 +102,34 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-  
+
       - name: Bootstrap
-        shell: msys2 {0}
         run: |
-          export PATH=${PATH}:/c/mozilla-build/python3
-          mkdir -p /tmp
-          cp "taintfox_mozconfig_win" ".mozconfig"
-          ./mach --no-interactive bootstrap --application-choice=browser
-    
+          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
       - name: Build
-        shell: msys2 {0}
         run: |
-          export PATH=${PATH}:/c/mozilla-build/python3
-          ./mach build
-    
+          cp "taintfox_mozconfig_win" ".mozconfig"
+          .\mach.ps1 build
       - name: Package
-        shell: msys2 {0}
         run: |
-          export PATH=${PATH}:/c/mozilla-build/python3
-          ./mach package
+          .\mach.ps1 package
+  
+#      - name: Bootstrap
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=${PATH}:/c/mozilla-build/python3
+#          mkdir -p /tmp
+#          cp "taintfox_mozconfig_win" ".mozconfig"
+#          ./mach --no-interactive bootstrap --application-choice=browser
+    
+#      - name: Build
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=${PATH}:/c/mozilla-build/python3
+#          ./mach build
+    
+#      - name: Package
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=${PATH}:/c/mozilla-build/python3
+#          ./mach package
