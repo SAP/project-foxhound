@@ -105,7 +105,7 @@ jobs:
 
       - name: Bootstrap
         run: |
-          cp "taintfox_mozconfig_win" ".mozconfig"        
+          #cp "taintfox_mozconfig_win" ".mozconfig"        
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
       - name: Build
         run: |
