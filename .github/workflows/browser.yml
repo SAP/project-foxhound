@@ -93,7 +93,7 @@ jobs:
       - name: Test Mozbuild
         shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}
         run: |
-          ls
+          ls /c/mozilla-build
   
       - name: Checkout release branch
         uses: actions/checkout@v4
@@ -101,14 +101,17 @@ jobs:
           fetch-depth: 1
   
       - name: Bootstrap
+        shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
-          C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound" -c "./mach --no-interactive bootstrap --application-choice=browser"
+          ./mach --no-interactive bootstrap --application-choice=browser
     
       - name: Build
+        shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
         run: |
-          C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound" -c "./mach build"
+          ./mach build
     
       - name: Package
+        shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c {0}      
         run: |
-          C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound" -c "./mach package"
+          ./mach package
