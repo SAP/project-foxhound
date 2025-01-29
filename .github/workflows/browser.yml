@@ -108,7 +108,7 @@ jobs:
         run: |
           export PATH=${PATH}:/c/mozilla-build/python3
           mkdir -p /tmp
-          cp "taintfox_mozconfig_windows" ".mozconfig"
+          cp "taintfox_mozconfig_win" ".mozconfig"
           ./mach --no-interactive bootstrap --application-choice=browser
     
       - name: Build
