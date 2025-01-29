@@ -1,40 +1,53 @@
-mk_add_options MOZ_MAKE_FLAGS="-s"
+# limit number of parallel jobs - do not do this by default, but might be needed for build systems with limited resources
+# mk_add_options MOZ_PARALLEL_BUILD=4
 
-# Export path to Windows C runtime libraries.
-# This will cause those DLLs to be packaged with the application, which is required to run taintfox on non-developer machines
+# Use ccache, make sure the path is correct
+#ac_add_options --with-ccache=/usr/bin/ccache
 
-# Add-on signing is not required for DevEdition
-MOZ_REQUIRE_SIGNING=
-
-# Force Visual Studio compiler (default is clang)
-#export CC=cl
-#export LINKER=link
-
-# Set 32-bit build
-#ac_add_options --target=i686-pc-mingw32
-#ac_add_options --host=x86_64-pc-mingw32
-#WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x86\Microsoft.VC141.CRT"
-
-
-# Set 64-bit build
-ac_add_options --target=x86_64-pc-mingw32
-ac_add_options --host=x86_64-pc-mingw32
-WIN32_REDIST_DIR="C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.20.27508\x64\Microsoft.VC141.CRT"
+# On OS X we only support newer releases so that clang uses libc++ (llvm) instead of stdlibc++
+# We could work around this (typedef basic_string<char16_t> u16string), but this should be fine.
+#ac_add_options --enable-macos-target=10.10
 
 # disable updater
 ac_add_options --disable-updater
 
+# Add-on signing is not required for DevEdition
+MOZ_REQUIRE_SIGNING=
+
+ac_add_options --with-branding=browser/branding/foxhound
+
 #
 # DEBUG BUILD
 #
-#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-ff-dbg
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-dbg
+#ac_add_options --enable-debug-symbols
 #ac_add_options --enable-debug
 #ac_add_options --disable-optimize
+#ac_add_options --disable-tests
+#ac_add_options --enable-project=js
+#ac_add_options --enable-jitspew
 
+# Package js shell.
+export MOZ_PACKAGE_JSSHELL=1
 
 #
 # RELEASE BUILD
 #
-mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-64
-ac_add_options --disable-tests
-ac_add_options --enable-cdp
+ac_add_options --with-app-name=foxhound
+mk_add_options MOZ_APP_NAME=foxhound
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
+#ac_add_options --disable-tests
+ac_add_options --disable-sandbox
+ac_add_options --without-wasm-sandboxed-libraries
+ac_add_options --disable-crashreporter
+ac_add_options --disable-backgroundtasks
+ac_add_options --enable-release
+
+#
+# OPTIMIZED BUILD WITH DEBUG SYMBOLS
+#
+#mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release-with-symbols
+#ac_add_options --enable-debug-symbols
+#ac_add_options --enable-gczeal
+#ac_add_options --enable-optimize
+#ac_add_options --disable-tests
