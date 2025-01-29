@@ -91,7 +91,7 @@ jobs:
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
 
       - name: Test Mozbuild
-        shell: C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c "{0}"
+        shell: cmd /c C:\mozilla-build\start-shell.bat -where D:\a\project-foxhound\project-foxhound -c '{0}'
         run: |
           ls /c/mozilla-build
   
