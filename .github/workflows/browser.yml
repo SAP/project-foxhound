@@ -97,11 +97,12 @@ jobs:
   
       - name: Bootstrap
         run: |
-          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
+          echo "./mach --no-interactive bootstrap --application-choice=browser" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
+    
       - name: Build
         run: |
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
-          .\mach.ps1 build
+          echo "./mach build" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
       - name: Package
         run: |
-          .\mach.ps1 package
+          echo "./mach package" | C:\mozilla-build\start-shell.bat -where "D:\a\project-foxhound\project-foxhound"
