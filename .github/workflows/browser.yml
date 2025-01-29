@@ -106,6 +106,7 @@ jobs:
       - name: Bootstrap
         shell: msys2 {0}
         run: |
+          export PATH=${PATH}:/c/mozilla-build/python3
           cp "taintfox_mozconfig_ubuntu" ".mozconfig"
           ./mach --no-interactive bootstrap --application-choice=browser
     
