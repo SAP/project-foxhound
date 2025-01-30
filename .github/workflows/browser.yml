@@ -97,22 +97,25 @@ jobs:
         shell: msys2 {0}
         run: |
           ls /c/mozilla-build
+          which bash
+          echo "ls -l /" | bash
+          echo "ls -l /tmp" | bash
   
-      - name: Checkout release branch
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+#      - name: Checkout release branch
+#        uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 1
 
-      - name: Bootstrap
-        run: |
-          #cp "taintfox_mozconfig_win" ".mozconfig"        
-          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
-      - name: Build
-        run: |
-          .\mach.ps1 build
-      - name: Package
-        run: |
-          .\mach.ps1 package
+#      - name: Bootstrap
+#        run: |
+#          cp "taintfox_mozconfig_win" ".mozconfig"        
+#          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
+#      - name: Build
+#        run: |
+#          .\mach.ps1 build
+#      - name: Package
+#        run: |
+#          .\mach.ps1 package
   
 #      - name: Bootstrap
 #        shell: msys2 {0}
