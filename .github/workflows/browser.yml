@@ -89,7 +89,7 @@ jobs:
           pwd
           ls
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
-          executable-find "bash.exe"
+          where bash
           echo "ls -l /" | bash.exe
 
       - name: Setup Msys2
