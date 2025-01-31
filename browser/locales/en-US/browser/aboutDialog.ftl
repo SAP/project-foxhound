@@ -61,9 +61,9 @@ aboutdialog-submit-feedback = Submit Feedback
 
 community-exp = <label data-l10n-name="community-exp-mozillaLink">{ -vendor-short-name }</label> is a <label data-l10n-name="community-exp-creditsLink">global community</label> working together to keep the Web open, public and accessible to all.
 
-community-2 = { -brand-short-name } an experimental browser developed by is designed by { -vendor-short-name }. It is based on Firefox from <label data-l10n-name="community-mozillaLink">Mozilla</label>, a <label data-l10n-name="community-creditsLink">global community</label> working together to keep the Web open, public and accessible to all.
+community-2 = <label data-l10n-name="community-githubLink">{ -brand-short-name }</label> an open-source experimental browser which uses dynamic tainting to discover interesting data-flows in web applications. It is designed and maintained by { -vendor-short-name }, with contributors from academia and industry across the world. It is based on Firefox from <label data-l10n-name="community-mozillaLink">Mozilla</label>, a <label data-l10n-name="community-creditsLink">global community</label> working together to keep the Web open, public and accessible to all.
 
-helpus = Want to help? <label data-l10n-name="helpus-donateLink">Make a donation</label> or <label data-l10n-name="helpus-getInvolvedLink">get involved!</label>
+helpus = Want to find out more about <label data-l10n-name="community-githubLink">{ -brand-short-name }</label>? Check out the GitHub page. Want to help supporting Firefox? <label data-l10n-name="helpus-donateLink">Make a donation</label> or <label data-l10n-name="helpus-getInvolvedLink">get involved!</label>
 
 bottomLinks-license = Licensing Information
 bottomLinks-rights = End-User Rights
