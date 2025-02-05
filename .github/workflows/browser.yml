@@ -120,32 +120,33 @@ jobs:
         with:
           fetch-depth: 1
 
-#      - name: Bootstrap
-#        run: |
-#          cp "taintfox_mozconfig_win" ".mozconfig"        
-#          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
-#      - name: Build
-#        run: |
-#          .\mach.ps1 build
-#      - name: Package
-#        run: |
-#          .\mach.ps1 package
-  
       - name: Bootstrap
-        shell: msys2 {0}
         run: |
-          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-          cp "taintfox_mozconfig_win" ".mozconfig"
-          ./mach --no-interactive bootstrap --application-choice=browser
-    
+          cp "taintfox_mozconfig_win" ".mozconfig"        
+          .\mach.ps1  --no-interactive bootstrap --application-choice=browser
       - name: Build
-        shell: msys2 {0}
         run: |
-          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-          ./mach build
-    
+          .\mach.ps1 build
       - name: Package
-        shell: msys2 {0}
         run: |
-          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-          ./mach package
+          .\mach.ps1 package
+  
+#      - name: Bootstrap
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
+#          cp "taintfox_mozconfig_win" ".mozconfig"
+#          ./mach --no-interactive bootstrap --application-choice=browser
+    
+#      - name: Build
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
+#          ./mach build
+    
+#      - name: Package
+#        shell: msys2 {0}
+#        run: |
+#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
+#          ./mach package
+#
