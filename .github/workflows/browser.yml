@@ -111,9 +111,8 @@ jobs:
           which bash
           echo "ls -l /" | bash
           echo "ls -l /tmp" | bash
-	  sh --help
-	  bash --help
-	  
+          sh --help
+          bash --help
   
       - name: Checkout release branch
         uses: actions/checkout@v4
