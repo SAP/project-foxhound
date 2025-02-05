@@ -83,7 +83,7 @@ jobs:
         run: |
           Set-PSDebug -Trace 1
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
-          &'.\MozillaBuildSetup-Latest.exe' /S /D=C:\mozilla-build
+          ExecWait "'.\MozillaBuildSetup-Latest.exe' /S /D=C:\mozilla-build"
           pwd
           ls C:\mozilla-build
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
