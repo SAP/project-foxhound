@@ -82,17 +82,19 @@ jobs:
       - name: Download mozbuild
         run: |
           Set-PSDebug -Trace 1
-          mkdir -p C:\mozilla-build
-          cd C:\mozilla-build
+	  #mkdir -p C:\mozilla-build
+          #cd C:\mozilla-build
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
-          &'C:\Program Files\7-Zip\7z.exe' x -r -y .\MozillaBuildSetup-Latest.exe
+          &'.\MozillaBuildSetup-Latest.exe' /S /D=C:\mozilla-build
+          #&'C:\Program Files\7-Zip\7z.exe' x -r -y .\MozillaBuildSetup-Latest.exe
+	  rm MozillaBuildSetup-Latest.exe
           pwd
           ls
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
           where bash
           echo "ls -l /" | bash.exe
-          rm -Recuse -Force "C:\mozilla-build\msys2"
-          mklink /D "C:\msys64" "C:\mozilla-build\msys2"
+          #rm -Recuse -Force "C:\mozilla-build\msys2"
+          #mklink /D "C:\msys64" "C:\mozilla-build\msys2"
 
       - name: Setup Msys2
         uses: msys2/setup-msys2@v2
