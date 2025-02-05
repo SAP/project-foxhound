@@ -101,8 +101,6 @@ jobs:
       - name: Test Bash
         shell: bash
         run: |
-          ls /c/mozilla-build
-          ls -l /
           which bash
           echo "ls -l /" | bash
           echo "ls -l /tmp" | bash
@@ -110,7 +108,10 @@ jobs:
       - name: Test Mozbuild
         shell: msys2 {0}
         run: |
-          ls /c/mozilla-build
+          echo "Mozilla Build"
+          ls -l /c/mozilla-build
+          echo "Msys2"
+          ls -l /c/mozilla-build/msys2/
           which bash
           echo "ls -l /" | bash
           echo "ls -l /tmp" | bash
