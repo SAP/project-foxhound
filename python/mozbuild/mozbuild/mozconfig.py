@@ -159,6 +159,8 @@ class MozconfigLoader(object):
             mozpath.join(mozpath.dirname(self._loader_script), "action", "dump_env.py"),
         ]
 
+        print("FOXHOUND DEBUG:", command)
+
         try:
             # We need to capture stderr because that's where the shell sends
             # errors if execution fails.
