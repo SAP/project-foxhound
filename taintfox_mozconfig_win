@@ -1,3 +1,6 @@
+echo FOXHOUND_DEBUG
+/c/mozilla-build/msys2/usr/bin/sh.exe --help
+
 # limit number of parallel jobs - do not do this by default, but might be needed for build systems with limited resources
 # mk_add_options MOZ_PARALLEL_BUILD=4
 
@@ -36,7 +39,7 @@ export MOZ_PACKAGE_JSSHELL=1
 ac_add_options --with-app-name=foxhound
 mk_add_options MOZ_APP_NAME=foxhound
 #mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-tf-release
-#ac_add_options --disable-tests
+ac_add_options --disable-tests
 ac_add_options --disable-sandbox
 ac_add_options --without-wasm-sandboxed-libraries
 ac_add_options --disable-crashreporter
