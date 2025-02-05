@@ -112,10 +112,10 @@ jobs:
           echo "ls -l /" | bash
           echo "ls -l /tmp" | bash
   
-#      - name: Checkout release branch
-#        uses: actions/checkout@v4
-#        with:
-#          fetch-depth: 1
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
 #      - name: Bootstrap
 #        run: |
@@ -128,13 +128,14 @@ jobs:
 #        run: |
 #          .\mach.ps1 package
   
-#      - name: Bootstrap
-#        shell: msys2 {0}
-#        run: |
-#          export PATH=${PATH}:/c/mozilla-build/python3
-#          mkdir -p /tmp
-#          cp "taintfox_mozconfig_win" ".mozconfig"
-#          ./mach --no-interactive bootstrap --application-choice=browser
+      - name: Bootstrap
+        shell: msys2 {0}
+        run: |
+          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
+          export BASH=/usr/bin/bash
+          mkdir -p /tmp
+          cp "taintfox_mozconfig_win" ".mozconfig"
+          ./mach --no-interactive bootstrap --application-choice=browser
     
 #      - name: Build
 #        shell: msys2 {0}
