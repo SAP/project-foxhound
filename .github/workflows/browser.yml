@@ -83,10 +83,11 @@ jobs:
         run: |
           Set-PSDebug -Trace 1
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
-          ExecWait "'.\MozillaBuildSetup-Latest.exe' /S /D=C:\mozilla-build"
+          Start-Process .\MozillaBuildSetup-Latest.exe -ArgumentList '/S /D=C:\mozilla-build' -Wait
           pwd
           ls C:\mozilla-build
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
+          rm .\MozillaBuildSetup-Latest.exe
 
       - name: Setup Msys2
         uses: msys2/setup-msys2@v2
