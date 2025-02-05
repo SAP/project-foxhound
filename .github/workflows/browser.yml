@@ -134,15 +134,18 @@ jobs:
       - name: Bootstrap
         shell: msys2 {0}
         run: |
+          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
           cp "taintfox_mozconfig_win" ".mozconfig"
           ./mach --no-interactive bootstrap --application-choice=browser
     
       - name: Build
         shell: msys2 {0}
         run: |
+          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
           ./mach build
     
       - name: Package
         shell: msys2 {0}
         run: |
+          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
           ./mach package
