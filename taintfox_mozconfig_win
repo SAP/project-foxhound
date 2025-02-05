@@ -1,4 +1,8 @@
 echo FOXHOUND_DEBUG
+echo $TEMP
+ls $TEMP
+echo $TMP
+ls $TMP
 ls /
 which sh
 which bash
