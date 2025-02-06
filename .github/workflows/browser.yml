@@ -96,7 +96,7 @@ jobs:
         run: |
           cp "taintfox_mozconfig_win" ".mozconfig"    
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
-          $env:RUST_VERSION=$(((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1]) 
+          $env:RUST_VERSION=$((((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1] -Split '"')[1])
           echo "Installing $env:RUST_VERSION from .PLAYWRIGHT_VERSION"
           rustup install $env:RUST_VERSION
           rustup default $env:RUST_VERSION
