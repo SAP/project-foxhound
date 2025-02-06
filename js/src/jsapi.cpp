@@ -4911,7 +4911,7 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
 JS_PUBLIC_API void
 JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& op)
 {
-  if (str->isTainted()) {
+  if (!str->isTainted()) {
     JS_SetStringTaint(cx, str, StringTaint(0, str->length(), op));
   } else {
     str->taint().overlay(0, str->length(), op);
