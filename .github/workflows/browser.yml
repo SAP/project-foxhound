@@ -84,37 +84,9 @@ jobs:
           Set-PSDebug -Trace 1
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
           Start-Process .\MozillaBuildSetup-Latest.exe -ArgumentList '/S /D=C:\mozilla-build' -Wait
-          pwd
-          ls C:\mozilla-build
           cmd.exe /c 'C:\mozilla-build\start-shell.bat' --help
           rm .\MozillaBuildSetup-Latest.exe
 
-      - name: Setup Msys2
-        uses: msys2/setup-msys2@v2
-        with:
-          release: false
-          msystem: MSYS
-
-      - name: Test Bash
-        shell: bash
-        run: |
-          which bash
-          echo "ls -l /" | bash
-          echo "ls -l /tmp" | bash
-
-      - name: Test Mozbuild
-        shell: msys2 {0}
-        run: |
-          echo "Mozilla Build"
-          ls -l /c/mozilla-build
-          echo "Msys2"
-          ls -l /c/mozilla-build/msys2/
-          which bash
-          echo "ls -l /" | bash
-          echo "ls -l /tmp" | bash
-          sh --help
-          bash --help
-  
       - name: Checkout release branch
         uses: actions/checkout@v4
         with:
@@ -124,31 +96,16 @@ jobs:
         run: |
           cp "taintfox_mozconfig_win" ".mozconfig"    
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
-          rustup install 1.76.0
-          rustup default 1.76.0
+          $env:RUST_VERSION=$(((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1]) 
+          echo "Installing $env:RUST_VERSION from .PLAYWRIGHT_VERSION"
+          rustup install $env:RUST_VERSION
+          rustup default $env:RUST_VERSION
+      
       - name: Build
         run: |
           .\mach.ps1 build
+  
       - name: Package
         run: |
           .\mach.ps1 package
   
-#      - name: Bootstrap
-#        shell: msys2 {0}
-#        run: |
-#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-#          cp "taintfox_mozconfig_win" ".mozconfig"
-#          ./mach --no-interactive bootstrap --application-choice=browser
-    
-#      - name: Build
-#        shell: msys2 {0}
-#        run: |
-#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-#          ./mach build
-    
-#      - name: Package
-#        shell: msys2 {0}
-#        run: |
-#          export PATH=/c/mozilla-build/bin:/c/mozilla-build/python3:${PATH}
-#          ./mach package
-#
