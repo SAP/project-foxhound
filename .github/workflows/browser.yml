@@ -109,3 +109,30 @@ jobs:
         run: |
           .\mach.ps1 package
   
+ # Test complete build on MacOS
+  macos-build:
+    runs-on: macos-latest
+
+    steps:
+
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Bootstrap
+        run: |
+          cp "taintfox_mozconfig_ubuntu" ".mozconfig"    
+          ./mach --no-interactive bootstrap --application-choice=browser
+          source .PLAYWRIGHT_VERSION
+          echo "Installing ${RUST_VERSION} from .PLAYWRIGHT_VERSION"
+          rustup install ${RUST_VERSION}
+          rustup default ${RUST_VERSION}
+      
+      - name: Build
+        run: |
+          ./mach build
+  
+      - name: Package
+        run: |
+          ./mach package
