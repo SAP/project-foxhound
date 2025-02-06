@@ -20,7 +20,6 @@
 # If given no args, create `configure' from template file `configure.in'.
 # With one arg, create a configure script on standard output from
 # the given template file.
-echo "FOXHOUND DEBUG: $0"
 
 usage="\
 Usage: autoconf [-h] [--help] [-m dir] [--macrodir=dir]
