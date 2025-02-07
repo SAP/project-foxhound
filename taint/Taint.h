@@ -88,6 +88,7 @@ class TaintLocation
     // MSVC doesn't let us = default these :(
     TaintLocation(TaintLocation&& other) noexcept;
     TaintLocation& operator=(TaintLocation&& other) noexcept;
+    bool operator==(const TaintLocation& other) const;
 
     const std::u16string& filename() const { return filename_; }
     uint32_t line() const { return line_; }
@@ -138,6 +139,7 @@ class TaintOperation
     // These work fine as long as we are using stl classes.
     TaintOperation(const TaintOperation& other) = default;
     TaintOperation& operator=(const TaintOperation& other) = default;
+    bool operator==(const TaintOperation& other) const;
 
     // MSVC doesn't let us = default these :(
     TaintOperation(TaintOperation&& other) noexcept;
