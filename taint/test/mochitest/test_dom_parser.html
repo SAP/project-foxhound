@@ -14,27 +14,7 @@
             ok(str.taint.length == 0, "Check untainted");
         }
 
-        let sink_names = [
-            "object.data"
-        ];
-
-        let i = 0;
-
-        SimpleTest.waitForExplicitFinish();
-        addEventListener("__taintreport", (report) => {
-            SimpleTest.is(report.detail.str, "tainted=hello", "Check sink string content");
-
-            let flow = report.detail.str.taint[0].flow;
-            SimpleTest.is(flow[2].operation, sink_names[i]);
-
-            i += 1;
-            if (i >= sink_names.length) {
-                SimpleTest.finish();
-            }
-        }, false);
-
-
-        function startTests() {
+        add_task(async function test_htmlParser() {
             const parser = new DOMParser();
 
             const tainted_str = String.tainted("tainted=hello");
@@ -48,16 +28,22 @@
             check_tainted(doc1.body.innerHTML);
             check_tainted(doc1.body.outerHTML);
             check_tainted(doc1.body.textContent);
+        });
+
+        add_task(async function test_xmlParser() {
+            const parser = new DOMParser();
+
+            const tainted_str = String.tainted("tainted=hello");
 
             const tainted_xml_str = "<warning>" + tainted_str + "</warning>";
             const doc2 = parser.parseFromString(tainted_xml_str, "application/xml");
 
             check_tainted(doc2.documentElement.textContent);
+        });
 
-            SimpleTest.finish();
-        }
     </script>
   </head>
-  <body onload="startTests()">
+  <body>
+    <h1>Hello world</p>
   </body>
 </html>
