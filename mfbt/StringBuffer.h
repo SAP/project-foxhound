@@ -33,7 +33,12 @@ namespace mozilla {
  * TaintFox: nsStringBuffer is taint aware.
  * TODO: check if this would be better as a member, rather than inheriting
  */
-class StringBuffer  : public TaintableString {
+class StringBuffer : public TaintableString {
+ private:
+  std::atomic<uint32_t> mRefCount;
+  uint32_t mStorageSize;
+
+ public:
 
   MOZ_DECLARE_REFCOUNTED_TYPENAME(StringBuffer)
 
@@ -258,7 +263,7 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
       data[aLength] = 0;
     }
 
-    this->AssignTaint(aTaint);
+    buffer->AssignTaint(aTaint);
 
     return already_AddRefed(buffer);
   }

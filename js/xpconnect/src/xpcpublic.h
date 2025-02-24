@@ -265,7 +265,7 @@ class XPCStringConvert {
                           JS::MutableHandle<JS::Value> vp);
 
   static MOZ_ALWAYS_INLINE bool UCStringBufferToJSVal(
-      JSContext* cx, nsStringBuffer* buf, uint32_t length,
+      JSContext* cx, mozilla::StringBuffer* buf, uint32_t length,
       JS::MutableHandle<JS::Value> rval, bool* sharedBuffer) {
     const StringTaint& taint = buf ? buf->Taint() : EmptyTaint;
     return UCStringBufferToJSVal(cx, buf, length, taint, rval, sharedBuffer);

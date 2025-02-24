@@ -40,6 +40,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
      * In comparison with onStreamComplete(), the data buffer cannot be
      * adopted if this method returns NS_SUCCESS_ADOPTED_DATA.
      */
+    [noscript]
     void onIncrementalData(in nsIIncrementalStreamLoader loader,
                            in nsISupports ctxt,
                            in unsigned long dataLength,
@@ -69,6 +70,7 @@ interface nsIIncrementalStreamLoaderObserver : nsISupports
      * onStreamComplete() returns; observer must call free()
      * when the data is no longer required.
      */
+    [noscript]
     void onStreamComplete(in nsIIncrementalStreamLoader loader,
                           in nsISupports ctxt,
                           in nsresult status,
