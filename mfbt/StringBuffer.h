@@ -69,6 +69,7 @@ class StringBuffer : public TaintableString {
     if (hdr) {
       hdr->mRefCount = 1;
       hdr->mStorageSize = aSize;
+      hdr->initTaint();
       detail::RefCountLogger::logAddRef(hdr, 1);
     }
     return already_AddRefed(hdr);
@@ -127,12 +128,14 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
     {
       detail::RefCountLogger::ReleaseLogger logger(aHdr);
       logger.logRelease(0);
+      aHdr->finalize(); // Free tainting-related resources
     }
 
     aHdr = (StringBuffer*)realloc(aHdr, sizeof(StringBuffer) + aSize);
     if (aHdr) {
       detail::RefCountLogger::logAddRef(aHdr, 1);
       aHdr->mStorageSize = aSize;
+      aHdr->initTaint();
     }
 
     return aHdr;
@@ -164,6 +167,7 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
       // on other threads, that is, to ensure that writes prior to that release
       // are now visible on this thread.
       count = mRefCount.load(std::memory_order_acquire);
+      finalize(); // Free tainting-related resources
       free(this);  // We were allocated with malloc.
     }
   }
@@ -262,7 +266,6 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
       memcpy(data, aData, aLength * sizeof(CharT));
       data[aLength] = 0;
     }
-
     buffer->AssignTaint(aTaint);
 
     return already_AddRefed(buffer);
