@@ -87,7 +87,7 @@ already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
   nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), aInput, nullptr,
                           aDocument->GetBaseURI());
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(input);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
   return resolvedURI.forget();
 }
@@ -128,7 +128,7 @@ already_AddRefed<nsIURI> ParseURLFromChrome(const nsACString& aInput,
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), input);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aInput);
   if (NS_FAILED(rv)) {
     aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
