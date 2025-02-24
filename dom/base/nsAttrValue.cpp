@@ -642,6 +642,10 @@ void nsAttrValue::ToString(nsAString& aResult) const {
       aResult.AssignTaint(mTaint);
       break;
     }
+    case eInteger: {
+      nsAutoString intStr;
+      intStr.AppendInt(GetIntegerValue());
+      aResult = intStr;
 
       break;
     }
@@ -2120,7 +2124,7 @@ already_AddRefed<mozilla::StringBuffer> nsAttrValue::GetStringBuffer(
     }
     return do_AddRef(buf);
   }
-  return nsStringBuffer::Create(aValue.Data(), aValue.Length(), aValue.Taint());
+  return mozilla::StringBuffer::Create(aValue.Data(), aValue.Length(), aValue.Taint());
 }
 
 size_t nsAttrValue::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
