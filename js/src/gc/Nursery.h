@@ -716,8 +716,8 @@ class Nursery {
   MapObjectVector mapsWithNurseryMemory_;
   using SetObjectVector = Vector<SetObject*, 0, SystemAllocPolicy>;
   SetObjectVector setsWithNurseryMemory_;
-  using StringObjectVector = Vector<JSString*,  0, SystemAllocPolicy>;
-  StringObjectVector stringsWithNurseryMemory_;  
+  using StringVector = Vector<JSString*, 0, SystemAllocPolicy>;
+  StringVector stringsWithNurseryMemory_;
 
   UniquePtr<NurseryDecommitTask> decommitTask;
 

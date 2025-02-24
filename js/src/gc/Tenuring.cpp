@@ -970,6 +970,8 @@ JSString* js::gc::TenuringTracer::promoteString(JSString* src) {
   //    The JSString NON_DEDUP_BIT flag is unset.
   // 4. It matches an entry in stringDeDupSet.
   // 5. It is moved to the tenured heap.
+  // 6. It is not tainted!
+  //    Deduplicating strings will differing taint information can lead to inaccurate results!
 
   if (shouldTenure(zone, JS::TraceKind::String, src) &&
       src->length() < MAX_DEDUPLICATABLE_STRING_LENGTH && src->isLinear() &&

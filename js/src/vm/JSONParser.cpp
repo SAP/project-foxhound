@@ -382,7 +382,7 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
       size_t length = current - start;
       ptrdiff_t offset = start - begin;
       current++;
-      return stringToken<ST>(start, length, taint.safeSubTaint(offset, offset + length));
+      return stringToken<ST>(start, length, mTaint.safeSubTaint(offset, offset + length));
     }
 
     if (*current == '\\') {
@@ -402,7 +402,7 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
    */
   StringBuilderT builder(parser->handler.context());
   do {
-    if (start < current && !builder.append(start.get(), current.get(), taint.safeSubTaint(start - begin, current - begin))) {
+    if (start < current && !builder.append(start.get(), current.get(), mTaint.safeSubTaint(start - begin, current - begin))) {
       return token(JSONToken::OOM);
     }
 
@@ -485,7 +485,7 @@ JSONToken JSONTokenizer<CharT, ParserT, StringBuilderT>::readString() {
         return token(JSONToken::Error);
     }
 
-    if (!builder.append(c, taint.atRef(current - 1 - begin))) {
+    if (!builder.append(c, mTaint.atRef(current - 1 - begin))) {
       return token(JSONToken::OOM);
     }
 

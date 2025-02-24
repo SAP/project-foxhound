@@ -8,16 +8,16 @@
 
 # BrandFullNameInternal is used for some registry and file system values
 # instead of BrandFullName and typically should not be modified.
-!define BrandFullNameInternal "Mozilla Developer Preview"
-!define BrandFullName         "Mozilla Developer Preview"
-!define CompanyName           "mozilla.org"
-!define URLInfoAbout          "https://www.mozilla.org"
-!define HelpLink              "https://support.mozilla.org"
+!define BrandFullNameInternal "Foxhound"
+!define BrandFullName         "Foxhound"
+!define CompanyName           "SAP SE"
+!define URLInfoAbout          "https://github.com/SAP/project-foxhound/"
+!define HelpLink              "https://github.com/SAP/project-foxhound/wiki"
 
-!define URLStubDownloadX86 "https://download.mozilla.org/?os=win&lang=${AB_CD}&product=firefox-latest"
-!define URLStubDownloadAMD64 "https://download.mozilla.org/?os=win64&lang=${AB_CD}&product=firefox-latest"
-!define URLStubDownloadAArch64 "https://download.mozilla.org/?os=win64-aarch64&lang=${AB_CD}&product=firefox-latest"
-!define URLManualDownload "https://www.mozilla.org/${AB_CD}/firefox/installer-help/?channel=release&installer_lang=${AB_CD}"
+!define URLStubDownloadX86 "https://foxhound.ias.tu-bs.de/"
+!define URLStubDownloadAMD64 "https://foxhound.ias.tu-bs.de/"
+!define URLStubDownloadAArch64 "https://foxhound.ias.tu-bs.de/"
+!define URLManualDownload "https://foxhound.ias.tu-bs.de/"
 !define URLSystemRequirements "https://www.mozilla.org/firefox/system-requirements/"
 !define Channel "unofficial"
 

@@ -1161,7 +1161,7 @@ void URLParams::Append(const nsACString& aName, const nsACString& aValue) {
   param->mKey = aName;
   param->mValue = aValue;
 
-  nsTArray<nsString> args;
+  nsTArray<nsCString> args;
   args.AppendElement(param->mKey);
   args.AppendElement(param->mValue);
 

@@ -361,8 +361,8 @@ class URLParams final {
  private:
   static bool ParseNextInternal(const char*& aStart, const char* aEnd,
                                 const char* stringStart, const StringTaint& aTaint,
-                                bool aShouldDecode, nsACString* aOutDecodedName,
-                                nsACString* aOutDecodedValue);
+                                bool aShouldDecode, nsACString* aOutputName,
+                                nsACString* aOutputValue);
 
   struct Param {
     nsCString mKey;

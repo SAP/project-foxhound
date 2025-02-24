@@ -56,7 +56,6 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
                                        const nsACString& aURL,
                                        const nsACString& aBase,
                                        ErrorResult& aRv) {
-
   nsCOMPtr<nsIURI> baseUri;
   nsresult rv = NS_NewURI(getter_AddRefs(baseUri), aBase);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -82,7 +81,7 @@ already_AddRefed<URL> URL::Constructor(nsISupports* aParent,
   if (NS_FAILED(rv)) {
     // No need to warn in this case. It's common to use the URL constructor
     // to determine if a URL is valid and an exception will be propagated.
-    aRv.ThrowTypeError<MSG_INVALID_URL>(aURL);
+    aRv.ThrowTypeError<MSG_INVALID_URL>(urlStr);
     return nullptr;
   }
 
@@ -337,8 +336,8 @@ void URL::GetSearch(nsACString& aSearch) const {
   rv = mURI->GetQuery(aSearch);
   if (NS_SUCCEEDED(rv) && !aSearch.IsEmpty()) {
     aSearch.Insert('?', 0);
+    MarkTaintOperation(aSearch, "URL.search");
   }
-  MarkTaintOperation(aSearch, "URL.search");
 }
 
 void URL::GetHash(nsACString& aHash) const {
@@ -347,8 +346,8 @@ void URL::GetHash(nsACString& aHash) const {
   nsresult rv = mURI->GetRef(aHash);
   if (NS_SUCCEEDED(rv) && !aHash.IsEmpty()) {
     aHash.Insert('#', 0);
+    MarkTaintOperation(aHash, "URL.hash");
   }
-  MarkTaintOperation(aHash, "URL.hash");
 }
 
 void URL::SetHash(const nsACString& aHash) {

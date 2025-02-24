@@ -125,6 +125,8 @@ static bool str_encodeURI_Component(JSContext* cx, unsigned argc, Value* vp);
 
 static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp);
 
+static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp);
+
 /*
  * Global string methods
  */
@@ -141,17 +143,23 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
   if (!str || str->length() == 0)
     return false;
 
+  std::string source("manual taint source");
+  if(args.length() >= 2 && args.hasDefined(1)) {
+    RootedString src_str(cx, ArgToLinearString(cx, args, 1));
+    if (src_str && src_str->length() > 0) {
+      UniqueChars src = JS_EncodeStringToLatin1(cx, src_str);
+      source = std::string(src.get());
+    }
+  }
   // We store the string as argument for a manual taint operation. This way it's easy to see what
   // the original value of a manually tainted string was for debugging/testing.
-  TaintOperation op = TaintOperation("manual taint source", true, TaintLocationFromContext(cx), { taintarg(cx, str) });
+  TaintOperation op = TaintOperation(source.c_str(), true, TaintLocationFromContext(cx), { taintarg(cx, str) });
   op.setSource();
-  SafeStringTaint taint(0, str->length(), op);
 
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
   if (!tainted_str)
     return false;
-  tainted_str->setTaint(cx, taint);
-
+  JS_MarkTaintSource(cx, tainted_str, op);
   MOZ_ASSERT(tainted_str->isTainted());
 
   args.rval().setString(tainted_str);
@@ -726,6 +734,7 @@ static const JSFunctionSpec string_functions[] = {
     JS_FN("decodeURIComponent", str_decodeURI_Component, 1, JSPROP_RESOLVING),
     JS_FN("encodeURIComponent", str_encodeURI_Component, 1, JSPROP_RESOLVING),
     JS_FN("foxhound", str_foxhound, 1, JSPROP_RESOLVING),
+    JS_FN("foxhound_sink", foxhound_sink, 2, JSPROP_RESOLVING),
     JS_FS_END,
 };
 
@@ -5325,6 +5334,25 @@ JSString* js::EncodeURI(JSContext* cx, const char* chars, size_t length) {
     return NewStringCopyN<CanGC>(cx, chars, length);
   }
   return sb.finishString();
+}
+
+static bool foxhound_sink(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "foxhound_sink");
+  CallArgs args = CallArgsFromVp(argc, vp);
+  RootedString str(cx, ArgToLinearString(cx, args, 0));
+  if (!str) {
+    return false;
+  }
+
+  RootedString sink(cx, ArgToLinearString(cx, args, 1));
+  if (!sink) {
+    return false;
+  }
+  UniqueChars sinkchars = JS_EncodeStringToLatin1(cx, sink);
+  JS_ReportTaintSink(cx, str, sinkchars.get());
+
+  args.rval().setUndefined();
+  return true;
 }
 
 static bool str_foxhound(JSContext* cx, unsigned argc, Value* vp) {
