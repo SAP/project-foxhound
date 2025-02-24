@@ -13,6 +13,30 @@ exclude: true
 
 ⚠️  breaking change and deprecation notices
 
+## v128
+- ⚠️ Removed deprecated [`GeckoSession.NavigationDelegate.onLocationChange`][128.1]
+- Reverted the change to the `WebExtension.MetaData` related to "prompt" permissions ([bug 1879543]({{bugzilla}}1879543)) and explicitly passed the permissions/origins into the `PromptDelegate` methods. Required permissions and origins are now available via [`WebExtension.MetaData.requiredPermissions`][128.2] and [`WebExtension.MetaData.requiredOrigins`][128.3].
+- Added additional [`Autocomplete.LoginSelectOption`][128.4] constructor that takes a `hint` ([bug 1877237]({{bugzilla}}1877237)).
+- ⚠️ Deprecated [`GeckoSession.ContentDelegate.onProductUrl`][128.5], will now be removed in v131.
+  ([bug 1898055]({{bugzilla}}1898055))
+
+[128.1]: {{javadoc_uri}}/GeckoSession.NavigationDelegate#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String,java.util.List)
+[128.2]: {{javadoc_uri}}/WebExtension.MetaData.html#promptPermissions
+[128.3]: {{javadoc_uri}}/WebExtension.MetaData.html#promptOrigins
+[128.4]: {{javadoc_uri}}/Autocomplete.LoginSelectOption.html#<init>(org.mozilla.geckoview.Autocomplete.LoginEntry,int)
+[128.5]: {{javadoc_uri}}/GeckoSession.ContentDelegate.html#onProductUrl(org.mozilla.geckoview.GeckoSession)
+
+## v127
+- ⚠️ Removed deprecated [`RuntimeTelemetry`][125.5], [`GeckoRuntimeSettings.getTelemetryDelegate`][125.6] and [`GeckoRuntimeSettings.telemetryDelegate`][125.7].
+- Added [FINDER_FIND_FORWARD][127.1]
+- Added [`WebExtensionController.AddonManagerDelegate.onOptionalPermissionsChanged`][127.2] ([bug 1892302]({{bugzilla}}1892302).
+- Added a new [`TranslationState`][127.3] constructor to add `hasVisibleChange` and deprecated the prior [`TranslationsState`][127.4] constructor to be removed in v130.
+
+[127.1]: {{javadoc_uri}}/GeckoSession.html#FINDER_FIND_FORWARD
+[127.2]: {{javadoc_uri}}/WebExtensionController.AddonManagerDelegate.html#onOptionalPermissionsChanged
+[127.3]: {{javadoc_uri}}/TranslationsController.SessionTranslation.TranslationState.html#%3Cinit%3E(org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationPair,java.lang.String,org.mozilla.geckoview.TranslationsController.SessionTranslation.DetectedLanguages,java.lang.Boolean,java.lang.Boolean)
+[127.4]: {{javadoc_uri}}/TranslationsController.SessionTranslation.TranslationState.html#<init>(org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationPair,java.lang.String,org.mozilla.geckoview.TranslationsController.SessionTranslation.DetectedLanguages,java.lang.Boolean)
+
 ## v125
 - ⚠️ Deprecated [`GeckoSession.NavigationDelegate.onLocationChange`][125.1], to be removed in v127.
 ([bug 1837601]({{bugzilla}}1837601))
@@ -23,6 +47,9 @@ while a user gesture was active (e.g., a tap).
 - ⚠️ Deprecated [`RuntimeTelemetry`][125.5], [`GeckoRuntimeSettings.getTelemetryDelegate`][125.6] and [`GeckoRuntimeSettings.telemetryDelegate`][125.7], to be removed in v127.
 ([bug 1877836]({{bugzilla}}1877836))
 - Added [`WebExtension.MetaData.grantedOptionalPermissions`][125.8] and [`WebExtension.MetaData.grantedOptionalOrigins`][125.9] which expose the granted optional and origin optional permissions of an extension ([bug 1879543]({{bugzilla}}1879543)).
+- Added [`WebExtension.MetaData.promptPermissions`][125.10] which exposes a list of permissions which needs to be prompted to users ([bug 1879547]({{bugzilla}}1879547)).
+- ⚠️ Deprecate the [`WebExtension.MetaData.permissions`][125.11] API to be removed in v131. Please use `WebExtension.MetaData.promptPermissions`][125.10] instead.
+- Added [`WebExtensionController.addOptionalPermissions`][125.12] and [`WebExtensionController.removeOptionalPermissions`][125.13], which allow to add and remove optional permissions/origins of an extension ([bug 1796176]({{bugzilla}}1796176)).
 
 [125.1]: {{javadoc_uri}}/GeckoSession.NavigationDelegate#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String,java.util.List)
 [125.2]: {{javadoc_uri}}/GeckoSession.NavigationDelegate#onLocationChange(org.mozilla.geckoview.GeckoSession,java.lang.String,java.util.List,boolean)
@@ -33,6 +60,10 @@ while a user gesture was active (e.g., a tap).
 [125.7]: {{javadoc_uri}}/GeckoRuntimeSettings.html#telemetryDelegate
 [125.8]: {{javadoc_uri}}/WebExtension.MetaData.html#grantedOptionalPermissions
 [125.9]: {{javadoc_uri}}/WebExtension.MetaData.html#grantedOptionalOrigins
+[125.10]: {{javadoc_uri}}/WebExtension.MetaData.html#promptPermissions
+[125.11]: {{javadoc_uri}}/WebExtension.MetaData.html#permissions
+[125.12]: {{javadoc_uri}}/WebExtensionController.html#addOptionalPermissions
+[125.13]: {{javadoc_uri}}/WebExtensionController.html#removeOptionalPermissions
 
 ## v124
 
@@ -1540,4 +1571,4 @@ to allow adding gecko profiler markers.
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport(android.content.Context,android.os.Bundle,java.lang.String)
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: fc9fd590333bebf38058b7abddbb7a860cd6e4de
+[api-version]: 24697aa7b11e3d09335606e1951de2dd4c9f15df

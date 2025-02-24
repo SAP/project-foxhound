@@ -43,7 +43,7 @@ user_pref("gfx.logging.level", 1);
 user_pref("image.downscale-during-decode.enabled", false);
 // We do the capturing the reftest results with sync decoding
 // so we want to be consistent.
-user_pref("image.decode-sync.enabled", true);
+user_pref("image.testing.decode-sync.enabled", true);
 // Disable interruptible reflow since (1) it's normally not going to
 // happen, but (2) it might happen if we somehow end up with both
 // pending user events and clock skew.  So to avoid having to change
@@ -85,7 +85,12 @@ user_pref("testing.supports.moz-bool-pref", false);
 // server in the middle of the tests.
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("toolkit.telemetry.server", "https://%(server)s/telemetry-dummy/");
+// Default Glean to "record but don't report" mode, and to never trigger
+// activity-based ping submission. Docs:
+// https://firefox-source-docs.mozilla.org/toolkit/components/glean/dev/preferences.html
 user_pref("telemetry.fog.test.localhost_port", -1);
+user_pref("telemetry.fog.test.activity_limit", -1);
+user_pref("telemetry.fog.test.inactivity_limit", -1);
 user_pref("ui.caretBlinkTime", -1);
 user_pref("ui.caretWidth", 1);
 user_pref("ui.prefersReducedMotion", 0);
@@ -103,3 +108,5 @@ user_pref("toolkit.legacyUserProfileCustomizations.stylesheets", true);
 user_pref("layout.css.prefers-color-scheme.content-override", 1);
 // Force OffscreenCanvas support
 user_pref("gfx.offscreencanvas.enabled", true);
+// Turn off update
+user_pref("app.update.disabledForTesting", true);

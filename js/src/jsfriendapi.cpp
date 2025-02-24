@@ -420,6 +420,23 @@ JS_PUBLIC_API JSFunction* js::NewFunctionByIdWithReserved(
                                  gc::AllocKind::FUNCTION_EXTENDED);
 }
 
+JS_PUBLIC_API JSFunction* js::NewFunctionByIdWithReservedAndProto(
+    JSContext* cx, JSNative native, HandleObject proto, unsigned nargs,
+    unsigned flags, jsid id) {
+  MOZ_ASSERT(id.isAtom());
+  MOZ_ASSERT(!cx->zone()->isAtomsZone());
+  MOZ_ASSERT(native);
+  CHECK_THREAD(cx);
+  cx->check(id);
+
+  Rooted<JSAtom*> atom(cx, id.toAtom());
+  FunctionFlags funflags = (flags & JSFUN_CONSTRUCTOR)
+                               ? FunctionFlags::NATIVE_CTOR
+                               : FunctionFlags::NATIVE_FUN;
+  return NewFunctionWithProto(cx, native, nargs, funflags, nullptr, atom, proto,
+                              gc::AllocKind::FUNCTION_EXTENDED, TenuredObject);
+}
+
 JS_PUBLIC_API const Value& js::GetFunctionNativeReserved(JSObject* fun,
                                                          size_t which) {
   MOZ_ASSERT(fun->as<JSFunction>().isNativeFun());
@@ -625,9 +642,9 @@ extern JS_PUBLIC_API bool JS::ForceLexicalInitialization(JSContext* cx,
   return initializedAny;
 }
 
-extern JS_PUBLIC_API int JS::IsGCPoisoning() {
+extern JS_PUBLIC_API bool JS::IsGCPoisoning() {
 #ifdef JS_GC_ALLOW_EXTRA_POISONING
-  return js::gExtraPoisoningEnabled;
+  return JS::Prefs::extra_gc_poisoning();
 #else
   return false;
 #endif

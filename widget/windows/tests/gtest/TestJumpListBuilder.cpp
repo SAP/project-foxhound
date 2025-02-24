@@ -275,14 +275,14 @@ class TestingJumpListBackend : public JumpListBackend {
  * @param {nsTArray<WindowsJumpListShortcutDescription>&} aArray
  *   The outparam for the array of generated
  * WindowsJumpListShortcutDescriptions.
- * @param {nsTArray<JS::Value>&} aJSValArray
+ * @param {JS::Handle<JSObject*>} aJSArrayObj
  *   The outparam for the array of JS::Value's representing the generated
  *   WindowsJumpListShortcutDescriptions.
  */
 void GenerateWindowsJumpListShortcutDescriptions(
     JSContext* aCx, uint32_t howMany, bool longDescription,
     nsTArray<WindowsJumpListShortcutDescription>& aArray,
-    nsTArray<JS::Value>& aJSValArray) {
+    JS::Handle<JSObject*> aJSArrayObj) {
   for (uint32_t i = 0; i < howMany; ++i) {
     WindowsJumpListShortcutDescription desc;
     nsAutoString title(u"Test Task #");
@@ -321,7 +321,8 @@ void GenerateWindowsJumpListShortcutDescriptions(
     aArray.AppendElement(desc);
     JS::Rooted<JS::Value> descJSValue(aCx);
     ASSERT_TRUE(ToJSValue(aCx, desc, &descJSValue));
-    aJSValArray.AppendElement(std::move(descJSValue));
+
+    MOZ_ALWAYS_TRUE(JS_SetElement(aCx, aJSArrayObj, i, descJSValue));
   }
 }
 
@@ -393,15 +394,15 @@ TEST(JumpListBuilder, CheckForRemovals)
   EXPECT_CALL(*testBackend, BeginList)
       .WillOnce([](UINT* pcMinSlots, REFIID riid, void** ppv) {
         RefPtr<IObjectCollection> collection;
-        DebugOnly<HRESULT> hr = CoCreateInstance(
+        HRESULT hr = CoCreateInstance(
             CLSID_EnumerableObjectCollection, nullptr, CLSCTX_INPROC_SERVER,
             IID_IObjectCollection, getter_AddRefs(collection));
-        MOZ_ASSERT(SUCCEEDED(hr));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
 
         RefPtr<IShellLinkW> link;
         hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
                               IID_IShellLinkW, getter_AddRefs(link));
-        MOZ_ASSERT(SUCCEEDED(hr));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
 
         nsAutoString firstLinkHref(u"https://example.com"_ns);
         link->SetArguments(firstLinkHref.get());
@@ -421,7 +422,7 @@ TEST(JumpListBuilder, CheckForRemovals)
         RefPtr<IObjectArray> pArray;
         hr = collection->QueryInterface(IID_IObjectArray,
                                         getter_AddRefs(pArray));
-        MOZ_ASSERT(SUCCEEDED(hr));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
 
         *ppv = static_cast<IObjectArray*>(pArray);
         (static_cast<IUnknown*>(*ppv))->AddRef();
@@ -478,6 +479,115 @@ TEST(JumpListBuilder, CheckForRemovals)
 }
 
 /**
+ * Tests calling CheckForRemovals and receiving a jump list entry with a very
+ * long URL doesn't result in JumpListBuilder truncating the URL before handing
+ * it back to the caller. Expects the following calls in order:
+ *
+ * - SetAppID
+ * - AbortList
+ * - BeginList
+ * - AbortList
+ */
+TEST(JumpListBuilder, CheckForRemovalsLongURL)
+{
+  RefPtr<StrictMock<TestingJumpListBackend>> testBackend =
+      new StrictMock<TestingJumpListBackend>();
+  nsAutoString aumid(u"TestApplicationID");
+  // We set up this expectation here because SetAppID will be called soon
+  // after construction of the JumpListBuilder via the background thread.
+  EXPECT_CALL(*testBackend, SetAppID(_)).Times(1);
+
+  nsCOMPtr<nsIJumpListBuilder> builder =
+      new JumpListBuilder(aumid, testBackend);
+  ASSERT_TRUE(builder);
+
+  EXPECT_CALL(*testBackend, AbortList()).Times(2);
+
+  constexpr static const nsLiteralString veryLongHref(
+      u"https://example.verylongurl.test/first/second/third/fourth/fifth/"
+      "sixth/seventh/eighth/ninth/tenth/eleventh/twelfth/thirteenth/"
+      "fourteenth/fifteenth-path-item/some/more/junk/after/that/more/more/"
+      "more/more/more/more/more/more/more/more/more/more/more/more/more/more/"
+      "more/more/more/more/more/more/more/more/more/more/more"_ns);
+  // This test ensures that URLs longer than MAX_PATH do not get truncated by
+  // JumpListBuilder or one of its utilities, so we must ensure that the static
+  // URL we just defined is actually longer than MAX_PATH.
+  static_assert(veryLongHref.Length() > MAX_PATH);
+
+  // Let's prepare BeginList to return a one entry collection of IShellLinks.
+  // The IShellLink will have the URL be very long - over MAX_PATH characters.
+  EXPECT_CALL(*testBackend, BeginList)
+      .WillOnce([](UINT* pcMinSlots, REFIID riid, void** ppv) {
+        RefPtr<IObjectCollection> collection;
+        HRESULT hr = CoCreateInstance(
+            CLSID_EnumerableObjectCollection, nullptr, CLSCTX_INPROC_SERVER,
+            IID_IObjectCollection, getter_AddRefs(collection));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+        RefPtr<IShellLinkW> link;
+        hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_IShellLinkW, getter_AddRefs(link));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+        link->SetArguments(veryLongHref.get());
+
+        nsAutoString appPath(u"C:\\Tmp\\firefox.exe"_ns);
+        link->SetIconLocation(appPath.get(), 0);
+
+        collection->AddObject(link);
+
+        RefPtr<IObjectArray> pArray;
+        hr = collection->QueryInterface(IID_IObjectArray,
+                                        getter_AddRefs(pArray));
+        MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+        *ppv = static_cast<IObjectArray*>(pArray);
+        (static_cast<IUnknown*>(*ppv))->AddRef();
+
+        // This is the default value to return, according to
+        // https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-icustomdestinationlist-beginlist
+        *pcMinSlots = 10;
+
+        return S_OK;
+      });
+
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
+  JSContext* cx = jsapi.cx();
+  RefPtr<Promise> promise;
+  nsresult rv = builder->CheckForRemovals(cx, getter_AddRefs(promise));
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_TRUE(promise);
+
+  RefPtr<WaitForResolver> resolver = new WaitForResolver();
+  promise->AppendNativeHandler(resolver);
+  JS::Rooted<JS::Value> result(cx);
+  resolver->SpinUntilResolvedWithResult(&result);
+
+  ASSERT_TRUE(result.isObject());
+  JS::Rooted<JSObject*> obj(cx, result.toObjectOrNull());
+
+  bool isArray;
+  ASSERT_TRUE(JS::IsArrayObject(cx, obj, &isArray));
+  ASSERT_TRUE(isArray);
+
+  // We should expect to see 1 URL string returned in the array.
+  uint32_t length = 0;
+  ASSERT_TRUE(JS::GetArrayLength(cx, obj, &length));
+  ASSERT_EQ(length, 1U);
+
+  // The URL should match veryLongHref
+  JS::Rooted<JS::Value> returnedURLValue(cx);
+  ASSERT_TRUE(JS_GetElement(cx, obj, 0, &returnedURLValue));
+  JS::Rooted<JSString*> returnedURLValueJSString(cx,
+                                                 returnedURLValue.toString());
+  nsAutoJSString returnedURLValueAutoString;
+  ASSERT_TRUE(returnedURLValueAutoString.init(cx, returnedURLValueJSString));
+
+  ASSERT_TRUE(returnedURLValueAutoString.Equals(veryLongHref));
+}
+
+/**
  * Tests calling PopulateJumpList with empty arguments, which should call the
  * following methods on the backend, in order:
  *
@@ -506,9 +616,13 @@ TEST(JumpListBuilder, PopulateJumpListEmpty)
   JSContext* cx = jsapi.cx();
   RefPtr<Promise> promise;
 
-  nsTArray<JS::Value> taskDescJSVals;
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx, JS::ObjectValue(*taskDescsObj));
+
   nsAutoString customTitle(u"");
-  nsTArray<JS::Value> customDescJSVals;
+
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
 
   EXPECT_CALL(*testBackend, AbortList()).Times(1);
   EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
@@ -516,7 +630,7 @@ TEST(JumpListBuilder, PopulateJumpListEmpty)
   EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
 
   nsresult rv =
-      builder->PopulateJumpList(taskDescJSVals, customTitle, customDescJSVals,
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
                                 cx, getter_AddRefs(promise));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE(promise);
@@ -558,13 +672,15 @@ TEST(JumpListBuilder, PopulateJumpListOnlyTasks)
   JSContext* cx = jsapi.cx();
   RefPtr<Promise> promise;
 
-  nsTArray<JS::Value> taskDescJSVals;
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx, JS::ObjectValue(*taskDescsObj));
   nsTArray<WindowsJumpListShortcutDescription> taskDescs;
   GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, taskDescs,
-                                              taskDescJSVals);
+                                              taskDescsObj);
 
   nsAutoString customTitle(u"");
-  nsTArray<JS::Value> customDescJSVals;
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
 
   EXPECT_CALL(*testBackend, AbortList()).Times(1);
   EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
@@ -575,7 +691,7 @@ TEST(JumpListBuilder, PopulateJumpListOnlyTasks)
   EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
 
   nsresult rv =
-      builder->PopulateJumpList(taskDescJSVals, customTitle, customDescJSVals,
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
                                 cx, getter_AddRefs(promise));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE(promise);
@@ -617,13 +733,17 @@ TEST(JumpListBuilder, PopulateJumpListOnlyCustomItems)
   JSContext* cx = jsapi.cx();
   RefPtr<Promise> promise;
 
-  nsTArray<WindowsJumpListShortcutDescription> descs;
-  nsTArray<JS::Value> customDescJSVals;
-  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, descs,
-                                              customDescJSVals);
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx);
+  taskDescsJSVal.setObject(*taskDescsObj);
 
   nsAutoString customTitle(u"My custom title");
-  nsTArray<JS::Value> taskDescJSVals;
+
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
+  nsTArray<WindowsJumpListShortcutDescription> descs;
+  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, descs,
+                                              customDescsObj);
 
   EXPECT_CALL(*testBackend, AbortList()).Times(1);
   EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
@@ -636,7 +756,7 @@ TEST(JumpListBuilder, PopulateJumpListOnlyCustomItems)
   EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
 
   nsresult rv =
-      builder->PopulateJumpList(taskDescJSVals, customTitle, customDescJSVals,
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
                                 cx, getter_AddRefs(promise));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE(promise);
@@ -679,17 +799,19 @@ TEST(JumpListBuilder, PopulateJumpList)
   JSContext* cx = jsapi.cx();
   RefPtr<Promise> promise;
 
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx, JS::ObjectValue(*taskDescsObj));
   nsTArray<WindowsJumpListShortcutDescription> taskDescs;
-  nsTArray<JS::Value> taskDescJSVals;
   GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, taskDescs,
-                                              taskDescJSVals);
-
-  nsTArray<WindowsJumpListShortcutDescription> customDescs;
-  nsTArray<JS::Value> customDescJSVals;
-  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, customDescs,
-                                              customDescJSVals);
+                                              taskDescsObj);
 
   nsAutoString customTitle(u"My custom title");
+
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
+  nsTArray<WindowsJumpListShortcutDescription> customDescs;
+  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, customDescs,
+                                              customDescsObj);
 
   EXPECT_CALL(*testBackend, AbortList()).Times(1);
   EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
@@ -702,7 +824,77 @@ TEST(JumpListBuilder, PopulateJumpList)
   EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
 
   nsresult rv =
-      builder->PopulateJumpList(taskDescJSVals, customTitle, customDescJSVals,
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
+                                cx, getter_AddRefs(promise));
+  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  ASSERT_TRUE(promise);
+
+  RefPtr<WaitForResolver> resolver = new WaitForResolver();
+  promise->AppendNativeHandler(resolver);
+  JS::Rooted<JS::Value> result(cx);
+  resolver->SpinUntilResolved();
+}
+
+/**
+ * Tests calling PopulateJumpList with tasks and custom items, but makes it so
+ * that AppendCategory returns E_ACCESSDENIED, which can occur if Windows is
+ * configured to not show recently opened items. The PopulateJumpList Promise
+ * should still resolve.
+ *
+ * - SetAppID
+ * - AbortList
+ * - BeginList
+ * - AddUserTasks
+ * - AppendCategory
+ * - CommitList
+ *
+ * This should result in a jump list with just built-in tasks.
+ */
+TEST(JumpListBuilder, PopulateJumpListNoOpenedItems)
+{
+  RefPtr<StrictMock<TestingJumpListBackend>> testBackend =
+      new StrictMock<TestingJumpListBackend>();
+  nsAutoString aumid(u"TestApplicationID");
+  // We set up this expectation here because SetAppID will be called soon
+  // after construction of the JumpListBuilder via the background thread.
+  EXPECT_CALL(*testBackend, SetAppID(_)).Times(1);
+
+  nsCOMPtr<nsIJumpListBuilder> builder =
+      new JumpListBuilder(aumid, testBackend);
+  ASSERT_TRUE(builder);
+
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(xpc::PrivilegedJunkScope()));
+  JSContext* cx = jsapi.cx();
+  RefPtr<Promise> promise;
+
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx, JS::ObjectValue(*taskDescsObj));
+  nsTArray<WindowsJumpListShortcutDescription> taskDescs;
+  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, taskDescs,
+                                              taskDescsObj);
+
+  nsAutoString customTitle(u"My custom title");
+
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
+  nsTArray<WindowsJumpListShortcutDescription> customDescs;
+  GenerateWindowsJumpListShortcutDescriptions(cx, 2, false, customDescs,
+                                              customDescsObj);
+
+  EXPECT_CALL(*testBackend, AbortList()).Times(1);
+  EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
+  EXPECT_CALL(*testBackend, AddUserTasks(ShellLinksEq(&taskDescs))).Times(1);
+
+  EXPECT_CALL(*testBackend, AppendCategory(LPCWSTREq(customTitle.get()),
+                                           ShellLinksEq(&customDescs)))
+      .WillOnce([] { return E_ACCESSDENIED; });
+
+  EXPECT_CALL(*testBackend, CommitList()).Times(1);
+  EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
+
+  nsresult rv =
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
                                 cx, getter_AddRefs(promise));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE(promise);
@@ -780,15 +972,20 @@ TEST(JumpListBuilder, TruncateDescription)
   JSContext* cx = jsapi.cx();
   RefPtr<Promise> promise;
 
+  JS::Rooted<JSObject*> taskDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> taskDescsJSVal(cx, JS::ObjectValue(*taskDescsObj));
   nsTArray<WindowsJumpListShortcutDescription> taskDescs;
-  nsTArray<JS::Value> taskDescJSVals;
   GenerateWindowsJumpListShortcutDescriptions(cx, 2, true, taskDescs,
-                                              taskDescJSVals);
+                                              taskDescsObj);
 
+  nsAutoString customTitle(u"My custom title");
+
+  JS::Rooted<JSObject*> customDescsObj(cx, JS::NewArrayObject(cx, 0));
+  JS::Rooted<JS::Value> customDescsJSVal(cx, JS::ObjectValue(*customDescsObj));
   nsTArray<WindowsJumpListShortcutDescription> customDescs;
-  nsTArray<JS::Value> customDescJSVals;
   GenerateWindowsJumpListShortcutDescriptions(cx, 2, true, customDescs,
-                                              customDescJSVals);
+                                              customDescsObj);
+
   // We expect the long descriptions to be truncated to 260 characters, so
   // we'll truncate the descriptions here ourselves.
   for (auto& taskDesc : taskDescs) {
@@ -797,8 +994,6 @@ TEST(JumpListBuilder, TruncateDescription)
   for (auto& customDesc : customDescs) {
     customDesc.mDescription.SetLength(MAX_PATH - 1);
   }
-
-  nsAutoString customTitle(u"My custom title");
 
   EXPECT_CALL(*testBackend, AbortList()).Times(1);
   EXPECT_CALL(*testBackend, BeginList(_, _, _)).Times(1);
@@ -811,7 +1006,7 @@ TEST(JumpListBuilder, TruncateDescription)
   EXPECT_CALL(*testBackend, DeleteList(_)).Times(0);
 
   nsresult rv =
-      builder->PopulateJumpList(taskDescJSVals, customTitle, customDescJSVals,
+      builder->PopulateJumpList(taskDescsJSVal, customTitle, customDescsJSVal,
                                 cx, getter_AddRefs(promise));
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   ASSERT_TRUE(promise);

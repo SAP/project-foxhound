@@ -17,7 +17,8 @@ namespace InspectorUtils {
   sequence<CSSStyleRule> getCSSStyleRules(
     Element element,
     optional [LegacyNullToEmptyString] DOMString pseudo = "",
-    optional boolean relevantLinkVisited = false);
+    optional boolean relevantLinkVisited = false,
+    optional boolean withStartingStyle = false);
   unsigned long getRuleLine(CSSRule rule);
   unsigned long getRuleColumn(CSSRule rule);
   unsigned long getRelativeRuleLine(CSSRule rule);
@@ -78,6 +79,8 @@ namespace InspectorUtils {
 
   boolean isElementThemed(Element element);
 
+  boolean isUsedColorSchemeDark(Element element);
+
   Element? containingBlockOf(Element element);
 
   // If the element is styled as display:block, returns an array of numbers giving
@@ -88,17 +91,26 @@ namespace InspectorUtils {
   [NewObject] NodeList getOverflowingChildrenOfElement(Element element);
   sequence<DOMString> getRegisteredCssHighlights(Document document, optional boolean activeOnly = false);
   sequence<InspectorCSSPropertyDefinition> getCSSRegisteredProperties(Document document);
+  boolean valueMatchesSyntax(Document document, UTF8String value, UTF8String syntax);
 
-  // Get the start and end offsets of the first rule body within initialText
+  // Get the first rule body text within initialText
   // Consider the following example:
   // p {
   //  line-height: 2em;
   //  color: blue;
   // }
-  // Calling the function with the whole text above would return offsets we can use to
-  // get "line-height: 2em; color: blue;"
+  // Calling the function with the whole text above would return:
+  // "line-height: 2em; color: blue;"
   // Returns null when opening curly bracket wasn't found in initialText
-  InspectorGetRuleBodyTextResult? getRuleBodyTextOffsets(UTF8String initialText);
+  UTF8String? getRuleBodyText(UTF8String initialText);
+
+  // Returns string where the rule body text at passed line and column in styleSheetText
+  // is replaced by newBodyText.
+  UTF8String? replaceBlockRuleBodyTextInStylesheet(
+    UTF8String styleSheetText,
+    unsigned long line,
+    unsigned long column,
+    UTF8String newBodyText);
 };
 
 dictionary SupportsOptions {
@@ -177,11 +189,6 @@ dictionary InspectorCSSPropertyDefinition {
   required boolean fromJS;
 };
 
-dictionary InspectorGetRuleBodyTextResult {
-  required double startOffset;
-  required double endOffset;
-};
-
 dictionary InspectorStyleSheetRuleCountAndAtRulesResult {
   required sequence<CSSRule> atRules;
   required unsigned long ruleCount;
@@ -223,4 +230,54 @@ interface InspectorFontFace {
   readonly attribute DOMString localName; // empty string  if not a src:local(...) rule
   readonly attribute DOMString format; // as per http://www.w3.org/TR/css3-webfonts/#referencing
   readonly attribute DOMString metadata; // XML metadata from WOFF file (if any)
+};
+
+dictionary InspectorCSSToken {
+  // The token type.
+  required UTF8String tokenType;
+
+  // Text associated with the token.
+  required UTF8String text;
+
+  // Value of the token. Might differ from `text`:
+  // - for `Function` tokens, text contains the opening paren, `value` does not (e.g. `var(` vs `var`)
+  // - for `AtKeyword` tokens, text contains the leading `@`, `value` does not (e.g. `@media` vs `media`)
+  // - for `Hash` and `IDHash` tokens, text contains the leading `#`, `value` does not (e.g. `#myid` vs `myid`)
+  // - for `UnquotedUrl` tokens, text contains the `url(` parts, `value` only holds the url (e.g. `url(test.jpg)` vs `test.jpg`)
+  // - for `QuotedString` tokens, text contains the wrapping quotes, `value` does not (e.g. `"hello"` vs `hello`)
+  // - for `Comment` tokens, text contains leading `/*` and trailing `*/`, `value` does not (e.g. `/* yo */` vs ` yo `)
+  required UTF8String? value;
+
+  // Unit for Dimension tokens
+  required UTF8String? unit;
+
+  // Float value for Dimension, Number and Percentage tokens
+  double? number = null;
+};
+
+/**
+ * InspectorCSSParser is an interface to the CSS lexer. It tokenizes an
+ * input stream and returns CSS tokens.
+ */
+[Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled",
+ Exposed=Window]
+interface InspectorCSSParser {
+  constructor(UTF8String text);
+
+  /**
+   * The line number of the most recently returned token.  Line
+   * numbers are 0-based.
+   */
+  readonly attribute unsigned long lineNumber;
+
+  /**
+   * The column number of the most recently returned token.  Column
+   * numbers are 1-based.
+   */
+  readonly attribute unsigned long columnNumber;
+
+  /**
+   * Return the next token, or null at EOF.
+   */
+  InspectorCSSToken? nextToken();
 };

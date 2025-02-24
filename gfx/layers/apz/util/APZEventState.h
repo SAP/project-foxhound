@@ -39,6 +39,11 @@ namespace layers {
 
 class ActiveElementManager;
 
+namespace apz {
+enum class PrecedingPointerDown : bool { NotConsumed, ConsumedByContent };
+enum class SingleTapState : uint8_t;
+}  // namespace apz
+
 typedef std::function<void(uint64_t /* input block id */,
                            bool /* prevent default */)>
     ContentReceivedInputBlockCallback;
@@ -52,6 +57,8 @@ class APZEventState final {
   typedef ScrollableLayerGuid::ViewID ViewID;
 
  public:
+  using PrecedingPointerDown = apz::PrecedingPointerDown;
+
   APZEventState(nsIWidget* aWidget,
                 ContentReceivedInputBlockCallback&& aCallback);
 
@@ -103,17 +110,19 @@ class APZEventState final {
   RefPtr<ActiveElementManager> mActiveElementManager;
   ContentReceivedInputBlockCallback mContentReceivedInputBlockCallback;
   TouchCounter mTouchCounter;
-  bool mPendingTouchPreventedResponse;
   ScrollableLayerGuid mPendingTouchPreventedGuid;
   uint64_t mPendingTouchPreventedBlockId;
-  bool mEndTouchIsClick;
-  bool mFirstTouchCancelled;
-  bool mTouchEndCancelled;
+  apz::SingleTapState mEndTouchState;
+  PrecedingPointerDown mPrecedingPointerDownState =
+      PrecedingPointerDown::NotConsumed;
+  bool mPendingTouchPreventedResponse = false;
+  bool mFirstTouchCancelled = false;
+  bool mTouchEndCancelled = false;
   // Set to true when we have received any one of
   // touch-move/touch-end/touch-cancel events in the touch block being
   // processed.
-  bool mReceivedNonTouchStart;
-  bool mTouchStartPrevented;
+  bool mReceivedNonTouchStart = false;
+  bool mTouchStartPrevented = false;
 
   int32_t mLastTouchIdentifier;
   nsTArray<TouchBehaviorFlags> mTouchBlockAllowedBehaviors;

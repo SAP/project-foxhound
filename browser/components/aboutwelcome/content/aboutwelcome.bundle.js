@@ -560,7 +560,22 @@ class WelcomeScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCo
     if (action.theme) {
       let themeToUse = action.theme === "<event>" ? event.currentTarget.value : this.props.initialTheme || action.theme;
       this.props.setActiveTheme(themeToUse);
-      window.AWSelectTheme(themeToUse);
+      if (props.content.tiles?.category?.type === "wallpaper") {
+        const theme = themeToUse.split("-")?.[1];
+        let actionWallpaper = {
+          ...props.content.tiles.category.action
+        };
+        actionWallpaper.data.actions.forEach(async wpAction => {
+          if (wpAction.data.pref.name?.includes("dark")) {
+            wpAction.data.pref.value = `dark-${theme}`;
+          } else {
+            wpAction.data.pref.value = `light-${theme}`;
+          }
+          await _lib_aboutwelcome_utils_mjs__WEBPACK_IMPORTED_MODULE_2__.AboutWelcomeUtils.handleUserAction(actionWallpaper);
+        });
+      } else {
+        window.AWSelectTheme(themeToUse);
+      }
     }
 
     // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
@@ -1113,7 +1128,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
         background: content.background,
         "--mr-secondary-background-position-y": content.split_narrow_bkg_position
       } : {}
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
+    }, content.dismiss_button && content.reverse_split ? this.renderDismissButton() : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: content.image_alt_text
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: "sr-only image-alt",
@@ -1197,7 +1212,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       content: content,
       handleAction: this.props.handleAction,
       position: "top"
-    }) : null, includeNoodles ? this.renderNoodles() : null, content.dismiss_button ? this.renderDismissButton() : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+    }) : null, includeNoodles ? this.renderNoodles() : null, content.dismiss_button && !content.reverse_split ? this.renderDismissButton() : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `main-content ${hideStepsIndicator ? "no-steps" : ""}`,
       style: {
         background: content.background && isCenterPosition ? content.background : null,
@@ -1214,8 +1229,11 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
       alt: "",
       role: "presentation"
     })) : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
-      className: "main-content-inner"
-    }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
+      className: "main-content-inner",
+      style: {
+        justifyContent: content.split_content_justify_content
+      }
+    }, content.title || content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
       className: `welcome-text ${content.title_style || ""}`
     }, content.title ? this.renderTitle(content) : null, content.subtitle ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
       text: content.subtitle
@@ -1228,7 +1246,7 @@ class ProtonScreen extends (react__WEBPACK_IMPORTED_MODULE_0___default().PureCom
     })) : null, content.cta_paragraph ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_CTAParagraph__WEBPACK_IMPORTED_MODULE_8__.CTAParagraph, {
       content: content.cta_paragraph,
       handleAction: this.props.handleAction
-    }) : null), content.video_container ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_OnboardingVideo__WEBPACK_IMPORTED_MODULE_10__.OnboardingVideo, {
+    }) : null) : null, content.video_container ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_OnboardingVideo__WEBPACK_IMPORTED_MODULE_10__.OnboardingVideo, {
       content: content.video_container,
       handleAction: this.props.handleAction
     }) : null, this.renderContentTiles(), this.renderLanguageSwitcher(), content.above_button_content ? this.renderOrderedContent(content.above_button_content) : null, !hideStepsIndicator && aboveButtonStepsIndicator ? this.renderStepsIndicator() : null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(ProtonScreenActionButtons, {
@@ -1448,10 +1466,11 @@ __webpack_require__.r(__webpack_exports__);
 
 
 const Themes = props => {
+  const category = props.content.tiles?.category?.type;
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", {
     className: "tiles-theme-container"
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("fieldset", {
-    className: "tiles-theme-section"
+    className: `tiles-theme-section ${category}`
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: props.content.subtitle
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("legend", {
@@ -1460,19 +1479,20 @@ const Themes = props => {
     theme,
     label,
     tooltip,
-    description
+    description,
+    type
   }) => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     key: theme + label,
     text: typeof tooltip === "object" ? tooltip : {}
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("label", {
-    className: "theme",
+    className: `theme ${type}`,
     title: theme + label
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement(_MSLocalized__WEBPACK_IMPORTED_MODULE_1__.Localized, {
     text: typeof description === "object" ? description : {}
   }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("input", {
     type: "radio",
     value: theme,
-    name: "theme",
+    name: category === "wallpaper" ? theme : "theme",
     checked: theme === props.activeTheme,
     className: "sr-only input",
     onClick: props.handleAction
@@ -2118,6 +2138,7 @@ const EmbeddedMigrationWizard = ({
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_0___default().createElement("migration-wizard", {
+    "in-aboutwelcome-bundle": "",
     "force-show-import-all": options?.force_show_import_all || "false",
     "auto-request-state": "",
     ref: ref,

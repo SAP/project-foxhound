@@ -10,6 +10,7 @@
 #include "nsDisplayList.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/gfx/CanvasManagerChild.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/ImageDataSerializer.h"
@@ -125,6 +126,17 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig) {
   mUseExternalTextureInSwapChain =
       wgpu_client_use_external_texture_in_swapChain(
           aConfig.mDevice->mId, ConvertTextureFormat(aConfig.mFormat));
+  if (!gfx::gfxVars::AllowWebGPUPresentWithoutReadback()) {
+    mUseExternalTextureInSwapChain = false;
+  }
+#ifdef XP_WIN
+  // When WebRender does not use hardware acceleration, disable external texture
+  // in swap chain. Since compositor device might not exist.
+  if (gfx::gfxVars::UseSoftwareWebRender() &&
+      !gfx::gfxVars::AllowSoftwareWebRenderD3D11()) {
+    mUseExternalTextureInSwapChain = false;
+  }
+#endif
   mTexture = aConfig.mDevice->InitSwapChain(
       mConfig.get(), mRemoteTextureOwnerId.ref(),
       mUseExternalTextureInSwapChain, mGfxFormat, mCanvasSize);
@@ -143,7 +155,7 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig) {
 }
 
 void CanvasContext::Unconfigure() {
-  if (mBridge && mBridge->IsOpen() && mRemoteTextureOwnerId) {
+  if (mBridge && mBridge->CanSend() && mRemoteTextureOwnerId) {
     mBridge->SendSwapChainDrop(
         *mRemoteTextureOwnerId,
         layers::ToRemoteTextureTxnType(mFwdTransactionTracker),
@@ -192,6 +204,10 @@ RefPtr<Texture> CanvasContext::GetCurrentTexture(ErrorResult& aRv) {
 }
 
 void CanvasContext::MaybeQueueSwapChainPresent() {
+  if (!mConfig) {
+    return;
+  }
+
   MOZ_ASSERT(mTexture);
 
   if (mTexture) {
@@ -213,7 +229,7 @@ void CanvasContext::MaybeQueueSwapChainPresent() {
 
 Maybe<layers::SurfaceDescriptor> CanvasContext::SwapChainPresent() {
   mPendingSwapChainPresent = false;
-  if (!mBridge || !mBridge->IsOpen() || mRemoteTextureOwnerId.isNothing() ||
+  if (!mBridge || !mBridge->CanSend() || mRemoteTextureOwnerId.isNothing() ||
       !mTexture) {
     return Nothing();
   }
@@ -325,7 +341,7 @@ already_AddRefed<mozilla::gfx::SourceSurface> CanvasContext::GetSurfaceSnapshot(
     return nullptr;
   }
 
-  if (!mBridge || !mBridge->IsOpen() || mRemoteTextureOwnerId.isNothing()) {
+  if (!mBridge || !mBridge->CanSend() || mRemoteTextureOwnerId.isNothing()) {
     return nullptr;
   }
 

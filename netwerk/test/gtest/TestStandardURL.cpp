@@ -14,6 +14,7 @@
 #include "nsSerializationHelper.h"
 #include "mozilla/Base64.h"
 #include "nsEscape.h"
+#include "nsURLHelper.h"
 
 using namespace mozilla;
 
@@ -438,4 +439,31 @@ TEST(TestStandardURL, ParseIPv4Num)
   uint32_t number;
   Test_ParseIPv4Number("0x10"_ns, 16, number, 255);
   ASSERT_EQ(number, (uint32_t)16);
+}
+
+TEST(TestStandardURL, CoalescePath)
+{
+  auto testCoalescing = [](const char* input, const char* expected) {
+    nsAutoCString buf(input);
+    net_CoalesceDirs(NET_COALESCE_NORMAL, buf.BeginWriting());
+    ASSERT_EQ(nsCString(buf.get()), nsCString(expected));
+  };
+
+  testCoalescing("/.", "/");
+  testCoalescing("/..", "/");
+  testCoalescing("/foo/foo1/.", "/foo/foo1/");
+  testCoalescing("/foo/../foo1", "/foo1");
+  testCoalescing("/foo/./foo1", "/foo/foo1");
+  testCoalescing("/foo/foo1/..", "/foo/");
+
+  // Bug 1890346
+  testCoalescing("/..?/..", "/?/..");
+
+  testCoalescing("/.?/..", "/?/..");
+  testCoalescing("/./../?", "/?");
+  testCoalescing("/.abc", "/.abc");
+  testCoalescing("//", "//");
+  testCoalescing("/../", "/");
+  testCoalescing("/./", "/");
+  testCoalescing("/.../", "/.../");
 }

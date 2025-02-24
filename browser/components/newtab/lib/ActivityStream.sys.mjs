@@ -36,6 +36,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TelemetryFeed: "resource://activity-stream/lib/TelemetryFeed.sys.mjs",
   TopSitesFeed: "resource://activity-stream/lib/TopSitesFeed.sys.mjs",
   TopStoriesFeed: "resource://activity-stream/lib/TopStoriesFeed.sys.mjs",
+  WallpaperFeed: "resource://activity-stream/lib/WallpaperFeed.sys.mjs",
+  WeatherFeed: "resource://activity-stream/lib/WeatherFeed.sys.mjs",
 });
 
 // NB: Eagerly load modules that will be loaded/constructed/initialized in the
@@ -43,7 +45,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 import {
   actionCreators as ac,
   actionTypes as at,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 
 const REGION_BASIC_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
@@ -54,6 +56,16 @@ function showSpocs({ geo }) {
     lazy.NimbusFeatures.pocketNewtab.getVariable("regionSpocsConfig") || "";
   const spocsGeo = spocsGeoString.split(",").map(s => s.trim());
   return spocsGeo.includes(geo);
+}
+
+function showWeather({ geo }) {
+  const weatherGeoString =
+    lazy.NimbusFeatures.pocketNewtab.getVariable("regionWeatherConfig") || "";
+  const weatherGeo = weatherGeoString
+    .split(",")
+    .map(s => s.trim())
+    .filter(item => item);
+  return weatherGeo.includes(geo);
 }
 
 // Configure default Activity Stream prefs with a plain `value` or a `getValue`
@@ -128,6 +140,50 @@ export const PREFS_CONFIG = new Map([
     {
       title: "Show sponsored top sites",
       value: true,
+    },
+  ],
+  [
+    "system.showWeather",
+    {
+      title: "system.showWeather",
+      // pref is dynamic
+      getValue: showWeather,
+    },
+  ],
+  [
+    "showWeather",
+    {
+      title: "showWeather",
+      value: true,
+    },
+  ],
+  [
+    "weather.query",
+    {
+      title: "weather.query",
+      value: "",
+    },
+  ],
+  [
+    "weather.locationSearchEnabled",
+    {
+      title: "Enable the option to search for a specific city",
+      value: false,
+    },
+  ],
+  [
+    "weather.temperatureUnits",
+    {
+      title: "Switch the temperature between Celsius and Fahrenheit",
+      getValue: args => (args.locale === "en-US" ? "f" : "c"),
+    },
+  ],
+  [
+    "weather.display",
+    {
+      title:
+        "Toggle the weather widget to include a text summary of the current conditions",
+      value: "simple",
     },
   ],
   [
@@ -230,6 +286,84 @@ export const PREFS_CONFIG = new Map([
     {
       title: "The rendering order for the sections",
       value: "topsites,topstories,highlights",
+    },
+  ],
+  [
+    "newtabWallpapers.enabled",
+    {
+      title: "Boolean flag to turn wallpaper functionality on and off",
+      value: false,
+    },
+  ],
+  [
+    "newtabWallpapers.v2.enabled",
+    {
+      title: "Boolean flag to turn wallpaper v2 functionality on and off",
+      value: false,
+    },
+  ],
+  [
+    "newtabWallpapers.highlightEnabled",
+    {
+      title: "Boolean flag to show the highlight about the Wallpaper feature",
+      value: false,
+    },
+  ],
+  [
+    "newtabWallpapers.highlightDismissed",
+    {
+      title:
+        "Boolean flag to remember if the user has seen the feature highlight",
+      value: false,
+    },
+  ],
+  [
+    "newtabWallpapers.highlightSeenCounter",
+    {
+      title: "Count the number of times a user has seen the feature highlight",
+      value: 0,
+    },
+  ],
+  [
+    "newtabWallpapers.highlightHeaderText",
+    {
+      title: "Changes the wallpaper feature highlight header text",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.highlightContentText",
+    {
+      title: "Changes the wallpaper feature highlight content text",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.highlightCtaText",
+    {
+      title: "Changes the wallpaper feature highlight cta text",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.wallpaper-light",
+    {
+      title: "Currently set light wallpaper",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.wallpaper-dark",
+    {
+      title: "Currently set dark wallpaper",
+      value: "",
+    },
+  ],
+  [
+    "newtabWallpapers.wallpaper",
+    {
+      title: "Currently set wallpaper",
+      value: "",
     },
   ],
   [
@@ -522,6 +656,18 @@ const FEEDS_DATA = [
     name: "discoverystreamfeed",
     factory: () => new lazy.DiscoveryStreamFeed(),
     title: "Handles new pocket ui for the new tab page",
+    value: true,
+  },
+  {
+    name: "wallpaperfeed",
+    factory: () => new lazy.WallpaperFeed(),
+    title: "Handles fetching and managing wallpaper data from RemoteSettings",
+    value: true,
+  },
+  {
+    name: "weatherfeed",
+    factory: () => new lazy.WeatherFeed(),
+    title: "Handles fetching and caching weather data",
     value: true,
   },
 ];

@@ -1035,6 +1035,36 @@ if (IsCSSPropertyPrefEnabled("layout.css.basic-shape-rect.enabled")) {
   );
 }
 
+var basicShapeShapeValues = [];
+var basicShapeShapeValuesWithFillRule = [];
+if (IsCSSPropertyPrefEnabled("layout.css.basic-shape-shape.enabled")) {
+  basicShapeShapeValuesWithFillRule.push(
+    "shape(evenodd from 0px 0px, line to 10px 10px)",
+    "shape(nonzero from 0px 0px, line to 10px 10px)"
+  );
+
+  basicShapeShapeValues.push(
+    "shape(from 0px 0%, line to 10px 10%)",
+    "shape(from 10px 10px, move by 10px 5px, line by 20px 40%, close)",
+    "shape(from 10px 10px, hline by 10px, vline to 5rem)",
+    "shape(from 10px 10px, vline by 5%, hline to 1vw)",
+    "shape(from 10px 10px, curve to 50px 20px via 10rem 1%)",
+    "shape(from 10px 10px, smooth to 50px 20px via 10rem 1%)",
+    "shape(from 10% 1rem, arc to 50px 1pt of 20% cw large rotate 25deg)"
+  );
+
+  // It's fine to include this for properties which don't support shape(),
+  // e.g. shape-outside, because they must reject these values.
+  basicShapeInvalidValues.push(
+    "shape()",
+    "shape(evenodd, from 0px 0px)",
+    "shape(from 0px 0px line to 10px 10px)",
+    "shape(from 0px 0px)",
+    "shape(close)",
+    "shape(nonzero, close)"
+  );
+}
+
 if (/* mozGradientsEnabled */ true) {
   // Maybe one day :(
   // Extend gradient lists with valid/invalid moz-prefixed expressions:
@@ -2922,6 +2952,43 @@ var gCSSProperties = {
       "calc(0px)",
     ],
     invalid_values: ["20", "-1px", "50%"],
+  },
+  "container-type": {
+    domProp: "containerType",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["normal"],
+    other_values: ["inline-size", "size"],
+    invalid_values: [
+      "none style",
+      "none inline-size",
+      "inline-size none",
+      "style none",
+      "style style",
+      "inline-size style inline-size",
+      "inline-size block-size",
+      "block-size",
+      "block-size style",
+      "size inline-size",
+      "size block-size",
+    ],
+  },
+  "container-name": {
+    domProp: "containerName",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: ["foo bar", "foo", "baz bazz", "foo foo"],
+    invalid_values: ["foo unset", "none bar", "foo initial", "initial foo"],
+  },
+  container: {
+    domProp: "container",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: ["container-type", "container-name"],
+    initial_values: ["none"],
+    other_values: ["foo / size", "foo bar / size", "foo / inline-size", "foo"],
+    invalid_values: ["size / foo", "size / foo bar"],
   },
   d: {
     domProp: "d",
@@ -5352,7 +5419,6 @@ var gCSSProperties = {
       "counter(\\()",
       "counters(a\\+b, '.')",
       "counter(\\}, upper-alpha)",
-      "-moz-alt-content",
       "counter(foo, symbols('*'))",
       "counter(foo, symbols(numeric '0' '1'))",
       "counters(foo, '.', symbols('*'))",
@@ -5370,6 +5436,7 @@ var gCSSProperties = {
       "attr(-2)",
       "counter(2)",
       "counters(-2, '.')",
+      "-moz-alt-content",
       "-moz-alt-content 'foo'",
       "'foo' -moz-alt-content",
       "counter(one, two, three) 'foo'",
@@ -6841,6 +6908,130 @@ var gCSSProperties = {
       "left 10px top",
     ],
   },
+  offset: {
+    domProp: "offset",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    subproperties: [
+      "offset-path",
+      "offset-distance",
+      "offset-rotate",
+      "offset-anchor",
+      "offset-position",
+    ],
+    initial_values: ["none"],
+    other_values: [
+      "none 30deg reverse",
+      "none 50px reverse 30deg",
+      "none calc(10px + 20%) auto",
+      "none reverse",
+      "none / left center",
+      "path('M 0 0 H 1') -200% auto",
+      "path('M 0 0 H 1') -200%",
+      "path('M 0 0 H 1') 50px",
+      "path('M 0 0 H 1') auto",
+      "path('M 0 0 H 1') reverse 30deg 50px",
+      "path('M 0 0 H 1')",
+      "path('m 20 0 h 100') -7rad 8px / auto",
+      "path('m 0 30 v 100') -7rad 8px / left top",
+      "path('m 0 0 h 100') -7rad 8px",
+      "path('M 0 0 H 100') 100px 0deg",
+      "top right / top left",
+      "top right ray(45deg closest-side)",
+      "50% 50% ray(0rad farthest-side)",
+    ],
+    invalid_values: [
+      "100px 0deg path('m 0 0 h 100')",
+      "30deg",
+      "auto 30deg 100px",
+      "auto / none",
+      "none /",
+      "none / 100px 20px 30deg",
+      "path('M 20 30 A 60 70 80') bottom",
+      "path('M 20 30 A 60 70 80') bottom top",
+      "path('M 20 30 A 60 70 80') 100px 200px",
+      "path('M 20 30 A 60 70 80') reverse auto",
+      "path('M 20 30 A 60 70 80') reverse 10px 30deg",
+      "path('M 20 30 A 60 70 80') /",
+    ],
+  },
+  "offset-anchor": {
+    domProp: "offsetAnchor",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: [
+      "left bottom",
+      "center center",
+      "calc(20% + 10px) center",
+      "right 30em",
+      "10px 20%",
+      "left -10px top -20%",
+      "right 10% bottom 20em",
+    ],
+    invalid_values: ["none", "10deg", "left 10% top"],
+  },
+  "offset-distance": {
+    domProp: "offsetDistance",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["0"],
+    other_values: ["10px", "10%", "190%", "-280%", "calc(30px + 40%)"],
+    invalid_values: ["none", "45deg"],
+  },
+  "offset-path": {
+    domProp: "offsetPath",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "ray(0deg)",
+      "ray(45deg closest-side)",
+      "ray(0rad farthest-side)",
+      "ray(0.5turn closest-corner contain)",
+      "ray(200grad farthest-corner)",
+      "ray(sides 180deg)",
+      "ray(contain farthest-side 180deg)",
+      "ray(calc(180deg - 45deg) farthest-side)",
+      "ray(0deg at center center)",
+      "ray(at 10% 10% 1rad)",
+    ]
+      .concat(pathValues.other_values)
+      .concat(basicShapeOtherValues)
+      .concat(basicShapeXywhRectValues)
+      .concat(basicShapeShapeValues),
+    invalid_values: [
+      "path('')",
+      "ray(closest-side)",
+      "ray(0deg, closest-side)",
+      "ray(contain 0deg closest-side contain)",
+    ].concat(pathValues.invalid_values),
+  },
+  "offset-position": {
+    domProp: "offsetPosition",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["normal"],
+    other_values: [
+      "auto",
+      "left bottom",
+      "center center",
+      "calc(20% + 10px) center",
+      "right 30em",
+      "10px 20%",
+      "left -10px top -20%",
+      "right 10% bottom 20em",
+    ],
+    invalid_values: ["none", "10deg", "left 10% top"],
+  },
+  "offset-rotate": {
+    domProp: "offsetRotate",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["reverse", "0deg", "0rad reverse", "-45deg", "5turn auto"],
+    invalid_values: ["none", "10px", "reverse 0deg reverse", "reverse auto"],
+  },
   opacity: {
     domProp: "opacity",
     inherited: false,
@@ -7751,7 +7942,19 @@ var gCSSProperties = {
     applies_to_placeholder: true,
     // don't know whether left and right are same as start
     initial_values: ["start"],
-    other_values: ["center", "justify", "end", "match-parent"],
+    other_values: [
+      "center",
+      "justify",
+      "end",
+      "match-parent",
+      // At least -webkit-center is needed for compat, see bug 1899042.
+      "-moz-center",
+      "-webkit-center",
+      "-moz-left",
+      "-webkit-left",
+      "-moz-right",
+      "-webkit-right",
+    ],
     invalid_values: [
       "true",
       "true true",
@@ -8827,7 +9030,9 @@ var gCSSProperties = {
       .concat(basicShapeSVGBoxValues)
       .concat(basicShapeOtherValues)
       .concat(basicShapeOtherValuesWithFillRule)
-      .concat(basicShapeXywhRectValues),
+      .concat(basicShapeXywhRectValues)
+      .concat(basicShapeShapeValues)
+      .concat(basicShapeShapeValuesWithFillRule),
     invalid_values: [
       "path(nonzero)",
       "path(abs, 'M 10 10 L 10 10 z')",
@@ -11767,122 +11972,120 @@ function get_computed_value(cs, property) {
   }
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.individual-transform.enabled")) {
-  gCSSProperties.rotate = {
-    domProp: "rotate",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: [
-      "45deg",
-      "45grad",
-      "72rad",
-      "0.25turn",
-      ".57rad",
-      "0 0 0 0rad",
-      "0 0 1 45deg",
-      "0 0 1 0rad",
-      "0rad 0 0 1",
-      "10rad 10 20 30",
-      "x 10rad",
-      "y 10rad",
-      "z 10rad",
-      "10rad x",
-      "10rad y",
-      "10rad z",
-      /* valid calc() values */
-      "calc(1) 0 0 calc(45deg + 5rad)",
-      "0 1 0 calc(400grad + 1rad)",
-      "calc(0.5turn + 10deg)",
-    ],
-    invalid_values: [
-      "0",
-      "7",
-      "0, 0, 1, 45deg",
-      "0 0 45deg",
-      "0 0 20rad",
-      "0 0 0 0",
-      "x x 10rad",
-      "x y 10rad",
-      "0 0 1 10rad z",
-      "0 0 1 z 10rad",
-      "z 0 0 1 10rad",
-      "0 0 z 1 10rad",
-      /* invalid calc() values */
-      "0.5 1 0 calc(45deg + 10)",
-      "calc(0.5turn + 10%)",
-    ],
-  };
+gCSSProperties.rotate = {
+  domProp: "rotate",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["none"],
+  other_values: [
+    "45deg",
+    "45grad",
+    "72rad",
+    "0.25turn",
+    ".57rad",
+    "0 0 0 0rad",
+    "0 0 1 45deg",
+    "0 0 1 0rad",
+    "0rad 0 0 1",
+    "10rad 10 20 30",
+    "x 10rad",
+    "y 10rad",
+    "z 10rad",
+    "10rad x",
+    "10rad y",
+    "10rad z",
+    /* valid calc() values */
+    "calc(1) 0 0 calc(45deg + 5rad)",
+    "0 1 0 calc(400grad + 1rad)",
+    "calc(0.5turn + 10deg)",
+  ],
+  invalid_values: [
+    "0",
+    "7",
+    "0, 0, 1, 45deg",
+    "0 0 45deg",
+    "0 0 20rad",
+    "0 0 0 0",
+    "x x 10rad",
+    "x y 10rad",
+    "0 0 1 10rad z",
+    "0 0 1 z 10rad",
+    "z 0 0 1 10rad",
+    "0 0 z 1 10rad",
+    /* invalid calc() values */
+    "0.5 1 0 calc(45deg + 10)",
+    "calc(0.5turn + 10%)",
+  ],
+};
 
-  gCSSProperties.translate = {
-    domProp: "translate",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    prerequisites: { width: "10px", height: "10px", display: "block" },
-    initial_values: ["none"],
-    other_values: [
-      "-4px",
-      "3px",
-      "4em",
-      "50%",
-      "4px 5px 6px",
-      "4px 5px",
-      "50% 5px 6px",
-      "50% 10% 6em",
-      /* valid calc() values */
-      "calc(5px + 10%)",
-      "calc(0.25 * 5px + 10% / 3)",
-      "calc(5px - 10% * 3)",
-      "calc(5px - 3 * 10%) 50px",
-      "-50px calc(5px - 10% * 3)",
-      "10px calc(min(5px,10%))",
-    ],
-    invalid_values: [
-      "1",
-      "-moz-min(5px,10%)",
-      "4px, 5px, 6px",
-      "3px 4px 1px 7px",
-      "4px 5px 10%",
-      /* invalid calc() values */
-      "calc(max(5px,10%) 10%)",
-      "calc(nonsense)",
-    ],
-  };
-  gCSSProperties.scale = {
-    domProp: "scale",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: [
-      "10",
-      "10%",
-      "10 20",
-      "10% 20%",
-      "10 20 30",
-      "10% 20% 30%",
-      "10 20% 30",
-      "-10",
-      "-10%",
-      "-10 20",
-      "-10% 20%",
-      "-10 20 -30",
-      "-10% 20% -30%",
-      "-10 20% -30",
-      "0 2.0",
-      /* valid calc() values */
-      "calc(1 + 2)",
-      "calc(10) calc(20) 30",
-    ],
-    invalid_values: [
-      "10px",
-      "10deg",
-      "10, 20, 30",
-      /* invalid calc() values */
-      "calc(1 + 20%)",
-      "10 calc(1 + 10px)",
-    ],
-  };
-}
+gCSSProperties.translate = {
+  domProp: "translate",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  prerequisites: { width: "10px", height: "10px", display: "block" },
+  initial_values: ["none"],
+  other_values: [
+    "-4px",
+    "3px",
+    "4em",
+    "50%",
+    "4px 5px 6px",
+    "4px 5px",
+    "50% 5px 6px",
+    "50% 10% 6em",
+    /* valid calc() values */
+    "calc(5px + 10%)",
+    "calc(0.25 * 5px + 10% / 3)",
+    "calc(5px - 10% * 3)",
+    "calc(5px - 3 * 10%) 50px",
+    "-50px calc(5px - 10% * 3)",
+    "10px calc(min(5px,10%))",
+  ],
+  invalid_values: [
+    "1",
+    "-moz-min(5px,10%)",
+    "4px, 5px, 6px",
+    "3px 4px 1px 7px",
+    "4px 5px 10%",
+    /* invalid calc() values */
+    "calc(max(5px,10%) 10%)",
+    "calc(nonsense)",
+  ],
+};
+gCSSProperties.scale = {
+  domProp: "scale",
+  inherited: false,
+  type: CSS_TYPE_LONGHAND,
+  initial_values: ["none"],
+  other_values: [
+    "10",
+    "10%",
+    "10 20",
+    "10% 20%",
+    "10 20 30",
+    "10% 20% 30%",
+    "10 20% 30",
+    "-10",
+    "-10%",
+    "-10 20",
+    "-10% 20%",
+    "-10 20 -30",
+    "-10% 20% -30%",
+    "-10 20% -30",
+    "0 2.0",
+    /* valid calc() values */
+    "calc(1 + 2)",
+    "calc(10) calc(20) 30",
+  ],
+  invalid_values: [
+    "10px",
+    "10deg",
+    "10, 20, 30",
+    /* invalid calc() values */
+    "calc(1 + 20%)",
+    "10 calc(1 + 10px)",
+  ],
+};
 
 if (
   IsCSSPropertyPrefEnabled("layout.css.transform-box-content-stroke.enabled")
@@ -12192,14 +12395,6 @@ if (isGridTemplateMasonryValueEnabled) {
     other_values: ["pack ordered", "ordered next", "next definite-first"],
     invalid_values: ["auto", "none", "10px", "row", "dense"],
   };
-
-  let alignTracks = { ...gCSSProperties["align-content"] };
-  alignTracks.domProp = "alignTracks";
-  gCSSProperties["align-tracks"] = alignTracks;
-
-  let justifyTracks = { ...gCSSProperties["justify-content"] };
-  justifyTracks.domProp = "justifyTracks";
-  gCSSProperties["justify-tracks"] = justifyTracks;
 }
 
 gCSSProperties["display"].other_values.push("grid", "inline-grid");
@@ -12887,8 +13082,21 @@ if (IsCSSPropertyPrefEnabled("layout.css.osx-font-smoothing.enabled")) {
     applies_to_cue: true,
     applies_to_marker: true,
     initial_values: ["auto"],
-    other_values: ["grayscale"],
-    invalid_values: ["none", "subpixel-antialiased", "antialiased"],
+    other_values: ["grayscale", "subpixel-antialiased", "antialiased"],
+    invalid_values: ["none"],
+  };
+
+  gCSSProperties["-webkit-font-smoothing"] = {
+    domProp: "webkitFontSmoothing",
+    inherited: true,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    applies_to_marker: true,
+    alias_for: "-moz-osx-font-smoothing",
+    subproperties: ["-moz-osx-font-smoothing"],
   };
 }
 
@@ -13104,43 +13312,188 @@ if (IsCSSPropertyPrefEnabled("layout.css.contain-intrinsic-size.enabled")) {
   };
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.container-queries.enabled")) {
-  gCSSProperties["container-type"] = {
-    domProp: "containerType",
+if (IsCSSPropertyPrefEnabled("layout.css.anchor-positioning.enabled")) {
+  gCSSProperties["anchor-name"] = {
+    domProp: "anchorName",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: ["--foo", "--foo, --baz", "--foo,--baz", "--foo ,--baz"],
+    invalid_values: [
+      "--foo --bar",
+      "foo",
+      "none bar",
+      "none --baz",
+      "--foo bar",
+      ",--foo",
+      "--foo,",
+    ],
+  };
+
+  gCSSProperties["anchor-scope"] = {
+    domProp: "anchorScope",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "all",
+      "--foo",
+      "--foo, --baz",
+      "--foo,--baz",
+      "--foo ,--baz",
+    ],
+    invalid_values: [
+      "all, --foo",
+      "--foo, all",
+      "--foo --bar",
+      "foo",
+      "none bar",
+      "none --baz",
+      "--foo bar",
+      ",--foo",
+      "--foo,",
+    ],
+  };
+
+  gCSSProperties["inset-area"] = {
+    domProp: "insetArea",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "center",
+      "span-all",
+      "left",
+      "right",
+      "span-left",
+      "span-right",
+      "x-start",
+      "x-end",
+      "span-x-start",
+      "span-x-end",
+      "x-self-start",
+      "x-self-end",
+      "span-x-self-start",
+      "span-x-self-end",
+      "top",
+      "bottom",
+      "span-top",
+      "span-bottom",
+      "y-start",
+      "y-end",
+      "span-y-start",
+      "span-y-end",
+      "y-self-start",
+      "y-self-end",
+      "span-y-self-start",
+      "span-y-self-end",
+      "block-start",
+      "block-end",
+      "span-block-start",
+      "span-block-end",
+      "inline-start",
+      "inline-end",
+      "span-inline-start",
+      "span-inline-end",
+      "self-block-start",
+      "self-block-end",
+      "span-self-block-start",
+      "span-self-block-end",
+      "self-inline-start",
+      "self-inline-end",
+      "span-self-inline-start",
+      "span-self-inline-end",
+      "start",
+      "end",
+      "span-start",
+      "span-end",
+      "self-start",
+      "self-end",
+      "span-self-start",
+      "span-self-end",
+      "center span-all",
+      "left center",
+      "span-left bottom",
+      "span-block-end inline-start",
+      "span-inline-start block-end",
+      "self-block-end span-self-inline-start",
+      "start center",
+      "span-start span-end",
+      "self-end span-self-start",
+    ],
+    invalid_values: [
+      "auto",
+      "none left",
+      "left self-top",
+      "right block-end",
+      "top self-end",
+      "y-self-end x-end",
+      "inline-start self-block-end",
+      "span-self-inline-start start",
+      "end span-self-start",
+    ],
+  };
+
+  gCSSProperties["position-anchor"] = {
+    domProp: "positionAnchor",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["--foo"],
+    invalid_values: ["none", "--foo, auto", "auto, --bar", "foo"],
+  };
+
+  gCSSProperties["position-try-options"] = {
+    domProp: "positionTryOptions",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: [
+      "--foo",
+      "flip-block",
+      "flip-inline",
+      "flip-start",
+      "left",
+      "span-y-start",
+      "span-block-start inline-end",
+      "span-all self-block-end",
+      "end span-start",
+      "center span-all",
+    ],
+    invalid_values: [
+      "foo",
+      "none none",
+      "span-y-start self-block-end",
+      "flip-block flip-start",
+    ],
+  };
+
+  gCSSProperties["position-try-order"] = {
+    domProp: "positionTryOrder",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["normal"],
-    other_values: ["inline-size", "size"],
-    invalid_values: [
-      "none style",
-      "none inline-size",
-      "inline-size none",
-      "style none",
-      "style style",
-      "inline-size style inline-size",
-      "inline-size block-size",
-      "block-size",
-      "block-size style",
-      "size inline-size",
-      "size block-size",
+    other_values: [
+      "most-width",
+      "most-heigh",
+      "most-block-size",
+      "most-inline-size",
     ],
+    invalid_values: ["auto", "none", "foo"],
   };
-  gCSSProperties["container-name"] = {
-    domProp: "containerName",
+
+  gCSSProperties["position-visibility"] = {
+    domProp: "positionVisibility",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: ["foo bar", "foo", "baz bazz", "foo foo"],
-    invalid_values: ["foo unset", "none bar", "foo initial", "initial foo"],
-  };
-  gCSSProperties["container"] = {
-    domProp: "container",
-    inherited: false,
-    type: CSS_TYPE_TRUE_SHORTHAND,
-    subproperties: ["container-type", "container-name"],
-    initial_values: ["none"],
-    other_values: ["foo / size", "foo bar / size", "foo / inline-size", "foo"],
-    invalid_values: ["size / foo", "size / foo bar"],
+    initial_values: ["always"],
+    other_values: ["anchors-valid", "anchors-visible", "no-overflow"],
+    invalid_values: [
+      "none",
+      "auto",
+      "always anchors-valid",
+      "anchors-visible always",
+    ],
   };
 }
 
@@ -13409,156 +13762,8 @@ gCSSProperties["scrollbar-width"] = {
   invalid_values: ["1px"],
 };
 
-gCSSProperties["offset"] = {
-  domProp: "offset",
-  inherited: false,
-  type: CSS_TYPE_TRUE_SHORTHAND,
-  subproperties: [
-    "offset-path",
-    "offset-distance",
-    "offset-rotate",
-    "offset-anchor",
-  ],
-  initial_values: ["none"],
-  other_values: [
-    "none 30deg reverse",
-    "none 50px reverse 30deg",
-    "none calc(10px + 20%) auto",
-    "none reverse",
-    "none / left center",
-    "path('M 0 0 H 1') -200% auto",
-    "path('M 0 0 H 1') -200%",
-    "path('M 0 0 H 1') 50px",
-    "path('M 0 0 H 1') auto",
-    "path('M 0 0 H 1') reverse 30deg 50px",
-    "path('M 0 0 H 1')",
-    "path('m 20 0 h 100') -7rad 8px / auto",
-    "path('m 0 30 v 100') -7rad 8px / left top",
-    "path('m 0 0 h 100') -7rad 8px",
-    "path('M 0 0 H 100') 100px 0deg",
-  ],
-  invalid_values: [
-    "100px 0deg path('m 0 0 h 100')",
-    "30deg",
-    "auto 30deg 100px",
-    "auto / none",
-    "none /",
-    "none / 100px 20px 30deg",
-    "path('M 20 30 A 60 70 80') bottom",
-    "path('M 20 30 A 60 70 80') bottom top",
-    "path('M 20 30 A 60 70 80') 100px 200px",
-    "path('M 20 30 A 60 70 80') reverse auto",
-    "path('M 20 30 A 60 70 80') reverse 10px 30deg",
-    "path('M 20 30 A 60 70 80') /",
-  ],
-};
-
-gCSSProperties["offset-path"] = {
-  domProp: "offsetPath",
-  inherited: false,
-  type: CSS_TYPE_LONGHAND,
-  initial_values: ["none"],
-  other_values: [...pathValues.other_values],
-  invalid_values: ["path('')"].concat(pathValues.invalid_values),
-};
-
-if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
-  gCSSProperties["offset-path"]["other_values"].push(
-    "ray(0deg)",
-    "ray(45deg closest-side)",
-    "ray(0rad farthest-side)",
-    "ray(0.5turn closest-corner contain)",
-    "ray(200grad farthest-corner)",
-    "ray(sides 180deg)",
-    "ray(contain farthest-side 180deg)",
-    "ray(calc(180deg - 45deg) farthest-side)",
-    "ray(0deg at center center)",
-    "ray(at 10% 10% 1rad)"
-  );
-
-  gCSSProperties["offset-path"]["invalid_values"].push(
-    "ray(closest-side)",
-    "ray(0deg, closest-side)",
-    "ray(contain 0deg closest-side contain)"
-  );
-}
-
-if (IsCSSPropertyPrefEnabled("layout.css.motion-path-basic-shapes.enabled")) {
-  gCSSProperties["offset-path"]["other_values"].push(
-    ...basicShapeOtherValues,
-    ...basicShapeXywhRectValues
-  );
-}
-
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path-url.enabled")) {
   gCSSProperties["offset-path"]["other_values"].push("url(#svgPath)");
-}
-
-gCSSProperties["offset-distance"] = {
-  domProp: "offsetDistance",
-  inherited: false,
-  type: CSS_TYPE_LONGHAND,
-  initial_values: ["0"],
-  other_values: ["10px", "10%", "190%", "-280%", "calc(30px + 40%)"],
-  invalid_values: ["none", "45deg"],
-};
-
-gCSSProperties["offset-rotate"] = {
-  domProp: "offsetRotate",
-  inherited: false,
-  type: CSS_TYPE_LONGHAND,
-  initial_values: ["auto"],
-  other_values: ["reverse", "0deg", "0rad reverse", "-45deg", "5turn auto"],
-  invalid_values: ["none", "10px", "reverse 0deg reverse", "reverse auto"],
-};
-
-gCSSProperties["offset-anchor"] = {
-  domProp: "offsetAnchor",
-  inherited: false,
-  type: CSS_TYPE_LONGHAND,
-  initial_values: ["auto"],
-  other_values: [
-    "left bottom",
-    "center center",
-    "calc(20% + 10px) center",
-    "right 30em",
-    "10px 20%",
-    "left -10px top -20%",
-    "right 10% bottom 20em",
-  ],
-  invalid_values: ["none", "10deg", "left 10% top"],
-};
-
-if (
-  IsCSSPropertyPrefEnabled("layout.css.motion-path-offset-position.enabled")
-) {
-  gCSSProperties["offset"]["subproperties"].push("offset-position");
-  gCSSProperties["offset"]["other_values"].push("top right / top left");
-
-  if (IsCSSPropertyPrefEnabled("layout.css.motion-path-ray.enabled")) {
-    gCSSProperties["offset"]["other_values"].push(
-      "top right ray(45deg closest-side)",
-      "50% 50% ray(0rad farthest-side)"
-    );
-  }
-
-  gCSSProperties["offset-position"] = {
-    domProp: "offsetPosition",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["normal"],
-    other_values: [
-      "auto",
-      "left bottom",
-      "center center",
-      "calc(20% + 10px) center",
-      "right 30em",
-      "10px 20%",
-      "left -10px top -20%",
-      "right 10% bottom 20em",
-    ],
-    invalid_values: ["none", "10deg", "left 10% top"],
-  };
 }
 
 {

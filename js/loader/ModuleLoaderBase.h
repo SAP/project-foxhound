@@ -165,20 +165,30 @@ class ScriptLoaderInterface : public nsISupports {
  */
 class ModuleLoaderBase : public nsISupports {
   /*
-   * The set of requests that are waiting for an ongoing fetch to complete.
+   * Represents an ongoing load operation for a URI initiated for one request
+   * and which may have other requests waiting for it to complete.
+   *
+   * These are tracked in the mFetchingModules map.
    */
-  class WaitingRequests final : public nsISupports {
-    virtual ~WaitingRequests() = default;
+  class LoadingRequest final : public nsISupports {
+    virtual ~LoadingRequest() = default;
 
    public:
     NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-    NS_DECL_CYCLE_COLLECTION_CLASS(WaitingRequests)
+    NS_DECL_CYCLE_COLLECTION_CLASS(LoadingRequest)
 
+    // The request that initiated the load and which is currently fetching or
+    // being compiled.
+    RefPtr<ModuleLoadRequest> mRequest;
+
+    // A list of any other requests for the same URI that are waiting for the
+    // initial load to complete. These will be resumed by ResumeWaitingRequests
+    // when that happens.
     nsTArray<RefPtr<ModuleLoadRequest>> mWaiting;
   };
 
   // Module map
-  nsRefPtrHashtable<nsURIHashKey, WaitingRequests> mFetchingModules;
+  nsRefPtrHashtable<nsURIHashKey, LoadingRequest> mFetchingModules;
   nsRefPtrHashtable<nsURIHashKey, ModuleScript> mFetchedModules;
 
   // List of dynamic imports that are currently being loaded.
@@ -240,6 +250,8 @@ class ModuleLoaderBase : public nsISupports {
   virtual already_AddRefed<ModuleLoadRequest> CreateDynamicImport(
       JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
       JS::Handle<JSString*> aSpecifier, JS::Handle<JSObject*> aPromise) = 0;
+
+  virtual bool IsDynamicImportSupported() { return true; }
 
   // Called when dynamic import started successfully.
   virtual void OnDynamicImportStarted(ModuleLoadRequest* aRequest) {}
@@ -333,10 +345,6 @@ class ModuleLoaderBase : public nsISupports {
 
   nsresult GetFetchedModuleURLs(nsTArray<nsCString>& aURLs);
 
-  // Removed a fetched module from the module map. Asserts that the module is
-  // unlinked. Extreme care should be taken when calling this method.
-  bool RemoveFetchedModule(nsIURI* aURL);
-
   // Override the module loader with given loader until ResetOverride is called.
   // While overridden, ModuleLoaderBase::GetCurrentModuleLoader returns aLoader.
   //
@@ -421,7 +429,7 @@ class ModuleLoaderBase : public nsISupports {
 
   void SetModuleFetchFinishedAndResumeWaitingRequests(
       ModuleLoadRequest* aRequest, nsresult aResult);
-  void ResumeWaitingRequests(WaitingRequests* aWaitingRequests, bool aSuccess);
+  void ResumeWaitingRequests(LoadingRequest* aLoadingRequest, bool aSuccess);
   void ResumeWaitingRequest(ModuleLoadRequest* aRequest, bool aSuccess);
 
   void StartFetchingModuleDependencies(ModuleLoadRequest* aRequest);
@@ -471,6 +479,8 @@ class ModuleLoaderBase : public nsISupports {
   void RemoveDynamicImport(ModuleLoadRequest* aRequest);
 
   nsresult CreateModuleScript(ModuleLoadRequest* aRequest);
+
+  bool IsFetchingAndHasWaitingRequest(ModuleLoadRequest* aRequest);
 
   // The slot stored in ImportMetaResolve function.
   enum { ModulePrivateSlot = 0, SlotCount };

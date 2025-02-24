@@ -1,9 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
 use serde::{Deserialize, Serialize};
 
 use crate::rs::{DownloadedGlobalConfig, DownloadedWeatherData};
 
 /// Global Suggest configuration data.
-#[derive(Clone, Default, Debug, Deserialize, Serialize)]
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SuggestGlobalConfig {
     pub show_less_frequently_cap: i32,
 }
@@ -17,7 +22,7 @@ impl From<&DownloadedGlobalConfig> for SuggestGlobalConfig {
 }
 
 /// Per-provider configuration data.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub enum SuggestProviderConfig {
     Weather { min_keyword_length: i32 },
 }

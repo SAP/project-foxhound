@@ -15,8 +15,8 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RestyleManager.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "nsGkAtoms.h"
-#include "nsIScrollableFrame.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "nsCanvasFrame.h"
 #include "nsLayoutUtils.h"
@@ -66,7 +66,7 @@ void ViewportFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   // If we have a scrollframe then it takes care of creating the display list
   // for the top layer, but otherwise we need to do it here.
-  if (!kid->IsScrollFrame()) {
+  if (!kid->IsScrollContainerFrame()) {
     bool isOpaque = false;
     if (auto* list = BuildDisplayListForTopLayer(aBuilder, &isOpaque)) {
       if (isOpaque) {
@@ -271,37 +271,27 @@ void ViewportFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
 
 /* virtual */
 nscoord ViewportFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-  if (mFrames.IsEmpty())
-    result = 0;
-  else
-    result = mFrames.FirstChild()->GetMinISize(aRenderingContext);
-
-  return result;
+  return mFrames.IsEmpty()
+             ? 0
+             : mFrames.FirstChild()->GetMinISize(aRenderingContext);
 }
 
 /* virtual */
 nscoord ViewportFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-  if (mFrames.IsEmpty())
-    result = 0;
-  else
-    result = mFrames.FirstChild()->GetPrefISize(aRenderingContext);
-
-  return result;
+  return mFrames.IsEmpty()
+             ? 0
+             : mFrames.FirstChild()->GetPrefISize(aRenderingContext);
 }
 
 nsPoint ViewportFrame::AdjustReflowInputForScrollbars(
     ReflowInput* aReflowInput) const {
   // Get our prinicpal child frame and see if we're scrollable
   nsIFrame* kidFrame = mFrames.FirstChild();
-  nsIScrollableFrame* scrollingFrame = do_QueryFrame(kidFrame);
 
-  if (scrollingFrame) {
+  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(kidFrame)) {
     WritingMode wm = aReflowInput->GetWritingMode();
-    LogicalMargin scrollbars(wm, scrollingFrame->GetActualScrollbarSizes());
+    LogicalMargin scrollbars(wm,
+                             scrollContainerFrame->GetActualScrollbarSizes());
     aReflowInput->SetComputedISize(
         aReflowInput->ComputedISize() - scrollbars.IStartEnd(wm),
         ReflowInput::ResetResizeFlags::No);
@@ -330,7 +320,6 @@ void ViewportFrame::Reflow(nsPresContext* aPresContext,
                            nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("ViewportFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE_REFLOW_IN("ViewportFrame::Reflow");
 

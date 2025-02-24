@@ -77,6 +77,16 @@ EOF
 }
 forward_decls qw/av1_common_forward_decls/;
 
+# Fallbacks for Valgrind support
+# For normal use, we require SSE4.1. However, 32-bit Valgrind does not support
+# SSE4.1, so we include fallbacks for some critical functions to improve
+# performance
+$sse2_x86 = $ssse3_x86 = '';
+if ($opts{arch} eq "x86") {
+  $sse2_x86 = 'sse2';
+  $ssse3_x86 = 'ssse3';
+}
+
 # functions that are 64 bit only.
 $mmx_x86_64 = $sse2_x86_64 = $ssse3_x86_64 = $avx_x86_64 = $avx2_x86_64 = '';
 if ($opts{arch} eq "x86_64") {
@@ -345,7 +355,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
 
   #fwd txfm
   add_proto qw/void av1_lowbd_fwd_txfm/, "const int16_t *src_diff, tran_low_t *coeff, int diff_stride, TxfmParam *txfm_param";
-  specialize qw/av1_lowbd_fwd_txfm sse2 sse4_1 avx2 neon/;
+  specialize qw/av1_lowbd_fwd_txfm sse4_1 avx2 neon/, $sse2_x86;
 
   add_proto qw/void av1_fwd_txfm2d_4x8/, "const int16_t *input, int32_t *output, int stride, TX_TYPE tx_type, int bd";
   specialize qw/av1_fwd_txfm2d_4x8 sse4_1 neon/;
@@ -436,9 +446,9 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
   specialize qw/av1_txb_init_levels sse4_1 avx2 neon/;
 
   add_proto qw/uint64_t av1_wedge_sse_from_residuals/, "const int16_t *r1, const int16_t *d, const uint8_t *m, int N";
-  specialize qw/av1_wedge_sse_from_residuals sse2 avx2 neon/;
+  specialize qw/av1_wedge_sse_from_residuals sse2 avx2 neon sve/;
   add_proto qw/int8_t av1_wedge_sign_from_residuals/, "const int16_t *ds, const uint8_t *m, int N, int64_t limit";
-  specialize qw/av1_wedge_sign_from_residuals sse2 avx2 neon/;
+  specialize qw/av1_wedge_sign_from_residuals sse2 avx2 neon sve/;
   add_proto qw/void av1_wedge_compute_delta_squares/, "int16_t *d, const int16_t *a, const int16_t *b, int N";
   specialize qw/av1_wedge_compute_delta_squares sse2 avx2 neon/;
 
@@ -448,7 +458,7 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
 
   if (aom_config("CONFIG_REALTIME_ONLY") ne "yes") {
     add_proto qw/void av1_compute_stats/,  "int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, int use_downsampled_wiener_stats";
-    specialize qw/av1_compute_stats sse4_1 avx2 neon/;
+    specialize qw/av1_compute_stats sse4_1 avx2 neon sve/;
     add_proto qw/void av1_calc_proj_params/, "const uint8_t *src8, int width, int height, int src_stride, const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride, int32_t *flt1, int flt1_stride, int64_t H[2][2], int64_t C[2], const sgr_params_type *params";
     specialize qw/av1_calc_proj_params sse4_1 avx2 neon/;
     add_proto qw/int64_t av1_lowbd_pixel_proj_error/, "const uint8_t *src8, int width, int height, int src_stride, const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride, int32_t *flt1, int flt1_stride, int xq[2], const sgr_params_type *params";
@@ -459,8 +469,8 @@ if (aom_config("CONFIG_AV1_ENCODER") eq "yes") {
       specialize qw/av1_calc_proj_params_high_bd sse4_1 avx2 neon/;
       add_proto qw/int64_t av1_highbd_pixel_proj_error/, "const uint8_t *src8, int width, int height, int src_stride, const uint8_t *dat8, int dat_stride, int32_t *flt0, int flt0_stride, int32_t *flt1, int flt1_stride, int xq[2], const sgr_params_type *params";
       specialize qw/av1_highbd_pixel_proj_error sse4_1 avx2 neon/;
-      add_proto qw/void av1_compute_stats_highbd/,  "int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth";
-      specialize qw/av1_compute_stats_highbd sse4_1 avx2 neon/;
+      add_proto qw/void av1_compute_stats_highbd/,  "int wiener_win, const uint8_t *dgd8, const uint8_t *src8, int16_t *dgd_avg, int16_t *src_avg, int h_start, int h_end, int v_start, int v_end, int dgd_stride, int src_stride, int64_t *M, int64_t *H, aom_bit_depth_t bit_depth";
+      specialize qw/av1_compute_stats_highbd sse4_1 avx2 neon sve/;
     }
   }
 
@@ -521,21 +531,21 @@ add_proto qw/void cdef_copy_rect8_16bit_to_16bit/, "uint16_t *dst, int dstride, 
 # structs as arguments, which makes the v256 type of the intrinsics
 # hard to support, so optimizations for this target are disabled.
 if ($opts{config} !~ /libs-x86-win32-vs.*/) {
-  specialize qw/cdef_find_dir sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_find_dir_dual sse2 ssse3 sse4_1 avx2 neon/;
+  specialize qw/cdef_find_dir sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_find_dir_dual sse4_1 avx2 neon/, "$ssse3_x86";
 
-  specialize qw/cdef_filter_8_0 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_8_1 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_8_2 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_8_3 sse2 ssse3 sse4_1 avx2 neon/;
+  specialize qw/cdef_filter_8_0 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_8_1 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_8_2 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_8_3 sse4_1 avx2 neon/, "$ssse3_x86";
 
-  specialize qw/cdef_filter_16_0 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_16_1 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_16_2 sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_filter_16_3 sse2 ssse3 sse4_1 avx2 neon/;
+  specialize qw/cdef_filter_16_0 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_16_1 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_16_2 sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_filter_16_3 sse4_1 avx2 neon/, "$ssse3_x86";
 
-  specialize qw/cdef_copy_rect8_8bit_to_16bit sse2 ssse3 sse4_1 avx2 neon/;
-  specialize qw/cdef_copy_rect8_16bit_to_16bit sse2 ssse3 sse4_1 avx2 neon/;
+  specialize qw/cdef_copy_rect8_8bit_to_16bit sse4_1 avx2 neon/, "$ssse3_x86";
+  specialize qw/cdef_copy_rect8_16bit_to_16bit sse4_1 avx2 neon/, "$ssse3_x86";
 }
 
 # WARPED_MOTION / GLOBAL_MOTION functions
@@ -543,6 +553,14 @@ if (aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
   add_proto qw/void av1_highbd_warp_affine/, "const int32_t *mat, const uint16_t *ref, int width, int height, int stride, uint16_t *pred, int p_col, int p_row, int p_width, int p_height, int p_stride, int subsampling_x, int subsampling_y, int bd, ConvolveParams *conv_params, int16_t alpha, int16_t beta, int16_t gamma, int16_t delta";
   specialize qw/av1_highbd_warp_affine sse4_1 avx2 neon sve/;
 }
+
+add_proto qw/bool av1_resize_vert_dir/, "uint8_t *intbuf, uint8_t *output, int out_stride, int height, int height2, int width2, int start_col";
+specialize qw/av1_resize_vert_dir sse2 avx2/;
+
+add_proto qw/void av1_resize_horz_dir/, "const uint8_t *const input, int in_stride, uint8_t *intbuf, int height, int filteredlength, int width2";
+# TODO(https://crbug.com/aomedia/3575): Restore sse2 after SSE2/AV1ResizeXTest
+# passes under 32-bit valgrind.
+specialize qw/av1_resize_horz_dir avx2/;
 
 add_proto qw/void av1_warp_affine/, "const int32_t *mat, const uint8_t *ref, int width, int height, int stride, uint8_t *pred, int p_col, int p_row, int p_width, int p_height, int p_stride, int subsampling_x, int subsampling_y, ConvolveParams *conv_params, int16_t alpha, int16_t beta, int16_t gamma, int16_t delta";
 specialize qw/av1_warp_affine sse4_1 avx2 neon neon_i8mm sve/;
@@ -584,27 +602,27 @@ if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
 
   add_proto qw/void av1_convolve_2d_scale/, "const uint8_t *src, int src_stride, uint8_t *dst, int dst_stride, int w, int h, const InterpFilterParams *filter_params_x, const InterpFilterParams *filter_params_y, const int subpel_x_qn, const int x_step_qn, const int subpel_y_qn, const int y_step_qn, ConvolveParams *conv_params";
 
-  specialize qw/av1_convolve_2d_sr sse2 avx2 neon neon_dotprod neon_i8mm/;
+  specialize qw/av1_convolve_2d_sr sse2 avx2 neon neon_dotprod neon_i8mm sve2/;
   specialize qw/av1_convolve_2d_sr_intrabc neon/;
   specialize qw/av1_convolve_x_sr sse2 avx2 neon neon_dotprod neon_i8mm/;
   specialize qw/av1_convolve_x_sr_intrabc neon/;
-  specialize qw/av1_convolve_y_sr sse2 avx2 neon/;
+  specialize qw/av1_convolve_y_sr sse2 avx2 neon neon_dotprod neon_i8mm/;
   specialize qw/av1_convolve_y_sr_intrabc neon/;
-  specialize qw/av1_convolve_2d_scale sse4_1/;
-  specialize qw/av1_dist_wtd_convolve_2d sse2 ssse3 avx2 neon neon_dotprod neon_i8mm/;
+  specialize qw/av1_convolve_2d_scale sse4_1 neon/;
+  specialize qw/av1_dist_wtd_convolve_2d ssse3 avx2 neon neon_dotprod neon_i8mm/;
   specialize qw/av1_dist_wtd_convolve_2d_copy sse2 avx2 neon/;
   specialize qw/av1_dist_wtd_convolve_x sse2 avx2 neon neon_dotprod neon_i8mm/;
   specialize qw/av1_dist_wtd_convolve_y sse2 avx2 neon/;
   if(aom_config("CONFIG_AV1_HIGHBITDEPTH") eq "yes") {
-    specialize qw/av1_highbd_dist_wtd_convolve_2d sse4_1 avx2 neon/;
-    specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon/;
-    specialize qw/av1_highbd_dist_wtd_convolve_y sse4_1 avx2 neon/;
+    specialize qw/av1_highbd_dist_wtd_convolve_2d sse4_1 avx2 neon sve2/;
+    specialize qw/av1_highbd_dist_wtd_convolve_x sse4_1 avx2 neon sve2/;
+    specialize qw/av1_highbd_dist_wtd_convolve_y sse4_1 avx2 neon sve2/;
     specialize qw/av1_highbd_dist_wtd_convolve_2d_copy sse4_1 avx2 neon/;
-    specialize qw/av1_highbd_convolve_2d_sr ssse3 avx2 neon/;
+    specialize qw/av1_highbd_convolve_2d_sr ssse3 avx2 neon sve2/;
     specialize qw/av1_highbd_convolve_2d_sr_intrabc neon/;
-    specialize qw/av1_highbd_convolve_x_sr ssse3 avx2 neon/;
+    specialize qw/av1_highbd_convolve_x_sr ssse3 avx2 neon sve2/;
     specialize qw/av1_highbd_convolve_x_sr_intrabc neon/;
-    specialize qw/av1_highbd_convolve_y_sr ssse3 avx2 neon/;
+    specialize qw/av1_highbd_convolve_y_sr ssse3 avx2 neon sve2/;
     specialize qw/av1_highbd_convolve_y_sr_intrabc neon/;
     specialize qw/av1_highbd_convolve_2d_scale sse4_1 neon/;
   }

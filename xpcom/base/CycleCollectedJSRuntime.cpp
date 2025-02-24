@@ -97,7 +97,6 @@
 #include "nsDOMJSUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsJSUtils.h"
-#include "nsStringBuffer.h"
 #include "nsWrapperCache.h"
 #include "prenv.h"
 
@@ -467,8 +466,8 @@ void TraversalTracer::onChild(JS::GCCellPtr aThing, const char* name) {
 // CycleCollectedJSRuntime. It should never be used directly.
 static const JSZoneParticipant sJSZoneCycleCollectorGlobal;
 
-static void JSObjectsTenuredCb(JSContext* aContext, void* aData) {
-  static_cast<CycleCollectedJSRuntime*>(aData)->JSObjectsTenured();
+static void JSObjectsTenuredCb(JS::GCContext* aGCContext, void* aData) {
+  static_cast<CycleCollectedJSRuntime*>(aData)->JSObjectsTenured(aGCContext);
 }
 
 static void MozCrashWarningReporter(JSContext*, JSErrorReport*) {
@@ -699,17 +698,7 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
   JS_SetGCCallback(aCx, GCCallback, this);
   mPrevGCSliceCallback = JS::SetGCSliceCallback(aCx, GCSliceCallback);
 
-  if (NS_IsMainThread()) {
-    // We would like to support all threads here, but the way timeline consumers
-    // are set up currently, you can either add a marker for one specific
-    // docshell, or for every consumer globally. We would like to add a marker
-    // for every consumer observing anything on this thread, but that is not
-    // currently possible. For now, add global markers only when we are on the
-    // main thread, since the UI for this tracing data only displays data
-    // relevant to the main-thread.
-    JS::AddGCNurseryCollectionCallback(aCx, GCNurseryCollectionCallback,
-                                       nullptr);
-  }
+  JS::AddGCNurseryCollectionCallback(aCx, GCNurseryCollectionCallback, this);
 
   JS_SetObjectsTenuredCallback(aCx, JSObjectsTenuredCb, this);
   JS::SetOutOfMemoryCallback(aCx, OutOfMemoryCallback, this);
@@ -770,10 +759,7 @@ void CycleCollectedJSRuntime::Shutdown(JSContext* aCx) {
 
   JS_SetDestroyZoneCallback(aCx, nullptr);
 
-  if (NS_IsMainThread()) {
-    JS::RemoveGCNurseryCollectionCallback(aCx, GCNurseryCollectionCallback,
-                                          nullptr);
-  }
+  JS::RemoveGCNurseryCollectionCallback(aCx, GCNurseryCollectionCallback, this);
 }
 
 CycleCollectedJSRuntime::~CycleCollectedJSRuntime() {
@@ -1135,9 +1121,8 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
 void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
     JSContext* aContext, JS::GCNurseryProgress aProgress, JS::GCReason aReason,
     void* data) {
-  CycleCollectedJSRuntime* self = CycleCollectedJSRuntime::Get();
-  MOZ_ASSERT(CycleCollectedJSContext::Get()->Context() == aContext);
-  MOZ_ASSERT(NS_IsMainThread());
+  CycleCollectedJSRuntime* self = static_cast<CycleCollectedJSRuntime*>(data);
+  MOZ_ASSERT(self->GetContext()->Context() == aContext);
 
   TimeStamp now = TimeStamp::Now();
   if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_START) {
@@ -1561,19 +1546,26 @@ void CycleCollectedJSRuntime::GarbageCollect(JS::GCOptions aOptions,
   JS::NonIncrementalGC(cx, aOptions, aReason);
 }
 
-void CycleCollectedJSRuntime::JSObjectsTenured() {
-  JSContext* cx = CycleCollectedJSContext::Get()->Context();
-  for (auto iter = mNurseryObjects.Iter(); !iter.Done(); iter.Next()) {
+void CycleCollectedJSRuntime::JSObjectsTenured(JS::GCContext* aGCContext) {
+  NurseryObjectsVector objects;
+  std::swap(objects, mNurseryObjects);
+
+  for (auto iter = objects.Iter(); !iter.Done(); iter.Next()) {
     nsWrapperCache* cache = iter.Get();
     JSObject* wrapper = cache->GetWrapperMaybeDead();
     MOZ_DIAGNOSTIC_ASSERT(wrapper);
-    if (!JS::ObjectIsTenured(wrapper)) {
+
+    if (js::gc::InCollectedNurseryRegion(wrapper)) {
       MOZ_ASSERT(!cache->PreservingWrapper());
-      js::gc::FinalizeDeadNurseryObject(cx, wrapper);
+      const JSClass* jsClass = JS::GetClass(wrapper);
+      jsClass->doFinalize(aGCContext, wrapper);
+      continue;
+    }
+
+    if (js::gc::IsInsideNursery(wrapper)) {
+      mNurseryObjects.InfallibleAppend(cache);
     }
   }
-
-  mNurseryObjects.Clear();
 }
 
 void CycleCollectedJSRuntime::NurseryWrapperAdded(nsWrapperCache* aCache) {
@@ -1675,8 +1667,7 @@ void IncrementalFinalizeRunnable::ReleaseNow(bool aLimited) {
           break;
         }
       } else {
-        while (!function.run(UINT32_MAX, function.data))
-          ;
+        while (!function.run(UINT32_MAX, function.data));
         ++mFinalizeFunctionToRun;
       }
     } while (mFinalizeFunctionToRun < mDeferredFinalizeFunctions.Length());

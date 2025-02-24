@@ -302,6 +302,7 @@ class RefTest(object):
         self.outputHandler = None
         self.testDumpFile = os.path.join(tempfile.gettempdir(), "reftests.json")
         self.currentManifest = "No test started"
+        self.gtkTheme = self.getGtkTheme()
 
         self.run_by_manifest = True
         if suite in ("crashtest", "jstestbrowser"):
@@ -327,6 +328,17 @@ class RefTest(object):
         self.log = mozlog.commandline.setup_logging(
             "reftest harness", options, {"tbpl": sys.stdout}, fmt_options
         )
+
+    def getGtkTheme(self):
+        if not platform.system() == "Linux":
+            return ""
+
+        theme_cmd = "gsettings get org.gnome.desktop.interface gtk-theme"
+        theme = subprocess.check_output(theme_cmd, shell=True, universal_newlines=True)
+        if theme:
+            theme = theme.strip("\n")
+            theme = theme.strip("'")
+        return theme.strip()
 
     def getFullPath(self, path):
         "Get an absolute path relative to self.oldcwd."
@@ -357,14 +369,14 @@ class RefTest(object):
         locations.add_host(server, scheme="http", port=port)
         locations.add_host(server, scheme="https", port=port)
 
-        sandbox_whitelist_paths = options.sandboxReadWhitelist
+        sandbox_allowlist_paths = options.sandboxReadWhitelist
         if platform.system() == "Linux" or platform.system() in (
             "Windows",
             "Microsoft",
         ):
             # Trailing slashes are needed to indicate directories on Linux and Windows
-            sandbox_whitelist_paths = map(
-                lambda p: os.path.join(p, ""), sandbox_whitelist_paths
+            sandbox_allowlist_paths = map(
+                lambda p: os.path.join(p, ""), sandbox_allowlist_paths
             )
 
         addons = []
@@ -390,7 +402,7 @@ class RefTest(object):
         kwargs = {
             "addons": addons,
             "locations": locations,
-            "whitelistpaths": sandbox_whitelist_paths,
+            "allowlistpaths": sandbox_allowlist_paths,
         }
         if profile_to_clone:
             profile = mozprofile.Profile.clone(profile_to_clone, **kwargs)
@@ -462,6 +474,9 @@ class RefTest(object):
         # config specific flags
         prefs["sandbox.apple_silicon"] = mozinfo.info.get("apple_silicon", False)
 
+        prefs["sandbox.mozinfo"] = json.dumps(mozinfo.info)
+        prefs["sandbox.os_version"] = mozinfo.info.get("os_version", "")
+
         # Set tests to run or manifests to parse.
         if tests:
             testlist = os.path.join(profile.profile, "reftests.json")
@@ -481,22 +496,6 @@ class RefTest(object):
                 prefs["reftest.totalChunks"] = options.totalChunks
             if options.thisChunk:
                 prefs["reftest.thisChunk"] = options.thisChunk
-
-        # Bug 1262954: For winXP + e10s disable acceleration
-        if (
-            platform.system() in ("Windows", "Microsoft")
-            and "5.1" in platform.version()
-            and options.e10s
-        ):
-            prefs["layers.acceleration.disabled"] = True
-
-        # Bug 1300355: Disable canvas cache for win7 as it uses
-        # too much memory and causes OOMs.
-        if (
-            platform.system() in ("Windows", "Microsoft")
-            and "6.1" in platform.version()
-        ):
-            prefs["reftest.nocache"] = True
 
         if options.marionette:
             # options.marionette can specify host:port
@@ -551,6 +550,9 @@ class RefTest(object):
         if options.suite == "jstestbrowser":
             browserEnv["TZ"] = "PST8PDT"
             browserEnv["LC_ALL"] = "en_US.UTF-8"
+
+        # This should help with consistency
+        browserEnv["GTK_THEME"] = "Adwaita"
 
         for v in options.environment:
             ix = v.find("=")
@@ -1113,6 +1115,13 @@ class RefTest(object):
         overall = 0
         status = -1
         for manifest, tests in tests_by_manifest.items():
+            if self.getGtkTheme() != self.gtkTheme:
+                self.log.error(
+                    "Theme (%s) has changed to (%s), terminating job as this is unstable"
+                    % (self.gtkTheme, self.getGtkTheme())
+                )
+                return 1
+
             self.log.info("Running tests in {}".format(manifest))
             self.currentManifest = manifest
             status = run(tests=tests)

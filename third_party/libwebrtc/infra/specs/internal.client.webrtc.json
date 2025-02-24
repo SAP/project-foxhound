@@ -7,7 +7,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -24,17 +24,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -47,7 +47,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -64,17 +64,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -88,7 +88,7 @@
           "--readline-timeout=1200",
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -105,19 +105,19 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "hard_timeout": 7200,
           "io_timeout": 7200,
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -131,7 +131,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -148,17 +148,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -172,7 +172,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -189,17 +189,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -212,7 +212,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -229,17 +229,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -252,7 +252,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -269,17 +269,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -292,7 +292,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -309,17 +309,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -332,7 +332,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -349,17 +349,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -372,47 +372,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "video_capture_tests",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
-            }
-          ],
-          "dimensions": {
-            "device_status": "available",
-            "os": "iOS-16.6",
-            "pool": "chrome.tests"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_15a507",
-              "path": "Xcode.app"
-            }
-          ],
-          "service_account": "chrome-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "video_capture_tests",
-        "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
-      },
-      {
-        "args": [
-          "--xctest",
-          "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -429,17 +389,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -480,7 +440,7 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
@@ -512,7 +472,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -529,17 +489,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -552,7 +512,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -569,17 +529,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -593,7 +553,7 @@
           "--readline-timeout=1200",
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -610,19 +570,19 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "hard_timeout": 7200,
           "io_timeout": 7200,
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -636,7 +596,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -653,17 +613,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -677,7 +637,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -694,17 +654,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -717,7 +677,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -734,17 +694,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -757,7 +717,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -774,17 +734,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -797,7 +757,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -814,17 +774,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -837,7 +797,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -854,17 +814,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],
@@ -877,47 +837,7 @@
         "args": [
           "--xctest",
           "--xcode-build-version",
-          "15a507",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "video_capture_tests",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
-            }
-          ],
-          "dimensions": {
-            "device_status": "available",
-            "os": "iOS-16.6",
-            "pool": "chrome.tests"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_15a507",
-              "path": "Xcode.app"
-            }
-          ],
-          "service_account": "chrome-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "video_capture_tests",
-        "test_id_prefix": "ninja://modules/video_capture:video_capture_tests/"
-      },
-      {
-        "args": [
-          "--xctest",
-          "--xcode-build-version",
-          "15a507",
+          "15c500b",
           "--out-dir",
           "${ISOLATED_OUTDIR}"
         ],
@@ -934,17 +854,17 @@
             {
               "cipd_package": "infra/tools/mac_toolchain/${platform}",
               "location": ".",
-              "revision": "git_revision:32d81d877ee07af07bf03b7f70ce597e323b80ce"
+              "revision": "git_revision:b28cf90d462a7bbd45c28f2d931960c2b9404cb0"
             }
           ],
           "dimensions": {
             "device_status": "available",
-            "os": "iOS-16.6",
+            "os": "iOS-16.7.1",
             "pool": "chrome.tests"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_15a507",
+              "name": "xcode_ios_15c500b",
               "path": "Xcode.app"
             }
           ],

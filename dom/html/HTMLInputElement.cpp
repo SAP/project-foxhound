@@ -2020,18 +2020,21 @@ Decimal HTMLInputElement::GetStepBase() const {
   return kDefaultStepBase;
 }
 
-nsresult HTMLInputElement::GetValueIfStepped(int32_t aStep,
-                                             StepCallerType aCallerType,
-                                             Decimal* aNextStep) {
+Decimal HTMLInputElement::GetValueIfStepped(int32_t aStep,
+                                            StepCallerType aCallerType,
+                                            ErrorResult& aRv) {
+  constexpr auto kNaN = Decimal::nan();
   if (!DoStepDownStepUpApply()) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
+    aRv.ThrowInvalidStateError("Step doesn't apply to this input type");
+    return kNaN;
   }
 
   Decimal stepBase = GetStepBase();
   Decimal step = GetStep();
   if (step == kStepAny) {
-    if (aCallerType != CALLED_FOR_USER_EVENT) {
-      return NS_ERROR_DOM_INVALID_STATE_ERR;
+    if (aCallerType != StepCallerType::ForUserEvent) {
+      aRv.ThrowInvalidStateError("Can't step an input with step=\"any\"");
+      return kNaN;
     }
     // Allow the spin buttons and up/down arrow keys to do something sensible:
     step = GetDefaultStep();
@@ -2049,7 +2052,7 @@ nsresult HTMLInputElement::GetValueIfStepped(int32_t aStep,
         // adjustment to align maximum on a step, or else (if we adjusted
         // maximum) there is no valid step between minimum and the unadjusted
         // maximum.
-        return NS_OK;
+        return kNaN;
       }
     }
   }
@@ -2096,25 +2099,20 @@ nsresult HTMLInputElement::GetValueIfStepped(int32_t aStep,
        (aStep < 0 && value > valueBeforeStepping))) {
     // We don't want step-up to effectively step down, or step-down to
     // effectively step up, so return;
-    return NS_OK;
+    return kNaN;
   }
 
-  *aNextStep = value;
-  return NS_OK;
+  return value;
 }
 
-nsresult HTMLInputElement::ApplyStep(int32_t aStep) {
-  Decimal nextStep = Decimal::nan();  // unchanged if value will not change
-
-  nsresult rv = GetValueIfStepped(aStep, CALLED_FOR_SCRIPT, &nextStep);
-
-  if (NS_SUCCEEDED(rv) && nextStep.isFinite()) {
-    // We know we're not a file input, so the caller type does not matter; just
-    // pass "not system" to be safe.
-    SetValue(nextStep, CallerType::NonSystem);
+void HTMLInputElement::ApplyStep(int32_t aStep, ErrorResult& aRv) {
+  Decimal nextStep = GetValueIfStepped(aStep, StepCallerType::ForScript, aRv);
+  if (aRv.Failed() || !nextStep.isFinite()) {
+    return;
   }
-
-  return rv;
+  // We know we're not a file input, so the caller type does not matter; just
+  // pass "not system" to be safe.
+  SetValue(nextStep, CallerType::NonSystem);
 }
 
 bool HTMLInputElement::IsDateTimeInputType(FormControlType aType) {
@@ -3554,11 +3552,9 @@ void HTMLInputElement::StepNumberControlForUserEvent(int32_t aDirection) {
     }
   }
 
-  Decimal newValue = Decimal::nan();  // unchanged if value will not change
-
-  nsresult rv = GetValueIfStepped(aDirection, CALLED_FOR_USER_EVENT, &newValue);
-
-  if (NS_FAILED(rv) || !newValue.isFinite()) {
+  Decimal newValue = GetValueIfStepped(aDirection, StepCallerType::ForUserEvent,
+                                       IgnoreErrors());
+  if (!newValue.isFinite()) {
     return;  // value should not or will not change
   }
 
@@ -3828,6 +3824,12 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
           if (mType == FormControlType::InputRadio && keyEvent->IsTrusted() &&
               !keyEvent->IsAlt() && !keyEvent->IsControl() &&
               !keyEvent->IsMeta()) {
+            // Radio button navigation needs to check visibility, so flush
+            // to ensure visibility is up to date.
+            if (Document* doc = GetComposedDoc()) {
+              doc->FlushPendingNotifications(
+                  FlushType::EnsurePresShellInitAndFrames);
+            }
             rv = MaybeHandleRadioButtonNavigation(aVisitor, keyEvent->mKeyCode);
           }
 
@@ -4023,7 +4025,7 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
             if (mType == FormControlType::InputSearch) {
               if (nsSearchControlFrame* searchControlFrame =
                       do_QueryFrame(GetPrimaryFrame())) {
-                Element* clearButton = searchControlFrame->GetAnonClearButton();
+                Element* clearButton = searchControlFrame->GetButton();
                 if (clearButton &&
                     aVisitor.mEvent->mOriginalTarget == clearButton) {
                   SetUserInput(EmptyString(),
@@ -4037,7 +4039,7 @@ nsresult HTMLInputElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
             } else if (mType == FormControlType::InputPassword) {
               if (nsTextControlFrame* textControlFrame =
                       do_QueryFrame(GetPrimaryFrame())) {
-                auto* reveal = textControlFrame->GetRevealButton();
+                auto* reveal = textControlFrame->GetButton();
                 if (reveal && aVisitor.mEvent->mOriginalTarget == reveal) {
                   SetRevealPassword(!RevealPassword());
                   // TODO(emilio): This should focus the input, but calling
@@ -5955,7 +5957,7 @@ nsresult HTMLInputElement::SetDefaultValueAsValue() {
 void HTMLInputElement::SetAutoDirectionality(bool aNotify,
                                              const nsAString* aKnownValue) {
   if (!IsAutoDirectionalityAssociated()) {
-    return SetDirectionality(GetParentDirectionality(this), aNotify);
+    return SetDirectionality(Directionality::Ltr, aNotify);
   }
   nsAutoString value;
   if (!aKnownValue) {
@@ -6461,10 +6463,10 @@ void HTMLInputElement::RemoveFromRadioGroup() {
   mRadioGroupContainer = nullptr;
 }
 
-bool HTMLInputElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                                       int32_t* aTabIndex) {
+bool HTMLInputElement::IsHTMLFocusable(IsFocusableFlags aFlags,
+                                       bool* aIsFocusable, int32_t* aTabIndex) {
   if (nsGenericHTMLFormControlElementWithState::IsHTMLFocusable(
-          aWithMouse, aIsFocusable, aTabIndex)) {
+          aFlags, aIsFocusable, aTabIndex)) {
     return true;
   }
 
@@ -6478,7 +6480,7 @@ bool HTMLInputElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
     return false;
   }
 
-  const bool defaultFocusable = IsFormControlDefaultFocusable(aWithMouse);
+  const bool defaultFocusable = IsFormControlDefaultFocusable(aFlags);
   if (CreatesDateTimeWidget()) {
     if (aTabIndex) {
       // We only want our native anonymous child to be tabable to, not ourself.
@@ -6585,7 +6587,7 @@ HTMLInputElement::ValueModeType HTMLInputElement::GetValueMode() const {
 
 bool HTMLInputElement::IsMutable() const {
   return !IsDisabled() &&
-         !(DoesReadOnlyApply() && State().HasState(ElementState::READONLY));
+         !(DoesReadWriteApply() && State().HasState(ElementState::READONLY));
 }
 
 bool HTMLInputElement::DoesRequiredApply() const {
@@ -6946,17 +6948,80 @@ bool HTMLInputElement::IsPasswordTextControl() const {
   return mType == FormControlType::InputPassword;
 }
 
-int32_t HTMLInputElement::GetCols() {
-  // Else we know (assume) it is an input with size attr
-  const nsAttrValue* attr = GetParsedAttr(nsGkAtoms::size);
-  if (attr && attr->Type() == nsAttrValue::eInteger) {
+Maybe<int32_t> HTMLInputElement::GetNumberInputCols() const {
+  // This logic is ported from WebKit, see
+  // https://github.com/whatwg/html/issues/10390
+  struct RenderSize {
+    uint32_t mBeforeDecimal = 0;
+    uint32_t mAfterDecimal = 0;
+
+    RenderSize Max(const RenderSize& aOther) const {
+      return {std::max(mBeforeDecimal, aOther.mBeforeDecimal),
+              std::max(mAfterDecimal, aOther.mAfterDecimal)};
+    }
+
+    static RenderSize From(const Decimal& aValue) {
+      MOZ_ASSERT(aValue.isFinite());
+      nsAutoCString tmp;
+      tmp.AppendInt(aValue.value().coefficient());
+      const uint32_t sizeOfDigits = tmp.Length();
+      const uint32_t sizeOfSign = aValue.isNegative() ? 1 : 0;
+      const int32_t exponent = aValue.exponent();
+      if (exponent >= 0) {
+        return {sizeOfSign + sizeOfDigits, 0};
+      }
+
+      const int32_t sizeBeforeDecimalPoint = exponent + int32_t(sizeOfDigits);
+      if (sizeBeforeDecimalPoint > 0) {
+        // In case of "123.456"
+        return {sizeOfSign + sizeBeforeDecimalPoint,
+                sizeOfDigits - sizeBeforeDecimalPoint};
+      }
+
+      // In case of "0.00012345"
+      const uint32_t sizeOfZero = 1;
+      const uint32_t numberOfZeroAfterDecimalPoint = -sizeBeforeDecimalPoint;
+      return {sizeOfSign + sizeOfZero,
+              numberOfZeroAfterDecimalPoint + sizeOfDigits};
+    }
+  };
+
+  if (mType != FormControlType::InputNumber) {
+    return {};
+  }
+  Decimal min = GetMinimum();
+  if (!min.isFinite()) {
+    return {};
+  }
+  Decimal max = GetMaximum();
+  if (!max.isFinite()) {
+    return {};
+  }
+  Decimal step = GetStep();
+  if (step == kStepAny) {
+    return {};
+  }
+  MOZ_ASSERT(step.isFinite());
+  RenderSize size = RenderSize::From(min).Max(
+      RenderSize::From(max).Max(RenderSize::From(step)));
+  return Some(size.mBeforeDecimal + size.mAfterDecimal +
+              (size.mAfterDecimal ? 1 : 0));
+}
+
+Maybe<int32_t> HTMLInputElement::GetCols() {
+  if (const nsAttrValue* attr = GetParsedAttr(nsGkAtoms::size);
+      attr && attr->Type() == nsAttrValue::eInteger) {
     int32_t cols = attr->GetIntegerValue();
     if (cols > 0) {
-      return cols;
+      return Some(cols);
     }
   }
 
-  return DEFAULT_COLS;
+  if (Maybe<int32_t> cols = GetNumberInputCols(); cols && *cols > 0) {
+    return cols;
+  }
+
+  return {};
 }
 
 int32_t HTMLInputElement::GetWrapCols() {
@@ -7007,6 +7072,10 @@ void HTMLInputElement::OnValueChanged(ValueChangeKind aKind,
   MOZ_ASSERT_IF(aKnownNewValue, aKnownNewValue->IsEmpty() == aNewValueEmpty);
   if (aKind != ValueChangeKind::Internal) {
     mLastValueChangeWasInteractive = aKind == ValueChangeKind::UserInteraction;
+
+    if (State().HasState(ElementState::AUTOFILL)) {
+      RemoveStates(ElementState::AUTOFILL | ElementState::AUTOFILL_PREVIEW);
+    }
   }
 
   if (aNewValueEmpty != IsValueEmpty()) {

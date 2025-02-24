@@ -209,9 +209,9 @@ async function checkCopyNestedRule(view) {
 
   const copyEvent = new win.Event("copy", { bubbles: true });
   const expectedNested = `html {
-  body {
+  & body {
     @container (1px < width) {
-      #nested {
+      & #nested {
         background: tomato;
         color: gold;
       }

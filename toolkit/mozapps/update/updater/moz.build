@@ -29,6 +29,9 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
         "__launchd_plist",
         SRCDIR + "/Launchd.plist",
     ]
+    DIRS += [
+        "macos-frameworks",
+    ]
 
 GENERATED_FILES = [
     "dep1Cert.h",

@@ -18,6 +18,7 @@
 
 #import "MOXLandmarkAccessibles.h"
 #import "MOXMathAccessibles.h"
+#import "MOXOuterDoc.h"
 #import "MOXTextMarkerDelegate.h"
 #import "MOXWebAreaAccessible.h"
 #import "mozAccessible.h"
@@ -118,6 +119,10 @@ Class AccessibleWrap::GetNativeType() {
     return [MOXWebAreaAccessible class];
   }
 
+  if (IsOuterDoc()) {
+    return [MOXOuterDoc class];
+  }
+
   return GetTypeFromRole(Role());
 
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
@@ -191,6 +196,12 @@ Class a11y::GetTypeFromRole(roles::Role aRole) {
     case roles::RADIOBUTTON:
     case roles::RADIO_MENU_ITEM:
       return [mozRadioButtonAccessible class];
+
+    case roles::PROGRESSBAR:
+      return [mozRangeAccessible class];
+
+    case roles::METER:
+      return [mozMeterAccessible class];
 
     case roles::SPINBUTTON:
     case roles::SLIDER:

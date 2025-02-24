@@ -100,7 +100,8 @@ const kNotificationAction = Object.freeze({
 export async function runBackgroundTask(commandLine) {
   Services.fog.initializeFOG(
     undefined,
-    "firefox.desktop.background.defaultagent"
+    "firefox.desktop.background.defaultagent",
+    /* disableInternalPings */ true
   );
 
   let defaultAgent = Cc["@mozilla.org/default-agent;1"].getService(
@@ -330,7 +331,7 @@ function makeAlert(options) {
   let systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
   alert.init(
     options.name,
-    "chrome://branding/content/about-logo@2x.png",
+    "chrome://global/content/defaultagent/fox-doodle-peek.png",
     options.title,
     options.body,
     true /* aTextClickable */,

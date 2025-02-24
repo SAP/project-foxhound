@@ -4,6 +4,8 @@
 
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 import { MozLitElement } from "../lit-utils.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://global/content/elements/moz-button.mjs";
 
 const messageTypeToIconData = {
   info: {
@@ -41,16 +43,16 @@ const messageTypeToIconData = {
  * @property {string} messageL10nArgs - Any args needed for the message l10n ID.
  * @fires message-bar:close
  *  Custom event indicating that message bar was closed.
- *  @fires message-bar:user-dismissed
+ * @fires message-bar:user-dismissed
  *  Custom event indicating that message bar was dismissed by the user.
  */
 
 export default class MozMessageBar extends MozLitElement {
   static queries = {
-    actionsSlotEl: "slot[name=actions]",
+    actionsSlot: "slot[name=actions]",
     actionsEl: ".actions",
-    closeButtonEl: "button.close",
-    supportLinkSlotEl: "slot[name=support-link]",
+    closeButton: "moz-button.close",
+    supportLinkSlot: "slot[name=support-link]",
   };
 
   static properties = {
@@ -70,13 +72,13 @@ export default class MozMessageBar extends MozLitElement {
   }
 
   onSlotchange() {
-    let actions = this.actionsSlotEl.assignedNodes();
+    let actions = this.actionsSlot.assignedNodes();
     this.actionsEl.classList.toggle("active", actions.length);
   }
 
   connectedCallback() {
     super.connectedCallback();
-    this.setAttribute("role", "status");
+    this.setAttribute("role", "alert");
   }
 
   disconnectedCallback() {
@@ -85,7 +87,7 @@ export default class MozMessageBar extends MozLitElement {
   }
 
   get supportLinkEls() {
-    return this.supportLinkSlotEl.assignedElements();
+    return this.supportLinkSlot.assignedElements();
   }
 
   iconTemplate() {
@@ -113,14 +115,16 @@ export default class MozMessageBar extends MozLitElement {
     return "";
   }
 
-  closeButtonTemplate() {
+  closeButtonTemplate({ size } = {}) {
     if (this.dismissable) {
       return html`
-        <button
-          class="close ghost-button"
+        <moz-button
+          type="icon ghost"
+          class="close"
+          size=${ifDefined(size)}
           data-l10n-id="moz-message-bar-close-button"
           @click=${this.dismiss}
-        ></button>
+        ></moz-button>
       `;
     }
     return "";

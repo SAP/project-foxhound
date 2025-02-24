@@ -245,13 +245,24 @@ shutdown_with_error(cubeb_stream * stm)
   }
 
   int64_t poll_frequency_ns = NS_PER_S * stm->out_frame_size / stm->sample_rate;
+  int rv;
   if (stm->istream) {
-    wait_for_state_change(stm->istream, AAUDIO_STREAM_STATE_STOPPED,
-                          poll_frequency_ns);
+    rv = wait_for_state_change(stm->istream, AAUDIO_STREAM_STATE_STOPPED,
+                               poll_frequency_ns);
+    if (rv != CUBEB_OK) {
+      LOG("Failure when waiting for stream change on the input side when "
+          "shutting down in error");
+      // Not much we can do, carry on
+    }
   }
   if (stm->ostream) {
-    wait_for_state_change(stm->ostream, AAUDIO_STREAM_STATE_STOPPED,
-                          poll_frequency_ns);
+    rv = wait_for_state_change(stm->ostream, AAUDIO_STREAM_STATE_STOPPED,
+                               poll_frequency_ns);
+    if (rv != CUBEB_OK) {
+      LOG("Failure when waiting for stream change on the output side when "
+          "shutting down in error");
+      // Not much we can do, carry on
+    }
   }
 
   assert(!stm->in_data_callback.load());
@@ -634,9 +645,12 @@ aaudio_get_latency(cubeb_stream * stm, aaudio_direction_t direction,
   // Extrapolate from the known timestamp for a particular frame presented.
   int64_t app_frame_hw_time = hw_tstamp + frame_time_delta;
   // For an output stream, the latency is positive, for an input stream, it's
-  // negative.
-  int64_t latency_ns = is_output ? app_frame_hw_time - signed_tstamp_ns
-                                 : signed_tstamp_ns - app_frame_hw_time;
+  // negative. It can happen in some instances, e.g. around start of the stream
+  // that the latency for output is negative, return 0 in this case.
+  int64_t latency_ns = is_output
+                           ? std::max(static_cast<int64_t>(0),
+                                      app_frame_hw_time - signed_tstamp_ns)
+                           : signed_tstamp_ns - app_frame_hw_time;
   int64_t latency_frames = stm->sample_rate * latency_ns / NS_PER_S;
 
   LOGV("Latency in frames (%s): %d (%dms)", is_output ? "output" : "input",
@@ -921,7 +935,7 @@ aaudio_error_cb(AAudioStream * astream, void * user_data, aaudio_result_t error)
   assert(stm->ostream == astream || stm->istream == astream);
 
   // Device change -- reinitialize on the new default device.
-  if (error == AAUDIO_ERROR_DISCONNECTED) {
+  if (error == AAUDIO_ERROR_DISCONNECTED || error == AAUDIO_ERROR_TIMEOUT) {
     LOG("Audio device change, reinitializing stream");
     reinitialize_stream(stm);
     return;
@@ -1038,6 +1052,8 @@ aaudio_stream_destroy_locked(cubeb_stream * stm, lock_guard<mutex> & lock)
     WRAP(AAudioStream_close)(stm->istream);
     stm->istream = nullptr;
   }
+
+  stm->timing_info.invalidate();
 
   if (stm->resampler) {
     cubeb_resampler_destroy(stm->resampler);

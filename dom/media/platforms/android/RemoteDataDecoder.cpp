@@ -227,7 +227,8 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
     // a MediaCodec. We therefore override the transform to be a simple y-flip
     // to ensure it is rendered correctly.
     const auto hardware = java::sdk::Build::HARDWARE()->ToString();
-    if (hardware.EqualsASCII("mt6735") || hardware.EqualsASCII("kirin980")) {
+    if (hardware.EqualsASCII("mt6735") || hardware.EqualsASCII("kirin980") ||
+        hardware.EqualsASCII("mt8696")) {
       mTransformOverride = Some(
           gfx::Matrix4x4::Scaling(1.0, -1.0, 1.0).PostTranslate(0.0, 1.0, 0.0));
     }
@@ -527,6 +528,8 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
         });
         aStage.SetResolution(v->mImage->GetSize().Width(),
                              v->mImage->GetSize().Height());
+        aStage.SetStartTimeAndEndTime(v->mTime.ToMicroseconds(),
+                                      v->GetEndTime().ToMicroseconds());
       });
 
       RemoteDataDecoder::UpdateOutputStatus(std::move(v));
@@ -574,7 +577,7 @@ class RemoteVideoDecoder final : public RemoteDataDecoder {
   bool mIsHardwareAccelerated = false;
   // Accessed on mThread and reader's thread. SimpleMap however is
   // thread-safe, so it's okay to do so.
-  SimpleMap<InputInfo> mInputInfos;
+  SimpleMap<int64_t, InputInfo, ThreadSafePolicy> mInputInfos;
   // Only accessed on mThread.
   Maybe<TimeUnit> mSeekTarget;
   Maybe<TimeUnit> mLatestOutputTime;
@@ -964,7 +967,9 @@ static CryptoInfoResult GetCryptoInfoFromSample(const MediaRawData* aSample) {
   }
 
   static bool supportsCBCS = java::CodecProxy::SupportsCBCS();
-  if (cryptoObj.mCryptoScheme == CryptoScheme::Cbcs && !supportsCBCS) {
+  if ((cryptoObj.mCryptoScheme == CryptoScheme::Cbcs ||
+       cryptoObj.mCryptoScheme == CryptoScheme::Cbcs_1_9) &&
+      !supportsCBCS) {
     return CryptoInfoResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR);
   }
 
@@ -1011,6 +1016,7 @@ static CryptoInfoResult GetCryptoInfoFromSample(const MediaRawData* aSample) {
       tempIV.AppendElements(cryptoObj.mIV);
       break;
     case CryptoScheme::Cbcs:
+    case CryptoScheme::Cbcs_1_9:
       mode = java::sdk::MediaCodec::CRYPTO_MODE_AES_CBC;
       MOZ_ASSERT(cryptoObj.mConstantIV.Length() <= kExpectedIVLength);
       tempIV.AppendElements(cryptoObj.mConstantIV);

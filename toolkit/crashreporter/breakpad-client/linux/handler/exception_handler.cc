@@ -97,7 +97,6 @@
 #include "common/linux/eintr_wrapper.h"
 #include "third_party/lss/linux_syscall_support.h"
 #if defined(MOZ_OXIDIZED_BREAKPAD)
-#include "nsString.h"
 #include "mozilla/toolkit/crashreporter/rust_minidump_writer_linux_ffi_generated.h"
 #endif
 
@@ -580,6 +579,13 @@ bool ExceptionHandler::GenerateDump(
     fdes[0] = fdes[1] = -1;
   }
 
+  static const char attempt_msg[] = "ExceptionHandler::GenerateDump attempting "
+                                    "to generate:";
+  logger::write(attempt_msg, sizeof(attempt_msg));
+  logger::write(minidump_descriptor_.path(),
+                my_strlen(minidump_descriptor_.path()));
+  logger::write("\n", 1);
+
   const pid_t child = sys_clone(
       ThreadEntry, stack, CLONE_FS | CLONE_UNTRACED, &thread_arg, NULL, NULL,
       NULL);
@@ -624,6 +630,19 @@ bool ExceptionHandler::GenerateDump(
   }
 
   bool success = r != -1 && WIFEXITED(status) && WEXITSTATUS(status) == 0;
+
+  static const char generate_msg[] = "ExceptionHandler::GenerateDump minidump "
+                                     "generation ";
+  static const char success_msg[] = "succeeded\n";
+  static const char fail_msg[] = "succeeded\n";
+
+  logger::write(generate_msg, sizeof(generate_msg));
+  if (success) {
+    logger::write(success_msg, sizeof(success_msg));
+  } else {
+    logger::write(fail_msg, sizeof(fail_msg));
+  }
+
   if (callback_)
     success =
       callback_(minidump_descriptor_, callback_context_, addr_info, success);
@@ -854,9 +873,10 @@ bool ExceptionHandler::WriteMinidumpForChild(pid_t child,
   MinidumpDescriptor descriptor(dump_path);
   descriptor.UpdatePath();
 #if defined(MOZ_OXIDIZED_BREAKPAD)
-  nsCString error_msg;
-  if (!write_minidump_linux(descriptor.path(), child, child_blamed_thread, &error_msg))
+  char* error_msg;
+  if (!write_minidump_linux(descriptor.path(), child, child_blamed_thread, &error_msg)) {
       return false;
+  }
 #else
   if (!google_breakpad::WriteMinidump(descriptor.path(),
                                       child,

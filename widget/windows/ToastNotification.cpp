@@ -647,8 +647,7 @@ void ToastNotification::SignalComNotificationHandled(
       do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
   if (winMediator) {
     nsCOMPtr<mozIDOMWindowProxy> navWin;
-    winMediator->GetMostRecentWindow(u"navigator:browser",
-                                     getter_AddRefs(navWin));
+    winMediator->GetMostRecentBrowserWindow(getter_AddRefs(navWin));
     if (navWin) {
       nsCOMPtr<nsIWidget> widget =
           WidgetUtils::DOMWindowToWidget(nsPIDOMWindowOuter::From(navWin));
@@ -776,6 +775,9 @@ ToastNotification::CloseAlert(const nsAString& aAlertName,
                               bool aContextClosed) {
   RefPtr<ToastNotificationHandler> handler;
   if (NS_WARN_IF(!mActiveHandlers.Get(aAlertName, getter_AddRefs(handler)))) {
+    // This can happen when the handler is gone but the closure signal is not
+    // yet reached to the content process, and then the process tries closing
+    // the same signal.
     return NS_OK;
   }
 

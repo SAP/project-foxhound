@@ -8,6 +8,14 @@ const CryptoHash = Components.Constructor(
   "initWithString"
 );
 
+const XPI_WEAK_SIGNATURES = [Ci.nsIAppSignatureInfo.PKCS7_WITH_SHA1];
+
+export function hasStrongSignature(addon) {
+  return !!addon.signedTypes?.filter(
+    algorithm => !XPI_WEAK_SIGNATURES.includes(algorithm)
+  ).length;
+}
+
 export function computeHashAsString(hashType, input) {
   const data = new Uint8Array(new TextEncoder().encode(input));
   const crypto = CryptoHash(hashType);
@@ -42,7 +50,7 @@ export function computeSha1HashAsString(input) {
 /**
  * Returns the string representation (hex) of a given CryptoHashInstance.
  *
- * @param {CryptoHash} aCrypto
+ * @param {nsICryptoHash} aCrypto
  * @returns {string}
  *          The hex representation of a SHA256 hash.
  */

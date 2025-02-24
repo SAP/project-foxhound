@@ -13,17 +13,26 @@ const projectRoot = path.resolve(__dirname, "../../../../");
 module.exports = {
   // The ordering for this stories array affects the order that they are displayed in Storybook
   stories: [
+    // Show the Storybook document first in the list
+    // so that navigating to firefoxux.github.io/firefox-desktop-components/
+    // lands on the Storybook.stories.md file
+    "../**/README.storybook.stories.md",
     // Docs section
     "../**/README.*.stories.md",
     // UI Widgets section
     `${projectRoot}/toolkit/content/widgets/**/*.stories.@(js|jsx|mjs|ts|tsx|md)`,
     // about:logins components stories
     `${projectRoot}/browser/components/aboutlogins/content/components/**/*.stories.mjs`,
+    // Backup components stories
+    `${projectRoot}/browser/components/backup/content/**/*.stories.mjs`,
+    // Reader View components stories
+    `${projectRoot}/toolkit/components/reader/**/*.stories.mjs`,
     // Everything else
     "../stories/**/*.stories.@(js|jsx|mjs|ts|tsx|md)",
     // Design system files
     `${projectRoot}/toolkit/themes/shared/design-system/**/*.stories.@(js|jsx|mjs|ts|tsx|md)`,
   ],
+  staticDirs: [`${projectRoot}/toolkit/themes/shared/design-system/docs/`],
   addons: [
     "@storybook/addon-links",
     {
@@ -50,7 +59,7 @@ module.exports = {
     };
     return [...existingIndexers, customIndexer];
   },
-  webpackFinal: async (config, { configType }) => {
+  webpackFinal: async config => {
     // `configType` has a value of 'DEVELOPMENT' or 'PRODUCTION'
     // You can change the configuration based on that.
     // 'PRODUCTION' is used when building the static version of storybook.

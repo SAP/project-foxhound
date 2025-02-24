@@ -2053,7 +2053,7 @@ nsXPCComponents_Utils::Dispatch(HandleValue runnableArg, HandleValue scope,
 NS_IMETHODIMP
 nsXPCComponents_Utils::SetGCZeal(int32_t aValue, JSContext* cx) {
 #ifdef JS_GC_ZEAL
-  JS_SetGCZeal(cx, uint8_t(aValue), JS_DEFAULT_ZEAL_FREQ);
+  JS::SetGCZeal(cx, uint8_t(aValue), JS::BrowserDefaultGCZealFrequency);
 #endif
   return NS_OK;
 }
@@ -2179,13 +2179,6 @@ nsXPCComponents_Utils::GetClassName(HandleValue aObj, bool aUnwrap,
   }
   *aRv = NS_xstrdup(JS::GetClass(obj)->name);
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXPCComponents_Utils::GetDOMClassInfo(const nsAString& aClassName,
-                                       nsIClassInfo** aClassInfo) {
-  *aClassInfo = nullptr;
-  return NS_ERROR_NOT_AVAILABLE;
 }
 
 NS_IMETHODIMP

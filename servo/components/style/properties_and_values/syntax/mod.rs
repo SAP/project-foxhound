@@ -17,7 +17,7 @@ use style_traits::{
     StyleParseErrorKind, ToCss,
 };
 
-use self::data_type::DataType;
+use self::data_type::{DataType, DependentDataTypes};
 
 mod ascii;
 pub mod data_type;
@@ -91,38 +91,23 @@ impl Descriptor {
             // 5. Repeatedly consume the next input code point from stream.
             parser.parse()?;
         }
-        Ok(Self { components, specified })
+        Ok(Self {
+            components,
+            specified,
+        })
     }
 
-    /// Returns true if the syntax permits the value to be computed as a length.
-    pub fn may_compute_length(&self) -> bool {
+    /// Returns the dependent types this syntax might contain.
+    pub fn dependent_types(&self) -> DependentDataTypes {
+        let mut types = DependentDataTypes::empty();
         for component in self.components.iter() {
-            match &component.name {
-                ComponentName::DataType(ref t) => {
-                    if matches!(t, DataType::Length | DataType::LengthPercentage) {
-                        return true;
-                    }
-                },
-                ComponentName::Ident(_) => (),
+            let t = match &component.name {
+                ComponentName::DataType(ref t) => t,
+                ComponentName::Ident(_) => continue,
             };
+            types.insert(t.dependent_types());
         }
-        false
-    }
-
-    /// Returns true if the syntax requires deferring computation to properly
-    /// resolve font-dependent lengths.
-    pub fn may_reference_font_relative_length(&self) -> bool {
-        for component in self.components.iter() {
-            match &component.name {
-                ComponentName::DataType(ref t) => {
-                    if t.may_reference_font_relative_length() {
-                        return true;
-                    }
-                },
-                ComponentName::Ident(_) => (),
-            };
-        }
-        false
+        types
     }
 }
 
@@ -165,7 +150,7 @@ impl Parse for Descriptor {
 }
 
 /// <https://drafts.css-houdini.org/css-properties-values-api-1/#multipliers>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue)]
 pub enum Multiplier {
     /// Indicates a space-separated list.
     Space,

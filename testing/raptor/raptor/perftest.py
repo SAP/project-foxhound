@@ -181,7 +181,6 @@ class Perftest(object):
         if self.config["app"] in (
             "chrome",
             "chrome-m",
-            "chromium",
             "custom-car",
             "cstm-car-m",
         ):
@@ -696,7 +695,11 @@ class PerftestAndroid(Perftest):
             device = ADBDeviceFactory(verbose=True)
 
             # Chrome uses a specific binary that we don't set as a command line option
-            binary = "com.android.chrome"
+            binary = (
+                "com.android.chrome"
+                if self.config["app"] == "chrome-m"
+                else "org.chromium.chrome"
+            )
             if self.config["app"] not in CHROME_ANDROID_APPS:
                 binary = self.config["binary"]
 
@@ -811,8 +814,8 @@ class PerftestDesktop(Perftest):
 
     def desktop_chrome_args(self, test):
         """Returns cmd line options required to run pageload tests on Desktop Chrome
-        and Chromium. Also add the cmd line options to turn on the proxy and
-        ignore security certificate errors if using host localhost, 127.0.0.1.
+        and Chromium as Release (CaR). Also add the cmd line options to turn on the
+        proxy and ignore security certificate errors if using host localhost, 127.0.0.1.
         """
         chrome_args = ["--use-mock-keychain", "--no-default-browser-check"]
 

@@ -18,7 +18,8 @@ include position-relative/reftest.list
 # apng-mime
 include apng-mime/reftest.list
 
-skip-if(unsupportedWithDrawSnapshot) include async-scrolling/reftest.list
+# unsupported with draw snapshot
+skip-if(useDrawSnapshot) include async-scrolling/reftest.list
 
 # backgrounds/
 include backgrounds/reftest.list
@@ -273,9 +274,6 @@ include outline/reftest.list
 # object/
 include object/reftest.list
 
-# ogg-video/
-skip include ogg-video/reftest.list
-
 # webm-video/
 skip include webm-video/reftest.list
 
@@ -363,9 +361,6 @@ include text-svgglyphs/reftest.list
 # text-transform/
 include text-transform/reftest.list
 
-# theme (osx)
-include ../../toolkit/themes/osx/reftests/reftest.list
-
 include ../../toolkit/content/tests/reftests/reftest.list
 
 # transform/
@@ -434,7 +429,8 @@ include invalidation/reftest.list
 include ../../dom/encoding/test/reftest/reftest.list
 
 # APZ/async positioning tests
-skip-if(unsupportedWithDrawSnapshot) include ../../gfx/layers/apz/test/reftest/reftest.list
+# unsupported with draw snapshot
+skip-if(useDrawSnapshot) include ../../gfx/layers/apz/test/reftest/reftest.list
 
 # Display list building
 include display-list/reftest.list

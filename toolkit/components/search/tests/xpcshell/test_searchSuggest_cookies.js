@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Test that search suggestions from SearchSuggestionController.jsm don't store
+ * Test that search suggestions from SearchSuggestionController.sys.mjs don't store
  * cookies.
  */
 
@@ -14,7 +14,7 @@ const { SearchSuggestionController } = ChromeUtils.importESModule(
 
 // We must make sure the FormHistoryStartup component is
 // initialized in order for it to respond to FormHistory
-// requests from nsFormAutoComplete.js.
+// requests from FormHistoryAutoComplete.sys.mjs.
 var formHistoryStartup = Cc[
   "@mozilla.org/satchel/form-history-startup;1"
 ].getService(Ci.nsIObserver);
@@ -79,14 +79,14 @@ add_setup(async function () {
 
   let unicodeName = ["\u30a8", "\u30c9"].join("");
   engines = [
-    await SearchTestUtils.promiseNewSearchEngine({
+    await SearchTestUtils.installOpenSearchEngine({
       url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
         baseURL: gDataUrl,
         name: unicodeName,
         method: "GET",
       })}`,
     }),
-    await SearchTestUtils.promiseNewSearchEngine({
+    await SearchTestUtils.installOpenSearchEngine({
       url: `${gDataUrl}engineMaker.sjs?${JSON.stringify({
         baseURL: gDataUrl,
         name: "engine two",

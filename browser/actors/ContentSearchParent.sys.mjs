@@ -6,6 +6,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
@@ -216,7 +217,7 @@ export let ContentSearch = {
       // message and the time we handle it.
       return;
     }
-    let where = win.whereToOpenLink(data.originalEvent);
+    let where = lazy.BrowserUtils.whereToOpenLink(data.originalEvent);
 
     // There is a chance that by the time we receive the search message, the user
     // has switched away from the tab that triggered the search. If, based on the
@@ -510,10 +511,11 @@ export let ContentSearch = {
           lazy.UrlbarPrefs.get("shouldHandOffToSearchMode")
         );
         break;
-      default:
+      default: {
         let state = await this.currentStateObj();
         this._broadcast("CurrentState", state);
         break;
+      }
     }
   },
 
@@ -553,13 +555,23 @@ export let ContentSearch = {
   },
 
   /**
+   * Used in _getEngineIconURL
+   *
+   * @typedef {object} iconData
+   * @property {ArrayBuffer|string} icon
+   *   The icon data in an ArrayBuffer or a placeholder icon string.
+   * @property {string|null} mimeType
+   *   The MIME type of the icon.
+   */
+
+  /**
    * Converts the engine's icon into a URL or an ArrayBuffer for passing to the
    * content process.
    *
    * @param {nsISearchEngine} engine
    *   The engine to get the icon for.
-   * @returns {string|ArrayBuffer}
-   *   The icon's URL or an ArrayBuffer containing the icon data.
+   * @returns {string|iconData}
+   *   The icon's URL or an iconData object containing the icon data.
    */
   async _getEngineIconURL(engine) {
     let url = await engine.getIconURL();
@@ -579,31 +591,22 @@ export let ContentSearch = {
     // the blob with that scope. Hence we have to create a copy of the data.
     //
     // For data: URIs we convert to an ArrayBuffer as that is more optimal for
-    // passing the data across to the content process.
+    // passing the data across to the content process. This is passed to the
+    // 'icon' field of the return object. The object also receives the
+    // content-type of the URI, which is passed to its 'mimeType' field.
     if (!url.startsWith("data:") && !url.startsWith("blob:")) {
       return url;
     }
 
-    return new Promise(resolve => {
-      let xhr = new XMLHttpRequest();
-      xhr.open("GET", url, true);
-      xhr.responseType = "arraybuffer";
-      xhr.onload = () => {
-        resolve(xhr.response);
-      };
-      xhr.onerror =
-        xhr.onabort =
-        xhr.ontimeout =
-          () => {
-            resolve(SEARCH_ENGINE_PLACEHOLDER_ICON);
-          };
-      try {
-        // This throws if the URI is erroneously encoded.
-        xhr.send();
-      } catch (err) {
-        resolve(SEARCH_ENGINE_PLACEHOLDER_ICON);
-      }
-    });
+    try {
+      const response = await fetch(url);
+      const mimeType = response.headers.get("Content-Type") || "";
+      const data = await response.arrayBuffer();
+      return { icon: data, mimeType };
+    } catch (err) {
+      console.error("Fetch error: ", err);
+      return SEARCH_ENGINE_PLACEHOLDER_ICON;
+    }
   },
 
   _ensureDataHasProperties(data, requiredProperties) {

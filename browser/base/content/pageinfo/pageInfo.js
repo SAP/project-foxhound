@@ -47,7 +47,7 @@ pageInfoTreeView.prototype = {
     return this.data[row][column.index] || "";
   },
 
-  setCellValue(row, column, value) {},
+  setCellValue() {},
 
   setCellText(row, column, value) {
     this.data[row][column.index] = value;
@@ -112,52 +112,52 @@ pageInfoTreeView.prototype = {
     this.sortcol = treecol.index;
   },
 
-  getRowProperties(row) {
+  getRowProperties() {
     return "";
   },
-  getCellProperties(row, column) {
+  getCellProperties() {
     return "";
   },
-  getColumnProperties(column) {
+  getColumnProperties() {
     return "";
   },
-  isContainer(index) {
+  isContainer() {
     return false;
   },
-  isContainerOpen(index) {
+  isContainerOpen() {
     return false;
   },
-  isSeparator(index) {
+  isSeparator() {
     return false;
   },
   isSorted() {
     return this.sortcol > -1;
   },
-  canDrop(index, orientation) {
+  canDrop() {
     return false;
   },
-  drop(row, orientation) {
+  drop() {
     return false;
   },
-  getParentIndex(index) {
+  getParentIndex() {
     return 0;
   },
-  hasNextSibling(index, after) {
+  hasNextSibling() {
     return false;
   },
-  getLevel(index) {
+  getLevel() {
     return 0;
   },
-  getImageSrc(row, column) {},
+  getImageSrc() {},
   getCellValue(row, column) {
     let col = column != null ? column : this.copycol;
     return row < 0 || col < 0 ? "" : this.data[row][col] || "";
   },
-  toggleOpenState(index) {},
-  cycleHeader(col) {},
+  toggleOpenState() {},
+  cycleHeader() {},
   selectionChanged() {},
-  cycleCell(row, column) {},
-  isEditable(row, column) {
+  cycleCell() {},
+  isEditable() {
     return false;
   },
 };
@@ -174,6 +174,7 @@ const COL_IMAGE_ALT = 3;
 const COL_IMAGE_COUNT = 4;
 const COL_IMAGE_NODE = 5;
 const COL_IMAGE_BG = 6;
+const COL_IMAGE_RAWSIZE = 7;
 
 // column number to copy from, second argument to pageInfoTreeView's constructor
 const COPYCOL_NONE = -1;
@@ -213,6 +214,11 @@ gImageView.onPageMediaSort = function (columnname) {
     comparator = function numComparator(a, b) {
       return a - b;
     };
+
+    // COL_IMAGE_SIZE contains the localized string, compare raw numbers.
+    if (index == COL_IMAGE_SIZE) {
+      index = COL_IMAGE_RAWSIZE;
+    }
   } else {
     comparator = function textComparator(a, b) {
       return (a || "").toLowerCase().localeCompare((b || "").toLowerCase());
@@ -475,10 +481,10 @@ async function loadTab(args) {
 
 function openCacheEntry(key, cb) {
   var checkCacheListener = {
-    onCacheEntryCheck(entry) {
+    onCacheEntryCheck() {
       return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
     },
-    onCacheEntryAvailable(entry, isNew, status) {
+    onCacheEntryAvailable(entry) {
       cb(entry);
     },
   };
@@ -580,21 +586,30 @@ async function addImage({ url, type, alt, altNotProvided, element, isBg }) {
   }
   if (!gImageHash[url][type].hasOwnProperty(alt)) {
     gImageHash[url][type][alt] = gImageView.data.length;
-    var row = [url, MEDIA_STRINGS[type], SIZE_UNKNOWN, alt, 1, element, isBg];
+    var row = [
+      url,
+      MEDIA_STRINGS[type],
+      SIZE_UNKNOWN,
+      alt,
+      1,
+      element,
+      isBg,
+      -1,
+    ];
     gImageView.addRow(row);
 
     // Fill in cache data asynchronously
     openCacheEntry(url, function (cacheEntry) {
-      // The data at row[2] corresponds to the data size.
       if (cacheEntry) {
         let value = cacheEntry.dataSize;
         // If value is not -1 then replace with actual value, else keep as "unknown"
         if (value != -1) {
+          row[COL_IMAGE_RAWSIZE] = value;
           let kbSize = Number(Math.round((value / 1024) * 100) / 100);
           document.l10n
             .formatValue("media-file-size", { size: kbSize })
             .then(function (response) {
-              row[2] = response;
+              row[COL_IMAGE_SIZE] = response;
               // Invalidate the row to trigger a repaint.
               gImageView.tree.invalidateRow(gImageView.data.indexOf(row));
             });
@@ -1085,7 +1100,7 @@ let treeController = {
     return command == "cmd_copy" || command == "cmd_selectAll";
   },
 
-  isCommandEnabled(command) {
+  isCommandEnabled() {
     return true; // not worth checking for this
   },
 

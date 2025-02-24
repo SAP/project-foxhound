@@ -3,15 +3,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "lib/jxl/icc_codec.h"
+#include <jxl/memory_manager.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
 
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/color_encoding_internal.h"
+#include "lib/jxl/dec_bit_reader.h"
+#include "lib/jxl/enc_bit_writer.h"
 #include "lib/jxl/enc_icc_codec.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -19,7 +23,8 @@ namespace jxl {
 namespace {
 
 void TestProfile(const IccBytes& icc) {
-  BitWriter writer;
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
+  BitWriter writer{memory_manager};
   ASSERT_TRUE(WriteICC(icc, &writer, 0, nullptr));
   writer.ZeroPadToByte();
   std::vector<uint8_t> dec;

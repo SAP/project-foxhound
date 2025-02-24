@@ -107,7 +107,7 @@ var gBuiltInInputs = {
     type: kInputTypes.BUTTON,
     callback: () => {
       let win = lazy.BrowserWindowTracker.getTopWindow();
-      win.BrowserHome();
+      win.BrowserCommands.home();
     },
   },
   Fullscreen: {
@@ -134,7 +134,7 @@ var gBuiltInInputs = {
     type: kInputTypes.BUTTON,
     callback: () => {
       let win = lazy.BrowserWindowTracker.getTopWindow();
-      win.SidebarUI.toggle();
+      win.SidebarController.toggle();
     },
   },
   AddBookmark: {

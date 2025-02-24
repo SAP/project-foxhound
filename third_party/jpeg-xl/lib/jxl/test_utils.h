@@ -11,6 +11,7 @@
 // Macros and functions useful for tests.
 
 #include <jxl/codestream_header.h>
+#include <jxl/memory_manager.h>
 #include <jxl/thread_parallel_runner_cxx.h>
 
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include "lib/extras/dec/jxl.h"
 #include "lib/extras/enc/jxl.h"
 #include "lib/extras/packed_image.h"
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/span.h"
 #include "lib/jxl/base/status.h"
@@ -48,6 +50,15 @@ class ThreadPool;
 namespace test {
 
 std::string GetTestDataPath(const std::string& filename);
+
+// Returns an ICC profile output by the JPEG XL decoder for RGB_D65_SRG_Rel_Lin,
+// but with, on purpose, rXYZ, bXYZ and gXYZ (the RGB primaries) switched to a
+// different order to ensure the profile does not match any known profile, so
+// the encoder cannot encode it in a compact struct instead.
+jxl::IccBytes GetIccTestProfile();
+
+std::vector<uint8_t> GetCompressedIccTestProfile();
+
 std::vector<uint8_t> ReadTestData(const std::string& filename);
 
 void JxlBasicInfoSetFromPixelFormat(JxlBasicInfo* basic_info,
@@ -180,8 +191,7 @@ class ThreadPoolForTests {
   }
   ThreadPoolForTests(const ThreadPoolForTests&) = delete;
   ThreadPoolForTests& operator&(const ThreadPoolForTests&) = delete;
-  // TODO(eustas): avoid unary `&` overload?
-  ThreadPool* operator&() { return pool_.get(); }
+  ThreadPool* get() { return pool_.get(); }
 
  private:
   JxlThreadParallelRunnerPtr runner_;

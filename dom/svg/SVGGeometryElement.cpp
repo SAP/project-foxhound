@@ -187,7 +187,7 @@ bool SVGGeometryElement::IsPointInFill(const DOMPointInit& aPoint) {
 bool SVGGeometryElement::IsPointInStroke(const DOMPointInit& aPoint) {
   // stroke-* attributes and the d attribute are presentation attributes, so we
   // flush the layout before building the path.
-  if (nsCOMPtr<Document> doc = GetComposedDoc()) {
+  if (auto* doc = GetComposedDoc()) {
     doc->FlushPendingNotifications(FlushType::Layout);
   }
 
@@ -201,7 +201,7 @@ bool SVGGeometryElement::IsPointInStroke(const DOMPointInit& aPoint) {
   SVGGeometryProperty::DoForComputedStyle(this, [&](const ComputedStyle* s) {
     // Per spec, we should take vector-effect into account.
     if (s->StyleSVGReset()->HasNonScalingStroke()) {
-      auto mat = SVGContentUtils::GetCTM(this, true);
+      auto mat = SVGContentUtils::GetCTM(this);
       if (mat.HasNonTranslation()) {
         // We have non-scaling-stroke as well as a non-translation transform.
         // We should transform the path first then apply the stroke on the

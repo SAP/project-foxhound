@@ -24,8 +24,7 @@ namespace dom {
 
 using SVGAElementBase = SVGGraphicsElement;
 
-class SVGAElement final : public SVGAElementBase,
-                          public Link {
+class SVGAElement final : public SVGAElementBase, public Link {
  protected:
   using Element::GetText;
 
@@ -51,9 +50,9 @@ class SVGAElement final : public SVGAElementBase,
   void UnbindFromTree(UnbindContext&) override;
 
   int32_t TabIndexDefault() override;
-  Focusable IsFocusableWithoutStyle(bool aWithMouse) override;
+  Focusable IsFocusableWithoutStyle(IsFocusableFlags) override;
 
-  void GetLinkTarget(nsAString& aTarget) override;
+  void GetLinkTargetImpl(nsAString& aTarget) override;
   already_AddRefed<nsIURI> GetHrefURI() const override;
   bool HasHref() const;
 
@@ -93,6 +92,7 @@ class SVGAElement final : public SVGAElementBase,
   virtual ~SVGAElement() = default;
 
   StringAttributesInfo GetStringInfo() override;
+  void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute) override;
 
   enum { HREF, XLINK_HREF, TARGET };
   SVGAnimatedString mStringAttributes[3];

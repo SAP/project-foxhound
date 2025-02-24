@@ -11,10 +11,11 @@ use crate::custom_properties_map::CustomPropertiesMap;
 use crate::media_queries::Device;
 use crate::properties::{
     CSSWideKeyword, CustomDeclaration, CustomDeclarationValue, LonghandId, LonghandIdSet,
-    VariableDeclaration,
+    PropertyDeclaration,
 };
 use crate::properties_and_values::{
     registry::PropertyRegistrationData,
+    syntax::data_type::DependentDataTypes,
     value::{
         AllowComputationallyDependent, ComputedValue as ComputedRegisteredValue,
         SpecifiedValue as SpecifiedRegisteredValue,
@@ -125,7 +126,12 @@ macro_rules! lnf_int_variable {
     }};
 }
 
-static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 8] = [
+static CHROME_ENVIRONMENT_VARIABLES: [EnvironmentVariable; 9] = [
+    lnf_int_variable!(
+        atom!("-moz-mac-titlebar-height"),
+        MacTitlebarHeight,
+        int_pixels
+    ),
     lnf_int_variable!(
         atom!("-moz-gtk-csd-titlebar-button-spacing"),
         TitlebarButtonSpacing,
@@ -269,6 +275,11 @@ impl ComputedCustomProperties {
         name: &Name,
         value: ComputedRegisteredValue,
     ) {
+        // Broadening the assert to
+        // registration.syntax.is_universal() ^ value.as_universal().is_none() would require
+        // rewriting the cascade to not temporarily store unparsed custom properties with references
+        // as universal in the custom properties map.
+        debug_assert!(!registration.syntax.is_universal() || value.as_universal().is_some());
         self.map_mut(registration).insert(name, value)
     }
 
@@ -292,7 +303,8 @@ impl ComputedCustomProperties {
         }
     }
 
-    fn get(
+    /// Returns the relevant custom property value given a registration.
+    pub fn get(
         &self,
         registration: &PropertyRegistrationData,
         name: &Name,
@@ -327,9 +339,9 @@ bitflags! {
         /// At least one custom property depends on root element's line height units.
         const ROOT_LH_UNITS = 1 << 3;
         /// All dependencies not depending on the root element.
-        const NON_ROOT_DEPENDENCIES = Self::FONT_UNITS.bits() | Self::LH_UNITS.bits();
+        const NON_ROOT_DEPENDENCIES = Self::FONT_UNITS.0 | Self::LH_UNITS.0;
         /// All dependencies depending on the root element.
-        const ROOT_DEPENDENCIES = Self::ROOT_FONT_UNITS.bits() | Self::ROOT_LH_UNITS.bits();
+        const ROOT_DEPENDENCIES = Self::ROOT_FONT_UNITS.0 | Self::ROOT_LH_UNITS.0;
     }
 }
 
@@ -447,14 +459,11 @@ impl References {
         !self.refs.is_empty()
     }
 
-    fn get_non_custom_dependencies(&self, is_root_element: bool) -> NonCustomReferences {
-        let mask = NonCustomReferences::NON_ROOT_DEPENDENCIES;
-        let mask = if is_root_element {
-            mask | NonCustomReferences::ROOT_DEPENDENCIES
-        } else {
-            mask
-        };
-
+    fn non_custom_references(&self, is_root_element: bool) -> NonCustomReferences {
+        let mut mask = NonCustomReferences::NON_ROOT_DEPENDENCIES;
+        if is_root_element {
+            mask |= NonCustomReferences::ROOT_DEPENDENCIES
+        }
         self.non_custom_references & mask
     }
 }
@@ -885,11 +894,34 @@ fn parse_declaration_value_block<'i, 't>(
 pub struct CustomPropertiesBuilder<'a, 'b: 'a> {
     seen: PrecomputedHashSet<&'a Name>,
     may_have_cycles: bool,
+    has_color_scheme: bool,
     custom_properties: ComputedCustomProperties,
     reverted: PrecomputedHashMap<&'a Name, (CascadePriority, bool)>,
     stylist: &'a Stylist,
     computed_context: &'a mut computed::Context<'b>,
     references_from_non_custom_properties: NonCustomReferenceMap<Vec<Name>>,
+}
+
+fn has_non_custom_dependency(
+    registration: &PropertyRegistrationData,
+    value: &VariableValue,
+    may_have_color_scheme: bool,
+    is_root_element: bool,
+) -> bool {
+    let dependent_types = registration.syntax.dependent_types();
+    if dependent_types.is_empty() {
+        return false;
+    }
+    if dependent_types.intersects(DependentDataTypes::COLOR) && may_have_color_scheme {
+        return true;
+    }
+    if dependent_types.intersects(DependentDataTypes::LENGTH) {
+        let value_dependencies = value.references.non_custom_references(is_root_element);
+        if !value_dependencies.is_empty() {
+            return true;
+        }
+    }
+    false
 }
 
 impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
@@ -905,6 +937,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             seen: PrecomputedHashSet::default(),
             reverted: Default::default(),
             may_have_cycles: false,
+            has_color_scheme: false,
             custom_properties,
             stylist,
             computed_context,
@@ -962,23 +995,24 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
         let registration = self.stylist.get_custom_property_registration(&name);
         match value {
             CustomDeclarationValue::Value(unparsed_value) => {
-                let has_custom_property_references = unparsed_value.references.any_var;
-                let registered_length_property =
-                    registration.syntax.may_reference_font_relative_length();
+                // At this point of the cascade we're not guaranteed to have seen the color-scheme
+                // declaration, so need to assume the worst. We could track all system color
+                // keyword tokens + the light-dark() function, but that seems non-trivial /
+                // probably overkill.
+                let may_have_color_scheme = true;
                 // Non-custom dependency is really relevant for registered custom properties
                 // that require computed value of such dependencies.
-                let has_non_custom_dependencies = registered_length_property &&
-                    !unparsed_value
-                        .references
-                        .get_non_custom_dependencies(self.computed_context.is_root_element())
-                        .is_empty();
-                self.may_have_cycles |=
-                    has_custom_property_references || has_non_custom_dependencies;
-
+                let has_dependency = unparsed_value.references.any_var ||
+                    has_non_custom_dependency(
+                        registration,
+                        unparsed_value,
+                        may_have_color_scheme,
+                        self.computed_context.is_root_element(),
+                    );
                 // If the variable value has no references to other properties, perform
                 // substitution here instead of forcing a full traversal in `substitute_all`
                 // afterwards.
-                if !has_custom_property_references && !has_non_custom_dependencies {
+                if !has_dependency {
                     return substitute_references_if_needed_and_apply(
                         name,
                         unparsed_value,
@@ -987,6 +1021,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                         self.computed_context,
                     );
                 }
+                self.may_have_cycles = true;
                 let value = ComputedRegisteredValue::universal(Arc::clone(unparsed_value));
                 map.insert(registration, name, value);
             },
@@ -1019,13 +1054,37 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
         }
     }
 
+    /// Fast check to avoid calling maybe_note_non_custom_dependency in ~all cases.
+    #[inline]
+    pub fn might_have_non_custom_dependency(id: LonghandId, decl: &PropertyDeclaration) -> bool {
+        if id == LonghandId::ColorScheme {
+            return true;
+        }
+        if matches!(id, LonghandId::LineHeight | LonghandId::FontSize) {
+            return matches!(decl, PropertyDeclaration::WithVariables(..));
+        }
+        false
+    }
+
     /// Note a non-custom property with variable reference that may in turn depend on that property.
     /// e.g. `font-size` depending on a custom property that may be a registered property using `em`.
-    pub fn note_potentially_cyclic_non_custom_dependency(
-        &mut self,
-        id: LonghandId,
-        decl: &VariableDeclaration,
-    ) {
+    pub fn maybe_note_non_custom_dependency(&mut self, id: LonghandId, decl: &PropertyDeclaration) {
+        debug_assert!(Self::might_have_non_custom_dependency(id, decl));
+        if id == LonghandId::ColorScheme {
+            // If we might change the color-scheme, we need to defer computation of colors.
+            self.has_color_scheme = true;
+            return;
+        }
+
+        let refs = match decl {
+            PropertyDeclaration::WithVariables(ref v) => &v.value.variable_value.references,
+            _ => return,
+        };
+
+        if !refs.any_var {
+            return;
+        }
+
         // With unit algebra in `calc()`, references aren't limited to `font-size`.
         // For example, `--foo: 100ex; font-weight: calc(var(--foo) / 1ex);`,
         // or `--foo: 1em; zoom: calc(var(--foo) * 30px / 2em);`
@@ -1046,10 +1105,6 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             },
             _ => return,
         };
-        let refs = &decl.value.variable_value.references;
-        if !refs.any_var {
-            return;
-        }
 
         let variables: Vec<Atom> = refs
             .refs
@@ -1058,11 +1113,13 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
                 if !reference.is_var {
                     return None;
                 }
-                if !self
+                let registration = self
                     .stylist
-                    .get_custom_property_registration(&reference.name)
+                    .get_custom_property_registration(&reference.name);
+                if !registration
                     .syntax
-                    .may_compute_length()
+                    .dependent_types()
+                    .intersects(DependentDataTypes::LENGTH)
                 {
                     return None;
                 }
@@ -1076,7 +1133,7 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
             if was_none {
                 return;
             }
-            v.extend(variables.clone().into_iter());
+            v.extend(variables.iter().cloned());
         });
     }
 
@@ -1187,17 +1244,18 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
     pub fn build(
         mut self,
         defer: DeferFontRelativeCustomPropertyResolution,
-    ) -> Option<ComputedCustomProperties> {
+    ) -> Option<CustomPropertiesMap> {
         let mut deferred_custom_properties = None;
         if self.may_have_cycles {
             if defer == DeferFontRelativeCustomPropertyResolution::Yes {
-                deferred_custom_properties = Some(ComputedCustomProperties::default());
+                deferred_custom_properties = Some(CustomPropertiesMap::default());
             }
             let mut invalid_non_custom_properties = LonghandIdSet::default();
             substitute_all(
                 &mut self.custom_properties,
                 deferred_custom_properties.as_mut(),
                 &mut invalid_non_custom_properties,
+                self.has_color_scheme,
                 &self.seen,
                 &self.references_from_non_custom_properties,
                 self.stylist,
@@ -1241,48 +1299,29 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
     /// Fully resolve all deferred custom properties, assuming that the incoming context
     /// has necessary properties resolved.
     pub fn build_deferred(
-        deferred: ComputedCustomProperties,
+        deferred: CustomPropertiesMap,
         stylist: &Stylist,
         computed_context: &mut computed::Context,
     ) {
         if deferred.is_empty() {
             return;
         }
-        // Guaranteed to not have cycles at this point.
-        let substitute =
-            |deferred: &CustomPropertiesMap,
-             stylist: &Stylist,
-             context: &computed::Context,
-             custom_properties: &mut ComputedCustomProperties| {
-                // Since `CustomPropertiesMap` preserves insertion order, we shouldn't
-                // have to worry about resolving in a wrong order.
-                for (k, v) in deferred.iter() {
-                    let Some(v) = v else { continue };
-                    let Some(v) = v.as_universal() else {
-                        unreachable!("Computing should have been deferred!")
-                    };
-                    substitute_references_if_needed_and_apply(
-                        k,
-                        v,
-                        custom_properties,
-                        stylist,
-                        context,
-                    );
-                }
-            };
         let mut custom_properties = std::mem::take(&mut computed_context.builder.custom_properties);
-        substitute(
-            &deferred.inherited,
-            stylist,
-            computed_context,
-            &mut custom_properties,
-        );
-        substitute(
-            &deferred.non_inherited,
-            stylist,
-            computed_context,
-            &mut custom_properties,
-        );
+        // Since `CustomPropertiesMap` preserves insertion order, we shouldn't have to worry about
+        // resolving in a wrong order.
+        for (k, v) in deferred.iter() {
+            let Some(v) = v else { continue };
+            let Some(v) = v.as_universal() else {
+                unreachable!("Computing should have been deferred!")
+            };
+            substitute_references_if_needed_and_apply(
+                k,
+                v,
+                &mut custom_properties,
+                stylist,
+                computed_context,
+            );
+        }
         computed_context.builder.custom_properties = custom_properties;
     }
 }
@@ -1293,8 +1332,9 @@ impl<'a, 'b: 'a> CustomPropertiesBuilder<'a, 'b> {
 /// It does cycle dependencies removal at the same time as substitution.
 fn substitute_all(
     custom_properties_map: &mut ComputedCustomProperties,
-    mut deferred_properties_map: Option<&mut ComputedCustomProperties>,
+    mut deferred_properties_map: Option<&mut CustomPropertiesMap>,
     invalid_non_custom_properties: &mut LonghandIdSet,
+    has_color_scheme: bool,
     seen: &PrecomputedHashSet<&Name>,
     references_from_non_custom_properties: &NonCustomReferenceMap<Vec<Name>>,
     stylist: &Stylist,
@@ -1343,6 +1383,8 @@ fn substitute_all(
         stack: SmallVec<[usize; 5]>,
         /// References to non-custom properties in this strongly connected component.
         non_custom_references: NonCustomReferences,
+        /// Whether the builder has seen a non-custom color-scheme reference.
+        has_color_scheme: bool,
         map: &'a mut ComputedCustomProperties,
         /// The stylist is used to get registered properties, and to resolve the environment to
         /// substitute `env()` variables.
@@ -1352,8 +1394,10 @@ fn substitute_all(
         computed_context: &'a computed::Context<'b>,
         /// Longhand IDs that became invalid due to dependency cycle(s).
         invalid_non_custom_properties: &'a mut LonghandIdSet,
-        /// Properties that cannot yet be substituted.
-        deferred_properties: Option<&'a mut ComputedCustomProperties>,
+        /// Properties that cannot yet be substituted. Note we store both inherited and
+        /// non-inherited properties in the same map, since we need to make sure we iterate through
+        /// them in the right order.
+        deferred_properties: Option<&'a mut CustomPropertiesMap>,
     }
 
     /// This function combines the traversal for cycle removal and value
@@ -1380,19 +1424,47 @@ fn substitute_all(
         context: &mut Context<'a, 'b>,
     ) -> Option<usize> {
         // Some shortcut checks.
-        let (value, should_substitute) = match var {
+        let value = match var {
             VarType::Custom(ref name) => {
                 let registration = context.stylist.get_custom_property_registration(name);
-                let value = context.map.get(registration, name)?;
-                let value = value.as_universal()?;
-
-                let non_custom_references = value
-                    .references
-                    .get_non_custom_dependencies(context.computed_context.is_root_element());
-                let has_custom_property_reference = value.references.any_var;
+                let value = context.map.get(registration, name)?.as_universal()?;
+                let is_root = context.computed_context.is_root_element();
+                // We need to keep track of (potential) non-custom-references even on unregistered
+                // properties for cycle-detection purposes.
+                let value_non_custom_references = value.references.non_custom_references(is_root);
+                context.non_custom_references |= value_non_custom_references;
+                let has_dependency = value.references.any_var ||
+                    !value_non_custom_references.is_empty() ||
+                    has_non_custom_dependency(
+                        registration,
+                        value,
+                        context.has_color_scheme,
+                        is_root,
+                    );
                 // Nothing to resolve.
-                if !has_custom_property_reference && non_custom_references.is_empty() {
+                if !has_dependency {
                     debug_assert!(!value.references.any_env, "Should've been handled earlier");
+                    if !registration.syntax.is_universal() {
+                        // We might still need to compute the value if this is not an universal
+                        // registration if we thought this had a dependency before but turned out
+                        // not to be (due to has_color_scheme, for example). Note that if this was
+                        // already computed we would've bailed out in the as_universal() check.
+                        debug_assert!(
+                            registration
+                                .syntax
+                                .dependent_types()
+                                .intersects(DependentDataTypes::COLOR),
+                            "How did an unresolved value get here otherwise?",
+                        );
+                        let value = value.clone();
+                        substitute_references_if_needed_and_apply(
+                            name,
+                            &value,
+                            &mut context.map,
+                            context.stylist,
+                            context.computed_context,
+                        );
+                    }
                     return None;
                 }
 
@@ -1405,11 +1477,10 @@ fn substitute_all(
                         entry.insert(context.count);
                     },
                 }
-                context.non_custom_references |= value.as_ref().references.non_custom_references;
 
                 // Hold a strong reference to the value so that we don't
                 // need to keep reference to context.map.
-                (Some(value.clone()), has_custom_property_reference)
+                Some(value.clone())
             },
             VarType::NonCustom(ref non_custom) => {
                 let entry = &mut context.non_custom_index_map[*non_custom];
@@ -1417,7 +1488,7 @@ fn substitute_all(
                     return Some(*v);
                 }
                 *entry = Some(context.count);
-                (None, false)
+                None
             },
         };
 
@@ -1575,47 +1646,37 @@ fn substitute_all(
 
         if let Some(ref v) = value {
             let registration = context.stylist.get_custom_property_registration(&name);
-            let registered_length_property =
-                registration.syntax.may_reference_font_relative_length();
+
             let mut defer = false;
-            if !context.non_custom_references.is_empty() && registered_length_property {
-                if let Some(deferred) = &mut context.deferred_properties {
-                    // This property directly depends on a non-custom property, defer resolving it.
-                    let deferred_property = ComputedRegisteredValue::universal(Arc::clone(v));
-                    deferred.insert(registration, &name, deferred_property);
+            if let Some(ref mut deferred) = context.deferred_properties {
+                // We need to defer this property if it has a non-custom property dependency, or
+                // any variable that it references is already deferred.
+                defer =
+                    has_non_custom_dependency(
+                        registration,
+                        v,
+                        context.has_color_scheme,
+                        context.computed_context.is_root_element(),
+                    ) || v.references.refs.iter().any(|reference| {
+                        reference.is_var && deferred.get(&reference.name).is_some()
+                    });
+
+                if defer {
+                    let value = ComputedRegisteredValue::universal(Arc::clone(v));
+                    deferred.insert(&name, value);
                     context.map.remove(registration, &name);
-                    defer = true;
                 }
             }
-            if should_substitute && !defer {
-                for reference in v.references.refs.iter() {
-                    if !reference.is_var {
-                        continue;
-                    }
-                    if let Some(deferred) = &mut context.deferred_properties {
-                        let registration = context
-                            .stylist
-                            .get_custom_property_registration(&reference.name);
-                        if deferred.get(registration, &reference.name).is_some() {
-                            // This property depends on a custom property that depends on a non-custom property, defer.
-                            let deferred_property =
-                                ComputedRegisteredValue::universal(Arc::clone(v));
-                            deferred.insert(registration, &name, deferred_property);
-                            context.map.remove(registration, &name);
-                            defer = true;
-                            break;
-                        }
-                    }
-                }
-                if !defer {
-                    substitute_references_if_needed_and_apply(
-                        &name,
-                        v,
-                        &mut context.map,
-                        context.stylist,
-                        context.computed_context,
-                    );
-                }
+
+            // If there are no var references we should already be computed and substituted by now.
+            if !defer && v.references.any_var {
+                substitute_references_if_needed_and_apply(
+                    &name,
+                    v,
+                    &mut context.map,
+                    context.stylist,
+                    context.computed_context,
+                );
             }
         }
         context.non_custom_references = NonCustomReferences::default();
@@ -1636,6 +1697,7 @@ fn substitute_all(
             var_info: SmallVec::new(),
             map: custom_properties_map,
             non_custom_references: NonCustomReferences::default(),
+            has_color_scheme,
             stylist,
             computed_context,
             invalid_non_custom_properties,
@@ -1920,13 +1982,13 @@ fn do_substitute_chunk<'a>(
             computed_context,
             references,
         )?;
+        let substitution = substitution.into_universal();
 
         // Optimize the property: var(--...) case to avoid allocating at all.
         if reference.start == start && reference.end == end && registration.syntax.is_universal() {
-            return Ok(substitution);
+            return Ok(Substitution::Universal(substitution));
         }
 
-        let substitution = substitution.into_universal();
         substituted.push(
             &substitution.css,
             substitution.first_token_type,

@@ -85,9 +85,16 @@ void CommandEncoder::Cleanup() {
     return;
   }
   mValid = false;
-  if (mBridge->IsOpen()) {
+
+  if (!mBridge) {
+    return;
+  }
+
+  if (mBridge->CanSend()) {
     mBridge->SendCommandEncoderDrop(mId);
   }
+
+  wgpu_client_free_command_encoder_id(mBridge->GetClient(), mId);
 }
 
 void CommandEncoder::TrackPresentationContext(CanvasContext* aTargetContext) {
@@ -103,7 +110,7 @@ void CommandEncoder::CopyBufferToBuffer(const Buffer& aSource,
                                         const Buffer& aDestination,
                                         BufferAddress aDestinationOffset,
                                         BufferAddress aSize) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -118,7 +125,7 @@ void CommandEncoder::CopyBufferToTexture(
     const dom::GPUImageCopyBuffer& aSource,
     const dom::GPUImageCopyTexture& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -136,7 +143,7 @@ void CommandEncoder::CopyTextureToBuffer(
     const dom::GPUImageCopyTexture& aSource,
     const dom::GPUImageCopyBuffer& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -152,7 +159,7 @@ void CommandEncoder::CopyTextureToTexture(
     const dom::GPUImageCopyTexture& aSource,
     const dom::GPUImageCopyTexture& aDestination,
     const dom::GPUExtent3D& aCopySize) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -181,7 +188,7 @@ void CommandEncoder::ClearBuffer(const Buffer& aBuffer, const uint64_t aOffset,
 }
 
 void CommandEncoder::PushDebugGroup(const nsAString& aString) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -191,7 +198,7 @@ void CommandEncoder::PushDebugGroup(const nsAString& aString) {
   mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
 }
 void CommandEncoder::PopDebugGroup() {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -200,7 +207,7 @@ void CommandEncoder::PopDebugGroup() {
   mBridge->SendCommandEncoderAction(mId, mParent->mId, std::move(bb));
 }
 void CommandEncoder::InsertDebugMarker(const nsAString& aString) {
-  if (!mBridge->IsOpen()) {
+  if (!mBridge->CanSend()) {
     return;
   }
 
@@ -230,7 +237,9 @@ already_AddRefed<RenderPassEncoder> CommandEncoder::BeginRenderPass(
 }
 
 void CommandEncoder::EndComputePass(ffi::WGPURecordedComputePass& aPass) {
-  if (!mBridge->IsOpen()) {
+  // Because this can be called during child Cleanup, we need to check
+  // that the bridge is still alive.
+  if (!mBridge || !mBridge->CanSend()) {
     return;
   }
 
@@ -240,7 +249,9 @@ void CommandEncoder::EndComputePass(ffi::WGPURecordedComputePass& aPass) {
 }
 
 void CommandEncoder::EndRenderPass(ffi::WGPURecordedRenderPass& aPass) {
-  if (!mBridge->IsOpen()) {
+  // Because this can be called during child Cleanup, we need to check
+  // that the bridge is still alive.
+  if (!mBridge || !mBridge->CanSend()) {
     return;
   }
 

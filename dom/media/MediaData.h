@@ -13,6 +13,7 @@
 #  include "SharedBuffer.h"
 #  include "TimeUnits.h"
 #  include "mozilla/CheckedInt.h"
+#  include "mozilla/EnumSet.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/PodOperations.h"
 #  include "mozilla/RefPtr.h"
@@ -23,6 +24,7 @@
 #  include "mozilla/gfx/Rect.h"
 #  include "nsString.h"
 #  include "nsTArray.h"
+#  include "EncoderConfig.h"
 
 namespace mozilla {
 
@@ -379,7 +381,7 @@ class NullData : public MediaData {
   static const Type sType = Type::NULL_DATA;
 };
 
-// Holds chunk a decoded audio frames.
+// Holds chunk a decoded interleaved audio frames.
 class AudioData : public MediaData {
  public:
   AudioData(int64_t aOffset, const media::TimeUnit& aTime,
@@ -388,6 +390,8 @@ class AudioData : public MediaData {
 
   static const Type sType = Type::AUDIO_DATA;
   static const char* sTypeName;
+
+  nsCString ToString() const;
 
   // Access the buffer as a Span.
   Span<AudioDataValue> Data() const;
@@ -578,13 +582,18 @@ class VideoData : public MediaData {
   media::TimeUnit mNextKeyFrameTime;
 };
 
+// See https://w3c.github.io/encrypted-media/#scheme-cenc
 enum class CryptoScheme : uint8_t {
   None,
   Cenc,
   Cbcs,
+  Cbcs_1_9,
 };
+using CryptoSchemeSet = EnumSet<CryptoScheme, uint8_t>;
 
 const char* CryptoSchemeToString(const CryptoScheme& aScheme);
+nsCString CryptoSchemeSetToString(const CryptoSchemeSet& aSchemes);
+CryptoScheme StringToCryptoScheme(const nsAString& aString);
 
 class CryptoTrack {
  public:
@@ -720,6 +729,9 @@ class MediaRawData final : public MediaData {
   // If it's true, the `mCrypto` should be copied into the remote data as well.
   // Currently this is only used for the media engine DRM playback.
   bool mShouldCopyCryptoToRemoteRawData = false;
+
+  // Config used to encode this packet.
+  UniquePtr<const EncoderConfig> mConfig;
 
   // It's only used when the remote decoder reconstructs the media raw data.
   CryptoSample& GetWritableCrypto() { return mCryptoInternal; }

@@ -398,7 +398,7 @@
 
     _adjustAcItem() {
       let originalUrl = this.getAttribute("ac-value");
-      let title = this.getAttribute("ac-comment");
+      let title = this.getAttribute("ac-label");
       this.setAttribute("url", originalUrl);
       this.setAttribute("image", this.getAttribute("ac-image"));
       this.setAttribute("title", title);
@@ -519,6 +519,11 @@
 
       this.addEventListener("click", event => {
         if (event.button != 0) {
+          return;
+        }
+
+        let comment = this.getAttribute("ac-comment");
+        if (comment && JSON.parse(comment)?.noLearnMore) {
           return;
         }
 
@@ -654,9 +659,7 @@
     static get inheritedAttributes() {
       return {
         // getLabelAt:
-        ".line1-label": "text=ac-value",
-        // getCommentAt:
-        ".line2-label": "text=ac-label",
+        ".line1-label": "text=ac-label",
         ".ac-site-icon": "src=ac-image",
       };
     }
@@ -676,7 +679,13 @@
     `;
     }
 
-    _adjustAcItem() {}
+    _adjustAcItem() {
+      let comment = JSON.parse(this.getAttribute("ac-comment"));
+      this.querySelector(".line2-label").textContent = comment?.secondary || "";
+
+      this.querySelector(".ac-site-icon").collapsed =
+        this.getAttribute("ac-image") == "";
+    }
 
     _onOverflow() {}
 
@@ -692,26 +701,128 @@
     }
 
     onSecondaryAction() {
-      const details = JSON.parse(this.getAttribute("ac-label"));
+      const comment = JSON.parse(this.getAttribute("ac-comment"));
       LoginHelper.openPasswordManager(window, {
-        loginGuid: details?.guid,
+        loginGuid: comment?.guid,
       });
     }
 
     static get inheritedAttributes() {
       return {
         // getLabelAt:
-        ".line1-label": "text=ac-value",
-        // Don't inherit ac-label with getCommentAt since the label is JSON.
+        ".line1-label": "text=ac-label",
         ".ac-site-icon": "src=ac-image",
       };
     }
+  }
+
+  // This type has an action that is triggered when activated. The comment
+  // for that result should contain a fillMessageName which is the message to send.
+  class MozAutocompleteActionRichlistitem extends MozAutocompleteTwoLineRichlistitem {
+    constructor() {
+      super();
+      this.selectedByMouseOver = true;
+    }
+  }
+
+  // A row that conveys status information assigned from the status field
+  // within the comment associated with the selected item in the list.
+  class MozAutocompleteStatusRichlistitem extends MozAutocompleteTwoLineRichlistitem {
+    static get markup() {
+      return `<div class="ac-status" xmlns="http://www.w3.org/1999/xhtml"></div>`;
+    }
+
+    connectedCallback() {
+      super.connectedCallback();
+      this.parentNode.addEventListener("select", this);
+      this.eventListenerParentNode = this.parentNode;
+    }
+
+    disconnectedCallback() {
+      this.eventListenerParentNode?.removeEventListener("select", this);
+      this.eventListenerParentNode = null;
+    }
+
+    handleEvent(event) {
+      if (event.type == "select") {
+        let selectedItem = event.target.selectedItem;
+        if (selectedItem) {
+          this.#setStatus(selectedItem);
+        }
+      }
+    }
+
+    #setStatus(item) {
+      // For normal rows, use that row's comment, otherwise use the status's
+      // comment which serves as the default label.
+      let target =
+        !item || item instanceof MozAutocompleteActionRichlistitem
+          ? this
+          : item;
+
+      let comment = JSON.parse(target.getAttribute("ac-comment"));
+
+      let statusBox = this.querySelector(".ac-status");
+      statusBox.textContent = comment?.status || "";
+    }
 
     _adjustAcItem() {
-      super._adjustAcItem();
+      this.#setStatus(this);
+      this.setAttribute("disabled", "true");
+    }
+  }
 
-      let details = JSON.parse(this.getAttribute("ac-label"));
-      this.querySelector(".line2-label").textContent = details.comment;
+  class MozAutocompleteAutoFillRichlistitem extends MozAutocompleteTwoLineRichlistitem {
+    constructor() {
+      super();
+      this.selectedByMouseOver = true;
+    }
+
+    _adjustAcItem() {
+      let label = this.getAttribute("ac-label");
+      this.querySelector(".line1-label").textContent = label;
+
+      let { secondary, ariaLabel } = JSON.parse(
+        this.getAttribute("ac-comment")
+      );
+
+      let line2Label = this.querySelector(".line2-label");
+      line2Label.textContent = secondary ?? "";
+
+      if (ariaLabel) {
+        this.setAttribute("aria-label", ariaLabel);
+      }
+
+      this.querySelector(".ac-site-icon").collapsed =
+        this.getAttribute("ac-image") == "";
+    }
+
+    set selected(val) {
+      if (val) {
+        this.setAttribute("selected", "true");
+      } else {
+        this.removeAttribute("selected");
+      }
+
+      let { AutoCompleteParent } = ChromeUtils.importESModule(
+        "resource://gre/actors/AutoCompleteParent.sys.mjs"
+      );
+
+      let actor = AutoCompleteParent.getCurrentActor();
+      if (!actor) {
+        return;
+      }
+
+      let popup = actor.openedPopup;
+
+      setTimeout(() => {
+        let selectedIndex = popup ? popup.selectedIndex : -1;
+        actor.previewEntry(selectedIndex);
+      }, 0);
+    }
+
+    get selected() {
+      return this.getAttribute("selected") == "true";
     }
   }
 
@@ -746,7 +857,7 @@
 
     _adjustAcItem() {
       let { generatedPassword, willAutoSaveGeneratedPassword } = JSON.parse(
-        this.getAttribute("ac-label")
+        this.getAttribute("ac-comment")
       );
       let line2Label = this.querySelector(".line2-label");
       line2Label.textContent = "";
@@ -773,8 +884,7 @@
     static get inheritedAttributes() {
       return {
         // getLabelAt:
-        ".line1-label": "text=ac-value",
-        // Don't inherit ac-label with getCommentAt since the label is JSON.
+        ".line1-label": "text=ac-label",
       };
     }
 
@@ -798,7 +908,7 @@
         this.querySelector(".labels-wrapper"),
         `autocomplete-import-logins-${this.getAttribute("ac-value")}`,
         {
-          host: JSON.parse(this.getAttribute("ac-label")).hostname.replace(
+          host: JSON.parse(this.getAttribute("ac-comment")).hostname.replace(
             /^www\./,
             ""
           ),
@@ -840,8 +950,32 @@
   );
 
   customElements.define(
+    "autocomplete-autofill-richlistitem",
+    MozAutocompleteAutoFillRichlistitem,
+    {
+      extends: "richlistitem",
+    }
+  );
+
+  customElements.define(
     "autocomplete-login-richlistitem",
     MozAutocompleteLoginRichlistitem,
+    {
+      extends: "richlistitem",
+    }
+  );
+
+  customElements.define(
+    "autocomplete-action-richlistitem",
+    MozAutocompleteActionRichlistitem,
+    {
+      extends: "richlistitem",
+    }
+  );
+
+  customElements.define(
+    "autocomplete-status-richlistitem",
+    MozAutocompleteStatusRichlistitem,
     {
       extends: "richlistitem",
     }

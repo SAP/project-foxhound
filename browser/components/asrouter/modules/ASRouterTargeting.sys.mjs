@@ -45,7 +45,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
@@ -71,12 +70,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "cfrAddonsUserPref",
   "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
   true
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "isWhatsNewPanelEnabled",
-  "browser.messaging-system.whatsNewPanel.enabled",
-  false
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -704,9 +697,6 @@ const TargetingGetters = {
   get hasAccessedFxAPanel() {
     return lazy.hasAccessedFxAPanel;
   },
-  get isWhatsNewPanelEnabled() {
-    return lazy.isWhatsNewPanelEnabled;
-  },
   get userPrefs() {
     return {
       cfrFeatures: lazy.cfrFeaturesUserPref,
@@ -856,6 +846,19 @@ const TargetingGetters = {
     return lazy.WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
   },
 
+  get isMSIX() {
+    if (AppConstants.platform !== "win") {
+      return false;
+    }
+    // While we can write registry keys using external programs, we have no
+    // way of cleanup on uninstall. If we are on an MSIX build
+    // launch on login should never be enabled.
+    // Default to false so that the feature isn't unnecessarily
+    // disabled.
+    // See Bug 1888263.
+    return Services.sysinfo.getProperty("hasWinPackageId", false);
+  },
+
   /**
    * Is this invocation running in background task mode?
    *
@@ -885,15 +888,6 @@ const TargetingGetters = {
   get userPrefersReducedMotion() {
     let window = Services.appShell.hiddenDOMWindow;
     return window?.matchMedia("(prefers-reduced-motion: reduce)")?.matches;
-  },
-
-  /**
-   * Whether or not the user is in the Major Release 2022 holdback study.
-   */
-  get inMr2022Holdback() {
-    return (
-      lazy.NimbusFeatures.majorRelease2022.getVariable("onboarding") === false
-    );
   },
 
   /**

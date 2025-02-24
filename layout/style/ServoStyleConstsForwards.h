@@ -83,12 +83,13 @@ struct PropertyStyleAnimationValuePair;
 using ComputedKeyframeValues = nsTArray<PropertyStyleAnimationValuePair>;
 
 class ComputedStyle;
-enum LogicalAxis : uint8_t;
+enum class LogicalAxis : uint8_t;
 class SeenPtrs;
 class SharedFontList;
 class StyleSheet;
 class WritingMode;
 class ServoElementSnapshotTable;
+class StyleParserState;
 
 template <typename T>
 struct StyleForgottenArcSlicePtr;
@@ -100,7 +101,7 @@ struct ComputedTiming;
 struct URLExtraData;
 
 enum HalfCorner : uint8_t;
-enum LogicalSide : uint8_t;
+enum class LogicalSide : uint8_t;
 enum class PseudoStyleType : uint8_t;
 enum class OriginFlags : uint8_t;
 enum class UseBoxSizing : uint8_t;

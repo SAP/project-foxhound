@@ -1226,47 +1226,6 @@ add_task(async function check_userPrefersReducedMotion() {
   );
 });
 
-add_task(async function test_mr2022Holdback() {
-  await ExperimentAPI.ready();
-
-  ok(
-    !ASRouterTargeting.Environment.inMr2022Holdback,
-    "Should not be in holdback (no experiment)"
-  );
-
-  {
-    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-      featureId: "majorRelease2022",
-      value: {
-        onboarding: true,
-      },
-    });
-
-    ok(
-      !ASRouterTargeting.Environment.inMr2022Holdback,
-      "Should not be in holdback (onboarding = true)"
-    );
-
-    await doExperimentCleanup();
-  }
-
-  {
-    const doExperimentCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-      featureId: "majorRelease2022",
-      value: {
-        onboarding: false,
-      },
-    });
-
-    ok(
-      ASRouterTargeting.Environment.inMr2022Holdback,
-      "Should be in holdback (onboarding = false)"
-    );
-
-    await doExperimentCleanup();
-  }
-});
-
 add_task(async function test_distributionId() {
   is(
     ASRouterTargeting.Environment.distributionId,
@@ -1467,6 +1426,28 @@ add_task(async function check_useEmbeddedMigrationWizard() {
   ]);
 
   ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+});
+
+add_task(async function check_isMSIX() {
+  is(
+    typeof ASRouterTargeting.Environment.isMSIX,
+    "boolean",
+    "Should return a boolean"
+  );
+  if (AppConstants.platform !== "win") {
+    is(
+      ASRouterTargeting.Environment.isMSIX,
+      false,
+      "Should always be false on non-Windows"
+    );
+    return;
+  }
+
+  is(
+    ASRouterTargeting.Environment.isMSIX,
+    Services.sysinfo.getProperty("hasWinPackageId"),
+    "Should match the value from sysinfo"
+  );
 });
 
 add_task(async function check_isRTAMO() {

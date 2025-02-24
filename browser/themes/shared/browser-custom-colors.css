@@ -5,7 +5,7 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 @media not (prefers-contrast) {
-  :root:not(:-moz-lwtheme) {
+  :root:not([lwtheme]) {
     --button-primary-bgcolor: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
     --button-primary-hover-bgcolor: light-dark(rgb(2, 80, 187), rgb(128, 235, 255));
     --button-primary-active-bgcolor: light-dark(rgb(5, 62, 148), rgb(170, 242, 255));
@@ -41,14 +41,12 @@
 
     --input-color: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
     --input-bgcolor: light-dark(rgb(255, 255, 255), #42414d);
-    --input-border-color: light-dark(color-mix(in srgb, currentColor 41%, transparent), #8f8f9d);
 
     --tab-selected-bgcolor: light-dark(rgb(255, 255, 255), rgb(66, 65, 77));
     --tab-selected-textcolor: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
     --tab-icon-overlay-stroke: light-dark(rgb(255, 255, 255), rgb(66, 65, 77));
     --tab-icon-overlay-fill: light-dark(rgb(91, 91, 102), rgb(251, 251, 254));
-    --tab-attention-icon-color: light-dark(rgb(42, 195, 162), rgb(84, 255, 189));
-    --tabs-navbar-shadow-color: transparent;
+    --tabs-navbar-separator-style: none;
 
     --toolbox-non-lwt-bgcolor: light-dark(rgb(240, 240, 244), rgb(28, 27, 34));
     --toolbox-non-lwt-textcolor: light-dark(rgb(21, 20, 26), rgb(251, 251, 254));
@@ -88,5 +86,6 @@
     --chrome-content-separator-color: light-dark(rgb(204, 204, 204), hsl(240, 5%, 5%));
 
     --link-color: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
+    --attention-dot-color: light-dark(#2ac3a2, #54ffbd);
   }
 }

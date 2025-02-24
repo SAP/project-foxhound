@@ -98,6 +98,8 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
                     "chrome",
                 ]
             )
+            if self.config["app"] == "cstm-car-m":
+                args_list.extend(["--chrome.android.package", "org.chromium.chrome"])
         else:
             activity = self.config["activity"]
             if self.config["app"] == "fenix":
@@ -107,7 +109,7 @@ class BrowsertimeAndroid(PerftestAndroid, Browsertime):
                 )
                 activity = "mozilla.telemetry.glean.debug.GleanDebugActivity"
 
-            if self.device.shell_output("getprop ro.product.model") in ["Pixel 6"]:
+            if int(self.device.shell_output("getprop ro.build.version.release")) > 11:
                 args_list.extend(
                     [
                         '--firefox.geckodriverArgs="--android-storage"',

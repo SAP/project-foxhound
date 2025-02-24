@@ -39,8 +39,7 @@ class PerformanceEntryAdder final : public WorkerControlRunnable {
   PerformanceEntryAdder(WorkerPrivate* aWorkerPrivate,
                         PerformanceStorageWorker* aStorage,
                         UniquePtr<PerformanceProxyData>&& aData)
-      : WorkerControlRunnable(aWorkerPrivate, "PerformanceEntryAdder",
-                              WorkerThread),
+      : WorkerControlRunnable("PerformanceEntryAdder"),
         mStorage(aStorage),
         mData(std::move(aData)) {}
 
@@ -119,7 +118,7 @@ void PerformanceStorageWorker::AddEntry(nsIHttpChannel* aChannel,
 
   RefPtr<PerformanceEntryAdder> r =
       new PerformanceEntryAdder(workerPrivate, this, std::move(data));
-  Unused << NS_WARN_IF(!r->Dispatch());
+  Unused << NS_WARN_IF(!r->Dispatch(workerPrivate));
 }
 
 void PerformanceStorageWorker::AddEntry(

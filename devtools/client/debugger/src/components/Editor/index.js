@@ -12,6 +12,7 @@ import { connect } from "devtools/client/shared/vendor/react-redux";
 import { getLineText, isLineBlackboxed } from "./../../utils/source";
 import { createLocation } from "./../../utils/location";
 import { getIndentation } from "../../utils/indentation";
+import { isWasm } from "../../utils/wasm";
 import { features } from "../../utils/prefs";
 
 import {
@@ -50,6 +51,7 @@ import Exceptions from "./Exceptions";
 import BlackboxLines from "./BlackboxLines";
 
 import {
+  fromEditorLine,
   showSourceText,
   setDocument,
   resetLineNumberFormat,
@@ -59,7 +61,6 @@ import {
   lineAtHeight,
   toSourceLine,
   getDocument,
-  scrollToPosition,
   toEditorPosition,
   getSourceLocationFromMouseEvent,
   hasDocument,
@@ -68,7 +69,11 @@ import {
   endOperation,
 } from "../../utils/editor/index";
 
-import { resizeToggleButton, resizeBreakpointGutter } from "../../utils/ui";
+import {
+  resizeToggleButton,
+  getLineNumberWidth,
+  resizeBreakpointGutter,
+} from "../../utils/ui";
 
 const { debounce } = require("resource://devtools/shared/debounce.js");
 const classnames = require("resource://devtools/client/shared/classnames.js");
@@ -143,14 +148,14 @@ class Editor extends PureComponent {
         this.props.selectedSourceTextContent?.value ||
       nextProps.symbols !== this.props.symbols;
 
+    const shouldScroll =
+      nextProps.selectedLocation &&
+      this.shouldScrollToLocation(nextProps, editor);
+
     if (!features.codemirrorNext) {
       const shouldUpdateSize =
         nextProps.startPanelSize !== this.props.startPanelSize ||
         nextProps.endPanelSize !== this.props.endPanelSize;
-
-      const shouldScroll =
-        nextProps.selectedLocation &&
-        this.shouldScrollToLocation(nextProps, editor);
 
       if (shouldUpdateText || shouldUpdateSize || shouldScroll) {
         startOperation();
@@ -169,7 +174,7 @@ class Editor extends PureComponent {
       if (this.props.selectedSource != nextProps.selectedSource) {
         this.props.updateViewport();
         resizeBreakpointGutter(editor.codeMirror);
-        resizeToggleButton(editor.codeMirror);
+        resizeToggleButton(getLineNumberWidth(editor.codeMirror));
       }
     } else {
       // For codemirror 6
@@ -177,8 +182,19 @@ class Editor extends PureComponent {
       if (shouldUpdateText) {
         this.setText(nextProps, editor);
       }
+
+      if (shouldScroll) {
+        this.scrollToLocation(nextProps, editor);
+      }
     }
   }
+
+  onEditorUpdated = v => {
+    if (v.docChanged || v.geometryChanged) {
+      resizeToggleButton(v.view.dom.querySelector(".cm-gutters").clientWidth);
+      this.props.updateViewport();
+    }
+  };
 
   setupEditor() {
     const editor = getEditor(features.codemirrorNext);
@@ -216,32 +232,24 @@ class Editor extends PureComponent {
       codeMirrorWrapper.addEventListener("keydown", e => this.onKeyDown(e));
       codeMirrorWrapper.addEventListener("click", e => this.onClick(e));
       codeMirrorWrapper.addEventListener("mouseover", onMouseOver(codeMirror));
-
-      const toggleFoldMarkerVisibility = () => {
-        if (node instanceof HTMLElement) {
-          node
-            .querySelectorAll(".CodeMirror-guttermarker-subtle")
-            .forEach(elem => {
-              elem.classList.toggle("visible");
-            });
-        }
-      };
-
-      const codeMirrorGutter = codeMirror.getGutterElement();
-      codeMirrorGutter.addEventListener(
-        "mouseleave",
-        toggleFoldMarkerVisibility
-      );
-      codeMirrorGutter.addEventListener(
-        "mouseenter",
-        toggleFoldMarkerVisibility
-      );
       codeMirrorWrapper.addEventListener("contextmenu", event =>
         this.openMenu(event)
       );
 
       codeMirror.on("scroll", this.onEditorScroll);
       this.onEditorScroll();
+    } else {
+      editor.setUpdateListener(this.onEditorUpdated);
+      editor.setGutterEventListeners({
+        click: (event, cm, line) => this.onGutterClick(cm, line, null, event),
+        contextmenu: (event, cm, line) => this.openMenu(event, line),
+      });
+      editor.addEditorDOMEventListeners({
+        click: (event, cm, line, column) => this.onClick(event, line, column),
+        contextmenu: (event, cm, line, column) =>
+          this.openMenu(event, line, column),
+        mouseover: onMouseOver(editor),
+      });
     }
     this.setState({ editor });
     return editor;
@@ -280,15 +288,74 @@ class Editor extends PureComponent {
     }
   };
 
-  componentWillUnmount() {
-    if (!features.codemirrorNext) {
-      const { editor } = this.state;
-      if (editor) {
-        editor.destroy();
-        editor.codeMirror.off("scroll", this.onEditorScroll);
-        this.setState({ editor: null });
+  componentDidUpdate(prevProps, prevState) {
+    const {
+      selectedSource,
+      blackboxedRanges,
+      isSourceOnIgnoreList,
+      breakableLines,
+    } = this.props;
+    const { editor } = this.state;
+
+    if (!selectedSource || !editor) {
+      return;
+    }
+
+    // Sets the breakables lines for codemirror 6
+    if (features.codemirrorNext) {
+      const shouldUpdateBreakableLines =
+        prevProps.breakableLines.size !== this.props.breakableLines.size ||
+        prevProps.selectedSource?.id !== selectedSource.id ||
+        // Make sure we update after the editor has loaded
+        (!prevState.editor && !!editor);
+
+      const isSourceWasm = isWasm(selectedSource.id);
+
+      if (shouldUpdateBreakableLines) {
+        editor.setLineGutterMarkers([
+          {
+            id: "empty-line-marker",
+            lineClassName: "empty-line",
+            condition: line => {
+              const lineNumber = fromEditorLine(
+                selectedSource.id,
+                line,
+                isSourceWasm
+              );
+              return !breakableLines.has(lineNumber);
+            },
+          },
+        ]);
       }
 
+      function condition(line) {
+        const lineNumber = fromEditorLine(selectedSource.id, line);
+
+        return isLineBlackboxed(
+          blackboxedRanges[selectedSource.url],
+          lineNumber,
+          isSourceOnIgnoreList
+        );
+      }
+
+      editor.setLineGutterMarkers([
+        {
+          id: "blackboxed-line-gutter-marker",
+          lineClassName: "blackboxed-line",
+          condition,
+        },
+      ]);
+      editor.setLineContentMarker({
+        id: "blackboxed-line-marker",
+        lineClassName: "blackboxed-line",
+        condition,
+      });
+    }
+  }
+
+  componentWillUnmount() {
+    const { editor } = this.state;
+    if (!features.codemirrorNext) {
       const { shortcuts } = this.context;
       shortcuts.off(L10N.getStr("sourceTabs.closeTab.key"));
       shortcuts.off(L10N.getStr("toggleBreakpoint.key"));
@@ -299,6 +366,13 @@ class Editor extends PureComponent {
         this.abortController.abort();
         this.abortController = null;
       }
+    }
+    if (editor) {
+      if (!features.codemirrorNext) {
+        editor.codeMirror.off("scroll", this.onEditorScroll);
+      }
+      editor.destroy();
+      this.setState({ editor: null });
     }
   }
 
@@ -396,8 +470,9 @@ class Editor extends PureComponent {
       e.preventDefault();
     }
   };
-
-  openMenu(event) {
+  // Note: The line is optional, if not passed (as is likely for codemirror 6)
+  // it fallsback to lineAtHeight.
+  openMenu(event, line, ch) {
     event.stopPropagation();
     event.preventDefault();
 
@@ -421,13 +496,19 @@ class Editor extends PureComponent {
 
     const target = event.target;
     const { id: sourceId } = selectedSource;
-    const line = lineAtHeight(editor, sourceId, event);
+    line = line ?? lineAtHeight(editor, sourceId, event);
 
     if (typeof line != "number") {
       return;
     }
 
-    if (target.classList.contains("CodeMirror-linenumber")) {
+    if (
+      // handles codemirror 6
+      (target.classList.contains("cm-gutterElement") &&
+        target.closest(".cm-gutter.cm-lineNumbers")) ||
+      // handles codemirror 5
+      target.classList.contains("CodeMirror-linenumber")
+    ) {
       const location = createLocation({
         line,
         column: undefined,
@@ -440,7 +521,14 @@ class Editor extends PureComponent {
         line
       ).trim();
 
-      this.props.showEditorGutterContextMenu(event, editor, location, lineText);
+      const lineObject = { from: { line, ch }, to: { line, ch } };
+
+      this.props.showEditorGutterContextMenu(
+        event,
+        lineObject,
+        location,
+        lineText
+      );
       return;
     }
 
@@ -448,13 +536,23 @@ class Editor extends PureComponent {
       return;
     }
 
-    const location = getSourceLocationFromMouseEvent(
-      editor,
-      selectedSource,
-      event
-    );
+    let location;
+    if (features.codemirrorNext) {
+      location = createLocation({
+        source: selectedSource,
+        line: fromEditorLine(
+          selectedSource.id,
+          line,
+          isWasm(selectedSource.id)
+        ),
+        column: isWasm(selectedSource.id) ? 0 : ch + 1,
+      });
+    } else {
+      location = getSourceLocationFromMouseEvent(editor, selectedSource, event);
+    }
 
-    this.props.showEditorContextMenu(event, editor, location);
+    const lineObject = editor.getSelectionCursor();
+    this.props.showEditorContextMenu(event, editor, lineObject, location);
   }
 
   /**
@@ -542,20 +640,29 @@ class Editor extends PureComponent {
     );
   };
 
-  onGutterContextMenu = event => {
-    this.openMenu(event);
-  };
-
-  onClick(e) {
+  onClick(e, line, ch) {
     const { selectedSource, updateCursorPosition, jumpToMappedLocation } =
       this.props;
 
     if (selectedSource) {
-      const sourceLocation = getSourceLocationFromMouseEvent(
-        this.state.editor,
-        selectedSource,
-        e
-      );
+      let sourceLocation;
+      if (features.codemirrorNext) {
+        sourceLocation = createLocation({
+          source: selectedSource,
+          line: fromEditorLine(
+            selectedSource.id,
+            line,
+            isWasm(selectedSource.id)
+          ),
+          column: isWasm(selectedSource.id) ? 0 : ch + 1,
+        });
+      } else {
+        sourceLocation = getSourceLocationFromMouseEvent(
+          this.state.editor,
+          selectedSource,
+          e
+        );
+      }
 
       if (e.metaKey && e.altKey) {
         jumpToMappedLocation(sourceLocation);
@@ -593,8 +700,7 @@ class Editor extends PureComponent {
       const lineText = doc.getLine(line);
       column = Math.max(column, getIndentation(lineText));
     }
-
-    scrollToPosition(editor.codeMirror, line, column);
+    editor.scrollTo(line, column);
   }
 
   setText(props, editor) {
@@ -703,6 +809,7 @@ class Editor extends PureComponent {
     };
   }
 
+  // eslint-disable-next-line complexity
   renderItems() {
     const {
       selectedSource,
@@ -717,7 +824,56 @@ class Editor extends PureComponent {
     } = this.props;
     const { editor } = this.state;
 
-    if (!selectedSource || !editor || !getDocument(selectedSource.id)) {
+    if (!selectedSource || !editor) {
+      return null;
+    }
+
+    if (features.codemirrorNext) {
+      return React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(Breakpoints, { editor }),
+        isPaused &&
+          selectedSource.isOriginal &&
+          !selectedSource.isPrettyPrinted &&
+          !mapScopesEnabled
+          ? null
+          : React.createElement(Preview, {
+              editor,
+              editorRef: this.$editorWrapper,
+            }),
+        React.createElement(DebugLine, { editor, selectedSource }),
+        React.createElement(HighlightLine, { editor }),
+        React.createElement(Exceptions, { editor }),
+        conditionalPanelLocation
+          ? React.createElement(ConditionalPanel, {
+              editor,
+              selectedSource,
+            })
+          : null,
+        isPaused &&
+          inlinePreviewEnabled &&
+          (!selectedSource.isOriginal ||
+            selectedSource.isPrettyPrinted ||
+            mapScopesEnabled)
+          ? React.createElement(InlinePreviews, {
+              editor,
+              selectedSource,
+            })
+          : null,
+        highlightedLineRange
+          ? React.createElement(HighlightLines, {
+              editor,
+              range: highlightedLineRange,
+            })
+          : null,
+        React.createElement(ColumnBreakpoints, {
+          editor,
+        })
+      );
+    }
+
+    if (!getDocument(selectedSource.id)) {
       return null;
     }
     return div(

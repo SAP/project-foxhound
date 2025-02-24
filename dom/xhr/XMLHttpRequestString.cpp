@@ -68,8 +68,7 @@ class XMLHttpRequestStringBuffer final {
     // Taintfox: nsStringBuffer and DOMString should already be taint aware
     // XXX: Bug 1408793 suggests encapsulating the following sequence within
     //      DOMString.
-    nsStringBuffer* buf = nsStringBuffer::FromString(mData);
-    if (buf) {
+    if (StringBuffer* buf = mData.GetStringBuffer()) {
       // We have to use SetStringBuffer, because once we release our mutex mData
       // can get mutated from some other thread while the DOMString is still
       // alive.

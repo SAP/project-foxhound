@@ -548,36 +548,42 @@ Maybe<layers::SurfaceDescriptor> ClientWebGLContext::GetFrontBuffer(
   const auto& child = mNotLost->outOfProcess;
   child->FlushPendingCmds();
 
-  Maybe<layers::SurfaceDescriptor> ret;
+  // Always synchronously get the front buffer if not using a remote texture.
+  bool needsSync = true;
+  Maybe<layers::SurfaceDescriptor> syncDesc;
+  Maybe<layers::SurfaceDescriptor> remoteDesc;
   auto& info = child->GetFlushedCmdInfo();
 
   // If valid remote texture data was set for async present, then use it.
   if (!fb && !vr && mRemoteTextureOwnerId && mLastRemoteTextureId) {
     const auto tooManyFlushes = 10;
     // If there are many flushed cmds, force synchronous IPC to avoid too many
-    // pending ipc messages.
-    if (XRE_IsParentProcess() ||
-        gfx::gfxVars::WebglOopAsyncPresentForceSync() ||
-        info.flushesSinceLastCongestionCheck > tooManyFlushes) {
-      // Request the front buffer from IPDL to cause a sync, even though we
-      // will continue to use the remote texture descriptor after.
-      (void)child->SendGetFrontBuffer(fb ? fb->mId : 0, vr, &ret);
-    }
-    // Reset flushesSinceLastCongestionCheck
-    info.flushesSinceLastCongestionCheck = 0;
-    info.congestionCheckGeneration++;
+    // pending ipc messages. Otherwise don't sync for other cases to avoid any
+    // performance penalty.
+    needsSync = XRE_IsParentProcess() ||
+                gfx::gfxVars::WebglOopAsyncPresentForceSync() ||
+                info.flushesSinceLastCongestionCheck > tooManyFlushes;
 
-    return Some(layers::SurfaceDescriptorRemoteTexture(*mLastRemoteTextureId,
-                                                       *mRemoteTextureOwnerId));
+    // Only send over a remote texture descriptor if the WebGLChild actor is
+    // alive to ensure the remote texture id is valid.
+    if (child->CanSend()) {
+      remoteDesc = Some(layers::SurfaceDescriptorRemoteTexture(
+          *mLastRemoteTextureId, *mRemoteTextureOwnerId));
+    }
   }
 
-  if (!child->SendGetFrontBuffer(fb ? fb->mId : 0, vr, &ret)) return {};
+  if (needsSync &&
+      !child->SendGetFrontBuffer(fb ? fb->mId : 0, vr, &syncDesc)) {
+    return {};
+  }
 
   // Reset flushesSinceLastCongestionCheck
   info.flushesSinceLastCongestionCheck = 0;
   info.congestionCheckGeneration++;
 
-  return ret;
+  // If there is a remote texture descriptor, use that preferentially, as the
+  // sync front buffer descriptor was only created to force a sync first.
+  return remoteDesc ? remoteDesc : syncDesc;
 }
 
 Maybe<layers::SurfaceDescriptor> ClientWebGLContext::PresentFrontBuffer(
@@ -728,6 +734,21 @@ void ClientWebGLContext::GetCanvas(
   } else {
     retval.SetNull();
   }
+}
+
+void ClientWebGLContext::SetDrawingBufferColorSpace(
+    const dom::PredefinedColorSpace val) {
+  mDrawingBufferColorSpace = val;
+
+  // Just in case, update in Options too.
+  // Why not treat our WebGLContextOptions as the source of truth? Well,
+  // mNotLost is lost on context-loss, so we'd lose any setting we had here if
+  // that happens.
+  if (mNotLost) {
+    mNotLost->info.options.colorSpace = mDrawingBufferColorSpace;
+  }
+
+  Run<RPROC(SetDrawingBufferColorSpace)>(mDrawingBufferColorSpace);
 }
 
 void ClientWebGLContext::GetContextAttributes(
@@ -957,7 +978,29 @@ bool ClientWebGLContext::CreateHostContext(const uvec2& requestedSize) {
         .mCurrentQueryByTarget[LOCAL_GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN];
   }
 
+  state.mIsEnabledMap = Some(webgl::MakeIsEnabledMap(mIsWebGL2));
+
   return true;
+}
+
+std::unordered_map<GLenum, bool> webgl::MakeIsEnabledMap(const bool webgl2) {
+  auto ret = std::unordered_map<GLenum, bool>{};
+
+  ret[LOCAL_GL_BLEND] = false;
+  ret[LOCAL_GL_CULL_FACE] = false;
+  ret[LOCAL_GL_DEPTH_TEST] = false;
+  ret[LOCAL_GL_DITHER] = true;
+  ret[LOCAL_GL_POLYGON_OFFSET_FILL] = false;
+  ret[LOCAL_GL_SAMPLE_ALPHA_TO_COVERAGE] = false;
+  ret[LOCAL_GL_SAMPLE_COVERAGE] = false;
+  ret[LOCAL_GL_SCISSOR_TEST] = false;
+  ret[LOCAL_GL_STENCIL_TEST] = false;
+
+  if (webgl2) {
+    ret[LOCAL_GL_RASTERIZER_DISCARD] = false;
+  }
+
+  return ret;
 }
 
 // -------
@@ -1030,9 +1073,7 @@ ClientWebGLContext::SetContextOptions(JSContext* cx,
   if (attributes.mAntialias.WasPassed()) {
     newOpts.antialias = attributes.mAntialias.Value();
   }
-  newOpts.ignoreColorSpace = true;
   if (attributes.mColorSpace.WasPassed()) {
-    newOpts.ignoreColorSpace = false;
     newOpts.colorSpace = attributes.mColorSpace.Value();
   }
 
@@ -1460,6 +1501,8 @@ already_AddRefed<WebGLSyncJS> ClientWebGLContext::FenceSync(
   auto& availRunnable = EnsureAvailabilityRunnable();
   availRunnable.mSyncs.push_back(ret.get());
   ret->mCanBeAvailable = false;
+
+  AutoEnqueueFlush();
 
   return ret.forget();
 }
@@ -1895,24 +1938,40 @@ bool ClientWebGLContext::IsVertexArray(
 
 // ------------------------- GL State -------------------------
 
-void ClientWebGLContext::SetEnabledI(GLenum cap, Maybe<GLuint> i,
-                                     bool val) const {
+void ClientWebGLContext::SetEnabledI(const GLenum cap, const Maybe<GLuint> i,
+                                     const bool val) const {
+  const FuncScope funcScope(*this, "enable/disable");
+  if (IsContextLost()) return;
+
+  auto& map = *mNotLost->state.mIsEnabledMap;
+  auto slot = MaybeFind(map, cap);
+  if (i && cap != LOCAL_GL_BLEND) {
+    slot = nullptr;
+  }
+  if (!slot) {
+    EnqueueError_ArgEnum("cap", cap);
+    return;
+  }
+
   Run<RPROC(SetEnabled)>(cap, i, val);
+
+  if (!i || *i == 0) {
+    *slot = val;
+  }
 }
 
-bool ClientWebGLContext::IsEnabled(GLenum cap) const {
+bool ClientWebGLContext::IsEnabled(const GLenum cap) const {
   const FuncScope funcScope(*this, "isEnabled");
   if (IsContextLost()) return false;
 
-  const auto& inProcess = mNotLost->inProcess;
-  if (inProcess) {
-    return inProcess->IsEnabled(cap);
+  const auto& map = *mNotLost->state.mIsEnabledMap;
+  const auto slot = MaybeFind(map, cap);
+  if (!slot) {
+    EnqueueError_ArgEnum("cap", cap);
+    return false;
   }
-  const auto& child = mNotLost->outOfProcess;
-  child->FlushPendingCmds();
-  bool ret = {};
-  if (!child->SendIsEnabled(cap, &ret)) return false;
-  return ret;
+
+  return *slot;
 }
 
 template <typename T, typename S>
@@ -2176,6 +2235,10 @@ void ClientWebGLContext::GetParameter(JSContext* cx, GLenum pname,
 
       case LOCAL_GL_DRAW_FRAMEBUFFER_BINDING:
         (void)ToJSValueOrNull(cx, state.mBoundDrawFb, retval);
+        return;
+
+      case LOCAL_GL_MAX_CLIENT_WAIT_TIMEOUT_WEBGL:
+        retval.set(JS::NumberValue(webgl::kMaxClientWaitSyncTimeoutNS));
         return;
 
       case LOCAL_GL_PIXEL_PACK_BUFFER_BINDING:
@@ -2987,7 +3050,7 @@ void ClientWebGLContext::DepthRange(GLclampf zNear, GLclampf zFar) {
   Run<RPROC(DepthRange)>(zNear, zFar);
 }
 
-void ClientWebGLContext::Flush(const bool flushGl) {
+void ClientWebGLContext::Flush(const bool flushGl) const {
   const FuncScope funcScope(*this, "flush");
   if (IsContextLost()) return;
 
@@ -5417,13 +5480,11 @@ void ClientWebGLContext::GetSyncParameter(
       case LOCAL_GL_SYNC_FLAGS:
         return JS::NumberValue(0);
       case LOCAL_GL_SYNC_STATUS: {
-        if (!sync.mSignaled) {
-          const auto res = ClientWaitSync(sync, 0, 0);
-          sync.mSignaled = (res == LOCAL_GL_ALREADY_SIGNALED ||
-                            res == LOCAL_GL_CONDITION_SATISFIED);
-        }
-        return JS::NumberValue(sync.mSignaled ? LOCAL_GL_SIGNALED
-                                              : LOCAL_GL_UNSIGNALED);
+        const auto res = ClientWaitSync(sync, 0, 0);
+        const auto signaled = (res == LOCAL_GL_ALREADY_SIGNALED ||
+                               res == LOCAL_GL_CONDITION_SATISFIED);
+        return JS::NumberValue(signaled ? LOCAL_GL_SIGNALED
+                                        : LOCAL_GL_UNSIGNALED);
       }
       default:
         EnqueueError_ArgEnum("pname", pname);
@@ -5432,6 +5493,8 @@ void ClientWebGLContext::GetSyncParameter(
   }());
 }
 
+// -
+
 GLenum ClientWebGLContext::ClientWaitSync(WebGLSyncJS& sync,
                                           const GLbitfield flags,
                                           const GLuint64 timeout) const {
@@ -5439,11 +5502,62 @@ GLenum ClientWebGLContext::ClientWaitSync(WebGLSyncJS& sync,
   if (IsContextLost()) return LOCAL_GL_WAIT_FAILED;
   if (!sync.ValidateUsable(*this, "sync")) return LOCAL_GL_WAIT_FAILED;
 
-  if (flags != 0 && flags != LOCAL_GL_SYNC_FLUSH_COMMANDS_BIT) {
+  static constexpr auto VALID_BITS = LOCAL_GL_SYNC_FLUSH_COMMANDS_BIT;
+  if ((flags | VALID_BITS) != VALID_BITS) {
     EnqueueError(LOCAL_GL_INVALID_VALUE,
                  "`flags` must be SYNC_FLUSH_COMMANDS_BIT or 0.");
     return LOCAL_GL_WAIT_FAILED;
   }
+
+  if (timeout > webgl::kMaxClientWaitSyncTimeoutNS) {
+    EnqueueError(
+        LOCAL_GL_INVALID_OPERATION,
+        "`timeout` (%sns) must be less than MAX_CLIENT_WAIT_TIMEOUT_WEBGL "
+        "(%sns).",
+        ToStringWithCommas(timeout).c_str(),
+        ToStringWithCommas(webgl::kMaxClientWaitSyncTimeoutNS).c_str());
+    return LOCAL_GL_WAIT_FAILED;
+  }
+
+  const bool canBeAvailable =
+      (sync.mCanBeAvailable || StaticPrefs::webgl_allow_immediate_queries());
+  if (!canBeAvailable) {
+    constexpr uint8_t WARN_AT = 100;
+    if (sync.mNumQueriesBeforeFirstFrameBoundary <= WARN_AT) {
+      sync.mNumQueriesBeforeFirstFrameBoundary += 1;
+      if (sync.mNumQueriesBeforeFirstFrameBoundary == WARN_AT) {
+        EnqueueWarning(
+            "ClientWaitSync must return TIMEOUT_EXPIRED until control has"
+            " returned to the user agent's main loop, but was polled %hhu "
+            "times. Are you spin-locking? (only warns once)",
+            sync.mNumQueriesBeforeFirstFrameBoundary);
+      }
+    }
+    return LOCAL_GL_TIMEOUT_EXPIRED;
+  }
+
+  if (mCompletedSyncId >= sync.mId) {
+    return LOCAL_GL_ALREADY_SIGNALED;
+  }
+  if (flags & LOCAL_GL_SYNC_FLUSH_COMMANDS_BIT) {
+    Flush();
+  } else {
+    constexpr uint8_t WARN_AT = 100;
+    if (sync.mNumQueriesWithoutFlushCommandsBit <= WARN_AT) {
+      sync.mNumQueriesWithoutFlushCommandsBit += 1;
+      if (sync.mNumQueriesWithoutFlushCommandsBit == WARN_AT) {
+        EnqueueWarning(
+            "ClientWaitSync with timeout=0 (or GetSyncParameter(SYNC_STATUS)) "
+            "called %hhu times without SYNC_FLUSH_COMMANDS_BIT. If you do not "
+            "flush, this sync object is not guaranteed to ever complete.",
+            sync.mNumQueriesWithoutFlushCommandsBit);
+      }
+    }
+  }
+  if (!timeout) return LOCAL_GL_TIMEOUT_EXPIRED;
+
+  // -
+  // Fine, time to block:
 
   const auto ret = [&]() {
     const auto& inProcess = mNotLost->inProcess;
@@ -5462,27 +5576,8 @@ GLenum ClientWebGLContext::ClientWaitSync(WebGLSyncJS& sync,
   switch (ret) {
     case LOCAL_GL_CONDITION_SATISFIED:
     case LOCAL_GL_ALREADY_SIGNALED:
-      sync.mSignaled = true;
+      OnSyncComplete(sync.mId);
       break;
-  }
-
-  // -
-
-  const bool canBeAvailable =
-      (sync.mCanBeAvailable || StaticPrefs::webgl_allow_immediate_queries());
-  if (!canBeAvailable) {
-    constexpr uint8_t WARN_AT = 100;
-    if (sync.mNumQueriesBeforeFirstFrameBoundary <= WARN_AT) {
-      sync.mNumQueriesBeforeFirstFrameBoundary += 1;
-      if (sync.mNumQueriesBeforeFirstFrameBoundary == WARN_AT) {
-        EnqueueWarning(
-            "ClientWaitSync must return TIMEOUT_EXPIRED until control has"
-            " returned to the user agent's main loop, but was polled %hhu "
-            "times. Are you spin-locking? (only warns once)",
-            sync.mNumQueriesBeforeFirstFrameBoundary);
-      }
-    }
-    return LOCAL_GL_TIMEOUT_EXPIRED;
   }
 
   return ret;
@@ -5688,6 +5783,7 @@ void ClientWebGLContext::DrawBuffers(const dom::Sequence<GLenum>& buffers) {
 void ClientWebGLContext::EnqueueErrorImpl(const GLenum error,
                                           const nsACString& text) const {
   if (!mNotLost) return;  // Ignored if context is lost.
+  AutoEnqueueFlush();
   Run<RPROC(GenerateError)>(error, ToString(text));
 }
 
@@ -6570,7 +6666,7 @@ Maybe<Span<uint8_t>> ClientWebGLContext::ValidateArrayBufferView(
 // ---------------------------
 
 webgl::ObjectJS::ObjectJS(const ClientWebGLContext& webgl)
-    : mGeneration(webgl.mNotLost), mId(webgl.mNotLost->state.NextId()) {}
+    : mGeneration(webgl.mNotLost), mId(webgl.NextId()) {}
 
 // -
 

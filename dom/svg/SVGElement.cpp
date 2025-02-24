@@ -1559,7 +1559,7 @@ void SVGElement::GetAnimatedLengthValues(float* aFirst, ...) {
   va_start(args, aFirst);
 
   while (f && i < info.mCount) {
-    *f = info.mValues[i++].GetAnimValue(metrics);
+    *f = info.mValues[i++].GetAnimValueWithZoom(metrics);
     f = va_arg(args, float*);
   }
 
@@ -2080,7 +2080,7 @@ void SVGElement::DidChangeStringList(bool aIsConditionalProcessingAttribute,
 void SVGElement::DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute) {
   if (auto* frame = GetPrimaryFrame()) {
     frame->AttributeChanged(aNameSpaceID, aAttribute,
-                            MutationEvent_Binding::SMIL);
+                            MutationEvent_Binding::MODIFICATION);
     SVGObserverUtils::InvalidateRenderingObservers(frame);
     return;
   }

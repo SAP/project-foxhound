@@ -62,16 +62,23 @@ struct UrlMarker {
   }
   static void StreamJSONMarkerData(
       mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
-      const mozilla::ProfilerString8View& aURL) {
+      const mozilla::ProfilerString8View& aURL, const TimeDuration& aDuration,
+      uint64_t aChannelId) {
     if (aURL.Length() != 0) {
       aWriter.StringProperty("url", aURL);
     }
+    if (!aDuration.IsZero()) {
+      aWriter.DoubleProperty("duration", aDuration.ToMilliseconds());
+    }
+    aWriter.IntProperty("channelId", static_cast<int64_t>(aChannelId));
   }
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
     schema.SetTableLabel("{marker.name} - {marker.data.url}");
-    schema.AddKeyFormat("url", MS::Format::Url);
+    schema.AddKeyFormatSearchable("url", MS::Format::Url,
+                                  MS::Searchable::Searchable);
+    schema.AddKeyLabelFormat("duration", "Duration", MS::Format::Duration);
     return schema;
   }
 };
@@ -505,9 +512,10 @@ nsresult nsHttpConnectionMgr::SpeculativeConnect(
     return NS_OK;
   }
 
-  nsCString url = ci->EndToEndSSL() ? "https://"_ns : "http://"_ns;
+  nsAutoCString url(ci->EndToEndSSL() ? "https://"_ns : "http://"_ns);
   url += ci->GetOrigin();
-  PROFILER_MARKER("SpeculativeConnect", NETWORK, {}, UrlMarker, url);
+  PROFILER_MARKER("SpeculativeConnect", NETWORK, {}, UrlMarker, url,
+                  TimeDuration::Zero(), 0);
 
   RefPtr<SpeculativeConnectArgs> args = new SpeculativeConnectArgs();
 
@@ -800,6 +808,11 @@ HttpConnectionBase* nsHttpConnectionMgr::FindCoalescableConnection(
   MOZ_ASSERT(ent->mConnInfo);
   nsHttpConnectionInfo* ci = ent->mConnInfo;
   LOG(("FindCoalescableConnection %s\n", ci->HashKey().get()));
+
+  if (ci->GetWebTransport()) {
+    LOG(("Don't coalesce a WebTransport conn "));
+    return nullptr;
+  }
   // First try and look it up by origin frame
   nsCString newKey;
   BuildOriginFrameHashKey(newKey, ci, ci->GetOrigin(), ci->OriginPort());
@@ -817,10 +830,35 @@ HttpConnectionBase* nsHttpConnectionMgr::FindCoalescableConnection(
   for (uint32_t i = 0; i < keyLen; ++i) {
     conn = FindCoalescableConnectionByHashKey(ent, ent->mCoalescingKeys[i],
                                               justKidding, aNoHttp2, aNoHttp3);
+
+    auto usableEntry = [&](HttpConnectionBase* conn) {
+      // This is allowed by the spec, but other browsers don't coalesce
+      // so agressively, which surprises developers. See bug 1420777.
+      if (StaticPrefs::network_http_http2_aggressive_coalescing()) {
+        return true;
+      }
+
+      // Make sure that the connection's IP address is one that is in
+      // the set of IP addresses in the entry's DNS response.
+      NetAddr addr;
+      nsresult rv = conn->GetPeerAddr(&addr);
+      if (NS_FAILED(rv)) {
+        // Err on the side of not coalescing
+        return false;
+      }
+      // We don't care about remote port when matching entries.
+      addr.inet.port = 0;
+      return ent->mAddresses.Contains(addr);
+    };
+
     if (conn) {
-      LOG(("FindCoalescableConnection(%s) match conn %p on dns key %s\n",
-           ci->HashKey().get(), conn, ent->mCoalescingKeys[i].get()));
-      return conn;
+      LOG(("Found connection with matching hash"));
+      if (usableEntry(conn)) {
+        LOG(("> coalescing"));
+        return conn;
+      } else {
+        LOG(("> not coalescing as remote address not present in DNS records"));
+      }
     }
   }
 
@@ -1624,9 +1662,9 @@ nsresult nsHttpConnectionMgr::DispatchTransaction(ConnectionEntry* ent,
   trans->CancelPacing(NS_OK);
 
   TimeStamp now = TimeStamp::Now();
+  TimeDuration elapsed = now - trans->GetPendingTime();
   auto recordPendingTimeForHTTPSRR = [&](nsCString& aKey) {
     uint32_t stage = trans->HTTPSSVCReceivedStage();
-    TimeDuration elapsed = now - trans->GetPendingTime();
     if (HTTPS_RR_IS_USED(stage)) {
       glean::networking::transaction_wait_time_https_rr.AccumulateRawDuration(
           elapsed);
@@ -1634,9 +1672,15 @@ nsresult nsHttpConnectionMgr::DispatchTransaction(ConnectionEntry* ent,
     } else {
       glean::networking::transaction_wait_time.AccumulateRawDuration(elapsed);
     }
-    PerfStats::RecordMeasurement(PerfStats::Metric::HttpTransactionWaitTime,
-                                 elapsed);
   };
+
+  PerfStats::RecordMeasurement(PerfStats::Metric::HttpTransactionWaitTime,
+                               elapsed);
+
+  PROFILER_MARKER(
+      "DispatchTransaction", NETWORK,
+      MarkerOptions(MarkerTiming::Interval(trans->GetPendingTime(), now)),
+      UrlMarker, trans->GetUrl(), elapsed, trans->ChannelId());
 
   nsAutoCString httpVersionkey("h1"_ns);
   if (conn->UsingSpdy() || conn->UsingHttp3()) {
@@ -1744,6 +1788,9 @@ nsresult nsHttpConnectionMgr::ProcessNewTransaction(nsHttpTransaction* trans) {
   CheckTransInPendingQueue(trans);
 
   trans->SetPendingTime();
+
+  PROFILER_MARKER("ProcessNewTransaction", NETWORK, {}, UrlMarker,
+                  trans->GetUrl(), TimeDuration::Zero(), trans->ChannelId());
 
   RefPtr<Http2PushedStreamWrapper> pushedStreamWrapper =
       trans->GetPushedStream();

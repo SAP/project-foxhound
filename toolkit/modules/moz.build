@@ -186,6 +186,7 @@ EXTRA_JS_MODULES += [
     "KeywordUtils.sys.mjs",
     "LayoutUtils.sys.mjs",
     "Log.sys.mjs",
+    "LogManager.sys.mjs",
     "NewTabUtils.sys.mjs",
     "NLP.sys.mjs",
     "ObjectUtils.sys.mjs",
@@ -227,7 +228,7 @@ EXTRA_JS_MODULES.sessionstore += [
     "sessionstore/PrivacyFilter.sys.mjs",
     "sessionstore/PrivacyLevel.sys.mjs",
     "sessionstore/SessionHistory.sys.mjs",
-    "sessionstore/Utils.sys.mjs",
+    "sessionstore/SessionStoreHelper.sys.mjs",
 ]
 
 EXTRA_JS_MODULES.third_party.fathom += ["third_party/fathom/fathom.mjs"]

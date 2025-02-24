@@ -48,6 +48,7 @@ const ZERO_PREFIX_SCALAR_EXPOSURE = "urlbar.zeroprefix.exposure";
 const RESULT_MENU_COMMANDS = {
   DISMISS: "dismiss",
   HELP: "help",
+  MANAGE: "manage",
 };
 
 const getBoundsWithoutFlushing = element =>
@@ -1094,6 +1095,13 @@ export class UrlbarView {
     this.window.addEventListener("blur", this);
 
     this.controller.notify(this.controller.NOTIFICATIONS.VIEW_OPEN);
+
+    if (lazy.UrlbarPrefs.get("closeOtherPanelsOnOpen")) {
+      this.window.docShell.treeOwner
+        .QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsIAppWindow)
+        .rollupAllPopups();
+    }
   }
 
   #shouldShowHeuristic(result) {
@@ -1634,6 +1642,38 @@ export class UrlbarView {
     item.appendChild(button);
   }
 
+  #createSecondaryAction(action, global = false) {
+    let actionContainer = this.#createElement("div");
+    actionContainer.classList.add("urlbarView-actions-container");
+
+    let button = this.#createElement("span");
+    button.classList.add("urlbarView-action-btn");
+    if (global) {
+      button.classList.add("urlbarView-global-action-btn");
+    }
+    button.setAttribute("role", "button");
+    if (action.icon) {
+      let icon = this.#createElement("img");
+      icon.src = action.icon;
+      button.appendChild(icon);
+    }
+    for (let key in action.dataset ?? {}) {
+      button.dataset[key] = action.dataset[key];
+    }
+    button.dataset.action = action.key;
+    button.dataset.providerName = action.providerName;
+
+    let label = this.#createElement("span");
+    if (action.l10nId) {
+      this.#setElementL10n(label, { id: action.l10nId, args: action.l10nArgs });
+    } else {
+      this.document.l10n.setAttributes(label, action.label, action.l10nArgs);
+    }
+    button.appendChild(label);
+    actionContainer.appendChild(button);
+    return actionContainer;
+  }
+
   // eslint-disable-next-line complexity
   #updateRow(item, result) {
     let oldResult = item.result;
@@ -1705,6 +1745,26 @@ export class UrlbarView {
       this.#addRowButtons(item, result);
     }
     item._content.id = item.id + "-inner";
+
+    let isFirstChild = item === this.#rows.children[0];
+    let secAction =
+      result.heuristic || isFirstChild
+        ? lazy.UrlbarProvidersManager.getGlobalAction()
+        : result.payload.action;
+    let container = item.querySelector(".urlbarView-actions-container");
+    if (secAction && !container) {
+      item.appendChild(this.#createSecondaryAction(secAction, isFirstChild));
+    } else if (
+      secAction &&
+      secAction.key != container.firstChild.dataset.action
+    ) {
+      item.replaceChild(
+        this.#createSecondaryAction(secAction, isFirstChild),
+        container
+      );
+    } else if (!secAction && container) {
+      item.removeChild(container);
+    }
 
     item.removeAttribute("feedback-acknowledgment");
 
@@ -1799,6 +1859,12 @@ export class UrlbarView {
     let isRowSelectable = true;
     switch (result.type) {
       case lazy.UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
+        // Hide chichlet when showing secondaryActions.
+        if (
+          lazy.UrlbarPrefs.getScotchBonnetPref("secondaryActions.featureGate")
+        ) {
+          break;
+        }
         actionSetter = () => {
           this.#setSwitchTabActionChiclet(result, action);
         };
@@ -3139,6 +3205,15 @@ export class UrlbarView {
         },
       });
     }
+    if (result.payload.isManageable) {
+      commands.push({
+        name: RESULT_MENU_COMMANDS.MANAGE,
+        l10n: {
+          id: "urlbar-result-menu-manage-firefox-suggest",
+        },
+      });
+    }
+
     let rv = commands.length ? commands : null;
     this.#resultMenuCommands.set(result, rv);
     return rv;

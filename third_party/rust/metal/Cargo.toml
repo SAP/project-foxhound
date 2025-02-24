@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "metal"
-version = "0.27.0"
+version = "0.28.0"
 authors = ["gfx-rs developers"]
 exclude = [
     "guide/**/*",
@@ -97,7 +97,7 @@ version = "2"
 version = "0.1.6"
 
 [dependencies.core-graphics-types]
-version = "0.1"
+version = "0.1.3"
 
 [dependencies.dispatch]
 version = "0.2"
@@ -111,7 +111,6 @@ version = "0.4"
 
 [dependencies.objc]
 version = "0.2.4"
-features = ["objc_exception"]
 
 [dependencies.paste]
 version = "1"
@@ -139,6 +138,6 @@ version = "0.27"
 
 [features]
 default = ["link"]
-link = []
+link = ["core-graphics-types/link"]
 mps = []
 private = []

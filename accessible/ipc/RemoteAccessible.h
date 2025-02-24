@@ -365,12 +365,17 @@ class RemoteAccessible : public Accessible, public HyperTextAccessibleBase {
 
   virtual void DOMNodeID(nsString& aID) const override;
 
+  virtual void DOMNodeClass(nsString& aClass) const override;
+
   virtual void ScrollToPoint(uint32_t aScrollType, int32_t aX,
                              int32_t aY) override;
 
 #if !defined(XP_WIN)
   void Announce(const nsString& aAnnouncement, uint16_t aPriority);
 #endif  // !defined(XP_WIN)
+
+  // HTMLMeterAccessible
+  int32_t ValueRegion() const;
 
   // HyperTextAccessibleBase
   virtual already_AddRefed<AccAttributes> DefaultTextAttributes() override;

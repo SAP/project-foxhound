@@ -32,6 +32,15 @@ const char* GetCodecTypeString(const CodecType& aCodecType) {
       return "_EndVideo_/_BeginAudio_";
     case CodecType::Opus:
       return "Opus";
+    case CodecType::Vorbis:
+      return "Vorbis";
+    case CodecType::Flac:
+      return "Flac";
+    case CodecType::AAC:
+      return "AAC";
+    case CodecType::PCM:
+      return "PCM";
+      break;
     case CodecType::G722:
       return "G722";
     case CodecType::_EndAudio_:
@@ -100,21 +109,27 @@ struct ConfigurationChangeToString {
     return nsPrintfCString("Framerate: %lfHz", aFramerateChange.get().value());
   }
   nsCString operator()(const BitrateModeChange& aBitrateModeChange) {
-    return nsPrintfCString(
-        "Bitrate mode: %s",
-        aBitrateModeChange.get() == MediaDataEncoder::BitrateMode::Constant
-            ? "Constant"
-            : "Variable");
+    return nsPrintfCString("Bitrate mode: %s",
+                           aBitrateModeChange.get() == BitrateMode::Constant
+                               ? "Constant"
+                               : "Variable");
   }
   nsCString operator()(const UsageChange& aUsageChange) {
     return nsPrintfCString(
         "Usage mode: %s",
-        aUsageChange.get() == MediaDataEncoder::Usage::Realtime ? "Realtime"
-                                                                : "Recoding");
+        aUsageChange.get() == Usage::Realtime ? "Realtime" : "Recoding");
   }
   nsCString operator()(const ContentHintChange& aContentHintChange) {
     return nsPrintfCString("Content hint: %s",
                            MaybeToString(aContentHintChange.get()).get());
+  }
+  nsCString operator()(const SampleRateChange& aSampleRateChange) {
+    return nsPrintfCString("Sample rate %" PRIu32 "Hz",
+                           aSampleRateChange.get());
+  }
+  nsCString operator()(const NumberOfChannelsChange& aNumberOfChannelsChange) {
+    return nsPrintfCString("Channels: %" PRIu32 "Hz",
+                           aNumberOfChannelsChange.get());
   }
 };
 
@@ -132,7 +147,9 @@ bool CanLikelyEncode(const EncoderConfig& aConfig) {
   if (aConfig.mCodec == CodecType::H264) {
     if (!aConfig.mCodecSpecific ||
         !aConfig.mCodecSpecific->is<H264Specific>()) {
-      LOGD("Error: asking for support codec for h264 without h264 specific config.");
+      LOGD(
+          "Error: asking for support codec for h264 without h264 specific "
+          "config.");
       return false;
     }
     H264Specific specific = aConfig.mCodecSpecific->as<H264Specific>();

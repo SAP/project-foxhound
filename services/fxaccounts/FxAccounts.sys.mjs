@@ -19,7 +19,7 @@ import {
   FXA_PWDMGR_PLAINTEXT_FIELDS,
   FXA_PWDMGR_REAUTH_ALLOWLIST,
   FXA_PWDMGR_SECURE_FIELDS,
-  FX_OAUTH_CLIENT_ID,
+  OAUTH_CLIENT_ID,
   ON_ACCOUNT_STATE_CHANGE_NOTIFICATION,
   ONLOGIN_NOTIFICATION,
   ONLOGOUT_NOTIFICATION,
@@ -62,6 +62,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "FXA_ENABLED",
   "identity.fxaccounts.enabled",
+  true
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "oauthEnabled",
+  "identity.fxaccounts.oauth.enabled",
   true
 );
 
@@ -550,7 +557,7 @@ export class FxAccounts {
         await this.signOut();
         return null;
       }
-      if (!this._internal.isUserEmailVerified(data)) {
+      if (!this._internal.isUserEmailVerified(data) && !lazy.oauthEnabled) {
         // If the email is not verified, start polling for verification,
         // but return null right away.  We don't want to return a promise
         // that might not be fulfilled for a long time.
@@ -865,7 +872,7 @@ FxAccountsInternal.prototype = {
   _oauth: null,
   get oauth() {
     if (!this._oauth) {
-      this._oauth = new lazy.FxAccountsOAuth(this.fxAccountsClient);
+      this._oauth = new lazy.FxAccountsOAuth(this.fxAccountsClient, this.keys);
     }
     return this._oauth;
   },
@@ -995,16 +1002,17 @@ FxAccountsInternal.prototype = {
       );
     }
     await this.abortExistingFlow();
-    let currentAccountState = (this.currentAccountState = this.newAccountState(
-      Cu.cloneInto(credentials, {}) // Pass a clone of the credentials object.
-    ));
+    const currentAccountState = (this.currentAccountState =
+      this.newAccountState(
+        Cu.cloneInto(credentials, {}) // Pass a clone of the credentials object.
+      ));
     // This promise waits for storage, but not for verification.
     // We're telling the caller that this is durable now (although is that
     // really something we should commit to? Why not let the write happen in
     // the background? Already does for updateAccountData ;)
     await currentAccountState.promiseInitialized;
     // Starting point for polling if new user
-    if (!this.isUserEmailVerified(credentials)) {
+    if (!this.isUserEmailVerified(credentials) && !lazy.oauthEnabled) {
       this.startVerifiedCheck(credentials);
     }
     await this.notifyObservers(ONLOGIN_NOTIFICATION);
@@ -1081,10 +1089,7 @@ FxAccountsInternal.prototype = {
    * @param { Object } tokenData: The token's data, with `tokenData.token` being the token itself
    **/
   destroyOAuthToken(tokenData) {
-    return this.fxAccountsClient.oauthDestroy(
-      FX_OAUTH_CLIENT_ID,
-      tokenData.token
-    );
+    return this.fxAccountsClient.oauthDestroy(OAUTH_CLIENT_ID, tokenData.token);
   },
 
   _destroyAllOAuthTokens(tokenInfos) {
@@ -1370,7 +1375,7 @@ FxAccountsInternal.prototype = {
   async _doTokenFetchWithSessionToken(sessionToken, scopeString, ttl) {
     const result = await this.fxAccountsClient.accessTokenWithSessionToken(
       sessionToken,
-      FX_OAUTH_CLIENT_ID,
+      OAUTH_CLIENT_ID,
       scopeString,
       ttl
     );
@@ -1478,13 +1483,14 @@ FxAccountsInternal.prototype = {
   /** Sets the user to be verified in the account state,
    * This prevents any polling for the user's verification state from the FxA server
    **/
-  setUserVerified() {
-    return this.withCurrentAccountState(async currentState => {
+  async setUserVerified() {
+    await this.withCurrentAccountState(async currentState => {
       const userData = await currentState.getUserAccountData();
       if (!userData.verified) {
-        await currentState.updateAccountData({ verified: true });
+        await currentState.updateUserAccountData({ verified: true });
       }
     });
+    await this.notifyObservers(ONVERIFIED_NOTIFICATION);
   },
 
   async _getVerifiedAccountOrReject() {

@@ -12,10 +12,7 @@ from taskgraph.util.schema import Schema, taskref_or_string
 from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.task import task_description_schema
-from gecko_taskgraph.util.attributes import (
-    copy_attributes_from_dependent_job,
-    release_level,
-)
+from gecko_taskgraph.util.attributes import copy_attributes_from_dependent_job
 from gecko_taskgraph.util.scriptworker import (
     add_scope_prefix,
     get_signing_cert_scope_per_platform,
@@ -59,9 +56,17 @@ signing_description_schema = Schema(
         Optional("repacks-per-chunk"): int,
         # Override the default priority for the project
         Optional("priority"): task_description_schema["priority"],
-        Optional("job-from"): task_description_schema["job-from"],
+        Optional("task-from"): task_description_schema["task-from"],
     }
 )
+
+
+def get_locales_description(attributes, default):
+    """Returns the [list] of locales for task description usage"""
+    chunk_locales = attributes.get("chunk_locales")
+    if chunk_locales:
+        return ", ".join(chunk_locales)
+    return attributes.get("locale", default)
 
 
 @transforms.add
@@ -77,30 +82,12 @@ transforms.add_validate(signing_description_schema)
 
 
 @transforms.add
-def add_entitlements_link(config, jobs):
-    for job in jobs:
-        dep_job = get_primary_dependency(config, job)
-        entitlements_path = evaluate_keyed_by(
-            config.graph_config["mac-notarization"]["mac-entitlements"],
-            "mac entitlements",
-            {
-                "platform": dep_job.attributes.get("build_platform"),
-                "release-level": release_level(config.params["project"]),
-            },
-        )
-        if entitlements_path:
-            job["entitlements-url"] = config.params.file_url(
-                entitlements_path,
-            )
-        yield job
-
-
-@transforms.add
 def add_requirements_link(config, jobs):
     for job in jobs:
         dep_job = get_primary_dependency(config, job)
+        assert dep_job
         requirements_path = evaluate_keyed_by(
-            config.graph_config["mac-notarization"]["mac-requirements"],
+            config.graph_config["mac-signing"]["mac-requirements"],
             "mac requirements",
             {
                 "platform": dep_job.attributes.get("build_platform"),
@@ -117,6 +104,7 @@ def add_requirements_link(config, jobs):
 def make_task_description(config, jobs):
     for job in jobs:
         dep_job = get_primary_dependency(config, job)
+        assert dep_job
         attributes = dep_job.attributes
 
         signing_format_scopes = []
@@ -127,6 +115,7 @@ def make_task_description(config, jobs):
 
         is_shippable = dep_job.attributes.get("shippable", False)
         build_platform = dep_job.attributes.get("build_platform")
+        assert build_platform
         treeherder = None
         if "partner" not in config.kind and "eme-free" not in config.kind:
             treeherder = job.get("treeherder", {})
@@ -161,9 +150,9 @@ def make_task_description(config, jobs):
 
         label = job["label"]
         description = (
-            "Initial Signing for locale '{locale}' for build '"
+            "Signing of locale(s) '{locale}' for build '"
             "{build_platform}/{build_type}'".format(
-                locale=attributes.get("locale", "en-US"),
+                locale=get_locales_description(attributes, "en-US"),
                 build_platform=build_platform,
                 build_type=attributes.get("build_type"),
             )
@@ -209,10 +198,16 @@ def make_task_description(config, jobs):
 
         # build-mac-{signing,notarization} uses signingscript instead of iscript
         if "macosx" in build_platform and config.kind.endswith("-mac-notarization"):
-            task["worker"]["mac-behavior"] = "apple_notarization"
             task["scopes"] = [
                 add_scope_prefix(config, "signing:cert:release-apple-notarization")
             ]
+            task[
+                "description"
+            ] = "Notarization of '{}' locales for build '{}/{}'".format(
+                get_locales_description(attributes, "en-US"),
+                build_platform,
+                attributes.get("build_type"),
+            )
         elif "macosx" in build_platform:
             # iscript overrides
             task["worker"]["mac-behavior"] = "mac_sign_and_pkg"

@@ -90,6 +90,7 @@ class AudioData final : public nsISupports, public nsWrapperCache {
   already_AddRefed<AudioData> Clone(ErrorResult& aRv);
 
   void Close();
+  bool IsClosed() const;
 
   // [Serializable] implementations: {Read, Write}StructuredClone
   static JSObject* ReadStructuredClone(JSContext* aCx, nsIGlobalObject* aGlobal,
@@ -107,11 +108,13 @@ class AudioData final : public nsISupports, public nsWrapperCache {
   static already_AddRefed<AudioData> FromTransferred(nsIGlobalObject* aGlobal,
                                                      TransferredData* aData);
 
+  nsCString ToString() const;
+
+  RefPtr<mozilla::AudioData> ToAudioData() const;
+
  private:
   size_t ComputeCopyElementCount(const AudioDataCopyToOptions& aOptions,
                                  ErrorResult& aRv);
-
-  nsCString ToString() const;
   // AudioData can run on either main thread or worker thread.
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(AudioData); }
   void CloseIfNeeded();

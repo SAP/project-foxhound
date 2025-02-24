@@ -160,6 +160,11 @@ const PLACES_OPEN_COMMANDS = [
   "placesCmd_open:tab",
 ];
 
+// How long of a delay between events means the start of a new flow?
+// Used by Browser UI Interaction event instrumentation.
+// Default: 5min.
+const FLOW_IDLE_TIME = 5 * 60 * 1000;
+
 function telemetryId(widgetId, obscureAddons = true) {
   // Add-on IDs need to be obscured.
   function addonId(id) {
@@ -433,6 +438,8 @@ export let URICountListener = {
     "nsISupportsWeakReference",
   ]),
 };
+
+let gInstallationTelemetryPromise = null;
 
 export let BrowserUsageTelemetry = {
   /**
@@ -872,6 +879,7 @@ export let BrowserUsageTelemetry = {
     let source = this._getWidgetContainer(node);
 
     if (item && source) {
+      this.recordInteractionEvent(item, source);
       let scalar = `browser.ui.interaction.${source.replace(/-/g, "_")}`;
       Services.telemetry.keyedScalarAdd(scalar, telemetryId(item), 1);
       if (SET_USAGECOUNT_PREF_BUTTONS.includes(item)) {
@@ -889,6 +897,7 @@ export let BrowserUsageTelemetry = {
         node.closest("menupopup")?.triggerNode
       );
       if (triggerContainer) {
+        this.recordInteractionEvent(item, contextMenu);
         let scalar = `browser.ui.interaction.${contextMenu.replace(/-/g, "_")}`;
         Services.telemetry.keyedScalarAdd(
           scalar,
@@ -897,6 +906,34 @@ export let BrowserUsageTelemetry = {
         );
       }
     }
+  },
+
+  _flowId: null,
+  _flowIdTS: 0,
+
+  recordInteractionEvent(widgetId, source) {
+    // A note on clocks. Cu.now() is monotonic, but its behaviour across
+    // computer sleeps is different per platform.
+    // We're okay with this for flows because we're looking at idle times
+    // on the order of minutes and within the same machine, so the weirdest
+    // thing we may expect is a flow that accidentally continues across a
+    // sleep. Until we have evidence that this is common, we're in the clear.
+    if (!this._flowId || this._flowIdTS + FLOW_IDLE_TIME < Cu.now()) {
+      // We submit the ping full o' events on every new flow,
+      // including at startup.
+      GleanPings.prototypeNoCodeEvents.submit();
+      // We use a GUID here because we need to identify events in a flow
+      // out of all events from all flows across all clients.
+      this._flowId = Services.uuid.generateUUID();
+    }
+    this._flowIdTS = Cu.now();
+
+    const extra = {
+      source,
+      widgetId: telemetryId(widgetId),
+      flowId: this._flowId,
+    };
+    Glean.browserUsage.interaction.record(extra);
   },
 
   /**
@@ -1069,7 +1106,7 @@ export let BrowserUsageTelemetry = {
     this._recordTabCounts({ tabCount, loadedTabCount });
   },
 
-  _onTabPinned(target) {
+  _onTabPinned() {
     const pinnedTabs = getPinnedTabsCount();
 
     // Update the "tab pinned" count and its maximum.
@@ -1274,23 +1311,23 @@ export let BrowserUsageTelemetry = {
 
   /**
    * Check if this is the first run of this profile since installation,
-   * if so then send installation telemetry.
+   * if so then collect installation telemetry.
    *
    * @param {nsIFile} [dataPathOverride] Optional, full data file path, for tests.
    * @param {Array<string>} [msixPackagePrefixes] Optional, list of prefixes to
             consider "existing" installs when looking at installed MSIX packages.
             Defaults to prefixes for builds produced in Firefox automation.
-   * @return {Promise}
+   * @return {Promise<Object>} A JSON object containing install telemetry.
    * @resolves When the event has been recorded, or if the data file was not found.
    * @rejects JavaScript exception on any failure.
    */
-  async reportInstallationTelemetry(
+  async collectInstallationTelemetry(
     dataPathOverride,
     msixPackagePrefixes = ["Mozilla.Firefox", "Mozilla.MozillaFirefox"]
   ) {
     if (AppConstants.platform != "win") {
       // This is a windows-only feature.
-      return;
+      return {};
     }
 
     const TIMESTAMP_PREF = "app.installation.timestamp";
@@ -1333,7 +1370,7 @@ export let BrowserUsageTelemetry = {
     if (pfn) {
       if (lastInstallTime != null) {
         // We've already seen this install
-        return;
+        return {};
       }
 
       // First time seeing this install, record the timestamp.
@@ -1376,7 +1413,7 @@ export let BrowserUsageTelemetry = {
         if (ex.name == "NotFoundError") {
           // Many systems will not have the data file, return silently if not found as
           // there is nothing to record.
-          return;
+          return {};
         }
         throw ex;
       }
@@ -1385,7 +1422,7 @@ export let BrowserUsageTelemetry = {
 
       if (lastInstallTime && data.install_timestamp == lastInstallTime) {
         // We've already seen this install
-        return;
+        return {};
       }
 
       // First time seeing this install, record the timestamp.
@@ -1413,15 +1450,69 @@ export let BrowserUsageTelemetry = {
         extra.default_path = data.default_path.toString();
       }
     }
-    // Record the event
-    Services.telemetry.setEventRecordingEnabled("installation", true);
-    Services.telemetry.recordEvent(
-      "installation",
-      "first_seen",
-      installer_type,
-      null,
-      extra
-    );
+    return { installer_type, extra };
+  },
+
+  async reportInstallationTelemetry(
+    dataPathOverride,
+    msixPackagePrefixes = ["Mozilla.Firefox", "Mozilla.MozillaFirefox"]
+  ) {
+    // The optional dataPathOverride is only used for testing purposes.
+    // Use this as a proxy for whether we're in a testing environment.
+    // If we're in a testing environment we don't want to return the
+    // same data even if we call this function multiple times in the
+    // same instance.
+    if (gInstallationTelemetryPromise && !dataPathOverride) {
+      return gInstallationTelemetryPromise;
+    }
+
+    gInstallationTelemetryPromise = (async () => {
+      let data = await BrowserUsageTelemetry.collectInstallationTelemetry(
+        dataPathOverride,
+        msixPackagePrefixes
+      );
+
+      if (data?.installer_type) {
+        let { installer_type, extra } = data;
+
+        // Record the event
+        Services.telemetry.setEventRecordingEnabled("installation", true);
+        Services.telemetry.recordEvent(
+          "installation",
+          "first_seen",
+          installer_type,
+          null,
+          extra
+        );
+
+        // Scalars for the new-profile ping. We don't need to collect the build version
+        // These are mirrored to legacy telemetry using GIFFT
+        Glean.installationFirstSeen.installerType.set(installer_type);
+        Glean.installationFirstSeen.version.set(extra.version);
+        // Convert "true" or "false" strings back into booleans
+        Glean.installationFirstSeen.adminUser.set(extra.admin_user === "true");
+        Glean.installationFirstSeen.installExisted.set(
+          extra.install_existed === "true"
+        );
+        Glean.installationFirstSeen.profdirExisted.set(
+          extra.profdir_existed === "true"
+        );
+        Glean.installationFirstSeen.otherInst.set(extra.other_inst === "true");
+        Glean.installationFirstSeen.otherMsixInst.set(
+          extra.other_msix_inst === "true"
+        );
+        if (installer_type == "full") {
+          Glean.installationFirstSeen.silent.set(extra.silent === "true");
+          Glean.installationFirstSeen.fromMsi.set(extra.from_msi === "true");
+          Glean.installationFirstSeen.defaultPath.set(
+            extra.default_path === "true"
+          );
+        }
+      }
+      return data;
+    })();
+
+    return gInstallationTelemetryPromise;
   },
 };
 

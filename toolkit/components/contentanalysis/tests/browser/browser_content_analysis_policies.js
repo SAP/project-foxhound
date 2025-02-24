@@ -11,24 +11,29 @@
 
 "use strict";
 
-const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
-  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-);
+const { EnterprisePolicyTesting, PoliciesPrefTracker } =
+  ChromeUtils.importESModule(
+    "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
+  );
 
 const kEnabledPref = "enabled";
 const kPipeNamePref = "pipe_path_name";
 const kTimeoutPref = "agent_timeout";
 const kAllowUrlPref = "allow_url_regex_list";
 const kDenyUrlPref = "deny_url_regex_list";
+const kAgentNamePref = "agent_name";
+const kClientSignaturePref = "client_signature";
 const kPerUserPref = "is_per_user";
 const kShowBlockedPref = "show_blocked_result";
-const kDefaultAllowPref = "default_allow";
+const kDefaultResultPref = "default_result";
+const kBypassForSameTabOperationsPref = "bypass_for_same_tab_operations";
 
 const ca = Cc["@mozilla.org/contentanalysis;1"].getService(
   Ci.nsIContentAnalysis
 );
 
 add_task(async function test_ca_active() {
+  PoliciesPrefTracker.start();
   ok(!ca.isActive, "CA is inactive when pref and cmd line arg are missing");
 
   // Set the pref without enterprise policy.  CA should not be active.
@@ -62,11 +67,15 @@ add_task(async function test_ca_active() {
     },
   });
   ok(ca.isActive, "CA is active when enabled by enterprise policy pref");
+  PoliciesPrefTracker.stop();
 });
 
 add_task(async function test_ca_enterprise_config() {
+  PoliciesPrefTracker.start();
   const string1 = "this is a string";
   const string2 = "this is another string";
+  const string3 = "an agent name";
+  const string4 = "a client signature";
 
   await EnterprisePolicyTesting.setupPolicyEngineWithJson({
     policies: {
@@ -75,9 +84,12 @@ add_task(async function test_ca_enterprise_config() {
         AgentTimeout: 99,
         AllowUrlRegexList: string1,
         DenyUrlRegexList: string2,
+        AgentName: string3,
+        ClientSignature: string4,
         IsPerUser: true,
         ShowBlockedResult: false,
-        DefaultAllow: true,
+        DefaultResult: 1,
+        BypassForSameTabOperations: true,
       },
     },
   });
@@ -103,6 +115,18 @@ add_task(async function test_ca_enterprise_config() {
     "deny urls match"
   );
   is(
+    Services.prefs.getStringPref("browser.contentanalysis." + kAgentNamePref),
+    string3,
+    "agent names match"
+  );
+  is(
+    Services.prefs.getStringPref(
+      "browser.contentanalysis." + kClientSignaturePref
+    ),
+    string4,
+    "client signatures match"
+  );
+  is(
     Services.prefs.getBoolPref("browser.contentanalysis." + kPerUserPref),
     true,
     "per user match"
@@ -113,10 +137,18 @@ add_task(async function test_ca_enterprise_config() {
     "show blocked match"
   );
   is(
-    Services.prefs.getBoolPref("browser.contentanalysis." + kDefaultAllowPref),
-    true,
-    "default allow match"
+    Services.prefs.getIntPref("browser.contentanalysis." + kDefaultResultPref),
+    1,
+    "default result match"
   );
+  is(
+    Services.prefs.getBoolPref(
+      "browser.contentanalysis." + kBypassForSameTabOperationsPref
+    ),
+    true,
+    "bypass for same tab operations match"
+  );
+  PoliciesPrefTracker.stop();
 });
 
 add_task(async function test_cleanup() {
@@ -124,4 +156,9 @@ add_task(async function test_cleanup() {
   await EnterprisePolicyTesting.setupPolicyEngineWithJson({
     policies: {},
   });
+  // These may have gotten set when ContentAnalysis was enabled through
+  // the policy and do not get cleared if there is no ContentAnalysis
+  // element - reset them manually here.
+  ca.isSetByEnterprisePolicy = false;
+  Services.prefs.setBoolPref("browser.contentanalysis." + kEnabledPref, false);
 });

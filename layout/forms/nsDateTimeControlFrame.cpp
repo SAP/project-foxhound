@@ -35,33 +35,21 @@ nsDateTimeControlFrame::nsDateTimeControlFrame(ComputedStyle* aStyle,
     : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
 nscoord nsDateTimeControlFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-
   nsIFrame* kid = mFrames.FirstChild();
-  if (kid) {  // display:none?
-    result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  IntrinsicISizeType::MinISize);
-  } else {
-    result = 0;
+  if (!kid) {
+    return 0;
   }
-
-  return result;
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
+                                              IntrinsicISizeType::MinISize);
 }
 
 nscoord nsDateTimeControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-
   nsIFrame* kid = mFrames.FirstChild();
-  if (kid) {  // display:none?
-    result = nsLayoutUtils::IntrinsicForContainer(
-        aRenderingContext, kid, IntrinsicISizeType::PrefISize);
-  } else {
-    result = 0;
+  if (!kid) {
+    return 0;
   }
-
-  return result;
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
+                                              IntrinsicISizeType::PrefISize);
 }
 
 Maybe<nscoord> nsDateTimeControlFrame::GetNaturalBaselineBOffset(
@@ -78,7 +66,6 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
   MarkInReflow();
 
   DO_GLOBAL_REFLOW_COUNT("nsDateTimeControlFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE(
       NS_FRAME_TRACE_CALLS,

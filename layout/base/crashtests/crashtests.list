@@ -358,7 +358,7 @@ asserts(0-2) pref(dom.disable_open_during_load,false) load 735943.html # the ass
 asserts(0-2) load 736389-1.xhtml # sometimes the above assertions are delayed and is reported on this test instead
 load 736924-1.html
 load 749816-1.html
-asserts(1-1) load 763223-1.html # bogus size
+load 763223-1.html
 test-pref(font.size.inflation.emPerLine,15) test-pref(font.size.inflation.lineThreshold,100) load 763702.xhtml
 load 767593-1.html
 load 767593-2.html
@@ -385,11 +385,7 @@ load 836990-1.html
 load 840480.html
 load 842114.html
 load 847242.html
-# This test is slow, because it uses setTimeout a lot.
-# After bug 1875100, on windows, it times out because there's a left-over
-# window or so, and that bug causes us to throttle timers. Disable window
-# occlusion to work around this for now, see bug 1864255.
-pref(widget.windows.window_occlusion_tracking.enabled,false) skip-if(ThreadSanitizer) load 852293.html
+skip-if(ThreadSanitizer) load 852293.html
 pref(layers.force-active,true) load 859526-1.html
 pref(layers.force-active,true) load 859630-1.html
 load 860579-1.html
@@ -494,7 +490,7 @@ load 1463940.html
 HTTP load 1464641.html
 load 1464737.html
 load 1466638.html
-pref(layout.css.motion-path-ray.enabled,true) asserts(1-1) load 1467519.html # bogus size
+asserts(1-1) load 1467519.html # bogus size
 load 1467688.html
 load 1467964.html
 load 1469354.html
@@ -514,7 +510,7 @@ load 1506314.html
 load 1507244.html
 load 1510080.html
 load 1510485.html
-pref(layout.css.individual-transform.enabled,true) load 1511442.html
+load 1511442.html
 load 1511535.html
 load 1511563.html
 load 1516286-empty-mask.html
@@ -528,7 +524,7 @@ load 1539303.html
 load 1541679.html
 load 1547261.html
 load 1547391.html
-pref(widget.windows.window_occlusion_tracking.enabled,false) load 1548057.html # Bug 1819154
+load 1548057.html
 load 1549867.html
 load 1553874.html
 load 1560328.html
@@ -547,7 +543,7 @@ load 1599532.html
 pref(layout.accessiblecaret.enabled,true) load 1606492.html
 load 1654315.html
 load 1676301-1.html
-pref(apz.mvm.force-enabled,false) pref(dom.meta-viewport.enabled,false) pref(apz.allow_zooming,false) pref(layout.dynamic-toolbar-max-height,100) load 1689371.html
+pref(dom.meta-viewport.enabled,false) pref(apz.allow_zooming,false) pref(layout.dynamic-toolbar-max-height,100) load 1689371.html
 load 1685146.html
 load 1689912.html
 load 1690163.html

@@ -30,11 +30,13 @@
 #include <aom/aomcx.h>
 
 #include "libavutil/avassert.h"
+#include "libavutil/avstring.h"
 #include "libavutil/base64.h"
 #include "libavutil/common.h"
 #include "libavutil/cpu.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mathematics.h"
+#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -134,6 +136,7 @@ typedef struct AOMEncoderContext {
     int enable_diff_wtd_comp;
     int enable_dist_wtd_comp;
     int enable_dual_filter;
+    AVDictionary *svc_parameters;
     AVDictionary *aom_params;
 } AOMContext;
 
@@ -214,6 +217,7 @@ static const char *const ctlidstr[] = {
     [AV1E_GET_TARGET_SEQ_LEVEL_IDX]     = "AV1E_GET_TARGET_SEQ_LEVEL_IDX",
 #endif
     [AV1_GET_NEW_FRAME_IMAGE]           = "AV1_GET_NEW_FRAME_IMAGE",
+    [AV1E_SET_SVC_PARAMS]               = "AV1E_SET_SVC_PARAMS",
 };
 
 static av_cold void log_encoder_error(AVCodecContext *avctx, const char *desc)
@@ -385,6 +389,31 @@ static av_cold int codecctl_imgp(AVCodecContext *avctx,
     snprintf(buf, sizeof(buf), "%s:", ctlidstr[id]);
 
     res = aom_codec_control(&ctx->encoder, id, img);
+    if (res != AOM_CODEC_OK) {
+        snprintf(buf, sizeof(buf), "Failed to get %s codec control",
+                 ctlidstr[id]);
+        log_encoder_error(avctx, buf);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+static av_cold int codecctl_svcp(AVCodecContext *avctx,
+#ifdef UENUM1BYTE
+                                 aome_enc_control_id id,
+#else
+                                 enum aome_enc_control_id id,
+#endif
+                                 aom_svc_params_t *svc_params)
+{
+    AOMContext *ctx = avctx->priv_data;
+    char buf[80];
+    int res;
+
+    snprintf(buf, sizeof(buf), "%s:", ctlidstr[id]);
+
+    res = aom_codec_control(&ctx->encoder, id, svc_params);
     if (res != AOM_CODEC_OK) {
         snprintf(buf, sizeof(buf), "Failed to get %s codec control",
                  ctlidstr[id]);
@@ -682,6 +711,18 @@ static int choose_tiling(AVCodecContext *avctx,
     }
 
     return 0;
+}
+
+static void aom_svc_parse_int_array(int *dest, char *value, int max_entries)
+{
+    int dest_idx = 0;
+    char *saveptr = NULL;
+    char *token = av_strtok(value, ",", &saveptr);
+
+    while (token && dest_idx < max_entries) {
+        dest[dest_idx++] = strtoul(token, NULL, 10);
+        token = av_strtok(NULL, ",", &saveptr);
+    }
 }
 
 static av_cold int aom_init(AVCodecContext *avctx,
@@ -996,6 +1037,41 @@ static av_cold int aom_init(AVCodecContext *avctx,
     if (ctx->enable_intrabc >= 0)
         codecctl_int(avctx, AV1E_SET_ENABLE_INTRABC, ctx->enable_intrabc);
 #endif
+
+    if (enccfg.rc_end_usage == AOM_CBR) {
+        aom_svc_params_t svc_params = {};
+        svc_params.framerate_factor[0] = 1;
+        svc_params.number_spatial_layers = 1;
+        svc_params.number_temporal_layers = 1;
+
+        AVDictionaryEntry *en = NULL;
+        while ((en = av_dict_get(ctx->svc_parameters, "", en, AV_DICT_IGNORE_SUFFIX))) {
+            if (!strlen(en->value))
+                return AVERROR(EINVAL);
+
+            if (!strcmp(en->key, "number_spatial_layers"))
+                svc_params.number_spatial_layers = strtoul(en->value, NULL, 10);
+            else if (!strcmp(en->key, "number_temporal_layers"))
+                svc_params.number_temporal_layers = strtoul(en->value, NULL, 10);
+            else if (!strcmp(en->key, "max_quantizers"))
+                aom_svc_parse_int_array(svc_params.max_quantizers, en->value, AOM_MAX_LAYERS);
+            else if (!strcmp(en->key, "min_quantizers"))
+                aom_svc_parse_int_array(svc_params.min_quantizers, en->value, AOM_MAX_LAYERS);
+            else if (!strcmp(en->key, "scaling_factor_num"))
+                aom_svc_parse_int_array(svc_params.scaling_factor_num, en->value, AOM_MAX_SS_LAYERS);
+            else if (!strcmp(en->key, "scaling_factor_den"))
+                aom_svc_parse_int_array(svc_params.scaling_factor_den, en->value, AOM_MAX_SS_LAYERS);
+            else if (!strcmp(en->key, "layer_target_bitrate"))
+                aom_svc_parse_int_array(svc_params.layer_target_bitrate, en->value, AOM_MAX_LAYERS);
+            else if (!strcmp(en->key, "framerate_factor"))
+                aom_svc_parse_int_array(svc_params.framerate_factor, en->value, AOM_MAX_TS_LAYERS);
+        }
+
+        res = codecctl_svcp(avctx, AV1E_SET_SVC_PARAMS, &svc_params);
+        if (res < 0)
+            return res;
+    }
+
 
 #if AOM_ENCODER_ABI_VERSION >= 23
     {
@@ -1467,13 +1543,13 @@ static const AVOption options[] = {
                          "alternate reference frame selection",    OFFSET(lag_in_frames),   AV_OPT_TYPE_INT, {.i64 = -1},      -1,      INT_MAX, VE},
     { "arnr-max-frames", "altref noise reduction max frame count", OFFSET(arnr_max_frames), AV_OPT_TYPE_INT, {.i64 = -1},      -1,      INT_MAX, VE},
     { "arnr-strength",   "altref noise reduction filter strength", OFFSET(arnr_strength),   AV_OPT_TYPE_INT, {.i64 = -1},      -1,      6,       VE},
-    { "aq-mode",         "adaptive quantization mode",             OFFSET(aq_mode),         AV_OPT_TYPE_INT, {.i64 = -1},      -1,      4, VE, "aq_mode"},
-    { "none",            "Aq not used",         0, AV_OPT_TYPE_CONST, {.i64 = 0}, 0, 0, VE, "aq_mode"},
-    { "variance",        "Variance based Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, VE, "aq_mode"},
-    { "complexity",      "Complexity based Aq", 0, AV_OPT_TYPE_CONST, {.i64 = 2}, 0, 0, VE, "aq_mode"},
-    { "cyclic",          "Cyclic Refresh Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 3}, 0, 0, VE, "aq_mode"},
-    { "error-resilience", "Error resilience configuration", OFFSET(error_resilient), AV_OPT_TYPE_FLAGS, {.i64 = 0}, INT_MIN, INT_MAX, VE, "er"},
-    { "default",         "Improve resiliency against losses of whole frames", 0, AV_OPT_TYPE_CONST, {.i64 = AOM_ERROR_RESILIENT_DEFAULT}, 0, 0, VE, "er"},
+    { "aq-mode",         "adaptive quantization mode",             OFFSET(aq_mode),         AV_OPT_TYPE_INT, {.i64 = -1},      -1,      4, VE, .unit = "aq_mode"},
+    { "none",            "Aq not used",         0, AV_OPT_TYPE_CONST, {.i64 = 0}, 0, 0, VE, .unit = "aq_mode"},
+    { "variance",        "Variance based Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 1}, 0, 0, VE, .unit = "aq_mode"},
+    { "complexity",      "Complexity based Aq", 0, AV_OPT_TYPE_CONST, {.i64 = 2}, 0, 0, VE, .unit = "aq_mode"},
+    { "cyclic",          "Cyclic Refresh Aq",   0, AV_OPT_TYPE_CONST, {.i64 = 3}, 0, 0, VE, .unit = "aq_mode"},
+    { "error-resilience", "Error resilience configuration", OFFSET(error_resilient), AV_OPT_TYPE_FLAGS, {.i64 = 0}, INT_MIN, INT_MAX, VE, .unit = "er"},
+    { "default",         "Improve resiliency against losses of whole frames", 0, AV_OPT_TYPE_CONST, {.i64 = AOM_ERROR_RESILIENT_DEFAULT}, 0, 0, VE, .unit = "er"},
     { "crf",              "Select the quality for constant quality mode", offsetof(AOMContext, crf), AV_OPT_TYPE_INT, {.i64 = -1}, -1, 63, VE },
     { "static-thresh",    "A change threshold on blocks below which they will be skipped by the encoder", OFFSET(static_thresh), AV_OPT_TYPE_INT, { .i64 = 0 }, 0, INT_MAX, VE },
     { "drop-threshold",   "Frame drop threshold", offsetof(AOMContext, drop_threshold), AV_OPT_TYPE_INT, {.i64 = 0 }, INT_MIN, INT_MAX, VE },
@@ -1492,13 +1568,13 @@ static const AVOption options[] = {
     { "enable-global-motion",  "Enable global motion",             OFFSET(enable_global_motion), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
     { "enable-intrabc",  "Enable intra block copy prediction mode", OFFSET(enable_intrabc), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
     { "enable-restoration", "Enable Loop Restoration filtering", OFFSET(enable_restoration), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
-    { "usage",           "Quality and compression efficiency vs speed trade-off", OFFSET(usage), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, VE, "usage"},
-    { "good",            "Good quality",      0, AV_OPT_TYPE_CONST, {.i64 = 0 /* AOM_USAGE_GOOD_QUALITY */}, 0, 0, VE, "usage"},
-    { "realtime",        "Realtime encoding", 0, AV_OPT_TYPE_CONST, {.i64 = 1 /* AOM_USAGE_REALTIME */},     0, 0, VE, "usage"},
-    { "allintra",        "All Intra encoding", 0, AV_OPT_TYPE_CONST, {.i64 = 2 /* AOM_USAGE_ALL_INTRA */},    0, 0, VE, "usage"},
-    { "tune",            "The metric that the encoder tunes for. Automatically chosen by the encoder by default", OFFSET(tune), AV_OPT_TYPE_INT, {.i64 = -1}, -1, AOM_TUNE_SSIM, VE, "tune"},
-    { "psnr",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_PSNR}, 0, 0, VE, "tune"},
-    { "ssim",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_SSIM}, 0, 0, VE, "tune"},
+    { "usage",           "Quality and compression efficiency vs speed trade-off", OFFSET(usage), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, VE, .unit = "usage"},
+    { "good",            "Good quality",      0, AV_OPT_TYPE_CONST, {.i64 = 0 /* AOM_USAGE_GOOD_QUALITY */}, 0, 0, VE, .unit = "usage"},
+    { "realtime",        "Realtime encoding", 0, AV_OPT_TYPE_CONST, {.i64 = 1 /* AOM_USAGE_REALTIME */},     0, 0, VE, .unit = "usage"},
+    { "allintra",        "All Intra encoding", 0, AV_OPT_TYPE_CONST, {.i64 = 2 /* AOM_USAGE_ALL_INTRA */},    0, 0, VE, .unit = "usage"},
+    { "tune",            "The metric that the encoder tunes for. Automatically chosen by the encoder by default", OFFSET(tune), AV_OPT_TYPE_INT, {.i64 = -1}, -1, AOM_TUNE_SSIM, VE, .unit = "tune"},
+    { "psnr",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_PSNR}, 0, 0, VE, .unit = "tune"},
+    { "ssim",            NULL,         0, AV_OPT_TYPE_CONST, {.i64 = AOM_TUNE_SSIM}, 0, 0, VE, .unit = "tune"},
     FF_AV1_PROFILE_OPTS
     { "still-picture", "Encode in single frame mode (typically used for still AVIF images).", OFFSET(still_picture), AV_OPT_TYPE_BOOL, {.i64 = 0}, -1, 1, VE },
     { "enable-rect-partitions", "Enable rectangular partitions", OFFSET(enable_rect_partitions), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
@@ -1529,6 +1605,7 @@ static const AVOption options[] = {
     { "enable-masked-comp",           "Enable masked compound",                            OFFSET(enable_masked_comp),           AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
     { "enable-interintra-comp",       "Enable interintra compound",                        OFFSET(enable_interintra_comp),       AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
     { "enable-smooth-interintra",     "Enable smooth interintra mode",                     OFFSET(enable_smooth_interintra),     AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, VE},
+    { "svc-parameters", "SVC configuration using a :-separated list of key=value parameters (only applied in CBR mode)", OFFSET(svc_parameters), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE},
 #if AOM_ENCODER_ABI_VERSION >= 23
     { "aom-params",                   "Set libaom options using a :-separated list of key=value pairs", OFFSET(aom_params), AV_OPT_TYPE_DICT, { 0 }, 0, 0, VE },
 #endif

@@ -47,6 +47,7 @@
 #include "vm/Opcodes.h"
 #include "vm/PlainObject.h"
 #include "vm/Shape.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 
 #include "debugger/DebugAPI-inl.h"
 #include "jit/BaselineFrame-inl.h"
@@ -1262,9 +1263,8 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
 
   CACHEOP_CASE(GuardFunctionHasJitEntry) {
     ObjOperandId funId = icregs.cacheIRReader.objOperandId();
-    bool constructing = icregs.cacheIRReader.readBool();
     JSObject* fun = reinterpret_cast<JSObject*>(icregs.icVals[funId.id()]);
-    uint16_t flags = FunctionFlags::HasJitEntryFlags(constructing);
+    uint16_t flags = FunctionFlags::HasJitEntryFlags();
     if (!fun->as<JSFunction>().flags().hasFlags(flags)) {
       return ICInterpretOpResult::NextIC;
     }
@@ -1274,7 +1274,7 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE(GuardFunctionHasNoJitEntry) {
     ObjOperandId funId = icregs.cacheIRReader.objOperandId();
     JSObject* fun = reinterpret_cast<JSObject*>(icregs.icVals[funId.id()]);
-    uint16_t flags = FunctionFlags::HasJitEntryFlags(/*constructing =*/false);
+    uint16_t flags = FunctionFlags::HasJitEntryFlags();
     if (fun->as<JSFunction>().flags().hasFlags(flags)) {
       return ICInterpretOpResult::NextIC;
     }
@@ -1373,9 +1373,13 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE(LoadWrapperTarget) {
     ObjOperandId objId = icregs.cacheIRReader.objOperandId();
     ObjOperandId resultId = icregs.cacheIRReader.objOperandId();
+    bool fallible = icregs.cacheIRReader.readBool();
     BOUNDSCHECK(resultId);
     JSObject* obj = reinterpret_cast<JSObject*>(icregs.icVals[objId.id()]);
-    JSObject* target = &obj->as<ProxyObject>().private_().toObject();
+    JSObject* target = obj->as<ProxyObject>().private_().toObjectOrNull();
+    if (fallible && !target) {
+      return ICInterpretOpResult::NextIC;
+    }
     icregs.icVals[resultId.id()] = reinterpret_cast<uintptr_t>(target);
     DISPATCH_CACHEOP();
   }
@@ -1710,6 +1714,7 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
           v = Int32Value(rhs);
           break;
 
+        case Scalar::Float16:
         case Scalar::Float32:
         case Scalar::Float64:
           v = Value::fromRawBits(rhs);
@@ -2686,6 +2691,7 @@ ICInterpretOps(BaselineFrame* frame, VMFrameManager& frameMgr, State& state,
   CACHEOP_CASE_UNIMPL(LoadConstantString)
   CACHEOP_CASE_UNIMPL(LoadInstanceOfObjectResult)
   CACHEOP_CASE_UNIMPL(LoadTypeOfObjectResult)
+  CACHEOP_CASE_UNIMPL(LoadTypeOfEqObjectResult)
   CACHEOP_CASE_UNIMPL(DoubleAddResult)
   CACHEOP_CASE_UNIMPL(DoubleSubResult)
   CACHEOP_CASE_UNIMPL(DoubleMulResult)
@@ -2868,6 +2874,14 @@ DEFINE_IC(Typeof, 1, {
   IC_LOAD_VAL(value0, 0);
   PUSH_FALLBACK_IC_FRAME();
   if (!DoTypeOfFallback(cx, frame, fallback, value0, &state.res)) {
+    goto error;
+  }
+});
+
+DEFINE_IC(TypeofEq, 1, {
+  IC_LOAD_VAL(value0, 0);
+  PUSH_FALLBACK_IC_FRAME();
+  if (!DoTypeOfEqFallback(cx, frame, fallback, value0, &state.res)) {
     goto error;
   }
 });
@@ -3417,6 +3431,23 @@ PBIResult PortableBaselineInterpret(JSContext* cx_, State& state, Stack& stack,
         IC_PUSH_RESULT();
       }
       END_OP(Typeof);
+    }
+
+    CASE(TypeofEq) {
+      if (kHybridICs) {
+        TypeofEqOperand operand = TypeofEqOperand::fromRawValue(GET_UINT8(pc));
+        bool result = js::TypeOfValue(Stack::handle(sp)) == operand.type();
+        if (operand.compareOp() == JSOp::Ne) {
+          result = !result;
+        }
+        sp[0] = StackVal(BooleanValue(result));
+        NEXT_IC();
+      } else {
+        IC_POP_ARG(0);
+        INVOKE_IC(TypeofEq);
+        IC_PUSH_RESULT();
+      }
+      END_OP(TypeofEq);
     }
 
     CASE(Pos) {

@@ -134,9 +134,6 @@ class ShaderKeepAlive final {
 };
 
 class ContextGenerationInfo final {
- private:
-  ObjectId mLastId = 0;
-
  public:
   webgl::ExtensionBits mEnabledExtensions;
   RefPtr<WebGLProgramJS> mCurrentProgram;
@@ -180,7 +177,7 @@ class ContextGenerationInfo final {
 
   webgl::ProvokingVertex mProvokingVertex = webgl::ProvokingVertex::LastVertex;
 
-  ObjectId NextId() { return mLastId += 1; }
+  mutable Maybe<std::unordered_map<GLenum, bool>> mIsEnabledMap;
 };
 
 // -
@@ -493,7 +490,7 @@ class WebGLSyncJS final : public nsWrapperCache,
 
   bool mCanBeAvailable = false;
   uint8_t mNumQueriesBeforeFirstFrameBoundary = 0;
-  bool mSignaled = false;
+  uint8_t mNumQueriesWithoutFlushCommandsBit = 0;
 
  public:
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(WebGLSyncJS)
@@ -781,8 +778,11 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   mutable GLenum mNextError = 0;
   mutable webgl::LossStatus mLossStatus = webgl::LossStatus::Ready;
   mutable bool mAwaitingRestore = false;
+  mutable webgl::ObjectId mLastId = 0;
 
  public:
+  webgl::ObjectId NextId() const { return mLastId += 1; }
+
   // Holds Some Id if async present is used
   mutable Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
   mutable Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
@@ -1052,6 +1052,20 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
     const FuncScope funcScope(*this, "drawingBufferHeight");
     return AutoAssertCast(DrawingBufferSize().y);
   }
+
+  // -
+
+ private:
+  dom::PredefinedColorSpace mDrawingBufferColorSpace =
+      dom::PredefinedColorSpace::Srgb;
+
+ public:
+  auto DrawingBufferColorSpace() const { return mDrawingBufferColorSpace; }
+
+  void SetDrawingBufferColorSpace(dom::PredefinedColorSpace);
+
+  // -
+
   void GetContextAttributes(dom::Nullable<dom::WebGLContextAttributes>& retval);
 
  private:
@@ -1092,15 +1106,15 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
   // -
 
-  bool mAutoFlushPending = false;
+  mutable bool mAutoFlushPending = false;
 
-  void AutoEnqueueFlush() {
+  void AutoEnqueueFlush() const {
     if (MOZ_LIKELY(mAutoFlushPending)) return;
     mAutoFlushPending = true;
 
-    const auto weak = WeakPtr<ClientWebGLContext>(this);
-    const auto DeferredFlush = [weak]() {
-      const auto strong = RefPtr<ClientWebGLContext>(weak);
+    const auto DeferredFlush = [weak =
+                                    WeakPtr<const ClientWebGLContext>(this)]() {
+      const auto strong = RefPtr<const ClientWebGLContext>(weak);
       if (!strong) return;
       if (!strong->mAutoFlushPending) return;
       strong->mAutoFlushPending = false;
@@ -1111,12 +1125,12 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
     };
 
     already_AddRefed<mozilla::CancelableRunnable> runnable =
-        NS_NewCancelableRunnableFunction("enqueue Event_webglcontextrestored",
+        NS_NewCancelableRunnableFunction("ClientWebGLContext::DeferredFlush",
                                          DeferredFlush);
     NS_DispatchToCurrentThread(std::move(runnable));
   }
 
-  void CancelAutoFlush() { mAutoFlushPending = false; }
+  void CancelAutoFlush() const { mAutoFlushPending = false; }
 
   // -
 
@@ -1141,6 +1155,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   void Disable(GLenum cap) const { SetEnabledI(cap, {}, false); }
   void Enable(GLenum cap) const { SetEnabledI(cap, {}, true); }
   void SetEnabledI(GLenum cap, Maybe<GLuint> i, bool val) const;
+
   bool IsEnabled(GLenum cap) const;
 
  private:
@@ -1397,7 +1412,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
   void DepthRange(GLclampf zNear, GLclampf zFar);
 
-  void Flush(bool flushGl = true);
+  void Flush(bool flushGl = true) const;
 
   void Finish();
 
@@ -2244,6 +2259,13 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
   void GetSyncParameter(JSContext*, WebGLSyncJS&, GLenum pname,
                         JS::MutableHandle<JS::Value> retval) const;
   void WaitSync(const WebGLSyncJS&, GLbitfield flags, GLint64 timeout) const;
+
+  mutable webgl::ObjectId mCompletedSyncId = 0;
+  void OnSyncComplete(webgl::ObjectId id) const {
+    if (mCompletedSyncId < id) {
+      mCompletedSyncId = id;
+    }
+  }
 
   // -------------------------- Transform Feedback ---------------------------
 

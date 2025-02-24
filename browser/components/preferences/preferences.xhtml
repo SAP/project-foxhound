@@ -49,7 +49,6 @@
   <link rel="localization" href="browser/preferences/fonts.ftl"/>
   <link rel="localization" href="browser/preferences/moreFromMozilla.ftl"/>
   <link rel="localization" href="browser/preferences/preferences.ftl"/>
-  <link rel="localization" href="toolkit/branding/accounts.ftl"/>
   <link rel="localization" href="toolkit/branding/brandings.ftl"/>
   <link rel="localization" href="toolkit/featuregates/features.ftl"/>
 
@@ -68,7 +67,9 @@
   <link rel="localization" href="browser/sanitize.ftl"/>
   <link rel="localization" href="browser/translations.ftl"/>
   <link rel="localization" href="preview/translations.ftl"/>
+  <link rel="localization" href="preview/genai.ftl"/>
   <link rel="localization" href="preview/enUS-searchFeatures.ftl"/>
+  <link rel="localization" href="preview/backupSettings.ftl"/>
   <link rel="localization" href="security/certificates/certManager.ftl"/>
   <link rel="localization" href="security/certificates/deviceManager.ftl"/>
   <link rel="localization" href="toolkit/updates/history.ftl"/>
@@ -80,11 +81,8 @@
   <script src="chrome://browser/content/preferences/preferences.js"/>
   <script src="chrome://browser/content/preferences/extensionControlled.js"/>
   <script src="chrome://browser/content/preferences/findInPage.js"/>
-  <script type="module" src="chrome://global/content/elements/moz-support-link.mjs"/>
   <script src="chrome://browser/content/migration/migration-wizard.mjs" type="module"></script>
-  <script type="module" src="chrome://global/content/elements/moz-toggle.mjs"/>
-  <script type="module" src="chrome://global/content/elements/moz-message-bar.mjs" />
-  <script type="module" src="chrome://global/content/elements/moz-label.mjs"/>
+  <script type="module" src="chrome://browser/content/backup/backup-settings.mjs"></script>
 </head>
 
 <html:body xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
@@ -224,7 +222,7 @@
           <hbox class="sticky-inner-container" pack="end" align="start">
             <hbox id="policies-container" class="info-box-container smaller-font-size" flex="1" hidden="true">
               <hbox class="info-icon-container">
-                <html:img class="info-icon"></html:img>
+                <html:img class="info-icon" data-l10n-attrs="alt" data-l10n-id="managed-notice-info-icon"></html:img>
               </hbox>
               <hbox align="center" flex="1">
                 <html:a href="about:policies" target="_blank" data-l10n-id="managed-notice"/>

@@ -238,6 +238,9 @@ with Files("NavigationPreloadManager.webidl"):
 with Files("Net*"):
     BUG_COMPONENT = ("Core", "Networking")
 
+with Files("Notification*"):
+    BUG_COMPONENT = ("Core", "DOM: Notifications")
+
 with Files("OfflineAudio*"):
     BUG_COMPONENT = ("Core", "Web Audio")
 
@@ -275,7 +278,7 @@ with Files("ProgressEvent.webidl"):
     BUG_COMPONENT = ("Core", "DOM: Events")
 
 with Files("Push*"):
-    BUG_COMPONENT = ("Core", "DOM: Notifications")
+    BUG_COMPONENT = ("Core", "DOM: Push Subscriptions")
 
 with Files("RTC*"):
     BUG_COMPONENT = ("Core", "WebRTC")
@@ -321,6 +324,9 @@ with Files("SubtleCrypto.webidl"):
 
 with Files("TCP*"):
     BUG_COMPONENT = ("Core", "DOM: Networking")
+
+with Files("TextEvent.webidl"):
+    BUG_COMPONENT = ("Core", "DOM: UI Events & Focus Handling")
 
 with Files("TextTrack*"):
     BUG_COMPONENT = ("Core", "Audio/Video")
@@ -419,6 +425,7 @@ WEBIDL_FILES = [
     "AudioData.webidl",
     "AudioDecoder.webidl",
     "AudioDestinationNode.webidl",
+    "AudioEncoder.webidl",
     "AudioListener.webidl",
     "AudioNode.webidl",
     "AudioParam.webidl",
@@ -484,6 +491,7 @@ WEBIDL_FILES = [
     "CSSKeyframesRule.webidl",
     "CSSLayerBlockRule.webidl",
     "CSSLayerStatementRule.webidl",
+    "CSSMarginRule.webidl",
     "CSSMediaRule.webidl",
     "CSSMozDocumentRule.webidl",
     "CSSNamespaceRule.webidl",
@@ -492,6 +500,8 @@ WEBIDL_FILES = [
     "CSSPseudoElement.webidl",
     "CSSRule.webidl",
     "CSSRuleList.webidl",
+    "CSSScopeRule.webidl",
+    "CSSStartingStyleRule.webidl",
     "CSSStyleDeclaration.webidl",
     "CSSStyleRule.webidl",
     "CSSStyleSheet.webidl",
@@ -566,6 +576,7 @@ WEBIDL_FILES = [
     "FontFaceSet.webidl",
     "FontFaceSource.webidl",
     "FormData.webidl",
+    "FragmentDirective.webidl",
     "Function.webidl",
     "GainNode.webidl",
     "Gamepad.webidl",
@@ -754,6 +765,7 @@ WEBIDL_FILES = [
     "NodeFilter.webidl",
     "NodeIterator.webidl",
     "NodeList.webidl",
+    "NonElementParentNode.webidl",
     "Notification.webidl",
     "NotificationEvent.webidl",
     "NotifyPaintEvent.webidl",
@@ -792,6 +804,7 @@ WEBIDL_FILES = [
     "PluginArray.webidl",
     "PointerEvent.webidl",
     "PopoverInvokerElement.webidl",
+    "PrivateAttribution.webidl",
     "ProcessingInstruction.webidl",
     "Promise.webidl",
     "PushEvent.webidl",
@@ -961,6 +974,7 @@ WEBIDL_FILES = [
     "TextDecoderStream.webidl",
     "TextEncoder.webidl",
     "TextEncoderStream.webidl",
+    "TextEvent.webidl",
     "TextTrack.webidl",
     "TextTrackCue.webidl",
     "TextTrackCueList.webidl",

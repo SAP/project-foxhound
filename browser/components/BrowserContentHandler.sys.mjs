@@ -60,62 +60,8 @@ function shouldLoadURI(aURI) {
   return false;
 }
 
-function validateFirefoxProtocol(aCmdLine, launchedWithArg_osint) {
-  let paramCount = 0;
-  // Only accept one parameter when we're handling the protocol.
-  for (let i = 0; i < aCmdLine.length; i++) {
-    if (!aCmdLine.getArgument(i).startsWith("-")) {
-      paramCount++;
-    }
-    if (paramCount > 1) {
-      return false;
-    }
-  }
-  // `-osint` and handling registered file types and protocols is Windows-only.
-  return AppConstants.platform != "win" || launchedWithArg_osint;
-}
-
-function resolveURIInternal(
-  aCmdLine,
-  aArgument,
-  launchedWithArg_osint = false
-) {
+function resolveURIInternal(aCmdLine, aArgument) {
   let principal = lazy.gSystemPrincipal;
-
-  // If using Firefox protocol handler remove it from URI
-  // at this stage. This is before we would otherwise
-  // record telemetry so do that here.
-  let handleFirefoxProtocol = protocol => {
-    let protocolWithColon = protocol + ":";
-    if (aArgument.startsWith(protocolWithColon)) {
-      if (!validateFirefoxProtocol(aCmdLine, launchedWithArg_osint)) {
-        throw new Error(
-          "Invalid use of Firefox-bridge and Firefox-private-bridge protocols."
-        );
-      }
-      aArgument = aArgument.substring(protocolWithColon.length);
-
-      if (
-        !aArgument.startsWith("http://") &&
-        !aArgument.startsWith("https://")
-      ) {
-        throw new Error(
-          "Firefox-bridge and Firefox-private-bridge protocols can only be used in conjunction with http and https urls."
-        );
-      }
-
-      principal = Services.scriptSecurityManager.createNullPrincipal({});
-      Services.telemetry.keyedScalarAdd(
-        "os.environment.launched_to_handle",
-        protocol,
-        1
-      );
-    }
-  };
-
-  handleFirefoxProtocol("firefox-bridge");
-  handleFirefoxProtocol("firefox-private-bridge");
-
   var uri = aCmdLine.resolveURI(aArgument);
   var uriFixup = Services.uriFixup;
 
@@ -378,8 +324,9 @@ function openBrowserWindow(
 
         if (
           AppConstants.platform == "win" &&
-          lazy.NimbusFeatures.majorRelease2022.getVariable(
-            "feltPrivacyWindowSeparation"
+          Services.prefs.getBoolPref(
+            "browser.privateWindowSeparation.enabled",
+            true
           )
         ) {
           lazy.WinTaskbar.setGroupIdForWindow(
@@ -438,7 +385,7 @@ function openBrowserWindow(
   });
 }
 
-function openPreferences(cmdLine, extraArgs) {
+function openPreferences(cmdLine) {
   openBrowserWindow(cmdLine, lazy.gSystemPrincipal, "about:preferences");
 }
 
@@ -602,17 +549,7 @@ nsBrowserContentHandler.prototype = {
         "private-window",
         false
       );
-      // Check for Firefox private browsing protocol handler here.
-      let url = null;
-      let urlFlagIdx = cmdLine.findFlag("url", false);
-      if (urlFlagIdx > -1 && cmdLine.length > 1) {
-        url = cmdLine.getArgument(urlFlagIdx + 1);
-      }
-      if (privateWindowParam || url?.startsWith("firefox-private-bridge:")) {
-        // Check if the osint flag is present on Windows
-        let launchedWithArg_osint =
-          AppConstants.platform == "win" &&
-          cmdLine.findFlag("osint", false) == 0;
+      if (privateWindowParam) {
         let forcePrivate = true;
         let resolvedInfo;
         if (!lazy.PrivateBrowsingUtils.enabled) {
@@ -623,19 +560,8 @@ nsBrowserContentHandler.prototype = {
             uri: Services.io.newURI("about:privatebrowsing"),
             principal: lazy.gSystemPrincipal,
           };
-        } else if (url?.startsWith("firefox-private-bridge:")) {
-          cmdLine.removeArguments(urlFlagIdx, urlFlagIdx + 1);
-          resolvedInfo = resolveURIInternal(
-            cmdLine,
-            url,
-            launchedWithArg_osint
-          );
         } else {
-          resolvedInfo = resolveURIInternal(
-            cmdLine,
-            privateWindowParam,
-            launchedWithArg_osint
-          );
+          resolvedInfo = resolveURIInternal(cmdLine, privateWindowParam);
         }
         handURIToExistingBrowser(
           resolvedInfo.uri,
@@ -819,7 +745,7 @@ nsBrowserContentHandler.prototype = {
             overridePage = Services.urlFormatter.formatURLPref(
               "startup.homepage_override_url"
             );
-            let update = lazy.UpdateManager.readyUpdate;
+            let update = lazy.UpdateManager.updateInstalledAtStartup;
 
             /** If the override URL is provided by an experiment, is a valid
              * Firefox What's New Page URL, and the update version is less than
@@ -830,17 +756,28 @@ nsBrowserContentHandler.prototype = {
             const nimbusOverrideUrl = Services.urlFormatter.formatURLPref(
               "startup.homepage_override_url_nimbus"
             );
+            // This defines the maximum allowed Fx update version to see the
+            // nimbus WNP. For ex, if maxVersion is set to 127 but user updates
+            // to 128, they will not qualify.
             const maxVersion = Services.prefs.getCharPref(
               "startup.homepage_override_nimbus_maxVersion",
               ""
             );
+            // This defines the minimum allowed Fx update version to see the
+            // nimbus WNP. For ex, if minVersion is set to 126 but user updates
+            // to 124, they will not qualify.
+            const minVersion = Services.prefs.getCharPref(
+              "startup.homepage_override_nimbus_minVersion",
+              ""
+            );
             let nimbusWNP;
 
-            // Update version should be less than or equal to maxVersion set by
-            // the experiment
+            // The update version should be less than or equal to maxVersion and
+            // greater or equal to minVersion set by the experiment.
             if (
               nimbusOverrideUrl &&
-              Services.vc.compare(update.appVersion, maxVersion) <= 0
+              Services.vc.compare(update.appVersion, maxVersion) <= 0 &&
+              Services.vc.compare(update.appVersion, minVersion) >= 0
             ) {
               try {
                 let uri = Services.io.newURI(nimbusOverrideUrl);
@@ -893,7 +830,7 @@ nsBrowserContentHandler.prototype = {
             break;
           }
           case OVERRIDE_NEW_BUILD_ID:
-            if (lazy.UpdateManager.readyUpdate) {
+            if (lazy.UpdateManager.updateInstalledAtStartup) {
               // Send the update ping to signal that the update was successful.
               lazy.UpdatePing.handleUpdateSuccess(old_mstone, old_buildId);
               lazy.LaterRun.enable(lazy.LaterRun.ENABLE_REASON_UPDATE_APPLIED);
@@ -1210,6 +1147,14 @@ nsDefaultCommandLineHandler.prototype = {
     var urilist = [];
     var principalList = [];
 
+    if (
+      cmdLine.state != Ci.nsICommandLine.STATE_INITIAL_LAUNCH &&
+      cmdLine.findFlag("os-autostart", true) != -1
+    ) {
+      // Relaunching after reboot (or quickly opening the application on reboot) and launch-on-login interact.  If we see an after reboot command line while already running, ignore it.
+      return;
+    }
+
     if (AppConstants.platform == "win") {
       // Windows itself does disk I/O when the notification service is
       // initialized, so make sure that is lazy.
@@ -1244,24 +1189,12 @@ nsDefaultCommandLineHandler.prototype = {
         async function handleNotification() {
           let { tagWasHandled } = await alertService.handleWindowsTag(tag);
 
-          // If the tag was not handled via callback, then the notification was
-          // from a prior instance of the application and we need to handle
-          // fallback behavior.
-          if (!tagWasHandled) {
-            console.info(
-              `Completing Windows notification (tag=${JSON.stringify(
-                tag
-              )}, notificationData=${notificationData})`
+          try {
+            notificationData = JSON.parse(notificationData);
+          } catch (e) {
+            console.error(
+              `Failed to parse (notificationData=${notificationData}) for Windows notification (tag=${tag})`
             );
-            try {
-              notificationData = JSON.parse(notificationData);
-            } catch (e) {
-              console.error(
-                `Completing Windows notification (tag=${JSON.stringify(
-                  tag
-                )}, failed to parse (notificationData=${notificationData})`
-              );
-            }
           }
 
           // This is awkward: the relaunch data set by the caller is _wrapped_
@@ -1275,11 +1208,7 @@ nsDefaultCommandLineHandler.prototype = {
               );
             } catch (e) {
               console.error(
-                `Completing Windows notification (tag=${JSON.stringify(
-                  tag
-                )}, failed to parse (opaqueRelaunchData=${
-                  notificationData.opaqueRelaunchData
-                })`
+                `Failed to parse (opaqueRelaunchData=${notificationData.opaqueRelaunchData}) for Windows notification (tag=${tag})`
               );
             }
           }
@@ -1298,9 +1227,16 @@ nsDefaultCommandLineHandler.prototype = {
           // window to perform the action in.
           let winForAction;
 
-          if (notificationData?.launchUrl && !opaqueRelaunchData) {
-            // Unprivileged Web Notifications contain a launch URL and are handled
-            // slightly differently than privileged notifications with actions.
+          if (
+            !tagWasHandled &&
+            notificationData?.launchUrl &&
+            !opaqueRelaunchData
+          ) {
+            // Unprivileged Web Notifications contain a launch URL and are
+            // handled slightly differently than privileged notifications with
+            // actions. If the tag was not handled, then the notification was
+            // from a prior instance of the application and we need to handle
+            // fallback behavior.
             let { uri, principal } = resolveURIInternal(
               cmdLine,
               notificationData.launchUrl
@@ -1347,6 +1283,14 @@ nsDefaultCommandLineHandler.prototype = {
             });
           }
 
+          // Note: at time of writing `opaqueRelaunchData` was only used by the
+          // Messaging System; if present it could be inferred that the message
+          // originated from the Messaging System. The Messaging System did not
+          // act on Windows 8 style notification callbacks, so there was no risk
+          // of duplicating behavior. If a non-Messaging System consumer is
+          // modified to populate `opaqueRelaunchData` or the Messaging System
+          // modified to use the callback directly, we will need to revisit
+          // this assumption.
           if (opaqueRelaunchData && winForAction) {
             // Without dispatch, `OPEN_URL` with `where: "tab"` does not work on relaunch.
             Services.tm.dispatchToMainThread(() => {
@@ -1431,11 +1375,7 @@ nsDefaultCommandLineHandler.prototype = {
     try {
       var ar;
       while ((ar = cmdLine.handleFlagWithParam("url", false))) {
-        let { uri, principal } = resolveURIInternal(
-          cmdLine,
-          ar,
-          launchedWithArg_osint
-        );
+        let { uri, principal } = resolveURIInternal(cmdLine, ar);
         urilist.push(uri);
         principalList.push(principal);
 
@@ -1507,9 +1447,6 @@ nsDefaultCommandLineHandler.prototype = {
       }
 
       // Can't open multiple URLs without using system principal.
-      // The firefox-bridge and firefox-private-bridge protocols should only
-      // accept a single URL due to using the -osint option
-      // so this isn't very relevant.
       var URLlist = urilist.filter(shouldLoadURI).map(u => u.spec);
       if (URLlist.length) {
         openBrowserWindow(cmdLine, lazy.gSystemPrincipal, URLlist);

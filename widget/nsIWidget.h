@@ -668,12 +668,6 @@ class nsIWidget : public nsISupports {
   virtual void SetModal(bool aModal) = 0;
 
   /**
-   * Make the non-modal window opened by modal window fake-modal, that will
-   * call SetFakeModal(false) on destroy on Cocoa.
-   */
-  virtual void SetFakeModal(bool aModal) { SetModal(aModal); }
-
-  /**
    * Are we app modal. Currently only implemented on Cocoa.
    */
   virtual bool IsRunningAppModal() { return false; }
@@ -783,10 +777,6 @@ class nsIWidget : public nsISupports {
    */
   virtual void Resize(double aX, double aY, double aWidth, double aHeight,
                       bool aRepaint) = 0;
-
-  virtual mozilla::Maybe<bool> IsResizingNativeWidget() {
-    return mozilla::Nothing();
-  }
 
   /**
    * Resize the widget so that the inner client area has the given size.
@@ -1406,6 +1396,8 @@ class nsIWidget : public nsISupports {
   virtual void SetWindowClass(const nsAString& xulWinType,
                               const nsAString& xulWinClass,
                               const nsAString& xulWinName) = 0;
+
+  virtual void SetIsEarlyBlankWindow(bool) {}
 
   /**
    * Enables/Disables system capture of any and all events that would cause a

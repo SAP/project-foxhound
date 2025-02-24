@@ -35,7 +35,7 @@
 #include "nsQueryObject.h"
 #include "nsSerializationHelper.h"
 #include "nsFrameLoader.h"
-#include "nsIScriptSecurityManager.h"
+#include "nsScriptSecurityManager.h"
 
 #include "mozilla/dom/JSWindowActorBinding.h"
 #include "mozilla/dom/JSWindowActorChild.h"
@@ -513,12 +513,6 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvResetScalingZoom() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult WindowGlobalChild::RecvSetContainerFeaturePolicy(
-    dom::FeaturePolicy* aContainerFeaturePolicy) {
-  mContainerFeaturePolicy = aContainerFeaturePolicy;
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult WindowGlobalChild::RecvRestoreDocShellState(
     const dom::sessionstore::DocShellRestoreState& aState,
     RestoreDocShellStateResolver&& aResolve) {
@@ -588,30 +582,19 @@ void WindowGlobalChild::SetDocumentURI(nsIURI* aDocumentURI) {
       embedderInnerWindowID, BrowsingContext()->UsePrivateBrowsing());
 
   if (StaticPrefs::dom_security_setdocumenturi()) {
-    auto isLoadableViaInternet = [](nsIURI* uri) {
-      return (uri && (net::SchemeIsHTTP(uri) || net::SchemeIsHTTPS(uri)));
-    };
-    if (isLoadableViaInternet(aDocumentURI)) {
-      nsCOMPtr<nsIURI> principalURI = mDocumentPrincipal->GetURI();
-      if (mDocumentPrincipal->GetIsNullPrincipal()) {
-        nsCOMPtr<nsIPrincipal> precursor =
-            mDocumentPrincipal->GetPrecursorPrincipal();
-        if (precursor) {
-          principalURI = precursor->GetURI();
-        }
-      }
-
-      if (isLoadableViaInternet(principalURI)) {
-        nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-
-        if (!NS_SUCCEEDED(ssm->CheckSameOriginURI(principalURI, aDocumentURI,
-                                                  false, false))) {
-          MOZ_DIAGNOSTIC_ASSERT(false,
-                                "Setting DocumentURI with a different origin "
-                                "than principal URI");
-        }
+    nsCOMPtr<nsIURI> principalURI = mDocumentPrincipal->GetURI();
+    if (mDocumentPrincipal->GetIsNullPrincipal()) {
+      nsCOMPtr<nsIPrincipal> precursor =
+          mDocumentPrincipal->GetPrecursorPrincipal();
+      if (precursor) {
+        principalURI = precursor->GetURI();
       }
     }
+
+    MOZ_DIAGNOSTIC_ASSERT(!nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(
+                              principalURI, aDocumentURI),
+                          "Setting DocumentURI with a different origin "
+                          "than principal URI");
   }
 
   mDocumentURI = aDocumentURI;
@@ -878,9 +861,26 @@ nsISupports* WindowGlobalChild::GetParentObject() {
   return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
 }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(WindowGlobalChild, mWindowGlobal,
-                                               mContainerFeaturePolicy,
-                                               mWindowContext)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_CLASS(WindowGlobalChild)
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(WindowGlobalChild)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindowGlobal)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mContainerFeaturePolicy)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindowContext)
+  tmp->UnlinkManager();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
+  NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_PTR
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(WindowGlobalChild)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindowGlobal)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mContainerFeaturePolicy)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindowContext)
+  if (!tmp->IsInProcess()) {
+    CycleCollectionNoteChild(cb, static_cast<BrowserChild*>(tmp->Manager()),
+                             "Manager()");
+  }
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WindowGlobalChild)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY

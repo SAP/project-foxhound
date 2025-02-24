@@ -7,11 +7,6 @@
 
 "use strict";
 
-ChromeUtils.defineESModuleGetters(this, {
-  CONTEXTUAL_SERVICES_PING_TYPES:
-    "resource:///modules/PartnerLinkAttribution.sys.mjs",
-});
-
 const { TELEMETRY_SCALARS } = UrlbarProviderQuickSuggest;
 
 const MERINO_SUGGESTION = {
@@ -86,24 +81,6 @@ add_task(async function () {
           category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
           method: "engagement",
           object: "block",
-          extra: {
-            suggestion_type,
-            match_type,
-            position: position.toString(),
-          },
-        },
-      },
-      // help
-      {
-        command: "help",
-        scalars: {
-          [TELEMETRY_SCALARS.IMPRESSION_DYNAMIC_WIKIPEDIA]: position,
-          [TELEMETRY_SCALARS.HELP_DYNAMIC_WIKIPEDIA]: position,
-        },
-        event: {
-          category: QuickSuggest.TELEMETRY_EVENT_CATEGORY,
-          method: "engagement",
-          object: "help",
           extra: {
             suggestion_type,
             match_type,

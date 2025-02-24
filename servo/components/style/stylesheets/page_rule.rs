@@ -10,8 +10,8 @@ use crate::parser::{Parse, ParserContext};
 use crate::properties::PropertyDeclarationBlock;
 use crate::shared_lock::{DeepCloneParams, DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
-use crate::stylesheets::CssRules;
 use crate::str::CssStringWriter;
+use crate::stylesheets::CssRules;
 use crate::values::{AtomIdent, CustomIdent};
 use cssparser::{Parser, SourceLocation, Token};
 #[cfg(feature = "gecko")]
@@ -221,7 +221,7 @@ impl Parse for PageSelector {
     ) -> Result<Self, ParseError<'i>> {
         let name = input
             .try_parse(parse_page_name)
-            .unwrap_or(AtomIdent(atom!("")));
+            .unwrap_or(AtomIdent::new(atom!("")));
         let mut pseudos = PagePseudoClasses::default();
         while let Ok(pc) = input.try_parse(PagePseudoClass::parse) {
             pseudos.push(pc);

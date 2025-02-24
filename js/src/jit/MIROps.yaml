@@ -539,7 +539,8 @@
 - name: LoadScriptedProxyHandler
   operands:
     object: Object
-  result_type: Value
+  result_type: Object
+  guard: true
   congruent_to: if_operands_equal
   alias_set: none
 
@@ -1421,8 +1422,6 @@
     index: Int32
   type_policy: none
   alias_set: custom
-  # By default no, unless built as a recovered instruction.
-  can_recover: custom
 
 # Load the function length. Bails for functions with lazy scripts or a
 # resolved "length" property.
@@ -2810,13 +2809,16 @@
   alias_set: none
 
 # Load the target object from a proxy wrapper. The target is stored in the
-# proxy object's private slot.
+# proxy object's private slot. This operation is fallible if the proxy can
+# be revoked.
 - name: LoadWrapperTarget
   operands:
     object: Object
+  arguments:
+    fallible: bool
   result_type: Object
   movable: true
-  congruent_to: if_operands_equal
+  congruent_to: custom
   # Can't use |AliasSet::None| because the target changes on navigation.
   # TODO: Investigate using a narrower or a custom alias set.
   alias_set: custom
@@ -3349,6 +3351,25 @@
 
 - name: Rotate
   gen_boilerplate: false
+
+- name: WasmStackSwitchToMain
+  operands:
+    suspender: Object
+    fn: Object
+    data: WasmAnyRef
+  type_policy: none
+
+- name: WasmStackSwitchToSuspendable
+  operands:
+    suspender: Object
+    fn: Object
+    data: WasmAnyRef
+  type_policy: none
+
+- name: WasmStackContinueOnSuspendable
+  operands:
+    suspender: Object
+  type_policy: none
 
 - name: WasmBinarySimd128
   gen_boilerplate: false

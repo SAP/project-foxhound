@@ -33,6 +33,7 @@
 #include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
 
+#include "mozilla/Components.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
@@ -365,17 +366,16 @@ nsresult Predictor::Init() {
     mDNSListener = new DNSListener();
   }
 
-  mCacheStorageService =
-      do_GetService("@mozilla.org/netwerk/cache-storage-service;1", &rv);
+  mCacheStorageService = mozilla::components::CacheStorage::Service(&rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mSpeculativeService = do_GetService("@mozilla.org/network/io-service;1", &rv);
+  mSpeculativeService = mozilla::components::IO::Service(&rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = NS_NewURI(getter_AddRefs(mStartupURI), "predictor://startup");
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mDnsService = do_GetService("@mozilla.org/network/dns-service;1", &rv);
+  mDnsService = mozilla::components::DNS::Service(&rv);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mInitialized = true;
@@ -486,6 +486,11 @@ Predictor::PredictNative(nsIURI* targetURI, nsIURI* sourceURI,
 
   PREDICTOR_LOG(("Predictor::Predict"));
 
+  if (!StaticPrefs::network_predictor_enabled()) {
+    PREDICTOR_LOG(("    not enabled"));
+    return NS_OK;
+  }
+
   if (IsNeckoChild()) {
     if (!gNeckoChild) {
       return NS_ERROR_FAILURE;
@@ -511,11 +516,6 @@ Predictor::PredictNative(nsIURI* targetURI, nsIURI* sourceURI,
 
   if (!mInitialized) {
     PREDICTOR_LOG(("    not initialized"));
-    return NS_OK;
-  }
-
-  if (!StaticPrefs::network_predictor_enabled()) {
-    PREDICTOR_LOG(("    not enabled"));
     return NS_OK;
   }
 
@@ -1238,6 +1238,11 @@ Predictor::LearnNative(nsIURI* targetURI, nsIURI* sourceURI,
 
   PREDICTOR_LOG(("Predictor::Learn"));
 
+  if (!StaticPrefs::network_predictor_enabled()) {
+    PREDICTOR_LOG(("    not enabled"));
+    return NS_OK;
+  }
+
   if (IsNeckoChild()) {
     if (!gNeckoChild) {
       return NS_ERROR_FAILURE;
@@ -1255,11 +1260,6 @@ Predictor::LearnNative(nsIURI* targetURI, nsIURI* sourceURI,
 
   if (!mInitialized) {
     PREDICTOR_LOG(("    not initialized"));
-    return NS_OK;
-  }
-
-  if (!StaticPrefs::network_predictor_enabled()) {
-    PREDICTOR_LOG(("    not enabled"));
     return NS_OK;
   }
 
@@ -1718,6 +1718,11 @@ Predictor::Reset() {
 
   PREDICTOR_LOG(("Predictor::Reset"));
 
+  if (!StaticPrefs::network_predictor_enabled()) {
+    PREDICTOR_LOG(("    not enabled"));
+    return NS_OK;
+  }
+
   if (IsNeckoChild()) {
     if (!gNeckoChild) {
       return NS_ERROR_FAILURE;
@@ -1732,11 +1737,6 @@ Predictor::Reset() {
 
   if (!mInitialized) {
     PREDICTOR_LOG(("    not initialized"));
-    return NS_OK;
-  }
-
-  if (!StaticPrefs::network_predictor_enabled()) {
-    PREDICTOR_LOG(("    not enabled"));
     return NS_OK;
   }
 
@@ -1923,8 +1923,8 @@ static nsresult EnsureGlobalPredictor(nsINetworkPredictor** aPredictor) {
 
   if (!sPredictor) {
     nsresult rv;
-    nsCOMPtr<nsINetworkPredictor> predictor =
-        do_GetService("@mozilla.org/network/predictor;1", &rv);
+    nsCOMPtr<nsINetworkPredictor> predictor;
+    predictor = mozilla::components::Predictor::Service(&rv);
     NS_ENSURE_SUCCESS(rv, rv);
     sPredictor = predictor;
     ClearOnShutdown(&sPredictor);

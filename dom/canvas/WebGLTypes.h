@@ -362,8 +362,7 @@ struct WebGLContextOptions final {
 
   dom::WebGLPowerPreference powerPreference =
       dom::WebGLPowerPreference::Default;
-  bool ignoreColorSpace = true;
-  dom::PredefinedColorSpace colorSpace = dom::PredefinedColorSpace::Srgb;
+  std::optional<dom::PredefinedColorSpace> colorSpace;
   bool shouldResistFingerprinting = true;
 
   bool enableDebugRendererInfo = false;
@@ -383,7 +382,6 @@ struct WebGLContextOptions final {
 
       powerPreference,
       colorSpace,
-      ignoreColorSpace,
       shouldResistFingerprinting,
 
       enableDebugRendererInfo);
@@ -1224,6 +1222,15 @@ inline bool StartsWith(const std::string_view str,
 
 // -
 
+template <class T>
+Maybe<T> AsValidEnum(const std::underlying_type_t<T> raw_val) {
+  const auto raw_enum = T{raw_val};  // This is the risk we prevent!
+  if (!IsEnumCase(raw_enum)) return {};
+  return Some(raw_enum);
+}
+
+// -
+
 namespace webgl {
 
 // In theory, this number can be unbounded based on the driver. However, no
@@ -1302,6 +1309,50 @@ struct ReinterpretToSpan {
   }
 };
 
+// -
+
+inline std::string Join(Span<const std::string> ss,
+                        const std::string_view& delim) {
+  if (!ss.size()) return "";
+  auto ret = std::string();
+  {
+    auto chars = delim.size() * (ss.size() - 1);
+    for (const auto& s : ss) {
+      chars += s.size();
+    }
+    ret.reserve(chars);
+  }
+
+  ret = ss[0];
+  ss = ss.subspan(1);
+  for (const auto& s : ss) {
+    ret += delim;
+    ret += s;
+  }
+  return ret;
+}
+
+inline std::string ToStringWithCommas(uint64_t v) {
+  if (!v) return "0";
+  std::vector<std::string> chunks;
+  while (v) {
+    const auto chunk = v % 1000;
+    v /= 1000;
+    chunks.insert(chunks.begin(), std::to_string(chunk));
+  }
+  return Join(chunks, ",");
+}
+
+// -
+
+namespace webgl {
+
+std::unordered_map<GLenum, bool> MakeIsEnabledMap(bool webgl2);
+
+static constexpr uint32_t kMaxClientWaitSyncTimeoutNS =
+    1000 * 1000 * 1000;  // 1000ms in ns.
+
+}  // namespace webgl
 }  // namespace mozilla
 
 #endif

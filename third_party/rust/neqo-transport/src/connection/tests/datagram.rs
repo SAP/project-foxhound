@@ -19,14 +19,14 @@ use crate::{
     packet::PacketBuilder,
     quic_datagrams::MAX_QUIC_DATAGRAM,
     send_stream::{RetransmissionPriority, TransmissionPriority},
-    Connection, ConnectionError, ConnectionParameters, Error, StreamType,
+    CloseReason, Connection, ConnectionParameters, Error, StreamType, MIN_INITIAL_PACKET_SIZE,
 };
 
 const DATAGRAM_LEN_MTU: u64 = 1310;
 const DATA_MTU: &[u8] = &[1; 1310];
 const DATA_BIGGER_THAN_MTU: &[u8] = &[0; 2620];
-const DATAGRAM_LEN_SMALLER_THAN_MTU: u64 = 1200;
-const DATA_SMALLER_THAN_MTU: &[u8] = &[0; 1200];
+const DATAGRAM_LEN_SMALLER_THAN_MTU: u64 = MIN_INITIAL_PACKET_SIZE as u64;
+const DATA_SMALLER_THAN_MTU: &[u8] = &[0; MIN_INITIAL_PACKET_SIZE];
 const DATA_SMALLER_THAN_MTU_2: &[u8] = &[0; 600];
 const OUTGOING_QUEUE: usize = 2;
 
@@ -259,7 +259,9 @@ fn datagram_after_stream_data() {
 
     // Create a stream with normal priority and send some data.
     let stream_id = client.stream_create(StreamType::BiDi).unwrap();
-    client.stream_send(stream_id, &[6; 1200]).unwrap();
+    client
+        .stream_send(stream_id, &[6; MIN_INITIAL_PACKET_SIZE])
+        .unwrap();
 
     assert!(
         matches!(send_packet_and_get_server_event(&mut client, &mut server), ConnectionEvent::RecvStreamReadable { stream_id: s } if s == stream_id)
@@ -289,7 +291,9 @@ fn datagram_before_stream_data() {
             RetransmissionPriority::default(),
         )
         .unwrap();
-    client.stream_send(stream_id, &[6; 1200]).unwrap();
+    client
+        .stream_send(stream_id, &[6; MIN_INITIAL_PACKET_SIZE])
+        .unwrap();
 
     // Write a datagram.
     let dgram_sent = client.stats().frame_tx.datagram;
@@ -362,10 +366,7 @@ fn dgram_no_allowed() {
 
     client.process_input(&out, now());
 
-    assert_error(
-        &client,
-        &ConnectionError::Transport(Error::ProtocolViolation),
-    );
+    assert_error(&client, &CloseReason::Transport(Error::ProtocolViolation));
 }
 
 #[test]
@@ -383,10 +384,7 @@ fn dgram_too_big() {
 
     client.process_input(&out, now());
 
-    assert_error(
-        &client,
-        &ConnectionError::Transport(Error::ProtocolViolation),
-    );
+    assert_error(&client, &CloseReason::Transport(Error::ProtocolViolation));
 }
 
 #[test]
@@ -446,7 +444,7 @@ fn send_datagram(sender: &mut Connection, receiver: &mut Connection, data: &[u8]
 
 #[test]
 fn multiple_datagram_events() {
-    const DATA_SIZE: usize = 1200;
+    const DATA_SIZE: usize = MIN_INITIAL_PACKET_SIZE;
     const MAX_QUEUE: usize = 3;
     const FIRST_DATAGRAM: &[u8] = &[0; DATA_SIZE];
     const SECOND_DATAGRAM: &[u8] = &[1; DATA_SIZE];
@@ -492,7 +490,7 @@ fn multiple_datagram_events() {
 
 #[test]
 fn too_many_datagram_events() {
-    const DATA_SIZE: usize = 1200;
+    const DATA_SIZE: usize = MIN_INITIAL_PACKET_SIZE;
     const MAX_QUEUE: usize = 2;
     const FIRST_DATAGRAM: &[u8] = &[0; DATA_SIZE];
     const SECOND_DATAGRAM: &[u8] = &[1; DATA_SIZE];
@@ -587,7 +585,7 @@ fn datagram_fill() {
 
     // Work out how much space we have for a datagram.
     let space = {
-        let p = client.paths.primary();
+        let p = client.paths.primary().unwrap();
         let path = p.borrow();
         // Minimum overhead is connection ID length, 1 byte short header, 1 byte packet number,
         // 1 byte for the DATAGRAM frame type, and 16 bytes for the AEAD.

@@ -12,11 +12,14 @@
 #include <assert.h>
 #include <stdbool.h>
 
+#include "aom_util/aom_pthread.h"
+
 #include "av1/common/warped_motion.h"
 #include "av1/common/thread_common.h"
 
 #include "av1/encoder/allintra_vis.h"
 #include "av1/encoder/bitstream.h"
+#include "av1/encoder/enc_enums.h"
 #include "av1/encoder/encodeframe.h"
 #include "av1/encoder/encodeframe_utils.h"
 #include "av1/encoder/encoder.h"
@@ -1121,7 +1124,8 @@ void av1_terminate_workers(AV1_PRIMARY *ppi) {
 
 // This function returns 1 if frame parallel encode is supported for
 // the current configuration. Returns 0 otherwise.
-static AOM_INLINE int is_fpmt_config(AV1_PRIMARY *ppi, AV1EncoderConfig *oxcf) {
+static AOM_INLINE int is_fpmt_config(const AV1_PRIMARY *ppi,
+                                     const AV1EncoderConfig *oxcf) {
   // FPMT is enabled for AOM_Q and AOM_VBR.
   // TODO(Tarun): Test and enable resize config.
   if (oxcf->rc_cfg.mode == AOM_CBR || oxcf->rc_cfg.mode == AOM_CQ) {
@@ -1159,7 +1163,7 @@ static AOM_INLINE int is_fpmt_config(AV1_PRIMARY *ppi, AV1EncoderConfig *oxcf) {
 }
 
 int av1_check_fpmt_config(AV1_PRIMARY *const ppi,
-                          AV1EncoderConfig *const oxcf) {
+                          const AV1EncoderConfig *const oxcf) {
   if (is_fpmt_config(ppi, oxcf)) return 1;
   // Reset frame parallel configuration for unsupported config
   if (ppi->num_fp_contexts > 1) {
@@ -1415,7 +1419,7 @@ static AOM_INLINE void sync_fpmt_workers(AV1_PRIMARY *ppi,
   int num_workers = ppi->p_mt_info.p_num_workers;
   int had_error = 0;
   // Points to error in the earliest display order frame in the parallel set.
-  const struct aom_internal_error_info *error;
+  const struct aom_internal_error_info *error = NULL;
 
   // Encoding ends.
   for (int i = num_workers - 1; i >= 0; --i) {
@@ -2227,8 +2231,8 @@ void av1_tpl_dealloc(AV1TplRowMultiThreadSync *tpl_sync) {
 }
 
 // Allocate memory for tpl row synchronization.
-void av1_tpl_alloc(AV1TplRowMultiThreadSync *tpl_sync, AV1_COMMON *cm,
-                   int mb_rows) {
+static void av1_tpl_alloc(AV1TplRowMultiThreadSync *tpl_sync, AV1_COMMON *cm,
+                          int mb_rows) {
   tpl_sync->rows = mb_rows;
 #if CONFIG_MULTITHREAD
   {
@@ -2518,7 +2522,7 @@ void av1_tf_do_filtering_mt(AV1_COMP *cpi) {
 static AOM_INLINE int get_next_gm_job(AV1_COMP *cpi, int *frame_idx,
                                       int cur_dir) {
   GlobalMotionInfo *gm_info = &cpi->gm_info;
-  JobInfo *job_info = &cpi->mt_info.gm_sync.job_info;
+  GlobalMotionJobInfo *job_info = &cpi->mt_info.gm_sync.job_info;
 
   int total_refs = gm_info->num_ref_frames[cur_dir];
   int8_t cur_frame_to_process = job_info->next_frame_to_process[cur_dir];
@@ -2549,7 +2553,7 @@ static int gm_mt_worker_hook(void *arg1, void *unused) {
   AV1_COMP *cpi = thread_data->cpi;
   GlobalMotionInfo *gm_info = &cpi->gm_info;
   AV1GlobalMotionSync *gm_sync = &cpi->mt_info.gm_sync;
-  JobInfo *job_info = &gm_sync->job_info;
+  GlobalMotionJobInfo *job_info = &gm_sync->job_info;
   int thread_id = thread_data->thread_id;
   GlobalMotionData *gm_thread_data = &thread_data->td->gm_data;
 #if CONFIG_MULTITHREAD
@@ -2687,7 +2691,7 @@ static AOM_INLINE void gm_dealloc_thread_data(AV1_COMP *cpi, int num_workers) {
 
 // Implements multi-threading for global motion.
 void av1_global_motion_estimation_mt(AV1_COMP *cpi) {
-  JobInfo *job_info = &cpi->mt_info.gm_sync.job_info;
+  GlobalMotionJobInfo *job_info = &cpi->mt_info.gm_sync.job_info;
 
   av1_zero(*job_info);
 

@@ -4,7 +4,11 @@ support-files = [
   "head.js",
   "head-common.js",
 ]
-
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # long running manifest
+  "os == 'linux' && os_version == '18.04' && tsan", # long running manifest
+  "win11_2009 && asan", # long running manifest
+]
 prefs = [
   "browser.bookmarks.testing.skipDefaultBookmarksImport=true",
   "browser.urlbar.trending.featureGate=false",
@@ -63,6 +67,8 @@ skip-if = ["apple_catalina && debug"] # Bug 1773790
 
 ["browser_UrlbarInput_trimURLs.js"]
 https_first_disabled = true
+
+["browser_UrlbarInput_untrimOnUserInteraction.js"]
 
 ["browser_aboutHomeLoading.js"]
 skip-if = [
@@ -168,6 +174,8 @@ support-files = [
 ["browser_clipboard.js"]
 
 ["browser_closePanelOnClick.js"]
+
+["browser_close_other_panels.js"]
 
 ["browser_content_opener.js"]
 
@@ -280,6 +288,8 @@ support-files = [
 
 ["browser_keyword_select_and_type.js"]
 
+["browser_less_common_selection_manipulations.js"]
+
 ["browser_loadRace.js"]
 
 ["browser_locationBarCommand.js"]
@@ -359,6 +369,8 @@ support-files = [
 
 ["browser_quickactions.js"]
 
+["browser_quickactions_commands.js"]
+
 ["browser_quickactions_devtools.js"]
 
 ["browser_quickactions_screenshot.js"]
@@ -397,9 +409,6 @@ https_first_disabled = true
 ["browser_retainedResultsOnFocus.js"]
 
 ["browser_revert.js"]
-
-["browser_search_continuation.js"]
-support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
 
 ["browser_searchFunction.js"]
 
@@ -490,7 +499,12 @@ support-files = [
 
 ["browser_search_bookmarks_from_bookmarks_menu.js"]
 
+["browser_search_continuation.js"]
+support-files = ["search-engines", "../../../search/test/browser/trendingSuggestionEngine.sjs"]
+
 ["browser_search_history_from_history_panel.js"]
+
+["browser_secondaryActions.js"]
 
 ["browser_selectStaleResults.js"]
 support-files = [
@@ -605,6 +619,7 @@ https_first_disabled = true
 https_first_disabled = true
 
 ["browser_url_formatted_correctly_on_load.js"]
+https_first_disabled = true
 
 ["browser_urlbar_annotation.js"]
 support-files = ["redirect_to.sjs"]
@@ -637,9 +652,6 @@ tags = "search-telemetry"
 
 ["browser_urlbar_telemetry_places.js"]
 https_first_disabled = true
-tags = "search-telemetry"
-
-["browser_urlbar_telemetry_quickactions.js"]
 tags = "search-telemetry"
 
 ["browser_urlbar_telemetry_remotetab.js"]

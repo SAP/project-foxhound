@@ -6,11 +6,10 @@
 
 #include "mozilla/dom/SVGAElement.h"
 
-#include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/SVGAElementBinding.h"
+#include "mozilla/FocusModel.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
@@ -158,7 +157,7 @@ void SVGAElement::UnbindFromTree(UnbindContext& aContext) {
 
 int32_t SVGAElement::TabIndexDefault() { return 0; }
 
-Focusable SVGAElement::IsFocusableWithoutStyle(bool aWithMouse) {
+Focusable SVGAElement::IsFocusableWithoutStyle(IsFocusableFlags) {
   Focusable result;
   if (IsSVGFocusable(&result.mFocusable, &result.mTabIndex)) {
     return result;
@@ -182,7 +181,7 @@ Focusable SVGAElement::IsFocusableWithoutStyle(bool aWithMouse) {
       return {};
     }
   }
-  if ((sTabFocusModel & eTabFocus_linksMask) == 0) {
+  if (!FocusModel::IsTabFocusable(TabFocusableType::Links)) {
     result.mTabIndex = -1;
   }
   return result;
@@ -211,7 +210,7 @@ already_AddRefed<nsIURI> SVGAElement::GetHrefURI() const {
   return nullptr;
 }
 
-void SVGAElement::GetLinkTarget(nsAString& aTarget) {
+void SVGAElement::GetLinkTargetImpl(nsAString& aTarget) {
   mStringAttributes[TARGET].GetAnimValue(aTarget, this);
   if (aTarget.IsEmpty()) {
     static Element::AttrValuesArray sShowVals[] = {nsGkAtoms::_new,
@@ -255,6 +254,16 @@ void SVGAElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
 SVGElement::StringAttributesInfo SVGAElement::GetStringInfo() {
   return StringAttributesInfo(mStringAttributes, sStringInfo,
                               ArrayLength(sStringInfo));
+}
+
+void SVGAElement::DidAnimateAttribute(int32_t aNameSpaceID,
+                                      nsAtom* aAttribute) {
+  if ((aNameSpaceID == kNameSpaceID_None ||
+       aNameSpaceID == kNameSpaceID_XLink) &&
+      aAttribute == nsGkAtoms::href) {
+    Link::ResetLinkState(true, Link::ElementHasHref());
+  }
+  SVGAElementBase::DidAnimateAttribute(aNameSpaceID, aAttribute);
 }
 
 }  // namespace mozilla::dom

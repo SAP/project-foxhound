@@ -649,30 +649,26 @@ class TestAgent {
     return SECSuccess;
   }
 
-  static SECStatus certCompressionShrinkDecode(
-      const SECItem* input, SECItem* output,
-      size_t expectedLenDecodedCertificate) {
+  static SECStatus certCompressionShrinkDecode(const SECItem* input,
+                                               unsigned char* output,
+                                               size_t outputLen,
+                                               size_t* usedLen) {
     if (input == NULL || input->data == NULL) {
       PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
       return SECFailure;
     }
 
-    SECITEM_AllocItem(NULL, output, input->len + 2);
-    if (output == NULL || output->data == NULL) {
+    if (output == NULL || outputLen != input->len + 2) {
       return SECFailure;
     }
 
-    if (expectedLenDecodedCertificate != output->len) {
-      std::cerr << "Cannot decompress certificate message." << std::endl;
-      return SECFailure;
-    }
-
-    output->data[0] = 0;
-    output->data[1] = 0;
+    output[0] = 0;
+    output[1] = 0;
     for (size_t i = 0; i < input->len; i++) {
-      output->data[i + 2] = input->data[i];
+      output[i + 2] = input->data[i];
     }
 
+    *usedLen = outputLen;
     return SECSuccess;
   }
 
@@ -704,9 +700,10 @@ class TestAgent {
     return SECSuccess;
   }
 
-  static SECStatus certCompressionExpandDecode(
-      const SECItem* input, SECItem* output,
-      size_t expectedLenDecodedCertificate) {
+  static SECStatus certCompressionExpandDecode(const SECItem* input,
+                                               unsigned char* output,
+                                               size_t outputLen,
+                                               size_t* usedLen) {
     if (input == NULL || input->data == NULL) {
       PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
       return SECFailure;
@@ -718,9 +715,7 @@ class TestAgent {
       return SECFailure;
     }
 
-    SECITEM_AllocItem(NULL, output, input->len - 4);
-
-    if (output == NULL || output->data == NULL) {
+    if (output == NULL || outputLen != input->len - 4) {
       return SECFailure;
     }
 
@@ -731,14 +726,11 @@ class TestAgent {
       return SECFailure;
     }
 
-    if (expectedLenDecodedCertificate != output->len) {
-      std::cerr << "Cannot decompress certificate message." << std::endl;
-      return SECFailure;
+    for (size_t i = 0; i < outputLen; i++) {
+      output[i] = input->data[i + 4];
     }
 
-    for (size_t i = 0; i < output->len; i++) {
-      output->data[i] = input->data[i + 4];
-    }
+    *usedLen = outputLen;
     return SECSuccess;
   }
 
@@ -772,9 +764,10 @@ class TestAgent {
     return SECSuccess;
   }
 
-  static SECStatus certCompressionRandomDecode(
-      const SECItem* input, SECItem* output,
-      size_t expectedLenDecodedCertificate) {
+  static SECStatus certCompressionRandomDecode(const SECItem* input,
+                                               unsigned char* output,
+                                               size_t outputLen,
+                                               size_t* usedLen) {
     if (input == NULL || input->data == NULL) {
       PR_SetError(SEC_ERROR_INVALID_ARGS, 0);
       return SECFailure;
@@ -785,20 +778,16 @@ class TestAgent {
       std::cerr << "Certificate is too short. " << std::endl;
       return SECFailure;
     }
-    SECITEM_AllocItem(NULL, output, input->len - 1);
 
-    if (output == NULL || output->data == NULL) {
+    if (output == NULL || outputLen != input->len - 1) {
       return SECFailure;
     }
 
-    if (expectedLenDecodedCertificate != output->len) {
-      std::cerr << "Cannot decompress certificate message." << std::endl;
-      return SECFailure;
+    for (size_t i = 0; i < outputLen; i++) {
+      output[i] = input->data[i + 1];
     }
 
-    for (size_t i = 0; i < output->len; i++) {
-      output->data[i] = input->data[i + 1];
-    }
+    *usedLen = outputLen;
     return SECSuccess;
   }
 

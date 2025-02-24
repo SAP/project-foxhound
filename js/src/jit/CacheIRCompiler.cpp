@@ -44,6 +44,7 @@
 #include "vm/GeneratorObject.h"
 #include "vm/GetterSetter.h"
 #include "vm/Interpreter.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "vm/Uint8Clamped.h"
 
 #include "builtin/Boolean-inl.h"
@@ -1055,6 +1056,15 @@ void CacheIRStubInfo::replaceStubRawWord(uint8_t* stubData, uint32_t offset,
   *addr = newWord;
 }
 
+void CacheIRStubInfo::replaceStubRawValueBits(uint8_t* stubData,
+                                              uint32_t offset, uint64_t oldBits,
+                                              uint64_t newBits) const {
+  MOZ_ASSERT(uint64_t(stubData + offset) % sizeof(uint64_t) == 0);
+  uint64_t* addr = reinterpret_cast<uint64_t*>(stubData + offset);
+  MOZ_ASSERT(*addr == oldBits);
+  *addr = newBits;
+}
+
 template <class Stub, StubField::Type type>
 typename MapStubFieldToType<type>::WrappedType& CacheIRStubInfo::getStubField(
     Stub* stub, uint32_t offset) const {
@@ -1364,6 +1374,8 @@ bool jit::TraceWeakCacheIRStub(JSTracer* trc, T* stub,
                                const CacheIRStubInfo* stubInfo) {
   using Type = StubField::Type;
 
+  // Trace all fields before returning because this stub can be traced again
+  // later through TraceBaselineStubFrame.
   bool isDead = false;
 
   uint32_t field = 0;
@@ -2379,19 +2391,23 @@ bool CacheIRCompiler::emitGuardDynamicSlotValue(ObjOperandId objId,
   return true;
 }
 
-bool CacheIRCompiler::emitLoadScriptedProxyHandler(ValOperandId resultId,
+bool CacheIRCompiler::emitLoadScriptedProxyHandler(ObjOperandId resultId,
                                                    ObjOperandId objId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
 
   Register obj = allocator.useRegister(masm, objId);
-  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  Register output = allocator.defineRegister(masm, resultId);
 
-  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()),
-               output.scratchReg());
-  masm.loadValue(
-      Address(output.scratchReg(), js::detail::ProxyReservedSlots::offsetOfSlot(
-                                       ScriptedProxyHandler::HANDLER_EXTRA)),
-      output);
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), output);
+  Address handlerAddr(output, js::detail::ProxyReservedSlots::offsetOfSlot(
+                                  ScriptedProxyHandler::HANDLER_EXTRA));
+  masm.fallibleUnboxObject(handlerAddr, output, failure->label());
+
   return true;
 }
 
@@ -2834,7 +2850,7 @@ bool CacheIRCompiler::emitStringToAtom(StringOperandId stringId) {
   masm.branchTest32(Assembler::NonZero, Address(str, JSString::offsetOfFlags()),
                     Imm32(JSString::ATOM_BIT), &done);
 
-  masm.lookupStringInAtomCacheLastLookups(str, scratch, str, &vmCall);
+  masm.tryFastAtomize(str, scratch, str, &vmCall);
   masm.jump(&done);
 
   masm.bind(&vmCall);
@@ -2937,14 +2953,27 @@ bool CacheIRCompiler::emitLoadEnclosingEnvironment(ObjOperandId objId,
 }
 
 bool CacheIRCompiler::emitLoadWrapperTarget(ObjOperandId objId,
-                                            ObjOperandId resultId) {
+                                            ObjOperandId resultId,
+                                            bool fallible) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register obj = allocator.useRegister(masm, objId);
   Register reg = allocator.defineRegister(masm, resultId);
 
+  FailurePath* failure;
+  if (fallible && !addFailurePath(&failure)) {
+    return false;
+  }
+
   masm.loadPtr(Address(obj, ProxyObject::offsetOfReservedSlots()), reg);
-  masm.unboxObject(
-      Address(reg, js::detail::ProxyReservedSlots::offsetOfPrivateSlot()), reg);
+
+  Address targetAddr(reg,
+                     js::detail::ProxyReservedSlots::offsetOfPrivateSlot());
+  if (fallible) {
+    masm.fallibleUnboxObject(targetAddr, reg, failure->label());
+  } else {
+    masm.unboxObject(targetAddr, reg);
+  }
+
   return true;
 }
 
@@ -4658,8 +4687,7 @@ bool CacheIRCompiler::emitGuardNoAllocationMetadataBuilder(
   return true;
 }
 
-bool CacheIRCompiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
-                                                   bool constructing) {
+bool CacheIRCompiler::emitGuardFunctionHasJitEntry(ObjOperandId funId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
   Register fun = allocator.useRegister(masm, funId);
 
@@ -4668,7 +4696,7 @@ bool CacheIRCompiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
     return false;
   }
 
-  masm.branchIfFunctionHasNoJitEntry(fun, constructing, failure->label());
+  masm.branchIfFunctionHasNoJitEntry(fun, failure->label());
   return true;
 }
 
@@ -4682,8 +4710,7 @@ bool CacheIRCompiler::emitGuardFunctionHasNoJitEntry(ObjOperandId funId) {
     return false;
   }
 
-  masm.branchIfFunctionHasJitEntry(obj, /*isConstructing =*/false,
-                                   failure->label());
+  masm.branchIfFunctionHasJitEntry(obj, failure->label());
   return true;
 }
 
@@ -6553,6 +6580,7 @@ bool CacheIRCompiler::emitStoreTypedArrayElement(ObjOperandId objId,
       valInt32.emplace(allocator.useRegister(masm, Int32OperandId(rhsId)));
       break;
 
+    case Scalar::Float16:
     case Scalar::Float32:
     case Scalar::Float64:
       allocator.ensureDoubleRegister(masm, NumberOperandId(rhsId),
@@ -7045,6 +7073,7 @@ bool CacheIRCompiler::emitStoreDataViewValueResult(
       valInt32.emplace(allocator.useRegister(masm, Int32OperandId(valueId)));
       break;
 
+    case Scalar::Float16:
     case Scalar::Float32:
     case Scalar::Float64:
       allocator.ensureDoubleRegister(masm, NumberOperandId(valueId),
@@ -7382,6 +7411,69 @@ bool CacheIRCompiler::emitLoadTypeOfObjectResult(ObjOperandId objId) {
     masm.PopRegsInMaskIgnore(save, ignore);
 
     masm.tagValue(JSVAL_TYPE_STRING, scratch, output.valueReg());
+  }
+
+  masm.bind(&done);
+  return true;
+}
+
+bool CacheIRCompiler::emitLoadTypeOfEqObjectResult(ObjOperandId objId,
+                                                   TypeofEqOperand operand) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  AutoOutputRegister output(*this);
+  Register obj = allocator.useRegister(masm, objId);
+  AutoScratchRegisterMaybeOutput scratch(allocator, masm, output);
+  JSType type = operand.type();
+  JSOp compareOp = operand.compareOp();
+  bool result;
+
+  Label slowCheck, isObject, isCallable, isUndefined, done;
+  masm.typeOfObject(obj, scratch, &slowCheck, &isObject, &isCallable,
+                    &isUndefined);
+
+  masm.bind(&isCallable);
+  result = type == JSTYPE_FUNCTION;
+  if (compareOp == JSOp::Ne) {
+    result = !result;
+  }
+  masm.moveValue(BooleanValue(result), output.valueReg());
+  masm.jump(&done);
+
+  masm.bind(&isUndefined);
+  result = type == JSTYPE_UNDEFINED;
+  if (compareOp == JSOp::Ne) {
+    result = !result;
+  }
+  masm.moveValue(BooleanValue(result), output.valueReg());
+  masm.jump(&done);
+
+  masm.bind(&isObject);
+  result = type == JSTYPE_OBJECT;
+  if (compareOp == JSOp::Ne) {
+    result = !result;
+  }
+  masm.moveValue(BooleanValue(result), output.valueReg());
+  masm.jump(&done);
+
+  {
+    masm.bind(&slowCheck);
+    LiveRegisterSet save(GeneralRegisterSet::Volatile(),
+                         liveVolatileFloatRegs());
+    save.takeUnchecked(output.valueReg());
+    save.takeUnchecked(scratch);
+    masm.PushRegsInMask(save);
+
+    using Fn = bool (*)(JSObject* obj, TypeofEqOperand operand);
+    masm.setupUnalignedABICall(scratch);
+    masm.passABIArg(obj);
+    masm.move32(Imm32(TypeofEqOperand(type, compareOp).rawValue()), scratch);
+    masm.passABIArg(scratch);
+    masm.callWithABI<Fn, TypeOfEqObject>();
+    masm.storeCallBoolResult(scratch);
+
+    masm.PopRegsInMask(save);
+
+    masm.tagValue(JSVAL_TYPE_BOOLEAN, scratch, output.valueReg());
   }
 
   masm.bind(&done);

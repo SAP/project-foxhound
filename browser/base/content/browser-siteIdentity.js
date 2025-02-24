@@ -177,7 +177,6 @@ var gIdentityHandler = {
 
   _popupInitialized: false,
   _initializePopup() {
-    window.ensureCustomElements("moz-support-link");
     if (!this._popupInitialized) {
       let wrapper = document.getElementById("template-identity-popup");
       wrapper.replaceWith(wrapper.content);
@@ -456,7 +455,9 @@ var gIdentityHandler = {
     );
 
     // Reload the page with the content unblocked
-    BrowserReloadWithFlags(Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE);
+    BrowserCommands.reloadWithFlags(
+      Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+    );
     if (this._popupInitialized) {
       PanelMultiView.hidePopup(this._identityPopup);
     }
@@ -475,7 +476,7 @@ var gIdentityHandler = {
       "mixed-content"
     );
     if (reload) {
-      BrowserReload();
+      BrowserCommands.reload();
     }
     if (this._popupInitialized) {
       PanelMultiView.hidePopup(this._identityPopup);
@@ -496,7 +497,7 @@ var gIdentityHandler = {
       port,
       gBrowser.contentPrincipal.originAttributes
     );
-    BrowserReloadSkipCache();
+    BrowserCommands.reloadSkipCache();
     if (this._popupInitialized) {
       PanelMultiView.hidePopup(this._identityPopup);
     }
@@ -611,7 +612,7 @@ var gIdentityHandler = {
     // Because "off" is 1 and "off temporarily" is 2, we can just check if the
     // sum of newValue and oldValue is 3.
     if (newValue + oldValue !== 3) {
-      BrowserReloadSkipCache();
+      BrowserCommands.reloadSkipCache();
       if (this._popupInitialized) {
         PanelMultiView.hidePopup(this._identityPopup);
       }
@@ -1260,7 +1261,7 @@ var gIdentityHandler = {
     }
   },
 
-  handleEvent(event) {
+  handleEvent() {
     let elem = document.activeElement;
     let position = elem.compareDocumentPosition(this._identityPopup);
 
@@ -1278,7 +1279,7 @@ var gIdentityHandler = {
     }
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "perm-changed": {
         // Exclude permissions which do not appear in the UI in order to avoid

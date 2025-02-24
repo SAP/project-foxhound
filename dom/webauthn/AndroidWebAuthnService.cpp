@@ -54,23 +54,36 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
         GECKOBUNDLE_PUT(credentialBundle, "isWebAuthn",
                         java::sdk::Integer::ValueOf(1));
 
-        nsString rpId;
-        Unused << aArgs->GetRpId(rpId);
-        GECKOBUNDLE_PUT(credentialBundle, "rpId", jni::StringParam(rpId));
+        {
+          GECKOBUNDLE_START(rpBundle);
 
-        nsString rpName;
-        Unused << aArgs->GetRpName(rpName);
-        GECKOBUNDLE_PUT(credentialBundle, "rpName", jni::StringParam(rpName));
+          nsString rpId;
+          Unused << aArgs->GetRpId(rpId);
+          GECKOBUNDLE_PUT(rpBundle, "id", jni::StringParam(rpId));
 
-        nsString userName;
-        Unused << aArgs->GetUserName(userName);
-        GECKOBUNDLE_PUT(credentialBundle, "userName",
-                        jni::StringParam(userName));
+          nsString rpName;
+          Unused << aArgs->GetRpName(rpName);
+          GECKOBUNDLE_PUT(rpBundle, "name", jni::StringParam(rpName));
 
-        nsString userDisplayName;
-        Unused << aArgs->GetUserDisplayName(userDisplayName);
-        GECKOBUNDLE_PUT(credentialBundle, "userDisplayName",
-                        jni::StringParam(userDisplayName));
+          GECKOBUNDLE_FINISH(rpBundle);
+          GECKOBUNDLE_PUT(credentialBundle, "rp", rpBundle);
+        }
+
+        {
+          GECKOBUNDLE_START(userBundle);
+
+          nsString userName;
+          Unused << aArgs->GetUserName(userName);
+          GECKOBUNDLE_PUT(userBundle, "name", jni::StringParam(userName));
+
+          nsString userDisplayName;
+          Unused << aArgs->GetUserDisplayName(userDisplayName);
+          GECKOBUNDLE_PUT(userBundle, "displayName",
+                          jni::StringParam(userDisplayName));
+
+          GECKOBUNDLE_FINISH(userBundle);
+          GECKOBUNDLE_PUT(credentialBundle, "user", userBundle);
+        }
 
         nsString origin;
         Unused << aArgs->GetOrigin(origin);
@@ -78,8 +91,13 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
 
         uint32_t timeout;
         Unused << aArgs->GetTimeoutMS(&timeout);
-        GECKOBUNDLE_PUT(credentialBundle, "timeoutMS",
+        GECKOBUNDLE_PUT(credentialBundle, "timeout",
                         java::sdk::Double::New(timeout));
+
+        // Add UI support to consent to attestation, bug 1550164
+        GECKOBUNDLE_PUT(credentialBundle, "attestation",
+                        jni::StringParam(u"none"_ns));
+
         GECKOBUNDLE_FINISH(credentialBundle);
 
         nsTArray<uint8_t> userId;
@@ -116,10 +134,19 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
                 static_cast<const void*>(transportBuf.Elements())),
             transportBuf.Length());
 
+        nsTArray<uint8_t> clientDataHash;
+        Unused << aArgs->GetClientDataHash(clientDataHash);
+        jni::ByteBuffer::LocalRef hash = jni::ByteBuffer::New(
+            const_cast<void*>(
+                static_cast<const void*>(clientDataHash.Elements())),
+            clientDataHash.Length());
+
+        nsTArray<int32_t> coseAlgs;
+        Unused << aArgs->GetCoseAlgs(coseAlgs);
+        jni::IntArray::LocalRef algs =
+            jni::IntArray::New(coseAlgs.Elements(), coseAlgs.Length());
+
         GECKOBUNDLE_START(authSelBundle);
-        // Add UI support to consent to attestation, bug 1550164
-        GECKOBUNDLE_PUT(authSelBundle, "attestationPreference",
-                        jni::StringParam(u"none"_ns));
 
         nsString residentKey;
         Unused << aArgs->GetResidentKey(residentKey);
@@ -159,14 +186,11 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
             return;
           }
           if (authenticatorAttachment.EqualsLiteral(
-                  MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM)) {
-            GECKOBUNDLE_PUT(authSelBundle, "requirePlatformAttachment",
-                            java::sdk::Integer::ValueOf(1));
-          } else if (
+                  MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_PLATFORM) ||
               authenticatorAttachment.EqualsLiteral(
                   MOZ_WEBAUTHN_AUTHENTICATOR_ATTACHMENT_CROSS_PLATFORM)) {
-            GECKOBUNDLE_PUT(authSelBundle, "requireCrossPlatformAttachment",
-                            java::sdk::Integer::ValueOf(1));
+            GECKOBUNDLE_PUT(authSelBundle, "authenticatorAttachment",
+                            jni::StringParam(authenticatorAttachment));
           }
         }
         GECKOBUNDLE_FINISH(authSelBundle);
@@ -176,7 +200,7 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
 
         auto result = java::WebAuthnTokenManager::WebAuthnMakeCredential(
             credentialBundle, uid, challenge, idList, transportList,
-            authSelBundle, extensionsBundle);
+            authSelBundle, extensionsBundle, algs, hash);
 
         auto geckoResult = java::GeckoResult::LocalRef(std::move(result));
 
@@ -186,12 +210,6 @@ AndroidWebAuthnService::MakeCredential(uint64_t aTransactionId,
                 GetCurrentSerialEventTarget(), __func__,
                 [aPromise, credPropsResponse = std::move(credPropsResponse)](
                     RefPtr<WebAuthnRegisterResult>&& aValue) {
-                  // We don't have a way for the user to consent to attestation
-                  // on Android, so always anonymize the result.
-                  nsresult rv = aValue->Anonymize();
-                  if (NS_FAILED(rv)) {
-                    aPromise->Reject(NS_ERROR_DOM_NOT_ALLOWED_ERR);
-                  }
                   if (credPropsResponse.isSome()) {
                     Unused << aValue->SetCredPropsRk(credPropsResponse.ref());
                   }
@@ -246,6 +264,13 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
           ix += 1;
         }
 
+        nsTArray<uint8_t> clientDataHash;
+        Unused << aArgs->GetClientDataHash(clientDataHash);
+        jni::ByteBuffer::LocalRef hash = jni::ByteBuffer::New(
+            const_cast<void*>(
+                static_cast<const void*>(clientDataHash.Elements())),
+            clientDataHash.Length());
+
         nsTArray<uint8_t> transportBuf;
         Unused << aArgs->GetAllowListTransports(transportBuf);
         jni::ByteBuffer::LocalRef transportList = jni::ByteBuffer::New(
@@ -268,7 +293,7 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
 
         uint32_t timeout;
         Unused << aArgs->GetTimeoutMS(&timeout);
-        GECKOBUNDLE_PUT(assertionBundle, "timeoutMS",
+        GECKOBUNDLE_PUT(assertionBundle, "timeout",
                         java::sdk::Double::New(timeout));
 
         // User Verification Requirement is not currently used in the
@@ -292,8 +317,8 @@ AndroidWebAuthnService::GetAssertion(uint64_t aTransactionId,
         GECKOBUNDLE_FINISH(extensionsBundle);
 
         auto result = java::WebAuthnTokenManager::WebAuthnGetAssertion(
-            challenge, idList, transportList, assertionBundle,
-            extensionsBundle);
+            challenge, idList, transportList, assertionBundle, extensionsBundle,
+            hash);
         auto geckoResult = java::GeckoResult::LocalRef(std::move(result));
         MozPromise<RefPtr<WebAuthnSignResult>, AndroidWebAuthnError,
                    true>::FromGeckoResult(geckoResult)
@@ -357,8 +382,8 @@ AndroidWebAuthnService::PinCallback(uint64_t aTransactionId,
 }
 
 NS_IMETHODIMP
-AndroidWebAuthnService::ResumeMakeCredential(uint64_t aTransactionId,
-                                             bool aForceNoneAttestation) {
+AndroidWebAuthnService::SetHasAttestationConsent(uint64_t aTransactionId,
+                                                 bool aHasConsent) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

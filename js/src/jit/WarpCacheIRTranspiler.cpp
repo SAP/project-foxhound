@@ -25,6 +25,7 @@
 #include "jit/WarpSnapshot.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "vm/BytecodeLocation.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "wasm/WasmCode.h"
 
 #include "gc/ObjectKind-inl.h"
@@ -977,7 +978,7 @@ bool WarpCacheIRTranspiler::emitGuardDynamicSlotValue(ObjOperandId objId,
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitLoadScriptedProxyHandler(ValOperandId resultId,
+bool WarpCacheIRTranspiler::emitLoadScriptedProxyHandler(ObjOperandId resultId,
                                                          ObjOperandId objId) {
   MDefinition* obj = getOperand(objId);
 
@@ -1117,10 +1118,9 @@ bool WarpCacheIRTranspiler::emitGuardNoDenseElements(ObjOperandId objId) {
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
-                                                         bool constructing) {
+bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId) {
   MDefinition* fun = getOperand(funId);
-  uint16_t expectedFlags = FunctionFlags::HasJitEntryFlags(constructing);
+  uint16_t expectedFlags = FunctionFlags::HasJitEntryFlags();
   uint16_t unexpectedFlags = 0;
 
   auto* ins =
@@ -1134,8 +1134,7 @@ bool WarpCacheIRTranspiler::emitGuardFunctionHasJitEntry(ObjOperandId funId,
 bool WarpCacheIRTranspiler::emitGuardFunctionHasNoJitEntry(ObjOperandId funId) {
   MDefinition* fun = getOperand(funId);
   uint16_t expectedFlags = 0;
-  uint16_t unexpectedFlags =
-      FunctionFlags::HasJitEntryFlags(/*isConstructing=*/false);
+  uint16_t unexpectedFlags = FunctionFlags::HasJitEntryFlags();
 
   auto* ins =
       MGuardFunctionFlags::New(alloc(), fun, expectedFlags, unexpectedFlags);
@@ -1621,6 +1620,22 @@ bool WarpCacheIRTranspiler::emitLoadTypeOfObjectResult(ObjOperandId objId) {
   add(typeOf);
 
   auto* ins = MTypeOfName::New(alloc(), typeOf);
+  add(ins);
+  pushResult(ins);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitLoadTypeOfEqObjectResult(
+    ObjOperandId objId, TypeofEqOperand operand) {
+  MDefinition* obj = getOperand(objId);
+  auto* typeOf = MTypeOf::New(alloc(), obj);
+  add(typeOf);
+
+  auto* typeInt = MConstant::New(alloc(), Int32Value(operand.type()));
+  add(typeInt);
+
+  auto* ins = MCompare::New(alloc(), typeOf, typeInt, operand.compareOp(),
+                            MCompare::Compare_Int32);
   add(ins);
   pushResult(ins);
   return true;
@@ -5216,10 +5231,14 @@ bool WarpCacheIRTranspiler::emitLoadOperandResult(ValOperandId inputId) {
 }
 
 bool WarpCacheIRTranspiler::emitLoadWrapperTarget(ObjOperandId objId,
-                                                  ObjOperandId resultId) {
+                                                  ObjOperandId resultId,
+                                                  bool fallible) {
   MDefinition* obj = getOperand(objId);
 
-  auto* ins = MLoadWrapperTarget::New(alloc(), obj);
+  auto* ins = MLoadWrapperTarget::New(alloc(), obj, fallible);
+  if (fallible) {
+    ins->setGuard();
+  }
   add(ins);
 
   return defineOperand(resultId, ins);
@@ -5728,33 +5747,29 @@ bool WarpCacheIRTranspiler::emitCallScriptedProxyGetShared(
 
 bool WarpCacheIRTranspiler::emitCallScriptedProxyGetResult(
     ValOperandId targetId, ObjOperandId receiverId, ObjOperandId handlerId,
-    uint32_t trapOffset, uint32_t idOffset, uint32_t nargsAndFlags) {
+    ObjOperandId trapId, uint32_t idOffset, uint32_t nargsAndFlags) {
   MDefinition* target = getOperand(targetId);
   MDefinition* receiver = getOperand(receiverId);
   MDefinition* handler = getOperand(handlerId);
-  MDefinition* trap = objectStubField(trapOffset);
+  MDefinition* trap = getOperand(trapId);
   jsid id = idStubField(idOffset);
   MDefinition* idDef = constant(StringValue(id.toAtom()));
-  uint16_t nargs = nargsAndFlags >> 16;
-  FunctionFlags flags = FunctionFlags(uint16_t(nargsAndFlags));
-  WrappedFunction* wrappedTarget =
-      maybeWrappedFunction(trap, CallKind::Scripted, nargs, flags);
+  WrappedFunction* wrappedTarget = maybeCallTarget(trap, CallKind::Scripted);
+  MOZ_RELEASE_ASSERT(wrappedTarget);
   return emitCallScriptedProxyGetShared(target, receiver, handler, idDef, trap,
                                         wrappedTarget);
 }
 
 bool WarpCacheIRTranspiler::emitCallScriptedProxyGetByValueResult(
     ValOperandId targetId, ObjOperandId receiverId, ObjOperandId handlerId,
-    ValOperandId idId, uint32_t trapOffset, uint32_t nargsAndFlags) {
+    ValOperandId idId, ObjOperandId trapId, uint32_t nargsAndFlags) {
   MDefinition* target = getOperand(targetId);
   MDefinition* receiver = getOperand(receiverId);
   MDefinition* handler = getOperand(handlerId);
-  MDefinition* trap = objectStubField(trapOffset);
+  MDefinition* trap = getOperand(trapId);
   MDefinition* idDef = getOperand(idId);
-  uint16_t nargs = nargsAndFlags >> 16;
-  FunctionFlags flags = FunctionFlags(uint16_t(nargsAndFlags));
-  WrappedFunction* wrappedTarget =
-      maybeWrappedFunction(trap, CallKind::Scripted, nargs, flags);
+  WrappedFunction* wrappedTarget = maybeCallTarget(trap, CallKind::Scripted);
+  MOZ_RELEASE_ASSERT(wrappedTarget);
   return emitCallScriptedProxyGetShared(target, receiver, handler, idDef, trap,
                                         wrappedTarget);
 }

@@ -261,20 +261,24 @@ export class SearchEngineSelector {
         continue;
       }
 
-      let variants =
-        config.variants?.filter(variant =>
-          this.#matchesUserEnvironment(variant, userEnv)
-        ) ?? [];
+      let variant = config.variants?.findLast(variant =>
+        this.#matchesUserEnvironment(variant, userEnv)
+      );
 
-      if (!variants.length) {
+      if (!variant) {
         continue;
       }
 
+      let subVariant = variant.subVariants?.findLast(subVariant =>
+        this.#matchesUserEnvironment(subVariant, userEnv)
+      );
+
       let engine = structuredClone(config.base);
       engine.identifier = config.identifier;
+      engine = this.#deepCopyObject(engine, variant);
 
-      for (let variant of variants) {
-        engine = this.#deepCopyObject(engine, variant);
+      if (subVariant) {
+        engine = this.#deepCopyObject(engine, subVariant);
       }
 
       for (let override of this._configurationOverrides) {
@@ -359,6 +363,10 @@ export class SearchEngineSelector {
         continue;
       }
 
+      if (["subVariants"].includes(key)) {
+        continue;
+      }
+
       if (typeof source[key] == "object" && !Array.isArray(source[key])) {
         if (key in target) {
           this.#deepCopyObject(target[key], source[key]);
@@ -431,14 +439,15 @@ export class SearchEngineSelector {
         user.version
       ) &&
       this.#matchesChannel(config.environment.channels, user.channel) &&
-      this.#matchesApplication(config.environment.applications, user.appName)
+      this.#matchesApplication(config.environment.applications, user.appName) &&
+      !this.#hasDeviceType(config.environment)
     );
   }
 
   /**
    * @param {string} userDistro
    *  The distribution from the user's environment.
-   * @param {Array} configDistro
+   * @param {string[]} configDistro
    *  An array of distributions for the particular environment in the config.
    * @returns {boolean}
    *  True if the user's distribution is included in the config distribution
@@ -497,7 +506,7 @@ export class SearchEngineSelector {
   }
 
   /**
-   * @param {Array} configChannels
+   * @param {string[]} configChannels
    *  Release channels such as nightly, beta, release, esr.
    * @param {string} userChannel
    *  The user's channel.
@@ -514,7 +523,7 @@ export class SearchEngineSelector {
   }
 
   /**
-   * @param {Array} configApps
+   * @param {string[]} configApps
    *  The applications such as firefox, firefox-android, firefox-ios,
    *  focus-android, and focus-ios.
    * @param {string} userApp
@@ -529,6 +538,21 @@ export class SearchEngineSelector {
     }
 
     return configApps.includes(userApp);
+  }
+
+  /**
+   * Generally the device type option should only be used when the application
+   * is selected to be on an android or iOS based product. However, we support
+   * rejecting if this is non-empty in case of future requirements that we haven't
+   * predicted.
+   *
+   * @param {object} environment
+   *   An environment section from the engine configuration.
+   * @returns {boolean}
+   *   Returns true if there is a device type section and it is not empty.
+   */
+  #hasDeviceType(environment) {
+    return !!environment.deviceType?.length;
   }
 
   /**

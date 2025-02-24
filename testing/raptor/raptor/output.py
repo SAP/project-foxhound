@@ -571,6 +571,7 @@ class PerftestOutput(object):
                         "alertThreshold": float(test["alert_threshold"]),
                         "lowerIsBetter": test["subtest_lower_is_better"],
                         "name": sub,
+                        "shouldAlert": True,
                         "replicates": [],
                     }
                 # pylint: disable=W1633
@@ -1837,7 +1838,6 @@ class BrowsertimeOutput(PerftestOutput):
             if self.app in (
                 "chrome",
                 "chrome-m",
-                "chromium",
                 "custom-car",
                 "cstm-car-m",
             ):
@@ -1880,7 +1880,6 @@ class BrowsertimeOutput(PerftestOutput):
                         if self.app in (
                             "chrome",
                             "chrome-m",
-                            "chromium",
                             "custom-car",
                             "cstm-car-m",
                         ):

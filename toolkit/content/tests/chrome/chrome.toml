@@ -51,7 +51,6 @@ support-files = [
 ]
 prefs = [
   "gfx.font_rendering.fallback.async=false",
-  "widget.non-native-theme.enabled=false",
 ]
 
 ["test_about_networking.html"]
@@ -225,6 +224,8 @@ support-files = [
 ["test_menulist_in_popup.xhtml"]
 
 ["test_menulist_initial_selection.xhtml"]
+
+["test_menulist_initial_selection_with_connected_callback.xhtml"]
 
 ["test_menulist_keynav.xhtml"]
 

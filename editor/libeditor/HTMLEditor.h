@@ -802,7 +802,8 @@ class HTMLEditor final : public EditorBase,
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<InsertTextResult, nsresult>
   InsertTextWithTransaction(Document& aDocument,
                             const nsAString& aStringToInsert,
-                            const EditorDOMPoint& aPointToInsert) final;
+                            const EditorDOMPoint& aPointToInsert,
+                            InsertTextTo aInsertTextTo) final;
 
   /**
    * CopyLastEditableChildStyles() clones inline container elements into
@@ -1333,7 +1334,8 @@ class HTMLEditor final : public EditorBase,
    * @param aHTMLEditor   The HTML editor.
    * @param aSrcElement   The element which have the attribute.
    * @param aDestElement  The element which will have the attribute.
-   * @param aAttr         [in] The attribute which will be copied.
+   * @param aNamespaceID  [in] The namespace ID of aAttrName.
+   * @param aAttrName     [in] The attribute name which will be copied.
    * @param aValue        [in/out] The attribute value which will be copied.
    *                      Once updated, the new value is used.
    * @return              true if the attribute should be copied, otherwise,
@@ -1341,7 +1343,7 @@ class HTMLEditor final : public EditorBase,
    */
   using AttributeFilter = std::function<bool(
       HTMLEditor& aHTMLEditor, Element& aSrcElement, Element& aDestElement,
-      const dom::Attr& aAttr, nsString& aValue)>;
+      int32_t aNamespaceID, const nsAtom& aAttrName, nsString& aValue)>;
   static AttributeFilter CopyAllAttributes;
   static AttributeFilter CopyAllAttributesExceptId;
   static AttributeFilter CopyAllAttributesExceptDir;

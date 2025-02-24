@@ -18,8 +18,8 @@ use neqo_common::qlog::NeqoQlog;
 use crate::{
     cc::{ClassicCongestionControl, CongestionControl, CongestionControlAlgorithm, Cubic, NewReno},
     pace::Pacer,
+    recovery::SentPacket,
     rtt::RttEstimate,
-    tracking::SentPacket,
 };
 
 /// The number of packets we allow to burst from the pacer.
@@ -97,6 +97,11 @@ impl PacketSender {
         )
     }
 
+    /// Called when ECN CE mark received.  Returns true if the congestion window was reduced.
+    pub fn on_ecn_ce_received(&mut self, largest_acked_pkt: &SentPacket) -> bool {
+        self.cc.on_ecn_ce_received(largest_acked_pkt)
+    }
+
     pub fn discard(&mut self, pkt: &SentPacket) {
         self.cc.discard(pkt);
     }
@@ -109,7 +114,7 @@ impl PacketSender {
 
     pub fn on_packet_sent(&mut self, pkt: &SentPacket, rtt: Duration) {
         self.pacer
-            .spend(pkt.time_sent, rtt, self.cc.cwnd(), pkt.size);
+            .spend(pkt.time_sent(), rtt, self.cc.cwnd(), pkt.len());
         self.cc.on_packet_sent(pkt);
     }
 

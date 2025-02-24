@@ -275,7 +275,7 @@ def write_test_settings_json(args, test_details, oskey):
                 "gecko_profile_entries": int(
                     test_details.get("gecko_profile_entries", 1000000)
                 ),
-                "gecko_profile_interval": int(
+                "gecko_profile_interval": float(
                     test_details.get("gecko_profile_interval", 1)
                 ),
                 "gecko_profile_threads": ",".join(set(threads)),
@@ -374,7 +374,6 @@ def get_raptor_test_list(args, oskey):
 
     if args.collect_perfstats and args.app.lower() not in (
         "chrome",
-        "chromium",
         "custom-car",
     ):
         for next_test in tests_to_run:
@@ -603,7 +602,7 @@ def get_raptor_test_list(args, oskey):
             and next_test.get("type") == "pageload"
         ):
             next_test["measure"] = (
-                "fnbpaint, fcp, dcf, loadtime, "
+                "fnbpaint, fcp, loadtime, "
                 "ContentfulSpeedIndex, PerceptualSpeedIndex, "
                 "SpeedIndex, FirstVisualChange, LastVisualChange, "
                 "largestContentfulPaint"

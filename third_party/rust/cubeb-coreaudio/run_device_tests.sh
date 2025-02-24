@@ -8,15 +8,18 @@ if [[ -z "${RUST_BACKTRACE}" ]]; then
 fi
 echo "RUST_BACKTRACE is set to ${RUST_BACKTRACE}\n"
 
+cargo test test_aggregate -- --ignored --nocapture
+
 cargo test test_switch_device -- --ignored --nocapture
 
 cargo test test_plug_and_unplug_device -- --ignored --nocapture
 
+cargo test test_get_channel_count_of_input_devices_with_vpio -- --ignored --nocapture
+cargo test test_get_channel_count_of_input_devices_with_aggregate_device_and_vpio -- --ignored --nocapture
+
 cargo test test_register_device_changed_callback_to_check_default_device_changed_input -- --ignored --nocapture
 cargo test test_register_device_changed_callback_to_check_default_device_changed_output -- --ignored --nocapture
 cargo test test_register_device_changed_callback_to_check_default_device_changed_duplex -- --ignored --nocapture
-cargo test test_register_device_changed_callback_to_check_input_alive_changed_input -- --ignored --nocapture
-cargo test test_register_device_changed_callback_to_check_input_alive_changed_duplex -- --ignored --nocapture
 
 cargo test test_destroy_input_stream_after_unplugging_a_nondefault_input_device -- --ignored --nocapture
 cargo test test_suspend_input_stream_by_unplugging_a_nondefault_input_device -- --ignored --nocapture

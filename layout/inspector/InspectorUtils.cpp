@@ -14,7 +14,6 @@
 #include "nsContentList.h"
 #include "nsString.h"
 #include "nsIContentInlines.h"
-#include "nsIScrollableFrame.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLTemplateElement.h"
@@ -27,6 +26,7 @@
 #include "nsRange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/dom/CharacterData.h"
 #include "mozilla/dom/CSSBinding.h"
@@ -229,41 +229,37 @@ void InspectorUtils::GetChildrenForNode(nsINode& aNode,
   }
 }
 
-/* static */
-void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
-                                      Element& aElement,
-                                      const nsAString& aPseudo,
-                                      bool aIncludeVisitedStyle,
-                                      nsTArray<RefPtr<CSSStyleRule>>& aResult) {
-  auto [type, functionalPseudoParameter] =
-      nsCSSPseudoElements::ParsePseudoElement(aPseudo,
-                                              CSSEnabledState::ForAllContent);
-  if (!type) {
-    return;
+static already_AddRefed<const ComputedStyle> GetStartingStyle(
+    Element& aElement) {
+  // If this element is unstyled, or it doesn't have matched rules in
+  // @starting-style, we return.
+  if (!Servo_Element_MayHaveStartingStyle(&aElement)) {
+    return nullptr;
   }
 
-  RefPtr<const ComputedStyle> computedStyle = GetCleanComputedStyleForElement(
-      &aElement, *type, functionalPseudoParameter);
-  if (!computedStyle) {
-    // This can fail for elements that are not in the document or
-    // if the document they're in doesn't have a presshell.  Bail out.
-    return;
+  const PresShell* presShell = aElement.OwnerDoc()->GetPresShell();
+  if (!presShell) {
+    return nullptr;
   }
 
-  if (aIncludeVisitedStyle) {
-    if (auto* styleIfVisited = computedStyle->GetStyleIfVisited()) {
-      computedStyle = styleIfVisited;
-    }
+  ServoStyleSet* styleSet = presShell->StyleSet();
+  if (!styleSet) {
+    return nullptr;
   }
 
-  Document* doc = aElement.OwnerDoc();
-  PresShell* presShell = doc->GetPresShell();
+  return styleSet->ResolveStartingStyle(aElement);
+}
+
+static void GetCSSStyleRulesFromComputedValue(
+    Element& aElement, const ComputedStyle* aComputedStyle,
+    nsTArray<RefPtr<CSSStyleRule>>& aResult) {
+  const PresShell* presShell = aElement.OwnerDoc()->GetPresShell();
   if (!presShell) {
     return;
   }
 
   AutoTArray<const StyleLockedStyleRule*, 8> rawRuleList;
-  Servo_ComputedValues_GetStyleRuleList(computedStyle, &rawRuleList);
+  Servo_ComputedValues_GetStyleRuleList(aComputedStyle, &rawRuleList);
 
   AutoTArray<ServoStyleRuleMap*, 8> maps;
   {
@@ -313,7 +309,7 @@ void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
 #ifdef DEBUG
       aElement.Dump();
       printf_stderr("\n\n----\n\n");
-      computedStyle->DumpMatchedRules();
+      aComputedStyle->DumpMatchedRules();
       nsAutoCString str;
       Servo_StyleRule_Debug(rawRule, &str);
       printf_stderr("\n\n----\n\n");
@@ -325,6 +321,48 @@ void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
 #endif
     }
   }
+}
+
+/* static */
+void InspectorUtils::GetCSSStyleRules(GlobalObject& aGlobalObject,
+                                      Element& aElement,
+                                      const nsAString& aPseudo,
+                                      bool aIncludeVisitedStyle,
+                                      bool aWithStartingStyle,
+                                      nsTArray<RefPtr<CSSStyleRule>>& aResult) {
+  auto [type, functionalPseudoParameter] =
+      nsCSSPseudoElements::ParsePseudoElement(aPseudo,
+                                              CSSEnabledState::ForAllContent);
+  if (!type) {
+    return;
+  }
+
+  RefPtr<const ComputedStyle> computedStyle;
+  if (aWithStartingStyle) {
+    computedStyle = GetStartingStyle(aElement);
+  }
+
+  // Note: GetStartingStyle() return nullptr if this element doesn't have rules
+  // inside @starting-style. For this case, we would like to return the primay
+  // rules of this element.
+  if (!computedStyle) {
+    computedStyle = GetCleanComputedStyleForElement(&aElement, *type,
+                                                    functionalPseudoParameter);
+  }
+
+  if (!computedStyle) {
+    // This can fail for elements that are not in the document or
+    // if the document they're in doesn't have a presshell.  Bail out.
+    return;
+  }
+
+  if (aIncludeVisitedStyle) {
+    if (const auto* styleIfVisited = computedStyle->GetStyleIfVisited()) {
+      computedStyle = styleIfVisited;
+    }
+  }
+
+  GetCSSStyleRulesFromComputedValue(aElement, computedStyle, aResult);
 }
 
 /* static */
@@ -415,6 +453,7 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::Media:
       case StyleCssRuleType::Supports:
       case StyleCssRuleType::LayerBlock:
+      case StyleCssRuleType::Property:
       case StyleCssRuleType::Container: {
         Unused << aResult.AppendElement(OwningNonNull(*rule), fallible);
         break;
@@ -425,7 +464,6 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::LayerStatement:
       case StyleCssRuleType::FontFace:
       case StyleCssRuleType::Page:
-      case StyleCssRuleType::Property:
       case StyleCssRuleType::Keyframes:
       case StyleCssRuleType::Keyframe:
       case StyleCssRuleType::Margin:
@@ -433,6 +471,8 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::CounterStyle:
       case StyleCssRuleType::FontFeatureValues:
       case StyleCssRuleType::FontPaletteValues:
+      case StyleCssRuleType::Scope:
+      case StyleCssRuleType::StartingStyle:
         break;
     }
 
@@ -824,6 +864,11 @@ bool InspectorUtils::IsElementThemed(GlobalObject&, Element& aElement) {
   return frame && frame->IsThemed();
 }
 
+bool InspectorUtils::IsUsedColorSchemeDark(GlobalObject&, Element& aElement) {
+  nsIFrame* frame = aElement.GetPrimaryFrame(FlushType::Frames);
+  return frame && LookAndFeel::ColorSchemeForFrame(frame) == ColorScheme::Dark;
+}
+
 Element* InspectorUtils::ContainingBlockOf(GlobalObject&, Element& aElement) {
   nsIFrame* frame = aElement.GetPrimaryFrame(FlushType::Frames);
   if (!frame) {
@@ -941,18 +986,18 @@ static void AddOverflowingChildrenOfElement(const nsIFrame* aFrame,
 
 already_AddRefed<nsINodeList> InspectorUtils::GetOverflowingChildrenOfElement(
     GlobalObject& aGlobal, Element& aElement) {
-  RefPtr<nsSimpleContentList> list = new nsSimpleContentList(&aElement);
-  const nsIScrollableFrame* scrollFrame = aElement.GetScrollFrame();
-  // Element must have a nsIScrollableFrame
-  if (!scrollFrame) {
+  auto list = MakeRefPtr<nsSimpleContentList>(&aElement);
+  const ScrollContainerFrame* scrollContainerFrame =
+      aElement.GetScrollContainerFrame();
+  // Element must be a ScrollContainerFrame.
+  if (!scrollContainerFrame) {
     return list.forget();
   }
 
-  auto scrollPortRect = scrollFrame->GetScrollPortRect();
-  const nsIFrame* outerFrame = do_QueryFrame(scrollFrame);
-  const nsIFrame* scrolledFrame = scrollFrame->GetScrolledFrame();
-  AddOverflowingChildrenOfElement(scrolledFrame, outerFrame, scrollPortRect,
-                                  *list);
+  auto scrollPortRect = scrollContainerFrame->GetScrollPortRect();
+  const nsIFrame* scrolledFrame = scrollContainerFrame->GetScrolledFrame();
+  AddOverflowingChildrenOfElement(scrolledFrame, scrollContainerFrame,
+                                  scrollPortRect, *list);
   return list.forget();
 }
 
@@ -1000,22 +1045,27 @@ void InspectorUtils::GetCSSRegisteredProperties(
 }
 
 /* static */
-void InspectorUtils::GetRuleBodyTextOffsets(
-    GlobalObject&, const nsACString& aInitialText,
-    Nullable<InspectorGetRuleBodyTextResult>& aResult) {
-  uint32_t resultStartOffset;
-  uint32_t resultEndOffset;
-
-  if (!Servo_GetRuleBodyTextOffsets(&aInitialText, &resultStartOffset,
-                                    &resultEndOffset)) {
-    aResult.SetNull();
-    return;
-  }
-
-  InspectorGetRuleBodyTextResult& offsets = aResult.SetValue();
-  offsets.mStartOffset = resultStartOffset;
-  offsets.mEndOffset = resultEndOffset;
+bool InspectorUtils::ValueMatchesSyntax(GlobalObject&, Document& aDocument,
+                                        const nsACString& aValue,
+                                        const nsACString& aSyntax) {
+  return Servo_Value_Matches_Syntax(&aValue, &aSyntax,
+                                    aDocument.DefaultStyleAttrURLData());
 }
 
+/* static */
+void InspectorUtils::GetRuleBodyText(GlobalObject&,
+                                     const nsACString& aInitialText,
+                                     nsACString& aBodyText) {
+  Servo_GetRuleBodyText(&aInitialText, &aBodyText);
+}
+
+/* static */
+void InspectorUtils::ReplaceBlockRuleBodyTextInStylesheet(
+    GlobalObject&, const nsACString& aStyleSheetText, uint32_t aLine,
+    uint32_t aColumn, const nsACString& aNewBodyText,
+    nsACString& aNewStyleSheetText) {
+  Servo_ReplaceBlockRuleBodyTextInStylesheetText(
+      &aStyleSheetText, aLine, aColumn, &aNewBodyText, &aNewStyleSheetText);
+}
 }  // namespace dom
 }  // namespace mozilla

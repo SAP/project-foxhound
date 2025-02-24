@@ -24,6 +24,8 @@ async function runPrefTest(aURI, aDesc, aAssertURLStartsWith) {
         );
       }
     );
+
+    await SpecialPowers.removePermission("https-only-load-insecure", aURI);
   });
 }
 
@@ -90,8 +92,14 @@ add_task(async function () {
     "http://"
   );
 
+  await runPrefTest(
+    "http://invalid.example.com",
+    "Should downgrade non-reachable site.",
+    "http://"
+  );
+
   info("Checking expected telemetry");
-  is(Glean.httpsfirst.upgraded.testGetValue(), 5);
+  is(Glean.httpsfirst.upgraded.testGetValue(), 1);
   is(Glean.httpsfirst.upgradedSchemeless.testGetValue(), null);
   is(Glean.httpsfirst.downgraded.testGetValue(), 3);
   is(Glean.httpsfirst.downgradedSchemeless.testGetValue(), null);
@@ -99,11 +107,10 @@ add_task(async function () {
   is(Glean.httpsfirst.downgradedOnTimerSchemeless.testGetValue(), null);
   const downgradeSeconds =
     Glean.httpsfirst.downgradeTime.testGetValue().sum / 1_000_000_000;
-  ok(
-    downgradeSeconds > 2 && downgradeSeconds < 30,
-    `Summed downgrade time should be above 2 and below 30 seconds (is ${downgradeSeconds.toFixed(
-      2
-    )}s)`
+  Assert.less(
+    downgradeSeconds,
+    10,
+    "Summed downgrade time should be below 10 seconds"
   );
   is(null, Glean.httpsfirst.downgradeTimeSchemeless.testGetValue());
 });

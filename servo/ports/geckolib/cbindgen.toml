@@ -19,11 +19,8 @@ trailer = """
 #pragma GCC diagnostic pop
 #include "mozilla/ServoStyleConstsInlines.h"
 """
-autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen.
- * To generate this file:
- *   1. Get the latest cbindgen using `cargo install --force cbindgen`
- *      a. Alternatively, you can clone `https://github.com/eqrion/cbindgen` and use a tagged release
- *   2. Run `rustup run nightly cbindgen toolkit/library/rust/ --lockfile Cargo.lock --crate style -o layout/style/ServoStyleConsts.h`
+autogen_warning = """/* DO NOT MODIFY THIS MANUALLY! This file was generated using cbindgen. See RunCbindgen.py
+ * To modify this file, edit servo/ports/geckolib/cbindgen.toml and build Firefox.
  */
 """
 include_guard = "mozilla_ServoStyleConsts_h"
@@ -51,6 +48,7 @@ derive_neq = true
 "feature = servo" = "CBINDGEN_IS_SERVO"
 "feature = servo-layout-2013" = "CBINDGEN_IS_SERVO"
 "feature = servo-layout-2020" = "CBINDGEN_IS_SERVO"
+"feature = track_alloc_size" = "CBINDGEN_IS_SERVO"
 # These will always be defined.
 "feature = gecko" = "CBINDGEN_IS_GECKO"
 "feature = cbindgen" = "CBINDGEN_IS_GECKO"
@@ -81,6 +79,8 @@ exclude = [
   "AuthorStyles",
 ]
 include = [
+  "AnchorName",
+  "AnchorScope",
   "AnimationTimeline",
   "AnimationIterationCount",
   "AnimationDirection",
@@ -92,11 +92,18 @@ include = [
   "BreakBetween",
   "BreakWithin",
   "BorderStyle",
+  "BorderSpacing",
   "BoolInteger",
   "OutlineStyle",
   "CaptionSide",
   "FontSizeAdjust",
   "FontPalette",
+  "FontLanguageOverride",
+  "FontVariantEastAsian",
+  "FontVariantLigatures",
+  "FontVariantNumeric",
+  "InsetArea",
+  "InsetAreaKeyword",
   "ComputedFontStretchRange",
   "ComputedFontStyleDescriptor",
   "ComputedFontWeightRange",
@@ -108,6 +115,10 @@ include = [
   "DisplayInside",
   "DisplayMode",
   "Platform",
+  "PositionAnchor",
+  "PositionTryOptions",
+  "PositionTryOrder",
+  "PositionVisibility",
   "GtkThemeFamily",
   "PrefersColorScheme",
   "PrefersContrast",
@@ -159,6 +170,7 @@ include = [
   "TextDecorationLength",
   "Time",
   "Rect",
+  "InitialLetter",
   "IntersectionObserverRootMargin",
   "Size",
   "MaxSize",
@@ -171,6 +183,7 @@ include = [
   "BorderSpacing",
   "BorderRadius",
   "ColorScheme",
+  "ColumnCount",
   "NonNegativeLengthOrNumberRect",
   "Perspective",
   "ZIndex",
@@ -214,6 +227,7 @@ include = [
   "BasicShape",
   "InsetRect",
   "ShapeRadius",
+  "ShapeCommand",
   "ArcSlice",
   "ForgottenArcSlicePtr",
   "HeaderWithLength",
@@ -257,8 +271,6 @@ include = [
   "ComputedJustifyItems",
   "AlignContent",
   "JustifyContent",
-  "AlignTracks",
-  "JustifyTracks",
   "TransformStyle",
   "Image",
   "ClipPath",
@@ -348,7 +360,7 @@ renaming_overrides_prefixing = true
 "BeforeFlag" = "StyleEasingBeforeFlag"
 "FontPaletteValueSet" = "gfx::FontPaletteValueSet"
 "PaletteValues" = "gfx::FontPaletteValueSet::PaletteValues"
-"ThinVec" = "nsTArray"
+"ThinVec" = "CopyableTArray"
 "RawPthread" = "pthread_t"
 "RawHandle" = "void*"
 
@@ -366,7 +378,8 @@ renaming_overrides_prefixing = true
 
 "CalcLengthPercentage" = """
   inline CSSCoord ResolveToCSSPixels(CSSCoord aBasis) const;
-  inline nscoord Resolve(nscoord aBasis) const;
+  template<typename Rounder>
+  inline nscoord Resolve(nscoord aBasis, Rounder) const;
 """
 
 "GenericCalcNode" = """
@@ -427,10 +440,10 @@ renaming_overrides_prefixing = true
   inline bool IsDefinitelyZero() const;
   inline CSSCoord ResolveToCSSPixels(CSSCoord aPercentageBasisInCSSPixels) const;
   template<typename T> inline CSSCoord ResolveToCSSPixelsWith(T aPercentageGetter) const;
-  template<typename T, typename PercentRounder>
-  inline nscoord Resolve(T aPercentageGetter, PercentRounder) const;
-  template<typename PercentRounder>
-  inline nscoord Resolve(nscoord aPercentageBasis, PercentRounder) const;
+  template<typename T, typename Rounder>
+  inline nscoord Resolve(T aPercentageGetter, Rounder) const;
+  template<typename Rounder>
+  inline nscoord Resolve(nscoord aPercentageBasis, Rounder) const;
   template<typename T> inline nscoord Resolve(T aPercentageGetter) const;
   inline nscoord Resolve(nscoord aPercentageBasis) const;
 """
@@ -490,7 +503,7 @@ renaming_overrides_prefixing = true
 
   // Defined in WritingModes.h
   inline const T& Get(mozilla::Side) const;
-  inline const T& Get(WritingMode, LogicalSide) const;
+  inline const T& Get(LogicalSide, WritingMode) const;
   inline const T& GetIStart(WritingMode) const;
   inline const T& GetBStart(WritingMode) const;
   inline const T& Start(LogicalAxis, WritingMode) const;
@@ -499,7 +512,7 @@ renaming_overrides_prefixing = true
   inline const T& End(LogicalAxis, WritingMode) const;
 
   inline T& Get(mozilla::Side);
-  inline T& Get(WritingMode, LogicalSide);
+  inline T& Get(LogicalSide, WritingMode);
   inline T& GetIStart(WritingMode);
   inline T& GetBStart(WritingMode);
   inline T& GetIEnd(WritingMode);
@@ -524,8 +537,7 @@ renaming_overrides_prefixing = true
 """
 
 "TextTransform" = """
-  static inline StyleTextTransform None();
-  inline bool IsNone() const;
+  bool IsNone() const { return *this == NONE; }
 """
 
 "TextUnderlinePosition" = """
@@ -757,9 +769,11 @@ renaming_overrides_prefixing = true
   }
 """
 
-"CoordPair" = """
-  explicit StyleCoordPair(const gfx::Point& aPoint): x(aPoint.x), y(aPoint.y) {}
-  gfx::Point ConvertsToGfxPoint() const { return gfx::Point(x, y); }
+"CoordinatePair" = """
+  inline gfx::Point ToGfxPoint(const CSSSize* aBasis = nullptr) const;
+  gfx::Point ToGfxPoint(const CSSSize& aBasis) const {
+    return ToGfxPoint(&aBasis);
+  };
 """
 
 "TextOverflow" = """
@@ -1035,18 +1049,30 @@ renaming_overrides_prefixing = true
 
   // Return true if the <basic-shape> is path().
   bool IsPath() const {
-    return IsOffsetPath() && AsOffsetPath().path->IsShape() &&
-           AsOffsetPath().path->AsShape().IsPath();
+    if (!IsOffsetPath()) {
+      return false;
+    }
+    const auto& path = AsOffsetPath().path;
+    if (!path->IsShape()) {
+      return false;
+    }
+    const auto& shape = path->AsShape();
+    return shape.IsPathOrShape() && shape.AsPathOrShape().IsPath();
   }
 
   const StyleSVGPathData& AsSVGPathData() const {
-    return AsOffsetPath().path->AsShape().AsPath().path;
+    return AsOffsetPath().path->AsShape().AsPathOrShape().AsPath().path;
   }
 
   // Return true if this is "<basic-shape> || <coord-box>".
   bool IsBasicShapeOrCoordBox() const {
     return IsCoordBox() || (IsOffsetPath() && AsOffsetPath().path->IsShape());
   }
+"""
+
+"GenericShapeCommand" = """
+  bool IsCubicType() const { return IsCubicCurve() || IsSmoothCubic(); }
+  bool IsQuadraticType() const { return IsQuadCurve() || IsSmoothQuad(); }
 """
 
 "GenericContainIntrinsicSize" = """

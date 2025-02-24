@@ -11,6 +11,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
+#include "mozilla/TimeStamp.h"
 
 #include "nsTArray.h"
 
@@ -20,6 +21,7 @@
 #include "prtime.h"
 
 using mozilla::Preferences;
+using mozilla::TimeDuration;
 using namespace mozilla::glean;
 using namespace mozilla::glean::impl;
 
@@ -277,6 +279,15 @@ TEST_F(FOGFixture, TestCppTimingDistWorks) {
   ASSERT_EQ(sampleCount, (uint64_t)2);
 }
 
+TEST_F(FOGFixture, TestCppTimingDistNegativeDuration) {
+  // Intentionally a negative duration to test the error case.
+  auto negDuration = TimeDuration::FromSeconds(-1);
+  test_only::what_time_is_it.AccumulateRawDuration(negDuration);
+
+  ASSERT_EQ(mozilla::Nothing(),
+            test_only::what_time_is_it.TestGetValue().unwrap());
+}
+
 TEST_F(FOGFixture, TestLabeledBooleanWorks) {
   ASSERT_EQ(mozilla::Nothing(),
             test_only::mabels_like_balloons.Get("hot_air"_ns)
@@ -351,6 +362,9 @@ TEST_F(FOGFixture, TestLabeledCounterWithLabelsWorks) {
   test_only::mabels_labeled_counters
       .EnumGet(test_only::MabelsLabeledCountersLabel::eClean)
       .Add(2);
+  test_only::mabels_labeled_counters
+      .EnumGet(test_only::MabelsLabeledCountersLabel::e1stCounter)
+      .Add(3);
   ASSERT_EQ(
       1, test_only::mabels_labeled_counters
              .EnumGet(test_only::MabelsLabeledCountersLabel::eNextToTheFridge)
@@ -359,6 +373,11 @@ TEST_F(FOGFixture, TestLabeledCounterWithLabelsWorks) {
              .ref());
   ASSERT_EQ(2, test_only::mabels_labeled_counters
                    .EnumGet(test_only::MabelsLabeledCountersLabel::eClean)
+                   .TestGetValue()
+                   .unwrap()
+                   .ref());
+  ASSERT_EQ(3, test_only::mabels_labeled_counters
+                   .EnumGet(test_only::MabelsLabeledCountersLabel::e1stCounter)
                    .TestGetValue()
                    .unwrap()
                    .ref());
@@ -474,3 +493,6 @@ TEST_F(FOGFixture, TestRustInGTest) { Rust_TestRustInGTest(); }
 
 extern "C" void Rust_TestJogfile();
 TEST_F(FOGFixture, TestJogfile) { Rust_TestJogfile(); }
+
+extern "C" void Rust_TestRideAlongPing();
+TEST_F(FOGFixture, TestRustRideAlongPing) { Rust_TestRideAlongPing(); }

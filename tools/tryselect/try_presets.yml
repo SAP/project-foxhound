@@ -17,12 +17,31 @@ android-components:
         - "'build-components"
         - "'test-components"
 
+android-geckoview:
+    selector: fuzzy
+    # Show chunk numbers so we can query with -1$ / -2$ etc.
+    show_chunk_numbers: true
+    # disable_target_task_filter: true
+    # Run taskgraph full so all tasks are available
+    full: true
+    description: >-
+        Run android-geckoview builds and tests.
+    query:
+        # Lint
+        - "^source-test-mozlint android-lints$ | eslint$ | rejected-words$ | file-perm$ | file-whitespace$"
+        # Tests
+        - "^test-android-em-7.0-x86_64-qr/debug-isolated-process-geckoview- 'test-verify | cppunittest-1proc$ | gtest-1proc$ | junit$ | junit-fis$ | junit-nofis$ | junit-nofis-ship$ | xpcshell-1$ | xpcshell-2$"
+        - "^test-android-em-7.0-x86_64-qr/debug-isolated-process-geckoview-mochitest- media-1$ | media-2$ | plain-1$ | plain-2$ | plain-3$ | plain-4$ | plain-5$ | plain-gpu$"
+        - "^test-android-em-7.0-x86_64-qr/opt-geckoview- xpcshell-1$ | xpcshell-2$ | cppunittest-1proc$ | gtest-1proc$ | junit-fis$ | junit-nofis-ship$ | junit-nofis$ | junit$ | mochitest-media$"
+        - "^test-android-em-7.0-x86_64-qr/opt-geckoview-mochitest- media$ | plain-1$ | plain-2$ | plain-3$ | plain-4$ | plain-5$ | plain-gpu$"
+        - "^test-android-em-7.0-x86_64-qr/opt-geckoview-test-verify"
+
 builds:
     selector: fuzzy
     description: >-
         Run builds without any of the extras.
     query:
-        - "^build- !fuzzing !notarization !reproduced !rusttests !signing !upload-symbols"
+        - "^build- !fuzzing !notarization !reproduced !rusttests !signing !upload-symbols !components !apk !bundle"
 
 builds-debug:
     selector: fuzzy
@@ -30,7 +49,7 @@ builds-debug:
         Run the bare minimum of debug build jobs to ensure builds work on
         all tier-1 platforms.
     query:
-        - "^build- 'debug !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
+        - "^build- 'debug !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols !apk !bundle"
 
 builds-debugopt:
     selector: fuzzy
@@ -38,7 +57,7 @@ builds-debugopt:
         Run the bare minimum of debug and opt build jobs to ensure builds work on
         all tier-1 platforms.
     query:
-        - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols"
+        - "^build- !fuzzing !rusttests !signing !plain !asan !tsan !noopt !toolchain !upload-symbols !components !apk !bundle"
 
 desktop-frontend:
     description: >-
@@ -51,7 +70,7 @@ desktop-frontend:
         stick on central.
     selector: fuzzy
     query:
-        # Runs 64-bit frontend-tests, plus win7. Tries to avoid running
+        # Runs desktop frontend-tests. Tries to avoid running
         # asan/tsan because they're not available as artifact builds, and
         # rarely offer different results from debug/opt. It also avoids running
         # msix/swr/a11y-checks/gpu/nofis/headless variants of otherwise
@@ -59,12 +78,12 @@ desktop-frontend:
         # results for frontend-only changes.
         # This won't run 32-bit debug tests, which seems an acceptable
         # trade-off for query complexity + runtime on infrastructure.
-        - "'browser-chrome                 'windows7 | '64 !spi !asan !tsan !msix !a11y !swr | 'linux"
-        - "'mochitest-chrome               'windows7 | '64 !spi !asan !tsan             !swr !gpu"
-        - "'xpcshell                       'windows7 | '64 !spi !asan !tsan !msix !nofis !condprof"
-        - "'browser-a11y | 'mochitest-a11y 'windows7 | '64 !spi !asan !tsan !no-cache   !swr"
-        - "'marionette                     'windows7 | '64      !asan       !source !headless !swr"
-        - "'firefox-ui-functional          'windows7 | '64      !asan !tsan"
+        - "'browser-chrome                 !spi !asan !tsan !msix !a11y !swr | 'linux"
+        - "'mochitest-chrome               !spi !asan !tsan             !swr !gpu"
+        - "'xpcshell                       !spi !asan !tsan !msix !nofis !condprof !android"
+        - "'browser-a11y | 'mochitest-a11y !spi !asan !tsan !no-cache   !swr"
+        - "'marionette                          !asan       !source !headless !swr"
+        - "'firefox-ui-functional               !asan !tsan"
 
 devtools:
     selector: fuzzy
@@ -150,7 +169,7 @@ fpush-linux-android:
     query:
         - "'test-linux1804 'debug- !-shippable !-asan"
         - "'test-android-em 'debug"
-        - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar-"
+        - "^build !-shippable !-signing !-asan !-fuzzing !-rusttests !-base-toolchain !-aar- !components !apk !bundle"
 
 geckodriver:
     selector: fuzzy
@@ -199,7 +218,7 @@ mochitest-bc:
         tsan, msix, etc.) and some non-default configurations. For frontend
         only changes, use this with --artifact to speed up your trypushes.
     query:
-        - "'browser-chrome 'windows7 | '64 !tsan !asan !msix !spi !a11y !swr | 'linux"
+        - "'browser-chrome !tsan !asan !msix !spi !a11y !swr | 'linux"
     selector: fuzzy
 
 perf:
@@ -254,7 +273,7 @@ sample-suites:
     query:
         - ^test- -1$
         # Only run a single talos + raptor suite per platform
-        - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos
+        - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos !components !apk
         - ^test- 'raptor-speedometer | 'talos-g1
 
 sm-shell-all:
@@ -295,12 +314,12 @@ webextensions:
         GeckoView JUnit tests are NOT run.
     paths:  # must be duplicate of test_paths, see bug 1556445
         - browser/components/extensions/test/
-        - mobile/android/components/extensions/test/
+        - mobile/shared/components/extensions/test/
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/
     test_paths:  # must be duplicate of paths, see bug 1556445
         - browser/components/extensions/test/
-        - mobile/android/components/extensions/test/
+        - mobile/shared/components/extensions/test/
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/
     query:
@@ -320,7 +339,7 @@ webrender:
     description: >-
         Runs the conformance tests relevant to WebRender.
     query:
-        - "!talos !raptor !shippable !asan '-qr"
+        - "!talos !raptor !shippable !asan '-qr !components"
         - "^webrender-"
 
 webrender-reftests:

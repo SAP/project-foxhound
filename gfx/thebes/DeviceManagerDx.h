@@ -6,6 +6,7 @@
 #ifndef mozilla_gfx_thebes_DeviceManagerDx_h
 #define mozilla_gfx_thebes_DeviceManagerDx_h
 
+#include <set>
 #include <vector>
 
 #include "gfxPlatform.h"
@@ -58,13 +59,17 @@ class DeviceManagerDx final {
 
   static DeviceManagerDx* Get() { return sInstance; }
 
+  enum class DeviceFlag {
+    isHardwareWebRenderInUse,
+  };
+  using DeviceFlagSet = EnumSet<DeviceFlag, uint8_t>;
   RefPtr<ID3D11Device> GetCompositorDevice();
   RefPtr<ID3D11Device> GetContentDevice();
   RefPtr<ID3D11Device> GetCanvasDevice();
   RefPtr<ID3D11Device> GetImageDevice();
   RefPtr<IDCompositionDevice2> GetDirectCompositionDevice();
   RefPtr<ID3D11Device> GetVRDevice();
-  RefPtr<ID3D11Device> CreateDecoderDevice(bool aHardwareWebRender);
+  RefPtr<ID3D11Device> CreateDecoderDevice(DeviceFlagSet aFlags);
   RefPtr<ID3D11Device> CreateMediaEngineDevice();
   IDirectDraw7* GetDirectDraw();
 
@@ -91,7 +96,10 @@ class DeviceManagerDx final {
   bool GetOutputFromMonitor(HMONITOR monitor, RefPtr<IDXGIOutput>* aOutOutput);
 
   void PostUpdateMonitorInfo();
+  void UpdateMonitorInfo();
   bool SystemHDREnabled();
+  bool WindowHDREnabled(HWND aWindow);
+  bool MonitorHDREnabled(HMONITOR aMonitor);
 
   // Check if the current adapter supports hardware stretching
   void CheckHardwareStretchingSupport(HwStretchingSupport& aRv);
@@ -177,9 +185,6 @@ class DeviceManagerDx final {
   bool GetAnyDeviceRemovedReason(DeviceResetReason* aOutReason)
       MOZ_REQUIRES(mDeviceLock);
 
-  void UpdateMonitorInfo();
-  std::vector<DXGI_OUTPUT_DESC1> GetOutputDescs();
-
  private:
   static StaticAutoPtr<DeviceManagerDx> sInstance;
 
@@ -193,6 +198,7 @@ class DeviceManagerDx final {
   mutable mozilla::Mutex mDeviceLock;
   nsTArray<D3D_FEATURE_LEVEL> mFeatureLevels MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<IDXGIAdapter1> mAdapter MOZ_GUARDED_BY(mDeviceLock);
+  RefPtr<IDXGIFactory1> mFactory MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<ID3D11Device> mCompositorDevice MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<ID3D11Device> mContentDevice MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<ID3D11Device> mCanvasDevice MOZ_GUARDED_BY(mDeviceLock);
@@ -208,6 +214,7 @@ class DeviceManagerDx final {
   Maybe<DeviceResetReason> mDeviceResetReason MOZ_GUARDED_BY(mDeviceLock);
   RefPtr<Runnable> mUpdateMonitorInfoRunnable MOZ_GUARDED_BY(mDeviceLock);
   Maybe<bool> mSystemHdrEnabled MOZ_GUARDED_BY(mDeviceLock);
+  std::set<HMONITOR> mHdrMonitors MOZ_GUARDED_BY(mDeviceLock);
 
   nsModuleHandle mDirectDrawDLL;
   RefPtr<IDirectDraw7> mDirectDraw;

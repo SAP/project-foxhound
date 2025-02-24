@@ -228,6 +228,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetRequestSucceeded(bool* aValue) override;
   NS_IMETHOD RedirectTo(nsIURI* newURI) override;
   NS_IMETHOD UpgradeToSecure() override;
+  NS_IMETHOD GetRequestObserversCalled(bool* aCalled) override;
+  NS_IMETHOD SetRequestObserversCalled(bool aCalled) override;
   NS_IMETHOD GetRequestContextID(uint64_t* aRCID) override;
   NS_IMETHOD GetTransferSize(uint64_t* aTransferSize) override;
   NS_IMETHOD GetRequestSize(uint64_t* aRequestSize) override;
@@ -319,7 +321,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetProxyURI(nsIURI** proxyURI) override;
   virtual void SetCorsPreflightParameters(
       const nsTArray<nsCString>& unsafeHeaders,
-      bool aShouldStripRequestBodyHeader) override;
+      bool aShouldStripRequestBodyHeader, bool aShouldStripAuthHeader) override;
   virtual void SetAltDataForChild(bool aIsForChild) override;
   virtual void DisableAltDataCache() override {
     StoreDisableAltDataCache(true);
@@ -353,8 +355,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD HTTPUpgrade(const nsACString& aProtocolName,
                          nsIHttpUpgradeListener* aListener) override;
   void DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() override;
-
-  NS_IMETHOD SetWaitForHTTPSSVCRecord() override;
 
   NS_IMETHOD SetEarlyHintPreloaderId(uint64_t aEarlyHintPreloaderId) override;
   NS_IMETHOD GetEarlyHintPreloaderId(uint64_t* aEarlyHintPreloaderId) override;
@@ -651,7 +651,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   static void CallTypeSniffers(void* aClosure, const uint8_t* aData,
                                uint32_t aCount);
 
-  nsresult CheckRedirectLimit(uint32_t aRedirectFlags) const;
+  nsresult CheckRedirectLimit(nsIURI* aNewURI, uint32_t aRedirectFlags) const;
 
   bool MaybeWaitForUploadStreamNormalization(nsIStreamListener* aListener,
                                              nsISupports* aContext);
@@ -690,6 +690,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   void SetChannelBlockedByOpaqueResponse();
   bool Http3Allowed() const;
 
+  virtual void ExplicitSetUploadStreamLength(uint64_t aContentLength,
+                                             bool aSetContentLengthHeader);
+
   friend class OpaqueResponseBlocker;
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
@@ -720,9 +723,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
  private:
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
-
-  void ExplicitSetUploadStreamLength(uint64_t aContentLength,
-                                     bool aSetContentLengthHeader);
 
   void MaybeResumeAsyncOpen();
 
@@ -1014,6 +1014,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   bool mDummyChannelForImageCache;
 
   bool mHasContentDecompressed;
+
+  // A flag that should be false if render-blocking is not stated
+  bool mRenderBlocking;
 
   // clang-format off
   MOZ_ATOMIC_BITFIELDS(mAtomicBitfields3, 8, (

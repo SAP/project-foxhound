@@ -58,7 +58,7 @@ describe('ElementHandle specs', function () {
         '<div style="width: 100px; height: 100px">hello</div>'
       );
       using elementHandle = (await page.$('div'))!;
-      await page.evaluate((element: HTMLElement) => {
+      await page.evaluate(element => {
         return (element.style.height = '200px');
       }, elementHandle);
       const box = await elementHandle.boundingBox();
@@ -260,7 +260,7 @@ describe('ElementHandle specs', function () {
 
       await page.goto(server.PREFIX + '/input/button.html');
       using button = (await page.$('button'))!;
-      await page.evaluate((button: HTMLElement) => {
+      await page.evaluate(button => {
         return button.remove();
       }, button);
       let error!: Error;
@@ -277,7 +277,7 @@ describe('ElementHandle specs', function () {
 
       await page.goto(server.PREFIX + '/input/button.html');
       using button = (await page.$('button'))!;
-      await page.evaluate((button: HTMLElement) => {
+      await page.evaluate(button => {
         return (button.style.display = 'none');
       }, button);
       const error = await button.click().catch(error_ => {
@@ -293,7 +293,7 @@ describe('ElementHandle specs', function () {
 
       await page.goto(server.PREFIX + '/input/button.html');
       using button = (await page.$('button'))!;
-      await page.evaluate((button: HTMLElement) => {
+      await page.evaluate(button => {
         return (button.parentElement!.style.display = 'none');
       }, button);
       const error = await button.click().catch(error_ => {
@@ -385,8 +385,15 @@ describe('ElementHandle specs', function () {
       await page.setContent(
         `<iframe name='frame' style='position: absolute; left: -100px' srcdoc="<button style='width: 10px; height: 10px;'></button>"></iframe>`
       );
-      const frame = await page.waitForFrame(frame => {
-        return frame.name() === 'frame';
+      const frame = await page.waitForFrame(async frame => {
+        using element = await frame.frameElement();
+        if (!element) {
+          return false;
+        }
+        const name = await element.evaluate(frame => {
+          return frame.name;
+        });
+        return name === 'frame';
       });
 
       using handle = await frame.locator('button').waitHandle();
@@ -395,8 +402,15 @@ describe('ElementHandle specs', function () {
       await page.setContent(
         `<iframe name='frame2' style='position: absolute; top: -100px' srcdoc="<button style='width: 10px; height: 10px;'></button>"></iframe>`
       );
-      const frame2 = await page.waitForFrame(frame => {
-        return frame.name() === 'frame2';
+      const frame2 = await page.waitForFrame(async frame => {
+        using element = await frame.frameElement();
+        if (!element) {
+          return false;
+        }
+        const name = await element.evaluate(frame => {
+          return frame.name;
+        });
+        return name === 'frame2';
       });
 
       using handle2 = await frame2.locator('button').waitHandle();
@@ -464,7 +478,7 @@ describe('ElementHandle specs', function () {
       expect(element2).toBeDefined();
       expect(
         await element2.evaluate(el => {
-          return (el as HTMLElement).innerText;
+          return el.innerText;
         })
       ).toStrictEqual('bar1');
     });

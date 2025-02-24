@@ -43,7 +43,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   typedef mozilla::layers::Image Image;
   typedef mozilla::layers::ImageContainer ImageContainer;
   typedef mozilla::layers::KnowsCompositor KnowsCompositor;
-  typedef SimpleMap<int64_t> DurationMap;
+  typedef SimpleMap<int64_t, int64_t, ThreadSafePolicy> DurationMap;
 
  public:
   FFmpegVideoDecoder(FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
@@ -205,6 +205,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   const bool mLowLatency;
   const Maybe<TrackingId> mTrackingId;
   PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder;
+  PerformanceRecorderMulti<DecodeStage> mPerformanceRecorder2;
 
   // True if we're allocating shmem for ffmpeg decode buffer.
   Maybe<Atomic<bool>> mIsUsingShmemBufferForDecode;

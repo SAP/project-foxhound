@@ -9,17 +9,18 @@
 
 #include "ErrorList.h"
 #include "MediaData.h"
+#include "PlatformEncoderModule.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Result.h"
 #include "mozilla/TaskQueue.h"
+#include "mozilla/dom/AudioDataBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/dom/VideoEncoderBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
-#include "PlatformEncoderModule.h"
 
 namespace mozilla {
 
@@ -92,6 +93,10 @@ Result<Ok, nsresult> CloneBuffer(
 
 Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
     const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer);
+
+bool CopyExtradataToDescription(
+    JSContext* aCx, Span<const uint8_t>& aSrc,
+    OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aDest);
 
 /*
  * The following are utilities to convert between VideoColorSpace values to
@@ -218,7 +223,7 @@ struct WebCodecsConfigurationChangeList {
 
   // Convert this to the format the underlying PEM can understand
   RefPtr<EncoderConfigurationChangeList> ToPEMChangeList() const;
-  nsString ToString() const;
+  nsCString ToString() const;
 
   nsTArray<WebCodecsEncoderConfigurationItem> mChanges;
 
@@ -235,12 +240,20 @@ VideoColorSpaceInit FallbackColorSpaceForWebContent();
 
 Maybe<CodecType> CodecStringToCodecType(const nsAString& aCodecString);
 
-nsString ConfigToString(const VideoDecoderConfig& aConfig);
+nsCString ConfigToString(const VideoDecoderConfig& aConfig);
 
+// Returns true if a particular codec is supported by WebCodecs.
 bool IsSupportedVideoCodec(const nsAString& aCodec);
+bool IsSupportedAudioCodec(const nsAString& aCodec);
 
+// Returns the codec string to use in Gecko for a particular container and
+// codec name given by WebCodecs. This maps pcm description to the profile
+// number, and simply returns the codec name for all other codecs.
+nsCString ConvertCodecName(const nsCString& aContainer,
+                           const nsCString& aCodec);
+
+uint32_t BytesPerSamples(const mozilla::dom::AudioSampleFormat& aFormat);
 }  // namespace dom
-
 }  // namespace mozilla
 
 #endif  // MOZILLA_DOM_WEBCODECS_WEBCODECSUTILS_H

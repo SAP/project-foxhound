@@ -14,6 +14,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Components.h"
+#include "mozilla/SharedThreadPool.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
@@ -186,6 +187,43 @@ static const uint32_t CUBEB_NORMAL_LATENCY_MS = 100;
 static const uint32_t CUBEB_NORMAL_LATENCY_FRAMES = 1024;
 
 namespace CubebUtils {
+nsCString ProcessingParamsToString(cubeb_input_processing_params aParams) {
+  if (aParams == CUBEB_INPUT_PROCESSING_PARAM_NONE) {
+    return "NONE"_ns;
+  }
+  nsCString str;
+  for (auto p : {CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION,
+                 CUBEB_INPUT_PROCESSING_PARAM_AUTOMATIC_GAIN_CONTROL,
+                 CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION,
+                 CUBEB_INPUT_PROCESSING_PARAM_VOICE_ISOLATION}) {
+    if (!(aParams & p)) {
+      continue;
+    }
+    if (!str.IsEmpty()) {
+      str.Append(" | ");
+    }
+    str.Append([&p] {
+      switch (p) {
+        case CUBEB_INPUT_PROCESSING_PARAM_NONE:
+          // Handled above.
+          MOZ_CRASH(
+              "NONE is the absence of a param, thus not for logging here.");
+        case CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION:
+          return "AEC";
+        case CUBEB_INPUT_PROCESSING_PARAM_AUTOMATIC_GAIN_CONTROL:
+          return "AGC";
+        case CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION:
+          return "NS";
+        case CUBEB_INPUT_PROCESSING_PARAM_VOICE_ISOLATION:
+          return "VOICE";
+      }
+      MOZ_ASSERT_UNREACHABLE("Unexpected input processing param");
+      return "<Unknown input processing param>";
+    }());
+  }
+  return str;
+}
+
 RefPtr<CubebHandle> GetCubebUnlocked();
 
 void GetPrefAndSetString(const char* aPref, StaticAutoPtr<char>& aStorage) {
@@ -300,12 +338,10 @@ RefPtr<CubebHandle> GetCubeb() {
 
 // This is only exported when running tests.
 void ForceSetCubebContext(cubeb* aCubebContext) {
+  RefPtr<CubebHandle> oldHandle;  // For release without sMutex
   StaticMutexAutoLock lock(sMutex);
-  if (aCubebContext) {
-    sCubebHandle = new CubebHandle(aCubebContext);
-  } else {
-    sCubebHandle = nullptr;
-  }
+  oldHandle = sCubebHandle.forget();
+  sCubebHandle = aCubebContext ? new CubebHandle(aCubebContext) : nullptr;
   sCubebState = CubebState::Initialized;
 }
 
@@ -384,10 +420,33 @@ int CubebStreamInit(cubeb* context, cubeb_stream** stream,
   if (ms) {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   }
-  return cubeb_stream_init(context, stream, stream_name, input_device,
-                           input_stream_params, output_device,
-                           output_stream_params, latency_frames, data_callback,
-                           state_callback, user_ptr);
+  cubeb_stream_params inputParamData;
+  cubeb_stream_params outputParamData;
+  cubeb_stream_params* inputParamPtr = input_stream_params;
+  cubeb_stream_params* outputParamPtr = output_stream_params;
+  if (input_stream_params && !output_stream_params) {
+    inputParamData = *input_stream_params;
+    inputParamData.rate = llround(
+        static_cast<double>(StaticPrefs::media_cubeb_input_drift_factor()) *
+        inputParamData.rate);
+    MOZ_LOG(
+        gCubebLog, LogLevel::Info,
+        ("CubebStreamInit input stream rate %" PRIu32, inputParamData.rate));
+    inputParamPtr = &inputParamData;
+  } else if (output_stream_params && !input_stream_params) {
+    outputParamData = *output_stream_params;
+    outputParamData.rate = llround(
+        static_cast<double>(StaticPrefs::media_cubeb_output_drift_factor()) *
+        outputParamData.rate);
+    MOZ_LOG(
+        gCubebLog, LogLevel::Info,
+        ("CubebStreamInit output stream rate %" PRIu32, outputParamData.rate));
+    outputParamPtr = &outputParamData;
+  }
+
+  return cubeb_stream_init(
+      context, stream, stream_name, input_device, inputParamPtr, output_device,
+      outputParamPtr, latency_frames, data_callback, state_callback, user_ptr);
 }
 
 void InitBrandName() {
@@ -655,15 +714,20 @@ uint32_t GetCubebMTGLatencyInFrames(cubeb_stream_params* params) {
 }
 
 static const char* gInitCallbackPrefs[] = {
-    PREF_VOLUME_SCALE,           PREF_CUBEB_OUTPUT_DEVICE,
-    PREF_CUBEB_LATENCY_PLAYBACK, PREF_CUBEB_LATENCY_MTG,
-    PREF_CUBEB_BACKEND,          PREF_CUBEB_FORCE_NULL_CONTEXT,
-    PREF_CUBEB_SANDBOX,          PREF_AUDIOIPC_STACK_SIZE,
-    PREF_AUDIOIPC_SHM_AREA_SIZE, nullptr,
+    PREF_VOLUME_SCALE,
+    PREF_CUBEB_OUTPUT_DEVICE,
+    PREF_CUBEB_LATENCY_PLAYBACK,
+    PREF_CUBEB_LATENCY_MTG,
+    PREF_CUBEB_BACKEND,
+    PREF_CUBEB_FORCE_SAMPLE_RATE,
+    PREF_CUBEB_FORCE_NULL_CONTEXT,
+    PREF_CUBEB_SANDBOX,
+    PREF_AUDIOIPC_STACK_SIZE,
+    PREF_AUDIOIPC_SHM_AREA_SIZE,
+    nullptr,
 };
 
 static const char* gCallbackPrefs[] = {
-    PREF_CUBEB_FORCE_SAMPLE_RATE,
     // We don't want to call the callback on startup, because the pref is the
     // empty string by default ("", which means "logging disabled"). Because the
     // logging can be enabled via environment variables (MOZ_LOG="module:5"),
@@ -739,6 +803,14 @@ bool SandboxEnabled() {
 #endif
 }
 
+already_AddRefed<SharedThreadPool> GetCubebOperationThread() {
+  RefPtr<SharedThreadPool> pool = SharedThreadPool::Get("CubebOperation"_ns, 1);
+  const uint32_t kIdleThreadTimeoutMs = 2000;
+  pool->SetIdleThreadMaximumTimeout(
+      PR_MillisecondsToInterval(kIdleThreadTimeoutMs));
+  return pool.forget();
+}
+
 uint32_t MaxNumberOfChannels() {
   RefPtr<CubebHandle> handle = GetCubeb();
   uint32_t maxNumberOfChannels;
@@ -786,13 +858,16 @@ long datacb(cubeb_stream*, void*, const void*, void* out_buffer, long nframes) {
 
 void statecb(cubeb_stream*, void*, cubeb_state) {}
 
-bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
+bool EstimatedLatencyDefaultDevices(double* aMean, double* aStdDev,
+                                    Side aSide) {
   RefPtr<CubebHandle> handle = GetCubeb();
   if (!handle) {
     MOZ_LOG(gCubebLog, LogLevel::Error, ("No cubeb context, bailing."));
     return false;
   }
-  nsTArray<double> roundtripLatencies;
+  bool includeInput = aSide & Side::Input;
+  bool includeOutput = aSide & Side::Output;
+  nsTArray<double> latencies;
   // Create a cubeb stream with the correct latency and default input/output
   // devices (mono/stereo channels). Wait for two seconds, get the latency a few
   // times.
@@ -852,8 +927,10 @@ bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
       continue;
     }
 
-    double roundTrip = static_cast<double>(outputLatency + inputLatency) / rate;
-    roundtripLatencies.AppendElement(roundTrip);
+    double latency = static_cast<double>((includeInput ? inputLatency : 0) +
+                                         (includeOutput ? outputLatency : 0)) /
+                     rate;
+    latencies.AppendElement(latency);
   }
   rv = cubeb_stream_stop(stm);
   if (rv != CUBEB_OK) {
@@ -863,22 +940,22 @@ bool EstimatedRoundTripLatencyDefaultDevices(double* aMean, double* aStdDev) {
   *aMean = 0.0;
   *aStdDev = 0.0;
   double variance = 0.0;
-  for (uint32_t i = 0; i < roundtripLatencies.Length(); i++) {
-    *aMean += roundtripLatencies[i];
+  for (uint32_t i = 0; i < latencies.Length(); i++) {
+    *aMean += latencies[i];
   }
 
-  *aMean /= roundtripLatencies.Length();
+  *aMean /= latencies.Length();
 
-  for (uint32_t i = 0; i < roundtripLatencies.Length(); i++) {
-    variance += pow(roundtripLatencies[i] - *aMean, 2.);
+  for (uint32_t i = 0; i < latencies.Length(); i++) {
+    variance += pow(latencies[i] - *aMean, 2.);
   }
-  variance /= roundtripLatencies.Length();
+  variance /= latencies.Length();
 
   *aStdDev = sqrt(variance);
 
   MOZ_LOG(gCubebLog, LogLevel::Debug,
-          ("Default device roundtrip latency in seconds %lf (stddev: %lf)",
-           *aMean, *aStdDev));
+          ("Default devices latency in seconds %lf (stddev: %lf)", *aMean,
+           *aStdDev));
 
   cubeb_stream_destroy(stm);
 

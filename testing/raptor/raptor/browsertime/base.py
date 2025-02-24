@@ -16,7 +16,7 @@ from copy import deepcopy
 import mozprocess
 import six
 from benchmark import Benchmark
-from cmdline import CHROME_ANDROID_APPS, DESKTOP_APPS
+from cmdline import CHROME_ANDROID_APPS, DESKTOP_APPS, FIREFOX_ANDROID_APPS
 from logger.logger import RaptorLogger
 from manifestparser.util import evaluate_list_from_string
 from perftest import GECKO_PROFILER_APPS, TRACE_APPS, Perftest
@@ -169,7 +169,6 @@ class Browsertime(Perftest):
         if self.browsertime_chromedriver and self.config["app"] in (
             "chrome",
             "chrome-m",
-            "chromium",
             "custom-car",
             "cstm-car-m",
         ):
@@ -187,7 +186,7 @@ class Browsertime(Perftest):
                 # setup once all chrome versions use the new artifact setup.
                 cd_extracted_names_115 = {
                     "windows": str(
-                        pathlib.Path("{}chromedriver-win32", "chromedriver.exe")
+                        pathlib.Path("{}chromedriver-win64", "chromedriver.exe")
                     ),
                     "mac-x86_64": str(
                         pathlib.Path("{}chromedriver-mac-x64", "chromedriver")
@@ -213,7 +212,8 @@ class Browsertime(Perftest):
                     elif "win" in self.config["platform"]:
                         self.browsertime_chromedriver = (
                             self.browsertime_chromedriver.replace(
-                                "{}chromedriver.exe", cd_extracted_names_115["windows"]
+                                "{}chromedriver.exe",
+                                cd_extracted_names_115["windows"],
                             )
                         )
                     else:
@@ -435,6 +435,7 @@ class Browsertime(Perftest):
         MULTI_OPTS = [
             "--firefox.android.intentArgument",
             "--firefox.args",
+            "--firefox.geckodriverArgs",
             "--firefox.preference",
             "--chrome.traceCategory",
         ]
@@ -462,7 +463,6 @@ class Browsertime(Perftest):
         priority1_options = self.browsertime_args
         if self.config["app"] in (
             "chrome",
-            "chromium",
             "chrome-m",
             "custom-car",
             "cstm-car-m",
@@ -522,7 +522,6 @@ class Browsertime(Perftest):
             )
 
             if self.browsertime_no_ffwindowrecorder or self.config["app"] in (
-                "chromium",
                 "chrome-m",
                 "chrome",
                 "custom-car",
@@ -570,7 +569,10 @@ class Browsertime(Perftest):
         # with no restrictions
         for user_arg in self.browsertime_user_args:
             arg, val = user_arg.split("=", 1)
-            priority1_options.extend([f"--{arg}", val])
+            if val.startswith("-"):
+                priority1_options.extend([f"--{arg}={val}"])
+            else:
+                priority1_options.extend([f"--{arg}", val])
 
         # In this code block we check if any priority 1 arguments are in conflict with a
         # priority 2/3/4 argument
@@ -601,12 +603,18 @@ class Browsertime(Perftest):
                 browsertime_options=browsertime_options, test=test
             )
 
-        return (
+        cmd = (
             [self.browsertime_node, self.browsertime_browsertimejs]
             + self.driver_paths
             + [browsertime_script]
             + browsertime_options
         )
+
+        if test.get("support_class", None):
+            LOG.info("Test support class is modifying the command...")
+            test.get("support_class").modify_command(cmd, test)
+
+        return cmd
 
     def _compose_gecko_profiler_cmds(self, test, priority1_options):
         """Modify the command line options for running the gecko profiler
@@ -626,7 +634,7 @@ class Browsertime(Perftest):
             (
                 "gecko_profile_features",
                 "--firefox.geckoProfilerParams.features",
-                "js,stackwalk,cpu,screenshots",
+                "js,stackwalk,cpu,screenshots,memory",
             ),
             (
                 "gecko_profile_threads",
@@ -826,26 +834,30 @@ class Browsertime(Perftest):
         proc.wait()
 
     def get_failure_screenshot(self):
-        if not (
-            self.config.get("screenshot_on_failure")
-            and self.config["app"] in DESKTOP_APPS
-        ):
+        if not self.config.get("screenshot_on_failure"):
             return
 
         # Bug 1884178
         # Temporarily disable on Windows + Chrom* applications.
         if self.config["app"] in TRACE_APPS and "win" in self.config["platform"]:
             return
+        if self.config["app"] in DESKTOP_APPS:
+            from mozscreenshot import dump_screen
 
-        from mozscreenshot import dump_screen
+            obj_dir = os.environ.get("MOZ_DEVELOPER_OBJ_DIR", None)
+            if obj_dir is None:
+                build_dir = pathlib.Path(os.environ.get("MOZ_UPLOAD_DIR")).parent
+                utility_path = pathlib.Path(build_dir, "tests", "bin")
+            else:
+                utility_path = os.path.join(obj_dir, "dist", "bin")
+            dump_screen(utility_path, LOG)
 
-        obj_dir = os.environ.get("MOZ_DEVELOPER_OBJ_DIR", None)
-        if obj_dir is None:
-            build_dir = pathlib.Path(os.environ.get("MOZ_UPLOAD_DIR")).parent
-            utility_path = pathlib.Path(build_dir, "tests", "bin")
-        else:
-            utility_path = os.path.join(obj_dir, "dist", "bin")
-        dump_screen(utility_path, LOG)
+        elif self.config["app"] in FIREFOX_ANDROID_APPS + CHROME_ANDROID_APPS:
+            from mozdevice import ADBDeviceFactory
+            from mozscreenshot import dump_device_screen
+
+            device = ADBDeviceFactory(verbose=True)
+            dump_device_screen(device, LOG)
 
     def run_extra_profiler_run(
         self, test, timeout, proc_timeout, output_timeout, line_handler, env
@@ -918,10 +930,6 @@ class Browsertime(Perftest):
         # timeout is a single page-load timeout value (ms) from the test INI
         # this will be used for btime --timeouts.pageLoad
         cmd = self._compose_cmd(test, timeout)
-
-        if test.get("support_class", None):
-            LOG.info("Test support class is modifying the command...")
-            test.get("support_class").modify_command(cmd, test)
 
         output_timeout = BROWSERTIME_PAGELOAD_OUTPUT_TIMEOUT
         if test.get("type", "") == "scenario":

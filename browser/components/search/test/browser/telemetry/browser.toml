@@ -6,9 +6,6 @@ prefs = ["browser.search.log=true"]
 ["browser_search_glean_serp_event_telemetry_categorization_enabled_by_nimbus_variable.js"]
 support-files = ["searchTelemetryDomainCategorizationReporting.html"]
 
-["browser_search_glean_serp_event_telemetry_enabled_by_nimbus_variable.js"]
-support-files = ["searchTelemetryAd.html"]
-
 ["browser_search_telemetry_abandonment.js"]
 support-files = [
   "searchTelemetry.html",
@@ -49,6 +46,15 @@ support-files = ["searchTelemetryDomainCategorizationReporting.html"]
 
 ["browser_search_telemetry_domain_categorization_extraction.js"]
 support-files = ["searchTelemetryDomainExtraction.html"]
+
+["browser_search_telemetry_domain_categorization_no_sponsored_values.js"]
+support-files = ["searchTelemetryDomainCategorizationReportingWithoutAds.html"]
+
+["browser_search_telemetry_domain_categorization_ping_submission.js"]
+support-files = [
+  "searchTelemetryDomainCategorizationReporting.html",
+  "searchTelemetryDomainExtraction.html",
+]
 
 ["browser_search_telemetry_domain_categorization_region.js"]
 support-files = ["searchTelemetryDomainCategorizationReporting.html"]
@@ -103,18 +109,18 @@ support-files = [
   "searchTelemetryAd_searchbox_with_content.html^headers^",
 ]
 
-["browser_search_telemetry_engagement_non_ad.js"]
-support-files = [
-  "searchTelemetryAd_searchbox_with_content.html",
-  "searchTelemetryAd_searchbox_with_content.html^headers^",
-  "serp.css",
-]
-
 ["browser_search_telemetry_engagement_nonAdsLinkQueryParamNames.js"]
 support-files = [
   "searchTelemetryAd_searchbox_with_redirecting_links.html",
   "searchTelemetryAd_shopping.html",
   "searchTelemetry_redirect_with_js.html",
+  "serp.css",
+]
+
+["browser_search_telemetry_engagement_non_ad.js"]
+support-files = [
+  "searchTelemetryAd_searchbox_with_content.html",
+  "searchTelemetryAd_searchbox_with_content.html^headers^",
   "serp.css",
 ]
 
@@ -165,6 +171,9 @@ support-files = [
 
 ["browser_search_telemetry_shopping.js"]
 support-files = ["searchTelemetryAd_shopping.html"]
+
+["browser_search_telemetry_signed_in_to_account.js"]
+support-files = ["searchTelemetry.html"]
 
 ["browser_search_telemetry_sources.js"]
 support-files = ["searchTelemetry.html", "searchTelemetryAd.html"]

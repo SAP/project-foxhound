@@ -101,10 +101,9 @@ using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::EventMessage from "mozilla/EventForwards.h";
 using mozilla::LayoutDeviceIntPoint from "Units.h";
 using mozilla::ImagePoint from "Units.h";
-using mozilla::ImageIntSize from "Units.h";
 using mozilla::widget::ThemeChangeKind from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
-using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
+[MoveOnly=data] using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
@@ -155,12 +154,13 @@ using struct mozilla::dom::LoadingSessionHistoryInfo from "mozilla/dom/SessionHi
 using mozilla::media::MediaCodecsSupported from "MediaCodecsSupport.h";
 using mozilla::RemoteDecodeIn from "mozilla/RemoteDecoderManagerChild.h";
 using mozilla::dom::PerformanceTimingData from "mozilla/dom/PerformanceTiming.h";
-[RefCounted] using mozilla::dom::FeaturePolicy from "mozilla/dom/FeaturePolicy.h";
+using mozilla::dom::MaybeFeaturePolicyInfo from "mozilla/dom/FeaturePolicy.h";
 using mozilla::dom::Wireframe from "mozilla/dom/DocumentBinding.h";
 using mozilla::PerfStats::MetricMask from "mozilla/PerfStats.h";
 [RefCounted] using class nsIX509Cert from "nsIX509Cert.h";
 using nsIDNSService::ResolverMode from "nsIDNSService.h";
 using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
+using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
 
 union ChromeRegistryItem
 {
@@ -461,13 +461,6 @@ struct TextRecognitionResult {
 union TextRecognitionResultOrError {
     TextRecognitionResult;
     nsCString;
-};
-
-struct IPCImage {
-    BigBuffer data;
-    uint32_t stride;
-    SurfaceFormat format;
-    ImageIntSize size;
 };
 
 struct ClipboardReadRequest {
@@ -1052,9 +1045,6 @@ child:
     // Update the cached list of codec supported in the given process.
     async UpdateMediaCodecsSupported(RemoteDecodeIn aLocation, MediaCodecsSupported aSupported);
 
-    // Send the list of the supported mimetypes in the given process. GeckoView-specific
-    async DecoderSupportedMimeTypes(nsCString[] supportedTypes);
-
     // Used to initialize the global variable in content processes with the
     // latched value in the parent process. See dom/LocalStorageCommon.h for more
     // details.
@@ -1214,12 +1204,12 @@ parent:
     async ConsoleMessage(nsString message);
     async ScriptErrorWithStack(nsString message, nsString sourceName, nsString sourceLine,
                                uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
-                               nsCString category, bool privateWindow,
-                               bool fromChromeContext, ClonedMessageData stack);
+                               nsCString category, bool isFromPrivateWindow,
+                               bool isFromChromeContext, ClonedMessageData stack);
 
     // Places the items within dataTransfer on the clipboard.
     async SetClipboard(IPCTransferable aTransferable,
-                       int32_t aWhichClipboard);
+                       int32_t aWhichClipboard, MaybeDiscardedWindowContext aRequestingWindowContext);
 
     // Given a list of supported types, returns the clipboard data for the
     // first type that matches.
@@ -1227,7 +1217,7 @@ parent:
     // which is used for content analysis.
     sync GetClipboard(nsCString[] aTypes, int32_t aWhichClipboard,
                       MaybeDiscardedWindowContext aRequestingWindowContext)
-        returns (IPCTransferableData transferableData);
+        returns (IPCTransferableDataOrError transferableDataOrError);
 
     // Requests getting data from clipboard.
     async GetClipboardAsync(nsCString[] aTypes, int32_t aWhichClipboard,
@@ -1252,8 +1242,12 @@ parent:
      * and that the data will be sent over another IPC message once it is ready.
      * @param  aClipboardType
      *         The clipboard type defined in nsIClipboard.
+     * @param  aSettingWindowContext
+     *         The window context that is setting the clipboard, if any. This is used
+     *         to possibly bypass Content Analysis if a set clipboard and get clipboard
+     *         operation are done on the same page.
      */
-    async PClipboardWriteRequest(int32_t aClipboardType);
+    async PClipboardWriteRequest(int32_t aClipboardType, MaybeDiscardedWindowContext aSettingWindowContext);
 
     sync GetIconForExtension(nsCString aFileExt, uint32_t aIconSize)
         returns (uint8_t[] bits);
@@ -1540,6 +1534,7 @@ parent:
                        bool aCalledFromJS,
                        bool aForPrinting,
                        bool aForWindowDotPrint,
+                       bool aTopLevelCreatedByContent,
                        nullable nsIURI aURIToLoad,
                        nsCString aFeatures,
                        Modifiers aModifiers,
@@ -1554,6 +1549,7 @@ parent:
       MaybeDiscardedBrowsingContext aParent,
       uint32_t aChromeFlags,
       bool aCalledFromJS,
+      bool aTopLevelCreatedByContent,
       nullable nsIURI aURIToLoad,
       nsCString aFeatures,
       Modifiers aModifiers,
@@ -1741,6 +1737,15 @@ parent:
         PositionState? aState);
 
     /**
+     * This method is used to update a media's position state whenever its
+     * guessed position state is being updated.
+     */
+    async NotifyGuessedPositionStateChanged(
+        MaybeDiscardedBrowsingContext aContext,
+        nsID aMediaId,
+        PositionState? aState);
+
+    /**
      * This method will make canonical browsing context to update the count of
      * callers which want to keep the page from being suspended even if the page
      * is inactive.
@@ -1819,8 +1824,8 @@ parent:
 both:
     async ScriptError(nsString message, nsString sourceName, nsString sourceLine,
                       uint32_t lineNumber, uint32_t colNumber, uint32_t flags,
-                      nsCString category, bool privateWindow, uint64_t innerWindowId,
-                      bool fromChromeContext);
+                      nsCString category, bool isFromPrivateWindow, uint64_t innerWindowId,
+                      bool isFromChromeContext);
 
     /**
      * Used in fission to report timing data when the parent window is in
@@ -1874,8 +1879,18 @@ both:
     async DiscardBrowsingContext(MaybeDiscardedBrowsingContext aContext, bool aDoDiscard)
             returns (uint64_t unused);
 
+    /**
+     * aContext is the one that's taking the affect. Either the one that
+     * receives the focus, or the one that loses the focus.
+     *
+     * aAncestorBrowsingContextToFocus can only be non-null when
+     * aShouldClearAncestorFocus is true. This is the browsing context
+     * that receives the focus when aContext loses the focus.
+     */
     async AdjustWindowFocus(MaybeDiscardedBrowsingContext aContext,
-                            bool aIsVisible, uint64_t aActionId);
+                            bool aIsVisible, uint64_t aActionId,
+                            bool aShouldClearAncestorFocus,
+                            MaybeDiscardedBrowsingContext aAncestorBrowsingContextToFocus);
     async WindowClose(MaybeDiscardedBrowsingContext aContext,
                       bool aTrustedCaller);
     async WindowFocus(MaybeDiscardedBrowsingContext aContext,
@@ -1943,7 +1958,7 @@ child:
 
 parent:
     async SetContainerFeaturePolicy(MaybeDiscardedBrowsingContext aContainerContext,
-                                    nullable FeaturePolicy aContainerFeaturePolicy);
+                                    MaybeFeaturePolicyInfo aContainerFeaturePolicyInfo);
 
     // Obtain an icon from the system widget toolkit, in nsIconDecoder
     // format.  Not supported (or needed) on all platforms; see the
@@ -1956,6 +1971,17 @@ parent:
     // test document before taking the snapshot and starting e.g. IPC fuzzing.
     async SignalFuzzingReady();
 #endif
+
+  async AttributionEvent(nsCString aSourceHost,
+                         PrivateAttributionImpressionType aType,
+                         uint32_t aIndex, nsString aAd, nsCString aTargetHost);
+
+  async AttributionConversion(nsCString aSourceHost, nsString aTask,
+                              uint32_t aHistogramSize,
+                              uint32_t? aLoopbackDays,
+                              PrivateAttributionImpressionType? aImpressionType,
+                              nsString[] aAds,
+                              nsCString[] aImpressionSourceHosts);
 };
 
 }

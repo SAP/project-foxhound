@@ -75,9 +75,13 @@ using namespace sandbox::bpf_dsl;
 #  define PR_SET_VMA_ANON_NAME 0
 #endif
 
-// The headers define O_LARGEFILE as 0 on x86_64, but we need the
+// The GNU libc headers define O_LARGEFILE as 0 on x86_64, but we need the
 // actual value because it shows up in file flags.
-#define O_LARGEFILE_REAL 00100000
+#if !defined(O_LARGEFILE) || O_LARGEFILE == 0
+#  define O_LARGEFILE_REAL 00100000
+#else
+#  define O_LARGEFILE_REAL O_LARGEFILE
+#endif
 
 // Not part of UAPI, but userspace sees it in F_GETFL; see bug 1650751.
 #define FMODE_NONOTIFY 0x4000000
@@ -1235,6 +1239,13 @@ class SandboxPolicyCommon : public SandboxPolicyBase {
       CASES_FOR_statfs:
         return Trap(StatFsTrap, nullptr);
 
+        // GTK's theme parsing tries to getcwd() while sandboxed, but
+        // only during Talos runs.
+        // Also, Rust panics call getcwd to try to print relative paths
+        // in backtraces.
+      case __NR_getcwd:
+        return Error(ENOENT);
+
       default:
         return SandboxPolicyBase::EvaluateSyscall(sysno);
     }
@@ -1381,11 +1392,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
 #ifdef DESKTOP
       case __NR_getppid:
         return Trap(GetPPidTrap, nullptr);
-
-        // GTK's theme parsing tries to getcwd() while sandboxed, but
-        // only during Talos runs.
-      case __NR_getcwd:
-        return Error(ENOENT);
 
 #  ifdef MOZ_PULSEAUDIO
       CASES_FOR_fchown:
@@ -1594,9 +1600,6 @@ class ContentSandboxPolicy : public SandboxPolicyCommon {
         // usually do something reasonable on error.
       case __NR_clone:
         return ClonePolicy(Error(EPERM));
-
-      case __NR_clone3:
-        return Error(ENOSYS);
 
 #  ifdef __NR_fadvise64
       case __NR_fadvise64:
@@ -1842,20 +1845,24 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
                                        bool aHasArgs) const override {
     switch (aCall) {
       // These are for X11.
+      //
+      // FIXME (bug 1884449): X11 is blocked now so we probably don't
+      // need these, but they're relatively harmless.
       case SYS_GETSOCKNAME:
       case SYS_GETPEERNAME:
       case SYS_SHUTDOWN:
         return Some(Allow());
 
-#ifdef MOZ_ENABLE_V4L2
       case SYS_SOCKET:
         // Hardware-accelerated decode uses EGL to manage hardware surfaces.
         // When initialised it tries to connect to the Wayland server over a
         // UNIX socket. It still works fine if it can't connect to Wayland, so
         // don't let it create the socket (but don't kill the process for
         // trying).
+        //
+        // We also see attempts to connect to an X server on desktop
+        // Linux sometimes (bug 1882598).
         return Some(Error(EACCES));
-#endif
 
       default:
         return SandboxPolicyCommon::EvaluateSocketCall(aCall, aHasArgs);
@@ -1944,6 +1951,10 @@ class RDDSandboxPolicy final : public SandboxPolicyCommon {
         // process.)
       CASES_FOR_fstatfs:
         return Allow();
+
+        // nvidia drivers may attempt to spawn nvidia-modprobe
+      case __NR_clone:
+        return ClonePolicy(Error(EPERM));
 
         // Pass through the common policy.
       default:

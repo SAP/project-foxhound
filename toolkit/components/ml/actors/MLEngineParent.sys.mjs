@@ -5,6 +5,7 @@
 /**
  * @typedef {object} Lazy
  * @property {typeof console} console
+ * @property {typeof import("../content/Utils.sys.mjs").getRuntimeWasmFilename} getRuntimeWasmFilename
  * @property {typeof import("../content/EngineProcess.sys.mjs").EngineProcess} EngineProcess
  * @property {typeof import("../../../../services/settings/remote-settings.sys.mjs").RemoteSettings} RemoteSettings
  * @property {typeof import("../../translations/actors/TranslationsParent.sys.mjs").TranslationsParent} TranslationsParent
@@ -21,16 +22,14 @@ ChromeUtils.defineLazyGetter(lazy, "console", () => {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  getRuntimeWasmFilename: "chrome://global/content/ml/Utils.sys.mjs",
   EngineProcess: "chrome://global/content/ml/EngineProcess.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
 });
 
-/**
- * @typedef {import("../../translations/translations").WasmRecord} WasmRecord
- */
-
-const DEFAULT_CACHE_TIMEOUT_MS = 15_000;
+const RS_RUNTIME_COLLECTION = "ml-onnx-runtime";
+const RS_INFERENCE_OPTIONS_COLLECTION = "ml-inference-options";
 
 /**
  * The ML engine is in its own content process. This actor handles the
@@ -40,9 +39,9 @@ export class MLEngineParent extends JSWindowActorParent {
   /**
    * The RemoteSettingsClient that downloads the wasm binaries.
    *
-   * @type {RemoteSettingsClient | null}
+   * @type {Record<string, RemoteSettingsClient>}
    */
-  static #remoteClient = null;
+  static #remoteClients = {};
 
   /** @type {Promise<WasmRecord> | null} */
   static #wasmRecord = null;
@@ -61,11 +60,11 @@ export class MLEngineParent extends JSWindowActorParent {
   /**
    * Remote settings isn't available in tests, so provide mocked responses.
    *
-   * @param {RemoteSettingsClient} remoteClient
+   * @param {RemoteSettingsClient} remoteClients
    */
-  static mockRemoteSettings(remoteClient) {
+  static mockRemoteSettings(remoteClients) {
     lazy.console.log("Mocking remote settings in MLEngineParent.");
-    MLEngineParent.#remoteClient = remoteClient;
+    MLEngineParent.#remoteClients = remoteClients;
     MLEngineParent.#wasmRecord = null;
   }
 
@@ -74,24 +73,49 @@ export class MLEngineParent extends JSWindowActorParent {
    */
   static removeMocks() {
     lazy.console.log("Removing mocked remote client in MLEngineParent.");
-    MLEngineParent.#remoteClient = null;
+    MLEngineParent.#remoteClients = {};
     MLEngineParent.#wasmRecord = null;
   }
 
-  /**
-   * @param {string} engineName
-   * @param {() => Promise<ArrayBuffer>} getModel
-   * @param {number} cacheTimeoutMS - How long the engine cache remains alive between
-   *   uses, in milliseconds. In automation the engine is manually created and destroyed
-   *   to avoid timing issues.
+  /** Creates a new MLEngine.
+   *
+   * @param {PipelineOptions} pipelineOptions
    * @returns {MLEngine}
    */
-  getEngine(engineName, getModel, cacheTimeoutMS = DEFAULT_CACHE_TIMEOUT_MS) {
-    return new MLEngine(this, engineName, getModel, cacheTimeoutMS);
+  getEngine(pipelineOptions) {
+    return new MLEngine({ mlEngineParent: this, pipelineOptions });
+  }
+
+  /** Extracts the task name from the name and validates it.
+   *
+   * Throws an exception if the task name is invalid.
+   *
+   * @param {string} name
+   * @returns {string}
+   */
+  nameToTaskName(name) {
+    // Extract taskName after the specific prefix
+    const taskName = name.split("MLEngine:GetInferenceOptions:")[1];
+
+    // Define a regular expression to verify taskName pattern (alphanumeric and underscores/dashes)
+    const validTaskNamePattern = /^[a-zA-Z0-9_\-]+$/;
+
+    // Check if taskName matches the pattern
+    if (!validTaskNamePattern.test(taskName)) {
+      // Handle invalid taskName, e.g., throw an error or return null
+      throw new Error(
+        "Invalid task name. Task name should contain only alphanumeric characters and underscores/dashes."
+      );
+    }
+    return taskName;
   }
 
   // eslint-disable-next-line consistent-return
-  async receiveMessage({ name, data }) {
+  async receiveMessage({ name }) {
+    if (name.startsWith("MLEngine:GetInferenceOptions")) {
+      return MLEngineParent.getInferenceOptions(this.nameToTaskName(name));
+    }
+
     switch (name) {
       case "MLEngine:Ready":
         if (lazy.EngineProcess.resolveMLEngineParent) {
@@ -112,19 +136,18 @@ export class MLEngineParent extends JSWindowActorParent {
     }
   }
 
-  /**
+  /** Gets the wasm file from remote settings.
+   *
    * @param {RemoteSettingsClient} client
    */
   static async #getWasmArrayRecord(client) {
-    // Load the wasm binary from remote settings, if it hasn't been already.
-    lazy.console.log(`Getting remote wasm records.`);
+    const wasmFilename = lazy.getRuntimeWasmFilename(this.browsingContext);
 
     /** @type {WasmRecord[]} */
     const wasmRecords = await lazy.TranslationsParent.getMaxVersionRecords(
       client,
       {
-        // TODO - This record needs to be created with the engine wasm payload.
-        filters: { name: "inference-engine" },
+        filters: { name: wasmFilename },
         majorVersion: MLEngineParent.WASM_MAJOR_VERSION,
       }
     );
@@ -142,11 +165,38 @@ export class MLEngineParent extends JSWindowActorParent {
       );
     }
     const [record] = wasmRecords;
-    lazy.console.log(
-      `Using ${record.name}@${record.release} release version ${record.version} first released on Fx${record.fx_release}`,
-      record
-    );
+    lazy.console.log(`Using runtime ${record.name}@${record.version}`, record);
     return record;
+  }
+
+  /** Gets the inference options from remote settings given a task name.
+   *
+   * @type {string} taskName - name of the inference :wtask
+   * @returns {Promise<ModelRevisionRecord>}
+   */
+  static async getInferenceOptions(taskName) {
+    const client = MLEngineParent.#getRemoteClient(
+      RS_INFERENCE_OPTIONS_COLLECTION
+    );
+    const records = await client.get({
+      filters: {
+        taskName,
+      },
+    });
+
+    if (records.length === 0) {
+      throw new Error(`No inference options found for task ${taskName}`);
+    }
+    const options = records[0];
+    return {
+      modelRevision: options.modelRevision,
+      modelId: options.modelId,
+      tokenizerRevision: options.tokenizerRevision,
+      tokenizerId: options.tokenizerId,
+      processorRevision: options.processorRevision,
+      processorId: options.processorId,
+      runtimeFilename: lazy.getRuntimeWasmFilename(this.browsingContext),
+    };
   }
 
   /**
@@ -155,7 +205,7 @@ export class MLEngineParent extends JSWindowActorParent {
    * @returns {Promise<ArrayBuffer>}
    */
   static async getWasmArrayBuffer() {
-    const client = MLEngineParent.#getRemoteClient();
+    const client = MLEngineParent.#getRemoteClient(RS_RUNTIME_COLLECTION);
 
     if (!MLEngineParent.#wasmRecord) {
       // Place the records into a promise to prevent any races.
@@ -184,20 +234,23 @@ export class MLEngineParent extends JSWindowActorParent {
   /**
    * Lazily initializes the RemoteSettingsClient for the downloaded wasm binary data.
    *
+   * @param {string} collectionName - The name of the collection to use.
    * @returns {RemoteSettingsClient}
    */
-  static #getRemoteClient() {
-    if (MLEngineParent.#remoteClient) {
-      return MLEngineParent.#remoteClient;
+  static #getRemoteClient(collectionName) {
+    if (MLEngineParent.#remoteClients[collectionName]) {
+      return MLEngineParent.#remoteClients[collectionName];
     }
 
     /** @type {RemoteSettingsClient} */
-    const client = lazy.RemoteSettings("ml-wasm");
+    const client = lazy.RemoteSettings(collectionName, {
+      bucketName: "main",
+    });
 
-    MLEngineParent.#remoteClient = client;
+    MLEngineParent.#remoteClients[collectionName] = client;
 
     client.on("sync", async ({ data: { created, updated, deleted } }) => {
-      lazy.console.log(`"sync" event for ml-wasm`, {
+      lazy.console.log(`"sync" event for ${collectionName}`, {
         created,
         updated,
         deleted,
@@ -227,17 +280,6 @@ export class MLEngineParent extends JSWindowActorParent {
     return this.sendQuery("MLEngine:ForceShutdown");
   }
 }
-
-/**
- * This contains all of the information needed to perform a translation request.
- *
- * @typedef {object} TranslationRequest
- * @property {Node} node
- * @property {string} sourceText
- * @property {boolean} isHTML
- * @property {Function} resolve
- * @property {Function} reject
- */
 
 /**
  * The interface to communicate to an MLEngine in the parent process. The engine manages
@@ -271,21 +313,13 @@ class MLEngine {
   engineStatus = "uninitialized";
 
   /**
-   * @param {MLEngineParent} mlEngineParent
-   * @param {string} engineName
-   * @param {() => Promise<ArrayBuffer>} getModel
-   * @param {number} timeoutMS
+   * @param {object} config - The configuration object for the instance.
+   * @param {object} config.mlEngineParent - The parent machine learning engine associated with this instance.
+   * @param {object} config.pipelineOptions - The options for configuring the pipeline associated with this instance.
    */
-  constructor(mlEngineParent, engineName, getModel, timeoutMS) {
-    /** @type {MLEngineParent} */
+  constructor({ mlEngineParent, pipelineOptions }) {
     this.mlEngineParent = mlEngineParent;
-    /** @type {string} */
-    this.engineName = engineName;
-    /** @type {() => Promise<ArrayBuffer>} */
-    this.getModel = getModel;
-    /** @type {number} */
-    this.timeoutMS = timeoutMS;
-
+    this.pipelineOptions = pipelineOptions;
     this.#setupPortCommunication();
   }
 
@@ -296,14 +330,12 @@ class MLEngine {
     const { port1: childPort, port2: parentPort } = new MessageChannel();
     const transferables = [childPort];
     this.#port = parentPort;
-
     this.#port.onmessage = this.handlePortMessage;
     this.mlEngineParent.sendAsyncMessage(
       "MLEngine:NewPort",
       {
         port: childPort,
-        engineName: this.engineName,
-        timeoutMS: this.timeoutMS,
+        pipelineOptions: this.pipelineOptions.getOptions(),
       },
       transferables
     );
@@ -393,11 +425,20 @@ class MLEngine {
     const resolvers = Promise.withResolvers();
     const requestId = this.#nextRequestId++;
     this.#requests.set(requestId, resolvers);
-    this.#port.postMessage({
-      type: "EnginePort:Run",
-      requestId,
-      request,
-    });
+
+    let transferables = [];
+    if (request.data instanceof ArrayBuffer) {
+      transferables.push(request.data);
+    }
+
+    this.#port.postMessage(
+      {
+        type: "EnginePort:Run",
+        requestId,
+        request,
+      },
+      transferables
+    );
     return resolvers.promise;
   }
 }

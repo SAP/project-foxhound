@@ -76,7 +76,7 @@ constexpr Matrix3x3 kBradfordInv{{{0.9869929f, -0.1470543f, 0.1599627f},
                                   {0.4323053f, 0.5183603f, 0.0492912f},
                                   {-0.0085287f, 0.0400428f, 0.9684867f}}};
 
-// Adapts whitepoint x, y to D50
+// Adapts white point x, y to D50
 static Status AdaptToXYZD50(float wx, float wy, Matrix3x3& matrix) {
   bool ok = (wx >= 0) && (wx <= 1) && (wy > 0) && (wy <= 1);
   if (!ok) {
@@ -146,7 +146,8 @@ static Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
     }
   }
   if (tf == JXL_TRANSFER_FUNCTION_PQ) {
-    Rec2408ToneMapperBase tone_mapper({0, 10000}, {0, 250}, luminances);
+    Rec2408ToneMapperBase tone_mapper({0.0f, 10000.0f}, {0.0f, 250.0f},
+                                      luminances);
     tone_mapper.ToneMap(linear);
   } else {
     HlgOOTF_Base ootf(/*source_luminance=*/300, /*target_luminance=*/80,
@@ -183,12 +184,12 @@ static Status ToneMapPixel(const JxlColorEncoding& c, const float in[3],
   const float f_y = lab_f(xyz[1] / kYn);
   const float f_z = lab_f(xyz[2] / kZn);
 
-  pcslab_out[0] =
-      static_cast<uint8_t>(.5f + 255.f * Clamp1(1.16f * f_y - .16f, 0.f, 1.f));
+  pcslab_out[0] = static_cast<uint8_t>(
+      std::lroundf(255.f * Clamp1(1.16f * f_y - .16f, 0.f, 1.f)));
   pcslab_out[1] = static_cast<uint8_t>(
-      .5f + 128.f + Clamp1(500 * (f_x - f_y), -128.f, 127.f));
+      std::lroundf(128.f + Clamp1(500 * (f_x - f_y), -128.f, 127.f)));
   pcslab_out[2] = static_cast<uint8_t>(
-      .5f + 128.f + Clamp1(200 * (f_y - f_z), -128.f, 127.f));
+      std::lroundf(128.f + Clamp1(200 * (f_y - f_z), -128.f, 127.f)));
 
   return true;
 }
@@ -203,8 +204,8 @@ static std::vector<uint16_t> CreateTableCurve(uint32_t N, const ExtraTF tf,
   JXL_ASSERT(tf == ExtraTF::kPQ || tf == ExtraTF::kHLG);
 
   static constexpr Vector3 kLuminances{1.f / 3, 1.f / 3, 1.f / 3};
-  Rec2408ToneMapperBase tone_mapper({0, kPQIntensityTarget},
-                                    {0, kDefaultIntensityTarget}, kLuminances);
+  Rec2408ToneMapperBase tone_mapper(
+      {0.0f, kPQIntensityTarget}, {0.0f, kDefaultIntensityTarget}, kLuminances);
   // No point using float - LCMS converts to 16-bit for A2B/MFT.
   std::vector<uint16_t> table(N);
   for (uint32_t i = 0; i < N; ++i) {
@@ -359,7 +360,7 @@ static Status CreateICCChadMatrix(double wx, double wy, Matrix3x3& result) {
   return true;
 }
 
-// Creates RGB to XYZ matrix given RGB primaries and whitepoint in xy.
+// Creates RGB to XYZ matrix given RGB primaries and white point in xy.
 static Status CreateICCRGBMatrix(double rx, double ry, double gx, double gy,
                                  double bx, double by, double wx, double wy,
                                  Matrix3x3& result) {
@@ -405,7 +406,7 @@ static Status WriteICCS15Fixed16(float value, size_t pos,
   // Even the first value works well,...
   bool ok = (-32767.995f <= value) && (value <= 32767.995f);
   if (!ok) return JXL_FAILURE("ICC value is out of range / NaN");
-  int32_t i = value * 65536.0f + 0.5f;
+  int32_t i = static_cast<int32_t>(std::lround(value * 65536.0f));
   // Use two's complement
   uint32_t u = static_cast<uint32_t>(i);
   WriteICCUint32(u, pos, icc);
@@ -581,7 +582,8 @@ static void CreateICCCurvCurvTag(const std::vector<uint16_t>& curve,
 }
 
 // Writes 12 + 4*params.size() bytes
-static Status CreateICCCurvParaTag(std::vector<float> params, size_t curve_type,
+static Status CreateICCCurvParaTag(const std::vector<float>& params,
+                                   size_t curve_type,
                                    std::vector<uint8_t>* tags) {
   WriteICCTag("para", tags->size(), tags);
   WriteICCUint32(0, tags->size(), tags);
@@ -637,7 +639,7 @@ static Status CreateICCLutAtoBTagForXYB(std::vector<uint8_t>* tags) {
       for (size_t ib = 0; ib < 2; ++ib) {
         const jxl::cms::ColorCube0D& out_f = cube[ix][iy][ib];
         for (int i = 0; i < 3; ++i) {
-          int32_t val = static_cast<int32_t>(0.5f + 65535 * out_f[i]);
+          int32_t val = static_cast<int32_t>(std::lroundf(65535 * out_f[i]));
           JXL_DASSERT(val >= 0 && val <= 65535);
           WriteICCUint16(val, tags->size(), tags);
         }
@@ -733,7 +735,7 @@ static Status CreateICCLutAtoBTagForHDR(JxlColorEncoding c,
 
 // Some software (Apple Safari, Preview) requires this.
 static Status CreateICCNoOpBToATag(std::vector<uint8_t>* tags) {
-  WriteICCTag("mBA ", tags->size(), tags);
+  WriteICCTag("mBA ", tags->size(), tags);  // notypo
   // 4 reserved bytes set to 0
   WriteICCUint32(0, tags->size(), tags);
   // number of input channels
@@ -848,6 +850,20 @@ static std::string ToString(JxlRenderingIntent rendering_intent) {
 }
 
 static std::string ColorEncodingDescriptionImpl(const JxlColorEncoding& c) {
+  if (c.color_space == JXL_COLOR_SPACE_RGB &&
+      c.white_point == JXL_WHITE_POINT_D65) {
+    if (c.rendering_intent == JXL_RENDERING_INTENT_PERCEPTUAL &&
+        c.transfer_function == JXL_TRANSFER_FUNCTION_SRGB) {
+      if (c.primaries == JXL_PRIMARIES_SRGB) return "sRGB";
+      if (c.primaries == JXL_PRIMARIES_P3) return "DisplayP3";
+    }
+    if (c.rendering_intent == JXL_RENDERING_INTENT_RELATIVE &&
+        c.primaries == JXL_PRIMARIES_2100) {
+      if (c.transfer_function == JXL_TRANSFER_FUNCTION_PQ) return "Rec2100PQ";
+      if (c.transfer_function == JXL_TRANSFER_FUNCTION_HLG) return "Rec2100HLG";
+    }
+  }
+
   std::string d = ToString(c.color_space);
 
   bool explicit_wp_tf = (c.color_space != JXL_COLOR_SPACE_XYB);

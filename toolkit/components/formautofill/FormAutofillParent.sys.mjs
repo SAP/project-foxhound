@@ -27,7 +27,6 @@
 
 // We expose a singleton from this module. Some tests may import the
 // constructor via a backstage pass.
-import { FirefoxRelayTelemetry } from "resource://gre/modules/FirefoxRelayTelemetry.mjs";
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
 
@@ -48,8 +47,11 @@ ChromeUtils.defineLazyGetter(lazy, "log", () =>
   FormAutofill.defineLogGetter(lazy, "FormAutofillParent")
 );
 
-const { ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF } =
-  FormAutofill;
+const {
+  ENABLED_AUTOFILL_ADDRESSES_PREF,
+  ENABLED_AUTOFILL_CREDITCARDS_PREF,
+  AUTOFILL_CREDITCARDS_REAUTH_PREF,
+} = FormAutofill;
 
 const { ADDRESSES_COLLECTION_NAME, CREDITCARDS_COLLECTION_NAME } =
   FormAutofillUtils;
@@ -83,21 +85,6 @@ export let FormAutofillStatus = {
     if (FormAutofill.isAutofillCreditCardsAvailable) {
       Services.prefs.addObserver(ENABLED_AUTOFILL_CREDITCARDS_PREF, this);
     }
-
-    // We have to use empty window type to get all opened windows here because the
-    // window type parameter may not be available during startup.
-    for (let win of Services.wm.getEnumerator("")) {
-      let { documentElement } = win.document;
-      if (documentElement?.getAttribute("windowtype") == "navigator:browser") {
-        this.injectElements(win.document);
-      } else {
-        // Manually call onOpenWindow for windows that are already opened but not
-        // yet have the window type set. This ensures we inject the elements we need
-        // when its docuemnt is ready.
-        this.onOpenWindow(win);
-      }
-    }
-    Services.wm.addListener(this);
 
     Services.telemetry.setEventRecordingEnabled("creditcard", true);
     Services.telemetry.setEventRecordingEnabled("address", true);
@@ -198,31 +185,6 @@ export let FormAutofillStatus = {
     this.updateStatus();
   },
 
-  injectElements(doc) {
-    Services.scriptloader.loadSubScript(
-      "chrome://formautofill/content/customElements.js",
-      doc.ownerGlobal
-    );
-  },
-
-  onOpenWindow(xulWindow) {
-    const win = xulWindow.docShell.domWindow;
-    win.addEventListener(
-      "load",
-      () => {
-        if (
-          win.document.documentElement.getAttribute("windowtype") ==
-          "navigator:browser"
-        ) {
-          this.injectElements(win.document);
-        }
-      },
-      { once: true }
-    );
-  },
-
-  onCloseWindow() {},
-
   async observe(subject, topic, data) {
     lazy.log.debug("observe:", topic, "with data:", data);
     switch (topic) {
@@ -307,31 +269,19 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:GetRecords": {
-        const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
-          formOrigin: this.formOrigin,
-          scenarioName: data.scenarioName,
-          hasInput: !!data.searchString?.length,
-        });
-        const recordsPromise = FormAutofillParent._getRecords(data);
-        const [records, externalEntries] = await Promise.all([
-          recordsPromise,
-          relayPromise,
-        ]);
-        return { records, externalEntries };
+        const records = await FormAutofillParent.getRecords(data);
+        return { records };
       }
       case "FormAutofill:OnFormSubmit": {
         this.notifyMessageObservers("onFormSubmitted", data);
         await this._onFormSubmit(data);
         break;
       }
-      case "FormAutofill:OpenPreferences": {
-        const win = lazy.BrowserWindowTracker.getTopWindow();
-        win.openPreferences("privacy-form-autofill");
-        break;
-      }
       case "FormAutofill:GetDecryptedString": {
         let { cipherText, reauth } = data;
-        if (!FormAutofillUtils._reauthEnabledByUser) {
+        if (
+          !FormAutofillUtils.getOSAuthEnabled(AUTOFILL_CREDITCARDS_REAUTH_PREF)
+        ) {
           lazy.log.debug("Reauth is disabled");
           reauth = false;
         }
@@ -367,7 +317,9 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:SaveCreditCard": {
-        if (!(await FormAutofillUtils.ensureLoggedIn()).authenticated) {
+        // Setting the first parameter of OSKeyStore.ensurLoggedIn as false
+        // since this case only called in tests. Also the reason why we're not calling FormAutofill.verifyUserOSAuth.
+        if (!(await lazy.OSKeyStore.ensureLoggedIn(false)).authenticated) {
           lazy.log.warn("User canceled encryption login");
           return undefined;
         }
@@ -386,21 +338,6 @@ export class FormAutofillParent extends JSWindowActorParent {
         );
         break;
       }
-      case "PasswordManager:offerRelayIntegration": {
-        FirefoxRelayTelemetry.recordRelayOfferedEvent(
-          "clicked",
-          data.telemetry.flowId,
-          data.telemetry.scenarioName
-        );
-        return this.#offerRelayIntegration();
-      }
-      case "PasswordManager:generateRelayUsername": {
-        FirefoxRelayTelemetry.recordRelayUsernameFilledEvent(
-          "clicked",
-          data.telemetry.flowId
-        );
-        return this.#generateRelayUsername();
-      }
     }
 
     return undefined;
@@ -410,20 +347,6 @@ export class FormAutofillParent extends JSWindowActorParent {
     return lazy.LoginHelper.getLoginOrigin(
       this.manager.documentPrincipal?.originNoSuffix
     );
-  }
-
-  getRootBrowser() {
-    return this.browsingContext.topFrameElement;
-  }
-
-  async #offerRelayIntegration() {
-    const browser = this.getRootBrowser();
-    return lazy.FirefoxRelay.offerRelayIntegration(browser, this.formOrigin);
-  }
-
-  async #generateRelayUsername() {
-    const browser = this.getRootBrowser();
-    return lazy.FirefoxRelay.generateUsername(browser, this.formOrigin);
   }
 
   notifyMessageObservers(callbackName, data) {
@@ -442,48 +365,85 @@ export class FormAutofillParent extends JSWindowActorParent {
   }
 
   /**
+   * Retrieves autocomplete entries for a given search string and data context.
+   *
+   * @param {string} searchString
+   *                 The search string used to filter autocomplete entries.
+   * @param {object} options
+   * @param {string} options.fieldName
+   *                 The name of the field for which autocomplete entries are being fetched.
+   * @param {string} options.scenarioName
+   *                 The scenario name used in the autocomplete operation to fetch external entries.
+   * @returns {Promise<object>} A promise that resolves to an object containing two properties: `records` and `externalEntries`.
+   *         `records` is an array of autofill records from the form's internal data, sorted by `timeLastUsed`.
+   *         `externalEntries` is an array of external autocomplete items fetched based on the scenario.
+   */
+  async searchAutoCompleteEntries(searchString, options) {
+    const { fieldName, scenarioName } = options;
+    const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
+      formOrigin: this.formOrigin,
+      scenarioName,
+      hasInput: !!searchString?.length,
+    });
+
+    const recordsPromise = FormAutofillParent.getRecords({
+      searchString,
+      fieldName,
+    });
+    const [records, externalEntries] = await Promise.all([
+      recordsPromise,
+      relayPromise,
+    ]);
+
+    // Sort addresses by timeLastUsed for showing the lastest used address at top.
+    records.sort((a, b) => b.timeLastUsed - a.timeLastUsed);
+
+    return { records, externalEntries };
+  }
+
+  /**
    * Get the records from profile store and return results back to content
    * process. It will decrypt the credit card number and append
    * "cc-number-decrypted" to each record if OSKeyStore isn't set.
    *
    * This is static as a unit test calls this.
    *
-   * @private
    * @param  {object} data
-   * @param  {string} data.collectionName
-   *         The name used to specify which collection to retrieve records.
    * @param  {string} data.searchString
    *         The typed string for filtering out the matched records.
-   * @param  {string} data.info
-   *         The input autocomplete property's information.
+   * @param  {string} data.collectionName
+   *         The name used to specify which collection to retrieve records.
+   * @param  {string} data.fieldName
+   *         The field name to search. If not specified, return all records in
+   *         the collection
    */
-  static async _getRecords({ collectionName, searchString, info }) {
-    let collection = lazy.gFormAutofillStorage[collectionName];
+  static async getRecords({ searchString, collectionName, fieldName }) {
+    // Derive the collection name from field name if it doesn't exist
+    collectionName ||=
+      FormAutofillUtils.getCollectionNameFromFieldName(fieldName);
+
+    const collection = lazy.gFormAutofillStorage[collectionName];
     if (!collection) {
       return [];
     }
 
-    let recordsInCollection = await collection.getAll();
-    if (!info || !info.fieldName || !recordsInCollection.length) {
-      return recordsInCollection;
+    const records = await collection.getAll();
+    if (!fieldName || !records.length) {
+      return records;
     }
 
-    let isCC = collectionName == CREDITCARDS_COLLECTION_NAME;
     // We don't filter "cc-number"
-    if (isCC && info.fieldName == "cc-number") {
-      recordsInCollection = recordsInCollection.filter(
-        record => !!record["cc-number"]
-      );
-      return recordsInCollection;
+    if (collectionName == CREDITCARDS_COLLECTION_NAME) {
+      if (fieldName == "cc-number") {
+        return records.filter(record => !!record["cc-number"]);
+      }
     }
 
-    let records = [];
-    let lcSearchString = searchString.toLowerCase();
-
-    for (let record of recordsInCollection) {
-      let fieldValue = record[info.fieldName];
+    const lcSearchString = searchString.toLowerCase();
+    return records.filter(record => {
+      const fieldValue = record[fieldName];
       if (!fieldValue) {
-        continue;
+        return false;
       }
 
       if (
@@ -493,19 +453,14 @@ export class FormAutofillParent extends JSWindowActorParent {
       ) {
         // Address autofill isn't supported for the record's country so we don't
         // want to attempt to potentially incorrectly fill the address fields.
-        continue;
+        return false;
       }
 
-      if (
-        lcSearchString &&
-        !String(fieldValue).toLowerCase().startsWith(lcSearchString)
-      ) {
-        continue;
-      }
-      records.push(record);
-    }
-
-    return records;
+      return (
+        !lcSearchString ||
+        String(fieldValue).toLowerCase().startsWith(lcSearchString)
+      );
+    });
   }
 
   async _onAddressSubmit(address, browser) {
@@ -712,5 +667,35 @@ export class FormAutofillParent extends JSWindowActorParent {
     }
 
     return true;
+  }
+
+  onAutoCompleteEntryHovered(message, data) {
+    if (message == "FormAutofill:FillForm") {
+      this.sendAsyncMessage("FormAutofill:PreviewProfile", data);
+    } else {
+      // Make sure the preview is cleared when users select an entry
+      // that doesn't support preview.
+      this.sendAsyncMessage("FormAutofill:PreviewProfile", null);
+    }
+  }
+
+  onAutoCompleteEntrySelected(message, data) {
+    switch (message) {
+      case "FormAutofill:OpenPreferences": {
+        const win = lazy.BrowserWindowTracker.getTopWindow();
+        win.openPreferences("privacy-form-autofill");
+        break;
+      }
+
+      case "FormAutofill:ClearForm":
+      case "FormAutofill:FillForm": {
+        this.sendAsyncMessage(message, data);
+        break;
+      }
+      default: {
+        lazy.log.debug("Unsupported autocomplete message:", message);
+        break;
+      }
+    }
   }
 }

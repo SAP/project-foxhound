@@ -294,33 +294,6 @@ addonsManager:
     record_in_processes: ["main"]
     bug_numbers: [1433335, 1515697, 1523641, 1549770, 1590736, 1630596, 1672570, 1714251, 1749878, 1781974, 1817100, 1861295]
     release_channel_collection: opt-out
-  report:
-    description: >
-      An abuse report submitted by a user for a given extension. The object of the event
-      represent the report entry point, the value is the id of the addon being reported.
-    objects:
-      - amo
-      - menu
-      - toolbar_context_menu
-      - unified_context_menu
-      - uninstall
-    extra_keys:
-      addon_type: >
-        The type of the add-on being reported (missing on ERROR_ADDON_NOT_FOUND, ERROR_AMODETAILS_NOTFOUND
-        and ERROR_AMODETAILS_FAILURE).
-      error_type: >
-        AbuseReport Error Type (included in case of submission failures). The error types include
-        ERROR_ABORTED_SUBMIT, ERROR_ADDON_NOT_FOUND, ERROR_CLIENT, ERROR_NETWORK, ERROR_UNKNOWN,
-        ERROR_RECENT_SUBMIT, ERROR_SERVER, ERROR_AMODETAILS_NOTFOUND, ERROR_AMODETAILS_FAILURE.
-    notification_emails: ["addons-dev-internal@mozilla.com"]
-    expiry_version: "132"
-    products:
-      - "firefox"
-      - "fennec"
-      - "thunderbird"
-    record_in_processes: ["main"]
-    bug_numbers: [1544927, 1580561, 1590736, 1630596, 1672570, 1714251, 1749878, 1780746, 1781974, 1817100, 1861295]
-    release_channel_collection: opt-out
   reportSuspiciousSite:
     description: >
       Sent when a user clicks "Report Suspicious Site" on the dropdown menu of the third-
@@ -563,38 +536,6 @@ creditcard:
       - "firefox"
     record_in_processes: ["main"]
     release_channel_collection: opt-out
-  cc_form:
-    description: >-
-      User interactions for credit card autofill forms
-    objects:
-      - "cc_form"
-    methods:
-      - "detected"
-      - "popup_shown"
-      - "filled"
-      - "filled_modified"
-      - "submitted"
-    bug_numbers: [1653073, 1653162, 1720608, 1767907]
-    notification_emails: ["autofill@lists.mozilla.org", "passwords-dev@mozilla.org"]
-    expiry_version: never
-    products:
-      - "firefox"
-    record_in_processes: ["content"]
-    release_channel_collection: opt-out
-    extra_keys:
-      cc_name_found: Whether the cardholder name field was identified
-      cc_number_found: Whether the credit card number field was identified
-      cc_exp_found: Whether the expiration date was identified
-      cc_name: Whether the name was autofilled (autofilled / not_filled / user_filled / unavailable)
-      cc_number: Whether the credit card number field was autofilled (autofilled / not_filled / user_filled / unavailable)
-      cc_exp: Whether the expiration date was autofilled (autofilled / not_filled / user_filled / unavailable)
-      field_name: Name of the field being affected by the method
-      fields_not_auto: >-
-        Number of fields in a `submitted` event that were not autofilled.
-        Note that this number counts all fields in a form, even if some of those fields might have been identified as password and/or address fields.
-        Additionally, it may include input elements that are not rendered as user-modifiable, such as hidden fields as well as <button> elements.
-      fields_auto: Number of fields in the `submitted` event that were autofilled
-      fields_modified: Number of fields in a `submitted` event that were autofilled and later modified
   cc_form_v2:
     description: >-
       User interactions for credit card autofill forms
@@ -4268,5 +4209,42 @@ screenshots:
       - main
     bug_numbers:
       - 1801019
+    expiry_version: "never"
+    release_channel_collection: opt-out
+
+session_restore:
+  backup_can_be_loaded:
+    objects: ["session_file"]
+    description: >
+      Recorded when a file is able to be successfully read on startup
+    record_in_processes:
+      - main
+    products:
+      - "firefox"
+    extra_keys:
+      can_load: Whether or not the startup file can be read/loaded
+      path_key: A symbolic name for the backup file, should be one of "clean", "recovery", "recoveryBackup", "cleanBackup", or "upgradeBackup"
+      loadfail_reason: Reason why the file cannot be loaded, N/A if can be loaded
+    notification_emails:
+      - "session-restore-telemetry-alerts@mozilla.com"
+    bug_numbers:
+      - 1874742
+    expiry_version: "never"
+    release_channel_collection: opt-out
+  shutdown_success:
+    objects: ["session_startup"]
+    description: >
+      Report shutdown success
+    record_in_processes:
+      - main
+    products:
+      - "firefox"
+    extra_keys:
+      shutdown_ok: Whether or not the shutdown happened successfully, unsuccessful if previous session crashed
+      shutdown_reason: Reason why shutdown didn't happen successfully, N/A if previous session didn't crashed
+    notification_emails:
+      - "session-restore-telemetry-alerts@mozilla.com"
+    bug_numbers:
+      - 1874742
     expiry_version: "never"
     release_channel_collection: opt-out

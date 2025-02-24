@@ -412,16 +412,12 @@ def build_src(install_dir, host, targets, patches):
     # `sysconfdir` is overloaded to be relative instead of absolute.
     # This is the default of `install.sh`, but for whatever reason
     # `x.py install` has its own default of `/etc` which we don't want.
-    #
-    # `missing-tools` is set so `rustfmt` is allowed to fail. This means
-    # we can "succeed" at building Rust while failing to build, say, Cargo.
-    # Ideally the build system would have better granularity:
-    # https://github.com/rust-lang/rust/issues/79249
     base_config = textwrap.dedent(
         """
         [build]
         docs = false
         sanitizers = true
+        profiler = true
         extended = true
         tools = ["analysis", "cargo", "rustfmt", "clippy", "src", "rust-analyzer"]
         cargo-native-static = true
@@ -433,9 +429,6 @@ def build_src(install_dir, host, targets, patches):
         [install]
         prefix = "{prefix}"
         sysconfdir = "etc"
-
-        [dist]
-        missing-tools = true
 
         [llvm]
         download-ci-llvm = false
@@ -624,6 +617,11 @@ def args():
         required=True,
     )
     parser.add_argument(
+        "--allow-generic-channel",
+        action="store_true",
+        help='Allow to use e.g. "nightly" without a date as a channel.',
+    )
+    parser.add_argument(
         "--patch",
         dest="patches",
         action="append",
@@ -658,12 +656,14 @@ def args():
     args = parser.parse_args()
     if not args.cargo_channel:
         args.cargo_channel = args.channel
-    validate_channel(args.channel)
-    validate_channel(args.cargo_channel)
+    if not args.allow_generic_channel:
+        validate_channel(args.channel)
+        validate_channel(args.cargo_channel)
     if not args.host:
         args.host = "linux64"
     args.host = expand_platform(args.host)
     args.targets = [expand_platform(t) for t in args.targets]
+    delattr(args, "allow_generic_channel")
 
     return args
 

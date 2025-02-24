@@ -18,13 +18,13 @@ const { XPCOMUtils } = ChromeUtils.importESModule(
 
 // eslint-disable-next-line mozilla/use-static-import
 const { MESSAGE_TYPE_HASH: msg } = ChromeUtils.importESModule(
-  "resource:///modules/asrouter/ActorConstants.sys.mjs"
+  "resource:///modules/asrouter/ActorConstants.mjs"
 );
 
 import {
   actionTypes as at,
   actionUtils as au,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 import { Prefs } from "resource://activity-stream/lib/ActivityStreamPrefs.sys.mjs";
 import { classifySite } from "resource://activity-stream/lib/SiteClassifier.sys.mjs";
 
@@ -114,6 +114,7 @@ const NEWTAB_PING_PREFS = {
   "feeds.section.topstories": Glean.pocket.enabled,
   showSponsored: Glean.pocket.sponsoredStoriesEnabled,
   topSitesRows: Glean.topsites.rows,
+  showWeather: Glean.newtab.weatherEnabled,
 };
 const TOP_SITES_BLOCKED_SPONSORS_PREF = "browser.topsites.blockedSponsors";
 
@@ -454,8 +455,7 @@ export class TelemetryFeed {
         event = await this.applyCFRPolicy(event);
         break;
       case "badge_user_event":
-      case "whats-new-panel_user_event":
-        event = await this.applyWhatsNewPolicy(event);
+        event = await this.applyToolbarBadgePolicy(event);
         break;
       case "infobar_user_event":
         event = await this.applyInfoBarPolicy(event);
@@ -509,12 +509,12 @@ export class TelemetryFeed {
    * Per Bug 1482134, all the metrics for What's New panel use client_id in
    * all the release channels
    */
-  async applyWhatsNewPolicy(ping) {
+  async applyToolbarBadgePolicy(ping) {
     ping.client_id = await this.telemetryClientId;
     ping.browser_session_id = lazy.browserSessionId;
     // Attach page info to `event_context` if there is a session associated with this ping
     delete ping.action;
-    return { ping, pingType: "whats-new-panel" };
+    return { ping, pingType: "toolbar-badge" };
   }
 
   async applyInfoBarPolicy(ping) {
@@ -715,8 +715,16 @@ export class TelemetryFeed {
     const session = this.sessions.get(au.getPortIdOfSender(action));
     switch (action.data?.event) {
       case "CLICK": {
-        const { card_type, topic, recommendation_id, tile_id, shim, feature } =
-          action.data.value ?? {};
+        const {
+          card_type,
+          topic,
+          recommendation_id,
+          tile_id,
+          shim,
+          fetchTimestamp,
+          firstVisibleTimestamp,
+          feature,
+        } = action.data.value ?? {};
         if (
           action.data.source === "POPULAR_TOPICS" ||
           card_type === "topics_widget"
@@ -740,6 +748,14 @@ export class TelemetryFeed {
           });
           if (shim) {
             Glean.pocket.shim.set(shim);
+            if (fetchTimestamp) {
+              Glean.pocket.fetchTimestamp.set(fetchTimestamp * 1000);
+            }
+            if (firstVisibleTimestamp) {
+              Glean.pocket.newtabCreationTimestamp.set(
+                firstVisibleTimestamp * 1000
+              );
+            }
             GleanPings.spoc.submit("click");
           }
         }
@@ -755,6 +771,16 @@ export class TelemetryFeed {
         });
         if (action.data.value?.shim) {
           Glean.pocket.shim.set(action.data.value.shim);
+          if (action.data.value.fetchTimestamp) {
+            Glean.pocket.fetchTimestamp.set(
+              action.data.value.fetchTimestamp * 1000
+            );
+          }
+          if (action.data.value.newtabCreationTimestamp) {
+            Glean.pocket.newtabCreationTimestamp.set(
+              action.data.value.newtabCreationTimestamp * 1000
+            );
+          }
           GleanPings.spoc.submit("save");
         }
         break;
@@ -907,6 +933,115 @@ export class TelemetryFeed {
       case at.BLOCK_URL:
         this.handleBlockUrl(action);
         break;
+      case at.WALLPAPER_CATEGORY_CLICK:
+      case at.WALLPAPER_CLICK:
+      case at.WALLPAPERS_FEATURE_HIGHLIGHT_DISMISSED:
+      case at.WALLPAPERS_FEATURE_HIGHLIGHT_CTA_CLICKED:
+        this.handleWallpaperUserEvent(action);
+        break;
+      case at.SET_PREF:
+        this.handleSetPref(action);
+        break;
+      case at.WEATHER_IMPRESSION:
+      case at.WEATHER_LOAD_ERROR:
+      case at.WEATHER_OPEN_PROVIDER_URL:
+      case at.WEATHER_LOCATION_DATA_UPDATE:
+        this.handleWeatherUserEvent(action);
+        break;
+    }
+  }
+
+  handleSetPref(action) {
+    const prefName = action.data.name;
+
+    // TODO: Migrate this event to handleWeatherUserEvent()
+    if (prefName === "weather.display") {
+      const session = this.sessions.get(au.getPortIdOfSender(action));
+
+      if (!session) {
+        return;
+      }
+
+      Glean.newtab.weatherChangeDisplay.record({
+        newtab_visit_id: session.session_id,
+        weather_display_mode: action.data.value,
+      });
+    }
+  }
+
+  handleWeatherUserEvent(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+
+    if (!session) {
+      return;
+    }
+
+    // Weather specific telemtry events can be added and parsed here.
+    switch (action.type) {
+      case "WEATHER_IMPRESSION":
+        Glean.newtab.weatherImpression.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WEATHER_LOAD_ERROR":
+        Glean.newtab.weatherLoadError.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WEATHER_OPEN_PROVIDER_URL":
+        Glean.newtab.weatherOpenProviderUrl.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WEATHER_LOCATION_DATA_UPDATE":
+        Glean.newtab.weatherLocationSelected.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  handleWallpaperUserEvent(action) {
+    const session = this.sessions.get(au.getPortIdOfSender(action));
+
+    if (!session) {
+      return;
+    }
+
+    // Wallpaper specific telemtry events can be added and parsed here.
+    switch (action.type) {
+      case "WALLPAPER_CATEGORY_CLICK":
+        Glean.newtab.wallpaperCategoryClick.record({
+          newtab_visit_id: session.session_id,
+          selected_category: action.data,
+        });
+        break;
+      case "WALLPAPER_CLICK":
+        {
+          const { data } = action;
+          const { selected_wallpaper, hadPreviousWallpaper } = data;
+          // if either of the wallpaper prefs are truthy, they had a previous wallpaper
+          Glean.newtab.wallpaperClick.record({
+            newtab_visit_id: session.session_id,
+            selected_wallpaper,
+            hadPreviousWallpaper,
+          });
+        }
+        break;
+      case "WALLPAPERS_FEATURE_HIGHLIGHT_CTA_CLICKED":
+        Glean.newtab.wallpaperHighlightCtaClick.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      case "WALLPAPERS_FEATURE_HIGHLIGHT_DISMISSED":
+        Glean.newtab.wallpaperHighlightDismissed.record({
+          newtab_visit_id: session.session_id,
+        });
+        break;
+      default:
+        break;
     }
   }
 
@@ -976,6 +1111,14 @@ export class TelemetryFeed {
       });
       if (tile.shim) {
         Glean.pocket.shim.set(tile.shim);
+        if (tile.fetchTimestamp) {
+          Glean.pocket.fetchTimestamp.set(tile.fetchTimestamp * 1000);
+        }
+        if (data.firstVisibleTimestamp) {
+          Glean.pocket.newtabCreationTimestamp.set(
+            data.firstVisibleTimestamp * 1000
+          );
+        }
         GleanPings.spoc.submit("impression");
       }
     });

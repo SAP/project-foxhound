@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 
+#include "builtin/temporal/Crash.h"
+
 namespace js::temporal {
 enum class TemporalUnit {
   Auto,
@@ -49,7 +51,32 @@ constexpr int64_t ToNanoseconds(TemporalUnit unit) {
     case TemporalUnit::Week:
       break;
   }
-  MOZ_CRASH("Unexpected temporal unit");
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
+}
+
+constexpr int64_t ToMicroseconds(TemporalUnit unit) {
+  switch (unit) {
+    case TemporalUnit::Day:
+      return 86'400'000'000;
+    case TemporalUnit::Hour:
+      return 3'600'000'000;
+    case TemporalUnit::Minute:
+      return 60'000'000;
+    case TemporalUnit::Second:
+      return 1'000'000;
+    case TemporalUnit::Millisecond:
+      return 1'000;
+    case TemporalUnit::Microsecond:
+      return 1;
+
+    case TemporalUnit::Auto:
+    case TemporalUnit::Year:
+    case TemporalUnit::Month:
+    case TemporalUnit::Week:
+    case TemporalUnit::Nanosecond:
+      break;
+  }
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
 }
 
 constexpr int64_t ToMilliseconds(TemporalUnit unit) {
@@ -73,7 +100,30 @@ constexpr int64_t ToMilliseconds(TemporalUnit unit) {
     case TemporalUnit::Nanosecond:
       break;
   }
-  MOZ_CRASH("Unexpected temporal unit");
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
+}
+
+constexpr int64_t ToSeconds(TemporalUnit unit) {
+  switch (unit) {
+    case TemporalUnit::Day:
+      return 86'400;
+    case TemporalUnit::Hour:
+      return 3'600;
+    case TemporalUnit::Minute:
+      return 60;
+    case TemporalUnit::Second:
+      return 1;
+
+    case TemporalUnit::Auto:
+    case TemporalUnit::Year:
+    case TemporalUnit::Month:
+    case TemporalUnit::Week:
+    case TemporalUnit::Millisecond:
+    case TemporalUnit::Microsecond:
+    case TemporalUnit::Nanosecond:
+      break;
+  }
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
 }
 
 constexpr int64_t UnitsPerDay(TemporalUnit unit) {
@@ -99,7 +149,7 @@ constexpr int64_t UnitsPerDay(TemporalUnit unit) {
     case TemporalUnit::Week:
       break;
   }
-  MOZ_CRASH("Unexpected temporal unit");
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
 }
 
 constexpr const char* TemporalUnitToString(TemporalUnit unit) {
@@ -127,7 +177,7 @@ constexpr const char* TemporalUnitToString(TemporalUnit unit) {
     case TemporalUnit::Nanosecond:
       return "nanosecond";
   }
-  MOZ_CRASH("Unexpected temporal unit");
+  JS_CONSTEXPR_CRASH("Unexpected temporal unit");
 }
 
 } /* namespace js::temporal */

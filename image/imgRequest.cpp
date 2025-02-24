@@ -579,9 +579,9 @@ void imgRequest::UpdateCacheEntrySize() {
 }
 
 void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry,
-                                    nsIRequest* aRequest) {
-  /* get the expires info */
-  if (!aCacheEntry || aCacheEntry->GetExpiryTime() != 0) {
+                                    nsIRequest* aRequest,
+                                    bool aForceTouch /* = false */) {
+  if (!aCacheEntry) {
     return;
   }
 
@@ -605,7 +605,7 @@ void imgRequest::SetCacheValidation(imgCacheEntry* aCacheEntry,
     info.mExpirationTime.emplace(nsContentUtils::SecondsFromPRTime(PR_Now()) -
                                  1);
   }
-  aCacheEntry->SetExpiryTime(*info.mExpirationTime);
+  aCacheEntry->AccumulateExpiryTime(*info.mExpirationTime, aForceTouch);
   // Cache entries default to not needing to validate. We ensure that
   // multiple calls to this function don't override an earlier decision to
   // validate by making validation a one-way decision.
@@ -690,7 +690,7 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
     }
   }
 
-  SetCacheValidation(mCacheEntry, aRequest);
+  SetCacheValidation(mCacheEntry, aRequest, /* aForceTouch = */ true);
 
   // Shouldn't we be dead already if this gets hit?
   // Probably multipart/x-mixed-replace...
@@ -711,16 +711,17 @@ imgRequest::OnStartRequest(nsIRequest* aRequest) {
     nsAutoCString mimeType;
     nsresult rv = channel->GetContentType(mimeType);
     if (NS_SUCCEEDED(rv) && !mimeType.EqualsLiteral(IMAGE_SVG_XML)) {
+      mOffMainThreadData = true;
       // Retarget OnDataAvailable to the DecodePool's IO thread.
       nsCOMPtr<nsISerialEventTarget> target =
           DecodePool::Singleton()->GetIOEventTarget();
       rv = retargetable->RetargetDeliveryTo(target);
+      MOZ_LOG(gImgLog, LogLevel::Warning,
+              ("[this=%p] imgRequest::OnStartRequest -- "
+               "RetargetDeliveryTo rv %" PRIu32 "=%s\n",
+               this, static_cast<uint32_t>(rv),
+               NS_SUCCEEDED(rv) ? "succeeded" : "failed"));
     }
-    MOZ_LOG(gImgLog, LogLevel::Warning,
-            ("[this=%p] imgRequest::OnStartRequest -- "
-             "RetargetDeliveryTo rv %" PRIu32 "=%s\n",
-             this, static_cast<uint32_t>(rv),
-             NS_SUCCEEDED(rv) ? "succeeded" : "failed"));
   }
 
   return NS_OK;
@@ -730,8 +731,6 @@ NS_IMETHODIMP
 imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
   LOG_FUNC(gImgLog, "imgRequest::OnStopRequest");
   MOZ_ASSERT(NS_IsMainThread(), "Can't send notifications off-main-thread");
-
-  RefPtr<Image> image = GetImage();
 
   RefPtr<imgRequest> strongThis = this;
 
@@ -745,6 +744,9 @@ imgRequest::OnStopRequest(nsIRequest* aRequest, nsresult status) {
   if (isMultipart && newPartPending) {
     OnDataAvailable(aRequest, nullptr, 0, 0);
   }
+
+  // Get this after OnDataAvailable because that might have created the image.
+  RefPtr<Image> image = GetImage();
 
   // XXXldb What if this is a non-last part of a multipart request?
   // xxx before we release our reference to mRequest, lets
@@ -834,9 +836,7 @@ static nsresult sniff_mimetype_callback(nsIInputStream* in, void* closure,
 /** nsThreadRetargetableStreamListener methods **/
 NS_IMETHODIMP
 imgRequest::CheckListenerChain() {
-  // TODO Might need more checking here.
-  NS_ASSERTION(NS_IsMainThread(), "Should be on the main thread!");
-  return NS_OK;
+  return mOffMainThreadData ? NS_OK : NS_ERROR_NO_INTERFACE;
 }
 
 NS_IMETHODIMP

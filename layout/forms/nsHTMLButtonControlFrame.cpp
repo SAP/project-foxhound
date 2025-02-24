@@ -51,6 +51,7 @@ void nsHTMLButtonControlFrame::Init(nsIContent* aContent,
 }
 
 NS_QUERYFRAME_HEAD(nsHTMLButtonControlFrame)
+  NS_QUERYFRAME_ENTRY(nsHTMLButtonControlFrame)
   NS_QUERYFRAME_ENTRY(nsIFormControlFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 
@@ -238,29 +239,21 @@ void nsHTMLButtonControlFrame::BuildDisplayList(
 }
 
 nscoord nsHTMLButtonControlFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
-    result = *containISize;
-  } else {
-    nsIFrame* kid = mFrames.FirstChild();
-    result = nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
-                                                  IntrinsicISizeType::MinISize);
+    return *containISize;
   }
-  return result;
+  nsIFrame* kid = mFrames.FirstChild();
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
+                                              IntrinsicISizeType::MinISize);
 }
 
 nscoord nsHTMLButtonControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
-    result = *containISize;
-  } else {
-    nsIFrame* kid = mFrames.FirstChild();
-    result = nsLayoutUtils::IntrinsicForContainer(
-        aRenderingContext, kid, IntrinsicISizeType::PrefISize);
+    return *containISize;
   }
-  return result;
+  nsIFrame* kid = mFrames.FirstChild();
+  return nsLayoutUtils::IntrinsicForContainer(aRenderingContext, kid,
+                                              IntrinsicISizeType::PrefISize);
 }
 
 void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
@@ -269,7 +262,6 @@ void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,
                                       nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsHTMLButtonControlFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   // Reflow the child

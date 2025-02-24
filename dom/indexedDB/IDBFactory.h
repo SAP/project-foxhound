@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/GlobalTeardownObserver.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
@@ -59,6 +60,7 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
 
   UniquePtr<PrincipalInfo> mPrincipalInfo;
 
+  // TODO: Unused, remove me!
   nsCOMPtr<nsIGlobalObject> mGlobal;
 
   // This will only be set if the factory belongs to a window in a child
@@ -75,11 +77,16 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
   uint32_t mActiveTransactionCount;
   uint32_t mActiveDatabaseCount;
 
+  // When mAllowed is false we throw security errors on all operations. This is
+  // because although we make storage access decisions when we create the
+  // IDBFactory, the spec (and content) expects us to only throw if an attempt
+  // is made to use the resulting IDBFactory.
+  bool mAllowed;
   bool mBackgroundActorFailed;
   bool mPrivateBrowsingMode;
 
  public:
-  explicit IDBFactory(const IDBFactoryGuard&);
+  IDBFactory(const IDBFactoryGuard&, bool aAllowed);
 
   static Result<RefPtr<IDBFactory>, nsresult> CreateForWindow(
       nsPIDOMWindowInner* aWindow);
@@ -87,14 +94,18 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
   static Result<RefPtr<IDBFactory>, nsresult> CreateForMainThreadJS(
       nsIGlobalObject* aGlobal);
 
+  // mAllowed shall be false for null aPrincipalInfo.
   static Result<RefPtr<IDBFactory>, nsresult> CreateForWorker(
-      nsIGlobalObject* aGlobal, const PrincipalInfo& aPrincipalInfo,
+      nsIGlobalObject* aGlobal, UniquePtr<PrincipalInfo>&& aPrincipalInfo,
       uint64_t aInnerWindowID);
 
   static bool AllowedForWindow(nsPIDOMWindowInner* aWindow);
 
   static bool AllowedForPrincipal(nsIPrincipal* aPrincipal,
                                   bool* aIsSystemPrincipal = nullptr);
+
+  static quota::PersistenceType GetPersistenceType(
+      const PrincipalInfo& aPrincipalInfo);
 
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(IDBFactory); }
 
@@ -141,21 +152,17 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
 
   bool IsChrome() const;
 
-  [[nodiscard]] RefPtr<IDBOpenDBRequest> Open(JSContext* aCx,
-                                              const nsAString& aName,
-                                              uint64_t aVersion,
-                                              CallerType aCallerType,
-                                              ErrorResult& aRv);
+  [[nodiscard]] RefPtr<IDBOpenDBRequest> Open(
+      JSContext* aCx, const nsAString& aName,
+      const Optional<uint64_t>& aVersion, CallerType aCallerType,
+      ErrorResult& aRv);
 
-  [[nodiscard]] RefPtr<IDBOpenDBRequest> Open(JSContext* aCx,
-                                              const nsAString& aName,
-                                              const IDBOpenDBOptions& aOptions,
-                                              CallerType aCallerType,
-                                              ErrorResult& aRv);
+  [[nodiscard]] RefPtr<IDBOpenDBRequest> DeleteDatabase(JSContext* aCx,
+                                                        const nsAString& aName,
+                                                        CallerType aCallerType,
+                                                        ErrorResult& aRv);
 
-  [[nodiscard]] RefPtr<IDBOpenDBRequest> DeleteDatabase(
-      JSContext* aCx, const nsAString& aName, const IDBOpenDBOptions& aOptions,
-      CallerType aCallerType, ErrorResult& aRv);
+  already_AddRefed<Promise> Databases(JSContext* aCx, ErrorResult& aRv);
 
   int16_t Cmp(JSContext* aCx, JS::Handle<JS::Value> aFirst,
               JS::Handle<JS::Value> aSecond, ErrorResult& aRv);
@@ -193,6 +200,8 @@ class IDBFactory final : public GlobalTeardownObserver, public nsWrapperCache {
 
   static nsresult AllowedForWindowInternal(nsPIDOMWindowInner* aWindow,
                                            nsCOMPtr<nsIPrincipal>* aPrincipal);
+
+  nsresult EnsureBackgroundActor();
 
   [[nodiscard]] RefPtr<IDBOpenDBRequest> OpenInternal(
       JSContext* aCx, nsIPrincipal* aPrincipal, const nsAString& aName,

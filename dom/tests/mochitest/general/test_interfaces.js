@@ -73,6 +73,7 @@ let wasmGlobalInterfaces = [
   { name: "Function", insecureContext: true, nightly: true },
   { name: "Exception", insecureContext: true },
   { name: "Tag", insecureContext: true },
+  { name: "JSTag", insecureContext: true, earlyBetaOrEarlier: true },
   { name: "compile", insecureContext: true },
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
@@ -190,6 +191,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioDestinationNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "AudioEncoder", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioListener", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioNode", insecureContext: true },
@@ -254,7 +257,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ClipboardEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ClipboardItem", earlyBetaOrEarlier: true },
+  { name: "ClipboardItem" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CloseEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -318,13 +321,15 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPageRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "CSSPropertyRule", insecureContext: true, nightly: true },
+  { name: "CSSPropertyRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSPseudoElement", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSRule", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSRuleList", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSSStartingStyleRule", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSStyleDeclaration", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -339,6 +344,8 @@ let interfaceNamesInGlobalScope = [
   { name: "CustomElementRegistry", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CustomEvent", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CustomStateSet", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DecompressionStream", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1370,6 +1377,12 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextEncoderStream", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "TextEvent",
+    insecureContext: true,
+    disabled: !SpecialPowers.getBoolPref("dom.events.textevent.enabled"),
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextMetrics", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextTrack", insecureContext: true },
@@ -1977,9 +1990,9 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "visualViewport", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WakeLock", earlyBetaOrEarlier: true },
+  { name: "WakeLock" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "WakeLockSentinel", earlyBetaOrEarlier: true },
+  { name: "WakeLockSentinel" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "webkitURL", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

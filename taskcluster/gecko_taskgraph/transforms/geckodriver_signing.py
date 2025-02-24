@@ -21,7 +21,7 @@ repackage_signing_description_schema = Schema(
         Optional("dependencies"): task_description_schema["dependencies"],
         Optional("treeherder"): task_description_schema["treeherder"],
         Optional("shipping-phase"): task_description_schema["shipping-phase"],
-        Optional("job-from"): task_description_schema["job-from"],
+        Optional("task-from"): task_description_schema["task-from"],
     }
 )
 
@@ -121,7 +121,7 @@ def make_signing_description(config, jobs):
 
 def _craft_upstream_artifacts(dep_job, dependency_kind, build_platform):
     if build_platform.startswith("win"):
-        signing_format = "autograph_authenticode_sha2"
+        signing_format = "autograph_authenticode_202404"
     elif build_platform.startswith("linux"):
         signing_format = "autograph_gpg"
     elif build_platform.startswith("macosx"):

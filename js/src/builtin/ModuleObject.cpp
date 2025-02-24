@@ -177,6 +177,17 @@ ResolvedBindingObject* ResolvedBindingObject::create(
 }
 
 ///////////////////////////////////////////////////////////////////////////
+// ImportAttribute
+
+ImportAttribute::ImportAttribute(Handle<JSAtom*> key, Handle<JSString*> value)
+    : key_(key), value_(value) {}
+
+void ImportAttribute::trace(JSTracer* trc) {
+  TraceNullableEdge(trc, &key_, "ImportAttribute::key_");
+  TraceNullableEdge(trc, &value_, "ImportAttribute::value_");
+}
+
+///////////////////////////////////////////////////////////////////////////
 // ModuleRequestObject
 /* static */ const JSClass ModuleRequestObject::class_ = {
     "ModuleRequest",
@@ -185,13 +196,15 @@ ResolvedBindingObject* ResolvedBindingObject::create(
 DEFINE_ATOM_OR_NULL_ACCESSOR_METHOD(ModuleRequestObject, specifier,
                                     SpecifierSlot)
 
-ArrayObject* ModuleRequestObject::attributes() const {
-  JSObject* obj = getReservedSlot(AttributesSlot).toObjectOrNull();
-  if (!obj) {
-    return nullptr;
+Span<const ImportAttribute> ModuleRequestObject::attributes() const {
+  Value value = getReservedSlot(AttributesSlot);
+  if (value.isNullOrUndefined()) {
+    return Span<const ImportAttribute>();
   }
-
-  return &obj->as<ArrayObject>();
+  void* ptr = value.toPrivate();
+  MOZ_ASSERT(ptr);
+  auto* vector = static_cast<ImportAttributeVector*>(ptr);
+  return *vector;
 }
 
 bool ModuleRequestObject::hasAttributes() const {
@@ -208,32 +221,22 @@ bool ModuleRequestObject::getModuleType(
     return true;
   }
 
-  Rooted<ArrayObject*> attributesArray(cx, moduleRequest->attributes());
-  RootedObject attributeObject(cx);
-  RootedId typeId(cx, NameToId(cx->names().type));
-  RootedValue value(cx);
+  for (const ImportAttribute& importAttribute : moduleRequest->attributes()) {
+    if (importAttribute.key() == cx->names().type) {
+      int32_t isJsonString;
+      if (!js::CompareStrings(cx, cx->names().json, importAttribute.value(),
+                              &isJsonString)) {
+        return false;
+      }
 
-  uint32_t numberOfAttributes = attributesArray->length();
-  for (uint32_t i = 0; i < numberOfAttributes; i++) {
-    attributeObject = &attributesArray->getDenseElement(i).toObject();
+      if (isJsonString == 0) {
+        moduleType = JS::ModuleType::JSON;
+        return true;
+      }
 
-    if (!GetProperty(cx, attributeObject, attributeObject, typeId, &value)) {
-      continue;
-    }
-
-    int32_t isJsonString;
-    if (!js::CompareStrings(cx, cx->names().json, value.toString(),
-                            &isJsonString)) {
-      return false;
-    }
-
-    if (isJsonString == 0) {
-      moduleType = JS::ModuleType::JSON;
+      moduleType = JS::ModuleType::Unknown;
       return true;
     }
-
-    moduleType = JS::ModuleType::Unknown;
-    return true;
   }
 
   moduleType = JS::ModuleType::JavaScript;
@@ -248,7 +251,7 @@ bool ModuleRequestObject::isInstance(HandleValue value) {
 /* static */
 ModuleRequestObject* ModuleRequestObject::create(
     JSContext* cx, Handle<JSAtom*> specifier,
-    Handle<ArrayObject*> maybeAttributes) {
+    MutableHandle<UniquePtr<ImportAttributeVector>> maybeAttributes) {
   ModuleRequestObject* self =
       NewObjectWithGivenProto<ModuleRequestObject>(cx, nullptr);
   if (!self) {
@@ -256,7 +259,12 @@ ModuleRequestObject* ModuleRequestObject::create(
   }
 
   self->initReservedSlot(SpecifierSlot, StringOrNullValue(specifier));
-  self->initReservedSlot(AttributesSlot, ObjectOrNullValue(maybeAttributes));
+
+  if (maybeAttributes) {
+    InitReservedSlot(self, AttributesSlot, maybeAttributes.get().release(),
+                     MemoryUse::ModuleImportAttributes);
+  }
+
   return self;
 }
 
@@ -1109,6 +1117,17 @@ JSScript* ModuleObject::script() const {
   return ptr;
 }
 
+const char* ModuleObject::filename() const {
+  // The ScriptSlot will be cleared once the module is evaluated, so we try to
+  // get the filename from cyclicModuleFields().
+
+  // TODO: Bug 1885483: Provide filename for JSON modules
+  if (!hasCyclicModuleFields()) {
+    return "(JSON module)";
+  }
+  return cyclicModuleFields()->scriptSourceObject->source()->filename();
+}
+
 static inline void AssertValidModuleStatus(ModuleStatus status) {
   MOZ_ASSERT(status >= ModuleStatus::Unlinked &&
              status <= ModuleStatus::Evaluated_Error);
@@ -1578,39 +1597,28 @@ bool frontend::StencilModuleMetadata::createModuleRequestObjects(
 ModuleRequestObject* frontend::StencilModuleMetadata::createModuleRequestObject(
     JSContext* cx, CompilationAtomCache& atomCache,
     const StencilModuleRequest& request) const {
-  Rooted<ArrayObject*> assertionArray(cx);
-  uint32_t numberOfAssertions = request.assertions.length();
-  if (numberOfAssertions > 0) {
-    assertionArray = NewDenseFullyAllocatedArray(cx, numberOfAssertions);
-    if (!assertionArray) {
+  uint32_t numberOfAttributes = request.attributes.length();
+
+  Rooted<UniquePtr<ImportAttributeVector>> attributes(cx);
+  if (numberOfAttributes > 0) {
+    attributes = cx->make_unique<ImportAttributeVector>();
+    if (!attributes) {
+      ReportOutOfMemory(cx);
       return nullptr;
     }
-    assertionArray->ensureDenseInitializedLength(0, numberOfAssertions);
 
-    Rooted<PlainObject*> assertionObject(cx);
-    RootedId assertionKey(cx);
-    RootedValue assertionValue(cx);
-    for (uint32_t j = 0; j < numberOfAssertions; ++j) {
-      assertionObject = NewPlainObject(cx);
-      if (!assertionObject) {
-        return nullptr;
-      }
+    if (!attributes->reserve(numberOfAttributes)) {
+      ReportOutOfMemory(cx);
+      return nullptr;
+    }
 
-      JSAtom* jsatom =
-          atomCache.getExistingAtomAt(cx, request.assertions[j].key);
-      MOZ_ASSERT(jsatom);
-      assertionKey = AtomToId(jsatom);
-
-      jsatom = atomCache.getExistingAtomAt(cx, request.assertions[j].value);
-      MOZ_ASSERT(jsatom);
-      assertionValue = StringValue(jsatom);
-
-      if (!DefineDataProperty(cx, assertionObject, assertionKey, assertionValue,
-                              JSPROP_ENUMERATE)) {
-        return nullptr;
-      }
-
-      assertionArray->initDenseElement(j, ObjectValue(*assertionObject));
+    Rooted<JSAtom*> attributeKey(cx);
+    Rooted<JSAtom*> attributeValue(cx);
+    for (uint32_t j = 0; j < numberOfAttributes; ++j) {
+      attributeKey = atomCache.getExistingAtomAt(cx, request.attributes[j].key);
+      attributeValue =
+          atomCache.getExistingAtomAt(cx, request.attributes[j].value);
+      attributes->infallibleEmplaceBack(attributeKey, attributeValue);
     }
   }
 
@@ -1618,7 +1626,7 @@ ModuleRequestObject* frontend::StencilModuleMetadata::createModuleRequestObject(
                             atomCache.getExistingAtomAt(cx, request.specifier));
   MOZ_ASSERT(specifier);
 
-  return ModuleRequestObject::create(cx, specifier, assertionArray);
+  return ModuleRequestObject::create(cx, specifier, &attributes);
 }
 
 bool frontend::StencilModuleMetadata::createImportEntries(
@@ -1785,34 +1793,24 @@ bool frontend::StencilModuleMetadata::initModule(
   return true;
 }
 
-bool ModuleBuilder::isAssertionSupported(frontend::TaggedParserAtomIndex key) {
-  if (!key.isWellKnownAtomId()) {
-    return false;
-  }
-
-  return key.toWellKnownAtomId() == WellKnownAtomId::type;
-}
-
-bool ModuleBuilder::processAssertions(frontend::StencilModuleRequest& request,
-                                      frontend::ListNode* assertionList) {
+bool ModuleBuilder::processAttributes(frontend::StencilModuleRequest& request,
+                                      frontend::ListNode* attributeList) {
   using namespace js::frontend;
 
-  for (ParseNode* assertionItem : assertionList->contents()) {
-    BinaryNode* assertion = &assertionItem->as<BinaryNode>();
-    MOZ_ASSERT(assertion->isKind(ParseNodeKind::ImportAttribute));
+  for (ParseNode* attributeItem : attributeList->contents()) {
+    BinaryNode* attribute = &attributeItem->as<BinaryNode>();
+    MOZ_ASSERT(attribute->isKind(ParseNodeKind::ImportAttribute));
 
-    auto key = assertion->left()->as<NameNode>().atom();
-    auto value = assertion->right()->as<NameNode>().atom();
+    auto key = attribute->left()->as<NameNode>().atom();
+    auto value = attribute->right()->as<NameNode>().atom();
 
-    if (isAssertionSupported(key)) {
-      markUsedByStencil(key);
-      markUsedByStencil(value);
+    markUsedByStencil(key);
+    markUsedByStencil(value);
 
-      StencilModuleAssertion assertionStencil(key, value);
-      if (!request.assertions.append(assertionStencil)) {
-        js::ReportOutOfMemory(fc_);
-        return false;
-      }
+    StencilModuleImportAttribute attributeStencil(key, value);
+    if (!request.attributes.append(attributeStencil)) {
+      js::ReportOutOfMemory(fc_);
+      return false;
     }
   }
 
@@ -1833,12 +1831,12 @@ bool ModuleBuilder::processImport(frontend::BinaryNode* importNode) {
   auto* moduleSpec = &moduleRequest->left()->as<NameNode>();
   MOZ_ASSERT(moduleSpec->isKind(ParseNodeKind::StringExpr));
 
-  auto* assertionList = &moduleRequest->right()->as<ListNode>();
-  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAttributeList));
+  auto* attributeList = &moduleRequest->right()->as<ListNode>();
+  MOZ_ASSERT(attributeList->isKind(ParseNodeKind::ImportAttributeList));
 
   auto specifier = moduleSpec->atom();
   MaybeModuleRequestIndex moduleRequestIndex =
-      appendModuleRequest(specifier, assertionList);
+      appendModuleRequest(specifier, attributeList);
   if (!moduleRequestIndex.isSome()) {
     return false;
   }
@@ -2078,12 +2076,12 @@ bool ModuleBuilder::processExportFrom(frontend::BinaryNode* exportNode) {
   auto* moduleSpec = &moduleRequest->left()->as<NameNode>();
   MOZ_ASSERT(moduleSpec->isKind(ParseNodeKind::StringExpr));
 
-  auto* assertionList = &moduleRequest->right()->as<ListNode>();
-  MOZ_ASSERT(assertionList->isKind(ParseNodeKind::ImportAttributeList));
+  auto* attributeList = &moduleRequest->right()->as<ListNode>();
+  MOZ_ASSERT(attributeList->isKind(ParseNodeKind::ImportAttributeList));
 
   auto specifier = moduleSpec->atom();
   MaybeModuleRequestIndex moduleRequestIndex =
-      appendModuleRequest(specifier, assertionList);
+      appendModuleRequest(specifier, attributeList);
   if (!moduleRequestIndex.isSome()) {
     return false;
   }
@@ -2181,11 +2179,11 @@ bool ModuleBuilder::appendExportEntry(
 
 frontend::MaybeModuleRequestIndex ModuleBuilder::appendModuleRequest(
     frontend::TaggedParserAtomIndex specifier,
-    frontend::ListNode* assertionList) {
+    frontend::ListNode* attributeList) {
   markUsedByStencil(specifier);
   auto request = frontend::StencilModuleRequest(specifier);
 
-  if (!processAssertions(request, assertionList)) {
+  if (!processAttributes(request, attributeList)) {
     return MaybeModuleRequestIndex();
   }
 
@@ -2293,17 +2291,17 @@ bool ModuleObject::topLevelCapabilityReject(JSContext* cx,
   return AsyncFunctionThrown(cx, promise, error);
 }
 
-// https://tc39.es/proposal-import-assertions/#sec-evaluate-import-call
+// https://tc39.es/proposal-import-attributes/#sec-evaluate-import-call
 // NOTE: The caller needs to handle the promise.
 static bool EvaluateDynamicImportOptions(
     JSContext* cx, HandleValue optionsArg,
-    MutableHandle<ArrayObject*> assertionArrayArg) {
-  // Step 10. If options is not undefined, then.
+    MutableHandle<ImportAttributeVector> attributesArrayArg) {
+  // Step 11. If options is not undefined, then
   if (optionsArg.isUndefined()) {
     return true;
   }
 
-  // Step 10.a. If Type(options) is not Object,
+  // Step 11.a. If options is not an Object, then
   if (!optionsArg.isObject()) {
     JS_ReportErrorNumberASCII(
         cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE, "import",
@@ -2311,114 +2309,125 @@ static bool EvaluateDynamicImportOptions(
     return false;
   }
 
-  RootedObject assertWrapperObject(cx, &optionsArg.toObject());
-  RootedValue assertValue(cx);
+  RootedObject attributesWrapperObject(cx, &optionsArg.toObject());
+  RootedValue attributesValue(cx);
 
-  // Step 10.b. Let attributesObj be Completion(Get(options, "with")).
+  // Step 11.b. Let attributesObj be Completion(Get(options, "with")).
   RootedId withId(cx, NameToId(cx->names().with));
-  if (!GetProperty(cx, assertWrapperObject, assertWrapperObject, withId,
-                   &assertValue)) {
+  if (!GetProperty(cx, attributesWrapperObject, attributesWrapperObject, withId,
+                   &attributesValue)) {
     return false;
   }
 
-  if (assertValue.isUndefined() &&
+  // Step 11.d. If the host supports the deprecated assert keyword for import
+  // attributes and attributesObj is undefined, then
+  if (attributesValue.isUndefined() &&
       cx->options().importAttributesAssertSyntax()) {
-    // Step 10.b. Let assertionsObj be Get(options, "assert").
+    // Step 11.d.i. Set attributesObj to Completion(Get(options, "assert")).
     RootedId assertId(cx, NameToId(cx->names().assert_));
-    if (!GetProperty(cx, assertWrapperObject, assertWrapperObject, assertId,
-                     &assertValue)) {
+    if (!GetProperty(cx, attributesWrapperObject, attributesWrapperObject,
+                     assertId, &attributesValue)) {
       return false;
     }
   }
 
-  // Step 10.d. If assertionsObj is not undefined.
-  if (assertValue.isUndefined()) {
+  // Step 11.e. If attributesObj is not undefined, then
+  if (attributesValue.isUndefined()) {
     return true;
   }
 
-  // Step 10.d.i. If Type(assertionsObj) is not Object.
-  if (!assertValue.isObject()) {
+  // Step 11.e.i. If attributesObj is not an Object, then
+  if (!attributesValue.isObject()) {
     JS_ReportErrorNumberASCII(
         cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE, "import",
-        "object or undefined", InformalValueTypeName(assertValue));
+        "object or undefined", InformalValueTypeName(attributesValue));
     return false;
   }
 
-  // Step 10.d.i. Let keys be EnumerableOwnPropertyNames(assertionsObj, key).
-  RootedObject assertObject(cx, &assertValue.toObject());
-  RootedIdVector assertions(cx);
-  if (!GetPropertyKeys(cx, assertObject, JSITER_OWNONLY, &assertions)) {
+  // Step 11.e.ii. Let entries be
+  // Completion(EnumerableOwnProperties(attributesObj, key+value)).
+  RootedObject attributesObject(cx, &attributesValue.toObject());
+  RootedIdVector attributes(cx);
+  if (!GetPropertyKeys(cx, attributesObject, JSITER_OWNONLY, &attributes)) {
     return false;
   }
 
-  uint32_t numberOfAssertions = assertions.length();
-  if (numberOfAssertions == 0) {
+  uint32_t numberOfAttributes = attributes.length();
+  if (numberOfAttributes == 0) {
     return true;
   }
 
-  // Step 9 (reordered). Let assertions be a new empty List.
-  Rooted<ArrayObject*> assertionArray(
-      cx, NewDenseFullyAllocatedArray(cx, numberOfAssertions));
-  if (!assertionArray) {
+  // Step 10 (reordered). Let attributes be a new empty List.
+  if (!attributesArrayArg.reserve(numberOfAttributes)) {
+    ReportOutOfMemory(cx);
     return false;
   }
-  assertionArray->ensureDenseInitializedLength(0, numberOfAssertions);
 
-  // Step 10.d.iv. Let supportedAssertions be
-  // !HostGetSupportedImportAssertions().
-  // Note: This should be driven by a host hook, howver the infrastructure of
-  //       said host hook is deeply unclear, and so right now embedders will
-  //       not have the ability to alter or extend the set of supported
-  //       assertion types.
-  //       See https://bugzilla.mozilla.org/show_bug.cgi?id=1840723.
-  size_t numberOfValidAssertions = 0;
+  size_t numberOfValidAttributes = 0;
 
-  // Step 10.d.v. For each String key of keys,
+  // Step 11.e.iv. For each element entry of entries, do
   RootedId key(cx);
-  for (size_t i = 0; i < numberOfAssertions; i++) {
-    key = assertions[i];
+  RootedValue value(cx);
+  Rooted<JSAtom*> keyAtom(cx);
+  Rooted<JSString*> valueString(cx);
+  for (size_t i = 0; i < numberOfAttributes; i++) {
+    // Step 11.e.ii.iv.1. Let key be ! Get(entry, "0").
+    key = attributes[i];
 
-    // Step 10.d.v.1. Let value be Get(assertionsObj, key).
-    RootedValue value(cx);
-    if (!GetProperty(cx, assertObject, assertObject, key, &value)) {
+    // Step 11.e.ii.iv.2. Let value be ! Get(entry, "1").
+    if (!GetProperty(cx, attributesObject, attributesObject, key, &value)) {
       return false;
     }
 
-    // Step 10.d.v.3. If Type(value) is not String, then.
-    if (!value.isString()) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_NOT_EXPECTED_TYPE, "import", "string",
-                                InformalValueTypeName(value));
-      return false;
-    }
-
-    // Step 10.d.v.4. If supportedAssertions contains key, then Append {
-    // [[Key]]: key, [[Value]]: value } to assertions.
-    // Note: We only currently support the "type" assertion; this will need
-    // extension
-    bool supported = key.isAtom() ? key.toAtom() == cx->names().type : false;
-    if (supported) {
-      Rooted<PlainObject*> assertionObj(cx, NewPlainObject(cx));
-      if (!assertionObj) {
+    // Step 11.e.ii.iv.3. If key is a String, then
+    if (key.isString()) {
+      // Step 11.f (reordered). If AllImportAttributesSupported(attributes) is
+      // false, then
+      //
+      // Note: This should be driven by a host hook
+      // (HostGetSupportedImportAttributes), however the infrastructure of said
+      // host hook is deeply unclear, and so right now embedders will not have
+      // the ability to alter or extend the set of supported attributes.
+      // See https://bugzilla.mozilla.org/show_bug.cgi?id=1840723.
+      bool supported = key.isAtom(cx->names().type);
+      if (!supported) {
+        UniqueChars printableKey = AtomToPrintableString(cx, key.toAtom());
+        if (!printableKey) {
+          return false;
+        }
+        JS_ReportErrorNumberASCII(
+            cx, GetErrorMessage, nullptr,
+            JSMSG_IMPORT_ATTRIBUTES_DYNAMIC_IMPORT_UNSUPPORTED_ATTRIBUTE,
+            printableKey.get());
         return false;
       }
 
-      if (!DefineDataProperty(cx, assertionObj, key, value, JSPROP_ENUMERATE)) {
+      // Step 10.d.v.3.a. If value is not a String, then
+      if (!value.isString()) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_NOT_EXPECTED_TYPE, "import", "string",
+                                  InformalValueTypeName(value));
         return false;
       }
 
-      assertionArray->initDenseElement(numberOfValidAssertions,
-                                       ObjectValue(*assertionObj));
-      ++numberOfValidAssertions;
+      // Step 10.d.v.3.b. Append the ImportAttribute Record { [[Key]]: key,
+      // [[Value]]: value } to attributes.
+      keyAtom = key.toAtom();
+      valueString = value.toString();
+      attributesArrayArg.infallibleEmplaceBack(keyAtom, valueString);
+      ++numberOfValidAttributes;
     }
   }
 
-  if (numberOfValidAssertions == 0) {
+  if (numberOfValidAttributes == 0) {
     return true;
   }
 
-  assertionArray->setLength(numberOfValidAssertions);
-  assertionArrayArg.set(assertionArray);
+  // Step 10.g (skipped). Sort attributes according to the lexicographic order
+  // of their [[Key]] fields, treating the value of each such field as a
+  // sequence of UTF-16 code unit values.
+  //
+  // We only support "type", so we can ignore this.
 
   return true;
 }
@@ -2428,11 +2437,6 @@ static bool EvaluateDynamicImportOptions(
 JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
                                        HandleValue specifierArg,
                                        HandleValue optionsArg) {
-  RootedObject promiseConstructor(cx, JS::GetPromiseConstructor(cx));
-  if (!promiseConstructor) {
-    return nullptr;
-  }
-
   RootedObject promiseObject(cx, JS::NewPromiseObject(cx, nullptr));
   if (!promiseObject) {
     return nullptr;
@@ -2471,16 +2475,32 @@ JSObject* js::StartDynamicModuleImport(JSContext* cx, HandleScript script,
     return promise;
   }
 
-  Rooted<ArrayObject*> assertionArray(cx);
-  if (!EvaluateDynamicImportOptions(cx, optionsArg, &assertionArray)) {
+  Rooted<ImportAttributeVector> tempAttributes(cx);
+  if (!EvaluateDynamicImportOptions(cx, optionsArg, &tempAttributes)) {
     if (!RejectPromiseWithPendingError(cx, promise)) {
       return nullptr;
     }
     return promise;
   }
 
+  Rooted<UniquePtr<ImportAttributeVector>> attributes(cx);
+  if (!tempAttributes.empty()) {
+    attributes = cx->make_unique<ImportAttributeVector>();
+    if (!attributes) {
+      return nullptr;
+    }
+    if (!attributes->reserve(tempAttributes.length())) {
+      ReportOutOfMemory(cx);
+      return nullptr;
+    }
+    if (!attributes->appendAll(tempAttributes)) {
+      ReportOutOfMemory(cx);
+      return nullptr;
+    }
+  }
+
   RootedObject moduleRequest(
-      cx, ModuleRequestObject::create(cx, specifierAtom, assertionArray));
+      cx, ModuleRequestObject::create(cx, specifierAtom, &attributes));
   if (!moduleRequest) {
     if (!RejectPromiseWithPendingError(cx, promise)) {
       return nullptr;
@@ -2658,8 +2678,9 @@ static bool OnResolvedDynamicModule(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   Rooted<PromiseObject*> promise(cx, TargetFromHandler<PromiseObject>(args));
+  Rooted<UniquePtr<ImportAttributeVector>> attributes(cx);
   RootedObject moduleRequest(
-      cx, ModuleRequestObject::create(cx, specifier, nullptr));
+      cx, ModuleRequestObject::create(cx, specifier, &attributes));
   if (!moduleRequest) {
     return RejectPromiseWithPendingError(cx, promise);
   }

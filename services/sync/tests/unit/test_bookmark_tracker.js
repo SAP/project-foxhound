@@ -534,7 +534,7 @@ add_task(async function test_async_onItemTagged() {
     await startTracking();
 
     // This will change once tags are moved into a separate table (bug 424160).
-    // We specifically test this case because Bookmarks.jsm updates tagged
+    // We specifically test this case because Bookmarks.sys.mjs updates tagged
     // bookmarks and notifies observers.
     _("Insert a tag using the async bookmarks API");
     let tag = await PlacesUtils.bookmarks.insert({
@@ -764,26 +764,7 @@ add_task(async function test_onFaviconChanged() {
     let iconURL =
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAA" +
       "AAAA6fptVAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==";
-
-    PlacesUtils.favicons.replaceFaviconDataFromDataURL(
-      iconURI,
-      iconURL,
-      0,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
-
-    await new Promise(resolve => {
-      PlacesUtils.favicons.setAndFetchFaviconForPage(
-        pageURI,
-        iconURI,
-        true,
-        PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-        () => {
-          resolve();
-        },
-        Services.scriptSecurityManager.getSystemPrincipal()
-      );
-    });
+    await PlacesTestUtils.setFaviconForPage(pageURI, iconURI, iconURL);
     await verifyTrackedItems([]);
     Assert.equal(tracker.score, 0);
   } finally {

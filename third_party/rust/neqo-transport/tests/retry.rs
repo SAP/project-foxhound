@@ -4,7 +4,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![cfg(not(feature = "fuzzing"))]
+#![cfg(not(feature = "disable-encryption"))]
 
 mod common;
 
@@ -14,14 +14,20 @@ use std::{
     time::Duration,
 };
 
-use common::{
-    apply_header_protection, connected_server, decode_initial_header, default_server,
-    generate_ticket, initial_aead_and_hp, remove_header_protection,
-};
+use common::{connected_server, default_server, generate_ticket};
 use neqo_common::{hex_with_len, qdebug, qtrace, Datagram, Encoder, Role};
 use neqo_crypto::AuthenticationStatus;
-use neqo_transport::{server::ValidateAddress, ConnectionError, Error, State, StreamType};
-use test_fixture::{assertions, datagram, default_client, now, split_datagram};
+use neqo_transport::{
+    server::ValidateAddress, CloseReason, Error, State, StreamType, MIN_INITIAL_PACKET_SIZE,
+};
+use test_fixture::{
+    assertions, datagram, default_client,
+    header_protection::{
+        apply_header_protection, decode_initial_header, initial_aead_and_hp,
+        remove_header_protection,
+    },
+    now, split_datagram,
+};
 
 #[test]
 fn retry_basic() {
@@ -327,7 +333,7 @@ fn retry_after_pto() {
     // Let PTO fire on the client and then let it exhaust its PTO packets.
     now += Duration::from_secs(1);
     let pto = client.process(None, now).dgram();
-    assert!(pto.unwrap().len() >= 1200);
+    assert!(pto.unwrap().len() >= MIN_INITIAL_PACKET_SIZE);
     let cb = client.process(None, now).callback();
     assert_ne!(cb, Duration::new(0, 0));
 
@@ -335,7 +341,7 @@ fn retry_after_pto() {
     assertions::assert_retry(retry.as_ref().unwrap());
 
     let ci2 = client.process(retry.as_ref(), now).dgram();
-    assert!(ci2.unwrap().len() >= 1200);
+    assert!(ci2.unwrap().len() >= MIN_INITIAL_PACKET_SIZE);
 }
 
 #[test]
@@ -400,7 +406,7 @@ fn mitm_retry() {
     // rewriting the header to remove the token, and then re-encrypting.
     let client_initial2 = client_initial2.unwrap();
     let (protected_header, d_cid, s_cid, payload) =
-        decode_initial_header(&client_initial2, Role::Client);
+        decode_initial_header(&client_initial2, Role::Client).unwrap();
 
     // Now we have enough information to make keys.
     let (aead, hp) = initial_aead_and_hp(d_cid, Role::Client);
@@ -426,11 +432,11 @@ fn mitm_retry() {
     qtrace!("notoken_header={}", hex_with_len(&notoken_header));
 
     // Encrypt.
-    let mut notoken_packet = Encoder::with_capacity(1200)
+    let mut notoken_packet = Encoder::with_capacity(MIN_INITIAL_PACKET_SIZE)
         .encode(&notoken_header)
         .as_ref()
         .to_vec();
-    notoken_packet.resize_with(1200, u8::default);
+    notoken_packet.resize_with(MIN_INITIAL_PACKET_SIZE, u8::default);
     aead.encrypt(
         pn,
         &notoken_header,
@@ -439,7 +445,7 @@ fn mitm_retry() {
     )
     .unwrap();
     // Unlike with decryption, don't truncate.
-    // All 1200 bytes are needed to reach the minimum datagram size.
+    // All MIN_INITIAL_PACKET_SIZE bytes are needed to reach the minimum datagram size.
 
     apply_header_protection(&hp, &mut notoken_packet, pn_offset..(pn_offset + pn_len));
     qtrace!("packet={}", hex_with_len(&notoken_packet));
@@ -465,7 +471,7 @@ fn mitm_retry() {
     assert!(matches!(
         *client.state(),
         State::Closing {
-            error: ConnectionError::Transport(Error::ProtocolViolation),
+            error: CloseReason::Transport(Error::ProtocolViolation),
             ..
         }
     ));

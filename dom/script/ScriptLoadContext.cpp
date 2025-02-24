@@ -38,17 +38,20 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ScriptLoadContext,
                                                 JS::loader::LoadContextBase)
   MOZ_ASSERT(!tmp->mCompileOrDecodeTask);
   tmp->MaybeUnblockOnload();
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mScriptElement);
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(ScriptLoadContext,
                                                   JS::loader::LoadContextBase)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLoadBlockedDocument)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScriptElement);
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_ADDREF_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
 NS_IMPL_RELEASE_INHERITED(ScriptLoadContext, JS::loader::LoadContextBase)
 
-ScriptLoadContext::ScriptLoadContext()
+ScriptLoadContext::ScriptLoadContext(
+    nsIScriptElement* aScriptElement /* = nullptr */)
     : JS::loader::LoadContextBase(JS::loader::ContextKind::Window),
       mScriptMode(ScriptMode::eBlocking),
       mScriptFromHead(false),
@@ -63,6 +66,7 @@ ScriptLoadContext::ScriptLoadContext()
       mLineNo(1),
       mColumnNo(0),
       mIsPreload(false),
+      mScriptElement(aScriptElement),
       mUnreportedPreloadError(NS_OK) {}
 
 ScriptLoadContext::~ScriptLoadContext() {
@@ -133,7 +137,7 @@ bool ScriptLoadContext::IsPreload() const {
     return root->GetScriptLoadContext()->IsPreload();
   }
 
-  MOZ_ASSERT_IF(mIsPreload, !GetScriptElement());
+  MOZ_ASSERT_IF(mIsPreload, !HasScriptElement());
   return mIsPreload;
 }
 
@@ -141,19 +145,63 @@ bool ScriptLoadContext::CompileStarted() const {
   return mRequest->IsCompiling() || (mRequest->IsFinished() && mWasCompiledOMT);
 }
 
-nsIScriptElement* ScriptLoadContext::GetScriptElement() const {
-  nsCOMPtr<nsIScriptElement> scriptElement =
-      do_QueryInterface(mRequest->mFetchOptions->mElement);
-  return scriptElement;
+bool ScriptLoadContext::HasScriptElement() const { return !!mScriptElement; }
+
+void ScriptLoadContext::GetInlineScriptText(nsAString& aText) const {
+  MOZ_ASSERT(mIsInline);
+  mScriptElement->GetScriptText(aText);
+}
+
+void ScriptLoadContext::GetHintCharset(nsAString& aCharset) const {
+  MOZ_ASSERT(mScriptElement);
+  mScriptElement->GetScriptCharset(aCharset);
+}
+
+uint32_t ScriptLoadContext::GetScriptLineNumber() const {
+  if (mScriptElement) {
+    return mScriptElement->GetScriptLineNumber();
+  }
+  return 0;
+}
+
+JS::ColumnNumberOneOrigin ScriptLoadContext::GetScriptColumnNumber() const {
+  if (mScriptElement) {
+    return mScriptElement->GetScriptColumnNumber();
+  }
+  return JS::ColumnNumberOneOrigin();
+}
+
+void ScriptLoadContext::BeginEvaluatingTopLevel() const {
+  MOZ_ASSERT(mScriptElement);
+  mScriptElement->BeginEvaluating();
+}
+
+void ScriptLoadContext::EndEvaluatingTopLevel() const {
+  MOZ_ASSERT(mScriptElement);
+  mScriptElement->EndEvaluating();
+}
+
+void ScriptLoadContext::UnblockParser() const {
+  MOZ_ASSERT(mScriptElement);
+  mScriptElement->UnblockParser();
+}
+
+void ScriptLoadContext::ContinueParserAsync() const {
+  MOZ_ASSERT(mScriptElement);
+  mScriptElement->ContinueParserAsync();
+}
+
+Document* ScriptLoadContext::GetScriptOwnerDocument() const {
+  nsCOMPtr<nsIContent> scriptContent(do_QueryInterface(mScriptElement));
+  MOZ_ASSERT(scriptContent);
+  return scriptContent->OwnerDoc();
 }
 
 void ScriptLoadContext::SetIsLoadRequest(nsIScriptElement* aElement) {
   MOZ_ASSERT(aElement);
-  MOZ_ASSERT(!GetScriptElement());
+  MOZ_ASSERT(!HasScriptElement());
   MOZ_ASSERT(IsPreload());
-  // We are not tracking our own element, and are relying on the one in
-  // FetchOptions.
-  mRequest->mFetchOptions->mElement = do_QueryInterface(aElement);
+  mScriptElement = aElement;
   mIsPreload = false;
 }
 

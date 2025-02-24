@@ -745,7 +745,7 @@ export var BrowserTestUtils = {
    * @resolves With the {xul:tab} when a tab is opened and its location changes
    *           to the given URL and optionally that browser has loaded.
    *
-   * NB: this method will not work if you open a new tab with e.g. BrowserOpenTab
+   * NB: this method will not work if you open a new tab with e.g. BrowserCommands.openTab
    * and the tab does not load a URL, because no onLocationChange will fire.
    */
   waitForNewTab(
@@ -822,25 +822,25 @@ export var BrowserTestUtils = {
    *
    * @param {tabbrowser} tabbrowser
    *        The tabbrowser to wait for the location change on.
-   * @param {string} url
+   * @param {string} [url]
    *        The string URL to look for. The URL must match the URL in the
    *        location bar exactly.
    * @return {Promise}
-   * @resolves When onLocationChange fires.
+   * @resolves {webProgress, request, flags} When onLocationChange fires.
    */
   waitForLocationChange(tabbrowser, url) {
     return new Promise(resolve => {
       let progressListener = {
-        onLocationChange(aBrowser, aWebProgress, aRequest, aLocationURI) {
+        onLocationChange(browser, webProgress, request, newURI, flags) {
           if (
-            (url && aLocationURI.spec != url) ||
-            (!url && aLocationURI.spec == "about:blank")
+            (url && newURI.spec != url) ||
+            (!url && newURI.spec == "about:blank")
           ) {
             return;
           }
 
           tabbrowser.removeTabsProgressListener(progressListener);
-          resolve();
+          resolve({ webProgress, request, flags });
         },
       };
       tabbrowser.addTabsProgressListener(progressListener);
@@ -1737,7 +1737,7 @@ export var BrowserTestUtils = {
   },
 
   /**
-   *  Versions of EventUtils.jsm synthesizeMouse functions that synthesize a
+   *  Versions of EventUtils.sys.mjs synthesizeMouse functions that synthesize a
    *  mouse event in a child process and return promises that resolve when the
    *  event has fired and completed. Instead of a window, a browser or
    *  browsing context is required to be passed to this function.
@@ -1754,7 +1754,7 @@ export var BrowserTestUtils = {
    * @param {integer} offsetY
    *        y offset from target's top bounding edge
    * @param {Object} event object
-   *        Additional arguments, similar to the EventUtils.jsm version
+   *        Additional arguments, similar to the EventUtils.sys.mjs version
    * @param {BrowserContext|MozFrameLoaderOwner} browsingContext
    *        Browsing context or browser element, must not be null
    * @param {boolean} handlingUserInput
@@ -1792,7 +1792,7 @@ export var BrowserTestUtils = {
   },
 
   /**
-   *  Versions of EventUtils.jsm synthesizeTouch functions that synthesize a
+   *  Versions of EventUtils.sys.mjs synthesizeTouch functions that synthesize a
    *  touch event in a child process and return promises that resolve when the
    *  event has fired and completed. Instead of a window, a browser or
    *  browsing context is required to be passed to this function.
@@ -1809,7 +1809,7 @@ export var BrowserTestUtils = {
    * @param {integer} offsetY
    *        y offset from target's top bounding edge
    * @param {Object} event object
-   *        Additional arguments, similar to the EventUtils.jsm version
+   *        Additional arguments, similar to the EventUtils.sys.mjs version
    * @param {BrowserContext|MozFrameLoaderOwner} browsingContext
    *        Browsing context or browser element, must not be null
    *

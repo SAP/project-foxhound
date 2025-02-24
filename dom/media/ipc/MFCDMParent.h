@@ -52,7 +52,8 @@ class MFCDMParent final : public PMFCDMParent {
   uint64_t Id() const { return mId; }
 
   mozilla::ipc::IPCResult RecvGetCapabilities(
-      const bool aIsHWSecured, GetCapabilitiesResolver&& aResolver);
+      const MFCDMCapabilitiesRequest& aRequest,
+      GetCapabilitiesResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvInit(const MFCDMInitParamsIPDL& aParams,
                                    InitResolver&& aResolver);
@@ -97,6 +98,14 @@ class MFCDMParent final : public PMFCDMParent {
  private:
   ~MFCDMParent();
 
+  enum class CapabilitesFlag {
+    HarewareDecryption,
+    NeedHDCPCheck,
+    NeedClearLeadCheck,
+    IsPrivateBrowsing,
+  };
+  using CapabilitesFlagSet = EnumSet<CapabilitesFlag, uint8_t>;
+
   static LPCWSTR GetCDMLibraryName(const nsString& aKeySystem);
 
   static HRESULT GetOrCreateFactory(
@@ -108,7 +117,7 @@ class MFCDMParent final : public PMFCDMParent {
       Microsoft::WRL::ComPtr<IMFContentDecryptionModuleFactory>& aFactoryOut);
 
   static void GetCapabilities(const nsString& aKeySystem,
-                              const bool aIsHWSecure,
+                              const CapabilitesFlagSet& aFlags,
                               IMFContentDecryptionModuleFactory* aFactory,
                               MFCDMCapabilitiesIPDL& aCapabilitiesOut);
 

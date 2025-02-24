@@ -220,7 +220,7 @@ load 1406109-1.html
 load 1411473.html
 load 1413815.html
 load 1419799.html
-skip-if(geckoview) skip-if(geckoview&&isDebugBuild) skip-if(AddressSanitizer) skip-if(ThreadSanitizer) pref(dom.disable_open_during_load,false) load 1419902.html # skip Bug 1419902. Bug 1563013 for GV+WR. Bug 1524493 GV+debug. Bug 1573281 asan
+# load 1419902.html # this test is run at the very end in testing/crashtest/final/crashtests.list
 load 1422883.html
 load 1428053.html
 load 1441029.html
@@ -265,9 +265,18 @@ load 1757923.html
 load 1766472.html
 pref(dom.enable_web_task_scheduling,true) load 1780790.html
 load 1700237.html
+load 1741957.html
 load 1811939.html
 load 1822717.html
 load 1835886.html
 load 1836824.html
 skip-if(Android) load 1838484.html
 load 1840191.html
+load 1887930.html
+load 1887963_1.html
+load 1887963_2.html
+asserts(0-1) load 1887974.html
+load 1890888.html
+load 1890899.html
+load 1896225.html
+load 1897248.html

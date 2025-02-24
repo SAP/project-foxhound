@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { html } from "lit.all.mjs";
-// eslint-disable-next-line import/no-unassigned-import
 import "browser/components/firefoxview/fxview-tab-list.mjs";
 
 const DATE_TIME_FORMATS = {
@@ -56,6 +55,7 @@ const Template = ({
       .dateTimeFormat=${dateTimeFormat}
       .maxTabsLength=${maxTabsLength}
       .tabItems=${tabItems}
+      .updatesPaused=${false}
       @fxview-tab-list-secondary-action=${secondaryAction}
       @fxview-tab-list-primary-action=${primaryAction}
     >
@@ -84,7 +84,7 @@ let secondaryAction = e => {
   e.target.querySelector("panel-list").toggle(e.detail.originalEvent);
 };
 
-let primaryAction = e => {
+let primaryAction = () => {
   // Open in new tab
 };
 

@@ -6,17 +6,22 @@
 "use strict";
 
 /**
- * @type {import("../../content/SummarizerModel.sys.mjs")}
- */
-const { SummarizerModel } = ChromeUtils.importESModule(
-  "chrome://global/content/ml/SummarizerModel.sys.mjs"
-);
-
-/**
  * @type {import("../../actors/MLEngineParent.sys.mjs")}
  */
 const { MLEngineParent } = ChromeUtils.importESModule(
   "resource://gre/actors/MLEngineParent.sys.mjs"
+);
+
+const { ModelHub, IndexedDBCache } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/ModelHub.sys.mjs"
+);
+
+const { getRuntimeWasmFilename } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/Utils.sys.mjs"
+);
+
+const { PipelineOptions } = ChromeUtils.importESModule(
+  "chrome://global/content/ml/EngineProcess.sys.mjs"
 );
 
 // This test suite shares some utility functions with translations as they work in a very
@@ -26,94 +31,39 @@ Services.scriptloader.loadSubScript(
   this
 );
 
-function getDefaultModelRecords() {
-  return [
-    {
-      name: "summarizer-model",
-      version: SummarizerModel.MODEL_MAJOR_VERSION + ".0",
-    },
-  ];
-}
-
 function getDefaultWasmRecords() {
   return [
     {
-      name: "inference-engine",
+      name: getRuntimeWasmFilename(),
       version: MLEngineParent.WASM_MAJOR_VERSION + ".0",
     },
   ];
 }
 
-/**
- * Creates a local RemoteSettingsClient for use within tests.
- *
- * @param {boolean} autoDownloadFromRemoteSettings
- * @param {object[]} models
- * @returns {AttachmentMock}
- */
-async function createMLModelsRemoteClient(
-  autoDownloadFromRemoteSettings,
-  models = getDefaultModelRecords()
-) {
-  const { RemoteSettings } = ChromeUtils.importESModule(
-    "resource://services-settings/remote-settings.sys.mjs"
-  );
-  const mockedCollectionName = "test-ml-models";
-  const client = RemoteSettings(
-    `${mockedCollectionName}-${_remoteSettingsMockId++}`
-  );
-  const metadata = {};
-  await client.db.clear();
-  await client.db.importChanges(
-    metadata,
-    Date.now(),
-    models.map(({ name, version }) => ({
-      id: crypto.randomUUID(),
-      name,
-      version,
-      last_modified: Date.now(),
-      schema: Date.now(),
-      attachment: {
-        hash: `${crypto.randomUUID()}`,
-        size: `123`,
-        filename: name,
-        location: `main-workspace/ml-models/${crypto.randomUUID()}.bin`,
-        mimetype: "application/octet-stream",
-      },
-    }))
-  );
-
-  return createAttachmentMock(
-    client,
-    mockedCollectionName,
-    autoDownloadFromRemoteSettings
-  );
-}
-
 async function createAndMockMLRemoteSettings({
-  models = getDefaultModelRecords(),
   autoDownloadFromRemoteSettings = false,
 } = {}) {
+  const runtime = await createMLWasmRemoteClient(
+    autoDownloadFromRemoteSettings
+  );
+  const options = await createOptionsRemoteClient();
+
   const remoteClients = {
-    models: await createMLModelsRemoteClient(
-      autoDownloadFromRemoteSettings,
-      models
-    ),
-    wasm: await createMLWasmRemoteClient(autoDownloadFromRemoteSettings),
+    "ml-onnx-runtime": runtime,
+    "ml-inference-options": options,
   };
 
-  MLEngineParent.mockRemoteSettings(remoteClients.wasm.client);
-  SummarizerModel.mockRemoteSettings(remoteClients.models.client);
+  MLEngineParent.mockRemoteSettings({
+    "ml-onnx-runtime": runtime.client,
+    "ml-inference-options": options,
+  });
 
   return {
     async removeMocks() {
-      await remoteClients.models.client.attachments.deleteAll();
-      await remoteClients.models.client.db.clear();
-      await remoteClients.wasm.client.attachments.deleteAll();
-      await remoteClients.wasm.client.db.clear();
-
+      await runtime.client.attachments.deleteAll();
+      await runtime.client.db.clear();
+      await options.db.clear();
       MLEngineParent.removeMocks();
-      SummarizerModel.removeMocks();
     },
     remoteClients,
   };
@@ -152,4 +102,33 @@ async function createMLWasmRemoteClient(autoDownloadFromRemoteSettings) {
     mockedCollectionName,
     autoDownloadFromRemoteSettings
   );
+}
+
+/**
+ * Creates a local RemoteSettingsClient for use within tests.
+ *
+ * @returns {RemoteSettings}
+ */
+async function createOptionsRemoteClient() {
+  const { RemoteSettings } = ChromeUtils.importESModule(
+    "resource://services-settings/remote-settings.sys.mjs"
+  );
+  const mockedCollectionName = "test-ml-inference-options";
+  const client = RemoteSettings(
+    `${mockedCollectionName}-${_remoteSettingsMockId++}`
+  );
+
+  const record = {
+    taskName: "echo",
+    modelId: "mozilla/distilvit",
+    processorId: "mozilla/distilvit",
+    tokenizerId: "mozilla/distilvit",
+    modelRevision: "main",
+    processorRevision: "main",
+    tokenizerRevision: "main",
+    id: "74a71cfd-1734-44e6-85c0-69cf3e874138",
+  };
+  await client.db.clear();
+  await client.db.importChanges({}, Date.now(), [record]);
+  return client;
 }

@@ -16,15 +16,13 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   ASRouterUtils: () => (/* binding */ ASRouterUtils)
 /* harmony export */ });
-/* harmony import */ var _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
-/* harmony import */ var _newtab_common_Actions_sys_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
+/* harmony import */ var _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(2);
+/* harmony import */ var _newtab_common_Actions_mjs__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(3);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// eslint-disable-next-line mozilla/reject-import-system-module-from-non-system
 
-// eslint-disable-next-line mozilla/reject-import-system-module-from-non-system
 
 
 const ASRouterUtils = {
@@ -46,54 +44,54 @@ const ASRouterUtils = {
   },
   blockById(id, options) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.BLOCK_MESSAGE_BY_ID,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.BLOCK_MESSAGE_BY_ID,
       data: { id, ...options },
     });
   },
   modifyMessageJson(content) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.MODIFY_MESSAGE_JSON,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.MODIFY_MESSAGE_JSON,
       data: { content },
     });
   },
   executeAction(button_action) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.USER_ACTION,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.USER_ACTION,
       data: button_action,
     });
   },
   unblockById(id) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.UNBLOCK_MESSAGE_BY_ID,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.UNBLOCK_MESSAGE_BY_ID,
       data: { id },
     });
   },
   blockBundle(bundle) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.BLOCK_BUNDLE,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.BLOCK_BUNDLE,
       data: { bundle },
     });
   },
   unblockBundle(bundle) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.UNBLOCK_BUNDLE,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.UNBLOCK_BUNDLE,
       data: { bundle },
     });
   },
   overrideMessage(id) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.OVERRIDE_MESSAGE,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.OVERRIDE_MESSAGE,
       data: { id },
     });
   },
   editState(key, value) {
     return ASRouterUtils.sendMessage({
-      type: _modules_ActorConstants_sys_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.EDIT_STATE,
+      type: _modules_ActorConstants_mjs__WEBPACK_IMPORTED_MODULE_0__.MESSAGE_TYPE_HASH.EDIT_STATE,
       data: { [key]: value },
     });
   },
   sendTelemetry(ping) {
-    return ASRouterUtils.sendMessage(_newtab_common_Actions_sys_mjs__WEBPACK_IMPORTED_MODULE_1__.actionCreators.ASRouterUserEvent(ping));
+    return ASRouterUtils.sendMessage(_newtab_common_Actions_mjs__WEBPACK_IMPORTED_MODULE_1__.actionCreators.ASRouterUserEvent(ping));
   },
   getPreviewEndpoint() {
     return null;
@@ -124,7 +122,6 @@ const MESSAGE_TYPE_LIST = [
   "PBNEWTAB_MESSAGE_REQUEST",
   "DOORHANGER_TELEMETRY",
   "TOOLBAR_BADGE_TELEMETRY",
-  "TOOLBAR_PANEL_TELEMETRY",
   "MOMENTS_PAGE_TELEMETRY",
   "INFOBAR_TELEMETRY",
   "SPOTLIGHT_TELEMETRY",
@@ -142,9 +139,7 @@ const MESSAGE_TYPE_LIST = [
   "EVALUATE_JEXL_EXPRESSION",
   "EXPIRE_QUERY_CACHE",
   "FORCE_ATTRIBUTION",
-  "FORCE_WHATSNEW_PANEL",
   "FORCE_PRIVATE_BROWSING_WINDOW",
-  "CLOSE_WHATSNEW_PANEL",
   "OVERRIDE_MESSAGE",
   "MODIFY_MESSAGE_JSON",
   "RESET_PROVIDER_PREF",
@@ -180,6 +175,8 @@ __webpack_require__.r(__webpack_exports__);
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// This file is accessed from both content and system scopes.
 
 const MAIN_MESSAGE_TYPE = "ActivityStream:Main";
 const CONTENT_MESSAGE_TYPE = "ActivityStream:Content";
@@ -337,6 +334,23 @@ for (const type of [
   "UPDATE_PINNED_SEARCH_SHORTCUTS",
   "UPDATE_SEARCH_SHORTCUTS",
   "UPDATE_SECTION_PREFS",
+  "WALLPAPERS_CATEGORY_SET",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_COUNTER_INCREMENT",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_CTA_CLICKED",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_DISMISSED",
+  "WALLPAPERS_FEATURE_HIGHLIGHT_SEEN",
+  "WALLPAPERS_SET",
+  "WALLPAPER_CATEGORY_CLICK",
+  "WALLPAPER_CLICK",
+  "WEATHER_IMPRESSION",
+  "WEATHER_LOAD_ERROR",
+  "WEATHER_LOCATION_DATA_UPDATE",
+  "WEATHER_LOCATION_SEARCH_UPDATE",
+  "WEATHER_LOCATION_SUGGESTIONS_UPDATE",
+  "WEATHER_OPEN_PROVIDER_URL",
+  "WEATHER_QUERY_UPDATE",
+  "WEATHER_SEARCH_ACTIVE",
+  "WEATHER_UPDATE",
   "WEBEXT_CLICK",
   "WEBEXT_DISMISS",
 ]) {
@@ -550,8 +564,11 @@ function DiscoveryStreamLoadedContent(
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
-function SetPref(name, value, importContext = globalImportContext) {
-  const action = { type: actionTypes.SET_PREF, data: { name, value } };
+function SetPref(prefName, value, importContext = globalImportContext) {
+  const action = {
+    type: actionTypes.SET_PREF,
+    data: { name: prefName, value },
+  };
   return importContext === UI_CODE ? AlsoToMain(action) : action;
 }
 
@@ -961,7 +978,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   ToggleMessageJSON: () => (/* binding */ ToggleMessageJSON),
 /* harmony export */   TogglePrefCheckbox: () => (/* binding */ TogglePrefCheckbox),
 /* harmony export */   ToggleStoryButton: () => (/* binding */ ToggleStoryButton),
-/* harmony export */   renderASRouterAdmin: () => (/* binding */ renderASRouterAdmin)
+/* harmony export */   renderASRouterAdmin: () => (/* binding */ renderASRouterAdmin),
+/* harmony export */   toBinary: () => (/* binding */ toBinary)
 /* harmony export */ });
 /* harmony import */ var _asrouter_utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(1);
 /* harmony import */ var react__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(4);
@@ -985,6 +1003,16 @@ function _extends() { _extends = Object.assign ? Object.assign.bind() : function
 const Row = props => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("tr", _extends({
   className: "message-item"
 }, props), props.children);
+
+// Convert a UTF-8 string to a string in which only one byte of each
+// 16-bit unit is occupied. This is necessary to comply with `btoa` API constraints.
+function toBinary(string) {
+  const codeUnits = new Uint16Array(string.length);
+  for (let i = 0; i < codeUnits.length; i++) {
+    codeUnits[i] = string.charCodeAt(i);
+  }
+  return btoa(String.fromCharCode(...Array.from(new Uint8Array(codeUnits.buffer))));
+}
 function relativeTime(timestamp) {
   if (!timestamp) {
     return "";
@@ -1427,7 +1455,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       className: "button modify",
       onClick: () => this.modifyJson(msg)
     }, "Modify"), aboutMessagePreviewSupported ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement(_CopyButton__WEBPACK_IMPORTED_MODULE_4__.CopyButton, {
-      transformer: text => `about:messagepreview?json=${encodeURIComponent(btoa(text))}`,
+      transformer: text => `about:messagepreview?json=${encodeURIComponent(toBinary(text))}`,
       label: "Share",
       copiedLabel: "Copied!",
       inputSelector: `#${msg.id}-textarea`,

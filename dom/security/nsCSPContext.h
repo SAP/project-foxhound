@@ -32,6 +32,8 @@ class nsIEventTarget;
 struct ConsoleMsgQueueElem;
 
 namespace mozilla {
+template <typename... Ts>
+class Variant;
 namespace dom {
 class Element;
 }
@@ -77,11 +79,23 @@ class nsCSPContext : public nsIContentSecurityPolicy {
                     uint32_t aLineNumber, uint32_t aColumnNumber,
                     uint32_t aSeverityFlag);
 
+  enum BlockedContentSource {
+    eUnknown,
+    eInline,
+    eEval,
+    eSelf,
+    eWasmEval,
+  };
+
+  // Roughly implements a violation's resource
+  // (https://w3c.github.io/webappsec-csp/#framework-violation).
+  using Resource = mozilla::Variant<nsIURI*, BlockedContentSource>;
+
   /**
    * Construct SecurityPolicyViolationEventInit structure.
    *
-   * @param aBlockedURI
-   *        A nsIURI: the source of the violation.
+   * @param aResource
+   *        The source of the violation.
    * @param aOriginalUri
    *        The original URI if the blocked content is a redirect, else null
    * @param aViolatedDirective
@@ -98,10 +112,10 @@ class nsCSPContext : public nsIContentSecurityPolicy {
    *        The output
    */
   nsresult GatherSecurityPolicyViolationEventData(
-      nsIURI* aBlockedURI, const nsACString& aBlockedString,
-      nsIURI* aOriginalURI, const nsAString& aViolatedDirective,
-      uint32_t aViolatedPolicyIndex, const nsAString& aSourceFile,
-      const nsAString& aScriptSample, uint32_t aLineNum, uint32_t aColumnNum,
+      Resource& aResource, nsIURI* aOriginalURI,
+      const nsAString& aViolatedDirective, uint32_t aViolatedPolicyIndex,
+      const nsAString& aSourceFile, const nsAString& aScriptSample,
+      uint32_t aLineNum, uint32_t aColumnNum,
       mozilla::dom::SecurityPolicyViolationEventInit& aViolationEventInit);
 
   nsresult SendReports(
@@ -114,20 +128,12 @@ class nsCSPContext : public nsIContentSecurityPolicy {
       const mozilla::dom::SecurityPolicyViolationEventInit&
           aViolationEventInit);
 
-  enum BlockedContentSource {
-    eUnknown,
-    eInline,
-    eEval,
-    eSelf,
-    eWasmEval,
-  };
-
   nsresult AsyncReportViolation(
       mozilla::dom::Element* aTriggeringElement,
       nsICSPEventListener* aCSPEventListener, nsIURI* aBlockedURI,
       BlockedContentSource aBlockedContentSource, nsIURI* aOriginalURI,
-      const nsAString& aViolatedDirective,
-      const nsAString& aViolatedDirectiveString,
+      const nsAString& aViolatedDirectiveName,
+      const nsAString& aViolatedDirectiveNameAndValue,
       const CSPDirective aEffectiveDirective, uint32_t aViolatedPolicyIndex,
       const nsAString& aObserverSubject, const nsAString& aSourceFile,
       bool aReportSample, const nsAString& aScriptSample, uint32_t aLineNum,
@@ -175,7 +181,7 @@ class nsCSPContext : public nsIContentSecurityPolicy {
                              uint32_t aViolatedPolicyIndex,
                              uint32_t aLineNumber, uint32_t aColumnNumber);
 
-  nsString mReferrer;
+  nsCString mReferrer;
   uint64_t mInnerWindowID;          // used for web console logging
   bool mSkipAllowInlineStyleCheck;  // used to allow Devtools to edit styles
   // When deserializing an nsCSPContext instance, we initially just keep the

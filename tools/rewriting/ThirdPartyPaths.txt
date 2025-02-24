@@ -36,6 +36,7 @@ dom/media/platforms/ffmpeg/ffmpeg57/
 dom/media/platforms/ffmpeg/ffmpeg58/
 dom/media/platforms/ffmpeg/ffmpeg59/
 dom/media/platforms/ffmpeg/ffmpeg60/
+dom/media/platforms/ffmpeg/ffmpeg61/
 dom/media/platforms/ffmpeg/libav53/
 dom/media/platforms/ffmpeg/libav54/
 dom/media/platforms/ffmpeg/libav55/
@@ -134,6 +135,9 @@ media/openmax_il/
 media/webrtc/signaling/gtest/MockCall.h
 mfbt/double-conversion/double-conversion/
 mfbt/lz4/.*
+mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/JSDOMParser-0.4.2.js
+mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-0.4.2.js
+mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-readerable-0.4.2.js
 mobile/android/exoplayer2/
 modules/brotli/
 modules/fdlibm/
@@ -180,10 +184,12 @@ testing/xpcshell/node-ws/
 third_party/
 toolkit/components/certviewer/content/vendor/
 toolkit/components/jsoncpp/
+toolkit/components/ml/vendor/
 toolkit/components/normandy/vendor/
 toolkit/components/passwordmgr/PasswordRulesParser.sys.mjs
 toolkit/components/protobuf/
 toolkit/components/reader/readability/
+toolkit/components/resistfingerprinting/content/gl-matrix.js
 toolkit/components/translation/cld2/
 toolkit/components/translations/bergamot-translator/thirdparty
 toolkit/components/translations/bergamot-translator/bergamot-translator.js

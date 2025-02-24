@@ -234,6 +234,7 @@ enum class OpKind {
   Try,
   TryTable,
   CallBuiltinModuleFunc,
+  StackSwitch,
 };
 
 // Return the OpKind for a given Op. This is used for sanity-checking that
@@ -431,6 +432,8 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   // immutable globals are allowed.
   uint32_t maxInitializedGlobalsIndexPlus1_;
   FeatureUsage featureUsage_;
+  uint32_t lastBranchHintIndex_;
+  BranchHintVector* branchHintVector_;
 
 #ifdef DEBUG
   OpBytes op_;
@@ -548,6 +551,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
         env_(env),
         maxInitializedGlobalsIndexPlus1_(0),
         featureUsage_(FeatureUsage::None),
+        branchHintVector_(nullptr),
         op_(OpBytes(Op::Limit)),
         offsetOfLastReadOp_(0) {}
 #else
@@ -596,6 +600,32 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   // Ideally this accessor would be removed; consider using something else.
   bool currentBlockHasPolymorphicBase() const {
     return !controlStack_.empty() && controlStack_.back().polymorphicBase();
+  }
+
+  // If it exists, return the BranchHint value from a function index and a
+  // branch offset.
+  // Branch hints are stored in a sorted vector. Because code in compiled in
+  // order, we keep track of the most recently accessed index.
+  // Retrieving branch hints is also done in order inside a function.
+  BranchHint getBranchHint(uint32_t funcIndex, uint32_t branchOffset) {
+    if (!env_.branchHintingEnabled()) {
+      return BranchHint::Invalid;
+    }
+
+    // Get the next hint in the collection
+    while (lastBranchHintIndex_ < branchHintVector_->length() &&
+           (*branchHintVector_)[lastBranchHintIndex_].branchOffset <
+               branchOffset) {
+      lastBranchHintIndex_++;
+    }
+
+    // No hint found for this branch.
+    if (lastBranchHintIndex_ >= branchHintVector_->length()) {
+      return BranchHint::Invalid;
+    }
+
+    // The last index is saved, now return the hint.
+    return (*branchHintVector_)[lastBranchHintIndex_].value;
   }
 
   // ------------------------------------------------------------------------
@@ -827,6 +857,11 @@ class MOZ_STACK_CLASS OpIter : private Policy {
 
   [[nodiscard]] bool readCallBuiltinModuleFunc(
       const BuiltinModuleFunc** builtinModuleFunc, ValueVector* params);
+
+#ifdef ENABLE_WASM_JSPI
+  [[nodiscard]] bool readStackSwitch(StackSwitchKind* kind, Value* suspender,
+                                     Value* fn, Value* data);
+#endif
 
   // At a location where readOp is allowed, peek at the next opcode
   // without consuming it or updating any internal state.
@@ -1270,6 +1305,12 @@ inline bool OpIter<Policy>::startFunction(uint32_t funcIndex,
   MOZ_ASSERT(maxInitializedGlobalsIndexPlus1_ == 0);
   BlockType type = BlockType::FuncResults(*env_.funcs[funcIndex].type);
 
+  // Initialize information related to branch hinting.
+  lastBranchHintIndex_ = 0;
+  if (env_.branchHintingEnabled()) {
+    branchHintVector_ = &env_.branchHints.getHintVector(funcIndex);
+  }
+
   size_t numArgs = env_.funcs[funcIndex].type->args().length();
   if (!unsetLocals_.init(locals, numArgs)) {
     return false;
@@ -1304,6 +1345,7 @@ inline bool OpIter<Policy>::startInitExpr(ValType expected) {
   MOZ_ASSERT(valueStack_.empty());
   MOZ_ASSERT(controlStack_.empty());
   MOZ_ASSERT(op_.b0 == uint16_t(Op::Limit));
+  lastBranchHintIndex_ = 0;
 
   // GC allows accessing any previously defined global, not just those that are
   // imported and immutable.
@@ -4218,6 +4260,46 @@ inline bool OpIter<Policy>::readStoreLane(uint32_t byteSize,
 }
 
 #endif  // ENABLE_WASM_SIMD
+
+#ifdef ENABLE_WASM_JSPI
+template <typename Policy>
+inline bool OpIter<Policy>::readStackSwitch(StackSwitchKind* kind,
+                                            Value* suspender, Value* fn,
+                                            Value* data) {
+  MOZ_ASSERT(Classify(op_) == OpKind::StackSwitch);
+  MOZ_ASSERT(env_.jsPromiseIntegrationEnabled());
+  uint32_t kind_;
+  if (!d_.readVarU32(&kind_)) {
+    return false;
+  }
+  *kind = StackSwitchKind(kind_);
+  if (!popWithType(ValType(RefType::any()), data)) {
+    return false;
+  }
+  StackType stackType;
+  if (!popWithType(ValType(RefType::func()), fn, &stackType)) {
+    return false;
+  }
+#  if DEBUG
+  // Verify that the function takes suspender and data as parameters and
+  // returns no values.
+  MOZ_ASSERT((*kind == StackSwitchKind::ContinueOnSuspendable) ==
+             stackType.isNullableAsOperand());
+  if (!stackType.isNullableAsOperand()) {
+    ValType valType = stackType.valType();
+    MOZ_ASSERT(valType.isRefType() && valType.typeDef()->isFuncType());
+    const FuncType& func = valType.typeDef()->funcType();
+    MOZ_ASSERT(func.args().length() == 2 && func.results().empty() &&
+               func.arg(0).isExternRef() &&
+               ValType::isSubTypeOf(func.arg(1), RefType::any()));
+  }
+#  endif
+  if (!popWithType(ValType(RefType::extern_()), suspender)) {
+    return false;
+  }
+  return true;
+}
+#endif
 
 template <typename Policy>
 inline bool OpIter<Policy>::readCallBuiltinModuleFunc(

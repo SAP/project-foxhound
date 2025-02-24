@@ -42,6 +42,7 @@ namespace mozilla {
 class Encoding;
 class HTMLEditor;
 class ObservedDocShell;
+class ScrollContainerFrame;
 enum class TaskCategory;
 namespace dom {
 class ClientInfo;
@@ -63,7 +64,6 @@ class nsIDocumentViewer;
 class nsIHttpChannel;
 class nsIMutableArray;
 class nsIPrompt;
-class nsIScrollableFrame;
 class nsIStringBundle;
 class nsIURIFixup;
 class nsIURIFixupInfo;
@@ -970,7 +970,7 @@ class nsDocShell final : public nsDocLoader,
   bool NavigationBlockedByPrinting(bool aDisplayErrorDialog = true);
   bool IsNavigationAllowed(bool aDisplayPrintErrorDialog = true,
                            bool aCheckIfUnloadFired = true);
-  nsIScrollableFrame* GetRootScrollFrame();
+  mozilla::ScrollContainerFrame* GetRootScrollContainerFrame();
   nsIChannel* GetCurrentDocChannel();
   nsresult EnsureScriptEnvironment();
   nsresult EnsureEditorData();
@@ -1266,10 +1266,6 @@ class nsDocShell final : public nsDocLoader,
   AppType mAppType;
   uint32_t mLoadType;
   uint32_t mFailedLoadType;
-
-  // Whether or not handling of the <meta name="viewport"> tag is overridden.
-  // Possible values are defined as constants in nsIDocShell.idl.
-  MetaViewportOverride mMetaViewportOverride;
 
   // See WindowGlobalParent::mSingleChannelId.
   mozilla::Maybe<uint64_t> mSingleChannelId;

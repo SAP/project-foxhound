@@ -51,6 +51,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerMarkersPrerequisites.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/BounceTrackingStorageObserver.h"
 #include "mozilla/CallState.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -74,6 +75,7 @@
 #include "mozilla/ProcessHangMonitor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/Components.h"
 #include "mozilla/SizeOfState.h"
@@ -265,7 +267,6 @@
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
-#include "nsIScrollableFrame.h"
 #include "nsISerialEventTarget.h"
 #include "nsISimpleEnumerator.h"
 #include "nsISizeOfEventTarget.h"
@@ -3506,18 +3507,7 @@ double nsGlobalWindowInner::GetDevicePixelRatio(CallerType aCallerType,
 
   if (nsIGlobalObject::ShouldResistFingerprinting(
           aCallerType, RFPTarget::WindowDevicePixelRatio)) {
-    // Spoofing the DevicePixelRatio causes blurriness in some situations
-    // on HiDPI displays. pdf.js is a non-system caller; but it can't
-    // expose the fingerprintable information, so we can safely disable
-    // spoofing in this situation. It doesn't address the issue for
-    // web-rendered content (including pdf.js instances on the web.)
-    // In the future we hope to have a better solution to fix all HiDPI
-    // blurriness...
-    nsAutoCString origin;
-    nsresult rv = this->GetPrincipal()->GetOrigin(origin);
-    if (NS_FAILED(rv) || origin != "resource://pdf.js"_ns) {
-      return 1.0;
-    }
+    return 2.0;
   }
 
   if (aCallerType == CallerType::NonSystem) {
@@ -3707,7 +3697,7 @@ bool nsGlobalWindowInner::Confirm(const nsAString& aMessage,
 }
 
 already_AddRefed<Promise> nsGlobalWindowInner::Fetch(
-    const RequestOrUSVString& aInput, const RequestInit& aInit,
+    const RequestOrUTF8String& aInput, const RequestInit& aInit,
     CallerType aCallerType, ErrorResult& aRv) {
   return FetchRequest(this, aInput, aInit, aCallerType, aRv);
 }
@@ -3756,7 +3746,7 @@ Nullable<WindowProxyHolder> nsGlobalWindowInner::PrintPreview(
        /* aRemotePrintJob = */ nullptr, aListener, aDocShellToCloneInto,
        nsGlobalWindowOuter::IsPreview::Yes,
        nsGlobalWindowOuter::IsForWindowDotPrint::No,
-       /* aPrintPreviewCallback = */ nullptr, aError),
+       /* aPrintPreviewCallback = */ nullptr, nullptr, aError),
       aError, nullptr);
 }
 
@@ -3831,7 +3821,7 @@ void nsGlobalWindowInner::ScrollTo(const ScrollToOptions& aOptions) {
           ? FlushType::Layout
           : FlushType::Frames;
   FlushPendingNotifications(flushType);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
 
   if (sf) {
     CSSIntPoint scrollPos = sf->GetRoundedScrollPositionCSSPixels();
@@ -3861,7 +3851,7 @@ void nsGlobalWindowInner::ScrollTo(const CSSIntPoint& aScroll,
   FlushType flushType =
       (aScroll.x || aScroll.y) ? FlushType::Layout : FlushType::Frames;
   FlushPendingNotifications(flushType);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
 
   if (sf) {
     // Here we calculate what the max pixel value is that we can
@@ -3890,7 +3880,7 @@ void nsGlobalWindowInner::ScrollTo(const CSSIntPoint& aScroll,
 
 void nsGlobalWindowInner::ScrollBy(double aXScrollDif, double aYScrollDif) {
   FlushPendingNotifications(FlushType::Layout);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
 
   if (sf) {
     // It seems like it would make more sense for ScrollBy to use
@@ -3905,7 +3895,7 @@ void nsGlobalWindowInner::ScrollBy(double aXScrollDif, double aYScrollDif) {
 
 void nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions) {
   FlushPendingNotifications(FlushType::Layout);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
 
   if (sf) {
     CSSIntPoint scrollDelta;
@@ -3929,7 +3919,7 @@ void nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions) {
 void nsGlobalWindowInner::ScrollByLines(int32_t numLines,
                                         const ScrollOptions& aOptions) {
   FlushPendingNotifications(FlushType::Layout);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
   if (sf) {
     // It seems like it would make more sense for ScrollByLines to use
     // SMOOTH mode, but tests seem to depend on the synchronous behaviour.
@@ -3945,7 +3935,7 @@ void nsGlobalWindowInner::ScrollByLines(int32_t numLines,
 void nsGlobalWindowInner::ScrollByPages(int32_t numPages,
                                         const ScrollOptions& aOptions) {
   FlushPendingNotifications(FlushType::Layout);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
   if (sf) {
     // It seems like it would make more sense for ScrollByPages to use
     // SMOOTH mode, but tests seem to depend on the synchronous behaviour.
@@ -3960,7 +3950,7 @@ void nsGlobalWindowInner::ScrollByPages(int32_t numPages,
 
 void nsGlobalWindowInner::MozScrollSnap() {
   FlushPendingNotifications(FlushType::Layout);
-  nsIScrollableFrame* sf = GetScrollFrame();
+  ScrollContainerFrame* sf = GetScrollContainerFrame();
   if (sf) {
     sf->ScrollSnap();
   }
@@ -4652,6 +4642,19 @@ already_AddRefed<nsICSSDeclaration> nsGlobalWindowInner::GetComputedStyleHelper(
                             aError, nullptr);
 }
 
+void nsGlobalWindowInner::MaybeNotifyStorageKeyUsed() {
+  // Only notify once per window lifetime.
+  if (hasNotifiedStorageKeyUsed) {
+    return;
+  }
+  nsresult rv =
+      BounceTrackingStorageObserver::OnInitialStorageAccess(GetWindowContext());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+  hasNotifiedStorageKeyUsed = true;
+}
+
 Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
   nsIPrincipal* principal = GetPrincipal();
   nsIPrincipal* storagePrincipal;
@@ -4773,6 +4776,8 @@ Storage* nsGlobalWindowInner::GetSessionStorage(ErrorResult& aError) {
       return nullptr;
     }
   }
+
+  MaybeNotifyStorageKeyUsed();
 
   MOZ_LOG(gDOMLeakPRLogInner, LogLevel::Debug,
           ("nsGlobalWindowInner %p returns %p sessionStorage", this,
@@ -4942,6 +4947,8 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
         new PartitionedLocalStorage(this, principal, storagePrincipal, cache);
   }
 
+  MaybeNotifyStorageKeyUsed();
+
   MOZ_ASSERT(mLocalStorage);
   MOZ_ASSERT(
       mLocalStorage->Type() ==
@@ -4960,6 +4967,8 @@ IDBFactory* nsGlobalWindowInner::GetIndexedDB(JSContext* aCx,
       mIndexedDB = res.unwrap();
     }
   }
+
+  MaybeNotifyStorageKeyUsed();
 
   return mIndexedDB;
 }
@@ -6377,8 +6386,8 @@ nsGlobalWindowInner::GetWebBrowserChrome() {
   return browserChrome.forget();
 }
 
-nsIScrollableFrame* nsGlobalWindowInner::GetScrollFrame() {
-  FORWARD_TO_OUTER(GetScrollFrame, (), nullptr);
+ScrollContainerFrame* nsGlobalWindowInner::GetScrollContainerFrame() {
+  FORWARD_TO_OUTER(GetScrollContainerFrame, (), nullptr);
 }
 
 bool nsGlobalWindowInner::IsPrivateBrowsing() {
@@ -6781,6 +6790,18 @@ void nsGlobalWindowInner::GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads) {
     aGamepads.EnsureLengthAtLeast(gamepad->Index() + 1);
     aGamepads[gamepad->Index()] = gamepad;
   }
+}
+
+already_AddRefed<mozilla::dom::Promise> nsGlobalWindowInner::RequestAllGamepads(
+    ErrorResult& aRv) {
+  RefPtr<GamepadManager> gamepadManager(GamepadManager::GetService());
+
+  if (!gamepadManager) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  return gamepadManager->RequestAllGamepads(this, aRv);
 }
 
 already_AddRefed<Gamepad> nsGlobalWindowInner::GetGamepad(
@@ -7578,7 +7599,7 @@ void nsGlobalWindowInner::SetScrollMarks(const nsTArray<uint32_t>& aScrollMarks,
   if (mDoc) {
     PresShell* presShell = mDoc->GetPresShell();
     if (presShell) {
-      nsIScrollableFrame* sf = presShell->GetRootScrollFrameAsScrollable();
+      ScrollContainerFrame* sf = presShell->GetRootScrollContainerFrame();
       if (sf) {
         sf->InvalidateScrollbars();
       }
@@ -7735,6 +7756,7 @@ nsPIDOMWindowInner::nsPIDOMWindowInner(nsPIDOMWindowOuter* aOuterWindow,
       mMayHaveMouseEnterLeaveEventListener(false),
       mMayHavePointerEnterLeaveEventListener(false),
       mMayHaveTransitionEventListener(false),
+      mMayHaveSMILTimeEventListener(false),
       mMayHaveBeforeInputEventListenerForTelemetry(false),
       mMutationObserverHasObservedNodeForTelemetry(false),
       mOuterWindow(aOuterWindow),

@@ -14,12 +14,14 @@
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientSource.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
+#include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -216,8 +218,9 @@ LoadInfo::LoadInfo(
     mDocumentHasUserInteracted =
         aLoadingContext->OwnerDoc()->UserHasInteracted();
 
-    // Inherit HTTPS-Only Mode flags from parent document
-    mHttpsOnlyStatus |= aLoadingContext->OwnerDoc()->HttpsOnlyStatus();
+    // Inherit HTTPS-Only Mode flags from parent document.
+    mHttpsOnlyStatus |= nsHTTPSOnlyUtils::GetStatusForSubresourceLoad(
+        aLoadingContext->OwnerDoc()->HttpsOnlyStatus());
 
     // When the element being loaded is a frame, we choose the frame's window
     // for the window ID and the frame element's window as the parent
@@ -421,20 +424,47 @@ LoadInfo::LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
   }
 #endif
 
-  // If we think we should not resist fingerprinting, defer to the opener's
-  // RFP bit (if there is an opener.)  If the opener is also exempted, it stays
-  // true, otherwise we will put a false into the CJS and that will be respected
-  // on this document.
+  // This code path can be taken when loading an about:blank document, which
+  // means we might think that we should be exempted from resist fingerprinting.
+  // If we think that, we should defer to any opener, if it is present. If the
+  // opener is also exempted, then it continues to be exempted. Regardless of
+  // what ShouldRFP says, we _also_ need to propagate any RandomizationKey we
+  // have.
   bool shouldResistFingerprinting =
       nsContentUtils::ShouldResistFingerprinting_dangerous(
           aURI, mOriginAttributes,
           "We are creating CookieJarSettings, so we can't have one already.",
           RFPTarget::IsAlwaysEnabledForPrecompute);
+
+  nsresult rv = NS_ERROR_NOT_AVAILABLE;
+  nsTArray<uint8_t> randomKey;
   RefPtr<BrowsingContext> opener = aBrowsingContext->GetOpener();
-  if (!shouldResistFingerprinting && opener &&
-      opener->GetCurrentWindowContext()) {
-    shouldResistFingerprinting =
-        opener->GetCurrentWindowContext()->ShouldResistFingerprinting();
+  if (opener) {
+    MOZ_ASSERT(opener->GetCurrentWindowContext());
+    if (opener->GetCurrentWindowContext()) {
+      shouldResistFingerprinting |=
+          opener->GetCurrentWindowContext()->ShouldResistFingerprinting();
+    }
+
+    // In the parent, we need to get the CJS from the CanonicalBrowsingContext's
+    // WindowGlobalParent If we're in the child, we probably have a reference to
+    // the opener's document, and can get it from there.
+    if (XRE_IsParentProcess()) {
+      MOZ_ASSERT(opener->Canonical()->GetCurrentWindowGlobal());
+      if (opener->Canonical()->GetCurrentWindowGlobal()) {
+        MOZ_ASSERT(
+            opener->Canonical()->GetCurrentWindowGlobal()->CookieJarSettings());
+        rv = opener->Canonical()
+                 ->GetCurrentWindowGlobal()
+                 ->CookieJarSettings()
+                 ->GetFingerprintingRandomizationKey(randomKey);
+      }
+    } else if (opener->GetDocument()) {
+      MOZ_ASSERT(false, "Code is in child");
+      rv = opener->GetDocument()
+               ->CookieJarSettings()
+               ->GetFingerprintingRandomizationKey(randomKey);
+    }
   }
 
   const bool isPrivate = mOriginAttributes.mPrivateBrowsingId > 0;
@@ -445,6 +475,11 @@ LoadInfo::LoadInfo(dom::CanonicalBrowsingContext* aBrowsingContext,
   mCookieJarSettings = CookieJarSettings::Create(
       isPrivate ? CookieJarSettings::ePrivate : CookieJarSettings::eRegular,
       shouldResistFingerprinting);
+
+  if (NS_SUCCEEDED(rv)) {
+    net::CookieJarSettings::Cast(mCookieJarSettings)
+        ->SetFingerprintingRandomizationKey(randomKey);
+  }
 }
 
 LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
@@ -528,7 +563,9 @@ LoadInfo::LoadInfo(dom::WindowGlobalParent* aParentWGP,
         parentBC->UsePrivateBrowsing());
   }
 
-  mHttpsOnlyStatus |= aParentWGP->HttpsOnlyStatus();
+  // Inherit HTTPS-Only Mode flags from embedder document.
+  mHttpsOnlyStatus |= nsHTTPSOnlyUtils::GetStatusForSubresourceLoad(
+      aParentWGP->HttpsOnlyStatus());
 
   // For chrome BC, the mPrivateBrowsingId remains 0 even its
   // UsePrivateBrowsing() is true, so we only update the mPrivateBrowsingId in
@@ -570,6 +607,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mChannelCreationOriginalURI(rhs.mChannelCreationOriginalURI),
       mCookieJarSettings(rhs.mCookieJarSettings),
       mCspToInherit(rhs.mCspToInherit),
+      mContainerFeaturePolicyInfo(rhs.mContainerFeaturePolicyInfo),
       mTriggeringRemoteType(rhs.mTriggeringRemoteType),
       mSandboxedNullPrincipalID(rhs.mSandboxedNullPrincipalID),
       mClientInfo(rhs.mClientInfo),
@@ -2333,6 +2371,15 @@ already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetPreloadCsp() {
 already_AddRefed<nsIContentSecurityPolicy> LoadInfo::GetCspToInherit() {
   nsCOMPtr<nsIContentSecurityPolicy> cspToInherit = mCspToInherit;
   return cspToInherit.forget();
+}
+
+Maybe<FeaturePolicyInfo> LoadInfo::GetContainerFeaturePolicyInfo() {
+  return mContainerFeaturePolicyInfo;
+}
+
+void LoadInfo::SetContainerFeaturePolicyInfo(
+    const FeaturePolicyInfo& aContainerFeaturePolicyInfo) {
+  mContainerFeaturePolicyInfo = Some(aContainerFeaturePolicyInfo);
 }
 
 nsIInterceptionInfo* LoadInfo::InterceptionInfo() { return mInterceptionInfo; }

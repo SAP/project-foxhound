@@ -357,6 +357,11 @@ class JsepAudioCodecDescription : public JsepCodecDescription {
       opusParams.maxFrameSizeMs = mMaxFrameSizeMs;
       opusParams.useCbr = mCbrEnabled;
       aFmtp.reset(opusParams.Clone());
+    } else if (mName == "telephone-event") {
+      if (!aFmtp) {
+        // We only use the default right now
+        aFmtp.reset(new SdpFmtpAttributeList::TelephoneEventParameters);
+      }
     }
   };
 
@@ -437,6 +442,30 @@ class JsepVideoCodecDescription : public JsepCodecDescription {
     codec->mProfileLevelId = 0x42E01F;
     if (aUseRtx) {
       codec->EnableRtx("127");
+    }
+    return codec;
+  }
+
+  static UniquePtr<JsepVideoCodecDescription> CreateDefaultH264Baseline_0(
+      bool aUseRtx) {
+    auto codec = MakeUnique<JsepVideoCodecDescription>("103", "H264", 90000);
+    codec->mPacketizationMode = 0;
+    // Defaults for mandatory params
+    codec->mProfileLevelId = 0x42001F;
+    if (aUseRtx) {
+      codec->EnableRtx("104");
+    }
+    return codec;
+  }
+
+  static UniquePtr<JsepVideoCodecDescription> CreateDefaultH264Baseline_1(
+      bool aUseRtx) {
+    auto codec = MakeUnique<JsepVideoCodecDescription>("105", "H264", 90000);
+    codec->mPacketizationMode = 1;
+    // Defaults for mandatory params
+    codec->mProfileLevelId = 0x42001F;
+    if (aUseRtx) {
+      codec->EnableRtx("106");
     }
     return codec;
   }
@@ -1165,7 +1194,7 @@ class JsepApplicationCodecDescription : public JsepCodecDescription {
   }
 
   void ApplyConfigToFmtp(
-      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const override{};
+      UniquePtr<SdpFmtpAttributeList::Parameters>& aFmtp) const override {};
 
   uint16_t mLocalPort;
   uint32_t mLocalMaxMessageSize;

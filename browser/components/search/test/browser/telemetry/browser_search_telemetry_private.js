@@ -31,10 +31,6 @@ const TEST_PROVIDER_INFO = [
 add_setup(async function () {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
-  // Enable local telemetry recording for the duration of the tests.
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.serpEventTelemetry.enabled", true]],
-  });
 
   registerCleanupFunction(async () => {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
@@ -82,6 +78,7 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_shopping_page: "false",
         is_private: "true",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       abandonment: {
         reason: SearchSERPTelemetryUtils.ABANDONMENTS.NAVIGATION,
@@ -96,6 +93,7 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_shopping_page: "false",
         is_private: "true",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       abandonment: {
         reason: SearchSERPTelemetryUtils.ABANDONMENTS.TAB_CLOSE,
@@ -118,6 +116,7 @@ add_task(async function load_2_pbm_serps_and_1_non_pbm_serp() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {

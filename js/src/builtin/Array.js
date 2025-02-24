@@ -76,85 +76,6 @@ function ArraySome(callbackfn /*, thisArg*/) {
 // Inlining this enables inlining of the callback function.
 SetIsInlinableLargeFunction(ArraySome);
 
-// ES2023 draft rev cb4224156c54156f30c18c50784c1b0148ebfae5
-// 23.1.3.30 Array.prototype.sort ( comparefn )
-function ArraySortCompare(comparefn) {
-  return function(x, y) {
-    // Steps 4.a-c.
-    if (x === undefined) {
-      if (y === undefined) {
-        return 0;
-      }
-      return 1;
-    }
-    if (y === undefined) {
-      return -1;
-    }
-
-    // Step 4.d.i.
-    var v = ToNumber(callContentFunction(comparefn, undefined, x, y));
-
-    // Steps 4.d.ii-iii.
-    return v !== v ? 0 : v;
-  };
-}
-
-// ES2023 draft rev cb4224156c54156f30c18c50784c1b0148ebfae5
-// 23.1.3.30 Array.prototype.sort ( comparefn )
-function ArraySort(comparefn) {
-  // Step 1.
-  if (comparefn !== undefined) {
-    if (!IsCallable(comparefn)) {
-      ThrowTypeError(JSMSG_BAD_SORT_ARG);
-    }
-  }
-
-  // Step 2.
-  var O = ToObject(this);
-
-  // First try to sort the array in native code, if that fails, indicated by
-  // returning |false| from ArrayNativeSort, sort it in self-hosted code.
-  if (callFunction(ArrayNativeSort, O, comparefn)) {
-    return O;
-  }
-
-  // Step 3.
-  var len = ToLength(O.length);
-
-  // Arrays with less than two elements remain unchanged when sorted.
-  if (len <= 1) {
-    return O;
-  }
-
-  // Step 4.
-  var wrappedCompareFn = ArraySortCompare(comparefn);
-
-  // Step 5.
-  // To save effort we will do all of our work on a dense list, then create
-  // holes at the end.
-  var denseList = [];
-  var denseLen = 0;
-
-  for (var i = 0; i < len; i++) {
-    if (i in O) {
-      DefineDataProperty(denseList, denseLen++, O[i]);
-    }
-  }
-
-  if (denseLen < 1) {
-    return O;
-  }
-
-  var sorted = MergeSort(denseList, denseLen, wrappedCompareFn);
-
-  assert(IsPackedArray(sorted), "sorted is a packed array");
-  assert(sorted.length === denseLen, "sorted array has the correct length");
-
-  MoveHoles(O, len, sorted, denseLen);
-
-  return O;
-}
-
 /* ES5 15.4.4.18. */
 function ArrayForEach(callbackfn /*, thisArg*/) {
   /* Step 1. */
@@ -760,7 +681,8 @@ function ArrayFromAsync(asyncItems, mapfn = undefined, thisArg = undefined) {
       //     Step 3.e.i. Let A be ? Construct(C).
       // Step 3.f. Else,
       //     Step 3.f.i. Let A be ! ArrayCreate(0).
-      var A = IsConstructor(C) ? constructContentFunction(C, C) : [];
+      var A = IsConstructor(C) ?
+        (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C)) : [];
 
 
       // Step 3.j.i. Let k be 0.
@@ -829,7 +751,7 @@ function ArrayFromAsync(asyncItems, mapfn = undefined, thisArg = undefined) {
     //     Step 3.k.iv.1. Let A be ? Construct(C, « 𝔽(len) »).
     // Step 3.k.v. Else,
     //     Step 3.k.v.1. Let A be ? ArrayCreate(len).
-    var A = IsConstructor(C) ? constructContentFunction(C, C, len) : std_Array(len);
+    var A = IsConstructor(C) ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C, len)) : std_Array(len);
 
     // Step 3.k.vi. Let k be 0.
     var k = 0;
@@ -893,7 +815,7 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
     }
 
     // Steps 5.a-b.
-    var A = IsConstructor(C) ? constructContentFunction(C, C) : [];
+    var A = IsConstructor(C) ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C)) : [];
 
     // Step 5.d.
     var k = 0;
@@ -936,7 +858,7 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
 
   // Steps 12-14.
   var A = IsConstructor(C)
-    ? constructContentFunction(C, C, len)
+    ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C, len))
     : std_Array(len);
 
   // Steps 15-16.
@@ -1000,7 +922,7 @@ function ArrayToLocaleString(locales, options) {
   if (IsNullOrUndefined(firstElement)) {
     R = "";
   } else {
-#if JS_HAS_INTL_API
+    #if JS_HAS_INTL_API
     R = ToString(
       callContentFunction(
         firstElement.toLocaleString,
@@ -1009,11 +931,11 @@ function ArrayToLocaleString(locales, options) {
         options
       )
     );
-#else
+    #else
     R = ToString(
       callContentFunction(firstElement.toLocaleString, firstElement)
     );
-#endif
+    #endif
   }
 
   // Step 3 (reordered).
@@ -1028,7 +950,7 @@ function ArrayToLocaleString(locales, options) {
     // Steps 9.a, 9.c-e.
     R += separator;
     if (!IsNullOrUndefined(nextElement)) {
-#if JS_HAS_INTL_API
+      #if JS_HAS_INTL_API
       R += ToString(
         callContentFunction(
           nextElement.toLocaleString,
@@ -1037,11 +959,11 @@ function ArrayToLocaleString(locales, options) {
           options
         )
       );
-#else
+      #else
       R += ToString(
         callContentFunction(nextElement.toLocaleString, nextElement)
       );
-#endif
+      #endif
     }
   }
 
@@ -1095,6 +1017,7 @@ function ArraySpeciesCreate(originalArray, length) {
     if (C === null) {
       return std_Array(length);
     }
+
   }
 
   // Step 6.
@@ -1108,6 +1031,7 @@ function ArraySpeciesCreate(originalArray, length) {
   }
 
   // Step 8.
+  ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_III);
   return constructContentFunction(C, C, length);
 }
 
@@ -1335,22 +1259,8 @@ function ArrayToSorted(comparefn) {
     return items;
   }
 
-  // First try to sort the array in native code, if that fails, indicated by
-  // returning |false| from ArrayNativeSort, sort it in self-hosted code.
-  if (callFunction(ArrayNativeSort, items, comparefn)) {
-    return items;
-  }
-
-  // Step 5.
-  var wrappedCompareFn = ArraySortCompare(comparefn);
-
-  // Steps 6-9.
-  var sorted = MergeSort(items, len, wrappedCompareFn);
-
-  assert(IsPackedArray(sorted), "sorted is a packed array");
-  assert(sorted.length === len, "sorted array has the correct length");
-
-  return sorted;
+  // Steps 5-9.
+  return callFunction(std_Array_sort, items, comparefn);
 }
 
 // https://github.com/tc39/proposal-array-find-from-last

@@ -7,7 +7,7 @@
 use std::{
     cell::RefCell,
     fmt::{Debug, Display},
-    mem,
+    iter, mem,
     net::SocketAddr,
     rc::Rc,
     time::Instant,
@@ -590,7 +590,7 @@ impl Http3Client {
     ///
     /// An error will be return if stream does not exist.
     pub fn stream_close_send(&mut self, stream_id: StreamId) -> Res<()> {
-        qinfo!([self], "Close sending side stream={}.", stream_id);
+        qdebug!([self], "Close sending side stream={}.", stream_id);
         self.base_handler
             .stream_close_send(&mut self.conn, stream_id)
     }
@@ -652,7 +652,7 @@ impl Http3Client {
         stream_id: StreamId,
         buf: &mut [u8],
     ) -> Res<(usize, bool)> {
-        qinfo!([self], "read_data from stream {}.", stream_id);
+        qdebug!([self], "read_data from stream {}.", stream_id);
         let res = self.base_handler.read_data(&mut self.conn, stream_id, buf);
         if let Err(e) = &res {
             if e.connection_error() {
@@ -874,19 +874,16 @@ impl Http3Client {
     ///
     /// [1]: ../neqo_transport/enum.ConnectionEvent.html
     pub fn process_input(&mut self, dgram: &Datagram, now: Instant) {
-        qtrace!([self], "Process input.");
-        self.conn.process_input(dgram, now);
-        self.process_http3(now);
+        self.process_multiple_input(iter::once(dgram), now);
     }
 
     pub fn process_multiple_input<'a, I>(&mut self, dgrams: I, now: Instant)
     where
         I: IntoIterator<Item = &'a Datagram>,
-        I::IntoIter: ExactSizeIterator,
     {
-        let dgrams = dgrams.into_iter();
-        qtrace!([self], "Process multiple datagrams, len={}", dgrams.len());
-        if dgrams.len() == 0 {
+        let mut dgrams = dgrams.into_iter().peekable();
+        qtrace!([self], "Process multiple datagrams");
+        if dgrams.peek().is_none() {
             return;
         }
         self.conn.process_multiple_input(dgrams, now);
@@ -1294,8 +1291,8 @@ mod tests {
     use neqo_crypto::{AllowZeroRtt, AntiReplay, ResumptionToken};
     use neqo_qpack::{encoder::QPackEncoder, QpackSettings};
     use neqo_transport::{
-        ConnectionError, ConnectionEvent, ConnectionParameters, Output, State, StreamId,
-        StreamType, Version, RECV_BUFFER_SIZE, SEND_BUFFER_SIZE,
+        CloseReason, ConnectionEvent, ConnectionParameters, Output, State, StreamId, StreamType,
+        Version, MIN_INITIAL_PACKET_SIZE, RECV_BUFFER_SIZE, SEND_BUFFER_SIZE,
     };
     use test_fixture::{
         anti_replay, default_server_h3, fixture_init, new_server, now,
@@ -1317,7 +1314,7 @@ mod tests {
     fn assert_closed(client: &Http3Client, expected: &Error) {
         match client.state() {
             Http3State::Closing(err) | Http3State::Closed(err) => {
-                assert_eq!(err, ConnectionError::Application(expected.code()));
+                assert_eq!(err, CloseReason::Application(expected.code()));
             }
             _ => panic!("Wrong state {:?}", client.state()),
         };
@@ -2623,7 +2620,7 @@ mod tests {
         force_idle(&mut client, &mut server);
 
         let idle_timeout = ConnectionParameters::default().get_idle_timeout();
-        assert_eq!(client.process_output(now()).callback(), idle_timeout / 2);
+        assert_eq!(client.process_output(now()).callback(), idle_timeout);
     }
 
     // Helper function: read response when a server sends HTTP_RESPONSE_2.
@@ -4422,7 +4419,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4440,7 +4437,7 @@ mod tests {
                 HSetting::new(HSettingType::MaxTableCapacity, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4477,7 +4474,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(514)),
+            &Http3State::Closing(CloseReason::Application(514)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4496,7 +4493,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4534,7 +4531,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 50),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4572,7 +4569,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 5000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -4629,7 +4626,7 @@ mod tests {
                 HSetting::new(HSettingType::BlockedStreams, 100),
                 HSetting::new(HSettingType::MaxHeaderListSize, 10000),
             ],
-            &Http3State::Closing(ConnectionError::Application(265)),
+            &Http3State::Closing(CloseReason::Application(265)),
             ENCODER_STREAM_DATA_WITH_CAP_INSTRUCTION,
         );
     }
@@ -5118,7 +5115,7 @@ mod tests {
         assert!(!fin);
 
         force_idle(&mut client, &mut server);
-        assert_eq!(client.process_output(now()).callback(), idle_timeout / 2);
+        assert_eq!(client.process_output(now()).callback(), idle_timeout);
     }
 
     #[test]
@@ -7160,8 +7157,9 @@ mod tests {
     #[test]
     fn priority_update_during_full_buffer() {
         // set a lower MAX_DATA on the server side to restrict the data the client can send
-        let (mut client, mut server) =
-            connect_with_connection_parameters(ConnectionParameters::default().max_data(1200));
+        let (mut client, mut server) = connect_with_connection_parameters(
+            ConnectionParameters::default().max_data(MIN_INITIAL_PACKET_SIZE.try_into().unwrap()),
+        );
 
         let request_stream_id = make_request_and_exchange_pkts(&mut client, &mut server, false);
         let data_writable = |e| matches!(e, Http3ClientEvent::DataWritable { .. });

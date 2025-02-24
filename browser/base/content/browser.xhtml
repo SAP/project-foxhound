@@ -41,11 +41,7 @@
       both "content" and "skin" packages, which bug 1385444 will unify later. -->
   <link rel="stylesheet" href="chrome://global/skin/global.css" />
 
-  <link rel="stylesheet" href="chrome://global/content/tabprompts.css" />
-  <link rel="stylesheet" href="chrome://global/skin/tabprompts.css" />
-
   <link rel="stylesheet" href="chrome://browser/content/browser.css" />
-  <link rel="stylesheet" href="chrome://browser/content/tabbrowser.css" />
   <link
     rel="stylesheet"
     href="chrome://browser/content/downloads/downloads.css"
@@ -63,7 +59,6 @@
     href="chrome://browser/skin/customizableui/panelUI.css"
   />
   <link rel="stylesheet" href="chrome://browser/skin/downloads/downloads.css" />
-  <link rel="stylesheet" href="chrome://browser/skin/searchbar.css" />
   <link rel="stylesheet" href="chrome://browser/skin/translations/panel.css" />
   <link rel="stylesheet" href="chrome://browser/skin/places/tree-icons.css" />
   <link rel="stylesheet" href="chrome://browser/skin/places/editBookmark.css" />
@@ -90,7 +85,6 @@
   <link rel="localization" href="browser/translations.ftl" />
   <link rel="localization" href="browser/unifiedExtensions.ftl"/>
   <link rel="localization" href="browser/webrtcIndicator.ftl"/>
-  <link rel="localization" href="toolkit/branding/accounts.ftl"/>
   <link rel="localization" href="toolkit/branding/brandings.ftl"/>
   <link rel="localization" href="toolkit/global/contextual-identity.ftl"/>
   <link rel="localization" href="toolkit/global/textActions.ftl"/>
@@ -98,9 +92,9 @@
   <!-- Untranslated FTL files -->
   <link rel="localization" href="preview/enUS-searchFeatures.ftl" />
   <link rel="localization" href="preview/interventions.ftl" />
-  <link rel="localization" href="preview/select-translations.ftl"/>
   <link rel="localization" href="browser/shopping.ftl"/>
   <link rel="localization" href="preview/shopping.ftl"/>
+  <link rel="localization" href="preview/sidebar.ftl"/>
   <link rel="localization" href="preview/profiles.ftl"/>
   <link rel="localization" href="preview/onboarding.ftl"/>
 
@@ -113,6 +107,7 @@
 
 <script>
   /* eslint-env mozilla/browser-window */
+  Services.scriptloader.loadSubScript("chrome://browser/content/browser-init.js", this);
   Services.scriptloader.loadSubScript("chrome://global/content/contentAreaUtils.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-captivePortal.js", this);
   if (AppConstants.MOZ_DATA_REPORTING) {
@@ -122,12 +117,12 @@
     Services.scriptloader.loadSubScript("chrome://browser/content/browser-development-helpers.js", this);
   }
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-pageActions.js", this);
-  Services.scriptloader.loadSubScript("chrome://browser/content/browser-sidebar.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/sidebar/browser-sidebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-tabsintitlebar.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/browser-unified-extensions.js", this);
-  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser.js", this);
-  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser-tab.js", this);
-  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser-tabs.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tab.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabbrowser.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabs.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/places/places-menupopup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/autocomplete-popup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/search/searchbar.js", this);

@@ -6,20 +6,9 @@
 #ifndef nsListControlFrame_h___
 #define nsListControlFrame_h___
 
-#ifdef DEBUG_evaughan
-// #define DEBUG_rods
-#endif
-
-#ifdef DEBUG_rods
-// #define DO_REFLOW_DEBUG
-// #define DO_REFLOW_COUNTER
-// #define DO_UNCONSTRAINED_CHECK
-// #define DO_PIXELS
-#endif
-
 #include "mozilla/Attributes.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPtr.h"
-#include "nsGfxScrollFrame.h"
 #include "nsIFormControlFrame.h"
 #include "nsISelectControlFrame.h"
 #include "nsSelectsAreaFrame.h"
@@ -43,7 +32,7 @@ class HTMLOptionsCollection;
  * Frame-based listbox.
  */
 
-class nsListControlFrame final : public nsHTMLScrollFrame,
+class nsListControlFrame final : public mozilla::ScrollContainerFrame,
                                  public nsIFormControlFrame,
                                  public nsISelectControlFrame {
  public:
@@ -195,7 +184,7 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
   bool MightNeedSecondPass() const { return mMightNeedSecondPass; }
 
   void SetSuppressScrollbarUpdate(bool aSuppress) {
-    nsHTMLScrollFrame::SetSuppressScrollbarUpdate(aSuppress);
+    ScrollContainerFrame::SetSuppressScrollbarUpdate(aSuppress);
   }
 
   /**
@@ -225,9 +214,7 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
   /**
    * Returns whether mContent supports multiple selection.
    */
-  bool GetMultiple() const {
-    return mContent->AsElement()->HasAttr(nsGkAtoms::multiple);
-  }
+  bool GetMultiple() const;
 
   mozilla::dom::HTMLSelectElement& Select() const;
 
@@ -341,10 +328,6 @@ class nsListControlFrame final : public nsHTMLScrollFrame,
   RefPtr<mozilla::HTMLSelectEventListener> mEventListener;
 
   static nsListControlFrame* mFocused;
-
-#ifdef DO_REFLOW_COUNTER
-  int32_t mReflowId;
-#endif
 };
 
 #endif /* nsListControlFrame_h___ */

@@ -8,17 +8,18 @@
 
 // std::vector replacement with padding to reduce bounds checks in WriteBits
 
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>  // memcpy
+#include <jxl/memory_manager.h>
 
 #include <algorithm>  // max
+#include <cstddef>
+#include <cstdint>
+#include <cstring>  // memcpy
 #include <initializer_list>
 #include <utility>  // swap
 
 #include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/cache_aligned.h"
+#include "lib/jxl/memory_manager_internal.h"
 
 namespace jxl {
 
@@ -29,25 +30,31 @@ namespace jxl {
 class PaddedBytes {
  public:
   // Required for output params.
-  PaddedBytes() : size_(0), capacity_(0) {}
+  explicit PaddedBytes(JxlMemoryManager* memory_manager)
+      : memory_manager_(memory_manager), size_(0), capacity_(0) {}
 
-  explicit PaddedBytes(size_t size) : size_(size), capacity_(0) {
+  PaddedBytes(JxlMemoryManager* memory_manager, size_t size)
+      : memory_manager_(memory_manager), size_(size), capacity_(0) {
     reserve(size);
   }
 
-  PaddedBytes(size_t size, uint8_t value) : size_(size), capacity_(0) {
+  PaddedBytes(JxlMemoryManager* memory_manager, size_t size, uint8_t value)
+      : memory_manager_(memory_manager), size_(size), capacity_(0) {
     reserve(size);
     if (size_ != 0) {
       memset(data(), value, size);
     }
   }
 
-  PaddedBytes(const PaddedBytes& other) : size_(other.size_), capacity_(0) {
+  PaddedBytes(const PaddedBytes& other)
+      : memory_manager_(other.memory_manager_),
+        size_(other.size_),
+        capacity_(0) {
     reserve(size_);
     if (data() != nullptr) memcpy(data(), other.data(), size_);
   }
   PaddedBytes& operator=(const PaddedBytes& other) {
-    // Self-assignment is safe.
+    if (this == &other) return *this;
     resize(other.size());
     if (data() != nullptr) memmove(data(), other.data(), size_);
     return *this;
@@ -55,12 +62,14 @@ class PaddedBytes {
 
   // default is not OK - need to set other.size_ to 0!
   PaddedBytes(PaddedBytes&& other) noexcept
-      : size_(other.size_),
+      : memory_manager_(other.memory_manager_),
+        size_(other.size_),
         capacity_(other.capacity_),
         data_(std::move(other.data_)) {
     other.size_ = other.capacity_ = 0;
   }
   PaddedBytes& operator=(PaddedBytes&& other) noexcept {
+    memory_manager_ = other.memory_manager_;
     size_ = other.size_;
     capacity_ = other.capacity_;
     data_ = std::move(other.data_);
@@ -71,7 +80,10 @@ class PaddedBytes {
     return *this;
   }
 
+  JxlMemoryManager* memory_manager() const { return memory_manager_; }
+
   void swap(PaddedBytes& other) noexcept {
+    std::swap(memory_manager_, other.memory_manager_);
     std::swap(size_, other.size_);
     std::swap(capacity_, other.capacity_);
     std::swap(data_, other.data_);
@@ -89,26 +101,28 @@ class PaddedBytes {
     new_capacity = std::max<size_t>(64, new_capacity);
 
     // BitWriter writes up to 7 bytes past the end.
-    CacheAlignedUniquePtr new_data = AllocateArray(new_capacity + 8);
-    if (new_data == nullptr) {
+    StatusOr<AlignedMemory> new_data_or =
+        AlignedMemory::Create(memory_manager_, new_capacity + 8);
+    if (!new_data_or.ok()) {
       // Allocation failed, discard all data to ensure this is noticed.
       size_ = capacity_ = 0;
       return;
     }
+    AlignedMemory new_data = std::move(new_data_or).value();
 
-    if (data_ == nullptr) {
+    if (data_.address<void>() == nullptr) {
       // First allocation: ensure first byte is initialized (won't be copied).
-      new_data[0] = 0;
+      new_data.address<uint8_t>()[0] = 0;
     } else {
       // Subsequent resize: copy existing data to new location.
-      memcpy(new_data.get(), data_.get(), size_);
+      memmove(new_data.address<void>(), data_.address<void>(), size_);
       // Ensure that the first new byte is initialized, to allow write_bits to
       // safely append to the newly-resized PaddedBytes.
-      new_data[size_] = 0;
+      new_data.address<uint8_t>()[size_] = 0;
     }
 
     capacity_ = new_capacity;
-    std::swap(new_data, data_);
+    data_ = std::move(new_data);
   }
 
   // NOTE: unlike vector, this does not initialize the new data!
@@ -136,14 +150,14 @@ class PaddedBytes {
       if (data() == nullptr) return;
     }
 
-    data_[size_++] = x;
+    data_.address<uint8_t>()[size_++] = x;
   }
 
   size_t size() const { return size_; }
   size_t capacity() const { return capacity_; }
 
-  uint8_t* data() { return data_.get(); }
-  const uint8_t* data() const { return data_.get(); }
+  uint8_t* data() { return data_.address<uint8_t>(); }
+  const uint8_t* data() const { return data_.address<uint8_t>(); }
 
   // std::vector operations implemented in terms of the public interface above.
 
@@ -198,9 +212,10 @@ class PaddedBytes {
     JXL_ASSERT(i <= size());
   }
 
+  JxlMemoryManager* memory_manager_;
   size_t size_;
   size_t capacity_;
-  CacheAlignedUniquePtr data_;
+  AlignedMemory data_;
 };
 
 template <typename T>

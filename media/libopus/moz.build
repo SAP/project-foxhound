@@ -21,7 +21,7 @@ FINAL_LIBRARY = "gkcodecs"
 NoVisibilityFlags()
 
 DEFINES["OPUS_BUILD"] = True
-DEFINES["OPUS_VERSION"] = "ab4e83598e7fc8b2ce82dc633a0fc0c452b629aa"
+DEFINES["OPUS_VERSION"] = "2554a89e02c7fc30a980b4f7e635ceae1ecba5d6"
 DEFINES["USE_ALLOCA"] = True
 DEFINES["ENABLE_HARDENING"] = True
 
@@ -50,8 +50,6 @@ if CONFIG["OS_ARCH"] == "WINNT":
     if CONFIG["CC_TYPE"] in ("clang", "gcc"):
         DEFINES["HAVE_LRINTF"] = True
 
-if CONFIG["OS_ARCH"] == "AIX":
-    DEFINES["alloca"] = "__alloca"
 
 if CONFIG["OS_ARCH"] == "SunOS":
     DEFINES["HAVE_ALLOCA_H"] = True

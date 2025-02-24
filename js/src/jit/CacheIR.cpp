@@ -49,7 +49,8 @@
 #include "vm/ProxyObject.h"
 #include "vm/RegExpObject.h"
 #include "vm/SelfHosting.h"
-#include "vm/ThrowMsgKind.h"  // ThrowCondition
+#include "vm/ThrowMsgKind.h"     // ThrowCondition
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "vm/Watchtower.h"
 #include "wasm/WasmInstance.h"
 
@@ -109,6 +110,7 @@ size_t js::jit::NumInputsForCacheKind(CacheKind kind) {
       return 0;
     case CacheKind::GetProp:
     case CacheKind::TypeOf:
+    case CacheKind::TypeOfEq:
     case CacheKind::ToPropertyKey:
     case CacheKind::GetIterator:
     case CacheKind::ToBool:
@@ -1144,6 +1146,7 @@ AttachDecision GetPropIRGenerator::tryAttachNative(HandleObject obj,
     case NativeGetPropKind::ScriptedGetter:
     case NativeGetPropKind::NativeGetter: {
       auto* nobj = &obj->as<NativeObject>();
+      MOZ_ASSERT(!IsWindow(nobj));
 
       maybeEmitIdGuard(id);
 
@@ -1199,7 +1202,8 @@ static ObjOperandId GuardAndLoadWindowProxyWindow(CacheIRWriter& writer,
                                                   ObjOperandId objId,
                                                   GlobalObject* windowObj) {
   writer.guardClass(objId, GuardClassKind::WindowProxy);
-  ObjOperandId windowObjId = writer.loadWrapperTarget(objId);
+  ObjOperandId windowObjId = writer.loadWrapperTarget(objId,
+                                                      /*fallible = */ false);
   writer.guardSpecificObject(windowObjId, windowObj);
   return windowObjId;
 }
@@ -1357,7 +1361,8 @@ AttachDecision GetPropIRGenerator::tryAttachCrossCompartmentWrapper(
   writer.guardHasProxyHandler(objId, Wrapper::wrapperHandler(obj));
 
   // Load the object wrapped by the CCW
-  ObjOperandId wrapperTargetId = writer.loadWrapperTarget(objId);
+  ObjOperandId wrapperTargetId =
+      writer.loadWrapperTarget(objId, /*fallible = */ false);
 
   // If the compartment of the wrapped object is different we should fail.
   writer.guardCompartment(wrapperTargetId, wrappedTargetGlobal,
@@ -1468,7 +1473,8 @@ AttachDecision GetPropIRGenerator::tryAttachXrayCrossCompartmentWrapper(
   writer.guardHasProxyHandler(objId, GetProxyHandler(obj));
 
   // Load the object wrapped by the CCW
-  ObjOperandId wrapperTargetId = writer.loadWrapperTarget(objId);
+  ObjOperandId wrapperTargetId =
+      writer.loadWrapperTarget(objId, /*fallible = */ false);
 
   // Test the wrapped object's class. The properties held by xrays or their
   // prototypes will be invariant for objects of a given class, except for
@@ -1578,9 +1584,9 @@ AttachDecision GetPropIRGenerator::tryAttachScriptedProxy(
 
   writer.guardIsProxy(objId);
   writer.guardHasProxyHandler(objId, &ScriptedProxyHandler::singleton);
-  ValOperandId handlerValId = writer.loadScriptedProxyHandler(objId);
-  ObjOperandId handlerObjId = writer.guardToObject(handlerValId);
-  ObjOperandId targetObjId = writer.loadWrapperTarget(objId);
+  ObjOperandId handlerObjId = writer.loadScriptedProxyHandler(objId);
+  ObjOperandId targetObjId =
+      writer.loadWrapperTarget(objId, /*fallible =*/true);
 
   writer.guardIsNativeObject(targetObjId);
 
@@ -1602,16 +1608,16 @@ AttachDecision GetPropIRGenerator::tryAttachScriptedProxy(
     ValOperandId fnValId =
         EmitLoadSlot(writer, trapHolder, trapHolderId, trapSlot);
     ObjOperandId fnObjId = writer.guardToObject(fnValId);
-    writer.guardSpecificFunction(fnObjId, trapFn);
+    emitCalleeGuard(fnObjId, trapFn);
     ValOperandId targetValId = writer.boxObject(targetObjId);
     if (cacheKind_ == CacheKind::GetProp) {
       writer.callScriptedProxyGetResult(targetValId, objId, handlerObjId,
-                                        trapFn, id);
+                                        fnObjId, trapFn, id);
     } else {
       ValOperandId idId = getElemKeyValueId();
       ValOperandId stringIdId = writer.idToStringOrSymbol(idId);
       writer.callScriptedProxyGetByValueResult(targetValId, objId, handlerObjId,
-                                               stringIdId, trapFn);
+                                               stringIdId, fnObjId, trapFn);
     }
   }
   writer.returnFromIC();
@@ -3167,6 +3173,11 @@ AttachDecision GetPropIRGenerator::tryAttachTypedArrayElement(
 
   auto* tarr = &obj->as<TypedArrayObject>();
 
+  if (tarr->type() == Scalar::Float16) {
+    // TODO: See Bug 1835034 for JIT support for Float16Array.
+    return AttachDecision::NoAction;
+  }
+
   bool handleOOB = false;
   int64_t indexInt64;
   if (!ValueIsInt64Index(idVal_, &indexInt64) || indexInt64 < 0 ||
@@ -4527,6 +4538,7 @@ OperandId IRGenerator::emitNumericGuard(ValOperandId valId, const Value& v,
       return writer.truncateDoubleToUInt32(numId);
     }
 
+    case Scalar::Float16:
     case Scalar::Float32:
     case Scalar::Float64: {
       if (v.isNumber()) {
@@ -5057,6 +5069,11 @@ AttachDecision SetPropIRGenerator::tryAttachSetTypedArrayElement(
 
   auto* tarr = &obj->as<TypedArrayObject>();
   Scalar::Type elementType = tarr->type();
+
+  if (elementType == Scalar::Float16) {
+    // TODO: See Bug 1835034 for JIT support for Float16Array.
+    return AttachDecision::NoAction;
+  }
 
   // Don't attach if the input type doesn't match the guard added below.
   if (!ValueCanConvertToNumeric(elementType, rhsVal_)) {
@@ -5794,6 +5811,77 @@ AttachDecision TypeOfIRGenerator::tryAttachObject(ValOperandId valId) {
   writer.returnFromIC();
   writer.setTypeData(TypeData(JSValueType(val_.type())));
   trackAttached("TypeOf.Object");
+  return AttachDecision::Attach;
+}
+
+TypeOfEqIRGenerator::TypeOfEqIRGenerator(JSContext* cx, HandleScript script,
+                                         jsbytecode* pc, ICState state,
+                                         HandleValue value, JSType type,
+                                         JSOp compareOp)
+    : IRGenerator(cx, script, pc, CacheKind::TypeOfEq, state),
+      val_(value),
+      type_(type),
+      compareOp_(compareOp) {}
+
+void TypeOfEqIRGenerator::trackAttached(const char* name) {
+  stubName_ = name ? name : "NotAttached";
+#ifdef JS_CACHEIR_SPEW
+  if (const CacheIRSpewer::Guard& sp = CacheIRSpewer::Guard(*this, name)) {
+    sp.valueProperty("val", val_);
+    sp.jstypeProperty("type", type_);
+    sp.opcodeProperty("compareOp", compareOp_);
+  }
+#endif
+}
+
+AttachDecision TypeOfEqIRGenerator::tryAttachStub() {
+  MOZ_ASSERT(cacheKind_ == CacheKind::TypeOfEq);
+
+  AutoAssertNoPendingException aanpe(cx_);
+
+  ValOperandId valId(writer.setInputOperandId(0));
+
+  TRY_ATTACH(tryAttachPrimitive(valId));
+  TRY_ATTACH(tryAttachObject(valId));
+
+  MOZ_ASSERT_UNREACHABLE("Failed to attach TypeOfEq");
+  return AttachDecision::NoAction;
+}
+
+AttachDecision TypeOfEqIRGenerator::tryAttachPrimitive(ValOperandId valId) {
+  if (!val_.isPrimitive()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Note: we don't use GuardIsNumber for int32 values because it's less
+  // efficient in Warp (unboxing to double instead of int32).
+  if (val_.isDouble()) {
+    writer.guardIsNumber(valId);
+  } else {
+    writer.guardNonDoubleType(valId, val_.type());
+  }
+
+  bool result = js::TypeOfValue(val_) == type_;
+  if (compareOp_ == JSOp::Ne) {
+    result = !result;
+  }
+  writer.loadBooleanResult(result);
+  writer.returnFromIC();
+  writer.setTypeData(TypeData(JSValueType(val_.type())));
+  trackAttached("TypeOfEq.Primitive");
+  return AttachDecision::Attach;
+}
+
+AttachDecision TypeOfEqIRGenerator::tryAttachObject(ValOperandId valId) {
+  if (!val_.isObject()) {
+    return AttachDecision::NoAction;
+  }
+
+  ObjOperandId objId = writer.guardToObject(valId);
+  writer.loadTypeOfEqObjectResult(objId, TypeofEqOperand(type_, compareOp_));
+  writer.returnFromIC();
+  writer.setTypeData(TypeData(JSValueType(val_.type())));
+  trackAttached("TypeOfEq.Object");
   return AttachDecision::Attach;
 }
 
@@ -9124,6 +9212,7 @@ static bool AtomicsMeetsPreconditions(TypedArrayObject* typedArray,
     case Scalar::BigUint64:
       break;
 
+    case Scalar::Float16:
     case Scalar::Float32:
     case Scalar::Float64:
     case Scalar::Uint8Clamped:
@@ -10305,7 +10394,7 @@ AttachDecision CallIRGenerator::tryAttachFunCall(HandleFunction callee) {
     writer.guardNotClassConstructor(thisObjId);
 
     if (isScripted) {
-      writer.guardFunctionHasJitEntry(thisObjId, /*isConstructing =*/false);
+      writer.guardFunctionHasJitEntry(thisObjId);
       writer.callScriptedFunction(thisObjId, argcId, targetFlags,
                                   ClampFixedArgc(argc_));
     } else {
@@ -11265,7 +11354,7 @@ AttachDecision CallIRGenerator::tryAttachFunApply(HandleFunction calleeFunc) {
 
     if (isScripted) {
       // Guard that function is scripted.
-      writer.guardFunctionHasJitEntry(thisObjId, /*constructing =*/false);
+      writer.guardFunctionHasJitEntry(thisObjId);
       writer.callScriptedFunction(thisObjId, argcId, targetFlags, fixedArgc);
     } else {
       // Guard that function is native.
@@ -12031,7 +12120,7 @@ void CallIRGenerator::emitCallScriptedGuards(ObjOperandId calleeObjId,
   } else {
     // Guard that object is a scripted function
     writer.guardClass(calleeObjId, GuardClassKind::JSFunction);
-    writer.guardFunctionHasJitEntry(calleeObjId, isConstructing);
+    writer.guardFunctionHasJitEntry(calleeObjId);
 
     if (isConstructing) {
       // If callee is not a constructor, we have to throw.

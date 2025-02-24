@@ -6,33 +6,24 @@
 
 #include "FFmpegVideoEncoder.h"
 
+#include <aom/aomcx.h>
+
 #include "BufferReader.h"
 #include "FFmpegLog.h"
-#include "FFmpegRuntimeLinker.h"
+#include "FFmpegUtils.h"
 #include "H264.h"
 #include "ImageContainer.h"
 #include "libavutil/error.h"
 #include "libavutil/pixfmt.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/StaticMutex.h"
-#include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/ImageUtils.h"
 #include "nsPrintfCString.h"
-#include "ImageToI420.h"
+#include "ImageConversion.h"
 #include "libyuv.h"
+#include "FFmpegRuntimeLinker.h"
 
 // The ffmpeg namespace is introduced to avoid the PixelFormat's name conflicts
 // with MediaDataEncoder::PixelFormat in MediaDataEncoder class scope.
 namespace ffmpeg {
-
-#if LIBAVCODEC_VERSION_MAJOR >= 57
-using FFmpegBitRate = int64_t;
-constexpr size_t FFmpegErrorMaxStringSize = AV_ERROR_MAX_STRING_SIZE;
-#else
-using FFmpegBitRate = int;
-constexpr size_t FFmpegErrorMaxStringSize = 64;
-#endif
 
 // TODO: WebCodecs' I420A should map to MediaDataEncoder::PixelFormat and then
 // to AV_PIX_FMT_YUVA420P here.
@@ -157,40 +148,49 @@ static Maybe<H264Setting> GetH264Level(const H264_LEVEL& aLevel) {
   return Some(H264Setting{val, str});
 }
 
-struct VPXSVCSetting {
+struct VPXSVCAppendix {
   uint8_t mLayeringMode;
-  size_t mNumberLayers;
-  uint8_t mPeriodicity;
-  nsTArray<uint8_t> mLayerIds;
-  nsTArray<uint8_t> mRateDecimators;
-  nsTArray<uint32_t> mTargetBitrates;
 };
 
-static Maybe<VPXSVCSetting> GetVPXSVCSetting(
-    const MediaDataEncoder::ScalabilityMode& aMode, uint32_t aBitPerSec) {
-  if (aMode == MediaDataEncoder::ScalabilityMode::None) {
+struct SVCLayerSettings {
+  using CodecAppendix = Variant<VPXSVCAppendix, aom_svc_params_t>;
+  size_t mNumberSpatialLayers;
+  size_t mNumberTemporalLayers;
+  uint8_t mPeriodicity;
+  nsTArray<uint8_t> mLayerIds;
+  // libvpx: ts_rate_decimator, libaom: framerate_factor
+  nsTArray<uint8_t> mRateDecimators;
+  nsTArray<uint32_t> mTargetBitrates;
+  Maybe<CodecAppendix> mCodecAppendix;
+};
+
+static Maybe<SVCLayerSettings> GetSVCLayerSettings(CodecType aCodec,
+                                                   const ScalabilityMode& aMode,
+                                                   uint32_t aBitPerSec) {
+  if (aMode == ScalabilityMode::None) {
     return Nothing();
   }
 
   // TODO: Apply more sophisticated bitrate allocation, like SvcRateAllocator:
   // https://searchfox.org/mozilla-central/rev/3bd65516eb9b3a9568806d846ba8c81a9402a885/third_party/libwebrtc/modules/video_coding/svc/svc_rate_allocator.h#26
 
-  uint8_t mode = 0;
   size_t layers = 0;
-  uint32_t kbps = aBitPerSec / 1000;  // ts_target_bitrate requies kbps.
+  const uint32_t kbps = aBitPerSec / 1000;  // ts_target_bitrate requies kbps.
 
   uint8_t periodicity;
   nsTArray<uint8_t> layerIds;
   nsTArray<uint8_t> rateDecimators;
   nsTArray<uint32_t> bitrates;
-  if (aMode == MediaDataEncoder::ScalabilityMode::L1T2) {
+
+  Maybe<SVCLayerSettings::CodecAppendix> appendix;
+
+  if (aMode == ScalabilityMode::L1T2) {
     // Two temporal layers. 0-1...
     //
     // Frame pattern:
     // Layer 0: |0| |2| |4| |6| |8|
     // Layer 1: | |1| |3| |5| |7| |
 
-    mode = 2;  // VP9E_TEMPORAL_LAYERING_MODE_0101
     layers = 2;
 
     // 2 frames per period.
@@ -207,8 +207,14 @@ static Maybe<VPXSVCSetting> GetVPXSVCSetting(
     // Bitrate allocation: L0 - 60%, L1 - 40%.
     bitrates.AppendElement(kbps * 3 / 5);
     bitrates.AppendElement(kbps);
+
+    if (aCodec == CodecType::VP8 || aCodec == CodecType::VP9) {
+      appendix.emplace(VPXSVCAppendix{
+          .mLayeringMode = 2 /* VP9E_TEMPORAL_LAYERING_MODE_0101 */
+      });
+    }
   } else {
-    MOZ_ASSERT(aMode == MediaDataEncoder::ScalabilityMode::L1T3);
+    MOZ_ASSERT(aMode == ScalabilityMode::L1T3);
     // Three temporal layers. 0-2-1-2...
     //
     // Frame pattern:
@@ -216,7 +222,6 @@ static Maybe<VPXSVCSetting> GetVPXSVCSetting(
     // Layer 1: | | |2| | | |6| | | |10|  |  |
     // Layer 2: | |1| |3| |5| |7| |9|  |11|  |
 
-    mode = 3;  // VP9E_TEMPORAL_LAYERING_MODE_0212
     layers = 3;
 
     // 4 frames per period
@@ -237,65 +242,19 @@ static Maybe<VPXSVCSetting> GetVPXSVCSetting(
     bitrates.AppendElement(kbps / 2);
     bitrates.AppendElement(kbps * 7 / 10);
     bitrates.AppendElement(kbps);
+
+    if (aCodec == CodecType::VP8 || aCodec == CodecType::VP9) {
+      appendix.emplace(VPXSVCAppendix{
+          .mLayeringMode = 3 /* VP9E_TEMPORAL_LAYERING_MODE_0212 */
+      });
+    }
   }
 
   MOZ_ASSERT(layers == bitrates.Length(),
              "Bitrate must be assigned to each layer");
-  return Some(VPXSVCSetting{mode, layers, periodicity, std::move(layerIds),
-                            std::move(rateDecimators), std::move(bitrates)});
-}
-
-static nsCString MakeErrorString(const FFmpegLibWrapper* aLib, int aErrNum) {
-  MOZ_ASSERT(aLib);
-
-  char errStr[ffmpeg::FFmpegErrorMaxStringSize];
-  aLib->av_strerror(aErrNum, errStr, ffmpeg::FFmpegErrorMaxStringSize);
-  return nsCString(errStr);
-}
-
-// TODO: Remove this function and simply use `avcodec_find_encoder` once
-// libopenh264 is supported.
-static AVCodec* FindEncoderWithPreference(const FFmpegLibWrapper* aLib,
-                                          AVCodecID aCodecId) {
-  MOZ_ASSERT(aLib);
-
-  AVCodec* codec = nullptr;
-
-  // Prioritize libx264 for now since it's the only h264 codec we tested.
-  if (aCodecId == AV_CODEC_ID_H264) {
-    codec = aLib->avcodec_find_encoder_by_name("libx264");
-    if (codec) {
-      FFMPEGV_LOG("Prefer libx264 for h264 codec");
-      return codec;
-    }
-  }
-
-  FFMPEGV_LOG("Fallback to other h264 library. Fingers crossed");
-  return aLib->avcodec_find_encoder(aCodecId);
-}
-
-template <>
-AVCodecID GetFFmpegEncoderCodecId<LIBAV_VER>(CodecType aCodec) {
-#if LIBAVCODEC_VERSION_MAJOR >= 58
-  if (aCodec == CodecType::VP8) {
-    return AV_CODEC_ID_VP8;
-  }
-
-  if (aCodec == CodecType::VP9) {
-    return AV_CODEC_ID_VP9;
-  }
-
-#  if !defined(USING_MOZFFVPX)
-  if (aCodec == CodecType::H264) {
-    return AV_CODEC_ID_H264;
-  }
-#  endif
-
-  if (aCodec == CodecType::AV1) {
-    return AV_CODEC_ID_AV1;
-  }
-#endif
-  return AV_CODEC_ID_NONE;
+  return Some(SVCLayerSettings{1, layers, periodicity, std::move(layerIds),
+                               std::move(rateDecimators), std::move(bitrates),
+                               appendix});
 }
 
 uint8_t FFmpegVideoEncoder<LIBAV_VER>::SVCInfo::UpdateTemporalLayerId() {
@@ -306,70 +265,10 @@ uint8_t FFmpegVideoEncoder<LIBAV_VER>::SVCInfo::UpdateTemporalLayerId() {
   return static_cast<uint8_t>(mTemporalLayerIds[currentIndex]);
 }
 
-StaticMutex FFmpegVideoEncoder<LIBAV_VER>::sMutex;
-
 FFmpegVideoEncoder<LIBAV_VER>::FFmpegVideoEncoder(
     const FFmpegLibWrapper* aLib, AVCodecID aCodecID,
     const RefPtr<TaskQueue>& aTaskQueue, const EncoderConfig& aConfig)
-    : mLib(aLib),
-      mCodecID(aCodecID),
-      mTaskQueue(aTaskQueue),
-      mConfig(aConfig),
-      mCodecName(EmptyCString()),
-      mCodecContext(nullptr),
-      mFrame(nullptr),
-      mSVCInfo(Nothing()) {
-  MOZ_ASSERT(mLib);
-  MOZ_ASSERT(mTaskQueue);
-#if LIBAVCODEC_VERSION_MAJOR < 58
-  MOZ_CRASH("FFmpegVideoEncoder needs ffmpeg 58 at least.");
-#endif
-};
-
-RefPtr<MediaDataEncoder::InitPromise> FFmpegVideoEncoder<LIBAV_VER>::Init() {
-  FFMPEGV_LOG("Init");
-  return InvokeAsync(mTaskQueue, this, __func__,
-                     &FFmpegVideoEncoder::ProcessInit);
-}
-
-RefPtr<MediaDataEncoder::EncodePromise> FFmpegVideoEncoder<LIBAV_VER>::Encode(
-    const MediaData* aSample) {
-  MOZ_ASSERT(aSample != nullptr);
-
-  FFMPEGV_LOG("Encode");
-  return InvokeAsync(mTaskQueue, __func__,
-                     [self = RefPtr<FFmpegVideoEncoder<LIBAV_VER>>(this),
-                      sample = RefPtr<const MediaData>(aSample)]() {
-                       return self->ProcessEncode(std::move(sample));
-                     });
-}
-
-RefPtr<MediaDataEncoder::ReconfigurationPromise>
-FFmpegVideoEncoder<LIBAV_VER>::Reconfigure(
-    const RefPtr<const EncoderConfigurationChangeList>& aConfigurationChanges) {
-  return InvokeAsync<const RefPtr<const EncoderConfigurationChangeList>>(
-      mTaskQueue, this, __func__,
-      &FFmpegVideoEncoder<LIBAV_VER>::ProcessReconfigure,
-      aConfigurationChanges);
-}
-
-RefPtr<MediaDataEncoder::EncodePromise> FFmpegVideoEncoder<LIBAV_VER>::Drain() {
-  FFMPEGV_LOG("Drain");
-  return InvokeAsync(mTaskQueue, this, __func__,
-                     &FFmpegVideoEncoder::ProcessDrain);
-}
-
-RefPtr<ShutdownPromise> FFmpegVideoEncoder<LIBAV_VER>::Shutdown() {
-  FFMPEGV_LOG("Shutdown");
-  return InvokeAsync(mTaskQueue, this, __func__,
-                     &FFmpegVideoEncoder::ProcessShutdown);
-}
-
-RefPtr<GenericPromise> FFmpegVideoEncoder<LIBAV_VER>::SetBitrate(
-    uint32_t aBitrate) {
-  FFMPEGV_LOG("SetBitrate");
-  return GenericPromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED, __func__);
-}
+    : FFmpegDataEncoder(aLib, aCodecID, aTaskQueue, aConfig) {}
 
 nsCString FFmpegVideoEncoder<LIBAV_VER>::GetDescriptionName() const {
 #ifdef USING_MOZFFVPX
@@ -385,112 +284,23 @@ nsCString FFmpegVideoEncoder<LIBAV_VER>::GetDescriptionName() const {
 #endif
 }
 
-RefPtr<MediaDataEncoder::InitPromise>
-FFmpegVideoEncoder<LIBAV_VER>::ProcessInit() {
+nsresult FFmpegVideoEncoder<LIBAV_VER>::InitSpecific() {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
 
-  FFMPEGV_LOG("ProcessInit");
-  MediaResult r = InitInternal();
-  return NS_FAILED(r)
-             ? InitPromise::CreateAndReject(r, __func__)
-             : InitPromise::CreateAndResolve(TrackInfo::kVideoTrack, __func__);
-}
+  FFMPEGV_LOG("FFmpegVideoEncoder::InitSpecific");
 
-RefPtr<MediaDataEncoder::EncodePromise>
-FFmpegVideoEncoder<LIBAV_VER>::ProcessEncode(RefPtr<const MediaData> aSample) {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("ProcessEncode");
-
-#if LIBAVCODEC_VERSION_MAJOR < 58
-  // TODO(Bug 1868253): implement encode with avcodec_encode_video2().
-  MOZ_CRASH("FFmpegVideoEncoder needs ffmpeg 58 at least.");
-  return EncodePromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED, __func__);
-#else
-  RefPtr<const VideoData> sample(aSample->As<const VideoData>());
-  MOZ_ASSERT(sample);
-
-  return EncodeWithModernAPIs(sample);
-#endif
-}
-
-RefPtr<MediaDataEncoder::ReconfigurationPromise>
-FFmpegVideoEncoder<LIBAV_VER>::ProcessReconfigure(
-    const RefPtr<const EncoderConfigurationChangeList> aConfigurationChanges) {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("ProcessReconfigure");
-
-  // Tracked in bug 1869583 -- for now this encoder always reports it cannot be
-  // reconfigured on the fly
-  return MediaDataEncoder::ReconfigurationPromise::CreateAndReject(
-      NS_ERROR_NOT_IMPLEMENTED, __func__);
-}
-
-RefPtr<MediaDataEncoder::EncodePromise>
-FFmpegVideoEncoder<LIBAV_VER>::ProcessDrain() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("ProcessDrain");
-
-#if LIBAVCODEC_VERSION_MAJOR < 58
-  MOZ_CRASH("FFmpegVideoEncoder needs ffmpeg 58 at least.");
-  return EncodePromise::CreateAndReject(NS_ERROR_NOT_IMPLEMENTED, __func__);
-#else
-  return DrainWithModernAPIs();
-#endif
-}
-
-RefPtr<ShutdownPromise> FFmpegVideoEncoder<LIBAV_VER>::ProcessShutdown() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("ProcessShutdown");
-
-  ShutdownInternal();
-
-  // Don't shut mTaskQueue down since it's owned by others.
-  return ShutdownPromise::CreateAndResolve(true, __func__);
-}
-
-MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("InitInternal");
-
-  if (mCodecID == AV_CODEC_ID_H264) {
-    // H264Specific is required to get the format (avcc vs annexb).
-    if (!mConfig.mCodecSpecific ||
-        !mConfig.mCodecSpecific->is<H264Specific>()) {
-      return MediaResult(
-          NS_ERROR_DOM_MEDIA_FATAL_ERR,
-          RESULT_DETAIL("Unable to get H264 necessary encoding info"));
-    }
-  }
-
-  AVCodec* codec = FindEncoderWithPreference(mLib, mCodecID);
+  // Initialize the common members of the encoder instance
+  AVCodec* codec = FFmpegDataEncoder<LIBAV_VER>::InitCommon();
   if (!codec) {
-    FFMPEGV_LOG("failed to find ffmpeg encoder for codec id %d", mCodecID);
-    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                       RESULT_DETAIL("Unable to find codec"));
-  }
-  FFMPEGV_LOG("find codec: %s", codec->name);
-  mCodecName = codec->name;
-
-  ForceEnablingFFmpegDebugLogs();
-
-  MOZ_ASSERT(!mCodecContext);
-  if (!(mCodecContext = mLib->avcodec_alloc_context3(codec))) {
-    FFMPEGV_LOG("failed to allocate ffmpeg context for codec %s", codec->name);
-    return MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                       RESULT_DETAIL("Failed to initialize ffmpeg context"));
+    FFMPEGV_LOG("FFmpegDataEncoder::InitCommon failed");
+    return NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR;
   }
 
-  // Set up AVCodecContext.
+  // And now the video-specific part
   mCodecContext->pix_fmt = ffmpeg::FFMPEG_PIX_FMT_YUV420P;
-  mCodecContext->bit_rate =
-      static_cast<ffmpeg::FFmpegBitRate>(mConfig.mBitrate);
   mCodecContext->width = static_cast<int>(mConfig.mSize.width);
   mCodecContext->height = static_cast<int>(mConfig.mSize.height);
+  mCodecContext->gop_size = static_cast<int>(mConfig.mKeyframeInterval);
   // TODO(bug 1869560): The recommended time_base is the reciprocal of the frame
   // rate, but we set it to microsecond for now.
   mCodecContext->time_base =
@@ -500,12 +310,13 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
   mCodecContext->framerate =
       AVRational{.num = static_cast<int>(mConfig.mFramerate), .den = 1};
 #endif
+
 #if LIBAVCODEC_VERSION_MAJOR >= 60
   mCodecContext->flags |= AV_CODEC_FLAG_FRAME_DURATION;
 #endif
   mCodecContext->gop_size = static_cast<int>(mConfig.mKeyframeInterval);
 
-  if (mConfig.mUsage == MediaDataEncoder::Usage::Realtime) {
+  if (mConfig.mUsage == Usage::Realtime) {
     mLib->av_opt_set(mCodecContext->priv_data, "deadline", "realtime", 0);
     // Explicitly ask encoder do not keep in flight at any one time for
     // lookahead purposes.
@@ -513,6 +324,12 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
   }
 
   if (Maybe<SVCSettings> settings = GetSVCSettings()) {
+    if (mCodecName == "libaom-av1") {
+      if (mConfig.mBitrateMode != BitrateMode::Constant) {
+        return NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR;
+      }
+    }
+
     SVCSettings s = settings.extract();
     mLib->av_opt_set(mCodecContext->priv_data, s.mSettingKeyValue.first.get(),
                      s.mSettingKeyValue.second.get(), 0);
@@ -578,14 +395,11 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
   // encoder.
   mCodecContext->strict_std_compliance = FF_COMPLIANCE_EXPERIMENTAL;
 
-  AVDictionary* options = nullptr;
-  if (int ret = OpenCodecContext(codec, &options); ret < 0) {
-    FFMPEGV_LOG("failed to open %s avcodec: %s", codec->name,
-                MakeErrorString(mLib, ret).get());
-    return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                       RESULT_DETAIL("Unable to open avcodec"));
+  MediaResult rv = FinishInitCommon(codec);
+  if (NS_FAILED(rv)) {
+    FFMPEGV_LOG("FFmpeg video encoder initialization failure.");
+    return rv;
   }
-  mLib->av_dict_free(&options);
 
   FFMPEGV_LOG("%s has been initialized with format: %s, bitrate: %" PRIi64
               ", width: %d, height: %d, time_base: %d/%d%s",
@@ -595,74 +409,7 @@ MediaResult FFmpegVideoEncoder<LIBAV_VER>::InitInternal() {
               mCodecContext->time_base.num, mCodecContext->time_base.den,
               h264Log.IsEmpty() ? "" : h264Log.get());
 
-  return MediaResult(NS_OK);
-}
-
-void FFmpegVideoEncoder<LIBAV_VER>::ShutdownInternal() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  FFMPEGV_LOG("ShutdownInternal");
-
-  DestroyFrame();
-
-  if (mCodecContext) {
-    CloseCodecContext();
-    mLib->av_freep(&mCodecContext);
-    mCodecContext = nullptr;
-  }
-}
-
-int FFmpegVideoEncoder<LIBAV_VER>::OpenCodecContext(const AVCodec* aCodec,
-                                                    AVDictionary** aOptions) {
-  MOZ_ASSERT(mCodecContext);
-
-  StaticMutexAutoLock mon(sMutex);
-  return mLib->avcodec_open2(mCodecContext, aCodec, aOptions);
-}
-
-void FFmpegVideoEncoder<LIBAV_VER>::CloseCodecContext() {
-  MOZ_ASSERT(mCodecContext);
-
-  StaticMutexAutoLock mon(sMutex);
-  mLib->avcodec_close(mCodecContext);
-}
-
-bool FFmpegVideoEncoder<LIBAV_VER>::PrepareFrame() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-
-  // TODO: Merge the duplicate part with FFmpegDataDecoder's PrepareFrame.
-#if LIBAVCODEC_VERSION_MAJOR >= 55
-  if (mFrame) {
-    mLib->av_frame_unref(mFrame);
-  } else {
-    mFrame = mLib->av_frame_alloc();
-  }
-#elif LIBAVCODEC_VERSION_MAJOR == 54
-  if (mFrame) {
-    mLib->avcodec_get_frame_defaults(mFrame);
-  } else {
-    mFrame = mLib->avcodec_alloc_frame();
-  }
-#else
-  mLib->av_freep(&mFrame);
-  mFrame = mLib->avcodec_alloc_frame();
-#endif
-  return !!mFrame;
-}
-
-void FFmpegVideoEncoder<LIBAV_VER>::DestroyFrame() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-  if (mFrame) {
-#if LIBAVCODEC_VERSION_MAJOR >= 55
-    mLib->av_frame_unref(mFrame);
-    mLib->av_frame_free(&mFrame);
-#elif LIBAVCODEC_VERSION_MAJOR == 54
-    mLib->avcodec_free_frame(&mFrame);
-#else
-    mLib->av_freep(&mFrame);
-#endif
-    mFrame = nullptr;
-  }
+  return NS_OK;
 }
 
 bool FFmpegVideoEncoder<LIBAV_VER>::ScaleInputFrame() {
@@ -709,71 +456,62 @@ bool FFmpegVideoEncoder<LIBAV_VER>::ScaleInputFrame() {
 
 // avcodec_send_frame and avcodec_receive_packet were introduced in version 58.
 #if LIBAVCODEC_VERSION_MAJOR >= 58
-RefPtr<MediaDataEncoder::EncodePromise> FFmpegVideoEncoder<
-    LIBAV_VER>::EncodeWithModernAPIs(RefPtr<const VideoData> aSample) {
+Result<MediaDataEncoder::EncodedData, nsresult> FFmpegVideoEncoder<
+    LIBAV_VER>::EncodeInputWithModernAPIs(RefPtr<const MediaData> aSample) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   MOZ_ASSERT(mCodecContext);
   MOZ_ASSERT(aSample);
 
+  RefPtr<const VideoData> sample(aSample->As<VideoData>());
+
   // Validate input.
-  if (!aSample->mImage) {
+  if (!sample->mImage) {
     FFMPEGV_LOG("No image");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_ILLEGAL_INPUT,
-                    RESULT_DETAIL("No image in sample")),
-        __func__);
-  } else if (aSample->mImage->GetSize().IsEmpty()) {
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
+  }
+  if (sample->mImage->GetSize().IsEmpty()) {
     FFMPEGV_LOG("image width or height is invalid");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_ILLEGAL_INPUT,
-                    RESULT_DETAIL("Invalid image size")),
-        __func__);
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
   }
 
   // Allocate AVFrame.
   if (!PrepareFrame()) {
     FFMPEGV_LOG("failed to allocate frame");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                    RESULT_DETAIL("Unable to allocate frame")),
-        __func__);
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
   }
 
   // Set AVFrame properties for its internal data allocation. For now, we always
   // convert into ffmpeg's buffer.
   mFrame->format = ffmpeg::FFMPEG_PIX_FMT_YUV420P;
-  mFrame->width = static_cast<int>(aSample->mImage->GetSize().width);
-  mFrame->height = static_cast<int>(aSample->mImage->GetSize().height);
+  mFrame->width = static_cast<int>(sample->mImage->GetSize().width);
+  mFrame->height = static_cast<int>(sample->mImage->GetSize().height);
 
   // Allocate AVFrame data.
   if (int ret = mLib->av_frame_get_buffer(mFrame, 0); ret < 0) {
     FFMPEGV_LOG("failed to allocate frame data: %s",
                 MakeErrorString(mLib, ret).get());
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                    RESULT_DETAIL("Unable to allocate frame data")),
-        __func__);
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
   }
 
   // Make sure AVFrame is writable.
   if (int ret = mLib->av_frame_make_writable(mFrame); ret < 0) {
     FFMPEGV_LOG("failed to make frame writable: %s",
                 MakeErrorString(mLib, ret).get());
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_NOT_AVAILABLE,
-                    RESULT_DETAIL("Unable to make frame writable")),
-        __func__);
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
   }
 
   nsresult rv = ConvertToI420(
-      aSample->mImage, mFrame->data[0], mFrame->linesize[0], mFrame->data[1],
+      sample->mImage, mFrame->data[0], mFrame->linesize[0], mFrame->data[1],
       mFrame->linesize[1], mFrame->data[2], mFrame->linesize[2]);
   if (NS_FAILED(rv)) {
     FFMPEGV_LOG("Conversion error!");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_ILLEGAL_INPUT,
-                    RESULT_DETAIL("libyuv conversion error")),
-        __func__);
+    return Result<MediaDataEncoder::EncodedData, nsresult>(
+        NS_ERROR_DOM_MEDIA_FATAL_ERR);
   }
 
   // Scale the YUV input frame if needed -- the encoded frame will have the
@@ -781,10 +519,8 @@ RefPtr<MediaDataEncoder::EncodePromise> FFmpegVideoEncoder<
   if (mFrame->width != mConfig.mSize.Width() ||
       mFrame->height != mConfig.mSize.Height()) {
     if (!ScaleInputFrame()) {
-      return EncodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                      RESULT_DETAIL("libyuv scaling error")),
-          __func__);
+      return Result<MediaDataEncoder::EncodedData, nsresult>(
+          NS_ERROR_DOM_MEDIA_FATAL_ERR);
     }
   }
 
@@ -803,195 +539,19 @@ RefPtr<MediaDataEncoder::EncodePromise> FFmpegVideoEncoder<
   // Save duration in the time_base unit.
   mDurationMap.Insert(mFrame->pts, aSample->mDuration.ToMicroseconds());
 #  endif
-  mFrame->pkt_duration = aSample->mDuration.ToMicroseconds();
+  Duration(mFrame) = aSample->mDuration.ToMicroseconds();
 
-  // Initialize AVPacket.
-  AVPacket* pkt = mLib->av_packet_alloc();
-
-  if (!pkt) {
-    FFMPEGV_LOG("failed to allocate packet");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                    RESULT_DETAIL("Unable to allocate packet")),
-        __func__);
-  }
-
-  auto freePacket = MakeScopeExit([this, &pkt] { mLib->av_packet_free(&pkt); });
-
-  // Send frame and receive packets.
-
-  if (int ret = mLib->avcodec_send_frame(mCodecContext, mFrame); ret < 0) {
-    // In theory, avcodec_send_frame could sent -EAGAIN to signal its internal
-    // buffers is full. In practice this can't happen as we only feed one frame
-    // at a time, and we immediately call avcodec_receive_packet right after.
-    // TODO: Create a NS_ERROR_DOM_MEDIA_ENCODE_ERR in ErrorList.py?
-    FFMPEGV_LOG("avcodec_send_frame error: %s",
-                MakeErrorString(mLib, ret).get());
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                    RESULT_DETAIL("avcodec_send_frame error")),
-        __func__);
-  }
-
-  EncodedData output;
-  while (true) {
-    int ret = mLib->avcodec_receive_packet(mCodecContext, pkt);
-    if (ret == AVERROR(EAGAIN)) {
-      // The encoder is asking for more inputs.
-      FFMPEGV_LOG("encoder is asking for more input!");
-      break;
-    }
-
-    if (ret < 0) {
-      // AVERROR_EOF is returned when the encoder has been fully flushed, but it
-      // shouldn't happen here.
-      FFMPEGV_LOG("avcodec_receive_packet error: %s",
-                  MakeErrorString(mLib, ret).get());
-      return EncodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                      RESULT_DETAIL("avcodec_receive_packet error")),
-          __func__);
-    }
-
-    RefPtr<MediaRawData> d = ToMediaRawData(pkt);
-    mLib->av_packet_unref(pkt);
-    if (!d) {
-      FFMPEGV_LOG("failed to create a MediaRawData from the AVPacket");
-      return EncodePromise::CreateAndReject(
-          MediaResult(
-              NS_ERROR_OUT_OF_MEMORY,
-              RESULT_DETAIL("Unable to get MediaRawData from AVPacket")),
-          __func__);
-    }
-    output.AppendElement(std::move(d));
-  }
-
-  FFMPEGV_LOG("get %zu encoded data", output.Length());
-  return EncodePromise::CreateAndResolve(std::move(output), __func__);
+  // Now send the AVFrame to ffmpeg for encoding, same code for audio and video.
+  return FFmpegDataEncoder<LIBAV_VER>::EncodeWithModernAPIs();
 }
-
-RefPtr<MediaDataEncoder::EncodePromise>
-FFmpegVideoEncoder<LIBAV_VER>::DrainWithModernAPIs() {
-  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-  MOZ_ASSERT(mCodecContext);
-
-  // TODO: Create a Result<EncodedData, nsresult> EncodeWithModernAPIs(AVFrame
-  // *aFrame) to merge the duplicate code below with EncodeWithModernAPIs above.
-
-  // Initialize AVPacket.
-  AVPacket* pkt = mLib->av_packet_alloc();
-  if (!pkt) {
-    FFMPEGV_LOG("failed to allocate packet");
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                    RESULT_DETAIL("Unable to allocate packet")),
-        __func__);
-  }
-  auto freePacket = MakeScopeExit([this, &pkt] { mLib->av_packet_free(&pkt); });
-
-  // Enter draining mode by sending NULL to the avcodec_send_frame(). Note that
-  // this can leave the encoder in a permanent EOF state after draining. As a
-  // result, the encoder is unable to continue encoding. A new
-  // AVCodecContext/encoder creation is required if users need to encode after
-  // draining.
-  //
-  // TODO: Use `avcodec_flush_buffers` to drain the pending packets if
-  // AV_CODEC_CAP_ENCODER_FLUSH is set in mCodecContext->codec->capabilities.
-  if (int ret = mLib->avcodec_send_frame(mCodecContext, nullptr); ret < 0) {
-    if (ret == AVERROR_EOF) {
-      // The encoder has been flushed. Drain can be called multiple time.
-      FFMPEGV_LOG("encoder has been flushed!");
-      return EncodePromise::CreateAndResolve(EncodedData(), __func__);
-    }
-
-    FFMPEGV_LOG("avcodec_send_frame error: %s",
-                MakeErrorString(mLib, ret).get());
-    return EncodePromise::CreateAndReject(
-        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                    RESULT_DETAIL("avcodec_send_frame error")),
-        __func__);
-  }
-
-  EncodedData output;
-  while (true) {
-    int ret = mLib->avcodec_receive_packet(mCodecContext, pkt);
-    if (ret == AVERROR_EOF) {
-      FFMPEGV_LOG("encoder has no more output packet!");
-      break;
-    }
-
-    if (ret < 0) {
-      // avcodec_receive_packet should not result in a -EAGAIN once it's in
-      // draining mode.
-      FFMPEGV_LOG("avcodec_receive_packet error: %s",
-                  MakeErrorString(mLib, ret).get());
-      return EncodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                      RESULT_DETAIL("avcodec_receive_packet error")),
-          __func__);
-    }
-
-    RefPtr<MediaRawData> d = ToMediaRawData(pkt);
-    mLib->av_packet_unref(pkt);
-    if (!d) {
-      FFMPEGV_LOG("failed to create a MediaRawData from the AVPacket");
-      return EncodePromise::CreateAndReject(
-          MediaResult(
-              NS_ERROR_OUT_OF_MEMORY,
-              RESULT_DETAIL("Unable to get MediaRawData from AVPacket")),
-          __func__);
-    }
-    output.AppendElement(std::move(d));
-  }
-
-  FFMPEGV_LOG("get %zu encoded data", output.Length());
-
-  // TODO: Evaluate a better solution (Bug 1869466)
-  // TODO: Only re-create AVCodecContext when avcodec_flush_buffers is
-  // unavailable.
-  ShutdownInternal();
-  MediaResult r = InitInternal();
-  return NS_FAILED(r)
-             ? EncodePromise::CreateAndReject(r, __func__)
-             : EncodePromise::CreateAndResolve(std::move(output), __func__);
-}
-#endif
+#endif  // if LIBAVCODEC_VERSION_MAJOR >= 58
 
 RefPtr<MediaRawData> FFmpegVideoEncoder<LIBAV_VER>::ToMediaRawData(
     AVPacket* aPacket) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   MOZ_ASSERT(aPacket);
 
-  // TODO: Do we need to check AV_PKT_FLAG_CORRUPT?
-
-  // Copy frame data from AVPacket.
-  auto data = MakeRefPtr<MediaRawData>();
-  UniquePtr<MediaRawDataWriter> writer(data->CreateWriter());
-  if (!writer->Append(aPacket->data, static_cast<size_t>(aPacket->size))) {
-    FFMPEGV_LOG("fail to allocate MediaRawData buffer");
-    return nullptr;  // OOM
-  }
-
-  data->mKeyframe = (aPacket->flags & AV_PKT_FLAG_KEY) != 0;
-  // TODO(bug 1869560): The unit of pts, dts, and duration is time_base, which
-  // is recommended to be the reciprocal of the frame rate, but we set it to
-  // microsecond for now.
-  data->mTime = media::TimeUnit::FromMicroseconds(aPacket->pts);
-#if LIBAVCODEC_VERSION_MAJOR >= 60
-  data->mDuration = media::TimeUnit::FromMicroseconds(aPacket->duration);
-#else
-  int64_t duration;
-  if (mDurationMap.Find(aPacket->pts, duration)) {
-    data->mDuration = media::TimeUnit::FromMicroseconds(duration);
-  } else {
-    data->mDuration = media::TimeUnit::FromMicroseconds(aPacket->duration);
-  }
-#endif
-  data->mTimecode = media::TimeUnit::FromMicroseconds(aPacket->dts);
-
-  if (auto r = GetExtraData(aPacket); r.isOk()) {
-    data->mExtraData = r.unwrap();
-  }
+  RefPtr<MediaRawData> data = ToMediaRawDataCommon(aPacket);
 
   // TODO: Is it possible to retrieve temporal layer id from underlying codec
   // instead?
@@ -1092,58 +652,91 @@ Maybe<FFmpegVideoEncoder<LIBAV_VER>::SVCSettings>
 FFmpegVideoEncoder<LIBAV_VER>::GetSVCSettings() {
   MOZ_ASSERT(!mCodecName.IsEmpty());
 
-  // TODO: Add support for AV1 and H264.
-  if (mCodecName != "libvpx" && mCodecName != "libvpx-vp9") {
+  CodecType codecType = CodecType::Unknown;
+  if (mCodecName == "libvpx") {
+    codecType = CodecType::VP8;
+  } else if (mCodecName == "libvpx-vp9") {
+    codecType = CodecType::VP9;
+  } else if (mCodecName == "libaom-av1") {
+    codecType = CodecType::AV1;
+  }
+
+  if (codecType == CodecType::Unknown) {
     FFMPEGV_LOG("SVC setting is not implemented for %s codec",
                 mCodecName.get());
     return Nothing();
   }
 
-  Maybe<VPXSVCSetting> svc =
-      GetVPXSVCSetting(mConfig.mScalabilityMode, mConfig.mBitrate);
+  Maybe<SVCLayerSettings> svc = GetSVCLayerSettings(
+      codecType, mConfig.mScalabilityMode, mConfig.mBitrate);
   if (!svc) {
     FFMPEGV_LOG("No SVC settings obtained. Skip");
     return Nothing();
   }
 
-  // Check if the number of temporal layers in codec specific settings matches
-  // the number of layers for the given scalability mode.
+  nsAutoCString name;
+  nsAutoCString parameters;
 
-  auto GetNumTemporalLayers = [&]() -> uint8_t {
-    uint8_t layers = 0;
+  if (codecType == CodecType::VP8 || codecType == CodecType::VP9) {
+    // Check if the number of temporal layers in codec specific settings
+    // matches
+    // the number of layers for the given scalability mode.
     if (mConfig.mCodecSpecific) {
       if (mConfig.mCodecSpecific->is<VP8Specific>()) {
-        layers = mConfig.mCodecSpecific->as<VP8Specific>().mNumTemporalLayers;
-        MOZ_ASSERT(layers > 0);
+        MOZ_ASSERT(
+            mConfig.mCodecSpecific->as<VP8Specific>().mNumTemporalLayers ==
+            svc->mNumberTemporalLayers);
       } else if (mConfig.mCodecSpecific->is<VP9Specific>()) {
-        layers = mConfig.mCodecSpecific->as<VP9Specific>().mNumTemporalLayers;
-        MOZ_ASSERT(layers > 0);
+        MOZ_ASSERT(
+            mConfig.mCodecSpecific->as<VP9Specific>().mNumTemporalLayers ==
+            svc->mNumberTemporalLayers);
       }
     }
-    return layers;
-  };
 
-  DebugOnly<uint8_t> numTemporalLayers = GetNumTemporalLayers();
-  MOZ_ASSERT_IF(numTemporalLayers > 0, numTemporalLayers == svc->mNumberLayers);
-
-  // Form an SVC setting string for libvpx.
-
-  nsPrintfCString parameters("ts_layering_mode=%u", svc->mLayeringMode);
-  parameters.Append(":ts_target_bitrate=");
-  for (size_t i = 0; i < svc->mTargetBitrates.Length(); ++i) {
-    if (i > 0) {
-      parameters.Append(",");
+    // Form an SVC setting string for libvpx.
+    name = "ts-parameters"_ns;
+    parameters.AppendPrintf(
+        "ts_layering_mode=%u",
+        svc->mCodecAppendix->as<VPXSVCAppendix>().mLayeringMode);
+    parameters.Append(":ts_target_bitrate=");
+    for (size_t i = 0; i < svc->mTargetBitrates.Length(); ++i) {
+      if (i > 0) {
+        parameters.Append(",");
+      }
+      parameters.AppendPrintf("%d", svc->mTargetBitrates[i]);
     }
-    parameters.AppendPrintf("%d", svc->mTargetBitrates[i]);
+
+    // TODO: Set ts_number_layers, ts_periodicity, ts_layer_id and
+    // ts_rate_decimator if they are different from the preset values in
+    // ts_layering_mode.
   }
 
-  // TODO: Set ts_number_layers, ts_periodicity, ts_layer_id and
-  // ts_rate_decimator if they are different from the preset values in
-  // ts_layering_mode.
+  if (codecType == CodecType::AV1) {
+    // Form an SVC setting string for libaom.
+    name = "svc-parameters"_ns;
+    parameters.AppendPrintf("number_spatial_layers=%zu",
+                            svc->mNumberSpatialLayers);
+    parameters.AppendPrintf(":number_temporal_layers=%zu",
+                            svc->mNumberTemporalLayers);
+    parameters.Append(":framerate_factor=");
+    for (size_t i = 0; i < svc->mRateDecimators.Length(); ++i) {
+      if (i > 0) {
+        parameters.Append(",");
+      }
+      parameters.AppendPrintf("%d", svc->mRateDecimators[i]);
+    }
+    parameters.Append(":layer_target_bitrate=");
+    for (size_t i = 0; i < svc->mTargetBitrates.Length(); ++i) {
+      if (i > 0) {
+        parameters.Append(",");
+      }
+      parameters.AppendPrintf("%d", svc->mTargetBitrates[i]);
+    }
+  }
 
   return Some(
       SVCSettings{std::move(svc->mLayerIds),
-                  std::make_pair("ts-parameters"_ns, std::move(parameters))});
+                  std::make_pair(std::move(name), std::move(parameters))});
 }
 
 FFmpegVideoEncoder<LIBAV_VER>::H264Settings FFmpegVideoEncoder<

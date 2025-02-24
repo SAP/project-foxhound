@@ -14,15 +14,17 @@ pub mod import_rule;
 pub mod keyframes_rule;
 pub mod layer_rule;
 mod loader;
+mod margin_rule;
 mod media_rule;
 mod namespace_rule;
 pub mod origin;
 mod page_rule;
-mod margin_rule;
 mod property_rule;
 mod rule_list;
 mod rule_parser;
 mod rules_iterator;
+pub mod scope_rule;
+mod starting_style_rule;
 mod style_rule;
 mod stylesheet;
 pub mod supports_rule;
@@ -31,7 +33,7 @@ pub mod supports_rule;
 use crate::gecko_bindings::sugar::refptr::RefCounted;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::{bindings, structs};
-use crate::parser::ParserContext;
+use crate::parser::{NestingContext, ParserContext};
 use crate::shared_lock::{DeepCloneParams, DeepCloneWithLock, Locked};
 use crate::shared_lock::{SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard};
 use crate::str::CssStringWriter;
@@ -45,7 +47,7 @@ use std::fmt;
 use std::mem::{self, ManuallyDrop};
 use style_traits::ParsingMode;
 #[cfg(feature = "gecko")]
-use to_shmem::{self, SharedMemoryBuilder, ToShmem};
+use to_shmem::{SharedMemoryBuilder, ToShmem};
 
 pub use self::container_rule::ContainerRule;
 pub use self::counter_style_rule::CounterStyleRule;
@@ -69,6 +71,8 @@ pub use self::rules_iterator::{AllRules, EffectiveRules};
 pub use self::rules_iterator::{
     EffectiveRulesIterator, NestedRuleIterationCondition, RulesIterator,
 };
+pub use self::scope_rule::ScopeRule;
+pub use self::starting_style_rule::StartingStyleRule;
 pub use self::style_rule::StyleRule;
 pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
@@ -132,7 +136,11 @@ impl Drop for UrlExtraData {
 impl ToShmem for UrlExtraData {
     fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> to_shmem::Result<Self> {
         if self.0 & 1 == 0 {
-            let shared_extra_datas = unsafe { &structs::URLExtraData_sShared };
+            let shared_extra_datas = unsafe {
+                std::ptr::addr_of!(structs::URLExtraData_sShared)
+                    .as_ref()
+                    .unwrap()
+            };
             let self_ptr = self.as_ref() as *const _ as *mut _;
             let sheet_id = shared_extra_datas
                 .iter()
@@ -265,6 +273,8 @@ pub enum CssRule {
     Document(Arc<DocumentRule>),
     LayerBlock(Arc<LayerBlockRule>),
     LayerStatement(Arc<LayerStatementRule>),
+    Scope(Arc<ScopeRule>),
+    StartingStyle(Arc<StartingStyleRule>),
 }
 
 impl CssRule {
@@ -309,8 +319,14 @@ impl CssRule {
             CssRule::Document(ref arc) => {
                 arc.unconditional_shallow_size_of(ops) + arc.size_of(guard, ops)
             },
+            CssRule::StartingStyle(ref arc) => {
+                arc.unconditional_shallow_size_of(ops) + arc.size_of(guard, ops)
+            },
             // TODO(emilio): Add memory reporting for these rules.
             CssRule::LayerBlock(_) | CssRule::LayerStatement(_) => 0,
+            CssRule::Scope(ref rule) => {
+                rule.unconditional_shallow_size_of(ops) + rule.size_of(guard, ops)
+            },
         }
     }
 }
@@ -349,6 +365,9 @@ pub enum CssRuleType {
     FontPaletteValues = 19,
     // 20 is an arbitrary number to use for Property.
     Property = 20,
+    Scope = 21,
+    // https://drafts.csswg.org/css-transitions-2/#the-cssstartingstylerule-interface
+    StartingStyle = 22,
 }
 
 impl CssRuleType {
@@ -436,6 +455,8 @@ impl CssRule {
             CssRule::LayerBlock(_) => CssRuleType::LayerBlock,
             CssRule::LayerStatement(_) => CssRuleType::LayerStatement,
             CssRule::Container(_) => CssRuleType::Container,
+            CssRule::Scope(_) => CssRuleType::Scope,
+            CssRule::StartingStyle(_) => CssRuleType::StartingStyle,
         }
     }
 
@@ -464,7 +485,11 @@ impl CssRule {
             None,
             None,
         );
-        context.rule_types = insert_rule_context.containing_rule_types;
+        // Override the nesting context with existing data.
+        context.nesting_context = NestingContext::new(
+            insert_rule_context.containing_rule_types,
+            insert_rule_context.parse_relative_rule_type,
+        );
 
         let state = if !insert_rule_context.containing_rule_types.is_empty() {
             State::Body
@@ -567,6 +592,12 @@ impl DeepCloneWithLock for CssRule {
             CssRule::LayerBlock(ref arc) => {
                 CssRule::LayerBlock(Arc::new(arc.deep_clone_with_lock(lock, guard, params)))
             },
+            CssRule::Scope(ref arc) => {
+                CssRule::Scope(Arc::new(arc.deep_clone_with_lock(lock, guard, params)))
+            },
+            CssRule::StartingStyle(ref arc) => {
+                CssRule::StartingStyle(Arc::new(arc.deep_clone_with_lock(lock, guard, params)))
+            },
         }
     }
 }
@@ -592,6 +623,8 @@ impl ToCssWithGuard for CssRule {
             CssRule::LayerBlock(ref rule) => rule.to_css(guard, dest),
             CssRule::LayerStatement(ref rule) => rule.to_css(guard, dest),
             CssRule::Container(ref rule) => rule.to_css(guard, dest),
+            CssRule::Scope(ref rule) => rule.to_css(guard, dest),
+            CssRule::StartingStyle(ref rule) => rule.to_css(guard, dest),
         }
     }
 }

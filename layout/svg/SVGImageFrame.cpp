@@ -191,26 +191,6 @@ nsresult SVGImageFrame::AttributeChanged(int32_t aNameSpaceID,
     }
   }
 
-  // Currently our SMIL implementation does not modify the DOM attributes. Once
-  // we implement the SVG 2 SMIL behaviour this can be removed
-  // SVGImageElement::AfterSetAttr's implementation will be sufficient.
-  if (aModType == MutationEvent_Binding::SMIL &&
-      aAttribute == nsGkAtoms::href &&
-      (aNameSpaceID == kNameSpaceID_XLink ||
-       aNameSpaceID == kNameSpaceID_None)) {
-    SVGImageElement* element = static_cast<SVGImageElement*>(GetContent());
-
-    bool hrefIsSet =
-        element->mStringAttributes[SVGImageElement::HREF].IsExplicitlySet() ||
-        element->mStringAttributes[SVGImageElement::XLINK_HREF]
-            .IsExplicitlySet();
-    if (hrefIsSet) {
-      element->LoadSVGImage(true, true);
-    } else {
-      element->CancelImageRequests(true);
-    }
-  }
-
   return NS_OK;
 }
 
@@ -424,7 +404,7 @@ void SVGImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     if (!IsVisibleForPainting()) {
       return;
     }
-    if (StyleEffects()->IsTransparent()) {
+    if (StyleEffects()->IsTransparent() && SVGUtils::CanOptimizeOpacity(this)) {
       return;
     }
     aBuilder->BuildCompositorHitTestInfoIfNeeded(this,
@@ -443,7 +423,8 @@ bool SVGImageFrame::IsInvisible() const {
   // Anything below will round to zero later down the pipeline.
   constexpr float opacity_threshold = 1.0 / 128.0;
 
-  return StyleEffects()->mOpacity <= opacity_threshold;
+  return StyleEffects()->mOpacity <= opacity_threshold &&
+         SVGUtils::CanOptimizeOpacity(this);
 }
 
 bool SVGImageFrame::CreateWebRenderCommands(

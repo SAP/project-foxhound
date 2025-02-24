@@ -190,7 +190,7 @@ webrtc::VideoCodecType SupportedCodecType(webrtc::VideoCodecType aType) {
 rtc::scoped_refptr<webrtc::VideoEncoderConfig::EncoderSpecificSettings>
 ConfigureVideoEncoderSettings(const VideoCodecConfig& aConfig,
                               const WebrtcVideoConduit* aConduit,
-                              webrtc::SdpVideoFormat::Parameters& aParameters) {
+                              webrtc::CodecParameterMap& aParameters) {
   bool is_screencast =
       aConduit->CodecMode() == webrtc::VideoCodecMode::kScreensharing;
   // No automatic resizing when using simulcast or screencast.
@@ -512,6 +512,7 @@ void WebrtcVideoConduit::OnControlConfigChange() {
         mRecvStreamConfig.rtp);
     MOZ_ASSERT(newRtp == mRecvStreamConfig.rtp);
     newRtp.rtx_associated_payload_types.clear();
+    newRtp.rtx_ssrc = 0;
     newRtp.rtcp_mode = rtpRtcpConfig->GetRtcpMode();
     newRtp.nack.rtp_history_ms = 0;
     newRtp.remb = false;
@@ -675,6 +676,14 @@ void WebrtcVideoConduit::OnControlConfigChange() {
         (codecConfig != mControl.mConfiguredSendCodec ||
          rtpRtcpConfig != mControl.mConfiguredSendRtpRtcpConfig)) {
       CSFLogDebug(LOGTAG, "Configuring codec %s", codecConfig->mName.c_str());
+
+      if (mControl.mConfiguredSendCodec.isSome() &&
+          (mControl.mConfiguredSendCodec->mName != codecConfig->mName)) {
+        // This tends to happen if the codec is changed mid call.
+        // We need to delete the stream now, if we continue to setup the new
+        // codec before deleting the send stream libwebrtc will throw erros.
+        DeleteSendStream();
+      }
       mControl.mConfiguredSendCodec = codecConfig;
       mControl.mConfiguredSendRtpRtcpConfig = rtpRtcpConfig;
 
@@ -750,8 +759,20 @@ void WebrtcVideoConduit::OnControlConfigChange() {
         // TODO this is for webrtc-priority, but needs plumbing bits
         mEncoderConfig.bitrate_priority = 1.0;
 
+        // Populate simulcast_layers with their config (not dimensions or
+        // dimensions-derived properties, as they're only known as a frame to
+        // be sent is known).
+        mEncoderConfig.simulcast_layers.clear();
+        for (size_t idx = 0; idx < streamCount; ++idx) {
+          webrtc::VideoStream video_stream;
+          auto& encoding = codecConfig->mEncodings[idx];
+          video_stream.active = encoding.active;
+          mEncoderConfig.simulcast_layers.push_back(video_stream);
+        }
+
         // Expected max number of encodings
-        mEncoderConfig.number_of_streams = streamCount;
+        mEncoderConfig.number_of_streams =
+            mEncoderConfig.simulcast_layers.size();
 
         // libwebrtc disables this by default.
         mSendStreamConfig.suspend_below_min_bitrate = false;
@@ -1042,7 +1063,9 @@ void WebrtcVideoConduit::SetRemoteSSRCConfig(uint32_t aSsrc,
   }
 
   mRecvSSRC = mRecvStreamConfig.rtp.remote_ssrc = aSsrc;
-  mRecvStreamConfig.rtp.rtx_ssrc = aRtxSsrc;
+  // If we have no associated PT then ensure we dont have an rtx_ssrc set.
+  mRecvStreamConfig.rtp.rtx_ssrc =
+      mRecvStreamConfig.rtp.rtx_associated_payload_types.empty() ? 0 : aRtxSsrc;
 }
 
 void WebrtcVideoConduit::SetRemoteSSRCAndRestartAsNeeded(uint32_t aSsrc,

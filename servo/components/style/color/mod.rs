@@ -4,13 +4,18 @@
 
 //! Color support functions.
 
-pub mod component;
+/// cbindgen:ignore
+mod color_function;
+
 /// cbindgen:ignore
 pub mod convert;
+
+pub mod component;
 pub mod mix;
 pub mod parsing;
 mod to_css;
 
+use self::parsing::ChannelKeyword;
 use component::ColorComponent;
 use cssparser::color::PredefinedColorSpace;
 
@@ -445,6 +450,76 @@ impl AbsoluteColor {
         }
     }
 
+    /// Return the value of a component by its channel keyword.
+    pub fn get_component_by_channel_keyword(
+        &self,
+        channel_keyword: ChannelKeyword,
+    ) -> Result<Option<f32>, ()> {
+        if channel_keyword == ChannelKeyword::Alpha {
+            return Ok(self.alpha());
+        }
+
+        Ok(match self.color_space {
+            ColorSpace::Srgb => {
+                if self.flags.contains(ColorFlags::IS_LEGACY_SRGB) {
+                    match channel_keyword {
+                        ChannelKeyword::R => self.c0().map(|v| v * 255.0),
+                        ChannelKeyword::G => self.c1().map(|v| v * 255.0),
+                        ChannelKeyword::B => self.c2().map(|v| v * 255.0),
+                        _ => return Err(()),
+                    }
+                } else {
+                    match channel_keyword {
+                        ChannelKeyword::R => self.c0(),
+                        ChannelKeyword::G => self.c1(),
+                        ChannelKeyword::B => self.c2(),
+                        _ => return Err(()),
+                    }
+                }
+            },
+            ColorSpace::Hsl => match channel_keyword {
+                ChannelKeyword::H => self.c0(),
+                ChannelKeyword::S => self.c1(),
+                ChannelKeyword::L => self.c2(),
+                _ => return Err(()),
+            },
+            ColorSpace::Hwb => match channel_keyword {
+                ChannelKeyword::H => self.c0(),
+                ChannelKeyword::W => self.c1(),
+                ChannelKeyword::B => self.c2(),
+                _ => return Err(()),
+            },
+            ColorSpace::Lab | ColorSpace::Oklab => match channel_keyword {
+                ChannelKeyword::L => self.c0(),
+                ChannelKeyword::A => self.c1(),
+                ChannelKeyword::B => self.c2(),
+                _ => return Err(()),
+            },
+            ColorSpace::Lch | ColorSpace::Oklch => match channel_keyword {
+                ChannelKeyword::L => self.c0(),
+                ChannelKeyword::C => self.c1(),
+                ChannelKeyword::H => self.c2(),
+                _ => return Err(()),
+            },
+            ColorSpace::SrgbLinear |
+            ColorSpace::DisplayP3 |
+            ColorSpace::A98Rgb |
+            ColorSpace::ProphotoRgb |
+            ColorSpace::Rec2020 => match channel_keyword {
+                ChannelKeyword::R => self.c0(),
+                ChannelKeyword::G => self.c1(),
+                ChannelKeyword::B => self.c2(),
+                _ => return Err(()),
+            },
+            ColorSpace::XyzD50 | ColorSpace::XyzD65 => match channel_keyword {
+                ChannelKeyword::X => self.c0(),
+                ChannelKeyword::Y => self.c1(),
+                ChannelKeyword::Z => self.c2(),
+                _ => return Err(()),
+            },
+        })
+    }
+
     /// Convert this color to the specified color space.
     pub fn to_color_space(&self, color_space: ColorSpace) -> Self {
         use ColorSpace::*;
@@ -480,7 +555,10 @@ impl AbsoluteColor {
             (Srgb, Hwb) => convert::rgb_to_hwb(&components),
             (Hsl, Srgb) => convert::hsl_to_rgb(&components),
             (Hwb, Srgb) => convert::hwb_to_rgb(&components),
-            (Lab, Lch) | (Oklab, Oklch) => convert::orthogonal_to_polar(&components),
+            (Lab, Lch) | (Oklab, Oklch) => convert::orthogonal_to_polar(
+                &components,
+                convert::epsilon_for_range(0.0, if color_space == Lch { 100.0 } else { 1.0 }),
+            ),
             (Lch, Lab) | (Oklch, Oklab) => convert::polar_to_orthogonal(&components),
 
             // All other conversions need to convert to XYZ first.

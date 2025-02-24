@@ -5,6 +5,7 @@ pub fn get_device_uid(
     devtype: DeviceType,
 ) -> std::result::Result<StringRef, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceUID, devtype);
     let mut size = mem::size_of::<CFStringRef>();
@@ -17,11 +18,38 @@ pub fn get_device_uid(
     }
 }
 
+pub fn get_devices() -> Vec<AudioObjectID> {
+    debug_assert_running_serially();
+    let mut size: usize = 0;
+    let address = get_property_address(
+        Property::HardwareDevices,
+        DeviceType::INPUT | DeviceType::OUTPUT,
+    );
+    let mut ret =
+        audio_object_get_property_data_size(kAudioObjectSystemObject, &address, &mut size);
+    if ret != NO_ERR {
+        return Vec::new();
+    }
+    // Total number of input and output devices.
+    let mut devices: Vec<AudioObjectID> = allocate_array_by_size(size);
+    ret = audio_object_get_property_data(
+        kAudioObjectSystemObject,
+        &address,
+        &mut size,
+        devices.as_mut_ptr(),
+    );
+    if ret != NO_ERR {
+        return Vec::new();
+    }
+    devices
+}
+
 pub fn get_device_model_uid(
     id: AudioDeviceID,
     devtype: DeviceType,
 ) -> std::result::Result<StringRef, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::ModelUID, devtype);
     let mut size = mem::size_of::<CFStringRef>();
@@ -39,6 +67,7 @@ pub fn get_device_transport_type(
     devtype: DeviceType,
 ) -> std::result::Result<u32, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::TransportType, devtype);
     let mut size = mem::size_of::<u32>();
@@ -56,6 +85,7 @@ pub fn get_device_source(
     devtype: DeviceType,
 ) -> std::result::Result<u32, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceSource, devtype);
     let mut size = mem::size_of::<u32>();
@@ -73,6 +103,7 @@ pub fn get_device_source_name(
     devtype: DeviceType,
 ) -> std::result::Result<StringRef, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let mut source: u32 = get_device_source(id, devtype)?;
     let address = get_property_address(Property::DeviceSourceName, devtype);
@@ -97,6 +128,7 @@ pub fn get_device_name(
     devtype: DeviceType,
 ) -> std::result::Result<StringRef, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceName, devtype);
     let mut size = mem::size_of::<CFStringRef>();
@@ -114,6 +146,7 @@ pub fn get_device_manufacturer(
     devtype: DeviceType,
 ) -> std::result::Result<StringRef, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceManufacturer, devtype);
     let mut size = mem::size_of::<CFStringRef>();
@@ -131,6 +164,7 @@ pub fn get_device_buffer_frame_size_range(
     devtype: DeviceType,
 ) -> std::result::Result<AudioValueRange, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceBufferFrameSizeRange, devtype);
     let mut size = mem::size_of::<AudioValueRange>();
@@ -148,6 +182,7 @@ pub fn get_device_latency(
     devtype: DeviceType,
 ) -> std::result::Result<u32, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceLatency, devtype);
     let mut size = mem::size_of::<u32>();
@@ -160,11 +195,17 @@ pub fn get_device_latency(
     }
 }
 
+#[derive(Debug)]
+pub struct DeviceStream {
+    pub device: AudioDeviceID,
+    pub stream: AudioStreamID,
+}
 pub fn get_device_streams(
     id: AudioDeviceID,
     devtype: DeviceType,
-) -> std::result::Result<Vec<AudioStreamID>, OSStatus> {
+) -> std::result::Result<Vec<DeviceStream>, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceStreams, devtype);
 
@@ -174,13 +215,81 @@ pub fn get_device_streams(
         return Err(err);
     }
 
-    let mut streams: Vec<AudioObjectID> = allocate_array_by_size(size);
+    let mut streams = vec![AudioObjectID::default(); size / mem::size_of::<AudioObjectID>()];
     let err = audio_object_get_property_data(id, &address, &mut size, streams.as_mut_ptr());
-    if err == NO_ERR {
-        Ok(streams)
-    } else {
-        Err(err)
+    if err != NO_ERR {
+        return Err(err);
     }
+
+    let mut device_streams = streams
+        .into_iter()
+        .map(|stream| DeviceStream { device: id, stream })
+        .collect::<Vec<_>>();
+    if devtype.contains(DeviceType::INPUT) {
+        // With VPIO, output devices will/may get a Tap that appears as an input stream on the
+        // output device id. It is unclear what kind of Tap this is as it cannot be enumerated
+        // as a Tap through the public APIs. There is no property on the stream itself that
+        // can consistently identify it as originating from another device's output either.
+        // TerminalType gets close but is often kAudioStreamTerminalTypeUnknown, and there are
+        // cases reported where real input streams have that TerminalType, too.
+        // See Firefox bug 1890186.
+        // We rely on AudioObjectID order instead. AudioDeviceID and AudioStreamID (and more)
+        // are all AudioObjectIDs underneath, and they're all distinct. The Tap streams
+        // mentioned above are created when VPIO is created, and their AudioObjectIDs are higher
+        // than the VPIO device's AudioObjectID, but lower than the next *real* device's
+        // AudioObjectID.
+        // Simplified, a device's native streams have AudioObjectIDs higher than their device's
+        // AudioObjectID but lower than the next device's AudioObjectID.
+        // We use this to filter streams, and hope that it holds across macOS versions.
+        // Note that for aggregate devices this does not hold, as their stream IDs seem to be
+        // repurposed by VPIO. We sum up the result of the above algorithm for each of their sub
+        // devices instead, as that seems to hold.
+        let mut devices = get_devices();
+        let sub_devices = AggregateDevice::get_sub_devices(id);
+        if let Ok(sub_device_ids) = sub_devices {
+            cubeb_log!(
+                "Getting input device streams for aggregate device {}. Summing over sub devices {:?}.",
+                id,
+                sub_device_ids
+            );
+            return Ok(sub_device_ids
+                .into_iter()
+                .filter_map(|sub_id| match sub_id {
+                    #[allow(non_upper_case_globals)]
+                    kAudioObjectUnknown => None,
+                    i => get_device_streams(i, devtype).ok(),
+                })
+                .flatten()
+                .collect());
+        }
+        debug_assert!(devices.contains(&id));
+        devices.sort();
+        let next_id = devices.into_iter().skip_while(|&i| i != id).nth(1);
+        cubeb_log!(
+            "Filtering input streams {:?} for device {}. Next device is {:?}.",
+            device_streams
+                .iter()
+                .map(|ds| ds.stream)
+                .collect::<Vec<_>>(),
+            id,
+            next_id
+        );
+        if let Some(next_id) = next_id {
+            device_streams.retain(|ds| ds.stream > id && ds.stream < next_id);
+        } else {
+            device_streams.retain(|ds| ds.stream > id);
+        }
+        cubeb_log!(
+            "Input stream filtering for device {} retained {:?}.",
+            id,
+            device_streams
+                .iter()
+                .map(|ds| ds.stream)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    Ok(device_streams)
 }
 
 pub fn get_device_sample_rate(
@@ -188,6 +297,7 @@ pub fn get_device_sample_rate(
     devtype: DeviceType,
 ) -> std::result::Result<f64, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceSampleRate, devtype);
     let mut size = mem::size_of::<f64>();
@@ -205,6 +315,7 @@ pub fn get_ranges_of_device_sample_rate(
     devtype: DeviceType,
 ) -> std::result::Result<Vec<AudioValueRange>, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::DeviceSampleRates, devtype);
 
@@ -225,6 +336,7 @@ pub fn get_ranges_of_device_sample_rate(
 
 pub fn get_stream_latency(id: AudioStreamID) -> std::result::Result<u32, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(
         Property::StreamLatency,
@@ -240,27 +352,11 @@ pub fn get_stream_latency(id: AudioStreamID) -> std::result::Result<u32, OSStatu
     }
 }
 
-pub fn get_stream_terminal_type(id: AudioStreamID) -> std::result::Result<u32, OSStatus> {
-    assert_ne!(id, kAudioObjectUnknown);
-
-    let address = get_property_address(
-        Property::StreamTerminalType,
-        DeviceType::INPUT | DeviceType::OUTPUT,
-    );
-    let mut size = mem::size_of::<u32>();
-    let mut terminal_type: u32 = 0;
-    let err = audio_object_get_property_data(id, &address, &mut size, &mut terminal_type);
-    if err == NO_ERR {
-        Ok(terminal_type)
-    } else {
-        Err(err)
-    }
-}
-
 pub fn get_stream_virtual_format(
     id: AudioStreamID,
 ) -> std::result::Result<AudioStreamBasicDescription, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(
         Property::StreamVirtualFormat,
@@ -281,6 +377,7 @@ pub fn get_clock_domain(
     devtype: DeviceType,
 ) -> std::result::Result<u32, OSStatus> {
     assert_ne!(id, kAudioObjectUnknown);
+    debug_assert_running_serially();
 
     let address = get_property_address(Property::ClockDomain, devtype);
     let mut size = mem::size_of::<u32>();

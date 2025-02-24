@@ -82,6 +82,7 @@ using rtc::NATType;
 using rtc::PacketSocketFactory;
 using rtc::Socket;
 using rtc::SocketAddress;
+using webrtc::IceCandidateType;
 
 namespace cricket {
 namespace {
@@ -141,7 +142,6 @@ bool WriteStunMessage(const StunMessage& msg, ByteBufferWriter* buf) {
 class TestPort : public Port {
  public:
   TestPort(rtc::Thread* thread,
-           absl::string_view type,
            rtc::PacketSocketFactory* factory,
            const rtc::Network* network,
            uint16_t min_port,
@@ -150,7 +150,7 @@ class TestPort : public Port {
            absl::string_view password,
            const webrtc::FieldTrialsView* field_trials = nullptr)
       : Port(thread,
-             type,
+             IceCandidateType::kHost,
              factory,
              network,
              min_port,
@@ -185,7 +185,7 @@ class TestPort : public Port {
     // Act as if the socket was bound to the best IP on the network, to the
     // first port in the allowed range.
     rtc::SocketAddress addr(Network()->GetBestIP(), min_port());
-    AddAddress(addr, addr, rtc::SocketAddress(), "udp", "", "", Type(),
+    AddAddress(addr, addr, rtc::SocketAddress(), "udp", "", "", type(),
                ICE_TYPE_PREFERENCE_HOST, 0, "", true);
   }
 
@@ -197,12 +197,12 @@ class TestPort : public Port {
 
   // Exposed for testing candidate building.
   void AddCandidateAddress(const rtc::SocketAddress& addr) {
-    AddAddress(addr, addr, rtc::SocketAddress(), "udp", "", "", Type(),
+    AddAddress(addr, addr, rtc::SocketAddress(), "udp", "", "", type(),
                type_preference_, 0, "", false);
   }
   void AddCandidateAddress(const rtc::SocketAddress& addr,
                            const rtc::SocketAddress& base_address,
-                           absl::string_view type,
+                           IceCandidateType type,
                            int type_preference,
                            bool final) {
     AddAddress(addr, base_address, rtc::SocketAddress(), "udp", "", "", type,
@@ -256,6 +256,15 @@ class TestPort : public Port {
   std::unique_ptr<IceMessage> last_stun_msg_;
   int type_preference_ = 0;
 };
+
+bool GetStunMessageFromBufferWriter(TestPort* port,
+                                    ByteBufferWriter* buf,
+                                    const rtc::SocketAddress& addr,
+                                    std::unique_ptr<IceMessage>* out_msg,
+                                    std::string* out_username) {
+  return port->GetStunMessage(reinterpret_cast<const char*>(buf->Data()),
+                              buf->Length(), addr, out_msg, out_username);
+}
 
 static void SendPingAndReceiveResponse(Connection* lconn,
                                        TestPort* lport,
@@ -620,8 +629,8 @@ class PortTest : public ::testing::Test, public sigslot::has_slots<> {
 
   std::unique_ptr<rtc::NATServer> CreateNatServer(const SocketAddress& addr,
                                                   rtc::NATType type) {
-    return std::make_unique<rtc::NATServer>(type, ss_.get(), addr, addr,
-                                            ss_.get(), addr);
+    return std::make_unique<rtc::NATServer>(type, main_, ss_.get(), addr, addr,
+                                            main_, ss_.get(), addr);
   }
   static const char* StunName(NATType type) {
     switch (type) {
@@ -816,9 +825,9 @@ class PortTest : public ::testing::Test, public sigslot::has_slots<> {
       absl::string_view username,
       absl::string_view password,
       const webrtc::FieldTrialsView* field_trials = nullptr) {
-    auto port = std::make_unique<TestPort>(&main_, "test", &socket_factory_,
-                                           MakeNetwork(addr), 0, 0, username,
-                                           password, field_trials);
+    auto port =
+        std::make_unique<TestPort>(&main_, &socket_factory_, MakeNetwork(addr),
+                                   0, 0, username, password, field_trials);
     port->SignalRoleConflict.connect(this, &PortTest::OnRoleConflict);
     return port;
   }
@@ -836,8 +845,8 @@ class PortTest : public ::testing::Test, public sigslot::has_slots<> {
   std::unique_ptr<TestPort> CreateTestPort(const rtc::Network* network,
                                            absl::string_view username,
                                            absl::string_view password) {
-    auto port = std::make_unique<TestPort>(&main_, "test", &socket_factory_,
-                                           network, 0, 0, username, password);
+    auto port = std::make_unique<TestPort>(&main_, &socket_factory_, network, 0,
+                                           0, username, password);
     port->SignalRoleConflict.connect(this, &PortTest::OnRoleConflict);
     return port;
   }
@@ -1529,7 +1538,8 @@ TEST_F(PortTest, TestLoopbackCall) {
   auto buf = std::make_unique<ByteBufferWriter>();
   WriteStunMessage(*modified_req, buf.get());
   conn1->OnReadPacket(rtc::ReceivedPacket::CreateFromLegacy(
-      buf->Data(), buf->Length(), /*packet_time_us=*/-1));
+      reinterpret_cast<const char*>(buf->Data()), buf->Length(),
+      /*packet_time_us=*/-1));
   ASSERT_TRUE_WAIT(lport->last_stun_msg() != NULL, kDefaultTimeout);
   msg = lport->last_stun_msg();
   EXPECT_EQ(STUN_BINDING_ERROR_RESPONSE, msg->type());
@@ -2247,8 +2257,8 @@ TEST_F(PortTest, TestHandleStunMessage) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() != NULL);
   EXPECT_EQ("lfrag", username);
 
@@ -2259,8 +2269,8 @@ TEST_F(PortTest, TestHandleStunMessage) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() != NULL);
   EXPECT_EQ("", username);
 
@@ -2271,8 +2281,8 @@ TEST_F(PortTest, TestHandleStunMessage) {
       STUN_ERROR_REASON_SERVER_ERROR));
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() != NULL);
   EXPECT_EQ("", username);
   ASSERT_TRUE(out_msg->GetErrorCode() != NULL);
@@ -2295,8 +2305,8 @@ TEST_F(PortTest, TestHandleStunMessageBadUsername) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_BAD_REQUEST, port->last_stun_error_code());
@@ -2306,8 +2316,8 @@ TEST_F(PortTest, TestHandleStunMessageBadUsername) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_UNAUTHORIZED, port->last_stun_error_code());
@@ -2317,8 +2327,8 @@ TEST_F(PortTest, TestHandleStunMessageBadUsername) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_UNAUTHORIZED, port->last_stun_error_code());
@@ -2328,8 +2338,8 @@ TEST_F(PortTest, TestHandleStunMessageBadUsername) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_UNAUTHORIZED, port->last_stun_error_code());
@@ -2339,8 +2349,8 @@ TEST_F(PortTest, TestHandleStunMessageBadUsername) {
   in_msg->AddMessageIntegrity("rpass");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_UNAUTHORIZED, port->last_stun_error_code());
@@ -2361,8 +2371,8 @@ TEST_F(PortTest, TestHandleStunMessageBadMessageIntegrity) {
   in_msg = CreateStunMessageWithUsername(STUN_BINDING_REQUEST, "rfrag:lfrag");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_BAD_REQUEST, port->last_stun_error_code());
@@ -2373,8 +2383,8 @@ TEST_F(PortTest, TestHandleStunMessageBadMessageIntegrity) {
   in_msg->AddMessageIntegrity("invalid");
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() == NULL);
   EXPECT_EQ("", username);
   EXPECT_EQ(STUN_ERROR_UNAUTHORIZED, port->last_stun_error_code());
@@ -2399,16 +2409,16 @@ TEST_F(PortTest, TestHandleStunMessageBadFingerprint) {
   in_msg = CreateStunMessageWithUsername(STUN_BINDING_REQUEST, "rfrag:lfrag");
   in_msg->AddMessageIntegrity("rpass");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 
   // Now, add a fingerprint, but munge the message so it's not valid.
   in_msg->AddFingerprint();
   in_msg->SetTransactionIdForTesting("TESTTESTBADD");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 
   // Valid BINDING-RESPONSE, except no FINGERPRINT.
@@ -2417,16 +2427,16 @@ TEST_F(PortTest, TestHandleStunMessageBadFingerprint) {
       STUN_ATTR_XOR_MAPPED_ADDRESS, kLocalAddr2));
   in_msg->AddMessageIntegrity("rpass");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 
   // Now, add a fingerprint, but munge the message so it's not valid.
   in_msg->AddFingerprint();
   in_msg->SetTransactionIdForTesting("TESTTESTBADD");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 
   // Valid BINDING-ERROR-RESPONSE, except no FINGERPRINT.
@@ -2436,16 +2446,16 @@ TEST_F(PortTest, TestHandleStunMessageBadFingerprint) {
       STUN_ERROR_REASON_SERVER_ERROR));
   in_msg->AddMessageIntegrity("rpass");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 
   // Now, add a fingerprint, but munge the message so it's not valid.
   in_msg->AddFingerprint();
   in_msg->SetTransactionIdForTesting("TESTTESTBADD");
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_FALSE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_FALSE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                              &out_msg, &username));
   EXPECT_EQ(0, port->last_stun_error_code());
 }
 
@@ -2472,8 +2482,8 @@ TEST_F(PortTest,
   in_msg->AddAttribute(StunAttribute::CreateUInt32(0xdead));
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  ASSERT_TRUE(port->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                   &username));
+  ASSERT_TRUE(GetStunMessageFromBufferWriter(port.get(), buf.get(), addr,
+                                             &out_msg, &username));
   IceMessage* error_response = port->last_stun_msg();
   ASSERT_NE(nullptr, error_response);
 
@@ -2522,7 +2532,8 @@ TEST_F(PortTest,
   ByteBufferWriter buf;
   WriteStunMessage(*modified_response, &buf);
   lconn->OnReadPacket(rtc::ReceivedPacket::CreateFromLegacy(
-      buf.Data(), buf.Length(), /*packet_time_us=*/-1));
+      reinterpret_cast<const char*>(buf.Data()), buf.Length(),
+      /*packet_time_us=*/-1));
   // Response should have been ignored, leaving us unwritable still.
   EXPECT_FALSE(lconn->writable());
 }
@@ -2570,8 +2581,8 @@ TEST_F(PortTest, TestHandleStunBindingIndication) {
   in_msg = CreateStunMessage(STUN_BINDING_INDICATION);
   in_msg->AddFingerprint();
   WriteStunMessage(*in_msg, buf.get());
-  EXPECT_TRUE(lport->GetStunMessage(buf->Data(), buf->Length(), addr, &out_msg,
-                                    &username));
+  EXPECT_TRUE(GetStunMessageFromBufferWriter(lport.get(), buf.get(), addr,
+                                             &out_msg, &username));
   EXPECT_TRUE(out_msg.get() != NULL);
   EXPECT_EQ(out_msg->type(), STUN_BINDING_INDICATION);
   EXPECT_EQ("", username);
@@ -2692,9 +2703,11 @@ TEST_F(PortTest, TestComputeCandidatePriorityWithPriorityAdjustment) {
 TEST_F(PortTest, TestFoundation) {
   auto testport = CreateTestPort(kLocalAddr1, "name", "pass");
   testport->SetIceTiebreaker(kTiebreakerDefault);
-  testport->AddCandidateAddress(kLocalAddr1, kLocalAddr1, LOCAL_PORT_TYPE,
+  testport->AddCandidateAddress(kLocalAddr1, kLocalAddr1,
+                                IceCandidateType::kHost,
                                 cricket::ICE_TYPE_PREFERENCE_HOST, false);
-  testport->AddCandidateAddress(kLocalAddr2, kLocalAddr1, STUN_PORT_TYPE,
+  testport->AddCandidateAddress(kLocalAddr2, kLocalAddr1,
+                                IceCandidateType::kSrflx,
                                 cricket::ICE_TYPE_PREFERENCE_SRFLX, true);
   EXPECT_NE(testport->Candidates()[0].foundation(),
             testport->Candidates()[1].foundation());
@@ -3763,7 +3776,8 @@ TEST_F(PortTest, TestAddConnectionWithSameAddress) {
   port->PrepareAddress();
   EXPECT_EQ(1u, port->Candidates().size());
   rtc::SocketAddress address("1.1.1.1", 5000);
-  cricket::Candidate candidate(1, "udp", address, 0, "", "", "relay", 0, "");
+  cricket::Candidate candidate(1, "udp", address, 0, "", "",
+                               IceCandidateType::kRelay, 0, "");
   cricket::Connection* conn1 =
       port->CreateConnection(candidate, Port::ORIGIN_MESSAGE);
   cricket::Connection* conn_in_use = port->GetConnection(address);

@@ -14,6 +14,7 @@
 #include "mozilla/a11y/AccessibleWrap.h"
 #include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "MsaaAccessible.h"
 #include "MsaaDocAccessible.h"
 #include "MsaaRootAccessible.h"
@@ -507,6 +508,13 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
     return E_NOINTERFACE;
   }
 
+  if (NS_WARN_IF(!NS_IsMainThread())) {
+    // Bug 1896816: JAWS sometimes traverses into Gecko UI from a file dialog
+    // thread. It shouldn't do that, but let's fail gracefully instead of
+    // crashing.
+    return RPC_E_WRONG_THREAD;
+  }
+
   // These interfaces are always available. We can support querying to them
   // even if the Accessible is dead.
   if (IID_IUnknown == iid) {
@@ -522,9 +530,11 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
     if (SUCCEEDED(hr)) {
       return hr;
     }
-    hr = uiaRawElmProvider::QueryInterface(iid, ppv);
-    if (SUCCEEDED(hr)) {
-      return hr;
+    if (StaticPrefs::accessibility_uia_enable()) {
+      hr = uiaRawElmProvider::QueryInterface(iid, ppv);
+      if (SUCCEEDED(hr)) {
+        return hr;
+      }
     }
   }
   if (*ppv) {
@@ -769,7 +779,8 @@ MsaaAccessible::get_accRole(
   uint32_t msaaRole = 0;
 
 #define ROLE(_geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             _msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
+             _msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
+             nameRule)                                                       \
   case roles::_geckoRole:                                                    \
     msaaRole = _msaaRole;                                                    \
     break;

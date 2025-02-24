@@ -28,7 +28,7 @@ RefPtr<TPromise> FetchJSONStructure(Request* aRequest) {
       new typename TPromise::Private(__func__);
 
   // Fetch the provided request
-  RequestOrUSVString fetchInput;
+  RequestOrUTF8String fetchInput;
   fetchInput.SetAsRequest() = aRequest;
   RootedDictionary<RequestInit> requestInit(RootingCx());
   IgnoredErrorResult error;
@@ -69,8 +69,8 @@ RefPtr<TPromise> FetchJSONStructure(Request* aRequest) {
 
         // Parse the body into JSON, which must be done async
         IgnoredErrorResult error;
-        RefPtr<Promise> jsonPromise = response->ConsumeBody(
-            aCx, BodyConsumer::ConsumeType::CONSUME_JSON, error);
+        RefPtr<Promise> jsonPromise =
+            response->ConsumeBody(aCx, BodyConsumer::ConsumeType::JSON, error);
         if (NS_WARN_IF(error.Failed())) {
           resultPromise->Reject(NS_ERROR_FAILURE, __func__);
           return;

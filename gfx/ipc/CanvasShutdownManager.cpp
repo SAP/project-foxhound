@@ -93,8 +93,7 @@ void CanvasShutdownManager::Destroy() {
   }
 
   if (NS_IsMainThread()) {
-    if (NS_WARN_IF(
-            AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed))) {
+    if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
       return nullptr;
     }
 
@@ -149,11 +148,10 @@ void CanvasShutdownManager::OnRemoteCanvasRestored() {
 /* static */ void CanvasShutdownManager::OnCompositorManagerRestored() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  class RestoreRunnable final : public WorkerRunnable {
+  class RestoreRunnable final : public WorkerThreadRunnable {
    public:
     explicit RestoreRunnable(WorkerPrivate* aWorkerPrivate)
-        : WorkerRunnable(aWorkerPrivate,
-                         "CanvasShutdownManager::RestoreRunnable") {}
+        : WorkerThreadRunnable("CanvasShutdownManager::RestoreRunnable") {}
 
     bool WorkerRun(JSContext*, WorkerPrivate*) override {
       MaybeRestoreRemoteCanvas();
@@ -171,7 +169,7 @@ void CanvasShutdownManager::OnRemoteCanvasRestored() {
   for (const auto& manager : sManagers) {
     if (manager->mWorkerRef) {
       auto task = MakeRefPtr<RestoreRunnable>(manager->mWorkerRef->Private());
-      task->Dispatch();
+      task->Dispatch(manager->mWorkerRef->Private());
     }
   }
 }

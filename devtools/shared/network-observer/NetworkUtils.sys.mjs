@@ -90,10 +90,10 @@ function isChannelFromSystemPrincipal(channel) {
   // WindowGlobal which is available on the BrowsingContext
   if (!principal) {
     principal = CanonicalBrowsingContext.isInstance(browsingContext)
-      ? browsingContext.currentWindowGlobal.documentPrincipal
+      ? browsingContext.currentWindowGlobal?.documentPrincipal
       : browsingContext.window.document.nodePrincipal;
   }
-  return principal.isSystemPrincipal;
+  return principal?.isSystemPrincipal;
 }
 
 /**
@@ -501,6 +501,13 @@ function matchRequest(channel, filters) {
         Services.scriptSecurityManager.getSystemPrincipal() ||
         channel.loadInfo.isInDevToolsContext)
     ) {
+      return false;
+    }
+
+    // When a page fails loading in top level or in iframe, an error page is shown
+    // which will trigger a request to about:neterror (which is translated into a file:// URI request).
+    // Ignore this request in regular toolbox (but not in the browser toolbox).
+    if (channel.loadInfo?.loadErrorPage) {
       return false;
     }
 

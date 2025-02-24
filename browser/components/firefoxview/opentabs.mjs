@@ -11,12 +11,13 @@ import {
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import {
   getLogger,
-  isSearchEnabled,
   placeLinkOnClipboard,
-  searchTabList,
   MAX_TABS_FOR_RECENT_BROWSING,
 } from "./helpers.mjs";
+import { searchTabList } from "./search-helpers.mjs";
 import { ViewPage, ViewPageContent } from "./viewpage.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/firefoxview/opentabs-tab-list.mjs";
 
 const lazy = {};
 
@@ -35,6 +36,9 @@ ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
     "resource://gre/modules/FxAccounts.sys.mjs"
   ).getFxAccountsSingleton();
 });
+
+const TOPIC_DEVICESTATE_CHANGED = "firefox-view.devicestate.changed";
+const TOPIC_DEVICELIST_UPDATED = "fxaccounts:devicelist_updated";
 
 /**
  * A collection of open tabs grouped by window.
@@ -220,18 +224,15 @@ class OpenTabsInView extends ViewPage {
       <div class="sticky-container bottom-fade">
         <h2 class="page-header" data-l10n-id="firefoxview-opentabs-header"></h2>
         <div class="open-tabs-options">
-          ${when(
-            isSearchEnabled(),
-            () => html`<div>
-              <fxview-search-textbox
-                data-l10n-id="firefoxview-search-text-box-opentabs"
-                data-l10n-attrs="placeholder"
-                @fxview-search-textbox-query=${this.onSearchQuery}
-                .size=${this.searchTextboxSize}
-                pageName=${this.recentBrowsing ? "recentbrowsing" : "opentabs"}
-              ></fxview-search-textbox>
-            </div>`
-          )}
+          <div>
+            <fxview-search-textbox
+              data-l10n-id="firefoxview-search-text-box-opentabs"
+              data-l10n-attrs="placeholder"
+              @fxview-search-textbox-query=${this.onSearchQuery}
+              .size=${this.searchTextboxSize}
+              pageName=${this.recentBrowsing ? "recentbrowsing" : "opentabs"}
+            ></fxview-search-textbox>
+          </div>
           <div class="open-tabs-sort-wrapper">
             <div class="open-tabs-sort-option">
               <input
@@ -339,7 +340,7 @@ class OpenTabsInView extends ViewPage {
     ></view-opentabs-card>`;
   }
 
-  handleEvent({ detail, target, type }) {
+  handleEvent({ detail, type }) {
     if (this.recentBrowsing && type === "fxview-search-textbox-query") {
       this.onSearchQuery({ detail });
       return;
@@ -424,7 +425,7 @@ class OpenTabsInViewCard extends ViewPageContent {
   static queries = {
     cardEl: "card-container",
     tabContextMenu: "view-opentabs-contextmenu",
-    tabList: "fxview-tab-list",
+    tabList: "opentabs-tab-list",
   };
 
   openContextMenu(e) {
@@ -565,7 +566,7 @@ class OpenTabsInViewCard extends ViewPageContent {
           () => html`<h3 slot="header">${this.title}</h3>`
         )}
         <div class="fxview-tab-list-container" slot="main">
-          <fxview-tab-list
+          <opentabs-tab-list
             .hasPopup=${"menu"}
             ?compactRows=${this.classList.contains("width-limited")}
             @fxview-tab-list-primary-action=${this.onTabListRowClick}
@@ -579,7 +580,7 @@ class OpenTabsInViewCard extends ViewPageContent {
             .searchQuery=${this.searchQuery}
             .pinnedTabsGridView=${!this.recentBrowsing}
             ><view-opentabs-contextmenu slot="menu"></view-opentabs-contextmenu>
-          </fxview-tab-list>
+          </opentabs-tab-list>
         </div>
         ${when(
           this.recentBrowsing,
@@ -659,7 +660,7 @@ customElements.define("view-opentabs-card", OpenTabsInViewCard);
 class OpenTabsContextMenu extends MozLitElement {
   static properties = {
     devices: { type: Array },
-    triggerNode: { type: Object },
+    triggerNode: { hasChanged: () => true, type: Object },
   };
 
   static queries = {
@@ -669,6 +670,7 @@ class OpenTabsContextMenu extends MozLitElement {
   constructor() {
     super();
     this.triggerNode = null;
+    this.boundObserve = (...args) => this.observe(...args);
     this.devices = [];
   }
 
@@ -678,6 +680,28 @@ class OpenTabsContextMenu extends MozLitElement {
 
   get ownerViewPage() {
     return this.ownerDocument.querySelector("view-opentabs");
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.fetchDevicesPromise = this.fetchDevices();
+    Services.obs.addObserver(this.boundObserve, TOPIC_DEVICELIST_UPDATED);
+    Services.obs.addObserver(this.boundObserve, TOPIC_DEVICESTATE_CHANGED);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    Services.obs.removeObserver(this.boundObserve, TOPIC_DEVICELIST_UPDATED);
+    Services.obs.removeObserver(this.boundObserve, TOPIC_DEVICESTATE_CHANGED);
+  }
+
+  observe(_subject, topic, _data) {
+    if (
+      topic == TOPIC_DEVICELIST_UPDATED ||
+      topic == TOPIC_DEVICESTATE_CHANGED
+    ) {
+      this.fetchDevicesPromise = this.fetchDevices();
+    }
   }
 
   async fetchDevices() {
@@ -699,7 +723,7 @@ class OpenTabsContextMenu extends MozLitElement {
       return;
     }
     this.triggerNode = triggerNode;
-    await this.fetchDevices();
+    await this.fetchDevicesPromise;
     await this.getUpdateComplete();
     this.panelList.toggle(originalEvent);
   }
@@ -1022,7 +1046,7 @@ function getTabListItems(tabs, isRecentBrowsing) {
           ? JSON.stringify({ tabTitle: tab.label })
           : null,
       tabElement: tab,
-      time: tab.lastAccessed,
+      time: tab.lastSeenActive,
       title: tab.label,
       url,
     };

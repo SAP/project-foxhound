@@ -127,19 +127,6 @@ class PerfParser(CompareParser):
             },
         ],
         [
-            # Bug 1866047 - Remove once monorepo changes are complete
-            ["--fenix"],
-            {
-                "action": "store_true",
-                "default": False,
-                "help": "Include Fenix in tasks to run (disabled by default). Must "
-                "be used in conjunction with --android. Fenix isn't built on mozilla-central "
-                "so we pull the APK being tested from the firefox-android project. This "
-                "means that the fenix APK being tested in the two pushes is the same, and "
-                "any local changes made won't impact it.",
-            },
-        ],
-        [
             ["--chrome"],
             {
                 "action": "store_true",
@@ -163,6 +150,14 @@ class PerfParser(CompareParser):
                 "action": "store_true",
                 "default": False,
                 "help": "Show tests available for Safari (disabled by default).",
+            },
+        ],
+        [
+            ["--safari-tp"],
+            {
+                "action": "store_true",
+                "default": False,
+                "help": "Show tests available for Safari Technology Preview(disabled by default).",
             },
         ],
         [
@@ -211,7 +206,7 @@ class PerfParser(CompareParser):
                 "tests. If the Activity, Binary Path, or Intents required "
                 "change at all relative to the existing GeckoView, and Fenix "
                 "tasks, then you will need to make fixes in the associated "
-                "taskcluster files (e.g. taskcluster/ci/test/browsertime-mobile.yml). "
+                "taskcluster files (e.g. taskcluster/kinds/test/browsertime-mobile.yml). "
                 "Alternatively, set MOZ_FIREFOX_ANDROID_APK_OUTPUT to a path to "
                 "an APK, and then run the command with --browsertime-upload-apk "
                 "firefox-android. This option will only copy the APK for browsertime, see "

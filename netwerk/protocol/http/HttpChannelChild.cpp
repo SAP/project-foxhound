@@ -8,7 +8,7 @@
 // HttpLog.h should generally be included first
 #include "HttpLog.h"
 
-#include "mozilla/net/PBackgroundDataBridge.h"
+#include "nsError.h"
 #include "nsHttp.h"
 #include "nsICacheEntry.h"
 #include "mozilla/BasePrincipal.h"
@@ -23,6 +23,7 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/HttpChannelChild.h"
+#include "mozilla/net/PBackgroundDataBridge.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 
@@ -34,6 +35,7 @@
 #include "nsContentPolicyUtils.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsIThreadRetargetableStreamListener.h"
+#include "nsIStreamTransportService.h"
 #include "nsStringStream.h"
 #include "nsHttpChannel.h"
 #include "nsHttpHandler.h"
@@ -598,6 +600,17 @@ void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
   } else if (listener) {
     mListener = listener;
     mCompressListener = listener;
+
+    // We call MaybeRetarget here to allow the stream converter
+    // the option to request data on another thread, even if the
+    // final listener might not support it
+    if (nsCOMPtr<nsIStreamConverter> conv =
+            do_QueryInterface((mCompressListener))) {
+      rv = conv->MaybeRetarget(this);
+      if (NS_SUCCEEDED(rv)) {
+        mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::successOnlyDecomp;
+      }
+    }
   }
 }
 
@@ -852,15 +865,10 @@ class RecordStopRequestDelta final {
     }
 
     TimeDuration delta = (mOnStopRequestTime - mOnDataFinishedTime);
-    if (delta.ToMilliseconds() < 0) {
-      // Because Telemetry can't handle negatives
-      delta = -delta;
-      glean::networking::http_content_ondatafinished_to_onstop_delay_negative
-          .AccumulateRawDuration(delta);
-    } else {
-      glean::networking::http_content_ondatafinished_to_onstop_delay
-          .AccumulateRawDuration(delta);
-    }
+    MOZ_ASSERT((delta.ToMilliseconds() >= 0),
+               "OnDataFinished after OnStopRequest");
+    glean::networking::http_content_ondatafinished_to_onstop_delay
+        .AccumulateRawDuration(delta);
   }
 };
 
@@ -1157,7 +1165,7 @@ void HttpChannelChild::CollectOMTTelemetry() {
       NS_CP_ContentTypeName(mLoadInfo->InternalContentPolicyType()));
 
   Telemetry::AccumulateCategoricalKeyed(
-      key, static_cast<LABELS_HTTP_CHILD_OMT_STATS>(mOMTResult));
+      key, static_cast<LABELS_HTTP_CHILD_OMT_STATS_2>(mOMTResult));
 }
 
 // We want to inspect all upgradable mixed content loads
@@ -3055,7 +3063,7 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
   NS_ENSURE_ARG(aNewTarget);
   if (aNewTarget->IsOnCurrentThread()) {
     NS_WARNING("Retargeting delivery to same thread");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS::successMainThread;
+    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::successMainThread;
     return NS_OK;
   }
 
@@ -3063,7 +3071,7 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
     // TODO: Maybe add a new label for this? Maybe it doesn't
     // matter though, since we also blocked QI, so we shouldn't
     // ever get here.
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS::failListener;
+    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListener;
     return NS_ERROR_NO_INTERFACE;
   }
 
@@ -3074,25 +3082,32 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
       do_QueryInterface(mListener, &rv);
   if (!retargetableListener || NS_FAILED(rv)) {
     NS_WARNING("Listener is not retargetable");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS::failListener;
+    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListener;
     return NS_ERROR_NO_INTERFACE;
   }
 
   rv = retargetableListener->CheckListenerChain();
   if (NS_FAILED(rv)) {
     NS_WARNING("Subsequent listeners are not retargetable");
-    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS::failListenerChain;
+    mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::failListenerChain;
     return rv;
   }
 
   {
     MutexAutoLock lock(mEventTargetMutex);
     MOZ_ASSERT(!mODATarget);
-    mODATarget = aNewTarget;
+    RetargetDeliveryToImpl(aNewTarget, lock);
   }
 
-  mOMTResult = LABELS_HTTP_CHILD_OMT_STATS::success;
+  mOMTResult = LABELS_HTTP_CHILD_OMT_STATS_2::success;
   return NS_OK;
+}
+
+void HttpChannelChild::RetargetDeliveryToImpl(nsISerialEventTarget* aNewTarget,
+                                              MutexAutoLock& aLockRef) {
+  aLockRef.AssertOwns(mEventTargetMutex);
+
+  mODATarget = aNewTarget;
 }
 
 NS_IMETHODIMP
@@ -3401,6 +3416,14 @@ HttpChannelChild::SetEarlyHintObserver(nsIEarlyHintObserver* aObserver) {
 NS_IMETHODIMP HttpChannelChild::SetWebTransportSessionEventListener(
     WebTransportSessionEventListener* aListener) {
   return NS_OK;
+}
+
+void HttpChannelChild::ExplicitSetUploadStreamLength(
+    uint64_t aContentLength, bool aSetContentLengthHeader) {
+  // SetRequestHeader propagates headers to chrome if HttpChannelChild
+  MOZ_ASSERT(!LoadWasOpened());
+  HttpBaseChannel::ExplicitSetUploadStreamLength(aContentLength,
+                                                 aSetContentLengthHeader);
 }
 
 }  // namespace mozilla::net

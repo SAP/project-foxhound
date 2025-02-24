@@ -9,7 +9,8 @@
 #include "vm/Modules.h"
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
-#include "mozilla/Utf8.h"        // mozilla::Utf8Unit
+#include "mozilla/ScopeExit.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include <stdint.h>  // uint32_t
 
@@ -41,6 +42,12 @@
 using namespace js;
 
 using mozilla::Utf8Unit;
+
+static bool ModuleLink(JSContext* cx, Handle<ModuleObject*> module);
+static bool ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> module,
+                           MutableHandle<Value> result);
+static bool SyntheticModuleEvaluate(JSContext* cx, Handle<ModuleObject*> module,
+                                    MutableHandle<Value> result);
 
 ////////////////////////////////////////////////////////////////////////////////
 // Public API
@@ -184,7 +191,7 @@ JS_PUBLIC_API bool JS::ModuleLink(JSContext* cx, Handle<JSObject*> moduleArg) {
   CHECK_THREAD(cx);
   cx->releaseCheck(moduleArg);
 
-  return js::ModuleLink(cx, moduleArg.as<ModuleObject>());
+  return ::ModuleLink(cx, moduleArg.as<ModuleObject>());
 }
 
 JS_PUBLIC_API bool JS::ModuleEvaluate(JSContext* cx,
@@ -194,11 +201,17 @@ JS_PUBLIC_API bool JS::ModuleEvaluate(JSContext* cx,
   CHECK_THREAD(cx);
   cx->releaseCheck(moduleRecord);
 
+  cx->isEvaluatingModule++;
+  auto guard = mozilla::MakeScopeExit([cx] {
+    MOZ_ASSERT(cx->isEvaluatingModule != 0);
+    cx->isEvaluatingModule--;
+  });
+
   if (moduleRecord.as<ModuleObject>()->hasSyntheticModuleFields()) {
     return SyntheticModuleEvaluate(cx, moduleRecord.as<ModuleObject>(), rval);
   }
 
-  return js::ModuleEvaluate(cx, moduleRecord.as<ModuleObject>(), rval);
+  return ::ModuleEvaluate(cx, moduleRecord.as<ModuleObject>(), rval);
 }
 
 JS_PUBLIC_API bool JS::ThrowOnModuleEvaluationFailure(
@@ -297,7 +310,9 @@ JS_PUBLIC_API JSObject* JS::CreateModuleRequest(
     return nullptr;
   }
 
-  return ModuleRequestObject::create(cx, specifierAtom, nullptr);
+  Rooted<UniquePtr<ImportAttributeVector>> attributes(cx);
+
+  return ModuleRequestObject::create(cx, specifierAtom, &attributes);
 }
 
 JS_PUBLIC_API JSString* JS::GetModuleRequestSpecifier(
@@ -325,6 +340,11 @@ JS_PUBLIC_API void JS::ClearModuleEnvironment(JSObject* moduleObj) {
   for (uint32_t i = numReserved; i < numSlots; i++) {
     env->setSlot(i, UndefinedValue());
   }
+}
+
+JS_PUBLIC_API bool JS::ModuleIsLinked(JSObject* moduleObj) {
+  AssertHeapIsIdle();
+  return moduleObj->as<ModuleObject>().status() != ModuleStatus::Unlinked;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -356,14 +376,17 @@ static ModuleObject* HostResolveImportedModule(
     JSContext* cx, Handle<ModuleObject*> module,
     Handle<ModuleRequestObject*> moduleRequest,
     ModuleStatus expectedMinimumStatus);
-static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
-                                Handle<JSAtom*> exportName,
-                                MutableHandle<ResolveSet> resolveSet,
-                                MutableHandle<Value> result);
+static bool CyclicModuleResolveExport(JSContext* cx,
+                                      Handle<ModuleObject*> module,
+                                      Handle<JSAtom*> exportName,
+                                      MutableHandle<ResolveSet> resolveSet,
+                                      MutableHandle<Value> result,
+                                      ModuleErrorInfo* errorInfoOut = nullptr);
 static bool SyntheticModuleResolveExport(JSContext* cx,
                                          Handle<ModuleObject*> module,
                                          Handle<JSAtom*> exportName,
-                                         MutableHandle<Value> result);
+                                         MutableHandle<Value> result,
+                                         ModuleErrorInfo* errorInfoOut);
 static ModuleNamespaceObject* ModuleNamespaceCreate(
     JSContext* cx, Handle<ModuleObject*> module,
     MutableHandle<UniquePtr<ExportNameVector>> exports);
@@ -575,17 +598,20 @@ static ModuleObject* HostResolveImportedModule(
 //  - If the request is found to be ambiguous, the string `"ambiguous"` is
 //    returned.
 //
-bool js::ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
-                             Handle<JSAtom*> exportName,
-                             MutableHandle<Value> result) {
+static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
+                                Handle<JSAtom*> exportName,
+                                MutableHandle<Value> result,
+                                ModuleErrorInfo* errorInfoOut = nullptr) {
   if (module->hasSyntheticModuleFields()) {
-    return ::SyntheticModuleResolveExport(cx, module, exportName, result);
+    return SyntheticModuleResolveExport(cx, module, exportName, result,
+                                        errorInfoOut);
   }
 
   // Step 1. If resolveSet is not present, set resolveSet to a new empty List.
   Rooted<ResolveSet> resolveSet(cx);
 
-  return ::ModuleResolveExport(cx, module, exportName, &resolveSet, result);
+  return CyclicModuleResolveExport(cx, module, exportName, &resolveSet, result,
+                                   errorInfoOut);
 }
 
 static bool CreateResolvedBindingObject(JSContext* cx,
@@ -602,10 +628,12 @@ static bool CreateResolvedBindingObject(JSContext* cx,
   return true;
 }
 
-static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
-                                Handle<JSAtom*> exportName,
-                                MutableHandle<ResolveSet> resolveSet,
-                                MutableHandle<Value> result) {
+static bool CyclicModuleResolveExport(JSContext* cx,
+                                      Handle<ModuleObject*> module,
+                                      Handle<JSAtom*> exportName,
+                                      MutableHandle<ResolveSet> resolveSet,
+                                      MutableHandle<Value> result,
+                                      ModuleErrorInfo* errorInfoOut) {
   // Step 2. For each Record { [[Module]], [[ExportName]] } r of resolveSet, do:
   for (const auto& entry : resolveSet) {
     // Step 2.a. If module and r.[[Module]] are the same Module Record and
@@ -614,6 +642,9 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
       // Step 2.a.i. Assert: This is a circular import request.
       // Step 2.a.ii. Return null.
       result.setNull();
+      if (errorInfoOut) {
+        errorInfoOut->setCircularImport(cx, module);
+      }
       return true;
     }
   }
@@ -669,8 +700,8 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
         // importedModule.ResolveExport(e.[[ImportName]],
         //                 resolveSet).
         name = e.importName();
-        return ModuleResolveExport(cx, importedModule, name, resolveSet,
-                                   result);
+        return CyclicModuleResolveExport(cx, importedModule, name, resolveSet,
+                                         result, errorInfoOut);
       }
     }
   }
@@ -683,6 +714,9 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
     // Step 6.c. NOTE: A default export cannot be provided by an export * from
     //           "mod" declaration.
     result.setNull();
+    if (errorInfoOut) {
+      errorInfoOut->setImportedModule(cx, module);
+    }
     return true;
   }
 
@@ -704,8 +738,8 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
 
     // Step 8.b. Let resolution be ? importedModule.ResolveExport(exportName,
     //           resolveSet).
-    if (!ModuleResolveExport(cx, importedModule, exportName, resolveSet,
-                             &resolution)) {
+    if (!CyclicModuleResolveExport(cx, importedModule, exportName, resolveSet,
+                                   &resolution, errorInfoOut)) {
       return false;
     }
 
@@ -744,6 +778,12 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
         if (binding->module() != starResolution->module() ||
             binding->bindingName() != starResolution->bindingName()) {
           result.set(StringValue(cx->names().ambiguous));
+
+          if (errorInfoOut) {
+            Rooted<ModuleObject*> module1(cx, starResolution->module());
+            Rooted<ModuleObject*> module2(cx, binding->module());
+            errorInfoOut->setForAmbiguousImport(cx, module, module1, module2);
+          }
           return true;
         }
       }
@@ -752,6 +792,9 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
 
   // Step 9. Return starResolution.
   result.setObjectOrNull(starResolution);
+  if (!starResolution && errorInfoOut) {
+    errorInfoOut->setImportedModule(cx, module);
+  }
   return true;
 }
 
@@ -759,10 +802,14 @@ static bool ModuleResolveExport(JSContext* cx, Handle<ModuleObject*> module,
 static bool SyntheticModuleResolveExport(JSContext* cx,
                                          Handle<ModuleObject*> module,
                                          Handle<JSAtom*> exportName,
-                                         MutableHandle<Value> result) {
+                                         MutableHandle<Value> result,
+                                         ModuleErrorInfo* errorInfoOut) {
   // Step 2. If module.[[ExportNames]] does not contain exportName, return null.
   if (!ContainsElement(module->syntheticExportNames(), exportName)) {
     result.setNull();
+    if (errorInfoOut) {
+      errorInfoOut->setImportedModule(cx, module);
+    }
     return true;
   }
 
@@ -923,63 +970,93 @@ static ModuleNamespaceObject* ModuleNamespaceCreate(
   return ns;
 }
 
+void ModuleErrorInfo::setImportedModule(JSContext* cx,
+                                        ModuleObject* importedModule) {
+  imported = importedModule->filename();
+}
+
+void ModuleErrorInfo::setCircularImport(JSContext* cx,
+                                        ModuleObject* importedModule) {
+  setImportedModule(cx, importedModule);
+  isCircular = true;
+}
+
+void ModuleErrorInfo::setForAmbiguousImport(JSContext* cx,
+                                            ModuleObject* importedModule,
+                                            ModuleObject* module1,
+                                            ModuleObject* module2) {
+  setImportedModule(cx, importedModule);
+  entry1 = module1->filename();
+  entry2 = module2->filename();
+}
+
+static void CreateErrorNumberMessageUTF8(JSContext* cx, unsigned errorNumber,
+                                         JSErrorReport* reportOut, ...) {
+  va_list ap;
+  va_start(ap, reportOut);
+  AutoReportFrontendContext fc(cx);
+  if (!ExpandErrorArgumentsVA(&fc, GetErrorMessage, nullptr, errorNumber,
+                              ArgumentsAreUTF8, reportOut, ap)) {
+    ReportOutOfMemory(cx);
+    return;
+  }
+
+  va_end(ap);
+}
+
 static void ThrowResolutionError(JSContext* cx, Handle<ModuleObject*> module,
-                                 Handle<Value> resolution, bool isDirectImport,
-                                 Handle<JSAtom*> name, uint32_t line,
-                                 JS::ColumnNumberOneOrigin column) {
-  MOZ_ASSERT(line != 0);
+                                 Handle<Value> resolution, Handle<JSAtom*> name,
+                                 ModuleErrorInfo* errorInfo) {
+  MOZ_ASSERT(errorInfo);
+  auto chars = StringToNewUTF8CharsZ(cx, *name);
+  if (!chars) {
+    ReportOutOfMemory(cx);
+    return;
+  }
 
   bool isAmbiguous = resolution == StringValue(cx->names().ambiguous);
 
-  // ErrorNumbers:
-  //          | MISSING | AMBIGUOUS |
-  // ---------+---------+-----------+
-  // INDIRECT |
-  // DIRECT   |
-  static constexpr unsigned ErrorNumbers[2][2] = {
-      {JSMSG_MISSING_INDIRECT_EXPORT, JSMSG_AMBIGUOUS_INDIRECT_EXPORT},
-      {JSMSG_MISSING_IMPORT, JSMSG_AMBIGUOUS_IMPORT}};
-  unsigned errorNumber = ErrorNumbers[isDirectImport][isAmbiguous];
-
-  const JSErrorFormatString* errorString =
-      GetErrorMessage(nullptr, errorNumber);
-  MOZ_ASSERT(errorString);
-
-  MOZ_ASSERT(errorString->argCount == 0);
-  Rooted<JSString*> message(cx, JS_NewStringCopyZ(cx, errorString->format));
-  if (!message) {
-    return;
-  }
-
-  Rooted<JSString*> separator(cx, JS_NewStringCopyZ(cx, ": "));
-  if (!separator) {
-    return;
-  }
-
-  message = ConcatStrings<CanGC>(cx, message, separator);
-  if (!message) {
-    return;
-  }
-
-  message = ConcatStrings<CanGC>(cx, message, name);
-  if (!message) {
-    return;
-  }
-
-  RootedString filename(cx);
-  if (const char* chars = module->script()->filename()) {
-    filename =
-        JS_NewStringCopyUTF8Z(cx, JS::ConstUTF8CharsZ(chars, strlen(chars)));
+  unsigned errorNumber;
+  if (errorInfo->isCircular) {
+    errorNumber = JSMSG_MODULE_CIRCULAR_IMPORT;
+  } else if (isAmbiguous) {
+    errorNumber = JSMSG_MODULE_AMBIGUOUS;
   } else {
-    filename = cx->names().empty_;
+    errorNumber = JSMSG_MODULE_NO_EXPORT;
   }
+
+  JSErrorReport report;
+  report.isWarning_ = false;
+  report.errorNumber = errorNumber;
+
+  if (errorNumber == JSMSG_MODULE_AMBIGUOUS) {
+    CreateErrorNumberMessageUTF8(cx, errorNumber, &report, errorInfo->imported,
+                                 chars.get(), errorInfo->entry1,
+                                 errorInfo->entry2);
+  } else {
+    CreateErrorNumberMessageUTF8(cx, errorNumber, &report, errorInfo->imported,
+                                 chars.get());
+  }
+
+  Rooted<JSString*> message(cx, report.newMessageString(cx));
+  if (!message) {
+    ReportOutOfMemory(cx);
+    return;
+  }
+
+  const char* file = module->filename();
+  RootedString filename(
+      cx, JS_NewStringCopyUTF8Z(cx, JS::ConstUTF8CharsZ(file, strlen(file))));
   if (!filename) {
+    ReportOutOfMemory(cx);
     return;
   }
 
   RootedValue error(cx);
-  if (!JS::CreateError(cx, JSEXN_SYNTAXERR, nullptr, filename, line, column,
-                       nullptr, message, JS::NothingHandleValue, &error)) {
+  if (!JS::CreateError(cx, JSEXN_SYNTAXERR, nullptr, filename,
+                       errorInfo->lineNumber, errorInfo->columnNumber, nullptr,
+                       message, JS::NothingHandleValue, &error)) {
+    ReportOutOfMemory(cx);
     return;
   }
 
@@ -988,8 +1065,8 @@ static void ThrowResolutionError(JSContext* cx, Handle<ModuleObject*> module,
 
 // https://tc39.es/ecma262/#sec-source-text-module-record-initialize-environment
 // ES2023 16.2.1.6.4 InitializeEnvironment
-bool js::ModuleInitializeEnvironment(JSContext* cx,
-                                     Handle<ModuleObject*> module) {
+static bool ModuleInitializeEnvironment(JSContext* cx,
+                                        Handle<ModuleObject*> module) {
   MOZ_ASSERT(module->status() == ModuleStatus::Linking);
 
   // Step 1. For each ExportEntry Record e of module.[[IndirectExportEntries]],
@@ -1002,15 +1079,15 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
 
     // Step 1.b. Let resolution be ? module.ResolveExport(e.[[ExportName]]).
     exportName = e.exportName();
-    if (!ModuleResolveExport(cx, module, exportName, &resolution)) {
+    ModuleErrorInfo errorInfo{e.lineNumber(), e.columnNumber()};
+    if (!ModuleResolveExport(cx, module, exportName, &resolution, &errorInfo)) {
       return false;
     }
 
     // Step 1.c. If resolution is either null or AMBIGUOUS, throw a SyntaxError
     //           exception.
     if (!IsResolvedBinding(cx, resolution)) {
-      ThrowResolutionError(cx, module, resolution, false, exportName,
-                           e.lineNumber(), e.columnNumber());
+      ThrowResolutionError(cx, module, resolution, exportName, &errorInfo);
       return false;
     }
   }
@@ -1059,15 +1136,16 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
       // Step 7.d. Else:
       // Step 7.d.i. Let resolution be ?
       // importedModule.ResolveExport(in.[[ImportName]]).
-      if (!ModuleResolveExport(cx, importedModule, importName, &resolution)) {
+      ModuleErrorInfo errorInfo{in.lineNumber(), in.columnNumber()};
+      if (!ModuleResolveExport(cx, importedModule, importName, &resolution,
+                               &errorInfo)) {
         return false;
       }
 
       // Step 7.d.ii. If resolution is null or ambiguous, throw a SyntaxError
       //              exception.
       if (!IsResolvedBinding(cx, resolution)) {
-        ThrowResolutionError(cx, module, resolution, true, importName,
-                             in.lineNumber(), in.columnNumber());
+        ThrowResolutionError(cx, module, resolution, importName, &errorInfo);
         return false;
       }
 
@@ -1134,7 +1212,7 @@ bool js::ModuleInitializeEnvironment(JSContext* cx,
 
 // https://tc39.es/ecma262/#sec-moduledeclarationlinking
 // ES2023 16.2.1.5.1 Link
-bool js::ModuleLink(JSContext* cx, Handle<ModuleObject*> module) {
+static bool ModuleLink(JSContext* cx, Handle<ModuleObject*> module) {
   // Step 1. Assert: module.[[Status]] is not linking or evaluating.
   ModuleStatus status = module->status();
   if (status == ModuleStatus::Linking || status == ModuleStatus::Evaluating) {
@@ -1177,6 +1255,31 @@ bool js::ModuleLink(JSContext* cx, Handle<ModuleObject*> module) {
   MOZ_ASSERT(stack.empty());
 
   // Step 7. Return unused.
+  return true;
+}
+
+// https://tc39.es/proposal-import-attributes/#sec-AllImportAttributesSupported
+static bool AllImportAttributesSupported(
+    JSContext* cx, mozilla::Span<const ImportAttribute> attributes,
+    MutableHandle<JSAtom*> invalidKey) {
+  // Step 1. Let supported be HostGetSupportedImportAttributes().
+  //
+  // Note: This should be driven by a host hook
+  // (HostGetSupportedImportAttributes), however the infrastructure of said host
+  // hook is deeply unclear, and so right now embedders will not have the
+  // ability to alter or extend the set of supported attributes. See
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1840723.
+
+  // Step 2. For each ImportAttribute Record attribute of attributes, do
+  for (const ImportAttribute& attribute : attributes) {
+    // Step 2.a. If supported does not contain attribute.[[Key]], return false.
+    if (attribute.key() != cx->names().type) {
+      invalidKey.set(attribute.key());
+      return false;
+    }
+  }
+
+  // Step 3. Return true.
   return true;
 }
 
@@ -1235,6 +1338,21 @@ static bool InnerModuleLinking(JSContext* cx, Handle<ModuleObject*> module,
   Rooted<ModuleObject*> requiredModule(cx);
   for (const RequestedModule& request : module->requestedModules()) {
     moduleRequest = request.moduleRequest();
+
+    // According to the spec, this should be in InnerModuleLoading, but
+    // currently, our module code is not aligned with the spec text.
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1894729
+    Rooted<JSAtom*> invalidKey(cx);
+    if (!AllImportAttributesSupported(cx, moduleRequest->attributes(),
+                                      &invalidKey)) {
+      UniqueChars printableKey = AtomToPrintableString(cx, invalidKey);
+      JS_ReportErrorNumberASCII(
+          cx, GetErrorMessage, nullptr,
+          JSMSG_IMPORT_ATTRIBUTES_STATIC_IMPORT_UNSUPPORTED_ATTRIBUTE,
+          printableKey ? printableKey.get() : "");
+
+      return false;
+    }
 
     // Step 9.a. Let requiredModule be ? HostResolveImportedModule(module,
     //           required).
@@ -1313,8 +1431,9 @@ static bool InnerModuleLinking(JSContext* cx, Handle<ModuleObject*> module,
   return true;
 }
 
-bool js::SyntheticModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
-                                 MutableHandle<Value> result) {
+static bool SyntheticModuleEvaluate(JSContext* cx,
+                                    Handle<ModuleObject*> moduleArg,
+                                    MutableHandle<Value> result) {
   // Steps 1-12 happens elsewhere in the engine.
 
   // Step 13. Let pc be ! NewPromiseCapability(%Promise%).
@@ -1337,8 +1456,8 @@ bool js::SyntheticModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
 
 // https://tc39.es/ecma262/#sec-moduleevaluation
 // ES2023 16.2.1.5.2 Evaluate
-bool js::ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
-                        MutableHandle<Value> result) {
+static bool ModuleEvaluate(JSContext* cx, Handle<ModuleObject*> moduleArg,
+                           MutableHandle<Value> result) {
   Rooted<ModuleObject*> module(cx, moduleArg);
 
   // Step 2. Assert: module.[[Status]] is linked, evaluating-async, or

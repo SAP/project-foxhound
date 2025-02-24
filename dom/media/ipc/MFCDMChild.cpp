@@ -7,6 +7,7 @@
 #include "mozilla/EMEUtils.h"
 #include "mozilla/KeySystemConfig.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticString.h"
 #include "mozilla/WMFCDMProxyCallback.h"
 #include "nsString.h"
 #include "RemoteDecoderManagerChild.h"
@@ -44,7 +45,7 @@ namespace mozilla {
 
 #define INVOKE_ASYNC(method, promiseId, param1)                      \
   do {                                                               \
-    auto callsite = __func__;                                        \
+    StaticString callsite = __func__;                                \
     using ParamType = std::remove_reference<decltype(param1)>::type; \
     mManagerThread->Dispatch(NS_NewRunnableFunction(                 \
         callsite, [self = RefPtr{this}, callsite, promiseId,         \
@@ -56,7 +57,7 @@ namespace mozilla {
 
 #define INVOKE_ASYNC2(method, promiseId, param1, param2)              \
   do {                                                                \
-    auto callsite = __func__;                                         \
+    StaticString callsite = __func__;                                 \
     using ParamType1 = std::remove_reference<decltype(param1)>::type; \
     using ParamType2 = std::remove_reference<decltype(param2)>::type; \
     mManagerThread->Dispatch(NS_NewRunnableFunction(                  \
@@ -148,7 +149,7 @@ void MFCDMChild::Shutdown() {
 }
 
 RefPtr<MFCDMChild::CapabilitiesPromise> MFCDMChild::GetCapabilities(
-    bool aIsHWSecured) {
+    MFCDMCapabilitiesRequest&& aRequest) {
   MOZ_ASSERT(mManagerThread);
 
   if (mShutdown) {
@@ -160,23 +161,21 @@ RefPtr<MFCDMChild::CapabilitiesPromise> MFCDMChild::GetCapabilities(
     return CapabilitiesPromise::CreateAndReject(mState, __func__);
   }
 
-  auto doSend = [self = RefPtr{this}, aIsHWSecured, this]() {
-    SendGetCapabilities(aIsHWSecured)
-        ->Then(
-            mManagerThread, __func__,
-            [self, this](MFCDMCapabilitiesResult&& aResult) {
-              if (aResult.type() == MFCDMCapabilitiesResult::Tnsresult) {
-                mCapabilitiesPromiseHolder.RejectIfExists(
-                    aResult.get_nsresult(), __func__);
-                return;
-              }
-              mCapabilitiesPromiseHolder.ResolveIfExists(
-                  std::move(aResult.get_MFCDMCapabilitiesIPDL()), __func__);
-            },
-            [self, this](const mozilla::ipc::ResponseRejectReason& aReason) {
-              mCapabilitiesPromiseHolder.RejectIfExists(NS_ERROR_FAILURE,
-                                                        __func__);
-            });
+  auto doSend = [self = RefPtr{this}, request = std::move(aRequest), this]() {
+    SendGetCapabilities(request)->Then(
+        mManagerThread, __func__,
+        [self, this](MFCDMCapabilitiesResult&& aResult) {
+          if (aResult.type() == MFCDMCapabilitiesResult::Tnsresult) {
+            mCapabilitiesPromiseHolder.RejectIfExists(aResult.get_nsresult(),
+                                                      __func__);
+            return;
+          }
+          mCapabilitiesPromiseHolder.ResolveIfExists(
+              std::move(aResult.get_MFCDMCapabilitiesIPDL()), __func__);
+        },
+        [self, this](const mozilla::ipc::ResponseRejectReason& aReason) {
+          mCapabilitiesPromiseHolder.RejectIfExists(NS_ERROR_FAILURE, __func__);
+        });
   };
 
   return InvokeAsync(doSend, __func__, mCapabilitiesPromiseHolder);
@@ -190,7 +189,7 @@ void MFCDMChild::AssertSendable() {
 
 template <typename PromiseType>
 already_AddRefed<PromiseType> MFCDMChild::InvokeAsync(
-    std::function<void()>&& aCall, const char* aCallerName,
+    std::function<void()>&& aCall, StaticString aCallerName,
     MozPromiseHolder<PromiseType>& aPromise) {
   AssertSendable();
 

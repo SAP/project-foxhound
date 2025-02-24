@@ -1325,6 +1325,9 @@ typedef struct macroblock {
   //! Coding block distortion value for uv/color, minimum over the inter modes.
   int64_t min_dist_inter_uv;
 
+  //! Threshold on the number of colors for testing palette mode.
+  int color_palette_thresh;
+
   //! The buffer used by search_tx_type() to swap dqcoeff in macroblockd_plane
   // so we can keep dqcoeff of the best tx_type.
   tran_low_t *dqcoeff_buf;
@@ -1348,6 +1351,9 @@ typedef struct macroblock {
   //! Motion vector from superblock MV derived from int_pro_motion() in
   // the variance_partitioning.
   int_mv sb_me_mv;
+  //! Flag to indicate if a fixed partition should be used, only if the
+  // speed feature rt_sf->use_fast_fixed_part is enabled.
+  int sb_force_fixed_part;
   //! SSE of the current predictor.
   unsigned int pred_sse[REF_FRAMES];
   //! Prediction for ML based partition.

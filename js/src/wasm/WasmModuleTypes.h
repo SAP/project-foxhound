@@ -23,6 +23,7 @@
 #include "mozilla/Span.h"
 
 #include "js/AllocPolicy.h"
+#include "js/HashTable.h"
 #include "js/RefCounted.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
@@ -219,6 +220,54 @@ struct FuncDesc {
 };
 
 using FuncDescVector = Vector<FuncDesc, 0, SystemAllocPolicy>;
+
+enum class BranchHint : uint8_t { Unlikely = 0, Likely = 1, Invalid = 2 };
+
+// Stores pairs of <BranchOffset, BranchHint>
+struct BranchHintEntry {
+  uint32_t branchOffset;
+  BranchHint value;
+
+  BranchHintEntry() = default;
+  BranchHintEntry(uint32_t branchOffset, BranchHint value)
+      : branchOffset(branchOffset), value(value) {}
+};
+
+// Branch hint sorted vector for a function,
+// stores tuples of <BranchOffset, BranchHint>
+using BranchHintVector = Vector<BranchHintEntry, 0, SystemAllocPolicy>;
+
+struct BranchHintCollection {
+ private:
+  // Map from function index to their collection of branch hints
+  HashMap<uint32_t, BranchHintVector, DefaultHasher<uint32_t>,
+          SystemAllocPolicy>
+      branchHintsMap;
+
+ public:
+  // Used for lookups into the collection if a function
+  // doesn't contain any hints.
+  static BranchHintVector invalidVector;
+
+  // Add all the branch hints for a function
+  [[nodiscard]] bool addHintsForFunc(uint32_t functionIndex,
+                                     BranchHintVector&& branchHints) {
+    return branchHintsMap.put(functionIndex, std::move(branchHints));
+  }
+
+  // Return the vector with branch hints for a funcIndex.
+  // If this function doesn't contain any hints, return an empty vector.
+  BranchHintVector& getHintVector(uint32_t funcIndex) const {
+    if (auto hintsVector = branchHintsMap.readonlyThreadsafeLookup(funcIndex)) {
+      return hintsVector->value();
+    }
+
+    // If not found, return the empty invalid Vector
+    return invalidVector;
+  }
+
+  bool isEmpty() const { return branchHintsMap.empty(); }
+};
 
 enum class GlobalKind { Import, Constant, Variable };
 

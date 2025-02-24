@@ -324,7 +324,7 @@ Result<IPCInternalRequest, nsresult> GetIPCInternalRequest(
   RequestCredentials requestCredentials =
       InternalRequest::MapChannelToRequestCredentials(underlyingChannel);
 
-  nsAutoString referrer;
+  nsAutoCString referrer;
   ReferrerPolicy referrerPolicy = ReferrerPolicy::_empty;
   ReferrerPolicy environmentReferrerPolicy = ReferrerPolicy::_empty;
 
@@ -544,10 +544,11 @@ nsresult ServiceWorkerPrivate::Initialize() {
     nsAutoString scheme;
     nsAutoString pkBaseDomain;
     int32_t unused;
+    bool unused2;
 
     if (OriginAttributes::ParsePartitionKey(
             principal->OriginAttributesRef().mPartitionKey, scheme,
-            pkBaseDomain, unused)) {
+            pkBaseDomain, unused, unused2)) {
       nsCOMPtr<nsIURI> firstPartyURI;
       rv = NS_NewURI(getter_AddRefs(firstPartyURI),
                      scheme + u"://"_ns + pkBaseDomain);
@@ -592,7 +593,8 @@ nsresult ServiceWorkerPrivate::Initialize() {
       }
     }
   } else {
-    net::CookieJarSettings::Cast(cookieJarSettings)->SetPartitionKey(uri);
+    net::CookieJarSettings::Cast(cookieJarSettings)
+        ->SetPartitionKey(uri, false);
 
     // The service worker is for a first-party context, we can use the uri of
     // the service worker as the first-party domain to get the fingerprinting

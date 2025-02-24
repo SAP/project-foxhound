@@ -17,10 +17,7 @@ import sys
 from time import localtime
 
 import mozpack.path as mozpath
-import six
-from mozpack.files import FileFinder
 from MozZipFile import ZipFile
-from six import BytesIO
 
 from mozbuild.action.buildlist import addEntriesToListFile
 from mozbuild.preprocessor import Preprocessor
@@ -45,7 +42,7 @@ class ZipEntry(object):
     def __init__(self, name, zipfile):
         self._zipfile = zipfile
         self._name = name
-        self._inner = BytesIO()
+        self._inner = io.BytesIO()
 
     def write(self, content):
         """Append the given content to this zip entry"""
@@ -341,7 +338,7 @@ class JarMaker(object):
         myregister = dict.fromkeys(
             map(lambda s: s.replace("%", chromebasepath), register)
         )
-        addEntriesToListFile(manifestPath, six.iterkeys(myregister))
+        addEntriesToListFile(manifestPath, myregister.keys())
 
     def makeJar(self, infile, jardir):
         """makeJar is the main entry point to JarMaker.
@@ -360,7 +357,7 @@ class JarMaker(object):
             self.localedirs = [_normpath(p) for p in self.localedirs]
         elif self.relativesrcdir:
             self.localedirs = self.generateLocaleDirs(self.relativesrcdir)
-        if isinstance(infile, six.text_type):
+        if isinstance(infile, str):
             logging.info("processing " + infile)
             self.sourcedirs.append(_normpath(os.path.dirname(infile)))
         pp = self.pp.clone()
@@ -467,6 +464,8 @@ class JarMaker(object):
 
             prefix = "".join(_prefix(src))
             emitted = set()
+            from mozpack.files import FileFinder
+
             for _srcdir in src_base:
                 finder = FileFinder(_srcdir)
                 for path, _ in finder.find(src):
@@ -518,7 +517,9 @@ class JarMaker(object):
 
         # copy or symlink if newer
 
-        if getModTime(realsrc) > outHelper.getDestModTime(e.output):
+        # if the output doesn't exist, we can skip an os.stat call
+        out_mod_time = outHelper.getDestModTime(e.output)
+        if out_mod_time == localtime(0) or getModTime(realsrc) > out_mod_time:
             if self.outputFormat == "symlink":
                 outHelper.symlink(realsrc, out)
                 return
@@ -631,10 +632,7 @@ def main(args=None):
     noise = logging.INFO
     if options.verbose is not None:
         noise = options.verbose and logging.DEBUG or logging.WARN
-    if sys.version_info[:2] > (2, 3):
-        logging.basicConfig(format="%(message)s")
-    else:
-        logging.basicConfig()
+    logging.basicConfig(format="%(message)s")
     logging.getLogger().setLevel(noise)
     topsrc = options.t
     topsrc = os.path.normpath(os.path.abspath(topsrc))
@@ -642,5 +640,6 @@ def main(args=None):
         infile = sys.stdin
     else:
         (infile,) = args
-        infile = six.ensure_text(infile)
+        if isinstance(infile, bytes):
+            infile = infile.decode()
     jm.makeJar(infile, options.d)

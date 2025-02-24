@@ -20,14 +20,14 @@ class Image;
 
 class AppleVTEncoder final : public MediaDataEncoder {
  public:
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AppleVTEncoder, final);
+
   AppleVTEncoder(const EncoderConfig& aConfig,
                  const RefPtr<TaskQueue>& aTaskQueue)
       : mConfig(aConfig),
         mTaskQueue(aTaskQueue),
-        mHardwareNotAllowed(
-            aConfig.mHardwarePreference ==
-            MediaDataEncoder::HardwarePreference::RequireSoftware),
-        mFramesCompleted(false),
+        mHardwareNotAllowed(aConfig.mHardwarePreference ==
+                            HardwarePreference::RequireSoftware),
         mError(NS_OK),
         mSession(nullptr) {
     MOZ_ASSERT(mConfig.mSize.width > 0 && mConfig.mSize.height > 0);
@@ -73,7 +73,6 @@ class AppleVTEncoder final : public MediaDataEncoder {
   const bool mHardwareNotAllowed;
   // Access only in mTaskQueue.
   EncodedData mEncodedData;
-  bool mFramesCompleted;
   RefPtr<MediaByteBuffer> mAvcc;  // Stores latest avcC data.
   MediaResult mError;
 

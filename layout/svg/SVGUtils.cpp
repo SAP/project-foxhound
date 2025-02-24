@@ -34,6 +34,7 @@
 #include "mozilla/FilterInstance.h"
 #include "mozilla/ISVGDisplayableFrame.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGClipPathFrame.h"
 #include "mozilla/SVGContainerFrame.h"
@@ -253,19 +254,20 @@ float SVGUtils::ObjectSpace(const gfxRect& aRect,
     // Multiply first to avoid precision errors:
     return axis * aLength->GetAnimValInSpecifiedUnits() / 100;
   }
-  return aLength->GetAnimValue(static_cast<SVGViewportElement*>(nullptr)) *
+  return aLength->GetAnimValueWithZoom(
+             static_cast<SVGViewportElement*>(nullptr)) *
          axis;
 }
 
 float SVGUtils::UserSpace(nsIFrame* aNonSVGContext,
                           const SVGAnimatedLength* aLength) {
   MOZ_ASSERT(!aNonSVGContext->IsTextFrame(), "Not expecting text content");
-  return aLength->GetAnimValue(aNonSVGContext);
+  return aLength->GetAnimValueWithZoom(aNonSVGContext);
 }
 
 float SVGUtils::UserSpace(const UserSpaceMetrics& aMetrics,
                           const SVGAnimatedLength* aLength) {
-  return aLength->GetAnimValue(aMetrics);
+  return aLength->GetAnimValueWithZoom(aMetrics);
 }
 
 SVGOuterSVGFrame* SVGUtils::GetOuterSVGFrame(nsIFrame* aFrame) {
@@ -513,7 +515,7 @@ class MixModeBlender {
 
     gfxContextAutoSaveRestore save(mSourceCtx);
     mSourceCtx->SetMatrix(Matrix());  // This will be restored right after.
-    RefPtr<gfxPattern> pattern = new gfxPattern(
+    auto pattern = MakeRefPtr<gfxPattern>(
         targetSurf, Matrix::Translation(mTargetOffset.x, mTargetOffset.y));
     mSourceCtx->SetPattern(pattern);
     mSourceCtx->Paint();
@@ -808,8 +810,7 @@ gfxRect SVGUtils::GetClipRectForFrame(const nsIFrame* aFrame, float aX,
 
   const auto& rect = effects->mClip.AsRect();
   nsRect coordClipRect = rect.ToLayoutRect();
-  nsIntRect clipPxRect = coordClipRect.ToOutsidePixels(
-      aFrame->PresContext()->AppUnitsPerDevPixel());
+  nsIntRect clipPxRect = coordClipRect.ToOutsidePixels(AppUnitsPerCSSPixel());
   gfxRect clipRect =
       gfxRect(clipPxRect.x, clipPxRect.y, clipPxRect.width, clipPxRect.height);
   if (rect.right.IsAuto()) {
@@ -908,17 +909,14 @@ gfxRect SVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
   // Account for 'clipped'.
   if (aFlags & SVGUtils::eBBoxIncludeClipped) {
     gfxRect clipRect;
-    float x, y, width, height;
     gfxRect fillBBox =
         svg->GetBBoxContribution({}, SVGUtils::eBBoxIncludeFill).ToThebesRect();
-    x = fillBBox.x;
-    y = fillBBox.y;
-    width = fillBBox.width;
-    height = fillBBox.height;
     // XXX Should probably check for overflow: clip too.
     bool hasClip = aFrame->StyleDisplay()->IsScrollableOverflow();
     if (hasClip) {
-      clipRect = SVGUtils::GetClipRectForFrame(aFrame, x, y, width, height);
+      clipRect = SVGUtils::GetClipRectForFrame(aFrame, 0.0f, 0.0f,
+                                               fillBBox.width, fillBBox.height);
+      clipRect.MoveBy(fillBBox.TopLeft());
       if (aFrame->IsSVGForeignObjectFrame() || aFrame->IsSVGUseFrame()) {
         clipRect = matrix.TransformBounds(clipRect);
       }
@@ -926,14 +924,14 @@ gfxRect SVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
     SVGClipPathFrame* clipPathFrame;
     if (SVGObserverUtils::GetAndObserveClipPath(aFrame, &clipPathFrame) ==
         SVGObserverUtils::eHasRefsSomeInvalid) {
-      bbox = gfxRect(0, 0, 0, 0);
+      bbox = gfxRect();
     } else {
       if (clipPathFrame) {
         SVGClipPathElement* clipContent =
             static_cast<SVGClipPathElement*>(clipPathFrame->GetContent());
         if (clipContent->IsUnitsObjectBoundingBox()) {
-          matrix.PreTranslate(gfxPoint(x, y));
-          matrix.PreScale(width, height);
+          matrix.PreTranslate(fillBBox.TopLeft());
+          matrix.PreScale(fillBBox.width, fillBBox.height);
         } else if (aFrame->IsSVGForeignObjectFrame()) {
           matrix = gfxMatrix();
         }
@@ -948,7 +946,7 @@ gfxRect SVGUtils::GetBBox(nsIFrame* aFrame, uint32_t aFlags,
       }
 
       if (bbox.IsEmpty()) {
-        bbox = gfxRect(0, 0, 0, 0);
+        bbox = gfxRect();
       }
     }
   }
@@ -1080,10 +1078,10 @@ bool SVGUtils::GetNonScalingStrokeTransform(const nsIFrame* aFrame,
 
   MOZ_ASSERT(aFrame->GetContent()->IsSVGElement(), "should be an SVG element");
 
-  *aUserToOuterSVG = ThebesMatrix(SVGContentUtils::GetCTM(
-      static_cast<SVGElement*>(aFrame->GetContent()), true));
+  *aUserToOuterSVG = ThebesMatrix(
+      SVGContentUtils::GetCTM(static_cast<SVGElement*>(aFrame->GetContent())));
 
-  return aUserToOuterSVG->HasNonTranslation();
+  return aUserToOuterSVG->HasNonTranslation() && !aUserToOuterSVG->IsSingular();
 }
 
 // The logic here comes from _cairo_stroke_style_max_distance_from_path

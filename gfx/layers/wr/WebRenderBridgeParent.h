@@ -244,7 +244,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
     return aFontKey.mNamespace == mIdNamespace;
   }
 
-  void FlushRendering(wr::RenderReasons aReasons, bool aWaitForPresent = true);
+  void FlushRendering(wr::RenderReasons aReasons, bool aBlocking = true);
 
   /**
    * Schedule generating WebRender frame definitely at next composite timing.
@@ -365,6 +365,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
                                     wr::TransactionBuilder& aTxn,
                                     wr::TransactionBuilder& aTxnForImageBridge);
   void RemovePipelineIdForCompositable(const wr::PipelineId& aPipelineId,
+                                       AsyncImagePipelineOps* aPendingOps,
                                        wr::TransactionBuilder& aTxn);
 
   void DeleteImage(const wr::ImageKey& aKey, wr::TransactionBuilder& aUpdates);

@@ -844,14 +844,14 @@ add_task(async function testLoadtimeTelemetry() {
   let loadTimeDistribution = Glean.privacySanitize.loadTime.testGetValue();
 
   let expectedNumberOfCounts = Object.entries(EXPECTED_CONTEXT_COUNTS).reduce(
-    (acc, [key, value]) => acc + value,
+    (acc, [, value]) => acc + value,
     0
   );
   // No guarantees from timers means no guarantees on buckets.
   // But we can guarantee it's only two samples.
   is(
     Object.entries(loadTimeDistribution.values).reduce(
-      (acc, [bucket, count]) => acc + count,
+      (acc, [, count]) => acc + count,
       0
     ),
     expectedNumberOfCounts,
@@ -904,7 +904,7 @@ add_task(async function testClearHistoryCheckboxStatesAfterMigration() {
       ["privacy.cpd.cache", true],
       // Set cookiesAndStorage to verify that the pref is flipped in the test
       ["privacy.clearHistory.cookiesAndStorage", false],
-      ["privacy.sanitize.cpd.hasMigratedToNewPrefs", false],
+      ["privacy.sanitize.cpd.hasMigratedToNewPrefs2", false],
     ],
   });
 
@@ -923,7 +923,7 @@ add_task(async function testClearHistoryCheckboxStatesAfterMigration() {
   await dh.promiseClosed;
 
   is(
-    Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs"),
+    Services.prefs.getBoolPref("privacy.sanitize.cpd.hasMigratedToNewPrefs2"),
     true,
     "Migration is complete for cpd branch"
   );

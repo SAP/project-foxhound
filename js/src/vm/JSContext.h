@@ -89,11 +89,14 @@ class InternalJobQueue : public JS::JobQueue {
                          JS::HandleObject incumbentGlobal) override;
   void runJobs(JSContext* cx) override;
   bool empty() const override;
+  bool isDrainingStopped() const override { return interrupted_; }
 
   // If we are currently in a call to runJobs(), make that call stop processing
   // jobs once the current one finishes, and return. If we are not currently in
   // a call to runJobs, make all future calls return immediately.
   void interrupt() { interrupted_ = true; }
+
+  void uninterrupt() { interrupted_ = false; }
 
   // Return the front element of the queue, or nullptr if the queue is empty.
   // This is only used by shell testing functions.
@@ -382,7 +385,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return offsetof(JSContext, jitActivation);
   }
 
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   static size_t offsetOfInUnsafeCallWithABI() {
     return offsetof(JSContext, inUnsafeCallWithABI);
   }
@@ -413,6 +416,16 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   /* If non-null, report JavaScript entry points to this monitor. */
   js::ContextData<JS::dbg::AutoEntryMonitor*> entryMonitor;
 
+  // In brittle mode, any failure will produce a diagnostic assertion rather
+  // than propagating an error or throwing an exception. This is used for
+  // intermittent crash diagnostics: if an operation is failing for unknown
+  // reasons, turn on brittle mode and annotate the operations within
+  // SpiderMonkey that the failing operation uses with:
+  //
+  //   MOZ_DIAGNOSTIC_ASSERT(!cx->brittleMode, "specific failure");
+  //
+  bool brittleMode = false;
+
   /*
    * Stack of debuggers that currently disallow debuggee execution.
    *
@@ -422,9 +435,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    */
   js::ContextData<js::EnterDebuggeeNoExecute*> noExecuteDebuggerTop;
 
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   js::ContextData<uint32_t> inUnsafeCallWithABI;
   js::ContextData<bool> hasAutoUnsafeCallWithABI;
+#endif
+
+#ifdef DEBUG
+  js::ContextData<uint32_t> liveArraySortDataInstances;
 #endif
 
 #ifdef JS_SIMULATOR
@@ -505,6 +522,9 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   static constexpr size_t offsetOfRegExpSearcherLastLimit() {
     return offsetof(JSContext, regExpSearcherLastLimit);
   }
+
+  // Whether we are currently executing the top level of a module.
+  js::ContextData<uint32_t> isEvaluatingModule;
 
  private:
   // Pools used for recycling name maps and vectors when parsing and
@@ -718,6 +738,13 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
    * attached.
    */
   js::SavedFrame* getPendingExceptionStack();
+
+#ifdef DEBUG
+  /**
+   * Return the pending exception (without wrapping).
+   */
+  const JS::Value& getPendingExceptionUnwrapped();
+#endif
 
   bool isThrowingDebuggeeWouldRun();
   bool isClosingGenerator();
@@ -1050,19 +1077,22 @@ enum UnsafeABIStrictness {
 };
 
 // Should be used in functions called directly from JIT code (with
-// masm.callWithABI) to assert invariants in debug builds.
-// In debug mode, masm.callWithABI inserts code to verify that the
-// callee function uses AutoUnsafeCallWithABI.
-// While this object is live:
-// 1. cx->hasAutoUnsafeCallWithABI must be true.
-// 2. We can't GC.
-// 3. Exceptions should not be pending/thrown.
+// masm.callWithABI). This assert invariants in debug builds. Resets
+// JSContext::inUnsafeCallWithABI on destruction.
 //
-// Note that #3 is a precaution, not a requirement. By default, we
-// assert that the function is not called with a pending exception,
-// and that it does not throw an exception itself.
+// In debug mode, masm.callWithABI inserts code to verify that the callee
+// function uses AutoUnsafeCallWithABI.
+//
+// While this object is live:
+//   1. cx->hasAutoUnsafeCallWithABI must be true.
+//   2. We can't GC.
+//   3. Exceptions should not be pending/thrown.
+//
+// Note that #3 is a precaution, not a requirement. By default, we assert that
+// the function is not called with a pending exception, and that it does not
+// throw an exception itself.
 class MOZ_RAII AutoUnsafeCallWithABI {
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   JSContext* cx_;
   bool nested_;
   bool checkForPendingException_;
@@ -1070,7 +1100,7 @@ class MOZ_RAII AutoUnsafeCallWithABI {
   JS::AutoCheckCannotGC nogc;
 
  public:
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   explicit AutoUnsafeCallWithABI(
       UnsafeABIStrictness strictness = UnsafeABIStrictness::NoExceptions);
   ~AutoUnsafeCallWithABI();

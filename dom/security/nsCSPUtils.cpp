@@ -23,6 +23,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsWhitespaceTokenizer.h"
 
+#include "mozilla/Assertions.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/Document.h"
@@ -241,6 +242,20 @@ void CSP_LogMessage(const nsAString& aMessage, const nsAString& aSourceName,
     return;
   }
   console->LogMessage(error);
+}
+
+CSPDirective CSP_StringToCSPDirective(const nsAString& aDir) {
+  nsString lowerDir = PromiseFlatString(aDir);
+  ToLowerCase(lowerDir);
+
+  uint32_t numDirs = (sizeof(CSPStrDirectives) / sizeof(CSPStrDirectives[0]));
+
+  for (uint32_t i = 1; i < numDirs; i++) {
+    if (lowerDir.EqualsASCII(CSPStrDirectives[i])) {
+      return static_cast<CSPDirective>(i);
+    }
+  }
+  return nsIContentSecurityPolicy::NO_DIRECTIVE;
 }
 
 /**
@@ -997,6 +1012,41 @@ void nsCSPSandboxFlags::toString(nsAString& outStr) const {
   outStr.Append(mFlags);
 }
 
+/* ===== nsCSPRequireTrustedTypesForDirectiveValue ===================== */
+
+nsCSPRequireTrustedTypesForDirectiveValue::
+    nsCSPRequireTrustedTypesForDirectiveValue(const nsAString& aValue)
+    : mValue{aValue} {}
+
+bool nsCSPRequireTrustedTypesForDirectiveValue::visit(
+    nsCSPSrcVisitor* aVisitor) const {
+  MOZ_ASSERT_UNREACHABLE(
+      "This method should only be called for other overloads of this method.");
+  return false;
+}
+
+void nsCSPRequireTrustedTypesForDirectiveValue::toString(
+    nsAString& aOutStr) const {
+  aOutStr.Append(mValue);
+}
+
+/* =============== nsCSPTrustedTypesDirectivePolicyName =============== */
+
+nsCSPTrustedTypesDirectivePolicyName::nsCSPTrustedTypesDirectivePolicyName(
+    const nsAString& aName)
+    : mName{aName} {}
+
+bool nsCSPTrustedTypesDirectivePolicyName::visit(
+    nsCSPSrcVisitor* aVisitor) const {
+  MOZ_ASSERT_UNREACHABLE(
+      "Should only be called for other overloads of this method.");
+  return false;
+}
+
+void nsCSPTrustedTypesDirectivePolicyName::toString(nsAString& aOutStr) const {
+  aOutStr.Append(mName);
+}
+
 /* ===== nsCSPDirective ====================== */
 
 nsCSPDirective::nsCSPDirective(CSPDirective aDirective) {
@@ -1279,6 +1329,9 @@ bool nsCSPDirective::allowsAllInlineBehavior(CSPDirective aDir) const {
 void nsCSPDirective::toString(nsAString& outStr) const {
   // Append directive name
   outStr.AppendASCII(CSP_CSPDirectiveToString(mDirective));
+
+  MOZ_ASSERT(!mSrcs.IsEmpty());
+
   outStr.AppendLiteral(" ");
 
   // Append srcs
@@ -1412,6 +1465,21 @@ void nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
     case nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE:
       outCSP.mScript_src_attr.Construct();
       outCSP.mScript_src_attr.Value() = std::move(srcs);
+      return;
+
+    case nsIContentSecurityPolicy::REQUIRE_TRUSTED_TYPES_FOR_DIRECTIVE:
+      outCSP.mRequire_trusted_types_for.Construct();
+
+      // Here, the srcs represent the sink group
+      // (https://w3c.github.io/trusted-types/dist/spec/#integration-with-content-security-policy).
+      outCSP.mRequire_trusted_types_for.Value() = std::move(srcs);
+      return;
+
+    case nsIContentSecurityPolicy::TRUSTED_TYPES_DIRECTIVE:
+      outCSP.mTrusted_types.Construct();
+      // Here, "srcs" represents tt-expressions
+      // (https://w3c.github.io/trusted-types/dist/spec/#trusted-types-csp-directive).
+      outCSP.mTrusted_types.Value() = std::move(srcs);
       return;
 
     default:
@@ -1693,24 +1761,23 @@ bool nsCSPPolicy::allowsAllInlineBehavior(CSPDirective aDir) const {
 /*
  * Use this function only after ::allows() returned 'false'. Most and
  * foremost it's used to get the violated directive before sending reports.
- * The parameter outDirective is the equivalent of 'outViolatedDirective'
+ * The parameter aDirectiveName is the equivalent of 'outViolatedDirective'
  * for the ::permits() function family.
  */
-void nsCSPPolicy::getViolatedDirectiveInformation(CSPDirective aDirective,
-                                                  nsAString& outDirective,
-                                                  nsAString& outDirectiveString,
-                                                  bool* aReportSample) const {
+void nsCSPPolicy::getViolatedDirectiveInformation(
+    CSPDirective aDirective, nsAString& aDirectiveName,
+    nsAString& aDirectiveNameAndValue, bool* aReportSample) const {
   *aReportSample = false;
   nsCSPDirective* directive = matchingOrDefaultDirective(aDirective);
   if (!directive) {
     MOZ_ASSERT_UNREACHABLE("Can not query violated directive");
-    outDirective.AppendLiteral("couldNotQueryViolatedDirective");
-    outDirective.Truncate();
+    aDirectiveName.Truncate();
+    aDirectiveNameAndValue.Truncate();
     return;
   }
 
-  directive->getDirName(outDirective);
-  directive->toString(outDirectiveString);
+  directive->getDirName(aDirectiveName);
+  directive->toString(aDirectiveNameAndValue);
   *aReportSample = directive->hasReportSampleKeyword();
 }
 

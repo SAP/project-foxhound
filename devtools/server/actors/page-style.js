@@ -9,7 +9,6 @@ const {
   pageStyleSpec,
 } = require("resource://devtools/shared/specs/page-style.js");
 
-const { getCSSLexer } = require("resource://devtools/shared/css/lexer.js");
 const {
   LongStringActor,
 } = require("resource://devtools/server/actors/string.js");
@@ -704,11 +703,12 @@ class PageStyleActor extends Actor {
       case "::first-line":
       case "::selection":
       case "::highlight":
+      case "::target-text":
         return true;
       case "::marker":
         return this._nodeIsListItem(node);
       case "::backdrop":
-        return node.matches(":modal");
+        return node.matches(":modal, :popover-open");
       case "::cue":
         return node.nodeName == "VIDEO";
       case "::file-selector-button":
@@ -861,7 +861,6 @@ class PageStyleActor extends Actor {
         }
 
         const domRule = entry.rule.rawRule;
-        const desugaredSelectors = entry.rule.getDesugaredSelectors();
         const element = entry.inherited
           ? entry.inherited.rawNode
           : node.rawNode;
@@ -869,9 +868,10 @@ class PageStyleActor extends Actor {
         const { bindingElement, pseudo } =
           CssLogic.getBindingElementAndPseudo(element);
         const relevantLinkVisited = CssLogic.hasVisitedState(bindingElement);
-        entry.matchedDesugaredSelectors = [];
+        entry.matchedSelectorIndexes = [];
 
-        for (let i = 0; i < desugaredSelectors.length; i++) {
+        const len = domRule.selectorCount;
+        for (let i = 0; i < len; i++) {
           if (
             domRule.selectorMatchesElement(
               i,
@@ -880,7 +880,7 @@ class PageStyleActor extends Actor {
               relevantLinkVisited
             )
           ) {
-            entry.matchedDesugaredSelectors.push(desugaredSelectors[i]);
+            entry.matchedSelectorIndexes.push(i);
           }
         }
       }
@@ -896,13 +896,15 @@ class PageStyleActor extends Actor {
         // Traverse through all the available keyframes rule and add
         // the keyframes rule that matches the computed animation name
         for (const keyframesRule of this.cssLogic.keyframesRules) {
-          if (animationNames.indexOf(keyframesRule.name) > -1) {
-            for (const rule of keyframesRule.cssRules) {
-              entries.push({
-                rule: this._styleRef(rule),
-                keyframes: this._styleRef(keyframesRule),
-              });
-            }
+          if (!animationNames.includes(keyframesRule.name)) {
+            continue;
+          }
+
+          for (const rule of keyframesRule.cssRules) {
+            entries.push({
+              rule: this._styleRef(rule),
+              keyframes: this._styleRef(keyframesRule),
+            });
           }
         }
       }
@@ -1279,20 +1281,26 @@ class PageStyleActor extends Actor {
       return;
     }
 
-    const lexer = getCSSLexer(selectorText);
+    const lexer = new InspectorCSSParser(selectorText);
     let token;
     while ((token = lexer.nextToken())) {
       if (
-        token.tokenType === "symbol" &&
-        ((shouldRetrieveClasses && token.text === ".") ||
-          (shouldRetrieveIds && token.text === "#"))
+        token.tokenType === "Delim" &&
+        shouldRetrieveClasses &&
+        token.text === "."
       ) {
         token = lexer.nextToken();
         if (
-          token.tokenType === "ident" &&
+          token.tokenType === "Ident" &&
           token.text.toLowerCase().startsWith(search)
         ) {
           result.add(token.text);
+        }
+      }
+      if (token.tokenType === "IDHash" && shouldRetrieveIds) {
+        const idWithoutHash = token.value;
+        if (idWithoutHash.startsWith(search)) {
+          result.add(idWithoutHash);
         }
       }
     }

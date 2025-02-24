@@ -15,15 +15,16 @@ if CONFIG['FFVPX_ASFLAGS']:
 if CONFIG['TARGET_CPU'] == 'aarch64':
     DIRS += ['aarch64']
 
+DIRS += ['bsf']
+
 LOCAL_INCLUDES += ['/modules/fdlibm/inexact-math-override']
 
 SharedLibrary('mozavcodec')
 SOURCES += [
     'allcodecs.c',
+    'audio_frame_queue.c',
     'avcodec.c',
     'avdct.c',
-    'avfft.c',
-    'avpacket.c',
     'bitstream.c',
     'bitstream_filters.c',
     'bsf.c',
@@ -47,7 +48,9 @@ SOURCES += [
     'jrevdct.c',
     'libopus.c',
     'libopusdec.c',
+    'libopusenc.c',
     'libvorbisdec.c',
+    'libvorbisenc.c',
     'log2_tab.c',
     'mpegaudio.c',
     'mpegaudiodata.c',
@@ -59,8 +62,8 @@ SOURCES += [
     'mpegaudiodsp_fixed.c',
     'mpegaudiodsp_float.c',
     'mpegaudiotabs.c',
-    'null_bsf.c',
     'options.c',
+    'packet.c',
     'parser.c',
     'parsers.c',
     'pcm.c',
@@ -82,10 +85,8 @@ SOURCES += [
 if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
     SOURCES += [
         'atsc_a53.c',
-        'av1_frame_split_bsf.c',
         'av1_parse.c',
         'av1dec.c',
-        'avpicture.c',
         'cbs.c',
         'cbs_av1.c',
         'golomb.c',
@@ -106,7 +107,6 @@ if not CONFIG['MOZ_FFVPX_AUDIOONLY']:
         'vp8dsp.c',
         'vp9.c',
         'vp9_parser.c',
-        'vp9_superframe_split_bsf.c',
         'vp9block.c',
         'vp9data.c',
         'vp9dsp.c',
@@ -139,6 +139,11 @@ LOCAL_INCLUDES += [
     '/media/libopus/include',
     '/media/libvorbis',
 ]
+
+c11_flags = ["-std=gnu11"]
+if CONFIG["CC_TYPE"] == "clang-cl":
+    c11_flags.insert(0, "-Xclang")
+CFLAGS += c11_flags
 
 if not CONFIG["MOZ_SYSTEM_LIBVPX"]:
   LOCAL_INCLUDES += ['/media/libvpx']

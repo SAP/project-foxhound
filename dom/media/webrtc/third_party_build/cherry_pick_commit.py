@@ -193,16 +193,17 @@ if __name__ == "__main__":
         default=False,
         help="continue an interrupted cherry-pick",
     )
+    parser.add_argument(
+        "--skip-restore",
+        action="store_true",
+        default=False,
+        help="to skip restoring the patch-stack if it is already restored and verified",
+    )
     args = parser.parse_args()
 
     # register the exit handler after the arg parser completes so '--help' doesn't exit with
     # an error.
     atexit.register(early_exit_handler)
-
-    # other scripts assume the short-sha is used for various comparisons, so
-    # make sure the provided sha is in the short form.
-    cmd = f"git show --format=%h --no-patch {args.commit_sha}"
-    args.commit_sha = run_git(cmd, args.repo_path)[0]
 
     commit_message_filename = os.path.join(args.tmp_path, "cherry-pick-commit_msg.txt")
 
@@ -226,13 +227,13 @@ if __name__ == "__main__":
 
     # handle aborting cherry-pick
     if args.abort:
+        run_hg("hg revert --all")
+        run_hg("hg purge {}".format(args.target_path))
         # If the resume_state is not resume2 or resume3 that means we may
         # have committed something to mercurial.  First we need to check
         # for our cherry-pick commit message, and if found, remove
         # that commit.
         if not (resume_state == "resume2" or resume_state == "resume3"):
-            run_hg("hg revert --all")
-            run_hg("hg purge {}".format(args.target_path))
             # check for committed mercurial patch and backout
             stdout_lines = run_hg("hg log --template {desc|firstline}\n -r .")
             # check for "Cherry-pick upstream libwebrtc commit"
@@ -271,6 +272,36 @@ if __name__ == "__main__":
     stdout_lines = run_hg("hg status")
     if len(stdout_lines) != 0:
         sys.exit(1)
+    error_help = None
+
+    if len(resume_state) == 0:
+        update_resume_state("resume2", resume_state_filename)
+        if args.skip_restore is False:
+            # Restoring is done with each new cherry-pick to ensure that
+            # guidance from verify_vendoring (the next step) is
+            # accurate.  If living dangerously is your thing, you can
+            # skip this step.
+            #
+            # Note: we're defaulting to fetching using https.
+            # In the most common use case, this is going to be run in
+            # moz-central (not elm) and is only using the repo to figure
+            # out how to do the cherry-pick.  In other words, we'd never
+            # be pushing from the repo fetched here.
+            # If a cherry-pick needs to happen when doing a fast-forward
+            # (from elm), the user would likely have already had the
+            # repo fetched in their preferred protocol and
+            # restore_patch_stack reuses the saved repo (from the
+            # .tar.gz file) and thus preserves the original protocol
+            # choice made when calling prep_repo.sh.
+            print("restoring patch stack")
+            restore_patch_stack(
+                args.repo_path,
+                args.branch,
+                os.path.abspath(args.patch_path),
+                args.state_path,
+                args.tar_name,
+                "https",  # unused if a previous restore has completed
+            )
 
     # make sure the github repo exists
     error_help = (
@@ -281,8 +312,21 @@ if __name__ == "__main__":
         sys.exit(1)
     error_help = None
 
-    if len(resume_state) == 0:
-        update_resume_state("resume2", resume_state_filename)
+    # Other scripts assume the short-sha is used for various comparisons, so
+    # make sure the provided sha is in the short form.
+    cmd = f"git rev-parse --short {args.commit_sha}"
+    args.commit_sha = run_git(cmd, args.repo_path)[0]
+
+    if len(resume_state) == 0 or resume_state == "resume2":
+        resume_state = ""
+        update_resume_state("resume3", resume_state_filename)
+        # Run verify_vendoring to make sure we have a sane patch-stack.
+        print("verifying patch stack")
+        run_shell(f"bash {args.script_path}/verify_vendoring.sh", False)
+
+    if len(resume_state) == 0 or resume_state == "resume3":
+        resume_state = ""
+        update_resume_state("resume4", resume_state_filename)
         print("-------")
         print(f"------- write commit message file {commit_message_filename}")
         print("-------")
@@ -294,9 +338,9 @@ if __name__ == "__main__":
             args.reviewers,
         )
 
-    if len(resume_state) == 0 or resume_state == "resume2":
+    if len(resume_state) == 0 or resume_state == "resume4":
         resume_state = ""
-        update_resume_state("resume3", resume_state_filename)
+        update_resume_state("resume5", resume_state_filename)
         print("-------")
         print(f"------- cherry-pick {args.commit_sha} into {args.repo_path}")
         print("-------")
@@ -319,9 +363,9 @@ if __name__ == "__main__":
         )
         error_help = None
 
-    if len(resume_state) == 0 or resume_state == "resume3":
+    if len(resume_state) == 0 or resume_state == "resume5":
         resume_state = ""
-        update_resume_state("resume4", resume_state_filename)
+        update_resume_state("resume6", resume_state_filename)
         print("-------")
         print(f"------- vendor from {args.repo_path}")
         print("-------")
@@ -358,9 +402,9 @@ if __name__ == "__main__":
         )
         error_help = None
 
-    if len(resume_state) == 0 or resume_state == "resume4":
+    if len(resume_state) == 0 or resume_state == "resume6":
         resume_state = ""
-        update_resume_state("resume5", resume_state_filename)
+        update_resume_state("resume7", resume_state_filename)
         error_help = (
             "Reverting change to 'third_party/libwebrtc/README.mozilla'\n"
             "has failed.  The cherry-pick commit should not modify\n"
@@ -379,9 +423,9 @@ if __name__ == "__main__":
         run_hg(cmd)
         error_help = None
 
-    if len(resume_state) == 0 or resume_state == "resume5":
+    if len(resume_state) == 0 or resume_state == "resume7":
         resume_state = ""
-        update_resume_state("resume6", resume_state_filename)
+        update_resume_state("resume8", resume_state_filename)
         # get the files changed from the newly vendored cherry-pick
         # commit in mercurial
         cmd = "hg status --change tip --exclude '**/README.*'"
@@ -407,7 +451,7 @@ if __name__ == "__main__":
             sys.exit(1)
         error_help = None
 
-    if len(resume_state) == 0 or resume_state == "resume6":
+    if len(resume_state) == 0 or resume_state == "resume8":
         resume_state = ""
         update_resume_state("", resume_state_filename)
         print("-------")

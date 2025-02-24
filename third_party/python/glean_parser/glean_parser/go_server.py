@@ -21,6 +21,7 @@ The generated code creates the following:
 * Two methods for logging an Event metric
     one with and one without user request info specified
 """
+
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, List
@@ -31,7 +32,7 @@ from . import util
 
 # Adding a metric here will require updating the `generate_metric_type` function
 # and require adjustments to `metrics` variables the the template.
-SUPPORTED_METRIC_TYPES = ["string", "quantity", "event"]
+SUPPORTED_METRIC_TYPES = ["string", "quantity", "event", "datetime"]
 
 
 def generate_event_type_name(metric: metrics.Metric) -> str:
@@ -57,6 +58,8 @@ def generate_metric_type(metric_type: str) -> str:
         return "string"
     elif metric_type == "boolean":
         return "bool"
+    elif metric_type == "datetime":
+        return "time.Time"
     else:
         print("❌ Unable to generate Go type from metric type: " + metric_type)
         exit

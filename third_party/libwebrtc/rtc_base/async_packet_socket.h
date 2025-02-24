@@ -50,6 +50,14 @@ struct RTC_EXPORT PacketOptions {
   ~PacketOptions();
 
   DiffServCodePoint dscp = DSCP_NO_CHANGE;
+
+  // Packet will be sent with ECN(1), RFC-3168, Section 5.
+  // Intended to be used with L4S
+  // https://www.rfc-editor.org/rfc/rfc9331.html
+  // TODO(https://bugs.webrtc.org/15368): Actually implement support for sending
+  // packets with different marking.
+  bool ecn_1 = false;
+
   // When used with RTP packets (for example, webrtc::PacketOptions), the value
   // should be 16 bits. A value of -1 represents "not set".
   int64_t packet_id = -1;
@@ -122,18 +130,6 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
           received_packet_callback);
   void DeregisterReceivedPacketCallback();
 
-  // Emitted each time a packet is read. Used only for UDP and
-  // connected TCP sockets.
-  // TODO(bugs.webrtc.org:15368): Deprecate and remove.
-  sigslot::signal5<AsyncPacketSocket*,
-                   const char*,
-                   size_t,
-                   const SocketAddress&,
-                   // TODO(bugs.webrtc.org/9584): Change to passing the int64_t
-                   // timestamp by value.
-                   const int64_t&>
-      SignalReadPacket;
-
   // Emitted each time a packet is sent.
   sigslot::signal2<AsyncPacketSocket*, const SentPacket&> SignalSentPacket;
 
@@ -161,16 +157,6 @@ class RTC_EXPORT AsyncPacketSocket : public sigslot::has_slots<> {
   void NotifyClosed(int err) {
     RTC_DCHECK_RUN_ON(&network_checker_);
     on_close_.Send(this, err);
-  }
-
-  // TODO(bugs.webrtc.org:15368): Deprecate and remove.
-  void NotifyPacketReceived(AsyncPacketSocket*,
-                            const char* data,
-                            size_t size,
-                            const SocketAddress& address,
-                            const int64_t& packet_time_us) {
-    NotifyPacketReceived(
-        ReceivedPacket::CreateFromLegacy(data, size, packet_time_us, address));
   }
 
   void NotifyPacketReceived(const rtc::ReceivedPacket& packet);

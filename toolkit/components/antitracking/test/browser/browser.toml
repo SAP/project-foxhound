@@ -1,5 +1,9 @@
 [DEFAULT]
-skip-if = ["os == 'linux' && (asan || tsan)"] # bug 1662229 - task exception
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # bug 1662229 - task exception
+  "os == 'linux' && os_version == '18.04' && tsan", # bug 1662229 - task exception
+  "debug", # bug 1884982 - takes 20+ minutes to run on debug
+]
 prefs = [
   "dom.storage_access.prompt.testing=true", # Disable the Storage Access API prompts for all of the tests in this directory
   "dom.storage_access.prompt.testing.allow=true",
@@ -108,6 +112,12 @@ skip-if = ["os == 'mac' && !debug"] # Bug 1503778, 1577362
 
 ["browser_onModifyRequestNotificationForTrackingResources.js"]
 
+["browser_partitionedABA.js"]
+
+["browser_partitionedABnavigatestToAA.js"]
+
+["browser_partitionedBlobSubresources.js"]
+
 ["browser_partitionedClearSiteDataHeader.js"]
 support-files = ["clearSiteData.sjs"]
 
@@ -117,6 +127,12 @@ support-files = ["clearSiteData.sjs"]
 support-files = ["cookies.sjs"]
 
 ["browser_partitionedDOMCache.js"]
+
+["browser_partitionedDedicatedWorker.js"]
+support-files = [
+  "cookies.sjs",
+  "dedicatedWorker.js",
+]
 
 ["browser_partitionedIndexedDB.js"]
 
@@ -194,7 +210,7 @@ support-files = [
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.request.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.script.js",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.sharedworker.js",
-  "!/browser/components/originattributes/test/browser/file_thirdPartyChild.video.ogv",
+  "!/browser/components/originattributes/test/browser/file_thirdPartyChild.video.webm",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.fetch.html",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.js",
   "!/browser/components/originattributes/test/browser/file_thirdPartyChild.worker.request.html",
@@ -210,7 +226,7 @@ support-files = [
   "file_saveAsImage.sjs",
   "file_saveAsVideo.sjs",
   "file_saveAsPageInfo.html",
-  "file_video.ogv",
+  "file_video.webm",
 ]
 
 ["browser_staticPartition_tls_session.js"]
@@ -314,6 +330,10 @@ tags = "remote-settings"
 
 ["browser_urlQueryStringStripping.js"]
 skip-if = ["os == 'linux' && asan"]  # Bug 1713909 - new Fission platform triage
+support-files = ["file_stripping.html"]
+
+["browser_urlQueryStringStrippingWithEncoding.js"]
+skip-if = ["os == 'linux' && asan"]
 support-files = ["file_stripping.html"]
 
 ["browser_urlQueryStringStripping_allowList.js"]

@@ -7,9 +7,9 @@ import { CommonUtils } from "resource://services-common/utils.sys.mjs";
 import { CryptoUtils } from "resource://services-crypto/utils.sys.mjs";
 
 import {
-  SCOPE_OLD_SYNC,
+  SCOPE_APP_SYNC,
   DEPRECATED_SCOPE_ECOSYSTEM_TELEMETRY,
-  FX_OAUTH_CLIENT_ID,
+  OAUTH_CLIENT_ID,
   log,
   logPII,
 } from "resource://gre/modules/FxAccountsCommon.sys.mjs";
@@ -35,7 +35,7 @@ const DEPRECATED_SCOPE_WEBEXT_SYNC = "sync:addon_storage";
 // These are the scopes that correspond to new storage for the `LEGACY_DERIVED_KEYS_NAMES`.
 // We will, if necessary, migrate storage for those keys so that it's associated with
 // these scopes.
-const LEGACY_DERIVED_KEY_SCOPES = [SCOPE_OLD_SYNC];
+const LEGACY_DERIVED_KEY_SCOPES = [SCOPE_APP_SYNC];
 
 // These are scopes that we used to store, but are no longer using,
 // and hence should be deleted from storage if present.
@@ -129,6 +129,69 @@ export class FxAccountsKeys {
       scope,
       ...scopedKeys[scope],
     };
+  }
+
+  /**
+   * Validates if the given scoped keys are valid keys
+   *
+   * @param { Object } scopedKeys: The scopedKeys bundle
+   *
+   * @return { Boolean }: true if the scopedKeys bundle is valid, false otherwise
+   */
+  validScopedKeys(scopedKeys) {
+    for (const expectedScope of Object.keys(scopedKeys)) {
+      const key = scopedKeys[expectedScope];
+      if (
+        !key.hasOwnProperty("scope") ||
+        !key.hasOwnProperty("kid") ||
+        !key.hasOwnProperty("kty") ||
+        !key.hasOwnProperty("k")
+      ) {
+        return false;
+      }
+      const { scope, kid, kty, k } = key;
+      if (scope != expectedScope || kty != "oct") {
+        return false;
+      }
+      // We verify the format of the key id is `timestamp-fingerprint`
+      if (!kid.includes("-")) {
+        return false;
+      }
+      const dashIndex = kid.indexOf("-");
+      const keyRotationTimestamp = kid.substring(0, dashIndex);
+      const fingerprint = kid.substring(dashIndex + 1);
+      // We then verify that the timestamp is a valid timestamp
+      const keyRotationTimestampNum = Number(keyRotationTimestamp);
+      // If the value we got back is falsy it's not a valid timestamp
+      // note that we treat a 0 timestamp as invalid
+      if (!keyRotationTimestampNum) {
+        return false;
+      }
+      // For extra safety, we validate that the timestamp can be converted into a valid
+      // Date object
+      const date = new Date(keyRotationTimestampNum);
+      if (isNaN(date.getTime()) || date.getTime() <= 0) {
+        return false;
+      }
+
+      // Finally, we validate that the fingerprint and the key itself are valid base64 values
+      // Note that we can't verify the fingerprint is correct here because we don't have kb
+      const validB64String = b64String => {
+        let decoded;
+        try {
+          decoded = ChromeUtils.base64URLDecode(b64String, {
+            padding: "reject",
+          });
+        } catch (e) {
+          return false;
+        }
+        return !!decoded;
+      };
+      if (!validB64String(fingerprint) || !validB64String(k)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -411,23 +474,21 @@ export class FxAccountsKeys {
   async _fetchScopedKeysMetadata(sessionToken) {
     // Hard-coded list of scopes that we know about.
     // This list will probably grow in future.
-    const scopes = [SCOPE_OLD_SYNC].join(" ");
+    const scopes = [SCOPE_APP_SYNC].join(" ");
     const scopedKeysMetadata =
       await this._fxai.fxAccountsClient.getScopedKeyData(
         sessionToken,
-        FX_OAUTH_CLIENT_ID,
+        OAUTH_CLIENT_ID,
         scopes
       );
     // The server may decline us permission for some of those scopes, although it really shouldn't.
-    // We can live without them...except for the OLDSYNC scope, whose absence would be catastrophic.
-    if (!scopedKeysMetadata.hasOwnProperty(SCOPE_OLD_SYNC)) {
+    // We can live without them...except for the sync scope, whose absence would be catastrophic.
+    if (!scopedKeysMetadata.hasOwnProperty(SCOPE_APP_SYNC)) {
       log.warn(
-        "The FxA server did not grant Firefox the `oldsync` scope; this is most unexpected!" +
+        "The FxA server did not grant Firefox the sync scope; this is most unexpected!" +
           ` scopes were: ${Object.keys(scopedKeysMetadata)}`
       );
-      throw new Error(
-        "The FxA server did not grant Firefox the `oldsync` scope"
-      );
+      throw new Error("The FxA server did not grant Firefox the sync scope");
     }
     return scopedKeysMetadata;
   }
@@ -582,7 +643,7 @@ export class FxAccountsKeys {
    */
   async _deriveLegacyScopedKey(uid, kBbytes, scope, scopedKeyMetadata) {
     let kid, key;
-    if (scope == SCOPE_OLD_SYNC) {
+    if (scope == SCOPE_APP_SYNC) {
       kid = await this._deriveXClientState(kBbytes);
       key = await this._deriveSyncKey(kBbytes);
     } else {

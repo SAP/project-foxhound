@@ -1131,23 +1131,23 @@ JSString* js::temporal::FormatUTCOffsetNanoseconds(JSContext* cx,
 
   // Steps 7-8. (Inlined FormatTimeString).
   result[n++] = sign;
-  result[n++] = '0' + (hour / 10);
-  result[n++] = '0' + (hour % 10);
+  result[n++] = char('0' + (hour / 10));
+  result[n++] = char('0' + (hour % 10));
   result[n++] = ':';
-  result[n++] = '0' + (minute / 10);
-  result[n++] = '0' + (minute % 10);
+  result[n++] = char('0' + (minute / 10));
+  result[n++] = char('0' + (minute % 10));
 
   if (second != 0 || subSecondNanoseconds != 0) {
     result[n++] = ':';
-    result[n++] = '0' + (second / 10);
-    result[n++] = '0' + (second % 10);
+    result[n++] = char('0' + (second / 10));
+    result[n++] = char('0' + (second % 10));
 
     if (uint32_t fractional = subSecondNanoseconds) {
       result[n++] = '.';
 
       uint32_t k = 100'000'000;
       do {
-        result[n++] = '0' + (fractional / k);
+        result[n++] = char('0' + (fractional / k));
         fractional %= k;
         k /= 10;
       } while (fractional);
@@ -1338,28 +1338,28 @@ static PlainDateTime GetISOPartsFromEpoch(const Instant& instant) {
   int32_t remainderNs = instant.nanoseconds % 1'000'000;
 
   // Step 3.
-  int64_t epochMilliseconds = instant.floorToMilliseconds();
+  double epochMilliseconds = double(instant.floorToMilliseconds());
 
   // Step 4.
-  int32_t year = JS::YearFromTime(epochMilliseconds);
+  int32_t year = int32_t(JS::YearFromTime(epochMilliseconds));
 
   // Step 5.
-  int32_t month = JS::MonthFromTime(epochMilliseconds) + 1;
+  int32_t month = int32_t(JS::MonthFromTime(epochMilliseconds)) + 1;
 
   // Step 6.
-  int32_t day = JS::DayFromTime(epochMilliseconds);
+  int32_t day = int32_t(JS::DayFromTime(epochMilliseconds));
 
   // Step 7.
-  int32_t hour = HourFromTime(epochMilliseconds);
+  int32_t hour = int32_t(HourFromTime(epochMilliseconds));
 
   // Step 8.
-  int32_t minute = MinFromTime(epochMilliseconds);
+  int32_t minute = int32_t(MinFromTime(epochMilliseconds));
 
   // Step 9.
-  int32_t second = SecFromTime(epochMilliseconds);
+  int32_t second = int32_t(SecFromTime(epochMilliseconds));
 
   // Step 10.
-  int32_t millisecond = msFromTime(epochMilliseconds);
+  int32_t millisecond = int32_t(msFromTime(epochMilliseconds));
 
   // Step 11.
   int32_t microsecond = remainderNs / 1000;
@@ -1389,11 +1389,11 @@ static PlainDateTime BalanceISODateTime(const PlainDateTime& dateTime,
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
   MOZ_ASSERT(std::abs(nanoseconds) < ToNanoseconds(TemporalUnit::Day));
 
-  auto& [date, time] = dateTime;
+  const auto& [date, time] = dateTime;
 
   // Step 1.
   auto balancedTime = BalanceTime(time, nanoseconds);
-  MOZ_ASSERT(-1 <= balancedTime.days && balancedTime.days <= 1);
+  MOZ_ASSERT(std::abs(balancedTime.days) <= 1);
 
   // Step 2.
   auto balancedDate =
@@ -1429,9 +1429,6 @@ static PlainDateTimeObject* GetPlainDateTimeFor(
   // Steps 5-7.
   auto dateTime =
       GetPlainDateTimeFor(ToInstant(unwrappedInstant), offsetNanoseconds);
-
-  // FIXME: spec issue - CreateTemporalDateTime is infallible
-  // https://github.com/tc39/proposal-temporal/issues/2523
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
 
   return CreateTemporalDateTime(cx, dateTime, calendar);
@@ -1455,9 +1452,6 @@ PlainDateTime js::temporal::GetPlainDateTimeFor(const Instant& instant,
 
   // Step 6.
   auto balanced = BalanceISODateTime(dateTime, offsetNanoseconds);
-
-  // FIXME: spec issue - CreateTemporalDateTime is infallible
-  // https://github.com/tc39/proposal-temporal/issues/2523
   MOZ_ASSERT(ISODateTimeWithinLimits(balanced));
 
   // Step 7.
@@ -1524,9 +1518,6 @@ PlainDateTimeObject* js::temporal::GetPlainDateTimeFor(
   if (!GetPlainDateTimeFor(cx, timeZone, instant, &dateTime)) {
     return nullptr;
   }
-
-  // FIXME: spec issue - CreateTemporalDateTime is infallible
-  // https://github.com/tc39/proposal-temporal/issues/2523
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
 
   // Step 7.
@@ -1544,9 +1535,6 @@ PlainDateTimeObject* js::temporal::GetPlainDateTimeFor(
 
   // Steps 1-6.
   auto dateTime = GetPlainDateTimeFor(instant, offsetNanoseconds);
-
-  // FIXME: spec issue - CreateTemporalDateTime is infallible
-  // https://github.com/tc39/proposal-temporal/issues/2523
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
 
   // Step 7.
@@ -1628,6 +1616,8 @@ static bool GetPossibleInstantsForSlow(
     JSContext* cx, Handle<TimeZoneRecord> timeZone,
     Handle<Wrapped<PlainDateTimeObject*>> dateTime,
     MutableHandle<InstantVector> list) {
+  MOZ_ASSERT(list.empty());
+
   // Step 1. (Inlined call to TimeZoneMethodsRecordCall)
   Rooted<Value> fval(cx, ObjectValue(*timeZone.getPossibleInstantsFor()));
   auto thisv = timeZone.receiver().toObject();
@@ -1647,23 +1637,46 @@ static bool GetPossibleInstantsForSlow(
 
   // Step 4. (Not applicable in our implementation.)
 
-  // Steps 5-6.
+  // Step 5.
+  auto min = Instant::max();
+  auto max = Instant::min();
   Rooted<Value> nextValue(cx);
   while (true) {
-    // Steps 6.a and 6.b.i.
+    // Step 5.a.
     bool done;
     if (!iterator.next(&nextValue, &done)) {
       return false;
     }
+
+    // Step 5.b.
     if (done) {
-      break;
+      // Steps 5.b.i-ii.
+      if (list.length() > 1) {
+        // Steps 5.b.ii.1-4. (Not applicable in our implementation.)
+
+        // Step 5.b.ii.5.
+        constexpr auto nsPerDay =
+            InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day));
+        if ((max - min).abs() > nsPerDay) {
+          JS_ReportErrorNumberASCII(
+              cx, GetErrorMessage, nullptr,
+              JSMSG_TEMPORAL_TIMEZONE_OFFSET_SHIFT_ONE_DAY);
+          return false;
+        }
+      }
+
+      // Step 5.b.iii.
+      return true;
     }
 
-    // Steps 6.b.ii.
+    // Step 5.d. (Reordered)
     if (nextValue.isObject()) {
       JSObject* obj = &nextValue.toObject();
-      if (obj->canUnwrapAs<InstantObject>()) {
-        // Step 6.b.iii.
+      if (auto* unwrapped = obj->maybeUnwrapIf<InstantObject>()) {
+        auto instant = ToInstant(unwrapped);
+        min = std::min(min, instant);
+        max = std::max(max, instant);
+
         if (!list.append(obj)) {
           return false;
         }
@@ -1671,17 +1684,14 @@ static bool GetPossibleInstantsForSlow(
       }
     }
 
-    // Step 6.b.ii.1.
+    // Step 5.c.1.
     ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, nextValue,
                      nullptr, "not an instant");
 
-    // Step 6.b.ii.2.
+    // Step 5.c.2.
     iterator.closeThrow();
     return false;
   }
-
-  // Step 7.
-  return true;
 }
 
 /**
@@ -1714,7 +1724,7 @@ static bool GetPossibleInstantsFor(
     }
   }
 
-  // Steps 1 and 3-7.
+  // Steps 1 and 3-5.
   return GetPossibleInstantsForSlow(cx, timeZone, dateTimeObj, list);
 }
 
@@ -1753,7 +1763,7 @@ bool js::temporal::GetPossibleInstantsFor(
     return false;
   }
 
-  // Steps 1 and 3-7.
+  // Steps 1 and 3-5.
   return GetPossibleInstantsForSlow(cx, timeZone, dateTimeObj, list);
 }
 
@@ -1763,9 +1773,9 @@ bool js::temporal::GetPossibleInstantsFor(
  */
 static auto AddTime(const PlainTime& time, int64_t nanoseconds) {
   MOZ_ASSERT(IsValidTime(time));
-  MOZ_ASSERT(std::abs(nanoseconds) <= 2 * ToNanoseconds(TemporalUnit::Day));
+  MOZ_ASSERT(std::abs(nanoseconds) <= ToNanoseconds(TemporalUnit::Day));
 
-  // Steps 1-7.
+  // Steps 1-3.
   return BalanceTime(time, nanoseconds);
 }
 
@@ -1871,79 +1881,80 @@ bool js::temporal::DisambiguatePossibleInstants(
   int64_t nanoseconds = offsetAfter - offsetBefore;
 
   // Step 18.
+  if (std::abs(nanoseconds) > ToNanoseconds(TemporalUnit::Day)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_TIMEZONE_OFFSET_SHIFT_ONE_DAY);
+    return false;
+  }
+
+  // Step 19.
   if (disambiguation == TemporalDisambiguation::Earlier) {
-    // Step 18.a.
+    // Steps 19.a-b.
     auto earlierTime = ::AddTime(dateTime.time, -nanoseconds);
-    MOZ_ASSERT(std::abs(earlierTime.days) <= 2,
-               "subtracting nanoseconds is at most two days");
+    MOZ_ASSERT(std::abs(earlierTime.days) <= 1,
+               "subtracting nanoseconds is at most one day");
 
-    // Step 18.b.
-    PlainDate earlierDate;
-    if (!AddISODate(cx, dateTime.date, {0, 0, 0, double(earlierTime.days)},
-                    TemporalOverflow::Constrain, &earlierDate)) {
-      return false;
-    }
+    // Step 19.c.
+    auto earlierDate = BalanceISODate(dateTime.date.year, dateTime.date.month,
+                                      dateTime.date.day + earlierTime.days);
 
-    // Step 18.c.
-    Rooted<CalendarValue> calendar(cx, CalendarValue(cx->names().iso8601));
+    // Step 19.d.
+    Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
     Rooted<PlainDateTimeWithCalendar> earlierDateTime(
         cx,
         PlainDateTimeWithCalendar{{earlierDate, earlierTime.time}, calendar});
 
-    // Step 18.d.
+    // Step 19.e.
     Rooted<InstantVector> earlierInstants(cx, InstantVector(cx));
     if (!GetPossibleInstantsFor(cx, timeZone, earlierDateTime,
                                 &earlierInstants)) {
       return false;
     }
 
-    // Step 18.e.
+    // Step 19.f.
     if (earlierInstants.empty()) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_TEMPORAL_TIMEZONE_INSTANT_AMBIGUOUS);
       return false;
     }
 
-    // Step 18.f.
+    // Step 19.g.
     result.set(earlierInstants[0]);
     return true;
   }
 
-  // Step 19.
+  // Step 20.
   MOZ_ASSERT(disambiguation == TemporalDisambiguation::Compatible ||
              disambiguation == TemporalDisambiguation::Later);
 
-  // Step 20.
+  // Steps 21-22.
   auto laterTime = ::AddTime(dateTime.time, nanoseconds);
-  MOZ_ASSERT(std::abs(laterTime.days) <= 2,
-             "adding nanoseconds is at most two days");
+  MOZ_ASSERT(std::abs(laterTime.days) <= 1,
+             "adding nanoseconds is at most one day");
 
-  // Step 21.
-  PlainDate laterDate;
-  if (!AddISODate(cx, dateTime.date, {0, 0, 0, double(laterTime.days)},
-                  TemporalOverflow::Constrain, &laterDate)) {
-    return false;
-  }
+  // Step 23.
+  auto laterDate = BalanceISODate(dateTime.date.year, dateTime.date.month,
+                                  dateTime.date.day + laterTime.days);
 
-  // Step 22.
-  Rooted<CalendarValue> calendar(cx, CalendarValue(cx->names().iso8601));
+  // Step 24.
+  Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
   Rooted<PlainDateTimeWithCalendar> laterDateTime(
       cx, PlainDateTimeWithCalendar{{laterDate, laterTime.time}, calendar});
 
-  // Step 23.
+  // Step 25.
   Rooted<InstantVector> laterInstants(cx, InstantVector(cx));
   if (!GetPossibleInstantsFor(cx, timeZone, laterDateTime, &laterInstants)) {
     return false;
   }
 
-  // Steps 24-25.
+  // Steps 26-27.
   if (laterInstants.empty()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_TIMEZONE_INSTANT_AMBIGUOUS);
     return false;
   }
 
-  // Step 26.
+  // Step 28.
   size_t last = laterInstants.length() - 1;
   result.set(laterInstants[last]);
   return true;
@@ -2282,24 +2293,20 @@ static bool TimeZone_getOffsetNanosecondsFor(JSContext* cx, unsigned argc,
 static bool TimeZone_getOffsetStringFor(JSContext* cx, const CallArgs& args) {
   Rooted<TimeZoneValue> timeZone(cx, &args.thisv().toObject());
 
-  // FIXME: spec issue - CreateTimeZoneMethodsRecord called before
-  // ToTemporalInstant whereas TimeZone.p.{getPlainDateTimeFor,getInstantFor}
-  // first convert the input arguments.
-
   // Step 3.
+  Rooted<Wrapped<InstantObject*>> instant(cx,
+                                          ToTemporalInstant(cx, args.get(0)));
+  if (!instant) {
+    return false;
+  }
+
+  // Step 4.
   Rooted<TimeZoneRecord> timeZoneRec(cx);
   if (!CreateTimeZoneMethodsRecord(cx, timeZone,
                                    {
                                        TimeZoneMethod::GetOffsetNanosecondsFor,
                                    },
                                    &timeZoneRec)) {
-    return false;
-  }
-
-  // Step 4.
-  Rooted<Wrapped<InstantObject*>> instant(cx,
-                                          ToTemporalInstant(cx, args.get(0)));
-  if (!instant) {
     return false;
   }
 
@@ -2388,7 +2395,7 @@ static bool TimeZone_getInstantFor(JSContext* cx, const CallArgs& args) {
     }
 
     // Step 5.
-    if (!ToTemporalDisambiguation(cx, options, &disambiguation)) {
+    if (!GetTemporalDisambiguationOption(cx, options, &disambiguation)) {
       return false;
     }
   }

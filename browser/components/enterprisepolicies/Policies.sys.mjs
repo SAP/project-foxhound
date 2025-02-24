@@ -81,23 +81,23 @@ export var Policies = {
   // Used for cleaning up policies.
   // Use the same timing that you used for setting up the policy.
   _cleanup: {
-    onBeforeAddons(manager) {
+    onBeforeAddons() {
       if (Cu.isInAutomation || isXpcshell) {
         console.log("_cleanup from onBeforeAddons");
         clearBlockedAboutPages();
       }
     },
-    onProfileAfterChange(manager) {
+    onProfileAfterChange() {
       if (Cu.isInAutomation || isXpcshell) {
         console.log("_cleanup from onProfileAfterChange");
       }
     },
-    onBeforeUIStartup(manager) {
+    onBeforeUIStartup() {
       if (Cu.isInAutomation || isXpcshell) {
         console.log("_cleanup from onBeforeUIStartup");
       }
     },
-    onAllWindowsRestored(manager) {
+    onAllWindowsRestored() {
       if (Cu.isInAutomation || isXpcshell) {
         console.log("_cleanup from onAllWindowsRestored");
       }
@@ -112,7 +112,7 @@ export var Policies = {
 
   AllowedDomainsForApps: {
     onBeforeAddons(manager, param) {
-      Services.obs.addObserver(function (subject, topic, data) {
+      Services.obs.addObserver(function (subject) {
         let channel = subject.QueryInterface(Ci.nsIHttpChannel);
         if (channel.URI.host.endsWith(".google.com")) {
           channel.setRequestHeader("X-GoogApps-Allowed-Domains", param, true);
@@ -540,10 +540,35 @@ export var Policies = {
           param.DenyUrlRegexList
         );
       }
+      if ("AgentName" in param) {
+        setAndLockPref("browser.contentanalysis.agent_name", param.AgentName);
+      }
+      if ("ClientSignature" in param) {
+        setAndLockPref(
+          "browser.contentanalysis.client_signature",
+          param.ClientSignature
+        );
+      }
+      if ("DefaultResult" in param) {
+        if (
+          !Number.isInteger(param.DefaultResult) ||
+          param.DefaultResult < 0 ||
+          param.DefaultResult > 2
+        ) {
+          lazy.log.error(
+            `Non-integer or out of range value for DefaultResult: ${param.DefaultResult}`
+          );
+        } else {
+          setAndLockPref(
+            "browser.contentanalysis.default_result",
+            param.DefaultResult
+          );
+        }
+      }
       let boolPrefs = [
         ["IsPerUser", "is_per_user"],
         ["ShowBlockedResult", "show_blocked_result"],
-        ["DefaultAllow", "default_allow"],
+        ["BypassForSameTabOperations", "bypass_for_same_tab_operations"],
       ];
       for (let pref of boolPrefs) {
         if (pref[0] in param) {
@@ -760,6 +785,15 @@ export var Policies = {
         blockAboutPage(manager, "about:debugging");
         blockAboutPage(manager, "about:devtools-toolbox");
         blockAboutPage(manager, "about:profiling");
+      }
+    },
+  },
+
+  DisableEncryptedClientHello: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        setAndLockPref("network.dns.echconfig.enabled", false);
+        setAndLockPref("network.dns.http3_echconfig.enabled", false);
       }
     },
   },
@@ -1506,6 +1540,31 @@ export var Policies = {
     },
   },
 
+  HttpAllowlist: {
+    onBeforeAddons(manager, param) {
+      addAllowDenyPermissions("https-only-load-insecure", param);
+    },
+  },
+
+  HttpsOnlyMode: {
+    onBeforeAddons(manager, param) {
+      switch (param) {
+        case "disallowed":
+          setAndLockPref("dom.security.https_only_mode", false);
+          break;
+        case "enabled":
+          PoliciesUtils.setDefaultPref("dom.security.https_only_mode", true);
+          break;
+        case "force_enabled":
+          setAndLockPref("dom.security.https_only_mode", true);
+          break;
+        case "allowed":
+          // The default case.
+          break;
+      }
+    },
+  },
+
   InstallAddonsPermission: {
     onBeforeUIStartup(manager, param) {
       if ("Allow" in param) {
@@ -1778,6 +1837,13 @@ export var Policies = {
     },
   },
 
+  PostQuantumKeyAgreementEnabled: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("network.http.http3.enable_kyber", param);
+      setAndLockPref("security.tls.enable_kyber", param);
+    },
+  },
+
   Preferences: {
     onBeforeAddons(manager, param) {
       let allowedPrefixes = [
@@ -1802,6 +1868,9 @@ export var Policies = {
         "places.",
         "pref.",
         "print.",
+        "privacy.globalprivacycontrol.enabled",
+        "privacy.userContext.enabled",
+        "privacy.userContext.ui.enabled",
         "signon.",
         "spellchecker.",
         "toolkit.legacyUserProfileCustomizations.stylesheets",
@@ -1820,6 +1889,8 @@ export var Policies = {
         "security.insecure_connection_text.enabled",
         "security.insecure_connection_text.pbmode.enabled",
         "security.mixed_content.block_active_content",
+        "security.mixed_content.block_display_content",
+        "security.mixed_content.upgrade_display_content",
         "security.osclientcerts.assume_rsa_pss_support",
         "security.osclientcerts.autoload",
         "security.OCSP.enabled",
@@ -1981,13 +2052,11 @@ export var Policies = {
     onBeforeAddons(manager, param) {
       if (param.Locked) {
         manager.disallowFeature("changeProxySettings");
-        lazy.ProxyPolicies.configureProxySettings(param, setAndLockPref);
-      } else {
-        lazy.ProxyPolicies.configureProxySettings(
-          param,
-          PoliciesUtils.setDefaultPref
-        );
       }
+      lazy.ProxyPolicies.configureProxySettings(
+        param,
+        PoliciesUtils.setDefaultPref
+      );
     },
   },
 
@@ -2023,6 +2092,13 @@ export var Policies = {
         setAndLockPref("privacy.clearOnShutdown.sessions", param);
         setAndLockPref("privacy.clearOnShutdown.siteSettings", param);
         setAndLockPref("privacy.clearOnShutdown.offlineApps", param);
+        setAndLockPref(
+          "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+          param
+        );
+        setAndLockPref("privacy.clearOnShutdown_v2.cookiesAndStorage", param);
+        setAndLockPref("privacy.clearOnShutdown_v2.cache", param);
+        setAndLockPref("privacy.clearOnShutdown_v2.siteSettings", param);
       } else {
         let locked = true;
         // Needed to preserve original behavior in perpetuity.
@@ -2042,9 +2118,19 @@ export var Policies = {
             param.Cache,
             locked
           );
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.cache",
+            param.Cache,
+            locked
+          );
         } else {
           PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.cache",
+            false,
+            lockDefaultPrefs
+          );
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.cache",
             false,
             lockDefaultPrefs
           );
@@ -2055,9 +2141,23 @@ export var Policies = {
             param.Cookies,
             locked
           );
+
+          // We set cookiesAndStorage to follow lock and pref
+          // settings for cookies, and deprecate offlineApps
+          // and sessions in the new clear on shutdown dialog - Bug 1853996
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.cookiesAndStorage",
+            param.Cookies,
+            locked
+          );
         } else {
           PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.cookies",
+            false,
+            lockDefaultPrefs
+          );
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.cookiesAndStorage",
             false,
             lockDefaultPrefs
           );
@@ -2094,9 +2194,23 @@ export var Policies = {
             param.History,
             locked
           );
+
+          // We set historyFormDataAndDownloads to follow lock and pref
+          // settings for history, and deprecate formdata and downloads
+          // in the new clear on shutdown dialog - Bug 1853996
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+            param.History,
+            locked
+          );
         } else {
           PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.history",
+            false,
+            lockDefaultPrefs
+          );
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
             false,
             lockDefaultPrefs
           );
@@ -2117,6 +2231,11 @@ export var Policies = {
         if ("SiteSettings" in param) {
           PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.siteSettings",
+            param.SiteSettings,
+            locked
+          );
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.siteSettings",
             param.SiteSettings,
             locked
           );
@@ -2390,15 +2509,14 @@ export var Policies = {
     },
   },
 
+  TranslateEnabled: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("browser.translations.enable", param);
+    },
+  },
+
   UserMessaging: {
     onBeforeAddons(manager, param) {
-      if ("WhatsNew" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.messaging-system.whatsNewPanel.enabled",
-          param.WhatsNew,
-          param.Locked
-        );
-      }
       if ("ExtensionRecommendations" in param) {
         PoliciesUtils.setDefaultPref(
           "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
@@ -2790,7 +2908,7 @@ function clearBlockedAboutPages() {
   gBlockedAboutPages = [];
 }
 
-function blockAboutPage(manager, feature, neededOnContentProcess = false) {
+function blockAboutPage(manager, feature) {
   addChromeURLBlocker();
   gBlockedAboutPages.push(feature);
 
@@ -2826,7 +2944,7 @@ let ChromeURLBlockPolicy = {
     }
     return Ci.nsIContentPolicy.ACCEPT;
   },
-  shouldProcess(contentLocation, loadInfo) {
+  shouldProcess() {
     return Ci.nsIContentPolicy.ACCEPT;
   },
   classDescription: "Policy Engine Content Policy",

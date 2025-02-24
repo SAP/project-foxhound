@@ -58,6 +58,7 @@ struct ModuleEnvironment {
   MemoryDescVector memories;
   MutableTypeContext types;
   FuncDescVector funcs;
+  BranchHintCollection branchHints;
   uint32_t numFuncImports;
   uint32_t numGlobalImports;
   GlobalDescVector globals;
@@ -93,6 +94,9 @@ struct ModuleEnvironment {
   Maybe<Name> moduleName;
   NameVector funcNames;
 
+  // Indicates whether the branch hint section was successfully parsed.
+  bool parsedBranchHints;
+
   explicit ModuleEnvironment(FeatureArgs features,
                              ModuleKind kind = ModuleKind::Wasm)
       : kind(kind),
@@ -103,7 +107,8 @@ struct ModuleEnvironment {
         typeDefsOffsetStart(UINT32_MAX),
         memoriesOffsetStart(UINT32_MAX),
         tablesOffsetStart(UINT32_MAX),
-        tagsOffsetStart(UINT32_MAX) {}
+        tagsOffsetStart(UINT32_MAX),
+        parsedBranchHints(false) {}
 
   [[nodiscard]] bool init() {
     types = js_new<TypeContext>(features);
@@ -191,6 +196,15 @@ struct ModuleEnvironment {
     MOZ_ASSERT(tagIndex < tags.length());
     return tagsOffsetStart + tagIndex * sizeof(TagInstanceData);
   }
+
+  bool addDefinedFunc(
+      ValTypeVector&& params, ValTypeVector&& results,
+      bool declareForRef = false,
+      Maybe<CacheableName>&& optionalExportedName = mozilla::Nothing());
+
+  bool addImportedFunc(ValTypeVector&& params, ValTypeVector&& results,
+                       CacheableName&& importModName,
+                       CacheableName&& importFieldName);
 };
 
 // ElemSegmentFlags provides methods for decoding and encoding the flags field

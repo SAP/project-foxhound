@@ -62,6 +62,11 @@
 #else
 #  define WASM_TAIL_CALLS_ENABLED 0
 #endif
+#ifdef ENABLE_WASM_JSPI
+#  define WASM_JSPI_ENABLED 1
+#else
+#  define WASM_JSPI_ENABLED 0
+#endif
 #ifdef ENABLE_WASM_MOZ_INTGEMM
 #  define WASM_MOZ_INTGEMM_ENABLED 1
 #else
@@ -71,6 +76,11 @@
 #  define WASM_MULTI_MEMORY_ENABLED 1
 #else
 #  define WASM_MULTI_MEMORY_ENABLED 0
+#endif
+#ifdef ENABLE_WASM_BRANCH_HINTING
+#  define WASM_BRANCH_HINTING_ENABLED 1
+#else
+#  define WASM_BRANCH_HINTING_ENABLED 0
 #endif
 #ifdef ENABLE_WASM_JS_STRING_BUILTINS
 #  define WASM_JS_STRING_BUILTINS_ENABLED 1
@@ -153,6 +163,15 @@
     /* flag fuzz enable   */ true,                                      \
     /* preference name    */ tail_calls)                                \
   FEATURE(                                                              \
+    /* capitalized name   */ JSPromiseIntegration,                      \
+    /* lower case name    */ jsPromiseIntegration,                      \
+    /* compile predicate  */ WASM_JSPI_ENABLED,                         \
+    /* compiler predicate */ IonAvailable(cx),                          \
+    /* flag predicate     */ true,                                      \
+    /* flag force enable  */ false,                                     \
+    /* flag fuzz enable   */ false,                                     \
+    /* preference name    */ js_promise_integration)                    \
+  FEATURE(                                                              \
     /* capitalized name   */ MozIntGemm,                                \
     /* lower case name    */ mozIntGemm,                                \
     /* compile predicate  */ WASM_MOZ_INTGEMM_ENABLED,                  \
@@ -169,7 +188,16 @@
     /* flag predicate     */ true,                                      \
     /* flag force enable  */ false,                                     \
     /* flag fuzz enable   */ false,                                     \
-    /* preference name    */ test_serialization)
+    /* preference name    */ test_serialization)                        \
+  FEATURE(                                                              \
+    /* capitalized name   */ BranchHinting,                             \
+    /* lower case name    */ branchHinting,                             \
+    /* compile predicate  */ WASM_BRANCH_HINTING_ENABLED,               \
+    /* compiler predicate */ IonAvailable(cx),                          \
+    /* flag predicate     */ true,                                      \
+    /* flag force enable  */ false,                                     \
+    /* flag fuzz enable   */ false,                                     \
+    /* preference name    */ branch_hinting)
 
 // clang-format on
 

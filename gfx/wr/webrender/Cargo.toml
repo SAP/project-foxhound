@@ -30,7 +30,7 @@ webrender_build = { version = "0.0.2", path = "../webrender_build" }
 bincode = "1.0"
 bitflags = { version = "2", features = ["serde"] }
 byteorder = "1.0"
-euclid = { version = "0.22.0", features = ["serde"] }
+euclid = { version = "0.22.10", features = ["serde"] }
 fxhash = "0.2.1"
 gleam = "0.15.0"
 lazy_static = "1"
@@ -52,7 +52,7 @@ svg_fmt = "0.4"
 tracy-rs = "0.1.2"
 derive_more = { version = "0.99", default-features = false, features = ["add_assign"] }
 etagere = "0.2.6"
-glean = { version = "58.1.0", optional = true }
+glean = { version = "60.1.1", optional = true }
 firefox-on-glean = { version = "0.1.0", optional = true }
 swgl = { path = "../swgl", optional = true }
 topological-sort = "0.1"

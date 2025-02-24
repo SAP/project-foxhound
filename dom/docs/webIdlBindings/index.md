@@ -1903,6 +1903,90 @@ worker involved is a `ChromeWorker` or not.  At the moment the only
 possible caller types are `System` (representing system-principal
 callers) and `NonSystem`.
 
+### `[GenerateInit]`
+
+When set on a dictionary it will add two `Init` methods to the generated C++
+class with the following signatures:
+
+``` cpp
+bool Init(BindingCallContext& cx, JS::Handle<JS::Value> val, const char* sourceDescription="Value", bool passedToJSImpl=false);
+bool Init(JSContext* cx_, JS::Handle<JS::Value> val, const char* sourceDescription="Value", bool passedToJSImpl=false);
+```
+
+These methods will initialize the dictionary from `val` by following WebIDL's
+[JavaScript type mapping](https://webidl.spec.whatwg.org/#js-dictionary).
+
+### `[GenerateInitFromJSON]`
+
+When set on a dictionary it will add an `Init` method to the generated C++
+class with the following signature:
+
+``` cpp
+bool Init(const nsAString& aJSON);
+```
+
+This extended attribute will only have an effect if all of the types of the
+dictionary's members are representable in JSON (they are a string type, a
+primitive type that's not an unrestricted float/double, a void type, or a
+sequence, union, dictionary or record containing these types).
+
+The method is expected to be called with a JSON string as input. The JSON string
+will be parsed into a JavaScript value, and then the dictionary is initialized
+with this value by following WebIDL's
+[JavaScript type mapping](https://webidl.spec.whatwg.org/#js-dictionary).
+
+Note: As a side-effect of how this is implemented it will also add the two
+`Init` methods that would be added by a [`[GenerateInit]`](#generateinit)
+extended attribute.
+
+### `[GenerateToJSON]`
+
+When set on a dictionary it will add a `ToJSON` method to the generated C++
+class with the following signature:
+
+``` cpp
+bool ToJSON(nsAString& aJSON);
+```
+
+The method will generate a JSON representation of the dictionary members' values
+in `aJSON` by converting the dictionary to a JavaScript object by following
+WebIDL's [JavaScript type mapping](https://webidl.spec.whatwg.org/#js-dictionary)
+and then converting that object to a JSON string.
+
+The same restrictions on types applies as on
+[`[GenerateInitFromJSON]`](#generateinitfromjson).
+
+Note: As a side-effect of how this is implemented it will also add the
+`ToObjectInternal` method that would be added by a
+[`[GenerateConversionToJS]`](#generateconversiontojs) extended attribute.
+
+### `[GenerateConversionToJS]`
+
+When set on a dictionary it will add a `ToObjectInternal` method to the
+generated C++ class with the following signature:
+
+``` cpp
+bool ToObjectInternal(JSContext* cx, JS::MutableHandle<JS::Value> rval);
+```
+
+The method will create a JavaScript object by following WebIDL's
+[JavaScript type mapping](https://webidl.spec.whatwg.org/#js-dictionary).
+
+### `[GenerateEqualityOperator]`
+
+When set on a dictionary it will add an equality operator to the generated C++
+class.
+
+This is only allowed on dictionaries who only have members (own or inherited)
+with string, primitive or enum types.
+
+### `[Unsorted]`
+
+When set on a dictionary the dictionary's members will not be sorted in
+lexicographic order (which is specified by WebIDL).
+
+This should only ever be used on internal APIs that are not exposed to the Web!
+
 ## Helper objects
 
 The C++ side of the bindings uses a number of helper objects.
@@ -1999,13 +2083,13 @@ and exported to `mozilla/dom/BindingDeclarations.h` that is used for
 Web IDL `DOMString` return values. It has a conversion operator to
 `nsString&` so that it can be passed to methods that take that type or
 `nsAString&`, but callees that care about performance, have an
-`nsStringBuffer` available, and promise to hold on to the
-`nsStringBuffer` at least until the binding code comes off the stack
+`StringBuffer` available, and promise to hold on to the
+`StringBuffer` at least until the binding code comes off the stack
 can also take a `DOMString` directly for their string return value and
-call its `SetStringBuffer` method with the `nsStringBuffer` and its
+call its `SetStringBuffer` method with the `StringBuffer` and its
 length. This allows the binding code to avoid extra reference-counting
 of the string buffer in many cases, and allows it to take a faster
-codepath even if it does end up having to addref the `nsStringBuffer`.
+codepath even if it does end up having to addref the `StringBuffer`.
 
 ### `GlobalObject`
 

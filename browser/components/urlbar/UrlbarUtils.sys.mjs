@@ -113,8 +113,7 @@ export var UrlbarUtils = {
     TABS: 4,
     OTHER_LOCAL: 5,
     OTHER_NETWORK: 6,
-    ACTIONS: 7,
-    ADDON: 8,
+    ADDON: 7,
   },
 
   // This defines icon locations that are commonly used in the UI.
@@ -227,13 +226,6 @@ export var UrlbarUtils = {
         icon: "chrome://browser/skin/history.svg",
         pref: "shortcuts.history",
         telemetryLabel: "history",
-      },
-      {
-        source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
-        restrict: lazy.UrlbarTokenizer.RESTRICT.ACTION,
-        icon: "chrome://browser/skin/quickactions.svg",
-        pref: "shortcuts.quickactions",
-        telemetryLabel: "actions",
       },
     ];
   },
@@ -854,7 +846,7 @@ export var UrlbarUtils = {
    * @returns {string} The modified paste data.
    */
   stripUnsafeProtocolOnPaste(pasteData) {
-    while (true) {
+    for (;;) {
       let scheme = "";
       try {
         scheme = Services.io.extractScheme(pasteData);
@@ -1279,8 +1271,6 @@ export var UrlbarUtils = {
         if (result.providerName == "TabToSearch") {
           // This is the onboarding result.
           return "tabtosearch";
-        } else if (result.providerName == "quickactions") {
-          return "quickaction";
         } else if (result.providerName == "Weather") {
           return "weather";
         }
@@ -1435,14 +1425,10 @@ export var UrlbarUtils = {
         switch (result.providerName) {
           case "calculator":
             return "calc";
-          case "quickactions":
-            return "action";
           case "TabToSearch":
             return "tab_to_search";
           case "UnitConversion":
             return "unit";
-          case "UrlbarProviderContextualSearch":
-            return "site_specific_contextual_search";
           case "UrlbarProviderQuickSuggest":
             return this._getQuickSuggestTelemetryType(result);
           case "UrlbarProviderQuickSuggestContextualOptIn":
@@ -1535,28 +1521,6 @@ export var UrlbarUtils = {
     return "unknown";
   },
 
-  /**
-   * Extracts a subtype for search engagement telemetry from a result and the picked element.
-   *
-   * @param {UrlbarResult} result The result to analyze.
-   * @param {DOMElement} element The picked view element. Nullable.
-   * @returns {string} Subtype as string.
-   */
-  searchEngagementTelemetrySubtype(result, element) {
-    if (!result) {
-      return "";
-    }
-
-    if (
-      result.providerName === "quickactions" &&
-      element?.classList.contains("urlbarView-quickaction-button")
-    ) {
-      return element.dataset.key;
-    }
-
-    return "";
-  },
-
   _getQuickSuggestTelemetryType(result) {
     if (result.payload.telemetryType == "weather") {
       // Return "weather" without the usual source prefix for consistency with
@@ -1641,6 +1605,17 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
     type: "object",
     required: ["url"],
     properties: {
+      action: {
+        type: "object",
+        properties: {
+          l10nId: {
+            type: "string",
+          },
+          key: {
+            type: "string",
+          },
+        },
+      },
       displayUrl: {
         type: "string",
       },
@@ -1829,6 +1804,9 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
         type: "object",
       },
       isBlockable: {
+        type: "boolean",
+      },
+      isManageable: {
         type: "boolean",
       },
       isPinned: {
@@ -2175,6 +2153,8 @@ export class UrlbarQueryContext {
     this.pendingHeuristicProviders = new Set();
     this.deferUserSelectionProviders = new Set();
     this.trimmedSearchString = this.searchString.trim();
+    this.lowerCaseSearchString = this.searchString.toLowerCase();
+    this.trimmedLowerCaseSearchString = this.trimmedSearchString.toLowerCase();
     this.userContextId =
       lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
         options.userContextId,
@@ -2270,7 +2250,10 @@ export class UrlbarQueryContext {
     }
 
     // We're unlikely to get useful remote results for a single character.
-    if (searchString.length < 2 && !allowEmptySearchString) {
+    if (
+      searchString.length < 2 &&
+      !(!searchString.length && allowEmptySearchString)
+    ) {
       return false;
     }
 
@@ -2425,27 +2408,120 @@ export class UrlbarProvider {
     // Override this with your clean-up on cancel code.
   }
 
+  // The following `on{Event}` notification methods are invoked only when
+  // defined, thus there is no base class implementation for them
   /**
-   * Called when the user starts and ends an engagement with the urlbar.
+   * Called when a user engages with a result in the urlbar. This is called for
+   * all providers who have implemented this method.
+   *
+   * @param {UrlbarQueryContext} _queryContext
+   *   The engagement's query context. It will always be defined for
+   *   "engagement" and "abandonment".
+   * @param {UrlbarController} _controller
+   *  The associated controller.
+   * @param {object} _details
+   *   This object is non-empty only when `state` is "engagement" or
+   *   "abandonment", and it describes the search string and engaged result.
+   *
+   *   For "engagement", it has the following properties:
+   *
+   *   {UrlbarResult} result
+   *       The engaged result. If a result itself was picked, this will be it.
+   *       If an element related to a result was picked (like a button or menu
+   *       command), this will be that result. This property will be present if
+   *       and only if `state` == "engagement", so it can be used to quickly
+   *       tell when the user engaged with a result.
+   *   {Element} element
+   *       The picked DOM element.
+   *   {boolean} isSessionOngoing
+   *       True if the search session remains ongoing or false if the engagement
+   *       ended it. Typically picking a result ends the session but not always.
+   *       Picking a button or menu command may not end the session; dismissals
+   *       do not, for example.
+   *   {string} searchString
+   *       The search string for the engagement's query.
+   *   {number} selIndex
+   *       The index of the picked result.
+   *   {string} selType
+   *       The type of the selected result.  See TelemetryEvent.record() in
+   *       UrlbarController.sys.mjs.
+   *   {string} provider
+   *       The name of the provider that produced the picked result.
+   *
+   *   For "abandonment", only `searchString` is defined.
+   *
+   * onEngagement(_queryContext, _controller, _details) {}
+   */
+
+  /**
+   * Called when the user abandons a search session without selecting a result.
+   * This could be due to losing focus on the urlbar, switching tabs, or other
+   * actions that imply the user is no longer actively engaging with the search
+   * suggestions. The method is called for all providers who have implemented
+   * this method and whose results were visible at the time of the abandonment.
+   *
+   * @param {UrlbarQueryContext} _queryContext
+   *    The query context at the time of abandonment.
+   * @param {UrlbarController} _controller
+   * The associated controller.
+   *
+   * onAbandonment(_queryContext, _controller) {}
+   */
+
+  /**
+   * Called for providers whose results are visible at the time of either
+   * engagement or abandonment. The method is called when a user actively
+   * interacts with a search result. This interaction could be clicking on a
+   * suggestion, using a keyboard to select a suggestion, or any other form of
+   * direct engagement with the results displayed. It is also called
+   * when a user decides to abandon the search session without engaging with any
+   * of the presented results. This is called for all providers who have
+   * implemented this method.
+   *
+   * @param {string} _state
+   *    The state of the user interaction, either "engagement" or "abandonment".
+   * @param {UrlbarQueryContext} _queryContext
+   *    The current query context.
+   * @param {UrlbarController} _controller
+   *    The associated controller.
+   * @param {Array} _providerVisibleResults
+   *    Array of visible results at the time of either an engagement or
+   *    abandonment event relevant to the provider. Each object in the array
+   *    contains:
+   *    - `index`: The position of the visible result within the original list
+   *               visible results.
+   *    - `result`: The visible result itself
+   *
+   * onImpression(_state, _queryContext, _controller, _providerVisibleResults)
+   * {}
+   */
+
+  /**
+   * Called when a search session concludes regardless of how it ends -
+   * whether through engagement or abandonment or otherwise. This is
+   * called for all providers who have implemented this method.
+   *
+   * @param {UrlbarQueryContext} _queryContext
+   *    The current query context.
+   * @param {UrlbarController} _controller
+   *    The associated controller.
+   *
+   * onSearchSessionEnd(_queryContext, _controller) {}
+   */
+
+  /**
+   * Called when the user starts and ends an engagement with the urlbar. This is
+   * called for all providers who have implemented this method.
    *
    * @param {string} _state
    *   The state of the engagement, one of the following strings:
    *
-   *   start
-   *       A new query has started in the urlbar.
    *   engagement
    *       The user picked a result in the urlbar or used paste-and-go.
    *   abandonment
    *       The urlbar was blurred (i.e., lost focus).
-   *   discard
-   *       This doesn't correspond to a user action, but it means that the
-   *       urlbar has discarded the engagement for some reason, and the
-   *       `onEngagement` implementation should ignore it.
-   *
    * @param {UrlbarQueryContext} _queryContext
-   *   The engagement's query context.  This is *not* guaranteed to be defined
-   *   when `state` is "start".  It will always be defined for "engagement" and
-   *   "abandonment".
+   *   The engagement's query context.
    * @param {object} _details
    *   This object is non-empty only when `state` is "engagement" or
    *   "abandonment", and it describes the search string and engaged result.
@@ -2478,8 +2554,9 @@ export class UrlbarProvider {
    *   For "abandonment", only `searchString` is defined.
    * @param {UrlbarController} _controller
    *  The associated controller.
+   *
+   * onLegacyEngagement(_state, _queryContext, _details, _controller) {}
    */
-  onEngagement(_state, _queryContext, _details, _controller) {}
 
   /**
    * Called before a result from the provider is selected. See `onSelection`

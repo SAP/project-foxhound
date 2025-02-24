@@ -233,6 +233,206 @@ newtab:
     send_in_pings:
       - newtab
 
+  wallpaper_click:
+    type: event
+    description: >
+      Recorded when a user clicks on a wallpaper option
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1896004
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      selected_wallpaper:
+        description: >
+          Which wallpaper has been selected by the user
+          Will be the title of a Wallpaper or 'none' for users
+          that reset the background to default
+        type: string
+      had_previous_wallpaper:
+        description: >
+          Wheather or not user had a previously set wallpaper
+        type: boolean
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  wallpaper_highlight_cta_click:
+    type: event
+    description: >
+      Recorded when a user clicks the CTA on the wallpaper feature highlight
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900854
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900854
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  wallpaper_highlight_dismissed:
+    type: event
+    description: >
+      Recorded when a user dismisses the wallpaper feature highlight
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900854
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1900854
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  wallpaper_category_click:
+    type: event
+    description: >
+      Recorded when a user clicks a wallpaper category option
+    bugs:
+     - https://bugzilla.mozilla.org/show_bug.cgi?id=1900420
+    data_reviews:
+     - https://bugzilla.mozilla.org/show_bug.cgi?id=1900420
+    data_sensitivity:
+      - interaction
+    notification_emails:
+     - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      selected_category:
+        description: >
+          Which wallpaper category selected by user
+        type: string
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  weather_change_display:
+    type: event
+    description: >
+      Recorded when a user changes the weather display.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      weather_display_mode: &weather_display_mode
+        description: >
+          Which display mode is selected.
+        type: string
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  weather_enabled:
+    lifetime: application
+    type: boolean
+    description: >
+      Whether the weather widget is enabled on the newtab.
+      Corresponds to the value of the
+      `browser.newtabpage.activity-stream.showWeather` pref.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1899340
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1899340
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+      - sdowne@mozilla.com
+    expires: never
+    send_in_pings:
+      - newtab
+
+  weather_open_provider_url:
+    type: event
+    description: >
+      Recorded when a user opens a link to the Weather provider website.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  weather_impression:
+      type: event
+      description: >
+        Recorded when the weather widget is viewed
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1898275
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - mcrawford@mozilla.com
+      expires: never
+      extra_keys:
+        newtab_visit_id: *newtab_visit_id
+      send_in_pings:
+        - newtab
+
+  weather_load_error:
+      type: event
+      description: >
+        Recorded when the weather widget is not available
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1898275
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1895797
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - mcrawford@mozilla.com
+      expires: never
+      extra_keys:
+        newtab_visit_id: *newtab_visit_id
+      send_in_pings:
+        - newtab
+
+  weather_location_selected:
+      type: event
+      description: >
+        Recorded when a user selects a location for weather widget
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1900103
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1900103
+      data_sensitivity:
+        - interaction
+      notification_emails:
+        - nbarrett@mozilla.com
+      expires: never
+      extra_keys:
+        newtab_visit_id: *newtab_visit_id
+      send_in_pings:
+        - newtab
+
 newtab.search:
   enabled:
     lifetime: application
@@ -271,9 +471,10 @@ newtab.handoff_preference:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1864496
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1864496
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892148
     data_sensitivity:
       - interaction
-    expires: 128
+    expires: 131
     notification_emails:
       - fx-search-telemetry@mozilla.com
 
@@ -817,6 +1018,35 @@ pocket:
     send_in_pings:
       - spoc
 
+  fetch_timestamp:
+    type: datetime
+    lifetime: ping
+    description: |
+      Timestamp of when the spoc was fetched by the client
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
+    notification_emails:
+      - dmueller@mozilla.com
+    expires: never
+    send_in_pings:
+      - spoc
+
+  newtab_creation_timestamp:
+    type: datetime
+    lifetime: ping
+    description: |
+      Timestamp of when this instance of the newtab was first visible to the user.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
+    notification_emails:
+      - dmueller@mozilla.com
+    expires: never
+    send_in_pings:
+      - spoc
 
 messaging_system:
   event_context_parse_error:
@@ -1031,7 +1261,7 @@ messaging_system:
     type: string
     description: >
       Type of event the ping is capturing.
-      e.g. "cfr", "whats-new-panel", "onboarding"
+      e.g. "cfr", "onboarding"
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1825863
     data_reviews:

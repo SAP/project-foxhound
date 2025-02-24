@@ -6,12 +6,13 @@
 
 use super::{Context, Number, ToComputedValue};
 use crate::values::animated::ToAnimatedValue;
-use crate::values::computed::NonNegativeNumber;
+use crate::values::computed::{NonNegativeNumber, Zoom};
 use crate::values::generics::length as generics;
 use crate::values::generics::length::{
     GenericLengthOrNumber, GenericLengthPercentageOrNormal, GenericMaxSize, GenericSize,
 };
 use crate::values::generics::NonNegative;
+use crate::values::resolved::{Context as ResolvedContext, ToResolvedValue};
 use crate::values::specified::length::{AbsoluteLength, FontBaseSize, LineHeightBase};
 use crate::values::{specified, CSSFloat};
 use crate::Zero;
@@ -227,11 +228,23 @@ impl Size {
     ToAnimatedValue,
     ToAnimatedZero,
     ToComputedValue,
-    ToResolvedValue,
     ToShmem,
 )]
 #[repr(C)]
 pub struct CSSPixelLength(CSSFloat);
+
+impl ToResolvedValue for CSSPixelLength {
+    type ResolvedValue = Self;
+
+    fn to_resolved_value(self, context: &ResolvedContext) -> Self::ResolvedValue {
+        Self(context.style.effective_zoom.unzoom(self.0))
+    }
+
+    #[inline]
+    fn from_resolved_value(value: Self::ResolvedValue) -> Self {
+        value
+    }
+}
 
 impl fmt::Debug for CSSPixelLength {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -269,6 +282,12 @@ impl CSSPixelLength {
     #[inline]
     pub fn px(self) -> CSSFloat {
         self.0
+    }
+
+    /// Zooms a particular length.
+    #[inline]
+    pub fn zoom(self, zoom: Zoom) -> Self {
+        Self::new(zoom.zoom(self.px()))
     }
 
     /// Return the length with app_unit i32 type.

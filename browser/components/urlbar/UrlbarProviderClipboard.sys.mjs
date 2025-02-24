@@ -143,23 +143,7 @@ class ProviderClipboard extends UrlbarProvider {
     addCallback(this, result);
   }
 
-  onEngagement(state, queryContext, details, controller) {
-    if (!["engagement", "abandonment"].includes(state)) {
-      return;
-    }
-    const visibleResults = controller.view?.visibleResults ?? [];
-    for (const result of visibleResults) {
-      if (
-        result.providerName === this.name &&
-        result.payload.url === this.#previousClipboard.value
-      ) {
-        this.#previousClipboard.impressionsLeft--; // Clipboard value was suggested
-      }
-    }
-
-    if (details.result?.providerName != this.name) {
-      return;
-    }
+  onEngagement(queryContext, controller, details) {
     this.#previousClipboard.impressionsLeft = 0; // User has picked the suggested clipboard result
     // Handle commands.
     this.#handlePossibleCommand(
@@ -167,6 +151,10 @@ class ProviderClipboard extends UrlbarProvider {
       details.result,
       details.selType
     );
+  }
+
+  onImpression() {
+    this.#previousClipboard.impressionsLeft--;
   }
 
   #handlePossibleCommand(view, result, selType) {

@@ -380,8 +380,6 @@ skip-if = [
   "http2",
 ]
 
-["test_bug338679.html"]
-
 ["test_bug339494.html"]
 
 ["test_bug339494.xhtml"]
@@ -1170,6 +1168,8 @@ skip-if = [
 
 ["test_content_iterator_subtree.html"]
 
+["test_content_iterator_subtree_shadow_tree.html"]
+
 ["test_copyimage.html"]
 skip-if = [
   "os == 'android'",
@@ -1511,6 +1511,7 @@ support-files = [
 ]
 
 ["test_script_loader_js_cache_frames.html"]
+disabled = "https://bugzilla.mozilla.org/show_bug.cgi?id=1853173"
 skip-if = ["verify"]
 support-files = [
   "file_script_module_frames_relay.js",

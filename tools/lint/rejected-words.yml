@@ -30,7 +30,7 @@ avoid-blacklist-and-whitelist:
         - java
         - kt
     exclude:
-        - '**/.eslintrc.js'
+        - '**/.eslintrc-rollouts.js'
         - browser/app/profile/firefox.js
         - browser/app/winlauncher/LauncherProcessWin.cpp
         - browser/base/content/browser.js
@@ -46,7 +46,6 @@ avoid-blacklist-and-whitelist:
         - browser/base/content/test/protectionsUI/browser_protectionsUI_subview_shim.js
         - browser/base/content/test/siteIdentity/browser_no_mcb_for_loopback.js
         - browser/base/content/test/tabMediaIndicator/browser_mute_webAudio.js
-        - browser/base/content/test/tabs/browser_new_file_whitelisted_http_tab.js
         - browser/components/enterprisepolicies/Policies.sys.mjs
         - browser/components/migration/ChromeMigrationUtils.sys.mjs
         - browser/components/migration/ChromeProfileMigrator.sys.mjs
@@ -56,6 +55,7 @@ avoid-blacklist-and-whitelist:
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
         - browser/components/safebrowsing/content/test/browser_whitelisted.js
         - browser/components/sessionstore/test/browser_crashedTabs.js
+        - browser/components/tabbrowser/test/browser/tabs/browser_new_file_whitelisted_http_tab.js
         - browser/components/uitour/UITourChild.sys.mjs
         - browser/components/urlbar/tests/browser/browser_searchSingleWordNotification.js
         - browser/components/urlbar/tests/browser/browser_UrlbarInput_trimURLs.js
@@ -154,7 +154,16 @@ avoid-blacklist-and-whitelist:
         - layout/tools/reftest/reftestcommandline.py
         - layout/tools/reftest/runreftest.py
         - layout/tools/reftest/selftest/conftest.py
+        - mobile/android/android-components/components/feature/webcompat/src/main/assets/extensions/webcompat/shims/nielsen.js
+        - mobile/android/android-components/docs/changelog.md
         - mobile/android/app/geckoview-prefs.js
+        - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/ext/Bitmap.kt
+        - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/perf/StrictModeManager.kt
+        - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/translations/preferences/downloadlanguages/DownloadLanguagesFeature.kt
+        - mobile/android/fenix/app/src/test/java/org/mozilla/fenix/translations/preferences/downloadlanguages/DownloadLanguagesFeatureTest.kt
+        - mobile/android/focus-android/app/src/main/res/values-ar/strings.xml
+        - mobile/android/focus-android/app/src/main/res/values-et/strings.xml
+        - mobile/android/focus-android/app/src/main/res/values-lt/strings.xml
         - mobile/android/geckoview/src/main/java/org/mozilla/gecko/util/HardwareCodecCapabilityUtils.java
         - mobile/android/geckoview/src/main/java/org/mozilla/geckoview/ContentBlocking.java
         - mobile/android/geckoview/src/main/java/org/mozilla/geckoview/CrashReporter.java
@@ -204,7 +213,7 @@ avoid-blacklist-and-whitelist:
         - security/sandbox/linux/SandboxFilter.cpp
         - security/sandbox/linux/SandboxFilterUtil.h
         - security/sandbox/linux/Sandbox.h
-        - taskcluster/ci/docker-image/kind.yml
+        - taskcluster/kinds/docker-image/kind.yml
         - taskcluster/gecko_taskgraph/actions/create_interactive.py
         - taskcluster/gecko_taskgraph/transforms/test/other.py
         - taskcluster/gecko_taskgraph/try_option_syntax.py
@@ -226,6 +235,7 @@ avoid-blacklist-and-whitelist:
         - testing/web-platform/tests/tools/manifest/tests/test_manifest.py
         - toolkit/actors/RemotePageChild.sys.mjs
         - toolkit/actors/WebChannelChild.sys.mjs
+        - toolkit/components/antitracking/docs/tracking-lists/index.md
         - toolkit/components/antitracking/test/browser/browser_socialtracking_save_image.js
         - toolkit/components/reputationservice/ApplicationReputation.cpp
         - toolkit/components/reputationservice/chromium/chrome/common/safe_browsing/csd.pb.h

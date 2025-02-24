@@ -32,19 +32,17 @@ namespace JS::loader {
 // ScriptFetchOptions
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mTriggeringPrincipal, mElement)
+NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mTriggeringPrincipal)
 
 ScriptFetchOptions::ScriptFetchOptions(
     mozilla::CORSMode aCORSMode, const nsAString& aNonce,
     mozilla::dom::RequestPriority aFetchPriority,
-    const ParserMetadata aParserMetadata, nsIPrincipal* aTriggeringPrincipal,
-    mozilla::dom::Element* aElement)
+    const ParserMetadata aParserMetadata, nsIPrincipal* aTriggeringPrincipal)
     : mCORSMode(aCORSMode),
       mNonce(aNonce),
       mFetchPriority(aFetchPriority),
       mParserMetadata(aParserMetadata),
-      mTriggeringPrincipal(aTriggeringPrincipal),
-      mElement(aElement) {}
+      mTriggeringPrincipal(aTriggeringPrincipal) {}
 
 ScriptFetchOptions::~ScriptFetchOptions() = default;
 
@@ -181,19 +179,12 @@ void ScriptLoadRequest::SetPendingFetchingError() {
   mState = State::PendingFetchingError;
 }
 
-void ScriptLoadRequest::MarkForBytecodeEncoding(JSScript* aScript) {
+void ScriptLoadRequest::MarkScriptForBytecodeEncoding(JSScript* aScript) {
   MOZ_ASSERT(!IsModuleRequest());
-  MOZ_ASSERT(!IsMarkedForBytecodeEncoding());
+  MOZ_ASSERT(!mScriptForBytecodeEncoding);
+  MarkForBytecodeEncoding();
   mScriptForBytecodeEncoding = aScript;
   HoldJSObjects(this);
-}
-
-bool ScriptLoadRequest::IsMarkedForBytecodeEncoding() const {
-  if (IsModuleRequest()) {
-    return AsModuleRequest()->IsModuleMarkedForBytecodeEncoding();
-  }
-
-  return !!mScriptForBytecodeEncoding;
 }
 
 static bool IsInternalURIScheme(nsIURI* uri) {

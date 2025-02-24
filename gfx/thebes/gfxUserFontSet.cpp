@@ -20,6 +20,7 @@
 #include "mozilla/PostTraversalTask.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "gfxOTSUtils.h"
+#include "nsFontFaceLoader.h"
 #include "nsIFontLoadCompleteCallback.h"
 #include "nsProxyRelease.h"
 #include "nsContentUtils.h"
@@ -392,6 +393,12 @@ void gfxUserFontEntry::LoadNextSrc() {
 }
 
 void gfxUserFontEntry::ContinueLoad() {
+  if (mUserFontLoadState == STATUS_NOT_LOADED) {
+    // We must have been cancelled (possibly due to a font-list refresh) while
+    // the runnable was pending, so just bail out.
+    return;
+  }
+
   MOZ_ASSERT(mUserFontLoadState == STATUS_LOAD_PENDING);
   MOZ_ASSERT(mSrcList[mCurrentSrcIndex].mSourceType ==
              gfxFontFaceSrc::eSourceType_URL);
@@ -462,7 +469,7 @@ void gfxUserFontEntry::DoLoadNextSrc(bool aIsContinue) {
       if (fe) {
         LOG(("userfonts (%p) [src %d] loaded local: (%s) for (%s) gen: %8.8x\n",
              fontSet.get(), mCurrentSrcIndex, currSrc.mLocalName.get(),
-             mFamilyName.get(), uint32_t(fontSet->mGeneration)));
+             mFamilyName.get(), uint32_t(fontSet->GetGeneration())));
         fe->mFeatureSettings.AppendElements(mFeatureSettings);
         fe->mVariationSettings.AppendElements(mVariationSettings);
         fe->mLanguageOverride = mLanguageOverride;
@@ -699,7 +706,6 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
                                         const uint8_t* aSanitizedFontData,
                                         uint32_t aSanitizedLength,
                                         nsTArray<OTSMessage>&& aMessages) {
-  MOZ_ASSERT(NS_IsMainThread());
   RefPtr<gfxUserFontSet> fontSet = GetUserFontSet();
   if (NS_WARN_IF(!fontSet)) {
     free((void*)aOriginalFontData);
@@ -810,10 +816,14 @@ bool gfxUserFontEntry::LoadPlatformFont(uint32_t aSrcIndex,
          "(%p) gen: %8.8x compress: %d%%\n",
          fontSet.get(), aSrcIndex,
          mSrcList[aSrcIndex].mURI->GetSpecOrDefault().get(), mFamilyName.get(),
-         this, uint32_t(fontSet->mGeneration), fontCompressionRatio));
+         this, uint32_t(fontSet->GetGeneration()), fontCompressionRatio));
     mPlatformFontEntry = fe;
     SetLoadState(STATUS_LOADED);
-    gfxUserFontSet::UserFontCache::CacheFont(fe);
+    if (NS_IsMainThread()) {
+      // UserFontCache::CacheFont is not currently safe to call off-main-thread,
+      // so we only cache the font if this is a main-thread load.
+      gfxUserFontSet::UserFontCache::CacheFont(fe);
+    }
   } else {
     LOG((
         "userfonts (%p) [src %d] failed uri: (%s) for (%s)"
@@ -974,7 +984,8 @@ gfxUserFontSet::gfxUserFontSet()
       mLocalRulesUsed(false),
       mRebuildLocalRules(false),
       mDownloadCount(0),
-      mDownloadSize(0) {
+      mDownloadSize(0),
+      mMutex("gfxUserFontSet") {
   IncrementGeneration(true);
 }
 
@@ -1057,7 +1068,7 @@ void gfxUserFontSet::AddUserFontEntry(const nsCString& aFamilyName,
   }
 }
 
-void gfxUserFontSet::IncrementGeneration(bool aIsRebuild) {
+void gfxUserFontSet::IncrementGenerationLocked(bool aIsRebuild) {
   // add one, increment again if zero
   do {
     mGeneration = ++sFontSetGeneration;
@@ -1097,6 +1108,10 @@ void gfxUserFontSet::ForgetLocalFaces() {
 }
 
 void gfxUserFontSet::ForgetLocalFace(gfxUserFontFamily* aFontFamily) {
+  // Entries for which we might need to cancel a current loader.
+  AutoTArray<RefPtr<gfxUserFontEntry>, 8> entriesToCancel;
+
+  // Lock the font family while we iterate over its entries.
   aFontFamily->ReadLock();
   const auto& fonts = aFontFamily->GetFontList();
   for (const auto& f : fonts) {
@@ -1107,14 +1122,28 @@ void gfxUserFontSet::ForgetLocalFace(gfxUserFontFamily* aFontFamily) {
         ufe->GetPlatformFontEntry()->IsLocalUserFont()) {
       ufe->mPlatformFontEntry = nullptr;
     }
-    // We need to re-evaluate the source list in the context of the new
-    // platform fontlist, whether or not the entry actually used a local()
-    // source last time, as one might be newly available.
+    // If the entry had a local source, we need to re-evaluate the source list
+    // in the context of the new platform fontlist, whether or not the entry
+    // actually used a local() source last time, as one might have been added.
     if (ufe->mSeenLocalSource) {
-      ufe->LoadCanceled();
+      entriesToCancel.AppendElement(ufe);
     }
   }
   aFontFamily->ReadUnlock();
+
+  // Cancel any current loaders and reset the state of the affected entries.
+  for (auto& ufe : entriesToCancel) {
+    if (auto* loader = ufe->GetLoader()) {
+      // If there's a loader, we need to cancel it, because we'll trigger a
+      // fresh load if required when we re-resolve the font...
+      loader->Cancel();
+      RemoveLoader(loader);
+    } else {
+      // ...otherwise, just reset our state so that we'll re-evaluate the
+      // source list from the beginning.
+      ufe->LoadCanceled();
+    }
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1209,7 +1238,7 @@ void gfxUserFontSet::UserFontCache::CacheFont(gfxFontEntry* aFontEntry) {
                "caching a font associated with no family yet");
 
   // if caching is disabled, simply return
-  if (Preferences::GetBool("gfx.downloadable_fonts.disable_cache")) {
+  if (StaticPrefs::gfx_downloadable_fonts_disable_cache()) {
     return;
   }
 
@@ -1282,8 +1311,7 @@ void gfxUserFontSet::UserFontCache::ForgetFont(gfxFontEntry* aFontEntry) {
 
 gfxFontEntry* gfxUserFontSet::UserFontCache::GetFont(
     const gfxFontFaceSrc& aSrc, const gfxUserFontEntry& aUserFontEntry) {
-  if (!sUserFonts ||
-      Preferences::GetBool("gfx.downloadable_fonts.disable_cache")) {
+  if (!sUserFonts || StaticPrefs::gfx_downloadable_fonts_disable_cache()) {
     return nullptr;
   }
 

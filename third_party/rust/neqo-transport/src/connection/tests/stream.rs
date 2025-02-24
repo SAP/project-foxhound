@@ -19,9 +19,9 @@ use crate::{
     send_stream::{OrderGroup, SendStreamState, SEND_BUFFER_SIZE},
     streams::{SendOrder, StreamOrder},
     tparams::{self, TransportParameter},
+    CloseReason,
     // tracking::DEFAULT_ACK_PACKET_TOLERANCE,
     Connection,
-    ConnectionError,
     ConnectionParameters,
     Error,
     StreamId,
@@ -114,12 +114,6 @@ fn transfer() {
     let (received3, fin3) = server.stream_recv(second_stream, &mut buf).unwrap();
     assert_eq!(received3, 60);
     assert!(fin3);
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct IdEntry {
-    sendorder: StreamOrder,
-    stream_id: StreamId,
 }
 
 // tests stream sendorder priorization
@@ -500,12 +494,9 @@ fn exceed_max_data() {
 
     assert_error(
         &client,
-        &ConnectionError::Transport(Error::PeerError(Error::FlowControlError.code())),
+        &CloseReason::Transport(Error::PeerError(Error::FlowControlError.code())),
     );
-    assert_error(
-        &server,
-        &ConnectionError::Transport(Error::FlowControlError),
-    );
+    assert_error(&server, &CloseReason::Transport(Error::FlowControlError));
 }
 
 #[test]

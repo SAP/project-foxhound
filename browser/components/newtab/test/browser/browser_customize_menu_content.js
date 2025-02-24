@@ -1,5 +1,15 @@
 "use strict";
 
+const { WeatherFeed } = ChromeUtils.importESModule(
+  "resource://activity-stream/lib/WeatherFeed.sys.mjs"
+);
+
+ChromeUtils.defineESModuleGetters(this, {
+  MerinoTestUtils: "resource://testing-common/MerinoTestUtils.sys.mjs",
+});
+
+const { WEATHER_SUGGESTION } = MerinoTestUtils;
+
 test_newtab({
   async before({ pushPrefs }) {
     await pushPrefs(
@@ -113,6 +123,79 @@ test_newtab({
     );
     Services.prefs.clearUserPref(
       "browser.newtabpage.activity-stream.feeds.section.highlights"
+    );
+  },
+});
+
+test_newtab({
+  async before({ pushPrefs }) {
+    sinon.stub(WeatherFeed.prototype, "MerinoClient").returns({
+      fetch: () => [WEATHER_SUGGESTION],
+    });
+    await pushPrefs(
+      ["browser.newtabpage.activity-stream.system.showWeather", true],
+      ["browser.newtabpage.activity-stream.showWeather", false]
+    );
+  },
+  test: async function test_render_customizeMenuWeather() {
+    // Weather Widget Fecthing
+    function getWeatherWidget() {
+      return content.document.querySelector(`.weather`);
+    }
+
+    function promiseWeatherShown() {
+      return ContentTaskUtils.waitForMutationCondition(
+        content.document.querySelector("aside"),
+        { childList: true, subtree: true },
+        () => getWeatherWidget()
+      );
+    }
+
+    const WEATHER_PREF = "browser.newtabpage.activity-stream.showWeather";
+
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.querySelector(".personalize-button"),
+      "Wait for prefs button to load on the newtab page"
+    );
+
+    let customizeButton = content.document.querySelector(".personalize-button");
+    customizeButton.click();
+
+    let defaultPos = "matrix(1, 0, 0, 1, 0, 0)";
+    await ContentTaskUtils.waitForCondition(
+      () =>
+        content.getComputedStyle(
+          content.document.querySelector(".customize-menu")
+        ).transform === defaultPos,
+      "Customize Menu should be visible on screen"
+    );
+
+    // Test that clicking the weather toggle will make the
+    // weather widget appear on the newtab page.
+    //
+    // We waive XRay wrappers because we want to call the click()
+    // method defined on the toggle from this context.
+    let weatherSwitch = Cu.waiveXrays(
+      content.document.querySelector("#weather-section moz-toggle")
+    );
+    Assert.ok(
+      !Services.prefs.getBoolPref(WEATHER_PREF),
+      "Weather pref is turned off"
+    );
+    Assert.ok(!getWeatherWidget(), "Weather widget is not rendered");
+
+    let sectionShownPromise = promiseWeatherShown();
+    weatherSwitch.click();
+    await sectionShownPromise;
+
+    Assert.ok(getWeatherWidget(), "Weather widget is rendered");
+  },
+  async after() {
+    Services.prefs.clearUserPref(
+      "browser.newtabpage.activity-stream.showWeather"
+    );
+    Services.prefs.clearUserPref(
+      "browser.newtabpage.activity-stream.system.showWeather"
     );
   },
 });

@@ -622,24 +622,14 @@ dom.isDisabled = function (el) {
     return false;
   }
 
-  switch (el.localName) {
-    case "option":
-    case "optgroup":
-      if (el.disabled) {
-        return true;
-      }
-      let parent = dom.findClosest(el, "optgroup,select");
-      return dom.isDisabled(parent);
-
-    case "button":
-    case "input":
-    case "select":
-    case "textarea":
-      return el.disabled;
-
-    default:
-      return false;
+  // Selenium expects that even an enabled "option" element that is a child
+  // of a disabled "optgroup" or "select" element to be disabled.
+  if (["optgroup", "option"].includes(el.localName) && !el.disabled) {
+    const parent = dom.findClosest(el, "optgroup,select");
+    return dom.isDisabled(parent);
   }
+
+  return el.matches(":disabled");
 };
 
 /**
@@ -1062,6 +1052,16 @@ dom.scrollIntoView = function (el) {
  */
 dom.isElement = function (obj) {
   return dom.isDOMElement(obj) || dom.isXULElement(obj);
+};
+
+dom.isEnabled = function (el) {
+  let enabled = false;
+
+  if (el.ownerDocument.contentType !== "text/xml") {
+    enabled = !dom.isDisabled(el);
+  }
+
+  return enabled;
 };
 
 /**

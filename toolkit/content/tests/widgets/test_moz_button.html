@@ -17,6 +17,33 @@
 }
 </style>
   <script>
+    const { AddonManager } = ChromeUtils.importESModule(
+      "resource://gre/modules/AddonManager.sys.mjs"
+    );
+    // Always run tests with the light theme for consistency and to avoid from false
+    // test passes arising from the fact that --icon-color and --button-text-color
+    // have the same value in the dark theme.
+    add_setup(async function () {
+      // Developer Edition enables the wrong theme by default. Make sure
+      // the ordinary default theme is enabled.
+      let theme = await AddonManager.getAddonByID("default-theme@mozilla.org");
+      await theme.enable();
+
+      await SpecialPowers.pushPrefEnv({
+        set: [
+          ["ui.systemUsesDarkTheme", 0],
+        ],
+      });
+      // Triggers a refresh to ensure new theme applied.
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      ok(window.matchMedia("(prefers-color-scheme: light)").matches, "Light theme is active.");
+
+      // Move mouse to the bottom of the test frame to prevent hover on buttons.
+      let mouseTrap = document.getElementById("mouse-trap");
+      await synthesizeMouseAtCenter(mouseTrap, { type: "mousemove" });
+      ok(mouseTrap.matches(":hover"), "The mouse trap is hovered");
+    });
+
     function normalizeColor(val, computedStyles) {
       if (val.includes("currentColor")) {
         val = val.replaceAll("currentColor", computedStyles.color);
@@ -37,7 +64,7 @@
     }
 
     function assertButtonPropertiesMatch(el, propertyToCssVar) {
-      let elStyles = getComputedStyle(el.buttonEl);
+      let elStyles = el.buttonEl ? getComputedStyle(el.buttonEl) : getComputedStyle(el);
       for (let [property, cssVar] of Object.entries(propertyToCssVar)) {
         let propertyVal = elStyles[property];
         let cssVarVal = cssVar.startsWith("--") ? elStyles.getPropertyValue(cssVar) : cssVar;
@@ -52,13 +79,14 @@
 
     add_task(async function testButtonTypes() {
       let [...buttons] = document.querySelectorAll("moz-button");
-      let [one, two, three, four, five, six] = buttons;
+      let [one, two, three, four, five, six, seven] = buttons;
 
       await Promise.all(buttons.map(btn => btn.updateComplete));
 
       is(one.textContent, "Test button", "Text is set");
       is(two.buttonEl.textContent.trim(), "Test button", "Text is set");
       is(three.textContent, "Test button", "Text is set");
+      is(seven.buttonEl.textContent.trim(), "Test button", "Text is set");
 
       assertButtonPropertiesMatch(one, {
         backgroundColor: "--button-background-color",
@@ -75,7 +103,6 @@
         color: "--button-text-color-primary",
         height: "--button-min-height",
       });
-
       assertButtonPropertiesMatch(four, {
         width: "--button-size-icon",
         height: "--button-size-icon",
@@ -93,6 +120,11 @@
         height: "--button-size-icon",
         backgroundColor: "transparent",
         fill: "--button-text-color",
+      });
+      assertButtonPropertiesMatch(seven, {
+        backgroundColor: "--button-background-color",
+        color: "--button-text-color",
+        height: "--button-min-height",
       });
 
       buttons.forEach(btn => (btn.size = "small"));
@@ -120,6 +152,9 @@
         width: "--button-size-icon-small",
         height: "--button-size-icon-small",
       });
+      assertButtonPropertiesMatch(seven, {
+        height: "--button-min-height-small",
+      });
     });
 
     add_task(async function testA11yAttributes() {
@@ -145,14 +180,97 @@
       await testProperty("aria-label", "ariaLabel");
     });
 
+    add_task(async function testIconButtons() {
+      let buttons = ["four", "five", "six", "seven", "eight", "nine", "ten"].map(
+        className => document.querySelector(`.${className}`)
+      );
+      let [four, five, six, seven, eight, nine, ten] = buttons;
+      await Promise.all(buttons.map(btn => btn.updateComplete));
+
+      function verifyBackgroundIcon(button) {
+        let img = button.shadowRoot.querySelector("img");
+        ok(!img, "button does not use an img element to display an icon");
+        assertButtonPropertiesMatch(button, {
+          fill: "--button-text-color",
+          backgroundSize: "--icon-size-default",
+        });
+      }
+
+      function verifyImageIcon(button) {
+        let img = button.shadowRoot.querySelector("img");
+        ok(img, "button uses an inner img element to display an icon");
+        is(img.src, "chrome://global/skin/icons/edit.svg", "button displays the expected icon");
+        assertButtonPropertiesMatch(img, {
+          fill: "--button-text-color",
+          width: "--icon-size-default",
+          height: "--icon-size-default",
+        });
+      }
+
+      verifyBackgroundIcon(four);
+      verifyBackgroundIcon(five);
+      verifyBackgroundIcon(six);
+
+      verifyImageIcon(seven);
+      verifyImageIcon(eight);
+      verifyImageIcon(nine);
+      verifyImageIcon(ten);
+      is(ten.buttonEl.innerText, "Edit", "ten's label is correct");
+
+      nine.textContent = "With text";
+      // Ensure we've painted before checking styles
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      verifyImageIcon(nine);
+
+      nine.textContent = "";
+      // Ensure we've painted before checking styles
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      verifyImageIcon(nine);
+    });
   </script>
 </head>
 <body>
-  <moz-button class="one">Test button</moz-button>
-  <moz-button class="two" label="Test button"></moz-button>
-  <moz-button class="three" type="primary">Test button</moz-button>
-  <moz-button class="four" type="icon"></moz-button>
-  <moz-button class="five" type="icon ghost"></moz-button>
-  <moz-button class="six" type="ghost icon"></moz-button>
+  <style>
+    .wrapper {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 64px;
+    }
+  </style>
+  <div class="wrapper">
+    <div>
+      <moz-button class="one">Test button</moz-button>
+      <moz-button class="two" label="Test button"></moz-button>
+      <moz-button class="three" type="primary">Test button</moz-button>
+      <moz-button class="four" type="icon"></moz-button>
+      <moz-button class="five" type="icon ghost"></moz-button>
+      <moz-button class="six" type="ghost icon"></moz-button>
+      <moz-button
+        class="seven"
+        label="Test button"
+        iconsrc="chrome://global/skin/icons/edit.svg"
+      ></moz-button>
+      <moz-button
+        class="eight"
+        iconsrc="chrome://global/skin/icons/edit.svg"
+      ></moz-button>
+      <!-- Used to verify that empty space doesn't get treated as a label -->
+      <moz-button
+        class="nine"
+        type="ghost"
+        iconsrc="chrome://global/skin/icons/edit.svg"
+      >   </moz-button>
+      <!-- Used to verify that empty space doesn't overwrite a label property -->
+      <moz-button
+      class="ten"
+      label="Edit"
+      type="ghost"
+      iconsrc="chrome://global/skin/icons/edit.svg"
+      >   </moz-button>
+    </div>
+    <button id="mouse-trap">Mouse goes here</button>
+  </div>
 </body>
 </html>

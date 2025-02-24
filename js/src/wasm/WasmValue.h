@@ -224,9 +224,9 @@ class LitVal {
   Cell& cell() { return cell_; }
   const Cell& cell() const { return cell_; }
 
-  // Updates the type of the LitVal. Does not check that the type is valid for the
-  // actual value, so make sure the type is definitely correct via validation or
-  // something.
+  // Updates the type of the LitVal. Does not check that the type is valid for
+  // the actual value, so make sure the type is definitely correct via
+  // validation or something.
   void unsafeSetType(ValType type) { type_ = type; }
 
   uint32_t i32() const {
@@ -370,6 +370,10 @@ using RootedValVectorN = Rooted<ValVectorN<N>>;
 // The same as above for when the target type is 'anyref'.
 [[nodiscard]] extern bool CheckAnyRefValue(JSContext* cx, HandleValue v,
                                            MutableHandleAnyRef vp);
+
+// The same as above for when the target type is 'nullexnref'.
+[[nodiscard]] extern bool CheckNullExnRefValue(JSContext* cx, HandleValue v,
+                                               MutableHandleAnyRef vp);
 
 // The same as above for when the target type is 'nullexternref'.
 [[nodiscard]] extern bool CheckNullExternRefValue(JSContext* cx, HandleValue v,

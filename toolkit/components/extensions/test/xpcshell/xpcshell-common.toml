@@ -155,12 +155,18 @@ skip-if = [
 
 ["test_ext_contentscript_module_import.js"]
 
+["test_ext_contentscript_preloading.js"]
+
 ["test_ext_contentscript_restrictSchemes.js"]
+
+["test_ext_contentscript_slow_frame.js"]
 
 ["test_ext_contentscript_teardown.js"]
 skip-if = ["tsan"] # Bug 1683730
 
 ["test_ext_contentscript_unregister_during_loadContentScript.js"]
+
+["test_ext_contentscript_world.js"]
 
 ["test_ext_contentscript_xml_prettyprint.js"]
 
@@ -177,6 +183,7 @@ skip-if = [
 ]
 
 ["test_ext_cookieBehaviors.js"]
+requesttimeoutfactor = 3 # deleteDatabase may take several minutes in slow environments, Android (bug 1896262)
 skip-if = [
   "appname == 'thunderbird'",
   "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
@@ -209,6 +216,8 @@ skip-if = [
 
 ["test_ext_dnr_api.js"]
 
+["test_ext_dnr_domainType.js"]
+
 ["test_ext_dnr_download.js"]
 skip-if = ["os == 'android'"] # Android: downloads.download goes through the embedder app instead of Gecko, and cannot be intercepted.
 
@@ -229,12 +238,17 @@ skip-if = ["os == 'android'"] # Android: downloads.download goes through the emb
 ["test_ext_dnr_startup_cache.js"]
 
 ["test_ext_dnr_static_rules.js"]
+requesttimeoutfactor = 4 # Prevent TV job failures on Android builds.
+
+["test_ext_dnr_static_rules_limits.js"]
 
 ["test_ext_dnr_system_restrictions.js"]
 
 ["test_ext_dnr_tabIds.js"]
 
 ["test_ext_dnr_testMatchOutcome.js"]
+
+["test_ext_dnr_update_static_rules.js"]
 
 ["test_ext_dnr_urlFilter.js"]
 
@@ -355,6 +369,8 @@ skip-if = ["appname == 'thunderbird'"]
 ["test_ext_onmessage_removelistener.js"]
 skip-if = ["true"] # This test no longer tests what it is meant to test.
 
+["test_ext_optional_host_permissions.js"]
+
 ["test_ext_permission_xhr.js"]
 
 ["test_ext_permissions.js"]
@@ -432,6 +448,8 @@ skip-if = ["os == 'android' && debug"]
 
 ["test_ext_runtime_getBrowserInfo.js"]
 
+["test_ext_runtime_getContexts.js"]
+
 ["test_ext_runtime_getPlatformInfo.js"]
 
 ["test_ext_runtime_id.js"]
@@ -440,6 +458,8 @@ skip-if = ["ccov && os == 'linux'"] # bug 1607581
 ["test_ext_runtime_messaging_self.js"]
 
 ["test_ext_runtime_onInstalled_and_onStartup.js"]
+
+["test_ext_runtime_onPerformanceWarning.js"]
 
 ["test_ext_runtime_ports.js"]
 
@@ -480,6 +500,7 @@ run-sequentially = "very high failure rate in parallel"
 ["test_ext_scripting_mv2.js"]
 
 ["test_ext_scripting_persistAcrossSessions.js"]
+requesttimeoutfactor = 2 # Needed for Android + TV (chaos mode) - bug 1899777
 
 ["test_ext_scripting_startupCache.js"]
 
@@ -533,7 +554,7 @@ skip-if = ["os == 'android'"] # Bug 1564871
 ["test_ext_storage_sanitizer.js"]
 skip-if = [
   "appname == 'thunderbird'",
-  "os == 'android'", # Sanitizer.jsm is not in toolkit.
+  "os == 'android'", # Sanitizer.sys.mjs is not in toolkit.
 ]
 
 ["test_ext_storage_session.js"]
@@ -587,7 +608,10 @@ skip-if = [
 ["test_ext_wasm.js"]
 
 ["test_ext_webRequest_auth.js"]
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+   "os == 'android' && debug",
+]
+requesttimeoutfactor = 4 # Prevents TV job failures on Android builds.
 
 ["test_ext_webRequest_cached.js"]
 skip-if = ["os == 'android'"] # Bug 1573511
@@ -616,7 +640,9 @@ skip-if = ["os == 'android' && debug"]
 skip-if = ["tsan"] # Bug 1683730
 
 ["test_ext_webRequest_permission.js"]
-skip-if = ["os == 'android' && debug"]
+skip-if = [
+  "os == 'android' && debug",
+]
 
 ["test_ext_webRequest_redirectProperty.js"]
 skip-if = ["os == 'android' && processor == 'x86_64'"] # Bug 1683253

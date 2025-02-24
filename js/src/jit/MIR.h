@@ -42,6 +42,7 @@
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/Value.h"
 #include "js/Vector.h"
+#include "util/DifferentialTesting.h"
 #include "vm/BigIntType.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
@@ -1890,6 +1891,7 @@ class MTest : public MAryControlInstruction<1, 2>, public TestPolicy::Data {
   MDefinition* foldsConstant(TempAllocator& alloc);
   MDefinition* foldsTypes(TempAllocator& alloc);
   MDefinition* foldsNeedlessControlFlow(TempAllocator& alloc);
+  MDefinition* foldsRedundantTest(TempAllocator& alloc);
   MDefinition* foldsTo(TempAllocator& alloc) override;
 
 #ifdef DEBUG
@@ -2309,7 +2311,7 @@ class WrappedFunction : public TempObject {
     return nativeFun_->nativeUnchecked();
   }
   bool hasJitInfo() const {
-    return flags_.isBuiltinNative() && nativeFun_->jitInfoUnchecked();
+    return flags_.canHaveJitInfo() && nativeFun_->jitInfoUnchecked();
   }
   const JSJitInfo* jitInfo() const {
     MOZ_ASSERT(hasJitInfo());
@@ -11894,7 +11896,13 @@ class MWasmNewStructObject : public MBinaryInstruction,
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, instance), (1, typeDefData))
 
-  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  AliasSet getAliasSet() const override {
+    if (js::SupportDifferentialTesting()) {
+      // Consider allocations effectful for differential testing.
+      return MDefinition::getAliasSet();
+    }
+    return AliasSet::None();
+  }
   bool isOutline() const { return isOutline_; }
   bool zeroFields() const { return zeroFields_; }
   gc::AllocKind allocKind() const { return allocKind_; }
@@ -11922,7 +11930,13 @@ class MWasmNewArrayObject : public MTernaryInstruction,
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, instance), (1, numElements), (2, typeDefData))
 
-  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  AliasSet getAliasSet() const override {
+    if (js::SupportDifferentialTesting()) {
+      // Consider allocations effectful for differential testing.
+      return MDefinition::getAliasSet();
+    }
+    return AliasSet::None();
+  }
   uint32_t elemSize() const { return elemSize_; }
   bool zeroFields() const { return zeroFields_; }
   wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }

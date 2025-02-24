@@ -9,6 +9,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -16,6 +17,13 @@ XPCOMUtils.defineLazyServiceGetter(
   "XreDirProvider",
   "@mozilla.org/xre/directory-provider;1",
   "nsIXREDirProvider"
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "BackgroundTasks",
+  "@mozilla.org/backgroundtasks;1",
+  "nsIBackgroundTasks"
 );
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -314,14 +322,33 @@ let ShellServiceInternal = {
     }
   },
 
+  async _maybeShowSetDefaultGuidanceNotification() {
+    if (
+      lazy.NimbusFeatures.shellService.getVariable(
+        "setDefaultGuidanceNotifications"
+      ) &&
+      // Do not show guidance if one-click set to default is enabled
+      !lazy.NimbusFeatures.shellService.getVariable(
+        "setDefaultBrowserUserChoiceRegRename"
+      ) &&
+      // Disable showing toast notification from Firefox Background Tasks.
+      !lazy.BackgroundTasks?.isBackgroundTaskMode
+    ) {
+      await lazy.ASRouter.waitForInitialized;
+      const win = Services.wm.getMostRecentBrowserWindow() ?? null;
+      lazy.ASRouter.sendTriggerMessage({
+        browser: win,
+        id: "deeplinkedToWindowsSettingsUI",
+      });
+    }
+  },
+
   // override nsIShellService.setDefaultBrowser() on the ShellService proxy.
   async setDefaultBrowser(forAllUsers) {
     // On Windows, our best chance is to set UserChoice, so try that first.
     if (
       AppConstants.platform == "win" &&
-      lazy.NimbusFeatures.shellService.getVariable(
-        "setDefaultBrowserUserChoice"
-      )
+      Services.prefs.getBoolPref("browser.shell.setDefaultBrowserUserChoice")
     ) {
       try {
         await this.setAsDefaultUserChoice();
@@ -337,6 +364,7 @@ let ShellServiceInternal = {
     }
 
     this.shellService.setDefaultBrowser(forAllUsers);
+    this._maybeShowSetDefaultGuidanceNotification();
   },
 
   async setAsDefault() {

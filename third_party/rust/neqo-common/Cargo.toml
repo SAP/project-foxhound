@@ -11,11 +11,10 @@
 
 [package]
 edition = "2021"
-rust-version = "1.74.0"
+rust-version = "1.76.0"
 name = "neqo-common"
-version = "0.7.2"
+version = "0.7.9"
 authors = ["The Neqo Authors <necko@mozilla.com>"]
-build = "build.rs"
 homepage = "https://github.com/mozilla/neqo/"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/mozilla/neqo/"
@@ -31,45 +30,36 @@ default-features = false
 version = "0.10"
 default-features = false
 
+[dependencies.hex]
+version = "0.4"
+features = ["alloc"]
+optional = true
+default-features = false
+
 [dependencies.log]
 version = "0.4"
 default-features = false
 
 [dependencies.qlog]
-version = "0.12"
+version = "0.13"
 default-features = false
-
-[dependencies.quinn-udp]
-git = "https://github.com/quinn-rs/quinn/"
-rev = "a947962131aba8a6521253d03cc948b20098a2d6"
-optional = true
 
 [dependencies.time]
 version = "0.3"
 features = ["formatting"]
 default-features = false
 
-[dependencies.tokio]
-version = "1"
-features = [
-    "net",
-    "time",
-    "macros",
-    "rt",
-    "rt-multi-thread",
-]
-optional = true
+[dev-dependencies.criterion]
+version = "0.5"
+features = ["html_reports"]
 default-features = false
 
 [dev-dependencies.test-fixture]
 path = "../test-fixture"
 
 [features]
+build-fuzzing-corpus = ["hex"]
 ci = []
-udp = [
-    "dep:quinn-udp",
-    "dep:tokio",
-]
 
 [target."cfg(windows)".dependencies.winapi]
 version = "0.3"

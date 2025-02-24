@@ -11,9 +11,9 @@
 
 [package]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74"
 name = "naga"
-version = "0.19.0"
+version = "0.20.0"
 authors = ["gfx-rs developers"]
 exclude = [
     "bin/**/*",
@@ -41,18 +41,13 @@ all-features = true
 name = "naga-test"
 path = "tests/root.rs"
 
-[[bench]]
-name = "criterion"
-harness = false
-
 [dependencies]
 arrayvec = "0.7"
 bit-set = "0.5"
-bitflags = "2.4"
+bitflags = "2.5"
 log = "0.4"
-num-traits = "0.2"
 rustc-hash = "1.1.0"
-thiserror = "1.0.57"
+thiserror = "1.0.61"
 
 [dependencies.arbitrary]
 version = "1.3"
@@ -79,7 +74,7 @@ version = "0.2.1"
 optional = true
 
 [dependencies.serde]
-version = "1.0.196"
+version = "1.0.202"
 features = ["derive"]
 optional = true
 
@@ -95,9 +90,8 @@ version = "0.2.3"
 optional = true
 
 [dev-dependencies]
-bincode = "1"
 diff = "0.1"
-env_logger = "0.10"
+env_logger = "0.11"
 ron = "0.8.0"
 
 [dev-dependencies.hlsl-snapshots]
@@ -122,36 +116,31 @@ arbitrary = [
     "bitflags/arbitrary",
     "indexmap/arbitrary",
 ]
-clone = []
 compact = []
 default = []
 deserialize = [
-    "serde",
+    "dep:serde",
     "bitflags/serde",
     "indexmap/serde",
 ]
 dot-out = []
-glsl-in = ["pp-rs"]
+glsl-in = ["dep:pp-rs"]
 glsl-out = []
 hlsl-out = []
 msl-out = []
 serialize = [
-    "serde",
+    "dep:serde",
     "bitflags/serde",
     "indexmap/serde",
 ]
 spv-in = [
-    "petgraph",
-    "spirv",
+    "dep:petgraph",
+    "dep:spirv",
 ]
-spv-out = ["spirv"]
+spv-out = ["dep:spirv"]
 wgsl-in = [
-    "hexf-parse",
-    "unicode-xid",
+    "dep:hexf-parse",
+    "dep:unicode-xid",
     "compact",
 ]
 wgsl-out = []
-
-[target."cfg(not(target_arch = \"wasm32\"))".dev-dependencies.criterion]
-version = "0.5"
-features = []

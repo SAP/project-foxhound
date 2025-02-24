@@ -55,9 +55,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.serpEventTelemetry.enabled", true]],
-  });
 
   registerCleanupFunction(async () => {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
@@ -83,6 +80,7 @@ async function loadSerpAndClickShoppingTab(page) {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "true",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -109,6 +107,7 @@ async function loadSerpAndClickShoppingTab(page) {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "true",
+        is_signed_in: "false",
       },
       engagements: [
         {

@@ -162,7 +162,7 @@ async function loadPageAndReload(testCase) {
         }
       );
       is(true, hasInteractedWith, "Simulated successfully user interaction");
-      BrowserReloadWithFlags(testCase.reloadFlag);
+      BrowserCommands.reloadWithFlags(testCase.reloadFlag);
       await BrowserTestUtils.browserLoaded(browser);
       is(true, true, `reload with flag ${testCase.name} was successful`);
     }
@@ -201,7 +201,10 @@ async function loadPagesAndUseBackButton() {
       info("Clicking back button");
       let backButton = document.getElementById("back-button");
       backButton.click();
-      await BrowserTestUtils.browserLoaded(browser);
+      await BrowserTestUtils.waitForLocationChange(
+        gBrowser,
+        `${TEST_PATH_HTTP}file_beforeunload_permit_http.html`
+      );
       is(true, true, `Got back successful`);
     }
   );

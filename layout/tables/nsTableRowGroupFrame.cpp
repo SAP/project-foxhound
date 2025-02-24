@@ -254,10 +254,10 @@ LogicalSides nsTableRowGroupFrame::GetLogicalSkipSides() const {
   }
 
   if (GetPrevInFlow()) {
-    skip |= eLogicalSideBitsBStart;
+    skip += LogicalSide::BStart;
   }
   if (GetNextInFlow()) {
-    skip |= eLogicalSideBitsBEnd;
+    skip += LogicalSide::BEnd;
   }
   return skip;
 }
@@ -1122,7 +1122,7 @@ void nsTableRowGroupFrame::SplitRowGroup(nsPresContext* aPresContext,
         FinishReflowChild(rowFrame, aPresContext, rowMetrics, &rowReflowInput,
                           wm, dummyPos, dummyContainerSize,
                           ReflowChildFlags::NoMoveFrame);
-        rowFrame->DidResize();
+        rowFrame->DidResize(ForceAlignTopForTableCell::Yes);
 
         if (!aRowForcedPageBreak && !aStatus.IsFullyComplete() &&
             ShouldAvoidBreakInside(aReflowInput)) {
@@ -1324,7 +1324,6 @@ void nsTableRowGroupFrame::Reflow(nsPresContext* aPresContext,
                                   nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsTableRowGroupFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   // Row geometry may be going to change so we need to invalidate any row
@@ -1627,10 +1626,8 @@ LogicalMargin nsTableRowGroupFrame::GetBCBorderWidth(WritingMode aWM) {
        rowFrame = rowFrame->GetNextRow()) {
     lastRowFrame = rowFrame;
   }
-  border.BStart(aWM) = PresContext()->DevPixelsToAppUnits(
-      firstRowFrame->GetBStartBCBorderWidth());
-  border.BEnd(aWM) =
-      PresContext()->DevPixelsToAppUnits(lastRowFrame->GetBEndBCBorderWidth());
+  border.BStart(aWM) = firstRowFrame->GetBStartBCBorderWidth();
+  border.BEnd(aWM) = lastRowFrame->GetBEndBCBorderWidth();
   return border;
 }
 

@@ -17,6 +17,7 @@
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsContainerFrame.h"
@@ -27,7 +28,6 @@
 #include "nsFrameManager.h"
 #include "nsGkAtoms.h"
 #include "nsIFrameInlines.h"
-#include "nsIScrollableFrame.h"
 #include "nsPresContext.h"
 
 using namespace mozilla;
@@ -196,8 +196,7 @@ void nsCanvasFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
 }
 
 void nsCanvasFrame::Destroy(DestroyContext& aContext) {
-  nsIScrollableFrame* sf = PresShell()->GetRootScrollFrameAsScrollable();
-  if (sf) {
+  if (ScrollContainerFrame* sf = PresShell()->GetRootScrollContainerFrame()) {
     sf->RemoveScrollPositionListener(this);
   }
 
@@ -222,8 +221,8 @@ nsCanvasFrame::SetHasFocus(bool aHasFocus) {
     PresShell()->GetRootFrame()->InvalidateFrameSubtree();
 
     if (!mAddedScrollPositionListener) {
-      nsIScrollableFrame* sf = PresShell()->GetRootScrollFrameAsScrollable();
-      if (sf) {
+      if (ScrollContainerFrame* sf =
+              PresShell()->GetRootScrollContainerFrame()) {
         sf->AddScrollPositionListener(this);
         mAddedScrollPositionListener = true;
       }
@@ -279,9 +278,8 @@ nsRect nsCanvasFrame::CanvasArea() const {
   // matter.
   nsRect result(InkOverflowRect());
 
-  nsIScrollableFrame* scrollableFrame = do_QueryFrame(GetParent());
-  if (scrollableFrame) {
-    nsRect portRect = scrollableFrame->GetScrollPortRect();
+  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(GetParent())) {
+    nsRect portRect = scrollContainerFrame->GetScrollPortRect();
     result.UnionRect(result, nsRect(nsPoint(0, 0), portRect.Size()));
   }
   return result;
@@ -546,6 +544,8 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         layers.mImageCount > 0 &&
         layers.mLayers[0].mAttachment == StyleImageLayerAttachment::Fixed;
 
+    nsDisplayList list(aBuilder);
+
     if (!hasFixedBottomLayer || needBlendContainer) {
       // Put a scrolled background color item in place, at the bottom of the
       // list. The color of this item will be filled in during
@@ -557,20 +557,18 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       // interleaving the two with a scrolled background color.
       // PresShell::AddCanvasBackgroundColorItem makes sure there always is a
       // non-scrolled background color item at the bottom.
-      aLists.BorderBackground()->AppendNewToTop<nsDisplayCanvasBackgroundColor>(
-          aBuilder, this);
+      list.AppendNewToTop<nsDisplayCanvasBackgroundColor>(aBuilder, this);
     }
 
-    aLists.BorderBackground()->AppendToTop(&layerItems);
+    list.AppendToTop(&layerItems);
 
     if (needBlendContainer) {
       const ActiveScrolledRoot* containerASR = contASRTracker.GetContainerASR();
       DisplayListClipState::AutoSaveRestore blendContainerClip(aBuilder);
-      aLists.BorderBackground()->AppendToTop(
-          nsDisplayBlendContainer::CreateForBackgroundBlendMode(
-              aBuilder, this, nullptr, aLists.BorderBackground(),
-              containerASR));
+      list.AppendToTop(nsDisplayBlendContainer::CreateForBackgroundBlendMode(
+          aBuilder, this, nullptr, &list, containerASR));
     }
+    aLists.BorderBackground()->AppendToTop(&list);
   }
 
   for (nsIFrame* kid : PrincipalChildList()) {
@@ -588,12 +586,11 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
   nsRect focusRect(aPt, GetSize());
 
-  nsIScrollableFrame* scrollableFrame = do_QueryFrame(GetParent());
-  if (scrollableFrame) {
-    nsRect portRect = scrollableFrame->GetScrollPortRect();
+  if (ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(GetParent())) {
+    nsRect portRect = scrollContainerFrame->GetScrollPortRect();
     focusRect.width = portRect.width;
     focusRect.height = portRect.height;
-    focusRect.MoveBy(scrollableFrame->GetScrollPosition());
+    focusRect.MoveBy(scrollContainerFrame->GetScrollPosition());
   }
 
   // XXX use the root frame foreground color, but should we find BODY frame
@@ -606,24 +603,16 @@ void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
 
 /* virtual */
 nscoord nsCanvasFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-  if (mFrames.IsEmpty())
-    result = 0;
-  else
-    result = mFrames.FirstChild()->GetMinISize(aRenderingContext);
-  return result;
+  return mFrames.IsEmpty()
+             ? 0
+             : mFrames.FirstChild()->GetMinISize(aRenderingContext);
 }
 
 /* virtual */
 nscoord nsCanvasFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
-  if (mFrames.IsEmpty())
-    result = 0;
-  else
-    result = mFrames.FirstChild()->GetPrefISize(aRenderingContext);
-  return result;
+  return mFrames.IsEmpty()
+             ? 0
+             : mFrames.FirstChild()->GetPrefISize(aRenderingContext);
 }
 
 void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
@@ -632,7 +621,6 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
                            nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsCanvasFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE_REFLOW_IN("nsCanvasFrame::Reflow");
 

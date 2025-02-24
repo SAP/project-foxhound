@@ -1,7 +1,6 @@
 [DEFAULT]
 support-files = [
   "dummy.html",
-  "ioactivity.html",
   "redirect.sjs",
   "auth_post.sjs",
   "early_hint_main_html.sjs",
@@ -72,6 +71,15 @@ support-files = [
   "x_frame_options.html^headers^",
   "test_1629307.html",
   "file_link_header.sjs",
+  "file_link_dns_prefetch.sjs",
+  "bug968273_new.html",
+  "bug968273_redirect.html",
+  "bug968273_redirect.html^headers^",
+  "file_bug968273.html",
+]
+
+prefs = [
+  "network.fetch.systemDefaultsToOmittingCredentials=false"
 ]
 
 ["browser_103_assets.js"]
@@ -152,6 +160,11 @@ skip-if = ["os == 'win'"] # Bug 1775761
 
 ["browser_cookie_sync_across_tabs.js"]
 
+["browser_display_plaintext_types.js"]
+support-files = ["res_hello_h1.sjs"]
+
+["browser_dns_prefetch_link_header.js"]
+
 ["browser_fetch_lnk.js"]
 run-if = ["os == 'win'"]
 support-files = ["file_lnk.lnk",]
@@ -182,7 +195,6 @@ support-files = [
   "file_favicon.html",
 ]
 
-["browser_test_io_activity.js"]
-skip-if = ["socketprocess_networking"]
-
 ["browser_test_offline_tab.js"]
+
+["browser_bug968273.js"]

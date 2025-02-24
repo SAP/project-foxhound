@@ -44,6 +44,7 @@
 #include "gc/Marking.h"
 #include "gc/PublicIterators.h"
 #include "jit/JitSpewer.h"
+#include "jit/TrampolineNatives.h"
 #include "js/CallAndConstruct.h"  // JS::IsCallable
 #include "js/CharacterEncoding.h"
 #include "js/ColumnNumber.h"  // JS::TaggedColumnNumberOneOrigin, JS::ColumnNumberOneOrigin
@@ -54,6 +55,7 @@
 #include "js/Date.h"  // JS::GetReduceMicrosecondTimePrecisionCallback
 #include "js/ErrorInterceptor.h"
 #include "js/ErrorReport.h"           // JSErrorBase
+#include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/GlobalObject.h"
@@ -1437,7 +1439,7 @@ JS_PUBLIC_API void JS_SetGCParametersBasedOnAvailableMemory(
   };
 
   static const JSGCConfig minimal[] = {
-      {JSGC_SLICE_TIME_BUDGET_MS, 5},
+      {JSGC_SLICE_TIME_BUDGET_MS, 10},
       {JSGC_HIGH_FREQUENCY_TIME_LIMIT, 1500},
       {JSGC_LARGE_HEAP_SIZE_MIN, 250},
       {JSGC_SMALL_HEAP_SIZE_MAX, 50},
@@ -1451,7 +1453,7 @@ JS_PUBLIC_API void JS_SetGCParametersBasedOnAvailableMemory(
       {JSGC_URGENT_THRESHOLD_MB, 8}};
 
   static const JSGCConfig nominal[] = {
-      {JSGC_SLICE_TIME_BUDGET_MS, 5},
+      {JSGC_SLICE_TIME_BUDGET_MS, 10},
       {JSGC_HIGH_FREQUENCY_TIME_LIMIT, 1000},
       {JSGC_LARGE_HEAP_SIZE_MIN, 500},
       {JSGC_SMALL_HEAP_SIZE_MAX, 100},
@@ -1607,7 +1609,8 @@ JS_PUBLIC_API bool JS::ToPrimitive(JSContext* cx, HandleObject obj, JSType hint,
   return ToPrimitiveSlow(cx, hint, vp);
 }
 
-JS_PUBLIC_API bool JS::GetFirstArgumentAsTypeHint(JSContext* cx, CallArgs args,
+JS_PUBLIC_API bool JS::GetFirstArgumentAsTypeHint(JSContext* cx,
+                                                  const CallArgs& args,
                                                   JSType* result) {
   if (!args.get(0).isString()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -1978,6 +1981,12 @@ JS_PUBLIC_API void JS::SetHostEnsureCanAddPrivateElementHook(
   cx->runtime()->canAddPrivateElement = op;
 }
 
+JS_PUBLIC_API bool JS::SetBrittleMode(JSContext* cx, bool setting) {
+  bool wasBrittle = cx->brittleMode;
+  cx->brittleMode = setting;
+  return wasBrittle;
+}
+
 /*** Standard internal methods **********************************************/
 
 JS_PUBLIC_API bool JS_GetPrototype(JSContext* cx, HandleObject obj,
@@ -2340,8 +2349,12 @@ JS_PUBLIC_API JSFunction* JS::NewFunctionFromSpec(JSContext* cx,
     return nullptr;
   }
 
-  if (fs->call.info) {
-    fun->setJitInfo(fs->call.info);
+  if (auto* jitInfo = fs->call.info) {
+    if (jitInfo->type() == JSJitInfo::OpType::TrampolineNative) {
+      jit::SetTrampolineNativeJitEntry(cx, fun, jitInfo->trampolineNative);
+    } else {
+      fun->setJitInfo(jitInfo);
+    }
   }
   return fun;
 }
@@ -4247,27 +4260,6 @@ extern MOZ_NEVER_INLINE JS_PUBLIC_API void JS_AbortIfWrongThread(
   }
 }
 
-#ifdef JS_GC_ZEAL
-JS_PUBLIC_API void JS_GetGCZealBits(JSContext* cx, uint32_t* zealBits,
-                                    uint32_t* frequency,
-                                    uint32_t* nextScheduled) {
-  cx->runtime()->gc.getZealBits(zealBits, frequency, nextScheduled);
-}
-
-JS_PUBLIC_API void JS_SetGCZeal(JSContext* cx, uint8_t zeal,
-                                uint32_t frequency) {
-  cx->runtime()->gc.setZeal(zeal, frequency);
-}
-
-JS_PUBLIC_API void JS_UnsetGCZeal(JSContext* cx, uint8_t zeal) {
-  cx->runtime()->gc.unsetZeal(zeal);
-}
-
-JS_PUBLIC_API void JS_ScheduleGC(JSContext* cx, uint32_t count) {
-  cx->runtime()->gc.setNextScheduled(count);
-}
-#endif
-
 JS_PUBLIC_API void JS_SetParallelParsingEnabled(JSContext* cx, bool enabled) {
   cx->runtime()->setParallelParsingEnabled(enabled);
 }
@@ -4468,6 +4460,12 @@ JS_PUBLIC_API void JS_SetGlobalJitCompilerOption(JSContext* cx,
     case JSJITCOMPILER_WASM_JIT_OPTIMIZING:
       JS::ContextOptionsRef(cx).setWasmIon(!!value);
       break;
+
+#ifdef NIGHTLY_BUILD
+    case JSJITCOMPILER_REGEXP_DUPLICATE_NAMED_GROUPS:
+      jit::JitOptions.js_regexp_duplicate_named_groups = !!value;
+      break;
+#endif
 
 #ifdef DEBUG
     case JSJITCOMPILER_FULL_DEBUG_CHECKS:

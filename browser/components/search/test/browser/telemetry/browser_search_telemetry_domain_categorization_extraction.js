@@ -362,19 +362,57 @@ const TESTS = [
     ],
     expectedDomains: ["organic.com"],
   },
+  {
+    title: "Bing organic result with a path in the URL.",
+    extractorInfos: [
+      {
+        selectors: "#test26 #b_results .b_algo .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["organic.com"],
+  },
+  {
+    title: "Bing organic result with a path and query param in the URL.",
+    extractorInfos: [
+      {
+        selectors: "#test27 #b_results .b_algo .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["organic.com"],
+  },
+  {
+    title:
+      "Bing organic result with a path in the URL, but protocol appears in separate HTML element.",
+    extractorInfos: [
+      {
+        selectors: "#test28 #b_results .b_algo .b_attribution cite",
+        method: "textContent",
+      },
+    ],
+    expectedDomains: ["wikipedia.org"],
+  },
 ];
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.search.serpEventTelemetry.enabled", true],
-      ["browser.search.serpEventTelemetryCategorization.enabled", true],
-    ],
+    set: [["browser.search.serpEventTelemetryCategorization.enabled", true]],
   });
 
   await SearchSERPTelemetry.init();
 
   registerCleanupFunction(async () => {
+    // Manually unload the pref so that we can check if we should wait for the
+    // the categories map to be un-initialized.
+    await SpecialPowers.popPrefEnv();
+    if (
+      !Services.prefs.getBoolPref(
+        "browser.search.serpEventTelemetryCategorization.enabled"
+      )
+    ) {
+      await waitForDomainToCategoriesUninit();
+    }
     resetTelemetry();
   });
 });

@@ -66,9 +66,19 @@ const TEST_URI = `https://example.org/document-builder.sjs?html=${encodeURICompo
       text-decoration-color: var(--js-not-defined, blue);
       caret-color: var(--css-dynamic-registered, turquoise);
     }
+
+    aside {
+     /* registered property has <color> syntax, this declaration is invalid at computed-value time */
+      --css-inherit: dashed;
+      /* valid, complex value */
+      --js-no-inherit: calc(100px * cos(45deg));
+      /* based on another property */
+      --css-dynamic-registered: var(--css-no-inherit);
+    }
   </style>
   <main>
     <h1>Hello world</h1>
+    <aside>fries</aside>
     <iframe src="https://example.com/document-builder.sjs?html=iframe"></iframe>
   </main>
 `)}`;
@@ -143,35 +153,56 @@ add_task(async function () {
     "h1",
     "background-color",
     // The variable value is the initial value since the variable does not inherit
-    `--css-no-inherit = ${CSS_NO_INHERIT_INITIAL_VALUE}`
+    `--css-no-inherit = ${CSS_NO_INHERIT_INITIAL_VALUE}`,
+    [
+      `syntax:"<color>"`,
+      `inherits:false`,
+      `initial-value:${CSS_NO_INHERIT_INITIAL_VALUE}`,
+    ]
   );
   await checkVariableTooltipForProperty(
     view,
     "h1",
     "color",
     // The variable value is the value set in the main selector, since the variable does inherit
-    `--css-inherit = ${CSS_INHERIT_MAIN_VALUE}`
+    `--css-inherit = ${CSS_INHERIT_MAIN_VALUE}`,
+    [
+      `syntax:"<color>"`,
+      `inherits:true`,
+      `initial-value:${CSS_INHERIT_INITIAL_VALUE}`,
+    ]
   );
   await checkVariableTooltipForProperty(
     view,
     "h1",
     "border-color",
     // The variable value is the initial value since the variable is not set
-    `--css-not-defined = ${CSS_NOT_DEFINED_INITIAL_VALUE}`
+    `--css-not-defined = ${CSS_NOT_DEFINED_INITIAL_VALUE}`,
+    [
+      `syntax:"<color>"`,
+      `inherits:true`,
+      `initial-value:${CSS_NOT_DEFINED_INITIAL_VALUE}`,
+    ]
   );
   await checkVariableTooltipForProperty(
     view,
     "h1",
     "height",
     // The variable value is the initial value since the variable does not inherit
-    `--js-no-inherit = ${JS_NO_INHERIT_INITIAL_VALUE}`
+    `--js-no-inherit = ${JS_NO_INHERIT_INITIAL_VALUE}`,
+    [
+      `syntax:"<length>"`,
+      `inherits:false`,
+      `initial-value:${JS_NO_INHERIT_INITIAL_VALUE}`,
+    ]
   );
   await checkVariableTooltipForProperty(
     view,
     "h1",
     "width",
     // The variable value is the value set in the main selector, since the variable does inherit
-    `--js-inherit = ${JS_INHERIT_MAIN_VALUE}`
+    `--js-inherit = ${JS_INHERIT_MAIN_VALUE}`,
+    [`syntax:"*"`, `inherits:true`]
   );
 
   info(
@@ -214,7 +245,8 @@ add_task(async function () {
     view,
     "h1",
     "caret-color",
-    `--css-dynamic-registered = orchid`
+    `--css-dynamic-registered = orchid`,
+    [`syntax:"<color>"`, `inherits:false`, `initial-value:orchid`]
   );
 
   info("Check that updating property does update rules view");
@@ -253,7 +285,8 @@ add_task(async function () {
     view,
     "h1",
     "caret-color",
-    `--css-dynamic-registered = purple`
+    `--css-dynamic-registered = purple`,
+    [`syntax:"<color>"`, `inherits:true`, `initial-value:purple`]
   );
 
   info("Check that removing property does update rules view");
@@ -324,7 +357,8 @@ add_task(async function () {
     view,
     "h1",
     "outline",
-    `--constructed = aqua`
+    `--constructed = aqua`,
+    [`syntax:"<color>"`, `inherits:true`, `initial-value:aqua`]
   );
 
   info(
@@ -402,7 +436,69 @@ add_task(async function () {
       },
     ].sort((a, b) => (a.header < b.header ? -1 : 1))
   );
+
+  await selectNode("aside", inspector);
+
+  info(
+    "Check that the invalid at computed-value time icon is displayed when needed"
+  );
+  checkInvalidAtComputedValueTime(view, {
+    ruleIndex: 1,
+    declaration: { "--css-inherit": "dashed" },
+    invalid: true,
+    syntax: `<color>`,
+  });
+
+  info(
+    "Check that the invalid at computed-value time icon is not displayed for valid properties"
+  );
+  checkInvalidAtComputedValueTime(view, {
+    ruleIndex: 1,
+    declaration: { "--js-no-inherit": "calc(100px * cos(45deg))" },
+    invalid: false,
+  });
+
+  info(
+    "Declaration of variable based on other variable are not marked as invalid"
+  );
+  checkInvalidAtComputedValueTime(view, {
+    ruleIndex: 1,
+    declaration: { "--css-dynamic-registered": "var(--css-no-inherit)" },
+    invalid: false,
+  });
 });
+
+function checkInvalidAtComputedValueTime(
+  view,
+  { ruleIndex, declaration, invalid, syntax }
+) {
+  const prop = getTextProperty(view, ruleIndex, declaration);
+  const warningIcon = prop.editor.element.querySelector(
+    ".ruleview-invalid-at-computed-value-time-warning:not([hidden])"
+  );
+  if (invalid) {
+    ok(
+      !!warningIcon,
+      `invalid at computed-value time icon is displayed for ${JSON.stringify(
+        declaration
+      )}`
+    );
+    is(
+      warningIcon?.title,
+      `Property value does not match expected "${syntax}" syntax`,
+      `invalid at computed-value time icon has expected title for ${JSON.stringify(
+        declaration
+      )}`
+    );
+  } else {
+    ok(
+      !warningIcon,
+      `invalid at computed-value time icon is not displayed for ${JSON.stringify(
+        declaration
+      )}`
+    );
+  }
+}
 
 function getRegisteredPropertiesContainer(view) {
   return view.styleDocument.querySelector("#registered-properties-container");
@@ -463,13 +559,15 @@ function checkRegisteredProperties(view, expectedProperties) {
  * @param {CssRuleView} view
  * @param {String} ruleSelector
  * @param {String} propertyName
- * @param {String} expectedTooltipContent
+ * @param {String} expectedTooltipValueContent
+ * @param {Array<String>} expectedTooltipRegisteredPropertyContent
  */
 async function checkVariableTooltipForProperty(
   view,
   ruleSelector,
   propertyName,
-  expectedTooltipContent
+  expectedTooltipValueContent,
+  expectedTooltipRegisteredPropertyContent
 ) {
   // retrieve tooltip target
   const variableEl = await waitFor(() =>
@@ -481,10 +579,26 @@ async function checkVariableTooltipForProperty(
   );
 
   const previewTooltip = await assertShowPreviewTooltip(view, variableEl);
+  const [valueEl, registeredPropertyEl] = previewTooltip.panel.querySelectorAll(
+    ".variable-value,.registered-property"
+  );
   is(
-    previewTooltip.panel.textContent,
-    expectedTooltipContent,
+    valueEl.textContent,
+    expectedTooltipValueContent,
     `CSS variable preview tooltip shows the expected value for ${propertyName} in ${ruleSelector}`
   );
+  if (!expectedTooltipRegisteredPropertyContent) {
+    is(
+      registeredPropertyEl,
+      undefined,
+      `CSS variable preview tooltip doesn't have registered property section for ${propertyName} in ${ruleSelector}`
+    );
+  } else {
+    is(
+      registeredPropertyEl.innerText,
+      expectedTooltipRegisteredPropertyContent.join("\n"),
+      `CSS variable preview tooltip has expected registered property section for ${propertyName} in ${ruleSelector}`
+    );
+  }
   await assertTooltipHiddenOnMouseOut(previewTooltip, variableEl);
 }

@@ -193,9 +193,6 @@ using namespace mozilla;
 // track which pages have been MADV_FREE'd.  You can then call
 // jemalloc_purge_freed_pages(), which will force the OS to release those
 // MADV_FREE'd pages, making the process's RSS reflect its true memory usage.
-//
-// The jemalloc_purge_freed_pages definition in memory/build/mozmemory.h needs
-// to be adjusted if MALLOC_DOUBLE_PURGE is ever enabled on Linux.
 
 #ifdef XP_DARWIN
 #  define MALLOC_DOUBLE_PURGE
@@ -317,13 +314,14 @@ struct arena_chunk_map_t {
   // Run address (or size) and various flags are stored together.  The bit
   // layout looks like (assuming 32-bit system):
   //
-  //   ???????? ???????? ????---- -mckdzla
+  //   ???????? ???????? ????---- fmckdzla
   //
   // ? : Unallocated: Run address for first/last pages, unset for internal
   //                  pages.
   //     Small: Run address.
   //     Large: Run size for first page, unset for trailing pages.
   // - : Unused.
+  // f : Fresh memory?
   // m : MADV_FREE/MADV_DONTNEED'ed?
   // c : decommitted?
   // k : key?
@@ -356,25 +354,49 @@ struct arena_chunk_map_t {
   //     -------- -------- -------- ------la
   size_t bits;
 
-// Note that CHUNK_MAP_DECOMMITTED's meaning varies depending on whether
-// MALLOC_DECOMMIT and MALLOC_DOUBLE_PURGE are defined.
+// A page can be in one of several states.
 //
-// If MALLOC_DECOMMIT is defined, a page which is CHUNK_MAP_DECOMMITTED must be
-// re-committed with pages_commit() before it may be touched.  If
-// MALLOC_DECOMMIT is defined, MALLOC_DOUBLE_PURGE may not be defined.
+// CHUNK_MAP_ALLOCATED marks allocated pages, the only other bit that can be
+// combined is CHUNK_MAP_LARGE.
 //
-// If neither MALLOC_DECOMMIT nor MALLOC_DOUBLE_PURGE is defined, pages which
-// are madvised (with either MADV_DONTNEED or MADV_FREE) are marked with
-// CHUNK_MAP_MADVISED.
+// CHUNK_MAP_LARGE may be combined with CHUNK_MAP_ALLOCATED to show that the
+// allocation is a "large" allocation (see SizeClass), rather than a run of
+// small allocations.  The interpretation of the gPageSizeMask bits depends onj
+// this bit, see the description above.
 //
-// Otherwise, if MALLOC_DECOMMIT is not defined and MALLOC_DOUBLE_PURGE is
-// defined, then a page which is madvised is marked as CHUNK_MAP_MADVISED.
-// When it's finally freed with jemalloc_purge_freed_pages, the page is marked
-// as CHUNK_MAP_DECOMMITTED.
+// CHUNK_MAP_DIRTY is used to mark pages that were allocated and are now freed.
+// They may contain their previous contents (or poison).  CHUNK_MAP_DIRTY, when
+// set, must be the only set bit.
+//
+// CHUNK_MAP_MADVISED marks pages which are madvised (with either MADV_DONTNEED
+// or MADV_FREE).  This is only valid if MALLOC_DECOMMIT is not defined.  When
+// set, it must be the only bit set.
+//
+// CHUNK_MAP_DECOMMITTED is used if CHUNK_MAP_DECOMMITTED is defined.  Unused
+// dirty pages may be decommitted and marked as CHUNK_MAP_DECOMMITTED.  They
+// must be re-committed with pages_commit() before they can be touched.
+//
+// CHUNK_MAP_FRESH is set on pages that have never been used before (the chunk
+// is newly allocated or they were decommitted and have now been recommitted.
+// CHUNK_MAP_FRESH is also used for "double purged" pages meaning that they were
+// madvised and later were unmapped and remapped to force them out of the
+// program's resident set.  This is enabled when MALLOC_DOUBLE_PURGE is defined
+// (eg on MacOS).
+//
+// CHUNK_MAP_ZEROED is set on pages that are known to contain zeros.
+//
+// CHUNK_MAP_DIRTY, _DECOMMITED _MADVISED and _FRESH are always mutually
+// exclusive.
+//
+// CHUNK_MAP_KEY is never used on real pages, only on lookup keys.
+//
+#define CHUNK_MAP_FRESH ((size_t)0x80U)
 #define CHUNK_MAP_MADVISED ((size_t)0x40U)
 #define CHUNK_MAP_DECOMMITTED ((size_t)0x20U)
 #define CHUNK_MAP_MADVISED_OR_DECOMMITTED \
   (CHUNK_MAP_MADVISED | CHUNK_MAP_DECOMMITTED)
+#define CHUNK_MAP_FRESH_MADVISED_OR_DECOMMITTED \
+  (CHUNK_MAP_FRESH | CHUNK_MAP_MADVISED | CHUNK_MAP_DECOMMITTED)
 #define CHUNK_MAP_KEY ((size_t)0x10U)
 #define CHUNK_MAP_DIRTY ((size_t)0x08U)
 #define CHUNK_MAP_ZEROED ((size_t)0x04U)
@@ -413,7 +435,13 @@ struct arena_chunk_t {
 // Maximum size of L1 cache line.  This is used to avoid cache line aliasing,
 // so over-estimates are okay (up to a point), but under-estimates will
 // negatively affect performance.
-static const size_t kCacheLineSize = 64;
+static const size_t kCacheLineSize =
+#if defined(XP_DARWIN) && defined(__aarch64__)
+    128
+#else
+    64
+#endif
+    ;
 
 // Our size classes are inclusive ranges of memory sizes.  By describing the
 // minimums and how memory is allocated in each range the maximums can be
@@ -653,7 +681,7 @@ struct arena_stats_t {
   // Number of bytes currently mapped.
   size_t mapped;
 
-  // Current number of committed pages.
+  // Current number of committed pages (non madvised/decommitted)
   size_t committed;
 
   // Per-size-category statistics.
@@ -1139,6 +1167,11 @@ struct arena_t {
   // memory is mapped for each arena.
   size_t mNumDirty;
 
+  // The current number of pages that are available without a system call (but
+  // probably a page fault).
+  size_t mNumMAdvised;
+  size_t mNumFresh;
+
   // Maximum value allowed for mNumDirty.
   size_t mMaxDirty;
 
@@ -1182,7 +1215,7 @@ struct arena_t {
   ~arena_t();
 
  private:
-  void InitChunk(arena_chunk_t* aChunk);
+  void InitChunk(arena_chunk_t* aChunk, size_t aMinCommittedPages);
 
   // This may return a chunk that should be destroyed with chunk_dealloc outside
   // of the arena lock.  It is not the same chunk as was passed in (since that
@@ -1245,6 +1278,13 @@ struct arena_t {
   void* Ralloc(void* aPtr, size_t aSize, size_t aOldSize);
 
   size_t EffectiveMaxDirty();
+
+#ifdef MALLOC_DECOMMIT
+  // During a commit operation (for aReqPages) we have the opportunity of
+  // commiting at most aRemPages additional pages.  How many should we commit to
+  // amortise system calls?
+  size_t ExtraCommitPages(size_t aReqPages, size_t aRemainingPages);
+#endif
 
   // Passing one means purging all.
   void Purge(size_t aMaxDirty);
@@ -1481,7 +1521,12 @@ MALLOC_RUNTIME_VAR PoisonType opt_poison = ALL;
 MALLOC_RUNTIME_VAR PoisonType opt_poison = SOME;
 #endif
 
-MALLOC_RUNTIME_VAR size_t opt_poison_size = kCacheLineSize * 4;
+// Keep this larger than and ideally a multiple of kCacheLineSize;
+MALLOC_RUNTIME_VAR size_t opt_poison_size = 256;
+#ifndef MALLOC_RUNTIME_CONFIG
+static_assert(opt_poison_size >= kCacheLineSize);
+static_assert((opt_poison_size % kCacheLineSize) == 0);
+#endif
 
 static bool opt_randomize_small = true;
 
@@ -2102,11 +2147,11 @@ bool AddressRadixTree<Bits>::Set(void* aKey, void* aValue) {
 
 // Return the offset between a and the nearest aligned address at or below a.
 #define ALIGNMENT_ADDR2OFFSET(a, alignment) \
-  ((size_t)((uintptr_t)(a) & ((alignment)-1)))
+  ((size_t)((uintptr_t)(a) & ((alignment) - 1)))
 
 // Return the smallest alignment multiple that is >= s.
 #define ALIGNMENT_CEILING(s, alignment) \
-  (((s) + ((alignment)-1)) & (~((alignment)-1)))
+  (((s) + ((alignment) - 1)) & (~((alignment) - 1)))
 
 static void* pages_trim(void* addr, size_t alloc_size, size_t leadsize,
                         size_t size) {
@@ -2590,57 +2635,71 @@ static inline void arena_run_reg_dalloc(arena_run_t* run, arena_bin_t* bin,
 
 bool arena_t::SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
                        bool aZero) {
-  arena_chunk_t* chunk;
-  size_t old_ndirty, run_ind, total_pages, need_pages, rem_pages, i;
-
-  chunk = GetChunkForPtr(aRun);
-  old_ndirty = chunk->ndirty;
-  run_ind = (unsigned)((uintptr_t(aRun) - uintptr_t(chunk)) >> gPageSize2Pow);
-  total_pages = (chunk->map[run_ind].bits & ~gPageSizeMask) >> gPageSize2Pow;
-  need_pages = (aSize >> gPageSize2Pow);
+  arena_chunk_t* chunk = GetChunkForPtr(aRun);
+  size_t old_ndirty = chunk->ndirty;
+  size_t run_ind =
+      (unsigned)((uintptr_t(aRun) - uintptr_t(chunk)) >> gPageSize2Pow);
+  size_t total_pages =
+      (chunk->map[run_ind].bits & ~gPageSizeMask) >> gPageSize2Pow;
+  size_t need_pages = (aSize >> gPageSize2Pow);
   MOZ_ASSERT(need_pages > 0);
   MOZ_ASSERT(need_pages <= total_pages);
-  rem_pages = total_pages - need_pages;
+  size_t rem_pages = total_pages - need_pages;
 
-  for (i = 0; i < need_pages; i++) {
+#ifdef MALLOC_DECOMMIT
+  size_t i = 0;
+  while (i < need_pages) {
     // Commit decommitted pages if necessary.  If a decommitted
     // page is encountered, commit all needed adjacent decommitted
     // pages in one operation, in order to reduce system call
     // overhead.
-    if (chunk->map[run_ind + i].bits & CHUNK_MAP_MADVISED_OR_DECOMMITTED) {
-      size_t j;
-
+    if (chunk->map[run_ind + i].bits & CHUNK_MAP_DECOMMITTED) {
       // Advance i+j to just past the index of the last page
-      // to commit.  Clear CHUNK_MAP_DECOMMITTED and
-      // CHUNK_MAP_MADVISED along the way.
-      for (j = 0; i + j < need_pages && (chunk->map[run_ind + i + j].bits &
-                                         CHUNK_MAP_MADVISED_OR_DECOMMITTED);
+      // to commit.  Clear CHUNK_MAP_DECOMMITTED along the way.
+      size_t j;
+      for (j = 0; i + j < need_pages &&
+                  (chunk->map[run_ind + i + j].bits & CHUNK_MAP_DECOMMITTED);
            j++) {
-        // DECOMMITTED and MADVISED are mutually exclusive.
-        MOZ_ASSERT(!(chunk->map[run_ind + i + j].bits & CHUNK_MAP_DECOMMITTED &&
-                     chunk->map[run_ind + i + j].bits & CHUNK_MAP_MADVISED));
-
-        chunk->map[run_ind + i + j].bits &= ~CHUNK_MAP_MADVISED_OR_DECOMMITTED;
+        // DECOMMITTED, MADVISED and FRESH are mutually exclusive.
+        MOZ_ASSERT((chunk->map[run_ind + i + j].bits &
+                    (CHUNK_MAP_FRESH | CHUNK_MAP_MADVISED)) == 0);
       }
 
-#ifdef MALLOC_DECOMMIT
-      bool committed = pages_commit(
-          (void*)(uintptr_t(chunk) + ((run_ind + i) << gPageSize2Pow)),
-          j << gPageSize2Pow);
+      // Consider committing more pages to amortise calls to VirtualAlloc.
+      // This only makes sense at the edge of our run hence the if condition
+      // here.
+      if (i + j == need_pages) {
+        size_t extra_commit = ExtraCommitPages(j, rem_pages);
+        for (; i + j < need_pages + extra_commit &&
+               (chunk->map[run_ind + i + j].bits &
+                CHUNK_MAP_MADVISED_OR_DECOMMITTED);
+             j++) {
+          MOZ_ASSERT((chunk->map[run_ind + i + j].bits &
+                      (CHUNK_MAP_FRESH | CHUNK_MAP_MADVISED)) == 0);
+        }
+      }
+
+      if (!pages_commit(
+              (void*)(uintptr_t(chunk) + ((run_ind + i) << gPageSize2Pow)),
+              j << gPageSize2Pow)) {
+        return false;
+      }
+
       // pages_commit zeroes pages, so mark them as such if it succeeded.
       // That's checked further below to avoid manually zeroing the pages.
       for (size_t k = 0; k < j; k++) {
-        chunk->map[run_ind + i + k].bits |=
-            committed ? CHUNK_MAP_ZEROED : CHUNK_MAP_DECOMMITTED;
+        chunk->map[run_ind + i + k].bits =
+            (chunk->map[run_ind + i + k].bits & ~CHUNK_MAP_DECOMMITTED) |
+            CHUNK_MAP_ZEROED | CHUNK_MAP_FRESH;
       }
-      if (!committed) {
-        return false;
-      }
-#endif
 
-      mStats.committed += j;
+      mNumFresh += j;
+      i += j;
+    } else {
+      i++;
     }
   }
+#endif
 
   mRunsAvail.Remove(&chunk->map[run_ind]);
 
@@ -2655,7 +2714,7 @@ bool arena_t::SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
     mRunsAvail.Insert(&chunk->map[run_ind + need_pages]);
   }
 
-  for (i = 0; i < need_pages; i++) {
+  for (size_t i = 0; i < need_pages; i++) {
     // Zero if necessary.
     if (aZero) {
       if ((chunk->map[run_ind + i].bits & CHUNK_MAP_ZEROED) == 0) {
@@ -2670,9 +2729,21 @@ bool arena_t::SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
       chunk->ndirty--;
       mNumDirty--;
       // CHUNK_MAP_DIRTY is cleared below.
+    } else if (chunk->map[run_ind + i].bits & CHUNK_MAP_MADVISED) {
+      mStats.committed++;
+      mNumMAdvised--;
     }
 
-    // Initialize the chunk map.
+    if (chunk->map[run_ind + i].bits & CHUNK_MAP_FRESH) {
+      mStats.committed++;
+      mNumFresh--;
+    }
+
+    // This bit has already been cleared
+    MOZ_ASSERT(!(chunk->map[run_ind + i].bits & CHUNK_MAP_DECOMMITTED));
+
+    // Initialize the chunk map.  This clears the dirty, zeroed and madvised
+    // bits, decommitted is cleared above.
     if (aLarge) {
       chunk->map[run_ind + i].bits = CHUNK_MAP_LARGE | CHUNK_MAP_ALLOCATED;
     } else {
@@ -2694,20 +2765,7 @@ bool arena_t::SplitRun(arena_run_t* aRun, size_t aSize, bool aLarge,
   return true;
 }
 
-void arena_t::InitChunk(arena_chunk_t* aChunk) {
-  size_t i;
-  // WARNING: The following relies on !aZeroed meaning "used to be an arena
-  // chunk".
-  // When the chunk we're initializating as an arena chunk is zeroed, we
-  // mark all runs are decommitted and zeroed.
-  // When it is not, which we can assume means it's a recycled arena chunk,
-  // all it can contain is an arena chunk header (which we're overwriting),
-  // and zeroed or poisoned memory (because a recycled arena chunk will
-  // have been emptied before being recycled). In that case, we can get
-  // away with reusing the chunk as-is, marking all runs as madvised.
-
-  size_t flags = CHUNK_MAP_DECOMMITTED | CHUNK_MAP_ZEROED;
-
+void arena_t::InitChunk(arena_chunk_t* aChunk, size_t aMinCommittedPages) {
   mStats.mapped += kChunkSize;
 
   aChunk->arena = this;
@@ -2715,44 +2773,63 @@ void arena_t::InitChunk(arena_chunk_t* aChunk) {
   // Claim that no pages are in use, since the header is merely overhead.
   aChunk->ndirty = 0;
 
-  // Initialize the map to contain one maximal free untouched run.
-  arena_run_t* run = (arena_run_t*)(uintptr_t(aChunk) +
-                                    (gChunkHeaderNumPages << gPageSize2Pow));
+  // Setup the chunk's pages in two phases.  First we mark which pages are
+  // committed & decommitted and perform the decommit.  Then we update the map
+  // to create the runs.
 
   // Clear the bits for the real header pages.
+  size_t i;
   for (i = 0; i < gChunkHeaderNumPages - 1; i++) {
     aChunk->map[i].bits = 0;
   }
-  // Mark the leading guard page (last header page) as decommitted.
-  aChunk->map[i++].bits = CHUNK_MAP_DECOMMITTED;
-
-  // Mark the area usable for runs as available, note size at start and end
-  aChunk->map[i++].bits = gMaxLargeClass | flags;
-  for (; i < gChunkNumPages - 2; i++) {
-    aChunk->map[i].bits = flags;
-  }
-  aChunk->map[gChunkNumPages - 2].bits = gMaxLargeClass | flags;
-
-  // Mark the trailing guard page as decommitted.
-  aChunk->map[gChunkNumPages - 1].bits = CHUNK_MAP_DECOMMITTED;
-
-#ifdef MALLOC_DECOMMIT
-  // Start out decommitted, in order to force a closer correspondence
-  // between dirty pages and committed untouched pages. This includes
-  // leading and trailing guard pages.
-  pages_decommit((void*)(uintptr_t(run) - gPageSize),
-                 gMaxLargeClass + 2 * gPageSize);
-#else
-  // Decommit the last header page (=leading page) as a guard.
-  pages_decommit((void*)(uintptr_t(run) - gPageSize), gPageSize);
-  // Decommit the last page as a guard.
-  pages_decommit((void*)(uintptr_t(aChunk) + kChunkSize - gPageSize),
-                 gPageSize);
-#endif
-
   mStats.committed += gChunkHeaderNumPages - 1;
 
-  // Insert the run into the tree of available runs.
+  // Decommit the last header page (=leading page) as a guard.
+  pages_decommit((void*)(uintptr_t(aChunk) + (i << gPageSize2Pow)), gPageSize);
+  aChunk->map[i++].bits = CHUNK_MAP_DECOMMITTED;
+
+  // If MALLOC_DECOMMIT is enabled then commit only the pages we're about to
+  // use.  Otherwise commit all of them.
+#ifdef MALLOC_DECOMMIT
+  size_t n_fresh_pages =
+      aMinCommittedPages +
+      ExtraCommitPages(
+          aMinCommittedPages,
+          gChunkNumPages - gChunkHeaderNumPages - aMinCommittedPages - 1);
+#else
+  size_t n_fresh_pages = gChunkNumPages - 1 - gChunkHeaderNumPages;
+#endif
+
+  // The committed pages are marked as Fresh.  Our caller, SplitRun will update
+  // this when it uses them.
+  for (size_t j = 0; j < n_fresh_pages; j++) {
+    aChunk->map[i + j].bits = CHUNK_MAP_ZEROED | CHUNK_MAP_FRESH;
+  }
+  i += n_fresh_pages;
+  mNumFresh += n_fresh_pages;
+
+#ifndef MALLOC_DECOMMIT
+  // If MALLOC_DECOMMIT isn't defined then all the pages are fresh and setup in
+  // the loop above.
+  MOZ_ASSERT(i == gChunkNumPages - 1);
+#endif
+
+  // If MALLOC_DECOMMIT is defined, then this will decommit the remainder of the
+  // chunk plus the last page which is a guard page, if it is not defined it
+  // will only decommit the guard page.
+  pages_decommit((void*)(uintptr_t(aChunk) + (i << gPageSize2Pow)),
+                 (gChunkNumPages - i) << gPageSize2Pow);
+  for (; i < gChunkNumPages; i++) {
+    aChunk->map[i].bits = CHUNK_MAP_DECOMMITTED;
+  }
+
+  // aMinCommittedPages will create a valid run.
+  MOZ_ASSERT(aMinCommittedPages > 0);
+  MOZ_ASSERT(aMinCommittedPages <= gChunkNumPages - gChunkHeaderNumPages - 1);
+
+  // Create the run.
+  aChunk->map[gChunkHeaderNumPages].bits |= gMaxLargeClass;
+  aChunk->map[gChunkNumPages - 2].bits |= gMaxLargeClass;
   mRunsAvail.Insert(&aChunk->map[gChunkHeaderNumPages]);
 
 #ifdef MALLOC_DOUBLE_PURGE
@@ -2767,6 +2844,25 @@ arena_chunk_t* arena_t::DeallocChunk(arena_chunk_t* aChunk) {
       mNumDirty -= mSpare->ndirty;
       mStats.committed -= mSpare->ndirty;
     }
+
+    // Count the number of madvised/fresh pages and update the stats.
+    size_t madvised = 0;
+    size_t fresh = 0;
+    for (size_t i = gChunkHeaderNumPages; i < gChunkNumPages - 1; i++) {
+      // There must not be any pages that are not fresh, madvised, decommitted
+      // or dirty.
+      MOZ_ASSERT(mSpare->map[i].bits &
+                 (CHUNK_MAP_FRESH_MADVISED_OR_DECOMMITTED | CHUNK_MAP_DIRTY));
+
+      if (mSpare->map[i].bits & CHUNK_MAP_MADVISED) {
+        madvised++;
+      } else if (mSpare->map[i].bits & CHUNK_MAP_FRESH) {
+        fresh++;
+      }
+    }
+
+    mNumMAdvised -= madvised;
+    mNumFresh -= fresh;
 
 #ifdef MALLOC_DOUBLE_PURGE
     if (mChunksMAdvised.ElementProbablyInList(mSpare)) {
@@ -2822,7 +2918,7 @@ arena_run_t* arena_t::AllocRun(size_t aSize, bool aLarge, bool aZero) {
       return nullptr;
     }
 
-    InitChunk(chunk);
+    InitChunk(chunk, aSize >> gPageSize2Pow);
     run = (arena_run_t*)(uintptr_t(chunk) +
                          (gChunkHeaderNumPages << gPageSize2Pow));
   }
@@ -2842,6 +2938,90 @@ size_t arena_t::EffectiveMaxDirty() {
 
   return modifier >= 0 ? mMaxDirty << modifier : mMaxDirty >> -modifier;
 }
+
+#ifdef MALLOC_DECOMMIT
+
+size_t arena_t::ExtraCommitPages(size_t aReqPages, size_t aRemainingPages) {
+  const int32_t modifier = gArenas.DefaultMaxDirtyPageModifier();
+  if (modifier < 0) {
+    return 0;
+  }
+
+  // The maximum size of the page cache
+  const size_t max_page_cache = EffectiveMaxDirty();
+
+  // The current size of the page cache, note that we use mNumFresh +
+  // mNumMAdvised here but Purge() does not.
+  const size_t page_cache = mNumDirty + mNumFresh + mNumMAdvised;
+
+  if (page_cache > max_page_cache) {
+    // We're already exceeding our dirty page count even though we're trying
+    // to allocate.  This can happen due to fragmentation.  Don't commit
+    // excess memory since we're probably here due to a larger allocation and
+    // small amounts of memory are certainly available in the page cache.
+    return 0;
+  }
+  if (modifier > 0) {
+    // If modifier is > 0 then we want to keep all the pages we can, but don't
+    // exceed the size of the page cache.  The subtraction cannot underflow
+    // because of the condition above.
+    return std::min(aRemainingPages, max_page_cache - page_cache);
+  }
+
+  // The rest is arbitrary and involves a some assumptions.  I've broken it down
+  // into simple expressions to document them more clearly.
+
+  // Assumption 1: a quarter of EffectiveMaxDirty() is a sensible "minimum
+  // target" for the dirty page cache.  Likewise 3 quarters is a sensible
+  // "maximum target".  Note that for the maximum we avoid using the whole page
+  // cache now so that a free that follows this allocation doesn't immeidatly
+  // call Purge (churning memory).
+  const size_t min = max_page_cache / 4;
+  const size_t max = 3 * max_page_cache / 4;
+
+  // Assumption 2: Committing 32 pages at a time is sufficient to amortise
+  // VirtualAlloc costs.
+  size_t amortisation_threshold = 32;
+
+  // extra_pages is the number of additional pages needed to meet
+  // amortisation_threshold.
+  size_t extra_pages = aReqPages < amortisation_threshold
+                           ? amortisation_threshold - aReqPages
+                           : 0;
+
+  // If committing extra_pages isn't enough to hit the minimum target then
+  // increase it.
+  if (page_cache + extra_pages < min) {
+    extra_pages = min - page_cache;
+  } else if (page_cache + extra_pages > max) {
+    // If committing extra_pages would exceed our maximum target then it may
+    // still be useful to allocate extra pages.  One of the reasons this can
+    // happen could be fragmentation of the cache,
+
+    // Therefore reduce the amortisation threshold so that we might allocate
+    // some extra pages but avoid exceeding the dirty page cache.
+    amortisation_threshold /= 2;
+    extra_pages = std::min(aReqPages < amortisation_threshold
+                               ? amortisation_threshold - aReqPages
+                               : 0,
+                           max_page_cache - page_cache);
+  }
+
+  // Cap extra_pages to aRemainingPages and adjust aRemainingPages.  We will
+  // commit at least this many extra pages.
+  extra_pages = std::min(extra_pages, aRemainingPages);
+
+  // Finally if commiting a small number of additional pages now can prevent
+  // a small commit later then try to commit a little more now, provided we
+  // don't exceed max_page_cache.
+  if ((aRemainingPages - extra_pages) < amortisation_threshold / 2 &&
+      (page_cache + aRemainingPages) < max_page_cache) {
+    return aRemainingPages;
+  }
+
+  return extra_pages;
+}
+#endif
 
 void arena_t::Purge(size_t aMaxDirty) {
   arena_chunk_t* chunk;
@@ -2878,16 +3058,16 @@ void arena_t::Purge(size_t aMaxDirty) {
 #else
         const size_t free_operation = CHUNK_MAP_MADVISED;
 #endif
-        MOZ_ASSERT((chunk->map[i].bits & CHUNK_MAP_MADVISED_OR_DECOMMITTED) ==
-                   0);
+        MOZ_ASSERT((chunk->map[i].bits &
+                    CHUNK_MAP_FRESH_MADVISED_OR_DECOMMITTED) == 0);
         chunk->map[i].bits ^= free_operation | CHUNK_MAP_DIRTY;
         // Find adjacent dirty run(s).
         for (npages = 1; i > gChunkHeaderNumPages &&
                          (chunk->map[i - 1].bits & CHUNK_MAP_DIRTY);
              npages++) {
           i--;
-          MOZ_ASSERT((chunk->map[i].bits & CHUNK_MAP_MADVISED_OR_DECOMMITTED) ==
-                     0);
+          MOZ_ASSERT((chunk->map[i].bits &
+                      CHUNK_MAP_FRESH_MADVISED_OR_DECOMMITTED) == 0);
           chunk->map[i].bits ^= free_operation | CHUNK_MAP_DIRTY;
         }
         chunk->ndirty -= npages;
@@ -2904,6 +3084,7 @@ void arena_t::Purge(size_t aMaxDirty) {
         madvise((void*)(uintptr_t(chunk) + (i << gPageSize2Pow)),
                 (npages << gPageSize2Pow), MADV_FREE);
 #  endif
+        mNumMAdvised += npages;
 #  ifdef MALLOC_DOUBLE_PURGE
         madvised = true;
 #  endif
@@ -3804,8 +3985,10 @@ static inline void arena_dalloc(void* aPtr, size_t aOffset, arena_t* aArena) {
   {
     MaybeMutexAutoLock lock(arena->mLock);
     arena_chunk_map_t* mapelm = &chunk->map[pageind];
-    MOZ_RELEASE_ASSERT((mapelm->bits & CHUNK_MAP_DECOMMITTED) == 0,
-                       "Freeing in decommitted page.");
+    MOZ_RELEASE_ASSERT(
+        (mapelm->bits &
+         (CHUNK_MAP_FRESH_MADVISED_OR_DECOMMITTED | CHUNK_MAP_ZEROED)) == 0,
+        "Freeing in a page with bad bits.");
     MOZ_RELEASE_ASSERT((mapelm->bits & CHUNK_MAP_ALLOCATED) != 0,
                        "Double-free?");
     if ((mapelm->bits & CHUNK_MAP_LARGE) == 0) {
@@ -4009,6 +4192,8 @@ arena_t::arena_t(arena_params_t* aParams, bool aIsPrivate) {
   mIsPrivate = aIsPrivate;
 
   mNumDirty = 0;
+  mNumFresh = 0;
+  mNumMAdvised = 0;
   // The default maximum amount of dirty pages allowed on arenas is a fraction
   // of opt_dirty_max.
   mMaxDirty = (aParams && aParams->mMaxDirty) ? aParams->mMaxDirty
@@ -4712,7 +4897,9 @@ inline void MozJemalloc::jemalloc_stats_internal(
   aStats->mapped = 0;
   aStats->allocated = 0;
   aStats->waste = 0;
-  aStats->page_cache = 0;
+  aStats->pages_dirty = 0;
+  aStats->pages_fresh = 0;
+  aStats->pages_madvised = 0;
   aStats->bookkeeping = 0;
   aStats->bin_unused = 0;
 
@@ -4745,8 +4932,8 @@ inline void MozJemalloc::jemalloc_stats_internal(
     // incomplete.
     MOZ_ASSERT(arena->mLock.SafeOnThisThread());
 
-    size_t arena_mapped, arena_allocated, arena_committed, arena_dirty, j,
-        arena_unused, arena_headers;
+    size_t arena_mapped, arena_allocated, arena_committed, arena_dirty,
+        arena_fresh, arena_madvised, j, arena_unused, arena_headers;
 
     arena_headers = 0;
     arena_unused = 0;
@@ -4763,6 +4950,8 @@ inline void MozJemalloc::jemalloc_stats_internal(
           arena->mStats.allocated_small + arena->mStats.allocated_large;
 
       arena_dirty = arena->mNumDirty << gPageSize2Pow;
+      arena_fresh = arena->mNumFresh << gPageSize2Pow;
+      arena_madvised = arena->mNumMAdvised << gPageSize2Pow;
 
       for (j = 0; j < NUM_SMALL_CLASSES; j++) {
         arena_bin_t* bin = &arena->mBins[j];
@@ -4801,7 +4990,9 @@ inline void MozJemalloc::jemalloc_stats_internal(
 
     aStats->mapped += arena_mapped;
     aStats->allocated += arena_allocated;
-    aStats->page_cache += arena_dirty;
+    aStats->pages_dirty += arena_dirty;
+    aStats->pages_fresh += arena_fresh;
+    aStats->pages_madvised += arena_madvised;
     // "waste" is committed memory that is neither dirty nor
     // allocated.  If you change this definition please update
     // memory/replace/logalloc/replay/Replay.cpp's jemalloc_stats calculation of
@@ -4826,7 +5017,7 @@ inline void MozJemalloc::jemalloc_stats_internal(
   aStats->waste -= chunk_header_size;
 
   MOZ_ASSERT(aStats->mapped >= aStats->allocated + aStats->waste +
-                                   aStats->page_cache + aStats->bookkeeping);
+                                   aStats->pages_dirty + aStats->bookkeeping);
 }
 
 inline size_t MozJemalloc::jemalloc_stats_num_bins() {
@@ -4841,7 +5032,8 @@ inline void MozJemalloc::jemalloc_set_main_thread() {
 #ifdef MALLOC_DOUBLE_PURGE
 
 // Explicitly remove all of this chunk's MADV_FREE'd pages from memory.
-static void hard_purge_chunk(arena_chunk_t* aChunk) {
+static size_t hard_purge_chunk(arena_chunk_t* aChunk) {
+  size_t total_npages = 0;
   // See similar logic in arena_t::Purge().
   for (size_t i = gChunkHeaderNumPages; i < gChunkNumPages; i++) {
     // Find all adjacent pages with CHUNK_MAP_MADVISED set.
@@ -4849,11 +5041,11 @@ static void hard_purge_chunk(arena_chunk_t* aChunk) {
     for (npages = 0; aChunk->map[i + npages].bits & CHUNK_MAP_MADVISED &&
                      i + npages < gChunkNumPages;
          npages++) {
-      // Turn off the chunk's MADV_FREED bit and turn on its
-      // DECOMMITTED bit.
-      MOZ_DIAGNOSTIC_ASSERT(
-          !(aChunk->map[i + npages].bits & CHUNK_MAP_DECOMMITTED));
-      aChunk->map[i + npages].bits ^= CHUNK_MAP_MADVISED_OR_DECOMMITTED;
+      // Turn off the page's CHUNK_MAP_MADVISED bit and turn on its
+      // CHUNK_MAP_FRESH bit.
+      MOZ_DIAGNOSTIC_ASSERT(!(aChunk->map[i + npages].bits &
+                              (CHUNK_MAP_FRESH | CHUNK_MAP_DECOMMITTED)));
+      aChunk->map[i + npages].bits ^= (CHUNK_MAP_MADVISED | CHUNK_MAP_FRESH);
     }
 
     // We could use mincore to find out which pages are actually
@@ -4864,8 +5056,11 @@ static void hard_purge_chunk(arena_chunk_t* aChunk) {
       Unused << pages_commit(((char*)aChunk) + (i << gPageSize2Pow),
                              npages << gPageSize2Pow);
     }
+    total_npages += npages;
     i += npages;
   }
+
+  return total_npages;
 }
 
 // Explicitly remove all of this arena's MADV_FREE'd pages from memory.
@@ -4874,7 +5069,9 @@ void arena_t::HardPurge() {
 
   while (!mChunksMAdvised.isEmpty()) {
     arena_chunk_t* chunk = mChunksMAdvised.popFront();
-    hard_purge_chunk(chunk);
+    size_t npages = hard_purge_chunk(chunk);
+    mNumMAdvised -= npages;
+    mNumFresh += npages;
   }
 }
 
@@ -5324,7 +5521,7 @@ static void replace_malloc_init_funcs(malloc_table_t* table) {
 #include "malloc_decls.h"
 // ***************************************************************************
 
-#ifdef HAVE_DLOPEN
+#ifdef HAVE_DLFCN_H
 #  include <dlfcn.h>
 #endif
 

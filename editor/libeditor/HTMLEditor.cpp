@@ -46,6 +46,7 @@
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/Attr.h"
+#include "mozilla/dom/BorrowedAttrInfo.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
@@ -63,7 +64,6 @@
 #include "nsContentUtils.h"
 #include "nsCRT.h"
 #include "nsDebug.h"
-#include "nsDOMAttributeMap.h"
 #include "nsElementTable.h"
 #include "nsFocusManager.h"
 #include "nsGenericHTMLElement.h"
@@ -215,27 +215,23 @@ HTMLEditor::AppendNewElementWithBRToInsertingElement(
 }
 
 HTMLEditor::AttributeFilter HTMLEditor::CopyAllAttributes =
-    [](HTMLEditor&, const Element&, const Element&, const Attr&, nsString&) {
-      return true;
-    };
+    [](HTMLEditor&, const Element&, const Element&, int32_t, const nsAtom&,
+       nsString&) { return true; };
 HTMLEditor::AttributeFilter HTMLEditor::CopyAllAttributesExceptId =
-    [](HTMLEditor&, const Element&, const Element&, const Attr& aAttr,
-       nsString&) {
-      return aAttr.NodeInfo()->NamespaceID() != kNameSpaceID_None ||
-             aAttr.NodeInfo()->NameAtom() != nsGkAtoms::id;
+    [](HTMLEditor&, const Element&, const Element&, int32_t aNamespaceID,
+       const nsAtom& aAttrName, nsString&) {
+      return aNamespaceID != kNameSpaceID_None || &aAttrName != nsGkAtoms::id;
     };
 HTMLEditor::AttributeFilter HTMLEditor::CopyAllAttributesExceptDir =
-    [](HTMLEditor&, const Element&, const Element&, const Attr& aAttr,
-       nsString&) {
-      return aAttr.NodeInfo()->NamespaceID() != kNameSpaceID_None ||
-             aAttr.NodeInfo()->NameAtom() != nsGkAtoms::dir;
+    [](HTMLEditor&, const Element&, const Element&, int32_t aNamespaceID,
+       const nsAtom& aAttrName, nsString&) {
+      return aNamespaceID != kNameSpaceID_None || &aAttrName != nsGkAtoms::dir;
     };
 HTMLEditor::AttributeFilter HTMLEditor::CopyAllAttributesExceptIdAndDir =
-    [](HTMLEditor&, const Element&, const Element&, const Attr& aAttr,
-       nsString&) {
-      return !(aAttr.NodeInfo()->NamespaceID() == kNameSpaceID_None &&
-               (aAttr.NodeInfo()->NameAtom() == nsGkAtoms::id ||
-                aAttr.NodeInfo()->NameAtom() == nsGkAtoms::dir));
+    [](HTMLEditor&, const Element&, const Element&, int32_t aNamespaceID,
+       const nsAtom& aAttrName, nsString&) {
+      return !(aNamespaceID == kNameSpaceID_None &&
+               (&aAttrName == nsGkAtoms::id || &aAttrName == nsGkAtoms::dir));
     };
 
 HTMLEditor::HTMLEditor(const Document& aDocument)
@@ -1150,15 +1146,15 @@ nsresult HTMLEditor::MaybeCollapseSelectionAtFirstEditableNode(
     if (Text* text = leafContent->GetAsText()) {
       // If there is editable and visible text node, move caret at first of
       // the visible character.
-      WSScanResult scanResultInTextNode =
-          WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+      const WSScanResult scanResultInTextNode =
+          WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
               editingHost, EditorRawDOMPoint(text, 0),
               BlockInlineCheck::UseComputedDisplayStyle);
       if ((scanResultInTextNode.InVisibleOrCollapsibleCharacters() ||
            scanResultInTextNode.ReachedPreformattedLineBreak()) &&
           scanResultInTextNode.TextPtr() == text) {
         nsresult rv = CollapseSelectionTo(
-            scanResultInTextNode.Point<EditorRawDOMPoint>());
+            scanResultInTextNode.PointAtReachedContent<EditorRawDOMPoint>());
         NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                              "EditorBase::CollapseSelectionTo() failed");
         return rv;
@@ -3603,29 +3599,35 @@ Result<CreateElementResult, nsresult> HTMLEditor::CreateAndInsertElement(
 nsresult HTMLEditor::CopyAttributes(WithTransaction aWithTransaction,
                                     Element& aDestElement, Element& aSrcElement,
                                     const AttributeFilter& aFilterFunc) {
-  RefPtr<nsDOMAttributeMap> srcAttributes = aSrcElement.Attributes();
-  if (!srcAttributes->Length()) {
+  if (!aSrcElement.GetAttrCount()) {
     return NS_OK;
   }
-  AutoTArray<OwningNonNull<Attr>, 16> srcAttrs;
-  srcAttrs.SetCapacity(srcAttributes->Length());
-  for (uint32_t i = 0; i < srcAttributes->Length(); i++) {
-    RefPtr<Attr> attr = srcAttributes->Item(i);
-    if (!attr) {
-      break;
+  struct MOZ_STACK_CLASS AttrCache {
+    int32_t mNamespaceID;
+    OwningNonNull<nsAtom> mName;
+    nsString mValue;
+  };
+  AutoTArray<AttrCache, 16> srcAttrs;
+  srcAttrs.SetCapacity(aSrcElement.GetAttrCount());
+  for (const uint32_t i : IntegerRange(aSrcElement.GetAttrCount())) {
+    const BorrowedAttrInfo attrInfo = aSrcElement.GetAttrInfoAt(i);
+    if (const nsAttrName* attrName = attrInfo.mName) {
+      MOZ_ASSERT(attrName->LocalName());
+      MOZ_ASSERT(attrInfo.mValue);
+      nsString attrValue;
+      attrInfo.mValue->ToString(attrValue);
+      srcAttrs.AppendElement(AttrCache{attrInfo.mName->NamespaceID(),
+                                       *attrName->LocalName(), attrValue});
     }
-    srcAttrs.AppendElement(std::move(attr));
   }
   if (aWithTransaction == WithTransaction::No) {
-    for (const OwningNonNull<Attr>& attr : srcAttrs) {
-      nsString value;
-      attr->GetValue(value);
-      if (!aFilterFunc(*this, aSrcElement, aDestElement, attr, value)) {
+    for (auto& attr : srcAttrs) {
+      if (!aFilterFunc(*this, aSrcElement, aDestElement, attr.mNamespaceID,
+                       attr.mName, attr.mValue)) {
         continue;
       }
-      DebugOnly<nsresult> rvIgnored =
-          aDestElement.SetAttr(attr->NodeInfo()->NamespaceID(),
-                               attr->NodeInfo()->NameAtom(), value, false);
+      DebugOnly<nsresult> rvIgnored = aDestElement.SetAttr(
+          attr.mNamespaceID, attr.mName, attr.mValue, false);
       NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
                            "Element::SetAttr() failed, but ignored");
     }
@@ -3773,41 +3775,38 @@ nsresult HTMLEditor::InsertLinkAroundSelectionAsAction(
     return EditorBase::ToGenericNSResult(rv);
   }
 
-  nsAutoString href;
-  anchor->GetHref(href);
-  if (href.IsEmpty()) {
-    return NS_OK;
+  // XXX Is this ok? Does this just want to check that we're a link? If so
+  // there are faster ways to do this.
+  {
+    nsAutoCString href;
+    anchor->GetHref(href);
+    if (href.IsEmpty()) {
+      return NS_OK;
+    }
   }
 
   AutoPlaceholderBatch treatAsOneTransaction(
       *this, ScrollSelectionIntoView::Yes, __FUNCTION__);
 
   // Set all attributes found on the supplied anchor element
-  RefPtr<nsDOMAttributeMap> attributeMap = anchor->Attributes();
-  if (NS_WARN_IF(!attributeMap)) {
-    return NS_ERROR_FAILURE;
-  }
-
   // TODO: We should stop using this loop for adding attributes to newly created
   //       `<a href="...">` elements.  Then, we can avoid to increate the ref-
   //       counter of attribute names since we can use nsStaticAtom if we don't
   //       need to support unknown attributes.
   AutoTArray<EditorInlineStyleAndValue, 32> stylesToSet;
-  stylesToSet.SetCapacity(attributeMap->Length());
-  nsString value;
-  for (uint32_t i : IntegerRange(attributeMap->Length())) {
-    RefPtr<Attr> attribute = attributeMap->Item(i);
-    if (!attribute) {
-      continue;
+  if (const uint32_t attrCount = anchor->GetAttrCount()) {
+    stylesToSet.SetCapacity(attrCount);
+    for (const uint32_t i : IntegerRange(attrCount)) {
+      const BorrowedAttrInfo attrInfo = anchor->GetAttrInfoAt(i);
+      if (const nsAttrName* attrName = attrInfo.mName) {
+        RefPtr<nsAtom> attributeName = attrName->LocalName();
+        MOZ_ASSERT(attrInfo.mValue);
+        nsString attrValue;
+        attrInfo.mValue->ToString(attrValue);
+        stylesToSet.AppendElement(EditorInlineStyleAndValue(
+            *nsGkAtoms::a, std::move(attributeName), std::move(attrValue)));
+      }
     }
-
-    RefPtr<nsAtom> attributeName = attribute->NodeInfo()->NameAtom();
-
-    MOZ_ASSERT(value.IsEmpty());
-    attribute->GetValue(value);
-
-    stylesToSet.AppendElement(EditorInlineStyleAndValue(
-        *nsGkAtoms::a, std::move(attributeName), std::move(value)));
   }
   rv = SetInlinePropertiesAsSubAction(stylesToSet);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -4046,7 +4045,8 @@ Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
     }
     Result<InsertTextResult, nsresult> insertTextResult =
         InsertTextWithTransaction(*document, aStringToInsert,
-                                  EditorDOMPoint(&aTextNode, aOffset));
+                                  EditorDOMPoint(&aTextNode, aOffset),
+                                  InsertTextTo::ExistingTextNodeIfAvailable);
     NS_WARNING_ASSERTION(insertTextResult.isOk(),
                          "HTMLEditor::InsertTextWithTransaction() failed");
     return insertTextResult;
@@ -4128,7 +4128,7 @@ Result<InsertTextResult, nsresult> HTMLEditor::ReplaceTextWithTransaction(
 
 Result<InsertTextResult, nsresult> HTMLEditor::InsertTextWithTransaction(
     Document& aDocument, const nsAString& aStringToInsert,
-    const EditorDOMPoint& aPointToInsert) {
+    const EditorDOMPoint& aPointToInsert, InsertTextTo aInsertTextTo) {
   if (NS_WARN_IF(!aPointToInsert.IsSet())) {
     return Err(NS_ERROR_INVALID_ARG);
   }
@@ -4140,7 +4140,7 @@ Result<InsertTextResult, nsresult> HTMLEditor::InsertTextWithTransaction(
   }
 
   return EditorBase::InsertTextWithTransaction(aDocument, aStringToInsert,
-                                               aPointToInsert);
+                                               aPointToInsert, aInsertTextTo);
 }
 
 Result<EditorDOMPoint, nsresult> HTMLEditor::PrepareToInsertBRElement(

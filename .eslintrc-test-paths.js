@@ -4,8 +4,6 @@
 
 "use strict";
 
-/* eslint-env node */
-
 // The `*testPaths` defined below for test paths are the main path formats we
 // prefer to support for tests as they are commonly used across the tree.
 
@@ -116,13 +114,11 @@ const extraBrowserTestPaths = [
   "browser/base/content/test/siteIdentity/",
   "browser/base/content/test/startup/",
   "browser/base/content/test/static/",
-  "browser/base/content/test/statuspanel/",
   "browser/base/content/test/sync/",
   "browser/base/content/test/tabMediaIndicator/",
   "browser/base/content/test/tabPrompts/",
   "browser/base/content/test/tabcrashed/",
   "browser/base/content/test/tabdialogs/",
-  "browser/base/content/test/tabs/",
   "browser/base/content/test/touch/",
   "browser/base/content/test/utilityOverlay/",
   "browser/base/content/test/webextensions/",
@@ -217,7 +213,7 @@ const extraBrowserTestPaths = [
   "toolkit/components/pdfjs/test/",
   "toolkit/components/pictureinpicture/tests/",
   "toolkit/components/printing/tests/",
-  "toolkit/components/reader/test/",
+  "toolkit/components/reader/tests/",
   "toolkit/components/thumbnails/test/",
   "toolkit/components/tooltiptext/tests/",
   "toolkit/components/windowcreator/test/",

@@ -11,6 +11,7 @@ import { createEditor } from "./create-editor";
 
 import { isWasm, lineToWasmOffset, wasmOffsetToLine } from "../wasm";
 import { createLocation } from "../location";
+import { features } from "../prefs";
 
 let editor;
 
@@ -65,12 +66,20 @@ export function toEditorLine(sourceId, lineOrOffset) {
     return wasmOffsetToLine(sourceId, lineOrOffset) || 0;
   }
 
+  if (features.codemirrorNext) {
+    return lineOrOffset;
+  }
+
   return lineOrOffset ? lineOrOffset - 1 : 1;
 }
 
 export function fromEditorLine(sourceId, line, sourceIsWasm) {
   if (sourceIsWasm) {
     return lineToWasmOffset(sourceId, line) || 0;
+  }
+
+  if (features.codemirrorNext) {
+    return line;
   }
 
   return line + 1;
@@ -88,93 +97,13 @@ export function toEditorPosition(location) {
 }
 
 export function toSourceLine(sourceId, line) {
-  return isWasm(sourceId) ? lineToWasmOffset(sourceId, line) : line + 1;
-}
-
-export function scrollToPosition(codeMirror, line, column) {
-  // For all cases where these are on the first line and column,
-  // avoid the possibly slow computation of cursor location on large bundles.
-  if (!line && !column) {
-    codeMirror.scrollTo(0, 0);
-    return;
+  if (isWasm(sourceId)) {
+    return lineToWasmOffset(sourceId, line);
   }
-
-  const { top, left } = codeMirror.charCoords({ line, ch: column }, "local");
-
-  if (!isVisible(codeMirror, top, left)) {
-    const scroller = codeMirror.getScrollerElement();
-    const centeredX = Math.max(left - scroller.offsetWidth / 2, 0);
-    const centeredY = Math.max(top - scroller.offsetHeight / 2, 0);
-
-    codeMirror.scrollTo(centeredX, centeredY);
+  if (features.codemirrorNext) {
+    return line;
   }
-}
-
-function isVisible(codeMirror, top, left) {
-  function withinBounds(x, min, max) {
-    return x >= min && x <= max;
-  }
-
-  const scrollArea = codeMirror.getScrollInfo();
-  const charWidth = codeMirror.defaultCharWidth();
-  const fontHeight = codeMirror.defaultTextHeight();
-  const { scrollTop, scrollLeft } = codeMirror.doc;
-
-  const inXView = withinBounds(
-    left,
-    scrollLeft,
-    scrollLeft + (scrollArea.clientWidth - 30) - charWidth
-  );
-
-  const inYView = withinBounds(
-    top,
-    scrollTop,
-    scrollTop + scrollArea.clientHeight - fontHeight
-  );
-
-  return inXView && inYView;
-}
-
-export function getLocationsInViewport(
-  { codeMirror },
-  // Offset represents an allowance of characters or lines offscreen to improve
-  // perceived performance of column breakpoint rendering
-  offsetHorizontalCharacters = 100,
-  offsetVerticalLines = 20
-) {
-  // Get scroll position
-  if (!codeMirror) {
-    return {
-      start: { line: 0, column: 0 },
-      end: { line: 0, column: 0 },
-    };
-  }
-  const charWidth = codeMirror.defaultCharWidth();
-  const scrollArea = codeMirror.getScrollInfo();
-  const { scrollLeft } = codeMirror.doc;
-  const rect = codeMirror.getWrapperElement().getBoundingClientRect();
-  const topVisibleLine =
-    codeMirror.lineAtHeight(rect.top, "window") - offsetVerticalLines;
-  const bottomVisibleLine =
-    codeMirror.lineAtHeight(rect.bottom, "window") + offsetVerticalLines;
-
-  const leftColumn = Math.floor(
-    scrollLeft > 0 ? scrollLeft / charWidth - offsetHorizontalCharacters : 0
-  );
-  const rightPosition = scrollLeft + (scrollArea.clientWidth - 30);
-  const rightCharacter =
-    Math.floor(rightPosition / charWidth) + offsetHorizontalCharacters;
-
-  return {
-    start: {
-      line: topVisibleLine || 0,
-      column: leftColumn || 0,
-    },
-    end: {
-      line: bottomVisibleLine || 0,
-      column: rightCharacter,
-    },
-  };
+  return line + 1;
 }
 
 export function markText({ codeMirror }, className, { start, end }) {

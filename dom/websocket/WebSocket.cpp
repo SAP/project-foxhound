@@ -1619,6 +1619,19 @@ nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
   nsresult rv = mWebSocket->CheckCurrentGlobalCorrectness();
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Assign the sub protocol list and scan it for illegal values
+  for (uint32_t index = 0; index < aProtocolArray.Length(); ++index) {
+    if (!WebSocket::IsValidProtocolString(aProtocolArray[index])) {
+      return NS_ERROR_DOM_SYNTAX_ERR;
+    }
+
+    if (!mRequestedProtocolList.IsEmpty()) {
+      mRequestedProtocolList.AppendLiteral(", ");
+    }
+
+    AppendUTF16toUTF8(aProtocolArray[index], mRequestedProtocolList);
+  }
+
   // Shut down websocket if window is frozen or destroyed (only needed for
   // "ghost" websockets--see bug 696085)
   RefPtr<WebSocketImplProxy> proxy;
@@ -1800,19 +1813,6 @@ nsresult WebSocketImpl::Init(JSContext* aCx, bool aIsSecure,
         return NS_ERROR_DOM_SECURITY_ERR;
       }
     }
-  }
-
-  // Assign the sub protocol list and scan it for illegal values
-  for (uint32_t index = 0; index < aProtocolArray.Length(); ++index) {
-    if (!WebSocket::IsValidProtocolString(aProtocolArray[index])) {
-      return NS_ERROR_DOM_SYNTAX_ERR;
-    }
-
-    if (!mRequestedProtocolList.IsEmpty()) {
-      mRequestedProtocolList.AppendLiteral(", ");
-    }
-
-    AppendUTF16toUTF8(aProtocolArray[index], mRequestedProtocolList);
   }
 
   if (mIsMainThread) {
@@ -2657,8 +2657,7 @@ namespace {
 class CancelRunnable final : public MainThreadWorkerRunnable {
  public:
   CancelRunnable(ThreadSafeWorkerRef* aWorkerRef, WebSocketImpl* aImpl)
-      : MainThreadWorkerRunnable(aWorkerRef->Private(), "CancelRunnable"),
-        mImpl(aImpl) {}
+      : MainThreadWorkerRunnable("CancelRunnable"), mImpl(aImpl) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->AssertIsOnWorkerThread();
@@ -2693,7 +2692,7 @@ WebSocketImpl::Cancel(nsresult aStatus) {
   if (!mIsMainThread) {
     MOZ_ASSERT(mWorkerRef);
     RefPtr<CancelRunnable> runnable = new CancelRunnable(mWorkerRef, this);
-    if (!runnable->Dispatch()) {
+    if (!runnable->Dispatch(mWorkerRef->Private())) {
       return NS_ERROR_FAILURE;
     }
 
@@ -2803,15 +2802,14 @@ WebSocketImpl::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
 
 namespace {
 
-class WorkerRunnableDispatcher final : public WorkerRunnable {
+class WorkerRunnableDispatcher final : public WorkerThreadRunnable {
   RefPtr<WebSocketImpl> mWebSocketImpl;
 
  public:
   WorkerRunnableDispatcher(WebSocketImpl* aImpl,
                            ThreadSafeWorkerRef* aWorkerRef,
                            already_AddRefed<nsIRunnable> aEvent)
-      : WorkerRunnable(aWorkerRef->Private(), "WorkerRunnableDispatcher",
-                       WorkerThread),
+      : WorkerThreadRunnable("WorkerRunnableDispatcher"),
         mWebSocketImpl(aImpl),
         mEvent(std::move(aEvent)) {}
 
@@ -2879,7 +2877,7 @@ WebSocketImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags) {
   RefPtr<WorkerRunnableDispatcher> event =
       new WorkerRunnableDispatcher(this, mWorkerRef, event_ref.forget());
 
-  if (!event->Dispatch()) {
+  if (!event->Dispatch(mWorkerRef->Private())) {
     return NS_ERROR_FAILURE;
   }
 

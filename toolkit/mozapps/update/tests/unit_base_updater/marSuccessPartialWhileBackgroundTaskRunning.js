@@ -45,8 +45,7 @@ async function run_test() {
   // won't be updated if it already exists.  The manipulations below arrange a)
   // for the file to exist and b) for the comparison afterward to succeed.
   gTestFiles = gTestFilesPartialSuccess;
-  let channelPrefs = gTestFiles[gTestFiles.length - 1];
-  Assert.equal("channel-prefs.js", channelPrefs.fileName);
+  let channelPrefs = getTestFileByName(FILE_CHANNEL_PREFS);
   let f = gGREDirOrig.clone();
   f.append("defaults");
   f.append("pref");
@@ -92,12 +91,12 @@ async function run_test() {
   runUpdate(STATE_SUCCEEDED, false, 0, true);
 
   checkAppBundleModTime();
-  standardInit();
+  await testPostUpdateProcessing();
   checkPostUpdateRunningFile(false);
   checkFilesAfterUpdateSuccess(getApplyDirFile);
   checkUpdateLogContents(LOG_PARTIAL_SUCCESS);
   await waitForUpdateXMLFiles();
-  checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
+  await checkUpdateManager(STATE_NONE, false, STATE_SUCCEEDED, 0, 1);
 
   // Once we've seen what we want, there's no need to let the task wait complete.
   await proc.kill();

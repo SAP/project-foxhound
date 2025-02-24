@@ -940,13 +940,7 @@ static JSFunction* GetRejectFunctionFromResolve(JSFunction* resolve);
 /**
  * Returns Promise Resolve Function's [[AlreadyResolved]].[[Value]].
  */
-static bool IsAlreadyResolvedMaybeWrappedResolveFunction(
-    JSObject* resolveFunObj) {
-  if (IsWrapper(resolveFunObj)) {
-    resolveFunObj = UncheckedUnwrap(resolveFunObj);
-  }
-
-  JSFunction* resolveFun = &resolveFunObj->as<JSFunction>();
+static bool IsAlreadyResolvedResolveFunction(JSFunction* resolveFun) {
   MOZ_ASSERT(resolveFun->maybeNative() == ResolvePromiseFunction);
 
   bool alreadyResolved =
@@ -970,13 +964,7 @@ static bool IsAlreadyResolvedMaybeWrappedResolveFunction(
 /**
  * Returns Promise Reject Function's [[AlreadyResolved]].[[Value]].
  */
-static bool IsAlreadyResolvedMaybeWrappedRejectFunction(
-    JSObject* rejectFunObj) {
-  if (IsWrapper(rejectFunObj)) {
-    rejectFunObj = UncheckedUnwrap(rejectFunObj);
-  }
-
-  JSFunction* rejectFun = &rejectFunObj->as<JSFunction>();
+static bool IsAlreadyResolvedRejectFunction(JSFunction* rejectFun) {
   MOZ_ASSERT(rejectFun->maybeNative() == RejectPromiseFunction);
 
   bool alreadyResolved =
@@ -1023,8 +1011,8 @@ static void SetAlreadyResolvedResolutionFunction(JSFunction* resolutionFun) {
   reject->setExtendedSlot(RejectFunctionSlot_Promise, UndefinedValue());
   reject->setExtendedSlot(RejectFunctionSlot_ResolveFunction, UndefinedValue());
 
-  MOZ_ASSERT(IsAlreadyResolvedMaybeWrappedResolveFunction(resolve));
-  MOZ_ASSERT(IsAlreadyResolvedMaybeWrappedRejectFunction(reject));
+  MOZ_ASSERT(IsAlreadyResolvedResolveFunction(resolve));
+  MOZ_ASSERT(IsAlreadyResolvedRejectFunction(reject));
 }
 
 /**
@@ -1132,8 +1120,8 @@ void js::SetAlreadyResolvedPromiseWithDefaultResolvingFunction(
   rejectFun->initExtendedSlot(RejectFunctionSlot_ResolveFunction,
                               ObjectValue(*resolveFun));
 
-  MOZ_ASSERT(!IsAlreadyResolvedMaybeWrappedResolveFunction(resolveFun));
-  MOZ_ASSERT(!IsAlreadyResolvedMaybeWrappedRejectFunction(rejectFun));
+  MOZ_ASSERT(!IsAlreadyResolvedResolveFunction(resolveFun));
+  MOZ_ASSERT(!IsAlreadyResolvedRejectFunction(rejectFun));
 
   // Step 12. Return the Record { [[Resolve]]: resolve, [[Reject]]: reject }.
   return true;
@@ -1181,8 +1169,7 @@ static bool RejectPromiseFunction(JSContext* cx, unsigned argc, Value* vp) {
   // If the Promise isn't available anymore, it has been resolved and the
   // reference to it removed to make it eligible for collection.
   bool alreadyResolved = promiseVal.isUndefined();
-  MOZ_ASSERT(IsAlreadyResolvedMaybeWrappedRejectFunction(reject) ==
-             alreadyResolved);
+  MOZ_ASSERT(IsAlreadyResolvedRejectFunction(reject) == alreadyResolved);
   if (alreadyResolved) {
     args.rval().setUndefined();
     return true;
@@ -1362,8 +1349,7 @@ static bool ResolvePromiseFunction(JSContext* cx, unsigned argc, Value* vp) {
   //
   // NOTE: We use the reference to the reject function as [[AlreadyResolved]].
   bool alreadyResolved = promiseVal.isUndefined();
-  MOZ_ASSERT(IsAlreadyResolvedMaybeWrappedResolveFunction(resolve) ==
-             alreadyResolved);
+  MOZ_ASSERT(IsAlreadyResolvedResolveFunction(resolve) == alreadyResolved);
   if (alreadyResolved) {
     args.rval().setUndefined();
     return true;
@@ -1815,6 +1801,9 @@ CreatePromiseObjectWithoutResolutionFunctions(JSContext* cx) {
     // Step 10. Return promiseCapability.
     return true;
   }
+
+  // At this point this is effectively subclassing;
+  ReportUsageCounter(cx, C, SUBCLASSING_PROMISE, SUBCLASSING_TYPE_II);
 
   // Step 4. Let executorClosure be a new Abstract Closure with parameters
   //         (resolve, reject) that captures promiseCapability and performs the
@@ -2805,6 +2794,12 @@ static bool PromiseConstructor(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+bool js::IsPromiseConstructor(const JSObject* obj) {
+  // Note: this also returns true for cross-realm Promise constructors in the
+  // same compartment.
+  return IsNativeFunction(obj, PromiseConstructor);
+}
+
 /**
  * ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
  *
@@ -3164,7 +3159,8 @@ static bool PromiseAllResolveElementFunction(JSContext* cx, unsigned argc,
   for (size_t i = 0, len = promises.length(); i < len; i++) {
     JSObject* obj = promises[i];
     cx->check(obj);
-    MOZ_ASSERT(UncheckedUnwrap(obj)->is<PromiseObject>());
+    JSObject* unwrapped = UncheckedUnwrap(obj);
+    MOZ_ASSERT(unwrapped->is<PromiseObject>() || JS_IsDeadWrapper(unwrapped));
   }
 #endif
 
@@ -3265,7 +3261,13 @@ static bool PromiseAllResolveElementFunction(JSContext* cx, unsigned argc,
       // compartments with principals inaccessible from the current
       // compartment. To make that work, it unwraps promises with
       // UncheckedUnwrap,
-      nextPromise = &UncheckedUnwrap(nextPromiseObj)->as<PromiseObject>();
+      JSObject* unwrapped = UncheckedUnwrap(nextPromiseObj);
+      if (JS_IsDeadWrapper(unwrapped)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_DEAD_OBJECT);
+        return nullptr;
+      }
+      nextPromise = &unwrapped->as<PromiseObject>();
 
       if (!PerformPromiseThen(cx, nextPromise, resolveFunVal, rejectFunVal,
                               resultCapabilityWithoutResolving)) {
@@ -5036,7 +5038,8 @@ static PromiseReactionRecord* NewReactionRecord(
       // This is the only case where we allow `resolve` and `reject` to
       // be null when the `promise` field is not a PromiseObject.
       JSObject* unwrappedPromise = UncheckedUnwrap(resultCapability.promise());
-      MOZ_ASSERT(unwrappedPromise->is<PromiseObject>());
+      MOZ_ASSERT(unwrappedPromise->is<PromiseObject>() ||
+                 JS_IsDeadWrapper(unwrappedPromise));
       MOZ_ASSERT(!resultCapability.resolve());
       MOZ_ASSERT(!resultCapability.reject());
     }
@@ -6218,6 +6221,11 @@ bool js::Promise_then(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
+  if (JS_IsDeadWrapper(UncheckedUnwrap(dependentPromise))) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
+    return false;
+  }
+
   // `dependentPromise` should be a maybe-wrapped Promise.
   MOZ_ASSERT(UncheckedUnwrap(dependentPromise)->is<PromiseObject>());
 
@@ -6934,7 +6942,8 @@ JS::AutoDebuggerJobQueueInterruption::AutoDebuggerJobQueueInterruption()
     : cx(nullptr) {}
 
 JS::AutoDebuggerJobQueueInterruption::~AutoDebuggerJobQueueInterruption() {
-  MOZ_ASSERT_IF(initialized(), cx->jobQueue->empty());
+  MOZ_ASSERT_IF(initialized() && !cx->jobQueue->isDrainingStopped(),
+                cx->jobQueue->empty());
 }
 
 bool JS::AutoDebuggerJobQueueInterruption::init(JSContext* cx) {

@@ -95,8 +95,8 @@ export class _ExperimentManager {
 
   get studiesEnabled() {
     return (
-      Services.prefs.getBoolPref(UPLOAD_ENABLED_PREF) &&
-      Services.prefs.getBoolPref(STUDIES_OPT_OUT_PREF)
+      Services.prefs.getBoolPref(UPLOAD_ENABLED_PREF, false) &&
+      Services.prefs.getBoolPref(STUDIES_OPT_OUT_PREF, false)
     );
   }
 
@@ -207,7 +207,7 @@ export class _ExperimentManager {
         lazy.NimbusFeatures.nimbusTelemetry.getVariable(
           "gleanMetricConfiguration"
         ) ?? {};
-      Services.fog.setMetricsFeatureConfig(JSON.stringify(cfg));
+      Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
     });
   }
 
@@ -974,7 +974,7 @@ export class _ExperimentManager {
       // need to check if we have another enrollment for the same feature.
       const conflictingEnrollment = getConflictingEnrollment(featureId);
 
-      for (const [variable, value] of Object.entries(featureValue)) {
+      for (let [variable, value] of Object.entries(featureValue)) {
         const setPref = feature.getSetPref(variable);
 
         if (setPref) {
@@ -1012,6 +1012,13 @@ export class _ExperimentManager {
 
           // An experiment takes precedence if there is already a pref set.
           if (!isRollout || !conflictingPref) {
+            if (
+              lazy.NimbusFeatures[featureId].manifest.variables[variable]
+                .type === "json"
+            ) {
+              value = JSON.stringify(value);
+            }
+
             prefsToSet.push({
               name: prefName,
               value,
@@ -1250,7 +1257,13 @@ export class _ExperimentManager {
         }
       }
 
-      const value = featuresById[featureId].value[variable];
+      let value = featuresById[featureId].value[variable];
+      if (
+        lazy.NimbusFeatures[featureId].manifest.variables[variable].type ===
+        "json"
+      ) {
+        value = JSON.stringify(value);
+      }
 
       if (prefBranch !== "user") {
         lazy.PrefUtils.setPref(name, value, { branch: prefBranch });

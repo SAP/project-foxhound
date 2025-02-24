@@ -182,10 +182,10 @@ export var RecentlyClosedTabsAndWindowsMenuUtils = {
    * @param aEvent
    *        The command event when the user clicks the restore all menu item
    */
-  onRestoreAllWindowsCommand(aEvent) {
-    const count = lazy.SessionStore.getClosedWindowCount();
-    for (let index = 0; index < count; index++) {
-      lazy.SessionStore.undoCloseWindow(index);
+  onRestoreAllWindowsCommand() {
+    const closedData = lazy.SessionStore.getClosedWindowData();
+    for (const { closedId } of closedData) {
+      lazy.SessionStore.undoCloseById(closedId);
     }
   },
 
@@ -265,7 +265,7 @@ function createEntry(
     element.removeAttribute("oncommand");
     element.addEventListener(
       "command",
-      event => {
+      () => {
         lazy.SessionStore.undoClosedTabFromClosedWindow(
           { sourceClosedId },
           aClosedTab.closedId

@@ -126,6 +126,7 @@ EXPORTS.mozilla += [
     "ContentIterator.h",
     "CORSMode.h",
     "FlushType.h",
+    "FocusModel.h",
     "FullscreenChange.h",
     "GlobalTeardownObserver.h",
     "IdentifierMapEntry.h",
@@ -166,6 +167,7 @@ EXPORTS.mozilla.dom += [
     "CompressionStream.h",
     "ContentFrameMessageManager.h",
     "ContentProcessMessageManager.h",
+    "CrossShadowBoundaryRange.h",
     "CustomElementRegistry.h",
     "DecompressionStream.h",
     "DirectionalityUtils.h",
@@ -194,6 +196,7 @@ EXPORTS.mozilla.dom += [
     "External.h",
     "FilteredNodeIterator.h",
     "FormData.h",
+    "FragmentDirective.h",
     "FragmentOrElement.h",
     "FromParser.h",
     "GeneratedImageContent.h",
@@ -237,6 +240,7 @@ EXPORTS.mozilla.dom += [
     "PlacesBookmarkTitle.h",
     "PlacesBookmarkUrl.h",
     "PlacesEvent.h",
+    "PlacesEventCounts.h",
     "PlacesFavicon.h",
     "PlacesHistoryCleared.h",
     "PlacesObservers.h",
@@ -296,6 +300,7 @@ if CONFIG["FUZZING"]:
 
 if CONFIG["COMPILE_ENVIRONMENT"]:
     EXPORTS.mozilla.dom += [
+        "!fragmentdirectives_ffi_generated.h",
         "!GeneratedElementDocumentState.h",
         "RustTypes.h",
     ]
@@ -303,6 +308,11 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
     CbindgenHeader(
         "GeneratedElementDocumentState.h",
         inputs=["rust"],
+    )
+
+    CbindgenHeader(
+        "fragmentdirectives_ffi_generated.h",
+        inputs=["fragmentdirectives"],
     )
 
 UNIFIED_SOURCES += [
@@ -328,6 +338,7 @@ UNIFIED_SOURCES += [
     "ContentFrameMessageManager.cpp",
     "ContentIterator.cpp",
     "ContentProcessMessageManager.cpp",
+    "CrossShadowBoundaryRange.cpp",
     "Crypto.cpp",
     "CustomElementRegistry.cpp",
     "DirectionalityUtils.cpp",
@@ -349,6 +360,7 @@ UNIFIED_SOURCES += [
     "EventSourceEventService.cpp",
     "External.cpp",
     "FormData.cpp",
+    "FragmentDirective.cpp",
     "FragmentOrElement.cpp",
     "GeneratedImageContent.cpp",
     "GlobalTeardownObserver.cpp",
@@ -489,6 +501,7 @@ if CONFIG["FUZZING"]:
 if CONFIG["MOZ_PLACES"]:
     UNIFIED_SOURCES += [
         "PlacesEvent.cpp",
+        "PlacesEventCounts.cpp",
         "PlacesObservers.cpp",
         "PlacesWeakCallbackWrapper.cpp",
     ]
@@ -587,6 +600,7 @@ LOCAL_INCLUDES += [
     "/security/manager/ssl",
     "/third_party/xsimd/include",
     "/widget",
+    "/xpcom/build",
     "/xpcom/ds",
 ]
 

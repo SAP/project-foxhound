@@ -1071,7 +1071,8 @@ class AccessibilityTest : BaseSessionTest() {
             override fun onFocused(event: AccessibilityEvent) {
                 nodeId = getSourceId(event)
                 val node = createNodeInfo(nodeId)
-                assertThat("Focused outsideSelectable", node.text.toString(), equalTo("outside selectable"))
+                val nodeChild = createNodeInfo(node.getChildId(0))
+                assertThat("Focused outsideSelectable", nodeChild.text.toString(), equalTo("outside selectable "))
             }
         })
     }
@@ -1197,6 +1198,19 @@ class AccessibilityTest : BaseSessionTest() {
             @AssertCalled(count = 1)
             override fun onAnnouncement(event: AccessibilityEvent) {
                 assertThat("Announcement is correct", event.text[0].toString(), equalTo("Goodbye"))
+            }
+        })
+    }
+
+    @Test fun testLiveRegionStatus() {
+        loadTestPage("test-live-region-status")
+        waitForInitialFocus()
+
+        mainSession.evaluateJS("document.querySelector('#status').textContent = 'hello';")
+        sessionRule.waitUntilCalled(object : EventDelegate {
+            @AssertCalled(count = 1)
+            override fun onAnnouncement(event: AccessibilityEvent) {
+                assertThat("Announcement is correct", event.text[0].toString(), equalTo("hello"))
             }
         })
     }

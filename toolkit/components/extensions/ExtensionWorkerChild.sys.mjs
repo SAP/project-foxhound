@@ -10,8 +10,14 @@
  */
 
 import {
-  ExtensionChild,
+  ChildAPIManager,
+  ChildLocalAPIImplementation,
   ExtensionActivityLogChild,
+  MessageEvent,
+  Messenger,
+  Port,
+  ProxyAPIImplementation,
+  SimpleEventAPI,
 } from "resource://gre/modules/ExtensionChild.sys.mjs";
 
 import { ExtensionCommon } from "resource://gre/modules/ExtensionCommon.sys.mjs";
@@ -19,19 +25,12 @@ import {
   ExtensionPageChild,
   getContextChildManagerGetter,
 } from "resource://gre/modules/ExtensionPageChild.sys.mjs";
-import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
+import {
+  ExtensionUtils,
+  WorkerExtensionError,
+} from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
 const { BaseContext, redefineGetter } = ExtensionCommon;
-
-const {
-  ChildAPIManager,
-  ChildLocalAPIImplementation,
-  MessageEvent,
-  Messenger,
-  Port,
-  ProxyAPIImplementation,
-  SimpleEventAPI,
-} = ExtensionChild;
 
 const { DefaultMap, getUniqueId } = ExtensionUtils;
 
@@ -341,7 +340,7 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    *        The object that represents the API request received
    *        (including arguments, an event listener wrapper etc)
    *
-   * @returns {mozIExtensionAPIRequestResult}
+   * @returns {Partial<mozIExtensionAPIRequestResult>}
    *          Result for the API request, either a value to be returned
    *          (which has to be a value that can be structure cloned
    *          if the request was originated from the worker thread) or
@@ -373,9 +372,8 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    * into the expected mozIExtensionAPIRequestResult.
    *
    * @param {Error | WorkerExtensionError} error
-   * @returns {mozIExtensionAPIRequestResult}
+   * @returns {Partial<mozIExtensionAPIRequestResult>}
    */
-
   handleExtensionError(error) {
     // Propagate an extension error to the caller on the worker thread.
     if (error instanceof this.context.Error) {
@@ -402,7 +400,6 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    * @returns {any}
    * @throws {Error | WorkerExtensionError}
    */
-
   callAPIImplementation(request, impl) {
     const { requestType, normalizedArgs } = request;
 
@@ -480,7 +477,7 @@ class WebIDLChildAPIManager extends ChildAPIManager {
    * Return an ExtensionAPI class instance given its namespace.
    *
    * @param {string} namespace
-   * @returns {ExtensionAPI}
+   * @returns {import("ExtensionCommon.sys.mjs").ExtensionAPI}
    */
   getExtensionAPIInstance(namespace) {
     return this.apiCan.apis.get(namespace);
@@ -569,7 +566,7 @@ class WorkerContextChild extends BaseContext {
    * This WorkerContextChild represents an addon execution environment
    * that is running on the worker thread in an extension child process.
    *
-   * @param {BrowserExtensionContent} extension This context's owner.
+   * @param {ExtensionChild} extension This context's owner.
    * @param {object}                         params
    * @param {mozIExtensionServiceWorkerInfo} params.serviceWorkerInfo
    */
@@ -607,7 +604,7 @@ class WorkerContextChild extends BaseContext {
       // ExtensionAPIRequestHandler as errors that should be propagated to
       // the worker thread and received by extension code that originated
       // the API request.
-      Error: ExtensionUtils.WorkerExtensionError,
+      Error: WorkerExtensionError,
     };
   }
 
@@ -616,6 +613,7 @@ class WorkerContextChild extends BaseContext {
     return { workerDescriptorId };
   }
 
+  /** @type {ConduitGen} */
   openConduit(subject, address) {
     let proc = ChromeUtils.domProcessChild;
     let conduit = proc.getActor("ProcessConduits").openConduit(subject, {
@@ -658,7 +656,7 @@ class WorkerContextChild extends BaseContext {
    * Captures the most recent stack frame from the WebIDL API request being
    * processed.
    *
-   * @returns {SavedFrame?}
+   * @returns {nsIStackFrame}
    */
   getCaller() {
     return this.webidlAPIRequest?.callerSavedFrame;
@@ -719,7 +717,7 @@ export var ExtensionWorkerChild = {
    * Create an extension worker context (on a mozExtensionAPIRequest with
    * requestType "initWorkerContext").
    *
-   * @param {BrowserExtensionContent} extension
+   * @param {ExtensionChild} extension
    *     The extension for which the context should be created.
    * @param {mozIExtensionServiceWorkerInfo} serviceWorkerInfo
    */
@@ -751,7 +749,7 @@ export var ExtensionWorkerChild = {
    * Get an existing extension worker context for the given extension and
    * service worker.
    *
-   * @param {BrowserExtensionContent} extension
+   * @param {ExtensionChild} extension
    *     The extension for which the context should be created.
    * @param {mozIExtensionServiceWorkerInfo} serviceWorkerInfo
    *

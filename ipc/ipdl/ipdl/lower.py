@@ -218,15 +218,11 @@ def _putInNamespaces(cxxthing, namespaces):
 
 def _sendPrefix(msgtype):
     """Prefix of the name of the C++ method that sends |msgtype|."""
-    if msgtype.isInterrupt():
-        return "Call"
     return "Send"
 
 
 def _recvPrefix(msgtype):
     """Prefix of the name of the C++ method that handles |msgtype|."""
-    if msgtype.isInterrupt():
-        return "Answer"
     return "Recv"
 
 
@@ -237,13 +233,16 @@ def _flatTypeName(ipdltype):
     # NB: this logic depends heavily on what IPDL types are allowed to
     # be constructed; e.g., Foo[][] is disallowed.  needs to be kept in
     # sync with grammar.
-    if ipdltype.isIPDL() and ipdltype.isArray():
+    if not ipdltype.isIPDL():
+        return ipdltype.name()
+    if ipdltype.isArray():
         return "ArrayOf" + _flatTypeName(ipdltype.basetype)
-    if ipdltype.isIPDL() and ipdltype.isMaybe():
+    if ipdltype.isMaybe():
         return "Maybe" + _flatTypeName(ipdltype.basetype)
-    # NotNull types just assume the underlying variant name to avoid unnecessary
-    # noise, as a NotNull<T> and T should never exist in the same union.
-    if ipdltype.isIPDL() and ipdltype.isNotNull():
+    # NotNull and UniquePtr types just assume the underlying variant name
+    # to avoid unnecessary noise, as eg a NotNull<T> and T should never exist
+    # in the same union.
+    if ipdltype.isNotNull() or ipdltype.isUniquePtr():
         return _flatTypeName(ipdltype.basetype)
     return ipdltype.name()
 
@@ -413,6 +412,13 @@ def _sentinelReadError(classname):
     )
 
 
+identifierRegExp = re.compile("[a-zA-Z_][a-zA-Z0-9_]*")
+
+
+def _validCxxIdentifier(name):
+    return identifierRegExp.fullmatch(name) is not None
+
+
 # Results that IPDL-generated code returns back to *Channel code.
 # Users never see these
 
@@ -466,10 +472,6 @@ def errfnSentinel(rvalue=ExprLiteral.FALSE):
         return [_sentinelReadError(msg), StmtReturn(rvalue)]
 
     return inner
-
-
-def _destroyMethod():
-    return ExprVar("ActorDestroy")
 
 
 def errfnUnreachable(msg):
@@ -937,6 +939,7 @@ class _UnionMember(_CompoundTypeComponent):
 
     def __init__(self, ipdltype, ud):
         flatname = _flatTypeName(ipdltype)
+        assert _validCxxIdentifier(flatname)
 
         _CompoundTypeComponent.__init__(self, ipdltype, "V" + flatname)
         self.flattypename = flatname
@@ -1228,10 +1231,12 @@ class MessageDecl(ipdl.ast.MessageDecl):
             # We also don't move NotNull, as it has no move constructor.
             cxxargs.extend(
                 [
-                    p.var()
-                    if p.ipdltype.isRefcounted()
-                    or (p.ipdltype.isIPDL() and p.ipdltype.isNotNull())
-                    else ExprMove(p.var())
+                    (
+                        p.var()
+                        if p.ipdltype.isRefcounted()
+                        or (p.ipdltype.isIPDL() and p.ipdltype.isNotNull())
+                        else ExprMove(p.var())
+                    )
                     for p in self.params
                 ]
             )
@@ -1855,16 +1860,6 @@ def _generateMessageConstructor(md, segmentSize, protocol, forReply=False):
         syncEnum = "SYNC"
     else:
         syncEnum = "ASYNC"
-
-    # FIXME(bug ???) - remove support for interrupt messages from the IPDL compiler.
-    if md.decl.type.isInterrupt():
-        func.addcode(
-            """
-            static_assert(
-                false,
-                "runtime support for intr messages has been removed from IPDL");
-            """
-        )
 
     if md.decl.type.isCtor():
         ctorEnum = "CONSTRUCTOR"
@@ -2497,9 +2492,7 @@ class _ComputeTypeDeps(TypeVisitor):
         self.visitActorType(s.actor)
 
     def visitUniquePtrType(self, s):
-        if s in self.visited:
-            return
-        self.visited.add(s)
+        return TypeVisitor.visitUniquePtrType(self, s)
 
     def visitVoidType(self, v):
         assert 0
@@ -2591,9 +2584,11 @@ def _generateCxxStruct(sd):
                 sd.name,
                 params=[
                     Decl(
-                        f.forceMoveType()
-                        if _cxxTypeNeedsMoveForData(f.ipdltype)
-                        else f.constRefType(),
+                        (
+                            f.forceMoveType()
+                            if _cxxTypeNeedsMoveForData(f.ipdltype)
+                            else f.constRefType()
+                        ),
                         f.argVar().name,
                     )
                     for f in sd.fields_ipdl_order()
@@ -2622,9 +2617,11 @@ def _generateCxxStruct(sd):
                     sd.name,
                     params=[
                         Decl(
-                            f.forceMoveType()
-                            if _cxxTypeCanMove(f.ipdltype)
-                            else f.constRefType(),
+                            (
+                                f.forceMoveType()
+                                if _cxxTypeCanMove(f.ipdltype)
+                                else f.constRefType()
+                            ),
                             f.argVar().name,
                         )
                         for f in sd.fields_ipdl_order()
@@ -3654,6 +3651,16 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 FriendClassDecl(_actorName(friend.fullname(), self.prettyside))
             )
 
+        self.cls.addstmt(Label.PUBLIC)
+        protocolid = ExprVar("kProtocolId")
+        self.cls.addcode(
+            """
+            static constexpr ::mozilla::ipc::ProtocolId ${name} = ${value};
+            """,
+            name=protocolid,
+            value=_protocolId(ptype),
+        )
+
         self.cls.addstmt(Label.PROTECTED)
         for typedef in sorted(self.typedefSet):
             self.cls.addstmt(typedef)
@@ -3805,7 +3812,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             ctor.memberinits = [
                 ExprMemberInit(
                     ExprVar("mozilla::ipc::IToplevelProtocol"),
-                    [name, _protocolId(ptype), side],
+                    [name, protocolid, side],
                 )
             ]
         else:
@@ -3814,7 +3821,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 if ptype.isRefcounted()
                 else ExprVar("mozilla::ipc::IProtocol")
             )
-            ctor.memberinits = [ExprMemberInit(baseCtor, [_protocolId(ptype), side])]
+            ctor.memberinits = [ExprMemberInit(baseCtor, [protocolid, side])]
 
         ctor.addcode("MOZ_COUNT_CTOR(${clsname});\n", clsname=self.clsname)
         self.cls.addstmts([ctor, Whitespace.NL])
@@ -3863,7 +3870,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                     Manager()->DeallocManagee(${protocolId}, this);
                 }
                 """,
-                protocolId=_protocolId(ptype),
+                protocolId=protocolid,
             )
 
         self.cls.addstmts([Label.PROTECTED, actoralloc, actordealloc])
@@ -3899,22 +3906,6 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
                 self.cls.addstmts([managermeth, Whitespace.NL])
 
-        def actorFromIter(itervar):
-            return ExprCode("${iter}.Get()->GetKey()", iter=itervar)
-
-        def forLoopOverHashtable(hashtable, itervar, const=False):
-            itermeth = "ConstIter" if const else "Iter"
-            return StmtFor(
-                init=ExprCode(
-                    "auto ${itervar} = ${hashtable}.${itermeth}()",
-                    itervar=itervar,
-                    hashtable=hashtable,
-                    itermeth=itermeth,
-                ),
-                cond=ExprCode("!${itervar}.Done()", itervar=itervar),
-                update=ExprCode("${itervar}.Next()", itervar=itervar),
-            )
-
         # Managed[T](Array& inout) const
         # const Array<T>& Managed() const
         for managed in ptype.manages:
@@ -3948,92 +3939,56 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
             self.cls.addstmts([meth, refmeth, Whitespace.NL])
 
-        # AllManagedActors(Array& inout) const
-        arrvar = ExprVar("arr__")
-        managedmeth = MethodDefn(
+        managedprotocolids = MethodDefn(
             MethodDecl(
-                "AllManagedActors",
-                params=[
-                    Decl(
-                        _cxxArrayType(_refptr(_cxxLifecycleProxyType()), ref=True),
-                        arrvar.name,
-                    )
-                ],
-                methodspec=MethodSpec.OVERRIDE,
+                "ManagedProtocolIds",
+                ret=_cxxSpanType(Type("mozilla::ipc::ProtocolId")),
+                methodspec=MethodSpec.FINAL,
                 const=True,
             )
         )
-
-        # Count the number of managed actors, and allocate space in the output array.
-        managedmeth.addcode(
-            """
-            uint32_t total = 0;
-            """
-        )
-        for managed in ptype.manages:
-            managedmeth.addcode(
+        if ptype.manages:
+            managedprotocolids.addcode(
                 """
-                total += ${container}.Count();
+                static constexpr ::mozilla::ipc::ProtocolId sIds[] = {
+                    $,{values}
+                };
+                return sIds;
                 """,
-                container=p.managedVar(managed, self.side),
+                values=[_protocolId(managed) for managed in ptype.manages],
             )
-        managedmeth.addcode(
-            """
-            arr__.SetCapacity(total);
+        else:
+            managedprotocolids.addcode("return {};\n")
 
-            """
-        )
+        self.cls.addstmts([managedprotocolids, Whitespace.NL])
 
-        for managed in ptype.manages:
-            managedmeth.addcode(
-                """
-                for (auto* key : ${container}) {
-                    arr__.AppendElement(key->GetLifecycleProxy());
-                }
-
-                """,
-                container=p.managedVar(managed, self.side),
-            )
-
-        self.cls.addstmts([managedmeth, Whitespace.NL])
-
-        # AllManagedActorsCount() const
-        managedmeth = MethodDefn(
+        # UntypedManagedContainer& GetManagedActors(ProtocolId)
+        managedactors = MethodDefn(
             MethodDecl(
-                "AllManagedActorsCount",
-                ret=Type.UINT32,
-                methodspec=MethodSpec.OVERRIDE,
-                const=True,
+                "GetManagedActors",
+                ret=Type("UntypedManagedContainer", ptr=True),
+                methodspec=MethodSpec.FINAL,
+                params=[Decl(Type("mozilla::ipc::ProtocolId"), "aProtocol")],
             )
         )
 
-        # Count the number of managed actors.
-        managedmeth.addcode(
-            """
-            uint32_t total = 0;
-            """
-        )
+        selectmanagedactors = StmtSwitch(ExprVar("aProtocol"))
         for managed in ptype.manages:
-            managedmeth.addcode(
-                """
-                total += ${container}.Count();
-                """,
-                container=p.managedVar(managed, self.side),
+            selectmanagedactors.addcase(
+                CaseLabel(_protocolId(managed).name),
+                StmtReturn(ExprAddrOf(p.managedVar(managed, self.side))),
             )
-        managedmeth.addcode(
-            """
-            return total;
+        selectmanagedactors.addcase(DefaultLabel(), StmtReturn(ExprLiteral.NULL))
 
-            """
-        )
+        managedactors.addstmt(selectmanagedactors)
 
-        self.cls.addstmts([managedmeth, Whitespace.NL])
+        self.cls.addstmts([managedactors, Whitespace.NL])
 
         # OpenPEndpoint(...)/BindPEndpoint(...)
         for managed in ptype.manages:
             self.genManagedEndpoint(managed)
 
-        # OnMessageReceived()/OnCallReceived()
+        # OnMessageReceived()
 
         # save these away for use in message handler case stmts
         msgvar = ExprVar("msg__")
@@ -4051,11 +4006,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         msgtype = ExprCode("msg__.type()")
         self.asyncSwitch = StmtSwitch(msgtype)
         self.syncSwitch = None
-        self.interruptSwitch = None
-        if toplevel.isSync() or toplevel.isInterrupt():
+        if toplevel.isSync():
             self.syncSwitch = StmtSwitch(msgtype)
-            if toplevel.isInterrupt():
-                self.interruptSwitch = StmtSwitch(msgtype)
 
         # Add a handler for the MANAGED_ENDPOINT_BOUND and
         # MANAGED_ENDPOINT_DROPPED message types for managed actors.
@@ -4103,10 +4055,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             """
         )
         self.asyncSwitch.addcase(DefaultLabel(), default)
-        if toplevel.isSync() or toplevel.isInterrupt():
+        if toplevel.isSync():
             self.syncSwitch.addcase(DefaultLabel(), default)
-            if toplevel.isInterrupt():
-                self.interruptSwitch.addcase(DefaultLabel(), default)
 
         self.cls.addstmts(self.implementManagerIface())
 
@@ -4197,94 +4147,9 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 Whitespace.NL,
             ]
         )
-        self.cls.addstmts(
-            [
-                makeHandlerMethod(
-                    "OnCallReceived",
-                    self.interruptSwitch,
-                    hasReply=True,
-                    dispatches=dispatches,
-                ),
-                Whitespace.NL,
-            ]
-        )
-
-        clearsubtreevar = ExprVar("ClearSubtree")
-
-        if ptype.isToplevel():
-            # OnChannelClose()
-            onclose = MethodDefn(
-                MethodDecl("OnChannelClose", methodspec=MethodSpec.OVERRIDE)
-            )
-            onclose.addcode(
-                """
-                DestroySubtree(NormalShutdown);
-                ClearSubtree();
-                DeallocShmems();
-                if (GetLifecycleProxy()) {
-                    GetLifecycleProxy()->Release();
-                }
-                """
-            )
-            self.cls.addstmts([onclose, Whitespace.NL])
-
-            # OnChannelError()
-            onerror = MethodDefn(
-                MethodDecl("OnChannelError", methodspec=MethodSpec.OVERRIDE)
-            )
-            onerror.addcode(
-                """
-                DestroySubtree(AbnormalShutdown);
-                ClearSubtree();
-                DeallocShmems();
-                if (GetLifecycleProxy()) {
-                    GetLifecycleProxy()->Release();
-                }
-                """
-            )
-            self.cls.addstmts([onerror, Whitespace.NL])
-
-        if ptype.isToplevel() and ptype.isInterrupt():
-            processnative = MethodDefn(
-                MethodDecl("ProcessNativeEventsInInterruptCall", ret=Type.VOID)
-            )
-            processnative.addcode(
-                """
-                #ifdef XP_WIN
-                GetIPCChannel()->ProcessNativeEventsInInterruptCall();
-                #else
-                FatalError("This method is Windows-only");
-                #endif
-                """
-            )
-
-            self.cls.addstmts([processnative, Whitespace.NL])
 
         # private methods
         self.cls.addstmt(Label.PRIVATE)
-
-        # ClearSubtree()
-        clearsubtree = MethodDefn(MethodDecl(clearsubtreevar.name))
-        for managed in ptype.manages:
-            clearsubtree.addcode(
-                """
-                for (auto* key : ${container}) {
-                    key->ClearSubtree();
-                }
-                for (auto* key : ${container}) {
-                    // Recursively releasing ${container} kids.
-                    auto* proxy = key->GetLifecycleProxy();
-                    NS_IF_RELEASE(proxy);
-                }
-                ${container}.Clear();
-
-                """,
-                container=p.managedVar(managed, self.side),
-            )
-
-        # don't release our own IPC reference: either the manager will do it,
-        # or we're toplevel
-        self.cls.addstmts([clearsubtree, Whitespace.NL])
 
         if not ptype.isToplevel():
             self.cls.addstmts(
@@ -4353,9 +4218,8 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         )
         bindmeth.addcode(
             """
-            return aEndpoint.Bind(mozilla::ipc::PrivateIPDLInterface(), aActor, this, ${container});
-            """,
-            container=self.protocol.managedVar(managed, self.side),
+            return aEndpoint.Bind(mozilla::ipc::PrivateIPDLInterface(), aActor, this);
+            """
         )
 
         self.cls.addstmts([openmeth, bindmeth, Whitespace.NL])
@@ -4389,64 +4253,10 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             if msgtype.isCtor() and msgtype.isInout():
                 inoutCtorTypes.append(msgtype.constructedType())
 
-        # all protocols share the "same" RemoveManagee() implementation
-        pvar = ExprVar("aProtocolId")
-        listenervar = ExprVar("aListener")
-        removemanagee = MethodDefn(
-            MethodDecl(
-                p.removeManageeMethod().name,
-                params=[
-                    Decl(_protocolIdType(), pvar.name),
-                    Decl(protocolbase, listenervar.name),
-                ],
-                methodspec=MethodSpec.OVERRIDE,
-            )
-        )
-
-        if not len(p.managesStmts):
-            removemanagee.addcode(
-                """
-                FatalError("unreached");
-                return;
-                """
-            )
-        else:
-            switchontype = StmtSwitch(pvar)
-            for managee in p.managesStmts:
-                manageeipdltype = managee.decl.type
-                manageecxxtype = _cxxBareType(
-                    ipdl.type.ActorType(manageeipdltype), self.side
-                )
-                case = ExprCode(
-                    """
-                    {
-                        ${manageecxxtype} actor = static_cast<${manageecxxtype}>(aListener);
-
-                        const bool removed = ${container}.EnsureRemoved(actor);
-                        MOZ_RELEASE_ASSERT(removed, "actor not managed by this!");
-
-                        auto* proxy = actor->GetLifecycleProxy();
-                        NS_IF_RELEASE(proxy);
-                        return;
-                    }
-                    """,
-                    manageecxxtype=manageecxxtype,
-                    container=p.managedVar(manageeipdltype, self.side),
-                )
-                switchontype.addcase(CaseLabel(_protocolId(manageeipdltype).name), case)
-            switchontype.addcase(
-                DefaultLabel(),
-                ExprCode(
-                    """
-                FatalError("unreached");
-                return;
-                """
-                ),
-            )
-            removemanagee.addstmt(switchontype)
-
         # The `DeallocManagee` method is called for managed actors to trigger
         # deallocation when ActorLifecycleProxy is freed.
+        pvar = ExprVar("aProtocolId")
+        listenervar = ExprVar("aListener")
         deallocmanagee = MethodDefn(
             MethodDecl(
                 p.deallocManageeMethod().name,
@@ -4496,7 +4306,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             )
             deallocmanagee.addstmt(switchontype)
 
-        return methods + [removemanagee, deallocmanagee, Whitespace.NL]
+        return methods + [deallocmanagee, Whitespace.NL]
 
     def genShmemCreatedHandler(self):
         assert self.protocol.decl.type.isToplevel()
@@ -4566,8 +4376,6 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 self.asyncSwitch.addcase(lbl, case)
             elif decltype.isSync():
                 self.syncSwitch.addcase(lbl, case)
-            elif decltype.isInterrupt():
-                self.interruptSwitch.addcase(lbl, case)
             else:
                 assert 0
 
@@ -4747,14 +4555,16 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return [
             StmtCode(
                 """
-            if (!${actor}) {
-                NS_WARNING("Cannot bind null ${actorname} actor");
-                return ${errfn};
-            }
+                if (!${actor}) {
+                    NS_WARNING("Cannot bind null ${actorname} actor");
+                    return ${errfn};
+                }
 
-            ${actor}->SetManagerAndRegister($,{setManagerArgs});
-            ${container}.Insert(${actor});
-            """,
+                if (!${actor}->SetManagerAndRegister($,{setManagerArgs})) {
+                    NS_WARNING("Failed to bind ${actorname} actor");
+                    return ${errfn};
+                }
+                """,
                 actor=actordecl.var(),
                 actorname=actorproto.name() + self.side.capitalize(),
                 errfn=errfn,
@@ -4805,22 +4615,13 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return method, (lbl, case)
 
     def destroyActor(self, md, actorexpr, why=_DestroyReason.Deletion):
-        if md and md.decl.type.isCtor():
-            destroyedType = md.decl.type.constructedType()
-        else:
-            destroyedType = self.protocol.decl.type
-
         return [
             StmtCode(
                 """
-                IProtocol* mgr = ${actor}->Manager();
-                ${actor}->DestroySubtree(${why});
-                ${actor}->ClearSubtree();
-                mgr->RemoveManagee(${protoId}, ${actor});
+                ${actor}->ActorDisconnected(${why});
                 """,
                 actor=actorexpr,
                 why=why,
-                protoId=_protocolId(destroyedType),
             )
         ]
 
@@ -5417,8 +5218,6 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
     def sendBlocking(self, md, msgexpr, replyexpr, actor=None):
         send = ExprVar("ChannelSend")
-        if md.decl.type.isInterrupt():
-            send = ExprVar("ChannelCall")
         if actor is not None:
             send = ExprSelect(actor, "->", send.name)
 

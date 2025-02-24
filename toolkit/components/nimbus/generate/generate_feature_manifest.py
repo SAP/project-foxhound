@@ -5,6 +5,7 @@
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 import jsonschema
 import yaml
@@ -24,18 +25,11 @@ NIMBUS_FALLBACK_PREFS = (
 # Do not add new feature IDs to this list! isEarlyStartup is being deprecated.
 # See https://bugzilla.mozilla.org/show_bug.cgi?id=1875331 for details.
 ALLOWED_ISEARLYSTARTUP_FEATURE_IDS = {
-    "abouthomecache",
     "aboutwelcome",
-    "dapTelemetry",
-    "gleanInternalSdk",
-    "majorRelease2022",
     "newtab",
     "pocketNewtab",
-    "saveToPocket",
     "searchConfiguration",
-    "shellService",
     "testFeature",
-    "updatePrompt",
     "upgradeDialog",
 }
 
@@ -45,6 +39,8 @@ def write_fm_headers(fd):
 
 
 def validate_feature_manifest(schema_path, manifest_path, manifest):
+    TOPSRCDIR = Path(__file__).parent.parent.parent.parent.parent
+
     with open(schema_path, "r") as f:
         schema = json.load(f)
 
@@ -123,6 +119,17 @@ def validate_feature_manifest(schema_path, manifest_path, manifest):
                             f"{pref}"
                         )
                         raise Exception("Set prefs and fallback prefs cannot overlap")
+
+            if "schema" in feature:
+                schema_path = TOPSRCDIR / feature["schema"]["path"]
+                if not schema_path.exists():
+                    raise Exception(f"Schema does not exist at {schema_path}")
+
+                uri = urlparse(feature["schema"]["uri"])
+                if uri.scheme not in ("resource", "chrome"):
+                    raise Exception(
+                        "Only resource:// and chrome:// URIs are supported for schemas"
+                    )
 
         except Exception as e:
             print("Error while validating FeatureManifest.yaml")

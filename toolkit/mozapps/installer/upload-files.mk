@@ -380,6 +380,7 @@ endif
 
 
 ifdef ENABLE_MOZSEARCH_PLUGIN
+  UPLOAD_FILES += $(call QUOTED_WILDCARD,$(topobjdir)/chrome-map.json)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_ARCHIVE_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_SCIP_INDEX_BASENAME).zip)
   UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(MOZSEARCH_INCLUDEMAP_BASENAME).map)
@@ -394,6 +395,10 @@ endif
 
 # Upload `.xpt` artifacts for use in artifact builds.
 UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(XPT_ARTIFACTS_ARCHIVE_BASENAME).zip)
+# Upload update-related macOS framework artifacts for use in artifact builds.
+ifeq ($(OS_ARCH),Darwin)
+UPLOAD_FILES += $(call QUOTED_WILDCARD,$(DIST)/$(PKG_PATH)$(UPDATE_FRAMEWORK_ARTIFACTS_ARCHIVE_BASENAME).zip)
+endif # Darwin
 
 ifndef MOZ_PKG_SRCDIR
   MOZ_PKG_SRCDIR = $(topsrcdir)

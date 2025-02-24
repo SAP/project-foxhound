@@ -211,24 +211,32 @@
         return -1;
       }
 
-      var newIdx = aIndex + (aReverse ? -1 : 1) * aAmount;
-      if (
-        (aReverse && aIndex == -1) ||
-        (newIdx > aMaxRow && aIndex != aMaxRow)
-      ) {
-        newIdx = aMaxRow;
-      } else if ((!aReverse && aIndex == -1) || (newIdx < 0 && aIndex != 0)) {
-        newIdx = 0;
-      }
+      do {
+        var newIdx = aIndex + (aReverse ? -1 : 1) * aAmount;
+        if (
+          (aReverse && aIndex == -1) ||
+          (newIdx > aMaxRow && aIndex != aMaxRow)
+        ) {
+          newIdx = aMaxRow;
+        } else if ((!aReverse && aIndex == -1) || (newIdx < 0 && aIndex != 0)) {
+          newIdx = 0;
+        }
 
-      if (
-        (newIdx < 0 && aIndex == 0) ||
-        (newIdx > aMaxRow && aIndex == aMaxRow)
-      ) {
-        aIndex = -1;
-      } else {
-        aIndex = newIdx;
-      }
+        if (
+          (newIdx < 0 && aIndex == 0) ||
+          (newIdx > aMaxRow && aIndex == aMaxRow)
+        ) {
+          aIndex = -1;
+        } else {
+          aIndex = newIdx;
+        }
+
+        if (aIndex == -1) {
+          return -1;
+        }
+      } while (
+        !this.richlistbox.canUserSelect(this.richlistbox.getItemAtIndex(aIndex))
+      );
 
       return aIndex;
     }
@@ -313,12 +321,7 @@
     _collapseUnusedItems() {
       let existingItemsCount = this.richlistbox.children.length;
       for (let i = this.matchCount; i < existingItemsCount; ++i) {
-        let item = this.richlistbox.children[i];
-
-        item.collapsed = true;
-        if (typeof item._onCollapse == "function") {
-          item._onCollapse();
-        }
+        this.richlistbox.children[i].collapsed = true;
       }
     }
 
@@ -408,10 +411,9 @@
           // The styles on the list which have different <content> structure and overrided
           // _adjustAcItem() are unreusable.
           const UNREUSEABLE_STYLES = [
-            "autofill-profile",
-            "autofill-footer",
-            "autofill-clear-button",
-            "autofill-insecureWarning",
+            "autofill",
+            "action",
+            "status",
             "generatedPassword",
             "generic",
             "importableLearnMore",
@@ -434,17 +436,14 @@
         if (!reusable) {
           let options = null;
           switch (style) {
-            case "autofill-profile":
-              options = { is: "autocomplete-profile-listitem" };
+            case "autofill":
+              options = { is: "autocomplete-autofill-richlistitem" };
               break;
-            case "autofill-footer":
-              options = { is: "autocomplete-profile-listitem-footer" };
+            case "action":
+              options = { is: "autocomplete-action-richlistitem" };
               break;
-            case "autofill-clear-button":
-              options = { is: "autocomplete-profile-listitem-clear-button" };
-              break;
-            case "autofill-insecureWarning":
-              options = { is: "autocomplete-creditcard-insecure-field" };
+            case "status":
+              options = { is: "autocomplete-status-richlistitem" };
               break;
             case "generic":
               options = { is: "autocomplete-two-line-richlistitem" };

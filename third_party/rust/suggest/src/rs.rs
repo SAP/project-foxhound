@@ -31,12 +31,12 @@
 //!     the new suggestion in their results, and return `Suggestion::T` variants
 //!     as needed.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 
-use remote_settings::{GetItemsOptions, RemoteSettingsResponse};
+use remote_settings::{Attachment, GetItemsOptions, RemoteSettingsRecord, RsJsonObject, SortOrder};
 use serde::{Deserialize, Deserializer};
 
-use crate::{provider::SuggestionProvider, Result};
+use crate::{error::Error, provider::SuggestionProvider, Result};
 
 /// The Suggest Remote Settings collection name.
 pub(crate) const REMOTE_SETTINGS_COLLECTION: &str = "quicksuggest";
@@ -47,31 +47,111 @@ pub(crate) const REMOTE_SETTINGS_COLLECTION: &str = "quicksuggest";
 /// `mozilla-services/quicksuggest-rs` repo.
 pub(crate) const SUGGESTIONS_PER_ATTACHMENT: u64 = 200;
 
+/// A list of default record types to download if nothing is specified.
+/// This currently defaults to all of the record types.
+pub(crate) const DEFAULT_RECORDS_TYPES: [SuggestRecordType; 9] = [
+    SuggestRecordType::Icon,
+    SuggestRecordType::AmpWikipedia,
+    SuggestRecordType::Amo,
+    SuggestRecordType::Pocket,
+    SuggestRecordType::Yelp,
+    SuggestRecordType::Mdn,
+    SuggestRecordType::Weather,
+    SuggestRecordType::GlobalConfig,
+    SuggestRecordType::AmpMobile,
+];
+
 /// A trait for a client that downloads suggestions from Remote Settings.
 ///
 /// This trait lets tests use a mock client.
-pub(crate) trait SuggestRemoteSettingsClient {
-    /// Fetches records from the Suggest Remote Settings collection.
-    fn get_records_with_options(&self, options: &GetItemsOptions)
-        -> Result<RemoteSettingsResponse>;
-
-    /// Fetches a record's attachment from the Suggest Remote Settings
-    /// collection.
-    fn get_attachment(&self, location: &str) -> Result<Vec<u8>>;
+pub(crate) trait Client {
+    /// Fetch a list of records and attachment data
+    fn get_records(&self, request: RecordRequest) -> Result<Vec<Record>>;
 }
 
-impl SuggestRemoteSettingsClient for remote_settings::Client {
-    fn get_records_with_options(
-        &self,
-        options: &GetItemsOptions,
-    ) -> Result<RemoteSettingsResponse> {
-        Ok(remote_settings::Client::get_records_with_options(
-            self, options,
-        )?)
+impl Client for remote_settings::Client {
+    fn get_records(&self, request: RecordRequest) -> Result<Vec<Record>> {
+        let options = request.into();
+        self.get_records_with_options(&options)?
+            .records
+            .into_iter()
+            .map(|record| {
+                let attachment_data = record
+                    .attachment
+                    .as_ref()
+                    .map(|a| self.get_attachment(&a.location))
+                    .transpose()?;
+                Ok(Record::new(record, attachment_data))
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct RecordRequest {
+    pub record_type: Option<String>,
+    pub last_modified: Option<u64>,
+    pub limit: Option<u64>,
+}
+
+impl From<RecordRequest> for GetItemsOptions {
+    fn from(value: RecordRequest) -> Self {
+        let mut options = GetItemsOptions::new();
+
+        // Remote Settings returns records in descending modification order
+        // (newest first), but we want them in ascending order (oldest first),
+        // so that we can eventually resume downloading where we left off.
+        options.sort("last_modified", SortOrder::Ascending);
+
+        if let Some(record_type) = value.record_type {
+            options.filter_eq("type", record_type);
+        }
+
+        if let Some(last_modified) = value.last_modified {
+            options.filter_gt("last_modified", last_modified.to_string());
+        }
+
+        if let Some(limit) = value.limit {
+            // Each record's attachment has 200 suggestions, so download enough
+            // records to cover the requested maximum.
+            options.limit((limit.saturating_sub(1) / SUGGESTIONS_PER_ATTACHMENT) + 1);
+        }
+        options
+    }
+}
+
+/// Remote settings record for suggest.
+///
+/// This is `remote_settings::RemoteSettingsRecord`, plus the downloaded attachment data.
+#[derive(Clone, Debug, Default)]
+pub struct Record {
+    pub id: String,
+    pub last_modified: u64,
+    pub deleted: bool,
+    pub attachment: Option<Attachment>,
+    pub fields: RsJsonObject,
+    pub attachment_data: Option<Vec<u8>>,
+}
+
+impl Record {
+    pub fn new(record: RemoteSettingsRecord, attachment_data: Option<Vec<u8>>) -> Self {
+        Self {
+            id: record.id,
+            deleted: record.deleted,
+            fields: record.fields,
+            last_modified: record.last_modified,
+            attachment: record.attachment,
+            attachment_data,
+        }
     }
 
-    fn get_attachment(&self, location: &str) -> Result<Vec<u8>> {
-        Ok(remote_settings::Client::get_attachment(self, location)?)
+    /// Get the attachment data for this record, returning an error if it's not present.
+    ///
+    /// This is indented to be used in cases where the attachment data is required.
+    pub fn require_attachment_data(&self) -> Result<&[u8]> {
+        self.attachment_data
+            .as_deref()
+            .ok_or_else(|| Error::MissingAttachment(self.id.clone()))
     }
 }
 
@@ -100,6 +180,61 @@ pub(crate) enum SuggestRecord {
     GlobalConfig(DownloadedGlobalConfig),
     #[serde(rename = "amp-mobile-suggestions")]
     AmpMobile,
+}
+
+/// Enum for the different record types that can be consumed.
+/// Extracting this from the serialization enum so that we can
+/// extend it to get type metadata.
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub enum SuggestRecordType {
+    Icon,
+    AmpWikipedia,
+    Amo,
+    Pocket,
+    Yelp,
+    Mdn,
+    Weather,
+    GlobalConfig,
+    AmpMobile,
+}
+
+impl From<SuggestRecord> for SuggestRecordType {
+    fn from(suggest_record: SuggestRecord) -> Self {
+        match suggest_record {
+            SuggestRecord::Amo => Self::Amo,
+            SuggestRecord::AmpWikipedia => Self::AmpWikipedia,
+            SuggestRecord::Icon => Self::Icon,
+            SuggestRecord::Mdn => Self::Mdn,
+            SuggestRecord::Pocket => Self::Pocket,
+            SuggestRecord::Weather(_) => Self::Weather,
+            SuggestRecord::Yelp => Self::Yelp,
+            SuggestRecord::GlobalConfig(_) => Self::GlobalConfig,
+            SuggestRecord::AmpMobile => Self::AmpMobile,
+        }
+    }
+}
+
+impl fmt::Display for SuggestRecordType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Icon => write!(f, "icon"),
+            Self::AmpWikipedia => write!(f, "data"),
+            Self::Amo => write!(f, "amo-suggestions"),
+            Self::Pocket => write!(f, "pocket-suggestions"),
+            Self::Yelp => write!(f, "yelp-suggestions"),
+            Self::Mdn => write!(f, "mdn-suggestions"),
+            Self::Weather => write!(f, "weather"),
+            Self::GlobalConfig => write!(f, "configuration"),
+            Self::AmpMobile => write!(f, "amp-mobile-suggestions"),
+        }
+    }
+}
+
+impl SuggestRecordType {
+    /// Return the meta key for the last ingested record.
+    pub fn last_ingest_meta_key(&self) -> String {
+        format!("last_quicksuggest_ingest_{}", self)
+    }
 }
 
 /// Represents either a single value, or a list of values. This is used to
@@ -156,16 +291,18 @@ where
 }
 
 /// Fields that are common to all downloaded suggestions.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct DownloadedSuggestionCommonDetails {
     pub keywords: Vec<String>,
     pub title: String,
     pub url: String,
     pub score: Option<f64>,
+    #[serde(default)]
+    pub full_keywords: Vec<(String, usize)>,
 }
 
 /// An AMP suggestion to ingest from an AMP-Wikipedia attachment.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct DownloadedAmpSuggestion {
     #[serde(flatten)]
     pub common_details: DownloadedSuggestionCommonDetails,
@@ -180,7 +317,7 @@ pub(crate) struct DownloadedAmpSuggestion {
 }
 
 /// A Wikipedia suggestion to ingest from an AMP-Wikipedia attachment.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct DownloadedWikipediaSuggestion {
     #[serde(flatten)]
     pub common_details: DownloadedSuggestionCommonDetails,
@@ -212,6 +349,34 @@ impl DownloadedAmpWikipediaSuggestion {
             DownloadedAmpWikipediaSuggestion::Wikipedia(_) => SuggestionProvider::Wikipedia,
         }
     }
+}
+
+impl DownloadedSuggestionCommonDetails {
+    /// Iterate over all keywords for this suggestion
+    pub fn keywords(&self) -> impl Iterator<Item = AmpKeyword<'_>> {
+        let full_keywords = self
+            .full_keywords
+            .iter()
+            .flat_map(|(full_keyword, repeat_for)| {
+                std::iter::repeat(Some(full_keyword.as_str())).take(*repeat_for)
+            })
+            .chain(std::iter::repeat(None)); // In case of insufficient full keywords, just fill in with infinite `None`s
+                                             //
+        self.keywords.iter().zip(full_keywords).enumerate().map(
+            move |(i, (keyword, full_keyword))| AmpKeyword {
+                rank: i,
+                keyword,
+                full_keyword,
+            },
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct AmpKeyword<'a> {
+    pub rank: usize,
+    pub keyword: &'a str,
+    pub full_keyword: Option<&'a str>,
 }
 
 impl<'de> Deserialize<'de> for DownloadedAmpWikipediaSuggestion {
@@ -343,4 +508,153 @@ where
     D: Deserializer<'de>,
 {
     String::deserialize(deserializer).map(|s| s.parse().ok())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_full_keywords() {
+        let suggestion = DownloadedAmpWikipediaSuggestion::Amp(DownloadedAmpSuggestion {
+            common_details: DownloadedSuggestionCommonDetails {
+                keywords: vec![
+                    String::from("f"),
+                    String::from("fo"),
+                    String::from("foo"),
+                    String::from("foo b"),
+                    String::from("foo ba"),
+                    String::from("foo bar"),
+                ],
+                full_keywords: vec![(String::from("foo"), 3), (String::from("foo bar"), 3)],
+                ..DownloadedSuggestionCommonDetails::default()
+            },
+            ..DownloadedAmpSuggestion::default()
+        });
+
+        assert_eq!(
+            Vec::from_iter(suggestion.common_details().keywords()),
+            vec![
+                AmpKeyword {
+                    rank: 0,
+                    keyword: "f",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 1,
+                    keyword: "fo",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 2,
+                    keyword: "foo",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 3,
+                    keyword: "foo b",
+                    full_keyword: Some("foo bar"),
+                },
+                AmpKeyword {
+                    rank: 4,
+                    keyword: "foo ba",
+                    full_keyword: Some("foo bar"),
+                },
+                AmpKeyword {
+                    rank: 5,
+                    keyword: "foo bar",
+                    full_keyword: Some("foo bar"),
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn test_missing_full_keywords() {
+        let suggestion = DownloadedAmpWikipediaSuggestion::Amp(DownloadedAmpSuggestion {
+            common_details: DownloadedSuggestionCommonDetails {
+                keywords: vec![
+                    String::from("f"),
+                    String::from("fo"),
+                    String::from("foo"),
+                    String::from("foo b"),
+                    String::from("foo ba"),
+                    String::from("foo bar"),
+                ],
+                // Only the first 3 keywords have full keywords associated with them
+                full_keywords: vec![(String::from("foo"), 3)],
+                ..DownloadedSuggestionCommonDetails::default()
+            },
+            ..DownloadedAmpSuggestion::default()
+        });
+
+        assert_eq!(
+            Vec::from_iter(suggestion.common_details().keywords()),
+            vec![
+                AmpKeyword {
+                    rank: 0,
+                    keyword: "f",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 1,
+                    keyword: "fo",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 2,
+                    keyword: "foo",
+                    full_keyword: Some("foo"),
+                },
+                AmpKeyword {
+                    rank: 3,
+                    keyword: "foo b",
+                    full_keyword: None,
+                },
+                AmpKeyword {
+                    rank: 4,
+                    keyword: "foo ba",
+                    full_keyword: None,
+                },
+                AmpKeyword {
+                    rank: 5,
+                    keyword: "foo bar",
+                    full_keyword: None,
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn test_remote_settings_limits() {
+        fn check_limit(suggestion_limit: Option<u64>, expected_record_limit: Option<&str>) {
+            let request = RecordRequest {
+                limit: suggestion_limit,
+                ..RecordRequest::default()
+            };
+            let options: GetItemsOptions = request.into();
+            let actual_record_limit = options
+                .iter_query_pairs()
+                .find_map(|(name, value)| (name == "_limit").then(|| value.to_string()));
+            assert_eq!(
+                actual_record_limit.as_deref(),
+                expected_record_limit,
+                "expected record limit = {:?} for suggestion limit {:?}; actual = {:?}",
+                expected_record_limit,
+                suggestion_limit,
+                actual_record_limit
+            );
+        }
+
+        check_limit(None, None);
+        // 200 suggestions per record, so test with numbers around that
+        // boundary.
+        check_limit(Some(0), Some("1"));
+        check_limit(Some(199), Some("1"));
+        check_limit(Some(200), Some("1"));
+        check_limit(Some(201), Some("2"));
+        check_limit(Some(300), Some("2"));
+        check_limit(Some(400), Some("2"));
+        check_limit(Some(401), Some("3"));
+    }
 }

@@ -178,20 +178,6 @@ struct SizeComputationInput {
                        const mozilla::Maybe<mozilla::LogicalMargin>& aPadding =
                            mozilla::Nothing());
 
-#ifdef DEBUG
-  // Reflow trace methods.  Defined in nsFrame.cpp so they have access
-  // to the display-reflow infrastructure.
-  static void* DisplayInitOffsetsEnter(nsIFrame* aFrame,
-                                       SizeComputationInput* aState,
-                                       nscoord aPercentBasis,
-                                       mozilla::WritingMode aCBWritingMode,
-                                       const nsMargin* aBorder,
-                                       const nsMargin* aPadding);
-  static void DisplayInitOffsetsExit(nsIFrame* aFrame,
-                                     SizeComputationInput* aState,
-                                     void* aValue);
-#endif
-
  private:
   /**
    * Computes margin values from the specified margin style information, and
@@ -233,14 +219,6 @@ struct SizeComputationInput {
    * size, min-inline-size, or max-inline-size.  Does not handle auto inline
    * sizes.
    */
-  template <typename SizeOrMaxSize>
-  inline nscoord ComputeISizeValue(const WritingMode aWM,
-                                   const LogicalSize& aContainingBlockSize,
-                                   const LogicalSize& aContentEdgeToBoxSizing,
-                                   nscoord aBoxSizingToMarginEdge,
-                                   const SizeOrMaxSize&) const;
-  // same as previous, but using mComputedBorderPadding, mComputedPadding,
-  // and mComputedMargin
   template <typename SizeOrMaxSize>
   inline nscoord ComputeISizeValue(const LogicalSize& aContainingBlockSize,
                                    mozilla::StyleBoxSizing aBoxSizing,
@@ -367,6 +345,16 @@ struct ReflowInput : public SizeComputationInput {
 
   mozilla::LogicalSize AvailableSize() const { return mAvailableSize; }
   mozilla::LogicalSize ComputedSize() const { return mComputedSize; }
+
+  template <typename F>
+  mozilla::LogicalSize ComputedSizeWithBSizeFallback(F&& aFallback) const {
+    auto size = mComputedSize;
+    if (size.BSize(mWritingMode) == NS_UNCONSTRAINEDSIZE) {
+      size.BSize(mWritingMode) = ApplyMinMaxBSize(aFallback());
+    }
+    return size;
+  }
+
   mozilla::LogicalSize ComputedMinSize() const { return mComputedMinSize; }
   mozilla::LogicalSize ComputedMaxSize() const { return mComputedMaxSize; }
 
@@ -449,7 +437,7 @@ struct ReflowInput : public SizeComputationInput {
   struct Flags {
     Flags() { memset(this, 0, sizeof(*this)); }
 
-    // cached mFrame->IsReplaced() || mFrame->IsReplacedWithBlock()
+    // Cached mFrame->IsReplaced().
     bool mIsReplaced : 1;
 
     // used by tables to communicate special reflow (in process) to handle
@@ -464,11 +452,11 @@ struct ReflowInput : public SizeComputationInput {
     // infinite loops.
     bool mIsTopOfPage : 1;
 
-    // parent frame is an nsIScrollableFrame and it is assuming a horizontal
+    // parent frame is an ScrollContainerFrame and it is assuming a horizontal
     // scrollbar
     bool mAssumingHScrollbar : 1;
 
-    // parent frame is an nsIScrollableFrame and it is assuming a vertical
+    // parent frame is an ScrollContainerFrame and it is assuming a vertical
     // scrollbar
     bool mAssumingVScrollbar : 1;
 
@@ -745,6 +733,15 @@ struct ReflowInput : public SizeComputationInput {
                                 const nsIContent* aContent, nscoord aBlockBSize,
                                 float aFontSizeInflation);
 
+  static nscoord CalcLineHeightForCanvas(const StyleLineHeight& aLh,
+                                         const nsFont& aRelativeToFont,
+                                         nsAtom* aLanguage,
+                                         bool aExplicitLanguage,
+                                         nsPresContext* aPresContext,
+                                         mozilla::WritingMode aWM);
+
+  static constexpr float kNormalLineHeightFactor = 1.2f;
+
   mozilla::LogicalSize ComputeContainingBlockRectangle(
       nsPresContext* aPresContext, const ReflowInput* aContainingBlockRI) const;
 
@@ -887,21 +884,6 @@ struct ReflowInput : public SizeComputationInput {
                                             bool aIsMarginIEndAuto,
                                             LogicalMargin& aMargin,
                                             LogicalMargin& aOffsets);
-
-#ifdef DEBUG
-  // Reflow trace methods.  Defined in nsFrame.cpp so they have access
-  // to the display-reflow infrastructure.
-  static void* DisplayInitConstraintsEnter(nsIFrame* aFrame,
-                                           ReflowInput* aState,
-                                           nscoord aCBISize, nscoord aCBBSize,
-                                           const nsMargin* aBorder,
-                                           const nsMargin* aPadding);
-  static void DisplayInitConstraintsExit(nsIFrame* aFrame, ReflowInput* aState,
-                                         void* aValue);
-  static void* DisplayInitFrameTypeEnter(nsIFrame* aFrame, ReflowInput* aState);
-  static void DisplayInitFrameTypeExit(nsIFrame* aFrame, ReflowInput* aState,
-                                       void* aValue);
-#endif
 
  protected:
   void InitCBReflowInput();

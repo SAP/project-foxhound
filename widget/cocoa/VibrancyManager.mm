@@ -5,10 +5,14 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VibrancyManager.h"
+#include "ViewRegion.h"
+#include "nsRegion.h"
+#include "ViewRegion.h"
 
 #import <objc/message.h>
 
 #include "nsChildView.h"
+#include "mozilla/StaticPrefs_widget.h"
 
 using namespace mozilla;
 
@@ -19,92 +23,71 @@ using namespace mozilla;
                  vibrancyType:(VibrancyType)aVibrancyType;
 @end
 
-@interface MOZVibrantLeafView : MOZVibrantView
-@end
-
 static NSVisualEffectState VisualEffectStateForVibrancyType(
     VibrancyType aType) {
   switch (aType) {
-    case VibrancyType::TOOLTIP:
-    case VibrancyType::MENU:
-      // Tooltip and menu windows are never "key", so we need to tell the
-      // vibrancy effect to look active regardless of window state.
-      return NSVisualEffectStateActive;
-    default:
-      return NSVisualEffectStateFollowsWindowActiveState;
+    case VibrancyType::Titlebar:
+      break;
   }
+  return NSVisualEffectStateFollowsWindowActiveState;
 }
 
 static NSVisualEffectMaterial VisualEffectMaterialForVibrancyType(
-    VibrancyType aType, BOOL* aOutIsEmphasized) {
+    VibrancyType aType) {
   switch (aType) {
-    case VibrancyType::TOOLTIP:
-      return (NSVisualEffectMaterial)NSVisualEffectMaterialToolTip;
-    case VibrancyType::MENU:
-      return NSVisualEffectMaterialMenu;
+    case VibrancyType::Titlebar:
+      return NSVisualEffectMaterialTitlebar;
+  }
+}
+
+static NSVisualEffectBlendingMode VisualEffectBlendingModeForVibrancyType(
+    VibrancyType aType) {
+  switch (aType) {
+    case VibrancyType::Titlebar:
+      return StaticPrefs::widget_macos_titlebar_blend_mode_behind_window()
+                 ? NSVisualEffectBlendingModeBehindWindow
+                 : NSVisualEffectBlendingModeWithinWindow;
   }
 }
 
 @implementation MOZVibrantView
-
 - (instancetype)initWithFrame:(NSRect)aRect vibrancyType:(VibrancyType)aType {
   self = [super initWithFrame:aRect];
   mType = aType;
 
   self.appearance = nil;
   self.state = VisualEffectStateForVibrancyType(mType);
-
-  BOOL isEmphasized = NO;
-  self.material = VisualEffectMaterialForVibrancyType(mType, &isEmphasized);
-  self.emphasized = isEmphasized;
-
+  self.material = VisualEffectMaterialForVibrancyType(mType);
+  self.blendingMode = VisualEffectBlendingModeForVibrancyType(mType);
+  self.emphasized = NO;
   return self;
 }
-
-// Don't override allowsVibrancy here, because this view may have subviews, and
-// returning YES from allowsVibrancy forces on foreground vibrancy for all
-// descendant views, which can have unintended effects.
-
-@end
-
-@implementation MOZVibrantLeafView
 
 - (NSView*)hitTest:(NSPoint)aPoint {
   // This view must be transparent to mouse events.
   return nil;
 }
-
-// MOZVibrantLeafView does not have subviews, so we can return YES here without
-// having unintended effects on other contents of the window.
-- (BOOL)allowsVibrancy {
-  return NO;
-}
-
 @end
+
+VibrancyManager::VibrancyManager(const nsChildView& aCoordinateConverter,
+                                 NSView* aContainerView)
+    : mCoordinateConverter(aCoordinateConverter),
+      mContainerView(aContainerView) {}
+
+VibrancyManager::~VibrancyManager() = default;
 
 bool VibrancyManager::UpdateVibrantRegion(
     VibrancyType aType, const LayoutDeviceIntRegion& aRegion) {
+  auto& slot = mVibrantRegions[aType];
   if (aRegion.IsEmpty()) {
-    return mVibrantRegions.Remove(uint32_t(aType));
+    bool hadRegion = !!slot;
+    slot = nullptr;
+    return hadRegion;
   }
-  auto& vr = *mVibrantRegions.GetOrInsertNew(uint32_t(aType));
-  return vr.UpdateRegion(aRegion, mCoordinateConverter, mContainerView, ^() {
-    return this->CreateEffectView(aType);
+  if (!slot) {
+    slot = MakeUnique<ViewRegion>();
+  }
+  return slot->UpdateRegion(aRegion, mCoordinateConverter, mContainerView, ^() {
+    return [[MOZVibrantView alloc] initWithFrame:NSZeroRect vibrancyType:aType];
   });
-}
-
-LayoutDeviceIntRegion VibrancyManager::GetUnionOfVibrantRegions() const {
-  LayoutDeviceIntRegion result;
-  for (const auto& region : mVibrantRegions.Values()) {
-    result.OrWith(region->Region());
-  }
-  return result;
-}
-
-/* static */ NSView* VibrancyManager::CreateEffectView(VibrancyType aType,
-                                                       BOOL aIsContainer) {
-  return aIsContainer ? [[MOZVibrantView alloc] initWithFrame:NSZeroRect
-                                                 vibrancyType:aType]
-                      : [[MOZVibrantLeafView alloc] initWithFrame:NSZeroRect
-                                                     vibrancyType:aType];
 }

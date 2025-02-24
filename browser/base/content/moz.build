@@ -82,9 +82,6 @@ with Files("test/startup/**"):
 with Files("test/static/**"):
     BUG_COMPONENT = ("Firefox", "General")
 
-with Files("test/statuspanel/**"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
-
 with Files("test/sync/**"):
     BUG_COMPONENT = ("Firefox", "Sync")
 
@@ -98,9 +95,6 @@ with Files("test/tabPrompts/**"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("test/tabcrashed/**"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
-
-with Files("test/tabs/**"):
     BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("test/touch/**"):
@@ -139,9 +133,6 @@ with Files("*menu*"):
 with Files("browser-customization.js"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")
 
-with Files("browser-fullZoom.js"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
-
 with Files("browser-gestureSupport.js"):
     BUG_COMPONENT = ("Core", "Widget")
 
@@ -171,15 +162,6 @@ with Files("macWindow.inc.xhtml"):
 
 with Files("sanitize*"):
     BUG_COMPONENT = ("Toolkit", "Data Sanitization")
-
-with Files("tabbrowser*"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
-
-with Files("browser-allTabsMenu.js"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
-
-with Files("browser-ctrlTab.js"):
-    BUG_COMPONENT = ("Firefox", "Tabbed Browser")
 
 with Files("webext-panels*"):
     BUG_COMPONENT = ("WebExtensions", "Frontend")

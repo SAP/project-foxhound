@@ -125,7 +125,7 @@ At a glance
 -  Tests are defined in
    `testing/talos/talos/test.py <https://searchfox.org/mozilla-central/source/testing/talos/talos/test.py>`__
 -  Treeherder abbreviations are defined in
-   `taskcluster/ci/test/talos.yml <https://searchfox.org/mozilla-central/source/taskcluster/ci/test/talos.yml>`__
+   `taskcluster/kinds/test/talos.yml <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/talos.yml>`__
 -  Suites are defined for production in
    `testing/talos/talos.json <https://searchfox.org/mozilla-central/source/testing/talos/talos.json>`__
 
@@ -133,7 +133,7 @@ Test lifecycle
 **************
 
 -  Taskcluster schedules `talos
-   jobs <https://searchfox.org/mozilla-central/source/taskcluster/ci/test/talos.yml>`__
+   jobs <https://searchfox.org/mozilla-central/source/taskcluster/kinds/test/talos.yml>`__
 -  Taskcluster runs a Talos job on a hardware machine when one is
    available - this is bootstrapped by
    `mozharness <https://searchfox.org/mozilla-central/source/testing/mozharness/mozharness/mozilla/testing/talos.py>`__
@@ -1243,7 +1243,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -1414,32 +1413,6 @@ For the sample commands found below, note that the capitalization used is import
 
 
    .. list-table:: **test-windows10-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -2025,7 +1998,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -2353,7 +2325,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -2911,7 +2882,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 25
    * unit: frame interval
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -3107,32 +3077,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -3258,7 +3202,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -3429,32 +3372,6 @@ For the sample commands found below, note that the capitalization used is import
 
 
    .. list-table:: **test-windows10-64-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
 
@@ -4127,32 +4044,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -4279,7 +4170,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -4475,32 +4365,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -4627,7 +4491,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -4823,32 +4686,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -4975,7 +4812,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -5171,32 +5007,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -5323,7 +5133,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -5519,32 +5328,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -5671,7 +5454,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -5867,32 +5649,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6019,7 +5775,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -6215,32 +5970,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6367,7 +6096,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -6563,32 +6291,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -6715,7 +6417,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -6911,32 +6612,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -7063,7 +6738,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -7259,32 +6933,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -7411,7 +7059,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -7607,32 +7254,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -7759,7 +7380,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -7955,32 +7575,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -8107,7 +7701,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 5
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -8303,32 +7896,6 @@ For the sample commands found below, note that the capitalization used is import
         - ❌
 
 
-   .. list-table:: **test-windows10-64-ref-hw-2017-qr/opt**
-      :widths: 30 15 15 15 15
-      :header-rows: 1
-
-      * - **Test Name**
-        - mozilla-central
-        - autoland
-        - mozilla-release
-        - mozilla-beta
-      * - **talos-webgl**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-      * - **talos-webgl-gli**
-        - ✅
-        - ✅
-        - ❌
-        - ❌
-      * - **talos-webgl-swr**
-        - ❌
-        - ❌
-        - ❌
-        - ❌
-
-
    .. list-table:: **test-windows10-64-shippable-qr/opt**
       :widths: 30 15 15 15 15
       :header-rows: 1
@@ -8425,11 +7992,19 @@ For the sample commands found below, note that the capitalization used is import
    * source:
    * type: `Page load`_
    * reporting: time from *performance.timing.navigationStart* to *pagerendered* event in ms (lower is better)
-   * data: load a PDF 20 times
+   * data: loads a PDF 5 times
+   * description:
+      | Runs through a set of chunks. Each chunk runs 100 PDFs with 5 iterations each.
+        If --pdfPaintChunk is not used when running the test locally, all PDFs will be tested
+        by default with only 1 cycle each. The PDFs that are run are found in the Mozilla pdf.js
+        repository, and this test pulls those in for testing locally through a toolchain artifact
+        called talos-pdfs.
    * pdfpaint: True
-   * timeout: 600
+   * subtest_alerts: True
+   * timeout: 1800
    * tpmanifest: ${talos}/tests/pdfpaint/pdfpaint.manifest
-   * tppagecycles: 20
+   * tppagecycles: 1
+   * tptimeout: 60000
    * unit: ms
    * Command
 
@@ -8448,12 +8023,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-1-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ❌
         - ❌
         - ❌
@@ -8469,17 +8134,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ✅
         - ✅
         - ❌
         - ❌
-      * - **talos-other-profiling**
+      * - **talos-pdfpaint-1-swr**
+        - ✅
+        - ✅
         - ❌
         - ❌
+      * - **talos-pdfpaint-10**
+        - ✅
+        - ✅
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-10-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ✅
         - ✅
         - ❌
@@ -8495,17 +8245,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ✅
         - ✅
         - ❌
         - ❌
-      * - **talos-other-profiling**
+      * - **talos-pdfpaint-1-swr**
+        - ✅
+        - ✅
         - ❌
         - ❌
+      * - **talos-pdfpaint-10**
+        - ✅
+        - ✅
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-10-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ✅
         - ✅
         - ❌
@@ -8521,12 +8356,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-1-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ❌
         - ❌
         - ❌
@@ -8542,17 +8467,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-other-profiling**
+      * - **talos-pdfpaint-1-swr**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-10**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ❌
         - ❌
         - ❌
@@ -8568,12 +8578,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ❌
         - ❌
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-1-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-10-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ❌
+        - ❌
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ❌
         - ❌
         - ❌
@@ -8589,17 +8689,102 @@ For the sample commands found below, note that the capitalization used is import
         - autoland
         - mozilla-release
         - mozilla-beta
-      * - **talos-other**
+      * - **talos-pdfpaint-1**
         - ✅
         - ✅
         - ❌
         - ❌
-      * - **talos-other-profiling**
+      * - **talos-pdfpaint-1-swr**
+        - ✅
+        - ✅
         - ❌
         - ❌
+      * - **talos-pdfpaint-10**
+        - ✅
+        - ✅
         - ❌
         - ❌
-      * - **talos-other-swr**
+      * - **talos-pdfpaint-10-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-2-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-3-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-4-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-5-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-6-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-7-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-8-swr**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9**
+        - ✅
+        - ✅
+        - ❌
+        - ❌
+      * - **talos-pdfpaint-9-swr**
         - ✅
         - ✅
         - ❌
@@ -9062,7 +9247,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 10
    * unit: score
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -9274,7 +9458,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 10
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -11146,7 +11329,6 @@ For the sample commands found below, note that the capitalization used is import
    * tpmozafterpaint: False
    * tppagecycles: 25
    * unit: ms
-   * w7_counters: None
    * win_counters: None
    * Command
 
@@ -11361,7 +11543,6 @@ For the sample commands found below, note that the capitalization used is import
    * tppagecycles: 1
    * tptimeout: 10000
    * unit: ms
-   * w7_counters: []
    * win_counters: []
    * xperf_counters: ['main_startup_fileio', 'main_startup_netio', 'main_normal_fileio', 'main_normal_netio', 'nonmain_startup_fileio', 'nonmain_normal_fileio', 'nonmain_normal_netio', 'mainthread_readcount', 'mainthread_readbytes', 'mainthread_writecount', 'mainthread_writebytes', 'time_to_session_store_window_restored_ms']
    * xperf_providers: ['PROC_THREAD', 'LOADER', 'HARD_FAULTS', 'FILENAME', 'FILE_IO', 'FILE_IO_INIT']
@@ -11524,7 +11705,6 @@ For the sample commands found below, note that the capitalization used is import
    * tppagecycles: 25
    * tptimeout: 5000
    * unit: ms
-   * w7_counters: ['% Processor Time']
    * win_counters: ['% Processor Time']
    * Command
 

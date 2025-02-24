@@ -7,6 +7,7 @@
 #include "WebCodecsUtils.h"
 
 #include "DecoderTypes.h"
+#include "PlatformEncoderModule.h"
 #include "VideoUtils.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/Assertions.h"
@@ -15,8 +16,6 @@
 #include "mozilla/dom/VideoFrameBinding.h"
 #include "mozilla/gfx/Types.h"
 #include "nsDebug.h"
-#include "PlatformEncoderModule.h"
-#include "PlatformEncoderModule.h"
 
 extern mozilla::LazyLogModule gWebCodecsLog;
 
@@ -155,6 +154,33 @@ Result<Ok, nsresult> CloneBuffer(
     return Err(NS_ERROR_UNEXPECTED);
   }
   return Ok();
+}
+
+Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
+    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
+  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
+  if (!AppendTypedArrayDataTo(aBuffer, *data)) {
+    return Err(NS_ERROR_OUT_OF_MEMORY);
+  }
+  return data->Length() > 0 ? data : nullptr;
+}
+
+bool CopyExtradataToDescription(
+    JSContext* aCx, Span<const uint8_t>& aSrc,
+    OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aDest) {
+  MOZ_ASSERT(!aSrc.IsEmpty());
+
+  MOZ_ASSERT(aCx);
+
+  size_t lengthBytes = aSrc.Length();
+  UniquePtr<uint8_t[], JS::FreePolicy> extradata(new uint8_t[lengthBytes]);
+
+  PodCopy(extradata.get(), aSrc.Elements(), lengthBytes);
+
+  JS::Rooted<JSObject*> data(aCx, JS::NewArrayBufferWithContents(
+                                      aCx, lengthBytes, std::move(extradata)));
+  JS::Rooted<JS::Value> value(aCx, JS::ObjectValue(*data));
+  return aDest.Init(aCx, value);
 }
 
 /*
@@ -412,8 +438,8 @@ struct ConfigurationChangeToString {
   }
 };
 
-nsString WebCodecsConfigurationChangeList::ToString() const {
-  nsString rv;
+nsCString WebCodecsConfigurationChangeList::ToString() const {
+  nsCString rv;
   for (const WebCodecsEncoderConfigurationItem& change : mChanges) {
     nsCString str = change.match(ConfigurationChangeToString());
     rv.AppendPrintf("- %s\n", str.get());
@@ -470,24 +496,24 @@ WebCodecsConfigurationChangeList::ToPEMChangeList() const {
     } else if (change.is<FramerateChange>()) {
       rv->Push(mozilla::FramerateChange(change.as<FramerateChange>().get()));
     } else if (change.is<dom::BitrateModeChange>()) {
-      MediaDataEncoder::BitrateMode mode;
+      mozilla::BitrateMode mode;
       if (change.as<dom::BitrateModeChange>().get() ==
           dom::VideoEncoderBitrateMode::Constant) {
-        mode = MediaDataEncoder::BitrateMode::Constant;
+        mode = mozilla::BitrateMode::Constant;
       } else if (change.as<BitrateModeChange>().get() ==
                  dom::VideoEncoderBitrateMode::Variable) {
-        mode = MediaDataEncoder::BitrateMode::Variable;
+        mode = mozilla::BitrateMode::Variable;
       } else {
         // Quantizer, not underlying support yet.
-        mode = MediaDataEncoder::BitrateMode::Variable;
+        mode = mozilla::BitrateMode::Variable;
       }
       rv->Push(mozilla::BitrateModeChange(mode));
     } else if (change.is<LatencyModeChange>()) {
-      MediaDataEncoder::Usage usage;
+      Usage usage;
       if (change.as<LatencyModeChange>().get() == dom::LatencyMode::Quality) {
-        usage = MediaDataEncoder::Usage::Record;
+        usage = Usage::Record;
       } else {
-        usage = MediaDataEncoder::Usage::Realtime;
+        usage = Usage::Realtime;
       }
       rv->Push(UsageChange(usage));
     } else if (change.is<ContentHintChange>()) {
@@ -570,21 +596,12 @@ Maybe<CodecType> CodecStringToCodecType(const nsAString& aCodecString) {
   return Nothing();
 }
 
-nsString ConfigToString(const VideoDecoderConfig& aConfig) {
+nsCString ConfigToString(const VideoDecoderConfig& aConfig) {
   nsString rv;
 
   auto internal = VideoDecoderConfigInternal::Create(aConfig);
 
   return internal->ToString();
-}
-
-Result<RefPtr<MediaByteBuffer>, nsresult> GetExtraDataFromArrayBuffer(
-    const OwningMaybeSharedArrayBufferViewOrMaybeSharedArrayBuffer& aBuffer) {
-  RefPtr<MediaByteBuffer> data = MakeRefPtr<MediaByteBuffer>();
-  if (!AppendTypedArrayDataTo(aBuffer, *data)) {
-    return Err(NS_ERROR_OUT_OF_MEMORY);
-  }
-  return data->Length() > 0 ? data : nullptr;
 }
 
 bool IsSupportedVideoCodec(const nsAString& aCodec) {
@@ -604,6 +621,54 @@ bool IsSupportedVideoCodec(const nsAString& aCodec) {
   }
 
   return true;
+}
+
+nsCString ConvertCodecName(const nsCString& aContainer,
+                           const nsCString& aCodec) {
+  if (!aContainer.EqualsLiteral("x-wav")) {
+    return aCodec;
+  }
+
+  // https://www.rfc-editor.org/rfc/rfc2361.txt
+  if (aCodec.EqualsLiteral("ulaw")) {
+    return nsCString("7");
+  }
+  if (aCodec.EqualsLiteral("alaw")) {
+    return nsCString("6");
+  }
+  if (aCodec.Find("f32")) {
+    return nsCString("3");
+  }
+  // Linear PCM
+  return nsCString("1");
+}
+
+bool IsSupportedAudioCodec(const nsAString& aCodec) {
+  LOG("IsSupportedAudioCodec: %s", NS_ConvertUTF16toUTF8(aCodec).get());
+  return aCodec.EqualsLiteral("flac") || aCodec.EqualsLiteral("mp3") ||
+         IsAACCodecString(aCodec) || aCodec.EqualsLiteral("opus") ||
+         aCodec.EqualsLiteral("ulaw") || aCodec.EqualsLiteral("alaw") ||
+         aCodec.EqualsLiteral("pcm-u8") || aCodec.EqualsLiteral("pcm-s16") ||
+         aCodec.EqualsLiteral("pcm-s24") || aCodec.EqualsLiteral("pcm-s32") ||
+         aCodec.EqualsLiteral("pcm-f32");
+}
+
+uint32_t BytesPerSamples(const mozilla::dom::AudioSampleFormat& aFormat) {
+  switch (aFormat) {
+    case AudioSampleFormat::U8:
+    case AudioSampleFormat::U8_planar:
+      return sizeof(uint8_t);
+    case AudioSampleFormat::S16:
+    case AudioSampleFormat::S16_planar:
+      return sizeof(int16_t);
+    case AudioSampleFormat::S32:
+    case AudioSampleFormat::F32:
+    case AudioSampleFormat::S32_planar:
+    case AudioSampleFormat::F32_planar:
+      return sizeof(float);
+  }
+  MOZ_ASSERT_UNREACHABLE("Invalid enum value");
+  return 0;
 }
 
 }  // namespace mozilla::dom

@@ -109,6 +109,11 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                                   const StoreOutputTo& out);
 
   template <typename LCallIns>
+  void emitCallNative(LCallIns* call, JSNative native, Register argContextReg,
+                      Register argUintNReg, Register argVpReg, Register tempReg,
+                      uint32_t unusedStack);
+
+  template <typename LCallIns>
   void emitCallNative(LCallIns* call, JSNative native);
 
  public:
@@ -204,6 +209,11 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                              wasm::BytecodeOffset bytecodeOffset);
   void visitOutOfLineWasmNewArray(OutOfLineWasmNewArray* ool);
 
+#ifdef ENABLE_WASM_JSPI
+  void callWasmUpdateSuspenderState(wasm::UpdateSuspenderStateAction kind,
+                                    Register suspender);
+#endif
+
  private:
   void emitPostWriteBarrier(const LAllocation* obj);
   void emitPostWriteBarrier(Register objreg);
@@ -239,11 +249,34 @@ class CodeGenerator final : public CodeGeneratorSpecific {
                          uint32_t extraFormals);
   void emitPushArrayAsArguments(Register tmpArgc, Register srcBaseAndArgc,
                                 Register scratch, size_t argvSrcOffset);
-  void emitPushArguments(LApplyArgsGeneric* apply, Register scratch);
-  void emitPushArguments(LApplyArgsObj* apply, Register scratch);
-  void emitPushArguments(LApplyArrayGeneric* apply, Register scratch);
-  void emitPushArguments(LConstructArgsGeneric* construct, Register scratch);
-  void emitPushArguments(LConstructArrayGeneric* construct, Register scratch);
+  void emitPushArguments(LApplyArgsGeneric* apply);
+  void emitPushArguments(LApplyArgsObj* apply);
+  void emitPushArguments(LApplyArrayGeneric* apply);
+  void emitPushArguments(LConstructArgsGeneric* construct);
+  void emitPushArguments(LConstructArrayGeneric* construct);
+
+  template <typename T>
+  void emitApplyNative(T* apply);
+  template <typename T>
+  void emitAlignStackForApplyNative(T* apply, Register argc);
+  template <typename T>
+  void emitPushNativeArguments(T* apply);
+  template <typename T>
+  void emitPushArrayAsNativeArguments(T* apply);
+  void emitPushArguments(LApplyArgsNative* apply);
+  void emitPushArguments(LApplyArgsObjNative* apply);
+  void emitPushArguments(LApplyArrayNative* apply);
+  void emitPushArguments(LConstructArgsNative* construct);
+  void emitPushArguments(LConstructArrayNative* construct);
+
+  template <typename T>
+  void emitApplyArgsGuard(T* apply);
+
+  template <typename T>
+  void emitApplyArgsObjGuard(T* apply);
+
+  template <typename T>
+  void emitApplyArrayGuard(T* apply);
 
   template <class GetInlinedArgument>
   void emitGetInlinedArgument(GetInlinedArgument* lir, Register index,
@@ -439,6 +472,7 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   // be mapped to an actual fuse by validateAndRegisterFuseDependencies.
   enum class FuseDependencyKind {
     HasSeenObjectEmulateUndefinedFuse,
+    OptimizeGetIteratorFuse,
   };
 
   // The set of fuses this code generation depends on.
@@ -447,6 +481,10 @@ class CodeGenerator final : public CodeGeneratorSpecific {
   // Register a dependency on the HasSeenObjectEmulateUndefined fuse.
   void addHasSeenObjectEmulateUndefinedFuseDependency() {
     fuseDependencies += FuseDependencyKind::HasSeenObjectEmulateUndefinedFuse;
+  }
+
+  void addOptimizeGetIteratorFuseDependency() {
+    fuseDependencies += FuseDependencyKind::OptimizeGetIteratorFuse;
   }
 
   // Called during linking on main-thread: Ensures that the fuses are still

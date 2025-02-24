@@ -440,15 +440,9 @@ typedef enum JSGCParamKey {
   JSGC_URGENT_THRESHOLD_MB = 48,
 
   /**
-   * Set the number of threads to use for parallel marking, or zero to use the
-   * default.
-   *
-   * The actual number used is capped to the number of available helper threads.
-   *
-   * This is provided for testing purposes.
+   * Get the number of threads used for parallel marking.
    *
    * Pref: None.
-   * Default: 0 (no effect).
    */
   JSGC_MARKING_THREAD_COUNT = 49,
 
@@ -459,6 +453,41 @@ typedef enum JSGCParamKey {
    * Default: ParallelMarkingThresholdMB
    */
   JSGC_PARALLEL_MARKING_THRESHOLD_MB = 50,
+
+  /**
+   * Whether the semispace nursery is enabled.
+   *
+   * Pref: javascript.options.mem.gc_experimental_semispace_nursery
+   * Default: SemispaceNurseryEnabled
+   */
+  JSGC_SEMISPACE_NURSERY_ENABLED = 51,
+
+  /**
+   * Set the maximum number of threads to use for parallel marking, if enabled.
+   *
+   * The actual number used is calculated based on the number of available
+   * helper threads and can be found by getting the JSGC_MARKING_THREAD_COUNT
+   * parameter.
+   *
+   * Pref: javascript.options.mem.gc_max_parallel_marking_threads
+   * Default: 2.
+   */
+  JSGC_MAX_MARKING_THREADS = 52,
+
+  /**
+   * Whether to automatically generate missing allocation sites so data about
+   * them can be gathered.
+   *
+   * Pref: None, this is an internal engine feature.
+   * Default: false.
+   */
+  JSGC_GENERATE_MISSING_ALLOC_SITES = 53,
+
+  /**
+   * A number that is incremented every GC slice.
+   */
+  JSGC_SLICE_NUMBER = 54,
+
 } JSGCParamKey;
 
 /*
@@ -481,7 +510,7 @@ typedef bool (*JSGrayRootsTracer)(JSTracer* trc, js::SliceBudget& budget,
 
 typedef enum JSGCStatus { JSGC_BEGIN, JSGC_END } JSGCStatus;
 
-typedef void (*JSObjectsTenuredCallback)(JSContext* cx, void* data);
+typedef void (*JSObjectsTenuredCallback)(JS::GCContext* gcx, void* data);
 
 typedef enum JSFinalizeStatus {
   /**
@@ -1344,33 +1373,36 @@ namespace gc {
 extern JS_PUBLIC_API JSObject* NewMemoryInfoObject(JSContext* cx);
 
 /*
- * Run the finalizer of a nursery-allocated JSObject that is known to be dead.
+ * Get the GCContext for the current context.
  *
- * This is a dangerous operation - only use this if you know what you're doing!
- *
- * This is used by the browser to implement nursery-allocated wrapper cached
- * wrappers.
+ * This is here to allow the browser to call finalizers for dead nursery
+ * objects. This is a dangerous operation - only use this if you know what
+ * you're doing!
  */
-extern JS_PUBLIC_API void FinalizeDeadNurseryObject(JSContext* cx,
-                                                    JSObject* obj);
+extern JS_PUBLIC_API JS::GCContext* GetGCContext(JSContext* cx);
 
 } /* namespace gc */
 } /* namespace js */
 
 #ifdef JS_GC_ZEAL
 
-#  define JS_DEFAULT_ZEAL_FREQ 100
+namespace JS {
 
-extern JS_PUBLIC_API void JS_GetGCZealBits(JSContext* cx, uint32_t* zealBits,
-                                           uint32_t* frequency,
-                                           uint32_t* nextScheduled);
+static constexpr uint32_t ShellDefaultGCZealFrequency = 100;
+static constexpr uint32_t BrowserDefaultGCZealFrequency = 5000;
 
-extern JS_PUBLIC_API void JS_SetGCZeal(JSContext* cx, uint8_t zeal,
-                                       uint32_t frequency);
+extern JS_PUBLIC_API void GetGCZealBits(JSContext* cx, uint32_t* zealBits,
+                                        uint32_t* frequency,
+                                        uint32_t* nextScheduled);
 
-extern JS_PUBLIC_API void JS_UnsetGCZeal(JSContext* cx, uint8_t zeal);
+extern JS_PUBLIC_API void SetGCZeal(JSContext* cx, uint8_t zeal,
+                                    uint32_t frequency);
 
-extern JS_PUBLIC_API void JS_ScheduleGC(JSContext* cx, uint32_t count);
+extern JS_PUBLIC_API void UnsetGCZeal(JSContext* cx, uint8_t zeal);
+
+extern JS_PUBLIC_API void ScheduleGC(JSContext* cx, uint32_t count);
+
+}  // namespace JS
 
 #endif
 

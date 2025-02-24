@@ -152,6 +152,8 @@ bool CheckStringIsIndex(const CharT* s, size_t length, uint32_t* indexp);
  * JSLinearString               latin1Chars, twoByteChars / -
  *  |
  *  +-- JSDependentString       base / -
+ *  |   |
+ *  |   +-- JSAtomRefString     - / base points to an atom
  *  |
  *  +-- JSExternalString        - / char array memory managed by embedding
  *  |
@@ -287,6 +289,7 @@ class JSString : public js::gc::CellWithLengthAndFlags {
         } u2;
         union {
           JSLinearString* base; /* JSDependentString */
+          JSAtom* atom;         /* JSAtomRefString */
           JSString* right;      /* JSRope */
           size_t capacity;      /* JSLinearString (extensible) */
           const JSExternalStringCallbacks*
@@ -329,28 +332,30 @@ class JSString : public js::gc::CellWithLengthAndFlags {
    *   String         Instance        Subtype
    *   type           encoding        predicate
    *   -----------------------------------------
-   *   Rope           000000 000      xxxx0x xxx
-   *   Linear         000010 000      xxxx1x xxx
-   *   Dependent      000110 000      xxx1xx xxx
-   *   External       100010 000      100010 xxx
-   *   Extensible     010010 000      010010 xxx
-   *   Inline         001010 000      xx1xxx xxx
-   *   FatInline      011010 000      x11xxx xxx
-   *   JSAtom         -               xxxxx1 xxx
-   *   NormalAtom     000011 000      xx0xx1 xxx
-   *   PermanentAtom  100011 000      1xxxx1 xxx
-   *   ThinInlineAtom 001011 000      x01xx1 xxx
-   *   FatInlineAtom  011011 000      x11xx1 xxx
-   *                                  |||||| |||
-   *                                  |||||| ||\- [0] reserved (FORWARD_BIT)
-   *                                  |||||| |\-- [1] reserved
-   *                                  |||||| \--- [2] reserved
-   *                                  |||||\----- [3] IsAtom
-   *                                  ||||\------ [4] IsLinear
-   *                                  |||\------- [5] IsDependent
-   *                                  ||\-------- [6] IsInline
-   *                                  |\--------- [7] FatInlineAtom/Extensible
-   *                                  \---------- [8] External/Permanent
+   *   Rope           0000000 000     xxxxx0x xxx
+   *   Linear         0000010 000     xxxxx1x xxx
+   *   Dependent      0000110 000     xxxx1xx xxx
+   *   AtomRef        1000110 000     1xxxxxx xxx
+   *   External       0100010 000     x100010 xxx
+   *   Extensible     0010010 000     x010010 xxx
+   *   Inline         0001010 000     xxx1xxx xxx
+   *   FatInline      0011010 000     xx11xxx xxx
+   *   JSAtom         -               xxxxxx1 xxx
+   *   NormalAtom     0000011 000     xxx0xx1 xxx
+   *   PermanentAtom  0100011 000     x1xxxx1 xxx
+   *   ThinInlineAtom 0001011 000     xx01xx1 xxx
+   *   FatInlineAtom  0011011 000     xx11xx1 xxx
+   *                                  ||||||| |||
+   *                                  ||||||| ||\- [0] reserved (FORWARD_BIT)
+   *                                  ||||||| |\-- [1] reserved
+   *                                  ||||||| \--- [2] reserved
+   *                                  ||||||\----- [3] IsAtom
+   *                                  |||||\------ [4] IsLinear
+   *                                  ||||\------- [5] IsDependent
+   *                                  |||\-------- [6] IsInline
+   *                                  ||\--------- [7] FatInlineAtom/Extensible
+   *                                  |\---------- [8] External/Permanent
+   *                                  \----------- [9] AtomRef
    *
    * Bits 0..2 are reserved for use by the GC (see
    * gc::CellFlagBitsReservedForGC). In particular, bit 0 is currently used for
@@ -376,6 +381,8 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static const uint32_t LINEAR_BIT = js::Bit(4);
   static const uint32_t DEPENDENT_BIT = js::Bit(5);
   static const uint32_t INLINE_CHARS_BIT = js::Bit(6);
+  // Indicates a dependent string pointing to an atom
+  static const uint32_t ATOM_REF_BIT = js::Bit(9);
 
   static const uint32_t LINEAR_IS_EXTENSIBLE_BIT = js::Bit(7);
   static const uint32_t INLINE_IS_FAT_BIT = js::Bit(7);
@@ -395,10 +402,18 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static const uint32_t INIT_ROPE_FLAGS = 0;
   static const uint32_t INIT_LINEAR_FLAGS = LINEAR_BIT;
   static const uint32_t INIT_DEPENDENT_FLAGS = LINEAR_BIT | DEPENDENT_BIT;
+  static const uint32_t INIT_ATOM_REF_FLAGS =
+      INIT_DEPENDENT_FLAGS | ATOM_REF_BIT;
 
-  static const uint32_t TYPE_FLAGS_MASK = js::BitMask(9) - js::BitMask(3);
+  static const uint32_t TYPE_FLAGS_MASK = js::BitMask(10) - js::BitMask(3);
   static_assert((TYPE_FLAGS_MASK & js::gc::HeaderWord::RESERVED_MASK) == 0,
                 "GC reserved bits must not be used for Strings");
+
+  // Whether this atom's characters store an uint32 index value less than or
+  // equal to MAX_ARRAY_INDEX. This bit means something different if the
+  // string is not an atom (see ATOM_REF_BIT)
+  // See JSLinearString::isIndex.
+  static const uint32_t ATOM_IS_INDEX_BIT = js::Bit(9);
 
   // Linear strings:
   // - Content and representation are Latin-1 characters.
@@ -409,18 +424,15 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   // - Flag may be cleared when the rope is changed into a dependent string.
   //
   // Also see LATIN1_CHARS_BIT description under "Flag Encoding".
-  static const uint32_t LATIN1_CHARS_BIT = js::Bit(9);
-
-  // Whether this atom's characters store an uint32 index value less than or
-  // equal to MAX_ARRAY_INDEX. Not used for non-atomized strings.
-  // See JSLinearString::isIndex.
-  static const uint32_t ATOM_IS_INDEX_BIT = js::Bit(10);
+  static const uint32_t LATIN1_CHARS_BIT = js::Bit(10);
 
   static const uint32_t INDEX_VALUE_BIT = js::Bit(11);
   static const uint32_t INDEX_VALUE_SHIFT = 16;
 
-  // NON_DEDUP_BIT is used in string deduplication during tenuring.
-  static const uint32_t NON_DEDUP_BIT = js::Bit(12);
+  // NON_DEDUP_BIT is used in string deduplication during tenuring. This bit is
+  // shared with both FLATTEN_FINISH_NODE and ATOM_IS_PERMANENT_BIT, since it
+  // only applies to linear non-atoms.
+  static const uint32_t NON_DEDUP_BIT = js::Bit(15);
 
   // If IN_STRING_TO_ATOM_CACHE is set, this string had an entry in the
   // StringToAtomCache at some point. Note that GC can purge the cache without
@@ -433,6 +445,11 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   static const uint32_t FLATTEN_FINISH_NODE = js::Bit(15);
   static const uint32_t FLATTEN_MASK =
       FLATTEN_VISIT_RIGHT | FLATTEN_FINISH_NODE;
+
+  // Indicates that this string is depended on by another string. A rope should
+  // never be depended on, and this should never be set during flattening, so
+  // we can reuse the FLATTEN_VISIT_RIGHT bit.
+  static const uint32_t DEPENDED_ON_BIT = FLATTEN_VISIT_RIGHT;
 
   static const uint32_t PINNED_ATOM_BIT = js::Bit(15);
   static const uint32_t PERMANENT_ATOM_MASK =
@@ -593,6 +610,35 @@ class JSString : public js::gc::CellWithLengthAndFlags {
     return flags() >> INDEX_VALUE_SHIFT;
   }
 
+  /*
+   * Whether any dependent strings point to this string's chars. This is needed
+   * so that we don't replace the string with a forwarded atom and free its
+   * buffer.
+   *
+   * NOTE: we specifically do not set this for atoms, because they are accessed
+   * on many threads and we don't want to mess with their flags if we don't
+   * have to, and it is safe because atoms will never be replaced by an atom
+   * ref.
+   */
+  bool isDependedOn() const {
+    bool result = flags() & DEPENDED_ON_BIT;
+    MOZ_ASSERT_IF(result, !isRope() && !isAtom());
+    return result;
+  }
+
+  bool assertIsValidBase() const {
+    // See isDependedOn comment for why we're excluding atoms
+    return isAtom() || isDependedOn();
+  }
+
+  void setDependedOn() {
+    MOZ_ASSERT(!isRope());
+    if (isAtom()) {
+      return;
+    }
+    setFlagBit(DEPENDED_ON_BIT);
+  }
+
   inline size_t allocSize() const;
 
   /* Fallible conversions to more-derived string types. */
@@ -621,6 +667,11 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 
   MOZ_ALWAYS_INLINE
   bool isDependent() const { return flags() & DEPENDENT_BIT; }
+
+  MOZ_ALWAYS_INLINE
+  bool isAtomRef() const {
+    return (flags() & ATOM_REF_BIT) && !(flags() & ATOM_BIT);
+  }
 
   MOZ_ALWAYS_INLINE
   JSDependentString& asDependent() const {
@@ -679,13 +730,27 @@ class JSString : public js::gc::CellWithLengthAndFlags {
   }
 
   MOZ_ALWAYS_INLINE
-  void setNonDeduplicatable() { setFlagBit(NON_DEDUP_BIT); }
+  void setNonDeduplicatable() {
+    MOZ_ASSERT(isLinear());
+    MOZ_ASSERT(!isAtom());
+    setFlagBit(NON_DEDUP_BIT);
+  }
 
+  // After copying a string from the nursery to the tenured heap, adjust bits
+  // that no longer apply.
   MOZ_ALWAYS_INLINE
-  void clearNonDeduplicatable() { clearFlagBit(NON_DEDUP_BIT); }
+  void clearBitsOnTenure() {
+    MOZ_ASSERT(!isAtom());
+    clearFlagBit(NON_DEDUP_BIT | IN_STRING_TO_ATOM_CACHE);
+  }
 
+  // NON_DEDUP_BIT is only valid for linear non-atoms.
   MOZ_ALWAYS_INLINE
-  bool isDeduplicatable() { return !(flags() & NON_DEDUP_BIT); }
+  bool isDeduplicatable() {
+    MOZ_ASSERT(isLinear());
+    MOZ_ASSERT(!isAtom());
+    return !(flags() & NON_DEDUP_BIT);
+  }
 
   void setInStringToAtomCache() {
     MOZ_ASSERT(!isAtom());
@@ -704,6 +769,8 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 
   inline JSLinearString* base() const;
 
+  inline JSAtom* atom() const;
+
   // The base may be forwarded and becomes a relocation overlay.
   // The return value can be a relocation overlay when the base is forwarded,
   // or the return value can be the actual base when it is not forwarded.
@@ -711,7 +778,10 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 
   inline bool canOwnDependentChars() const;
 
+  // Only called by the GC during nursery collection.
   inline void setBase(JSLinearString* newBase);
+
+  bool tryReplaceWithAtomRef(JSAtom* atom);
 
   void traceBase(JSTracer* trc);
 
@@ -843,6 +913,8 @@ class JSString : public js::gc::CellWithLengthAndFlags {
 #endif
 
   void traceChildren(JSTracer* trc);
+
+  inline void traceBaseFromStoreBuffer(JSTracer* trc);
 
   // Override base class implementation to tell GC about permanent atoms.
   bool isPermanentAndMayBeShared() const { return isPermanentAtom(); }
@@ -993,6 +1065,7 @@ class JSLinearString : public JSString {
   friend class JS::AutoStableStringChars;
   friend class js::gc::TenuringTracer;
   friend class js::gc::CellAllocator;
+  friend class JSDependentString;  // To allow access when used as base.
 
   /* Vacuous and therefore unimplemented. */
   JSLinearString* ensureLinear(JSContext* cx) = delete;
@@ -1202,6 +1275,13 @@ class JSDependentString : public JSLinearString {
     setNonInlineChars(chars + offset);
   }
 
+  inline JSLinearString* rootBaseDuringMinorGC();
+
+  template <typename CharT>
+  inline void sweepTypedAfterMinorGC();
+
+  inline void sweepAfterMinorGC();
+
 #if defined(DEBUG) || defined(JS_JITSPEW) || defined(JS_CACHEIR_SPEW) || defined(JS_TAINTSPEW)
   void dumpOwnRepresentationFields(js::JSONPrinter& json) const;
 #endif
@@ -1217,6 +1297,20 @@ class JSDependentString : public JSLinearString {
 };
 
 static_assert(sizeof(JSDependentString) == sizeof(JSString),
+              "string subclasses must be binary-compatible with JSString");
+
+class JSAtomRefString : public JSDependentString {
+  friend class JSString;
+  friend class js::gc::CellAllocator;
+  friend class js::jit::MacroAssembler;
+
+ public:
+  inline static size_t offsetOfAtom() {
+    return offsetof(JSAtomRefString, d.s.u3.atom);
+  }
+};
+
+static_assert(sizeof(JSAtomRefString) == sizeof(JSString),
               "string subclasses must be binary-compatible with JSString");
 
 class JSExtensibleString : public JSLinearString {
@@ -1776,7 +1870,9 @@ inline JSLinearString* NewStringCopy(
 }
 
 /* Copy a counted string and GC-allocate a descriptor for it. */
-template <js::AllowGC allowGC, typename CharT>
+template <
+    js::AllowGC allowGC, typename CharT,
+    typename std::enable_if_t<!std::is_same_v<CharT, unsigned char>>* = nullptr>
 inline JSLinearString* NewStringCopy(
     JSContext* cx, std::basic_string_view<CharT> s,
     js::gc::Heap heap = js::gc::Heap::Default) {
@@ -2075,8 +2171,17 @@ MOZ_ALWAYS_INLINE JSLinearString* JSString::ensureLinear(JSContext* cx) {
 
 inline JSLinearString* JSString::base() const {
   MOZ_ASSERT(hasBase());
-  MOZ_ASSERT(!d.s.u3.base->isInline());
+  MOZ_ASSERT_IF(!isAtomRef(), !d.s.u3.base->isInline());
+  MOZ_ASSERT(d.s.u3.base->assertIsValidBase());
+  if (isAtomRef()) {
+    return static_cast<JSLinearString*>(d.s.u3.atom);
+  }
   return d.s.u3.base;
+}
+
+inline JSAtom* JSString::atom() const {
+  MOZ_ASSERT(isAtomRef());
+  return d.s.u3.atom;
 }
 
 inline JSLinearString* JSString::nurseryBaseOrRelocOverlay() const {
@@ -2229,7 +2334,9 @@ MOZ_ALWAYS_INLINE bool JSAtom::lengthFitsInline<char16_t>(size_t length) {
 template <>
 MOZ_ALWAYS_INLINE void JSString::setNonInlineChars(const char16_t* chars) {
   // Check that the new buffer is located in the StringBufferArena
-  checkStringCharsArena(chars);
+  if (!(isAtomRef() && atom()->isInline())) {
+    checkStringCharsArena(chars);
+  }
   d.s.u2.nonInlineCharsTwoByte = chars;
 }
 
@@ -2237,7 +2344,9 @@ template <>
 MOZ_ALWAYS_INLINE void JSString::setNonInlineChars(
     const JS::Latin1Char* chars) {
   // Check that the new buffer is located in the StringBufferArena
-  checkStringCharsArena(chars);
+  if (!(isAtomRef() && atom()->isInline())) {
+    checkStringCharsArena(chars);
+  }
   d.s.u2.nonInlineCharsLatin1 = chars;
 }
 
@@ -2332,14 +2441,17 @@ class StringRelocationOverlay : public RelocationOverlay {
   MOZ_ALWAYS_INLINE const CharT* savedNurseryChars() const;
 
   const MOZ_ALWAYS_INLINE JS::Latin1Char* savedNurseryCharsLatin1() const {
+    MOZ_ASSERT(!forwardingAddress()->as<JSString>()->hasBase());
     return nurseryCharsLatin1;
   }
 
   const MOZ_ALWAYS_INLINE char16_t* savedNurseryCharsTwoByte() const {
+    MOZ_ASSERT(!forwardingAddress()->as<JSString>()->hasBase());
     return nurseryCharsTwoByte;
   }
 
   JSLinearString* savedNurseryBaseOrRelocOverlay() const {
+    MOZ_ASSERT(forwardingAddress()->as<JSString>()->hasBase());
     return nurseryBaseOrRelocOverlay;
   }
 

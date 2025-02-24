@@ -68,14 +68,14 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 AudioDecoderConfigInternal::AudioDecoderConfigInternal(
     const nsAString& aCodec, uint32_t aSampleRate, uint32_t aNumberOfChannels,
-    Maybe<RefPtr<MediaByteBuffer>>&& aDescription)
+    already_AddRefed<MediaByteBuffer> aDescription)
     : mCodec(aCodec),
       mSampleRate(aSampleRate),
       mNumberOfChannels(aNumberOfChannels),
-      mDescription(std::move(aDescription)) {}
+      mDescription(aDescription) {}
 
 /*static*/
-UniquePtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
+RefPtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
     const AudioDecoderConfig& aConfig) {
   nsCString errorMessage;
   if (!AudioDecoderTraits::Validate(aConfig, errorMessage)) {
@@ -83,7 +83,7 @@ UniquePtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
     return nullptr;
   }
 
-  Maybe<RefPtr<MediaByteBuffer>> description;
+  RefPtr<MediaByteBuffer> description;
   if (aConfig.mDescription.WasPassed()) {
     auto rv = GetExtraDataFromArrayBuffer(aConfig.mDescription.Value());
     if (rv.isErr()) {  // Invalid description data.
@@ -95,12 +95,28 @@ UniquePtr<AudioDecoderConfigInternal> AudioDecoderConfigInternal::Create(
           error.get());
       return nullptr;
     }
-    description.emplace(rv.unwrap());
+    description = rv.unwrap();
   }
 
-  return UniquePtr<AudioDecoderConfigInternal>(new AudioDecoderConfigInternal(
+  return MakeRefPtr<AudioDecoderConfigInternal>(
       aConfig.mCodec, aConfig.mSampleRate, aConfig.mNumberOfChannels,
-      std::move(description)));
+      description.forget());
+}
+
+nsCString AudioDecoderConfigInternal::ToString() const {
+  nsCString rv;
+
+  rv.AppendLiteral("AudioDecoderConfigInternal: ");
+  rv.AppendPrintf("%s %" PRIu32 "Hz %" PRIu32 " ch",
+                  NS_ConvertUTF16toUTF8(mCodec).get(), mSampleRate,
+                  mNumberOfChannels);
+  if (mDescription) {
+    rv.AppendPrintf("(%zu bytes of extradata)", mDescription->Length());
+  } else {
+    rv.AppendLiteral("(no extradata)");
+  }
+
+  return rv;
 }
 
 /*
@@ -118,24 +134,6 @@ struct AudioMIMECreateParam {
 
 // Map between WebCodecs pcm types as strings and codec numbers
 // All other codecs
-nsCString ConvertCodecName(const nsCString& aContainer,
-                           const nsCString& aCodec) {
-  if (!aContainer.EqualsLiteral("x-wav")) {
-    return aCodec;
-  }
-  if (aCodec.EqualsLiteral("ulaw")) {
-    return nsCString("7");
-  }
-  if (aCodec.EqualsLiteral("alaw")) {
-    return nsCString("6");
-  }
-  if (aCodec.Find("f32")) {
-    return nsCString("3");
-  }
-  // Linear PCM
-  return nsCString("1");
-}
-
 static nsTArray<nsCString> GuessMIMETypes(const AudioMIMECreateParam& aParam) {
   nsCString codec = NS_ConvertUTF16toUTF8(aParam.mParsedCodec);
   nsTArray<nsCString> types;
@@ -145,16 +143,6 @@ static nsTArray<nsCString> GuessMIMETypes(const AudioMIMECreateParam& aParam) {
     types.AppendElement(mime);
   }
   return types;
-}
-
-static bool IsSupportedAudioCodec(const nsAString& aCodec) {
-  LOG("IsSupportedAudioCodec: %s", NS_ConvertUTF16toUTF8(aCodec).get());
-  return aCodec.EqualsLiteral("flac") || aCodec.EqualsLiteral("mp3") ||
-         IsAACCodecString(aCodec) || aCodec.EqualsLiteral("opus") ||
-         aCodec.EqualsLiteral("ulaw") || aCodec.EqualsLiteral("alaw") ||
-         aCodec.EqualsLiteral("pcm-u8") || aCodec.EqualsLiteral("pcm-s16") ||
-         aCodec.EqualsLiteral("pcm-s24") || aCodec.EqualsLiteral("pcm-s32") ||
-         aCodec.EqualsLiteral("pcm-f32");
 }
 
 // https://w3c.github.io/webcodecs/#check-configuration-support
@@ -259,13 +247,12 @@ Result<UniquePtr<TrackInfo>, nsresult> AudioDecoderTraits::CreateTrackInfo(
     return Err(NS_ERROR_INVALID_ARG);
   }
 
-  if (aConfig.mDescription.isSome()) {
-    RefPtr<MediaByteBuffer> buf;
-    buf = aConfig.mDescription.value();
-    if (buf) {
-      LOG("The given config has %zu bytes of description data", buf->Length());
-      ai->mCodecSpecificConfig =
-          AudioCodecSpecificVariant{AudioCodecSpecificBinaryBlob{buf}};
+  if (aConfig.mDescription) {
+    if (!aConfig.mDescription->IsEmpty()) {
+      LOG("The given config has %zu bytes of description data",
+          aConfig.mDescription->Length());
+      ai->mCodecSpecificConfig = AudioCodecSpecificVariant{
+          AudioCodecSpecificBinaryBlob{aConfig.mDescription}};
     }
   }
 
@@ -275,7 +262,7 @@ Result<UniquePtr<TrackInfo>, nsresult> AudioDecoderTraits::CreateTrackInfo(
   LOG("Created AudioInfo %s (%" PRIu32 "ch %" PRIu32
       "Hz - with extra-data: %s)",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get(), ai->mChannels, ai->mChannels,
-      aConfig.mDescription.isSome() ? "yes" : "no");
+      aConfig.mDescription && !aConfig.mDescription->IsEmpty() ? "yes" : "no");
 
   return track;
 }
@@ -328,7 +315,7 @@ bool AudioDecoderTraits::Validate(const AudioDecoderConfig& aConfig,
 }
 
 /* static */
-UniquePtr<AudioDecoderConfigInternal> AudioDecoderTraits::CreateConfigInternal(
+RefPtr<AudioDecoderConfigInternal> AudioDecoderTraits::CreateConfigInternal(
     const AudioDecoderConfig& aConfig) {
   return AudioDecoderConfigInternal::Create(aConfig);
 }
@@ -460,7 +447,7 @@ already_AddRefed<MediaRawData> AudioDecoder::InputDataToMediaRawData(
 
 nsTArray<RefPtr<AudioData>> AudioDecoder::DecodedDataToOutputType(
     nsIGlobalObject* aGlobalObject, const nsTArray<RefPtr<MediaData>>&& aData,
-    AudioDecoderConfigInternal& aConfig) {
+    const AudioDecoderConfigInternal& aConfig) {
   AssertIsOnOwningThread();
 
   nsTArray<RefPtr<AudioData>> frames;

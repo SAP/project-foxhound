@@ -17,7 +17,7 @@
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
-#include "nsAttrValueOrString.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/dom/Document.h"
 #include "nsPresContext.h"
 #include "nsIURI.h"
@@ -72,10 +72,7 @@ nsresult HTMLAnchorElement::BindToTree(BindContext& aContext,
   Link::BindToTree(aContext);
 
   // Prefetch links
-  if (IsInComposedDoc()) {
-    TryDNSPrefetch(*this);
-  }
-
+  MaybeTryDNSPrefetch();
   return rv;
 }
 
@@ -93,10 +90,10 @@ void HTMLAnchorElement::UnbindFromTree(UnbindContext& aContext) {
   Link::UnbindFromTree();
 }
 
-bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+bool HTMLAnchorElement::IsHTMLFocusable(IsFocusableFlags aFlags,
+                                        bool* aIsFocusable,
                                         int32_t* aTabIndex) {
-  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
-                                            aTabIndex)) {
+  if (nsGenericHTMLElement::IsHTMLFocusable(aFlags, aIsFocusable, aTabIndex)) {
     return true;
   }
 
@@ -126,7 +123,7 @@ bool HTMLAnchorElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
     }
   }
 
-  if ((sTabFocusModel & eTabFocus_linksMask) == 0) {
+  if (!FocusModel::IsTabFocusable(TabFocusableType::Links)) {
     *aTabIndex = -1;
   }
   *aIsFocusable = true;
@@ -141,7 +138,7 @@ nsresult HTMLAnchorElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
   return PostHandleEventForAnchors(aVisitor);
 }
 
-void HTMLAnchorElement::GetLinkTarget(nsAString& aTarget) {
+void HTMLAnchorElement::GetLinkTargetImpl(nsAString& aTarget) {
   GetAttr(nsGkAtoms::target, aTarget);
   if (aTarget.IsEmpty()) {
     GetBaseTarget(aTarget);
@@ -207,8 +204,8 @@ void HTMLAnchorElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   if (aNamespaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::href) {
       Link::ResetLinkState(aNotify, !!aValue);
-      if (aValue && IsInComposedDoc()) {
-        TryDNSPrefetch(*this);
+      if (aValue) {
+        MaybeTryDNSPrefetch();
       }
     }
   }
@@ -221,6 +218,24 @@ void HTMLAnchorElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
                                                size_t* aNodeSize) const {
   nsGenericHTMLElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
   *aNodeSize += Link::SizeOfExcludingThis(aSizes.mState);
+}
+
+void HTMLAnchorElement::MaybeTryDNSPrefetch() {
+  if (IsInComposedDoc()) {
+    nsIURI* docURI = OwnerDoc()->GetDocumentURI();
+    if (!docURI) {
+      return;
+    }
+
+    bool docIsHttps = docURI->SchemeIs("https");
+    if ((docIsHttps &&
+         StaticPrefs::dom_prefetch_dns_for_anchor_https_document()) ||
+        (!docIsHttps &&
+         StaticPrefs::dom_prefetch_dns_for_anchor_http_document())) {
+      TryDNSPrefetch(
+          *this, HTMLDNSPrefetch::PrefetchSource::AnchorSpeculativePrefetch);
+    }
+  }
 }
 
 }  // namespace mozilla::dom

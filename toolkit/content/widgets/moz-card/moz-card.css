@@ -7,32 +7,15 @@
   --card-border-radius: var(--border-radius-medium);
   --card-border-width: var(--border-width);
   --card-border: var(--card-border-width) solid var(--card-border-color);
-  --card-background-color: var(--box-background-color);
+  --card-background-color: var(--background-color-box);
   --card-focus-outline: var(--focus-outline);
   --card-box-shadow: var(--box-shadow-10);
-  /* Bug 1791816, 1839523: replace with spacing tokens */
-  --card-padding: 1em;
+  --card-padding: var(--space-large);
   --card-gap: var(--card-padding);
-  --card-article-gap: 0.45em;
+  --card-article-gap: var(--space-small);
 
-  /* Bug 1791816: replace with button tokens */
   @media (prefers-contrast) {
-    --button-border-color: var(--border-interactive-color);
-    --button-border-color-hover: var(--border-interactive-color-hover);
-    --button-border-color-active: var(--border-interactive-color-active);
     --card-border-color: color-mix(in srgb, currentColor 41%, transparent);
-  }
-  /* Bug 1791816: replace with button tokens */
-  @media (forced-colors) {
-    --button-background-color: ButtonFace;
-    --button-background-color-hover: SelectedItemText;
-    --button-background-color-active: SelectedItemText;
-    --button-border-color: var(--border-interactive-color);
-    --button-border-color-hover: var(--border-interactive-color-hover);
-    --button-border-color-active: var(--border-interactive-color-active);
-    --button-text-color: ButtonText;
-    --button-text-color-hover: SelectedItem;
-    --button-text-color-active: SelectedItem;
   }
 }
 
@@ -81,6 +64,29 @@ summary {
   gap: var(--card-gap);
   padding-inline: var(--card-padding);
   border-radius: var(--card-border-radius);
+
+  .chevron-icon {
+    background-image: url("chrome://global/skin/icons/arrow-down.svg");
+
+    details[open] & {
+      background-image: url("chrome://global/skin/icons/arrow-up.svg");
+    }
+  }
+
+  .chevron-icon,
+  #heading-icon {
+    background-position: center;
+    background-repeat: no-repeat;
+    -moz-context-properties: fill;
+    fill: currentColor;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
 }
 
 #heading {
@@ -157,24 +163,5 @@ details  {
 
   &:focus-visible {
     outline: var(--card-focus-outline);
-  }
-}
-
-.chevron-icon {
-  background-image: url("chrome://global/skin/icons/arrow-down.svg");
-  background-position: center;
-  background-repeat: no-repeat;
-  -moz-context-properties: fill;
-  fill: currentColor;
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  padding: 0;
-  flex-shrink: 0;
-  align-self: flex-start;
-
-  details[open] & {
-    background-image: url("chrome://global/skin/icons/arrow-up.svg");
   }
 }

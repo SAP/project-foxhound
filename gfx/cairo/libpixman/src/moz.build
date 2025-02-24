@@ -44,7 +44,7 @@ SOURCES += [
 # We allow warnings for third-party code that can be updated from upstream.
 AllowCompilerWarnings()
 
-FINAL_LIBRARY = 'gkmedias'
+FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '../../cairo/src',
 ]
@@ -93,6 +93,8 @@ elif CONFIG['TARGET_CPU'] == 'arm':
             'pixman-arm-simd-asm.S',
             'pixman-arm-simd.c',
         ]
+    if CONFIG['HAVE_ARM_NEON'] or CONFIG['HAVE_ARM_SIMD']:
+        DEFINES['ASM_HAVE_SYNTAX_UNIFIED'] = True
     if CONFIG['OS_TARGET'] == 'Android':
         # For cpu-features.h
         LOCAL_INCLUDES += [

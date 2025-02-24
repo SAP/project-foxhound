@@ -6,13 +6,14 @@ use api::{AlphaType, ClipMode, ImageBufferKind};
 use api::{FontInstanceFlags, YuvColorSpace, YuvFormat, ColorDepth, ColorRange, PremultipliedColorF};
 use api::units::*;
 use crate::clip::{ClipNodeFlags, ClipNodeRange, ClipItemKind, ClipStore};
-use crate::command_buffer::{PrimitiveCommand, QuadFlags};
+use crate::command_buffer::PrimitiveCommand;
 use crate::composite::CompositorSurfaceKind;
+use crate::pattern::PatternKind;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex, CoordinateSystemId};
 use glyph_rasterizer::{GlyphFormat, SubpixelDirection};
 use crate::gpu_cache::{GpuBlockData, GpuCache, GpuCacheAddress};
 use crate::gpu_types::{BrushFlags, BrushInstance, PrimitiveHeaders, ZBufferId, ZBufferIdGenerator};
-use crate::gpu_types::{SplitCompositeInstance, QuadInstance};
+use crate::gpu_types::SplitCompositeInstance;
 use crate::gpu_types::{PrimitiveInstanceData, RasterizationSpace, GlyphInstance};
 use crate::gpu_types::{PrimitiveHeader, PrimitiveHeaderIndex, TransformPaletteId, TransformPalette};
 use crate::gpu_types::{ImageBrushData, get_shader_opacity, BoxShadowData, MaskInstance};
@@ -22,12 +23,13 @@ use crate::picture::{Picture3DContext, PictureCompositeMode, calculate_screen_uv
 use crate::prim_store::{PrimitiveInstanceKind, ClipData};
 use crate::prim_store::{PrimitiveInstance, PrimitiveOpacity, SegmentInstanceIndex};
 use crate::prim_store::{BrushSegment, ClipMaskKind, ClipTaskIndex};
-use crate::prim_store::{VECS_PER_SEGMENT, PrimitiveInstanceIndex};
+use crate::prim_store::VECS_PER_SEGMENT;
+use crate::quad;
 use crate::render_target::RenderTargetContext;
 use crate::render_task_graph::{RenderTaskId, RenderTaskGraph};
 use crate::render_task::{RenderTaskAddress, RenderTaskKind, SubPass};
 use crate::renderer::{BlendMode, GpuBufferBuilder, ShaderColorMode};
-use crate::renderer::{MAX_VERTEX_TEXTURE_WIDTH, GpuBufferAddress};
+use crate::renderer::MAX_VERTEX_TEXTURE_WIDTH;
 use crate::resource_cache::{GlyphFetchResult, ImageProperties};
 use crate::space::SpaceMapper;
 use crate::visibility::{PrimitiveVisibilityFlags, VisibilityState};
@@ -72,7 +74,7 @@ pub enum BatchKind {
     SplitComposite,
     TextRun(GlyphFormat),
     Brush(BrushBatchKind),
-    Primitive,
+    Quad(PatternKind),
 }
 
 /// Input textures for a primitive, without consideration of clip mask
@@ -435,16 +437,19 @@ impl OpaqueBatchList {
         // `current_batch_index` instead of iterating the batches.
         z_bounding_rect: &PictureRect,
     ) -> &mut Vec<PrimitiveInstanceData> {
-        if self.current_batch_index == usize::MAX ||
+        // If the area of this primitive is larger than the given threshold,
+        // then it is large enough to warrant breaking a batch for. In this
+        // case we just see if it can be added to the existing batch or
+        // create a new one.
+        let is_large_occluder = z_bounding_rect.area() > self.pixel_area_threshold_for_new_batch;
+        // Since primitives of the same kind tend to come in succession, we keep track
+        // of the current batch index to skip the search in some cases. We ignore the
+        // current batch index in the case of large occluders to make sure they get added
+        // at the top of the bach list.
+        if is_large_occluder || self.current_batch_index == usize::MAX ||
            !self.batches[self.current_batch_index].key.is_compatible_with(&key) {
             let mut selected_batch_index = None;
-            let item_area = z_bounding_rect.area();
-
-            // If the area of this primitive is larger than the given threshold,
-            // then it is large enough to warrant breaking a batch for. In this
-            // case we just see if it can be added to the existing batch or
-            // create a new one.
-            if item_area > self.pixel_area_threshold_for_new_batch {
+            if is_large_occluder {
                 if let Some(batch) = self.batches.last() {
                     if batch.key.is_compatible_with(&key) {
                         selected_batch_index = Some(self.batches.len() - 1);
@@ -794,51 +799,6 @@ impl BatchBuilder {
         self.batcher.clear();
     }
 
-    /// Add a quad primitive to the batch list, appllying edge AA and tiling
-    /// segments as required.
-    fn add_quad_to_batch(
-        &mut self,
-        prim_instance_index: PrimitiveInstanceIndex,
-        transform_id: TransformPaletteId,
-        prim_address_f: GpuBufferAddress,
-        quad_flags: QuadFlags,
-        edge_flags: EdgeAaSegmentMask,
-        segment_index: u8,
-        task_id: RenderTaskId,
-        z_generator: &mut ZBufferIdGenerator,
-        prim_instances: &[PrimitiveInstance],
-        render_tasks: &RenderTaskGraph,
-        gpu_buffer_builder: &mut GpuBufferBuilder,
-    ) {
-        let prim_instance = &prim_instances[prim_instance_index.0 as usize];
-        let prim_info = &prim_instance.vis;
-        let bounding_rect = &prim_info.clip_chain.pic_coverage_rect;
-        let z_id = z_generator.next();
-
-        add_quad_to_batch(
-            self.batcher.render_task_address,
-            transform_id,
-            prim_address_f,
-            quad_flags,
-            edge_flags,
-            segment_index,
-            task_id,
-            z_id,
-            render_tasks,
-            gpu_buffer_builder,
-            |key, instance| {
-                let batch = self.batcher.set_params_and_get_batch(
-                    key,
-                    BatchFeatures::empty(),
-                    bounding_rect,
-                    z_id,
-                );
-
-                batch.push(instance);
-            }
-        );
-    }
-
     // Adds a primitive to a batch.
     // It can recursively call itself in some situations, for
     // example if it encounters a picture where the items
@@ -869,38 +829,71 @@ impl BatchBuilder {
             PrimitiveCommand::Instance { prim_instance_index, gpu_buffer_address } => {
                 (prim_instance_index, Some(gpu_buffer_address.as_int()))
             }
-            PrimitiveCommand::Quad { prim_instance_index, gpu_buffer_address, quad_flags, edge_flags, transform_id } => {
+            PrimitiveCommand::Quad { pattern, pattern_input, prim_instance_index, gpu_buffer_address, quad_flags, edge_flags, transform_id } => {
+                let prim_instance = &prim_instances[prim_instance_index.0 as usize];
+                let prim_info = &prim_instance.vis;
+                let bounding_rect = &prim_info.clip_chain.pic_coverage_rect;
+                let render_task_address = self.batcher.render_task_address;
+
                 if segments.is_empty() {
-                    self.add_quad_to_batch(
-                        *prim_instance_index,
+                    let z_id = z_generator.next();
+                    // TODO: Some pattern types will sample from render tasks.
+                    // At the moment quads only use a render task as source for
+                    // segments which have been pre-rendered and masked.
+                    let src_color_task_id = RenderTaskId::INVALID;
+
+                    quad::add_to_batch(
+                        *pattern,
+                        *pattern_input,
+                        render_task_address,
                         *transform_id,
                         *gpu_buffer_address,
                         *quad_flags,
                         *edge_flags,
                         INVALID_SEGMENT_INDEX as u8,
-                        RenderTaskId::INVALID,
-                        z_generator,
-                        prim_instances,
+                        src_color_task_id,
+                        z_id,
                         render_tasks,
                         gpu_buffer_builder,
+                        |key, instance| {
+                            let batch = self.batcher.set_params_and_get_batch(
+                                key,
+                                BatchFeatures::empty(),
+                                bounding_rect,
+                                z_id,
+                            );
+                            batch.push(instance);
+                        },
                     );
                 } else {
                     for (i, task_id) in segments.iter().enumerate() {
                         // TODO(gw): edge_flags should be per-segment, when used for more than composites
                         debug_assert!(edge_flags.is_empty());
 
-                        self.add_quad_to_batch(
-                            *prim_instance_index,
+                        let z_id = z_generator.next();
+
+                        quad::add_to_batch(
+                            *pattern,
+                            *pattern_input,
+                            render_task_address,
                             *transform_id,
                             *gpu_buffer_address,
                             *quad_flags,
                             *edge_flags,
                             i as u8,
                             *task_id,
-                            z_generator,
-                            prim_instances,
+                            z_id,
                             render_tasks,
                             gpu_buffer_builder,
+                            |key, instance| {
+                                let batch = self.batcher.set_params_and_get_batch(
+                                    key,
+                                    BatchFeatures::empty(),
+                                    bounding_rect,
+                                    z_id,
+                                );
+                                batch.push(instance);
+                            },
                         );
                     }
                 }
@@ -1752,7 +1745,8 @@ impl BatchBuilder {
                                             Filter::ComponentTransfer |
                                             Filter::Blur { .. } |
                                             Filter::DropShadows(..) |
-                                            Filter::Opacity(..) => unreachable!(),
+                                            Filter::Opacity(..) |
+                                            Filter::SVGGraphNode(..) => unreachable!(),
                                         };
 
                                         // Other filters that may introduce opacity are handled via different
@@ -2147,6 +2141,53 @@ impl BatchBuilder {
                                 }
                             }
                             PictureCompositeMode::SvgFilter(..) => {
+                                let (clip_task_address, clip_mask_texture_id) = ctx.get_prim_clip_task_and_texture(
+                                    prim_info.clip_task_index,
+                                    render_tasks,
+                                ).unwrap();
+
+                                let kind = BatchKind::Brush(
+                                    BrushBatchKind::Image(ImageBufferKind::Texture2D)
+                                );
+                                let (uv_rect_address, texture) = render_tasks.resolve_location(
+                                    pic_task_id,
+                                    gpu_cache,
+                                ).unwrap();
+                                let textures = BatchTextures::prim_textured(
+                                    texture,
+                                    clip_mask_texture_id,
+                                );
+                                let key = BatchKey::new(
+                                    kind,
+                                    blend_mode,
+                                    textures,
+                                );
+                                let prim_header_index = prim_headers.push(
+                                    &prim_header,
+                                    z_id,
+                                    self.batcher.render_task_address,
+                                    ImageBrushData {
+                                        color_mode: ShaderColorMode::Image,
+                                        alpha_type: AlphaType::PremultipliedAlpha,
+                                        raster_space: RasterizationSpace::Screen,
+                                        opacity: 1.0,
+                                    }.encode(),
+                                );
+
+                                self.add_brush_instance_to_batches(
+                                    key,
+                                    batch_features,
+                                    bounding_rect,
+                                    z_id,
+                                    INVALID_SEGMENT_INDEX,
+                                    EdgeAaSegmentMask::all(),
+                                    clip_task_address,
+                                    brush_flags,
+                                    prim_header_index,
+                                    uv_rect_address.as_int(),
+                                );
+                            }
+                            PictureCompositeMode::SVGFEGraph(..) => {
                                 let (clip_task_address, clip_mask_texture_id) = ctx.get_prim_clip_task_and_texture(
                                     prim_info.clip_task_index,
                                     render_tasks,
@@ -3889,154 +3930,6 @@ impl<'a, 'rc> RenderTargetContext<'a, 'rc> {
             0,
             render_tasks,
         )
-    }
-}
-
-pub fn add_quad_to_batch<F>(
-    render_task_address: RenderTaskAddress,
-    transform_id: TransformPaletteId,
-    prim_address_f: GpuBufferAddress,
-    quad_flags: QuadFlags,
-    edge_flags: EdgeAaSegmentMask,
-    segment_index: u8,
-    task_id: RenderTaskId,
-    z_id: ZBufferId,
-    render_tasks: &RenderTaskGraph,
-    gpu_buffer_builder: &mut GpuBufferBuilder,
-    mut f: F,
-) where F: FnMut(BatchKey, PrimitiveInstanceData) {
-
-    #[repr(u8)]
-    enum PartIndex {
-        Center = 0,
-        Left = 1,
-        Top = 2,
-        Right = 3,
-        Bottom = 4,
-        All = 5,
-    }
-
-    let mut writer = gpu_buffer_builder.i32.write_blocks(1);
-    writer.push_one([
-        transform_id.0 as i32,
-        z_id.0,
-        0,
-        0,
-    ]);
-    let prim_address_i = writer.finish();
-
-    let texture = match task_id {
-        RenderTaskId::INVALID => {
-            TextureSource::Invalid
-        }
-        _ => {
-            let texture = render_tasks
-                .resolve_texture(task_id)
-                .expect("bug: valid task id must be resolvable");
-
-            texture
-        }
-    };
-
-    let textures = BatchTextures::prim_textured(
-        texture,
-        TextureSource::Invalid,
-    );
-
-    let default_blend_mode = if quad_flags.contains(QuadFlags::IS_OPAQUE) && task_id == RenderTaskId::INVALID {
-        BlendMode::None
-    } else {
-        BlendMode::PremultipliedAlpha
-    };
-
-    let edge_flags_bits = edge_flags.bits();
-
-    let prim_batch_key = BatchKey {
-        blend_mode: default_blend_mode,
-        kind: BatchKind::Primitive,
-        textures,
-    };
-
-    let edge_batch_key = BatchKey {
-        blend_mode: BlendMode::PremultipliedAlpha,
-        kind: BatchKind::Primitive,
-        textures,
-    };
-
-    if edge_flags.is_empty() {
-        let instance = QuadInstance {
-            render_task_address,
-            prim_address_i,
-            prim_address_f,
-            z_id,
-            transform_id,
-            edge_flags: edge_flags_bits,
-            quad_flags: quad_flags.bits(),
-            part_index: PartIndex::All as u8,
-            segment_index,
-        };
-
-        f(prim_batch_key, instance.into());
-    } else if quad_flags.contains(QuadFlags::USE_AA_SEGMENTS) {
-        let main_instance = QuadInstance {
-            render_task_address,
-            prim_address_i,
-            prim_address_f,
-            z_id,
-            transform_id,
-            edge_flags: edge_flags_bits,
-            quad_flags: quad_flags.bits(),
-            part_index: PartIndex::Center as u8,
-            segment_index,
-        };
-
-        if edge_flags.contains(EdgeAaSegmentMask::LEFT) {
-            let instance = QuadInstance {
-                part_index: PartIndex::Left as u8,
-                ..main_instance
-            };
-            f(edge_batch_key, instance.into());
-        }
-        if edge_flags.contains(EdgeAaSegmentMask::RIGHT) {
-            let instance = QuadInstance {
-                part_index: PartIndex::Top as u8,
-                ..main_instance
-            };
-            f(edge_batch_key, instance.into());
-        }
-        if edge_flags.contains(EdgeAaSegmentMask::TOP) {
-            let instance = QuadInstance {
-                part_index: PartIndex::Right as u8,
-                ..main_instance
-            };
-            f(edge_batch_key, instance.into());
-        }
-        if edge_flags.contains(EdgeAaSegmentMask::BOTTOM) {
-            let instance = QuadInstance {
-                part_index: PartIndex::Bottom as u8,
-                ..main_instance
-            };
-            f(edge_batch_key, instance.into());
-        }
-
-        let instance = QuadInstance {
-            ..main_instance
-        };
-        f(prim_batch_key, instance.into());
-    } else {
-        let instance = QuadInstance {
-            render_task_address,
-            prim_address_i,
-            prim_address_f,
-            z_id,
-            transform_id,
-            edge_flags: edge_flags_bits,
-            quad_flags: quad_flags.bits(),
-            part_index: PartIndex::All as u8,
-            segment_index,
-        };
-
-        f(edge_batch_key, instance.into());
     }
 }
 

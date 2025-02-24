@@ -4,20 +4,29 @@
 // license that can be found in the LICENSE file.
 #include "lib/jxl/quant_weights.h"
 
-#include <stdlib.h>
+#include <jxl/memory_manager.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <hwy/base.h>  // HWY_ALIGN_MAX
 #include <hwy/tests/hwy_gtest.h>
+#include <iterator>
 #include <numeric>
+#include <vector>
 
+#include "lib/jxl/ac_strategy.h"
 #include "lib/jxl/base/random.h"
+#include "lib/jxl/base/status.h"
 #include "lib/jxl/dct_for_test.h"
 #include "lib/jxl/dec_transforms_testonly.h"
 #include "lib/jxl/enc_modular.h"
+#include "lib/jxl/enc_params.h"
 #include "lib/jxl/enc_quant_weights.h"
 #include "lib/jxl/enc_transforms.h"
+#include "lib/jxl/frame_header.h"
+#include "lib/jxl/image_metadata.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/testing.h"
 
 namespace jxl {
@@ -49,9 +58,10 @@ void CheckSimilar(float a, float b) {
 }
 
 TEST(QuantWeightsTest, DC) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   DequantMatrices mat;
   float dc_quant[3] = {1e+5, 1e+3, 1e+1};
-  DequantMatricesSetCustomDC(&mat, dc_quant);
+  DequantMatricesSetCustomDC(memory_manager, &mat, dc_quant);
   for (size_t c = 0; c < 3; c++) {
     CheckSimilar(mat.InvDCQuant(c), dc_quant[c]);
   }
@@ -62,7 +72,8 @@ void RoundtripMatrices(const std::vector<QuantEncoding>& encodings) {
   DequantMatrices mat;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
+  ModularFrameEncoder encoder(jxl::test::MemoryManager(), frame_header,
+                              CompressParams{}, false);
   JXL_CHECK(DequantMatricesSetCustom(&mat, encodings, &encoder));
   const std::vector<QuantEncoding>& encodings_dec = mat.encodings();
   for (size_t i = 0; i < encodings.size(); i++) {
@@ -164,7 +175,7 @@ TEST(QuantWeightsTest, RAW) {
                                        QuantEncoding::Library(0));
   std::vector<int> matrix(3 * 32 * 32);
   Rng rng(0);
-  for (size_t i = 0; i < matrix.size(); i++) matrix[i] = rng.UniformI(1, 256);
+  for (int& v : matrix) v = rng.UniformI(1, 256);
   encodings[DequantMatrices::kQuantTable[AcStrategy::DCT32X32]] =
       QuantEncoding::RAW(matrix, 2);
   RoundtripMatrices(encodings);
@@ -174,6 +185,7 @@ class QuantWeightsTargetTest : public hwy::TestWithParamTarget {};
 HWY_TARGET_INSTANTIATE_TEST_SUITE_P(QuantWeightsTargetTest);
 
 TEST_P(QuantWeightsTargetTest, DCTUniform) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   constexpr float kUniformQuant = 4;
   float weights[3][2] = {{1.0f / kUniformQuant, 0},
                          {1.0f / kUniformQuant, 0},
@@ -184,13 +196,14 @@ TEST_P(QuantWeightsTargetTest, DCTUniform) {
   DequantMatrices dequant_matrices;
   CodecMetadata metadata;
   FrameHeader frame_header(&metadata);
-  ModularFrameEncoder encoder(frame_header, CompressParams{}, false);
+  ModularFrameEncoder encoder(jxl::test::MemoryManager(), frame_header,
+                              CompressParams{}, false);
   JXL_CHECK(DequantMatricesSetCustom(&dequant_matrices, encodings, &encoder));
   JXL_CHECK(dequant_matrices.EnsureComputed(~0u));
 
   const float dc_quant[3] = {1.0f / kUniformQuant, 1.0f / kUniformQuant,
                              1.0f / kUniformQuant};
-  DequantMatricesSetCustomDC(&dequant_matrices, dc_quant);
+  DequantMatricesSetCustomDC(memory_manager, &dequant_matrices, dc_quant);
 
   HWY_ALIGN_MAX float scratch_space[16 * 16 * 5];
 

@@ -239,9 +239,9 @@ fn iter_declarations<'builder, 'decls: 'builder>(
         } else {
             let id = declaration.id().as_longhand().unwrap();
             declarations.note_declaration(declaration, priority, id);
-            if let Some(ref mut builder) = custom_builder {
-                if let PropertyDeclaration::WithVariables(ref v) = declaration {
-                    builder.note_potentially_cyclic_non_custom_dependency(id, v);
+            if CustomPropertiesBuilder::might_have_non_custom_dependency(id, declaration) {
+                if let Some(ref mut builder) = custom_builder {
+                    builder.maybe_note_non_custom_dependency(id, declaration);
                 }
             }
         }
@@ -297,7 +297,7 @@ where
     context.style().add_flags(cascade_input_flags);
 
     let using_cached_reset_properties;
-    let ignore_colors = !context.builder.device.use_document_colors();
+    let ignore_colors = context.builder.device.forced_colors().is_active();
     let mut cascade = Cascade::new(first_line_reparenting, ignore_colors);
     let mut declarations = Default::default();
     let mut shorthand_cache = ShorthandsWithPropertyReferencesCache::default();
@@ -763,6 +763,11 @@ impl<'b> Cascade<'b> {
 
         if apply!(Zoom) {
             self.compute_zoom(context);
+            // NOTE(emilio): This is a bit of a hack, but matches the shipped WebKit and Blink
+            // behavior for now. Ideally, in the future, we have a pass over all
+            // implicitly-or-explicitly-inherited properties that can contain lengths and
+            // re-compute them properly, see https://github.com/w3c/csswg-drafts/issues/9397.
+            self.recompute_font_size_for_zoom_change(&mut context.builder);
         }
 
         // Compute font-family.
@@ -1226,8 +1231,6 @@ impl<'b> Cascade<'b> {
     /// <svg:text> is not affected by text zoom, and it uses a preshint to disable it. We fix up
     /// the struct when this happens by unzooming its contained font values, which will have been
     /// zoomed in the parent.
-    ///
-    /// FIXME(emilio): Why doing this _before_ handling font-size? That sounds wrong.
     #[cfg(feature = "gecko")]
     fn unzoom_fonts_if_needed(&self, builder: &mut StyleBuilder) {
         debug_assert!(self.seen.contains(LonghandId::XTextScale));
@@ -1248,6 +1251,19 @@ impl<'b> Cascade<'b> {
         );
         let device = builder.device;
         builder.mutate_font().unzoom_fonts(device);
+    }
+
+    fn recompute_font_size_for_zoom_change(&self, builder: &mut StyleBuilder) {
+        debug_assert!(self.seen.contains(LonghandId::Zoom));
+        // NOTE(emilio): Intentionally not using the effective zoom here, since all the inherited
+        // zooms are already applied.
+        let zoom = builder.get_box().clone_zoom();
+        let old_size = builder.get_font().clone_font_size();
+        let new_size = old_size.zoom(zoom);
+        if old_size == new_size {
+            return;
+        }
+        builder.mutate_font().set_font_size(new_size);
     }
 
     /// Special handling of font-size: math (used for MathML).

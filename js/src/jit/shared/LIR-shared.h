@@ -649,14 +649,14 @@ class LApplyArgsGeneric
   LIR_HEADER(ApplyArgsGeneric)
 
   LApplyArgsGeneric(const LAllocation& func, const LAllocation& argc,
-                    const LBoxAllocation& thisv, const LDefinition& tmpobjreg,
-                    const LDefinition& tmpcopy)
+                    const LBoxAllocation& thisv, const LDefinition& tmpObjReg,
+                    const LDefinition& tmpCopy)
       : LCallInstructionHelper(classOpcode) {
     setOperand(0, func);
     setOperand(1, argc);
     setBoxOperand(ThisIndex, thisv);
-    setTemp(0, tmpobjreg);
-    setTemp(1, tmpcopy);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
   }
 
   MApplyArgs* mir() const { return mir_->toApplyArgs(); }
@@ -712,14 +712,14 @@ class LApplyArrayGeneric
   LIR_HEADER(ApplyArrayGeneric)
 
   LApplyArrayGeneric(const LAllocation& func, const LAllocation& elements,
-                     const LBoxAllocation& thisv, const LDefinition& tmpobjreg,
-                     const LDefinition& tmpcopy)
+                     const LBoxAllocation& thisv, const LDefinition& tmpObjReg,
+                     const LDefinition& tmpCopy)
       : LCallInstructionHelper(classOpcode) {
     setOperand(0, func);
     setOperand(1, elements);
     setBoxOperand(ThisIndex, thisv);
-    setTemp(0, tmpobjreg);
-    setTemp(1, tmpcopy);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
   }
 
   MApplyArray* mir() const { return mir_->toApplyArray(); }
@@ -746,13 +746,13 @@ class LConstructArgsGeneric
   LConstructArgsGeneric(const LAllocation& func, const LAllocation& argc,
                         const LAllocation& newTarget,
                         const LBoxAllocation& thisv,
-                        const LDefinition& tmpobjreg)
+                        const LDefinition& tmpObjReg)
       : LCallInstructionHelper(classOpcode) {
     setOperand(0, func);
     setOperand(1, argc);
     setOperand(2, newTarget);
     setBoxOperand(ThisIndex, thisv);
-    setTemp(0, tmpobjreg);
+    setTemp(0, tmpObjReg);
   }
 
   MConstructArgs* mir() const { return mir_->toConstructArgs(); }
@@ -784,13 +784,13 @@ class LConstructArrayGeneric
   LConstructArrayGeneric(const LAllocation& func, const LAllocation& elements,
                          const LAllocation& newTarget,
                          const LBoxAllocation& thisv,
-                         const LDefinition& tmpobjreg)
+                         const LDefinition& tmpObjReg)
       : LCallInstructionHelper(classOpcode) {
     setOperand(0, func);
     setOperand(1, elements);
     setOperand(2, newTarget);
     setBoxOperand(ThisIndex, thisv);
-    setTemp(0, tmpobjreg);
+    setTemp(0, tmpObjReg);
   }
 
   MConstructArray* mir() const { return mir_->toConstructArray(); }
@@ -814,6 +814,164 @@ class LConstructArrayGeneric
   // tempForArgCopy becomes live as newTarget is dying, all registers are
   // calltemps.
   const LAllocation* getTempForArgCopy() { return getOperand(2); }
+};
+
+class LApplyArgsNative
+    : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES + 1, 3> {
+ public:
+  LIR_HEADER(ApplyArgsNative)
+
+  LApplyArgsNative(const LAllocation& argc, const LBoxAllocation& thisv,
+                   const LDefinition& tmpObjReg, const LDefinition& tmpCopy,
+                   const LDefinition& tmpExtra)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, argc);
+    setBoxOperand(ThisIndex, thisv);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
+    setTemp(2, tmpExtra);
+  }
+
+  static constexpr bool isConstructing() { return false; }
+
+  MApplyArgs* mir() const { return mir_->toApplyArgs(); }
+
+  uint32_t numExtraFormals() const { return mir()->numExtraFormals(); }
+
+  const LAllocation* getArgc() { return getOperand(0); }
+
+  static const size_t ThisIndex = 1;
+
+  const LDefinition* getTempObject() { return getTemp(0); }
+  const LDefinition* getTempForArgCopy() { return getTemp(1); }
+  const LDefinition* getTempExtra() { return getTemp(2); }
+};
+
+class LApplyArgsObjNative
+    : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES + 1, 3> {
+ public:
+  LIR_HEADER(ApplyArgsObjNative)
+
+  LApplyArgsObjNative(const LAllocation& argsObj, const LBoxAllocation& thisv,
+                      const LDefinition& tmpObjReg, const LDefinition& tmpCopy,
+                      const LDefinition& tmpExtra)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, argsObj);
+    setBoxOperand(ThisIndex, thisv);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
+    setTemp(2, tmpExtra);
+  }
+
+  static constexpr bool isConstructing() { return false; }
+
+  MApplyArgsObj* mir() const { return mir_->toApplyArgsObj(); }
+
+  const LAllocation* getArgsObj() { return getOperand(0); }
+
+  static const size_t ThisIndex = 1;
+
+  const LDefinition* getTempObject() { return getTemp(0); }
+  const LDefinition* getTempForArgCopy() { return getTemp(1); }
+  const LDefinition* getTempExtra() { return getTemp(2); }
+
+  // argc is mapped to the same register as argsObj: argc becomes live as
+  // argsObj is dying, all registers are calltemps.
+  const LAllocation* getArgc() { return getOperand(0); }
+};
+
+class LApplyArrayNative
+    : public LCallInstructionHelper<BOX_PIECES, BOX_PIECES + 1, 3> {
+ public:
+  LIR_HEADER(ApplyArrayNative)
+
+  LApplyArrayNative(const LAllocation& elements, const LBoxAllocation& thisv,
+                    const LDefinition& tmpObjReg, const LDefinition& tmpCopy,
+                    const LDefinition& tmpExtra)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, elements);
+    setBoxOperand(ThisIndex, thisv);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
+    setTemp(2, tmpExtra);
+  }
+
+  static constexpr bool isConstructing() { return false; }
+
+  MApplyArray* mir() const { return mir_->toApplyArray(); }
+
+  const LAllocation* getElements() { return getOperand(0); }
+
+  static const size_t ThisIndex = 1;
+
+  const LDefinition* getTempObject() { return getTemp(0); }
+  const LDefinition* getTempForArgCopy() { return getTemp(1); }
+  const LDefinition* getTempExtra() { return getTemp(2); }
+
+  // argc is mapped to the same register as elements: argc becomes live as
+  // elements is dying, all registers are calltemps.
+  const LAllocation* getArgc() { return getOperand(0); }
+};
+
+class LConstructArgsNative : public LCallInstructionHelper<BOX_PIECES, 2, 3> {
+ public:
+  LIR_HEADER(ConstructArgsNative)
+
+  LConstructArgsNative(const LAllocation& argc, const LAllocation& newTarget,
+                       const LDefinition& tmpObjReg, const LDefinition& tmpCopy,
+                       const LDefinition& tmpExtra)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, argc);
+    setOperand(1, newTarget);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
+    setTemp(2, tmpExtra);
+  }
+
+  static constexpr bool isConstructing() { return true; }
+
+  MConstructArgs* mir() const { return mir_->toConstructArgs(); }
+
+  uint32_t numExtraFormals() const { return mir()->numExtraFormals(); }
+
+  const LAllocation* getArgc() { return getOperand(0); }
+  const LAllocation* getNewTarget() { return getOperand(1); }
+
+  const LDefinition* getTempObject() { return getTemp(0); }
+  const LDefinition* getTempForArgCopy() { return getTemp(1); }
+  const LDefinition* getTempExtra() { return getTemp(2); }
+};
+
+class LConstructArrayNative : public LCallInstructionHelper<BOX_PIECES, 2, 3> {
+ public:
+  LIR_HEADER(ConstructArrayNative)
+
+  LConstructArrayNative(const LAllocation& elements,
+                        const LAllocation& newTarget,
+                        const LDefinition& tmpObjReg,
+                        const LDefinition& tmpCopy, const LDefinition& tmpExtra)
+      : LCallInstructionHelper(classOpcode) {
+    setOperand(0, elements);
+    setOperand(1, newTarget);
+    setTemp(0, tmpObjReg);
+    setTemp(1, tmpCopy);
+    setTemp(2, tmpExtra);
+  }
+
+  static constexpr bool isConstructing() { return true; }
+
+  MConstructArray* mir() const { return mir_->toConstructArray(); }
+
+  const LAllocation* getElements() { return getOperand(0); }
+  const LAllocation* getNewTarget() { return getOperand(1); }
+
+  const LDefinition* getTempObject() { return getTemp(0); }
+  const LDefinition* getTempForArgCopy() { return getTemp(1); }
+  const LDefinition* getTempExtra() { return getTemp(2); }
+
+  // argc is mapped to the same register as elements: argc becomes live as
+  // elements is dying, all registers are calltemps.
+  const LAllocation* getArgc() { return getOperand(0); }
 };
 
 // Takes in either an integer or boolean input and tests it for truthiness.

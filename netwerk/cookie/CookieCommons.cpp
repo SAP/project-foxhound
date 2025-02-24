@@ -349,10 +349,6 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
     std::function<bool(const nsACString&, const OriginAttributes&)>&&
         aHasExistingCookiesLambda,
     nsIURI** aDocumentURI, nsACString& aBaseDomain, OriginAttributes& aAttrs) {
-  nsCOMPtr<nsIPrincipal> storagePrincipal =
-      aDocument->EffectiveCookiePrincipal();
-  MOZ_ASSERT(storagePrincipal);
-
   nsCOMPtr<nsIURI> principalURI;
   auto* basePrincipal = BasePrincipal::Cast(aDocument->NodePrincipal());
   basePrincipal->GetURI(getter_AddRefs(principalURI));
@@ -376,15 +372,6 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
 
   nsPIDOMWindowInner* innerWindow = aDocument->GetInnerWindow();
   if (NS_WARN_IF(!innerWindow)) {
-    return nullptr;
-  }
-
-  // Check if limit-foreign is required.
-  uint32_t dummyRejectedReason = 0;
-  if (aDocument->CookieJarSettings()->GetLimitForeignContexts() &&
-      !aHasExistingCookiesLambda(baseDomain,
-                                 storagePrincipal->OriginAttributesRef()) &&
-      !ShouldAllowAccessFor(innerWindow, principalURI, &dummyRejectedReason)) {
     return nullptr;
   }
 
@@ -419,10 +406,10 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
   CookieStruct cookieData;
   MOZ_ASSERT(cookieData.creationTime() == 0, "Must be initialized to 0");
   bool canSetCookie = false;
-  CookieService::CanSetCookie(principalURI, baseDomain, cookieData,
-                              requireHostMatch, cookieStatus, cookieString,
-                              false, isForeignAndNotAddon, mustBePartitioned,
-                              crc, canSetCookie);
+  CookieService::CanSetCookie(
+      principalURI, baseDomain, cookieData, requireHostMatch, cookieStatus,
+      cookieString, false, isForeignAndNotAddon, mustBePartitioned,
+      aDocument->IsInPrivateBrowsing(), crc, canSetCookie);
 
   if (!canSetCookie) {
     return nullptr;
@@ -439,8 +426,28 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
     return nullptr;
   }
 
+  // CHIPS - If the partitioned attribute is set, store cookie in partitioned
+  // cookie jar independent of context. If the cookies are stored in the
+  // partitioned cookie jar anyway no special treatment of CHIPS cookies
+  // necessary.
+  bool needPartitioned =
+      StaticPrefs::network_cookie_CHIPS_enabled() && cookieData.isPartitioned();
+  nsCOMPtr<nsIPrincipal> cookiePrincipal =
+      needPartitioned ? aDocument->PartitionedPrincipal()
+                      : aDocument->EffectiveCookiePrincipal();
+  MOZ_ASSERT(cookiePrincipal);
+
+  // Check if limit-foreign is required.
+  uint32_t dummyRejectedReason = 0;
+  if (aDocument->CookieJarSettings()->GetLimitForeignContexts() &&
+      !aHasExistingCookiesLambda(baseDomain,
+                                 cookiePrincipal->OriginAttributesRef()) &&
+      !ShouldAllowAccessFor(innerWindow, principalURI, &dummyRejectedReason)) {
+    return nullptr;
+  }
+
   RefPtr<Cookie> cookie =
-      Cookie::Create(cookieData, storagePrincipal->OriginAttributesRef());
+      Cookie::Create(cookieData, cookiePrincipal->OriginAttributesRef());
   MOZ_ASSERT(cookie);
 
   cookie->SetLastAccessed(currentTimeInUsec);
@@ -448,7 +455,7 @@ already_AddRefed<Cookie> CookieCommons::CreateCookieFromDocument(
       Cookie::GenerateUniqueCreationTime(currentTimeInUsec));
 
   aBaseDomain = baseDomain;
-  aAttrs = storagePrincipal->OriginAttributesRef();
+  aAttrs = cookiePrincipal->OriginAttributesRef();
   principalURI.forget(aDocumentURI);
 
   return cookie.forget();
@@ -486,9 +493,18 @@ bool CookieCommons::ShouldIncludeCrossSiteCookieForDocument(
   int32_t sameSiteAttr = 0;
   aCookie->GetSameSite(&sameSiteAttr);
 
+  // CHIPS - If a third-party has storage access it can access both it's
+  // partitioned and unpartitioned cookie jars, else its cookies are blocked.
+  //
+  // Note that we will only include partitioned cookies that have "partitioned"
+  // attribution if we enable opt-in partitioning.
   if (aDocument->CookieJarSettings()->GetPartitionForeign() &&
-      StaticPrefs::network_cookie_cookieBehavior_optInPartitioning() &&
-      !aCookie->IsPartitioned()) {
+      (StaticPrefs::network_cookie_cookieBehavior_optInPartitioning() ||
+       (aDocument->IsInPrivateBrowsing() &&
+        StaticPrefs::
+            network_cookie_cookieBehavior_optInPartitioning_pbmode())) &&
+      !(aCookie->IsPartitioned() && aCookie->RawIsPartitioned()) &&
+      !aDocument->UsingStorageAccess()) {
     return false;
   }
 

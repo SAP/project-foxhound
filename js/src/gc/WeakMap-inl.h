@@ -18,9 +18,11 @@
 #include "gc/GCLock.h"
 #include "gc/Marking.h"
 #include "gc/Zone.h"
+#include "js/Prefs.h"
 #include "js/TraceKind.h"
 #include "vm/JSContext.h"
 
+#include "gc/Marking-inl.h"
 #include "gc/StableCellHasher-inl.h"
 
 namespace js {
@@ -70,6 +72,16 @@ static inline JSObject* GetDelegate(const T& key) {
 
 template <>
 inline JSObject* GetDelegate(gc::Cell* const&) = delete;
+
+template <typename T>
+static inline bool IsSymbol(const T& key) {
+  return false;
+}
+
+template <>
+inline bool IsSymbol(const HeapPtr<JS::Value>& key) {
+  return key.isSymbol();
+}
 
 }  // namespace gc::detail
 
@@ -173,23 +185,24 @@ bool WeakMap<K, V>::markEntry(GCMarker* marker, gc::CellColor mapColor, K& key,
   }
 
   if (populateWeakKeysTable) {
+    MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
+
     // Note that delegateColor >= keyColor because marking a key marks its
     // delegate, so we only need to check whether keyColor < mapColor to tell
     // this.
-
     if (keyColor < mapColor) {
-      MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
-      // The final color of the key is not yet known. Record this weakmap and
-      // the lookup key in the list of weak keys. If the key has a delegate,
-      // then the lookup key is the delegate (because marking the key will end
-      // up marking the delegate and thereby mark the entry.)
+      // The final color of the key is not yet known. Add an edge to the
+      // relevant ephemerons table to ensure that the value will be marked if
+      // the key is marked. If the key has a delegate, also add an edge to
+      // ensure the key is marked if the delegate is marked.
+
       gc::TenuredCell* tenuredValue = nullptr;
       if (cellValue && cellValue->isTenured()) {
         tenuredValue = &cellValue->asTenured();
       }
 
-      if (!this->addImplicitEdges(AsMarkColor(mapColor), keyCell, delegate,
-                                  tenuredValue)) {
+      if (!this->addEphemeronEdgesForEntry(AsMarkColor(mapColor), keyCell,
+                                           delegate, tenuredValue)) {
         marker->abortLinearWeakMarking();
       }
     }
@@ -303,25 +316,42 @@ bool WeakMap<K, V>::findSweepGroupEdges() {
   for (Range r = all(); !r.empty(); r.popFront()) {
     const K& key = r.front().key();
 
-    // If the key type doesn't have delegates, then this will always return
-    // nullptr and the optimizer can remove the entire body of this function.
     JSObject* delegate = gc::detail::GetDelegate(key);
-    if (!delegate) {
+    if (delegate) {
+      // Marking a WeakMap key's delegate will mark the key, so process the
+      // delegate zone no later than the key zone.
+      Zone* delegateZone = delegate->zone();
+      gc::Cell* keyCell = gc::ToMarkable(key);
+      MOZ_ASSERT(keyCell);
+      Zone* keyZone = keyCell->zone();
+      if (delegateZone != keyZone && delegateZone->isGCMarking() &&
+          keyZone->isGCMarking()) {
+        if (!delegateZone->addSweepGroupEdgeTo(keyZone)) {
+          return false;
+        }
+      }
+    }
+
+#ifdef NIGHTLY_BUILD
+    bool symbolsAsWeakMapKeysEnabled =
+        JS::Prefs::experimental_symbols_as_weakmap_keys();
+    if (!symbolsAsWeakMapKeysEnabled) {
       continue;
     }
 
-    // Marking a WeakMap key's delegate will mark the key, so process the
-    // delegate zone no later than the key zone.
-    Zone* delegateZone = delegate->zone();
-    gc::Cell* keyCell = gc::ToMarkable(key);
-    MOZ_ASSERT(keyCell);
-    Zone* keyZone = keyCell->zone();
-    if (delegateZone != keyZone && delegateZone->isGCMarking() &&
-        keyZone->isGCMarking()) {
-      if (!delegateZone->addSweepGroupEdgeTo(keyZone)) {
-        return false;
+    bool isSym = gc::detail::IsSymbol(key);
+    if (isSym) {
+      gc::Cell* keyCell = gc::ToMarkable(key);
+      Zone* keyZone = keyCell->zone();
+      MOZ_ASSERT(keyZone->isAtomsZone());
+
+      if (zone()->isGCMarking() && keyZone->isGCMarking()) {
+        if (!keyZone->addSweepGroupEdgeTo(zone())) {
+          return false;
+        }
       }
     }
+#endif
   }
   return true;
 }
@@ -363,6 +393,24 @@ bool WeakMap<K, V>::checkMarking() const {
   return ok;
 }
 #endif
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+template <class K, class V>
+void WeakMap<K, V>::checkAfterMovingGC() const {
+  for (Range r = all(); !r.empty(); r.popFront()) {
+    gc::Cell* key = gc::ToMarkable(r.front().key());
+    gc::Cell* value = gc::ToMarkable(r.front().value());
+    CheckGCThingAfterMovingGC(key);
+    if (!allowKeysInOtherZones()) {
+      Zone* keyZone = key->zoneFromAnyThread();
+      MOZ_RELEASE_ASSERT(keyZone == zone() || keyZone->isAtomsZone());
+    }
+    CheckGCThingAfterMovingGC(value, zone());
+    auto ptr = lookupUnbarriered(r.front().key());
+    MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
+  }
+}
+#endif  // JSGC_HASH_TABLE_CHECKS
 
 inline HashNumber GetHash(JS::Symbol* sym) { return sym->hash(); }
 

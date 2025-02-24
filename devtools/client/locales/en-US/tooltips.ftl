@@ -19,6 +19,8 @@ inactive-css-not-grid-or-flex-container-or-multicol-container = <strong>{ $prope
 
 inactive-css-not-multicol-container = <strong>{ $property }</strong> has no effect on this element since it’s not a multi-column container.
 
+inactive-css-column-span = <strong>{ $property }</strong> has no spanning effect on this element since it is not within a multi-column container.
+
 inactive-css-not-grid-or-flex-item = <strong>{ $property }</strong> has no effect on this element since it’s not a grid or flex item.
 
 inactive-css-not-grid-item = <strong>{ $property }</strong> has no effect on this element since it’s not a grid item.
@@ -44,6 +46,8 @@ inactive-css-not-display-block-on-floated = The <strong>display</strong> value h
 inactive-css-property-is-impossible-to-override-in-visited = It’s impossible to override <strong>{ $property }</strong> due to <strong>:visited</strong> restriction.
 
 inactive-css-position-property-on-unpositioned-box = <strong>{ $property }</strong> has no effect on this element since it’s not a positioned element.
+
+inactive-css-only-replaced-elements = <strong>{ $property }</strong> has no effect on this element since it can only be applied to replaced elements.
 
 inactive-text-overflow-when-no-overflow = <strong>{ $property }</strong> has no effect on this element since <strong>overflow:hidden</strong> is not set.
 
@@ -88,6 +92,8 @@ inactive-css-not-grid-or-flex-container-or-multicol-container-fix = Try adding e
 
 inactive-css-not-multicol-container-fix = Try adding either <strong>column-count</strong> or <strong>column-width</strong>. { learn-more }
 
+inactive-css-column-span-fix = Try adding <strong>column-count</strong> or <strong>column-width</strong> to one of its ancestor elements. { learn-more }
+
 inactive-css-not-grid-or-flex-item-fix-3 = Try adding <strong>display:grid</strong>, <strong>display:flex</strong>, <strong>display:inline-grid</strong>, or <strong>display:inline-flex</strong> to the element’s parent. { learn-more }
 
 inactive-css-not-grid-item-fix-2 =Try adding <strong>display:grid</strong> or <strong>display:inline-grid</strong> to the element’s parent. { learn-more }
@@ -107,6 +113,8 @@ inactive-css-non-replaced-inline-or-table-column-or-column-group-fix = Try addin
 inactive-css-not-display-block-on-floated-fix = Try removing <strong>float</strong> or adding <strong>display:block</strong>. { learn-more }
 
 inactive-css-position-property-on-unpositioned-box-fix = Try setting its <strong>position</strong> property to something other than <strong>static</strong>. { learn-more }
+
+inactive-css-only-replaced-elements-fix = Ensure you are adding the property to a replaced element. { learn-more }
 
 inactive-text-overflow-when-no-overflow-fix = Try adding <strong>overflow:hidden</strong>. { learn-more }
 

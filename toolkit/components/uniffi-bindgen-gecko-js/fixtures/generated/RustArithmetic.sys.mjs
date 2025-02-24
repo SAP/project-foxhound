@@ -329,7 +329,7 @@ export class FfiConverterTypeArithmeticError extends FfiConverterArrayBuffer {
             case 1:
                 return new IntegerOverflow(FfiConverterString.read(dataStream));
             default:
-                throw new Error("Unknown ArithmeticError variant");
+                throw new UniFFITypeError("Unknown ArithmeticError variant");
         }
     }
     static computeSize(value) {
@@ -338,14 +338,14 @@ export class FfiConverterTypeArithmeticError extends FfiConverterArrayBuffer {
         if (value instanceof IntegerOverflow) {
             return totalSize;
         }
-        throw new Error("Unknown ArithmeticError variant");
+        throw new UniFFITypeError("Unknown ArithmeticError variant");
     }
     static write(dataStream, value) {
         if (value instanceof IntegerOverflow) {
             dataStream.writeInt32(1);
             return;
         }
-        throw new Error("Unknown ArithmeticError variant");
+        throw new UniFFITypeError("Unknown ArithmeticError variant");
     }
 
     static errorClass = ArithmeticError;
@@ -377,7 +377,7 @@ export function add(a,b) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                35, // arithmetic:uniffi_arithmetical_fn_func_add
+                57, // arithmetic:uniffi_arithmetical_fn_func_add
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -411,7 +411,7 @@ export function div(dividend,divisor) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                36, // arithmetic:uniffi_arithmetical_fn_func_div
+                58, // arithmetic:uniffi_arithmetical_fn_func_div
                 FfiConverterU64.lower(dividend),
                 FfiConverterU64.lower(divisor),
             )
@@ -445,7 +445,7 @@ export function equal(a,b) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                37, // arithmetic:uniffi_arithmetical_fn_func_equal
+                59, // arithmetic:uniffi_arithmetical_fn_func_equal
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -479,7 +479,7 @@ export function sub(a,b) {
                 throw e;
             }
             return UniFFIScaffolding.callAsync(
-                38, // arithmetic:uniffi_arithmetical_fn_func_sub
+                60, // arithmetic:uniffi_arithmetical_fn_func_sub
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )

@@ -441,7 +441,7 @@ void FetchDriver::UpdateReferrerInfoFromNewChannel(nsIChannel* aChannel) {
     return;
   }
 
-  nsAutoString computedReferrerSpec;
+  nsAutoCString computedReferrerSpec;
   mRequest->SetReferrerPolicy(referrerInfo->ReferrerPolicy());
   Unused << referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
   mRequest->SetReferrer(computedReferrerSpec);
@@ -665,6 +665,13 @@ nsresult FetchDriver::HttpFetch(
     nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
     rv = loadInfo->SetWorkerAssociatedBrowsingContextID(
         mAssociatedBrowsingContextID);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  if (mIsThirdPartyWorker.isSome()) {
+    nsCOMPtr<nsILoadInfo> loadInfo = chan->LoadInfo();
+    rv = loadInfo->SetIsInThirdPartyContext(mIsThirdPartyWorker.ref());
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // If the fetch is created by FetchEvent.request or NavigationPreload request,
@@ -1645,8 +1652,7 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
     // we need to strip Authentication headers for cross-origin requests
     // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
     bool skipAuthHeader =
-        (StaticPrefs::network_fetch_redirect_stripAuthHeader() &&
-         NS_ShouldRemoveAuthHeaderOnRedirect(aOldChannel, aNewChannel, aFlags));
+        NS_ShouldRemoveAuthHeaderOnRedirect(aOldChannel, aNewChannel, aFlags);
 
     SetRequestHeaders(newHttpChannel, rewriteToGET, skipAuthHeader);
   }

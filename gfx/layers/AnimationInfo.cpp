@@ -15,6 +15,7 @@
 #include "mozilla/EffectSet.h"
 #include "mozilla/MotionPathUtils.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "nsIContent.h"
 #include "nsLayoutUtils.h"
 #include "nsRefreshDriver.h"
@@ -494,11 +495,15 @@ void AnimationInfo::AddAnimationForProperty(
   }
 
   if (aAnimation->Pending()) {
-    const TimeStamp readyTime =
-        aFrame->PresContext()->RefreshDriver()->MostRecentRefresh(
-            /* aEnsureTimerStarted= */ false);
-    MOZ_ASSERT(!readyTime.IsNull());
-    aAnimation->SetPendingReadyTime(readyTime);
+    TimeStamp readyTime = aAnimation->GetPendingReadyTime();
+    if (readyTime.IsNull()) {
+      // TODO(emilio): This should generally not happen anymore, can we remove
+      // this SetPendingReadyTime call?
+      readyTime = aFrame->PresContext()->RefreshDriver()->MostRecentRefresh(
+          /* aEnsureTimerStarted= */ false);
+      MOZ_ASSERT(!readyTime.IsNull());
+      aAnimation->SetPendingReadyTime(readyTime);
+    }
     MaybeStartPendingAnimation(*animation, readyTime);
   }
 }
@@ -648,27 +653,28 @@ static SideBits GetOverflowedSides(const nsRect& aOverflow,
 static std::pair<ParentLayerRect, gfx::Matrix4x4>
 GetClipRectAndTransformForPartialPrerender(
     const nsIFrame* aFrame, int32_t aDevPixelsToAppUnits,
-    const nsIFrame* aClipFrame, const nsIScrollableFrame* aScrollFrame) {
+    const nsIFrame* aClipFrame,
+    const ScrollContainerFrame* aScrollContainerFrame) {
   MOZ_ASSERT(aClipFrame);
 
   gfx::Matrix4x4 transformInClip =
       nsLayoutUtils::GetTransformToAncestor(RelativeTo{aFrame->GetParent()},
                                             RelativeTo{aClipFrame})
           .GetMatrix();
-  if (aScrollFrame) {
+  if (aScrollContainerFrame) {
     transformInClip.PostTranslate(
-        LayoutDevicePoint::FromAppUnits(aScrollFrame->GetScrollPosition(),
-                                        aDevPixelsToAppUnits)
+        LayoutDevicePoint::FromAppUnits(
+            aScrollContainerFrame->GetScrollPosition(), aDevPixelsToAppUnits)
             .ToUnknownPoint());
   }
 
   // We don't necessarily use nsLayoutUtils::CalculateCompositionSizeForFrame
   // since this is a case where we don't use APZ at all.
   return std::make_pair(
-      LayoutDeviceRect::FromAppUnits(aScrollFrame
-                                         ? aScrollFrame->GetScrollPortRect()
-                                         : aClipFrame->GetRectRelativeToSelf(),
-                                     aDevPixelsToAppUnits) *
+      LayoutDeviceRect::FromAppUnits(
+          aScrollContainerFrame ? aScrollContainerFrame->GetScrollPortRect()
+                                : aClipFrame->GetRectRelativeToSelf(),
+          aDevPixelsToAppUnits) *
           LayoutDeviceToLayerScale2D() * LayerToParentLayerScale(),
       transformInClip);
 }
@@ -682,14 +688,14 @@ static PartialPrerenderData GetPartialPrerenderData(
 
   const nsIFrame* clipFrame =
       nsLayoutUtils::GetNearestOverflowClipFrame(aFrame->GetParent());
-  const nsIScrollableFrame* scrollFrame = do_QueryFrame(clipFrame);
+  const ScrollContainerFrame* scrollContainerFrame = do_QueryFrame(clipFrame);
 
   if (!clipFrame) {
     // If there is no suitable clip frame in the same document, use the
     // root one.
-    scrollFrame = aFrame->PresShell()->GetRootScrollFrameAsScrollable();
-    if (scrollFrame) {
-      clipFrame = do_QueryFrame(scrollFrame);
+    scrollContainerFrame = aFrame->PresShell()->GetRootScrollContainerFrame();
+    if (scrollContainerFrame) {
+      clipFrame = scrollContainerFrame;
     } else {
       // If there is no root scroll frame, use the viewport frame.
       clipFrame = aFrame->PresShell()->GetRootFrame();
@@ -697,32 +703,31 @@ static PartialPrerenderData GetPartialPrerenderData(
   }
 
   // If the scroll frame is asyncronously scrollable, try to find the scroll id.
-  if (scrollFrame &&
-      !scrollFrame->GetScrollStyles().IsHiddenInBothDirections() &&
+  if (scrollContainerFrame &&
+      !scrollContainerFrame->GetScrollStyles().IsHiddenInBothDirections() &&
       nsLayoutUtils::AsyncPanZoomEnabled(aFrame)) {
     const bool isInPositionFixed =
         nsLayoutUtils::IsInPositionFixedSubtree(aFrame);
     const ActiveScrolledRoot* asr = aItem->GetActiveScrolledRoot();
-    const nsIFrame* asrScrollableFrame =
-        asr ? do_QueryFrame(asr->mScrollableFrame) : nullptr;
     if (!isInPositionFixed && asr &&
-        aFrame->PresContext() == asrScrollableFrame->PresContext()) {
+        aFrame->PresContext() == asr->mScrollContainerFrame->PresContext()) {
       scrollId = asr->GetViewId();
-      MOZ_ASSERT(clipFrame == asrScrollableFrame);
+      MOZ_ASSERT(clipFrame == asr->mScrollContainerFrame);
     } else {
       // Use the root scroll id in the same document if the target frame is in
       // position:fixed subtree or there is no ASR or the ASR is in a different
       // ancestor document.
       scrollId =
           nsLayoutUtils::ScrollIdForRootScrollFrame(aFrame->PresContext());
-      MOZ_ASSERT(clipFrame == aFrame->PresShell()->GetRootScrollFrame());
+      MOZ_ASSERT(clipFrame ==
+                 aFrame->PresShell()->GetRootScrollContainerFrame());
     }
   }
 
   int32_t devPixelsToAppUnits = aFrame->PresContext()->AppUnitsPerDevPixel();
 
   auto [clipRect, transformInClip] = GetClipRectAndTransformForPartialPrerender(
-      aFrame, devPixelsToAppUnits, clipFrame, scrollFrame);
+      aFrame, devPixelsToAppUnits, clipFrame, scrollContainerFrame);
 
   return PartialPrerenderData{
       LayoutDeviceRect::FromAppUnits(partialPrerenderedRect,

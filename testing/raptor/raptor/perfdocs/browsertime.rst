@@ -6,7 +6,7 @@ Raptor Browsertime
    :depth: 2
    :local:
 
-Browsertime is a harness for running performance tests, similar to Mozilla's Raptor testing framework. Browsertime is written in Node.js and uses Selenium WebDriver to drive multiple browsers including Chrome, Chrome for Android, Firefox, and Firefox for Android and GeckoView-based vehicles.
+Browsertime is a harness for running performance tests, similar to Mozilla's Raptor testing framework. Browsertime is written in Node.js and uses Selenium WebDriver to drive multiple browsers including Safari, Safari Technology Preview, Chrome, Chrome for Android, Firefox, and Firefox for Android and GeckoView-based vehicles.
 
 Source code:
 
@@ -126,6 +126,26 @@ Or for Raptor-Browsertime (use ``chrome`` for desktop, and ``chrome-m`` for mobi
 
   ./mach raptor -t amazon --app chrome --browsertime-chromedriver <PATH/TO/CHROMEDRIVER>
 
+Running on Safari Technology Preview
+------------------------------------
+
+Safari Technology Preview comes bundled with an appropriate ``safaridriver`` binary, and browsertime (via selenium) automatically launches this.
+
+You will need to have installed the most up to date application version either by updating an existing installation on your MacOS or downloading it from https://developer.apple.com/safari/resources/ and ensure you download the one appropriate to your MacOS version
+
+You can launch vanilla Browsertime with Safari Technology Preview as follows:
+
+::
+
+  ./mach browsertime https://www.sitespeed.io -b safari --safari.useTechnologyPreview
+
+
+Or with Raptor-Browsertime
+
+::
+
+  ./mach raptor -t speedometer3 --app safari-tp --binary "/Applications/Safari Technology Preview.app/Contents/MacOS/Safari Technology Preview"
+
 Running Page-load tests with third party WebExtensions
 ------------------------------------------------------
 Page-load tests can also be executed on both Firefox Desktop and Firefox for Android builds with a set of popular
@@ -180,10 +200,29 @@ trigger explicit linter errors, :doc:`see condprof-addons linter docs </code-qua
 .. _webext.json: https://searchfox.org/mozilla-central/rev/bc6a50e6f08db0bb371ef7197c472555499e82c0/testing/condprofile/condprof/customization/webext.json
 .. _firefox-addons: https://searchfox.org/mozilla-central/rev/bc6a50e6f08db0bb371ef7197c472555499e82c0/taskcluster/ci/fetch/browsertime.yml#169-176
 
+TP6-Bench Test
+--------------
+
+The ``tp6-bench`` can either be run on desktop, or locally using the following command:
+
+::
+
+  ./mach raptor -t tp6-bench
+
+This test runs through a selection of our tp6 pageload tests as quickly as possible while only measuring loadtime, FCP (First Contentful Paint), and LCP (Largest Contentful Paint). It does not measure visual metrics like our standard tp6 pageload tests do. The test produces 3 overall metrics (fcp, lcp, and loadtime) across all the pages tested that are summarized in two ways: geomean, and mean. The subtests for each of those metrics are the individual metrics produced in each of the pages tested.
+
+To run this test on try and get a compare view link, run the following
+
+::
+
+  ./mach try perf -q "'Pageload 'Lite"
+
+
+
 More Examples
 -------------
 
-`Browsertime docs <https://github.com/sitespeedio/browsertime/tree/main/docs/examples>`_
+`Browsertime docs <https://www.sitespeed.io/documentation/sitespeed.io/scripting/>`_
 
 Passing Additional Arguments to Browsertime
 -------------------------------------------

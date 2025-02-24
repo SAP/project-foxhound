@@ -607,17 +607,20 @@ add_task(async function test_experiment_ui_state_unconfigured() {
   checkFxAAvatar("not_configured");
 
   let expectedLabel = gSync.fluentStrings.formatValueSync(
-    "appmenuitem-sign-in-account"
+    "synced-tabs-fxa-sign-in"
+  );
+
+  let expectedDescriptionLabel = gSync.fluentStrings.formatValueSync(
+    "fxa-menu-sync-description"
   );
 
   await openMainPanel();
 
   checkFxaToolbarButtonPanel({
     headerTitle: expectedLabel,
-    headerDescription: "",
+    headerDescription: expectedDescriptionLabel,
     enabledItems: [
       "PanelUI-fxa-cta-menu",
-      "PanelUI-fxa-menu-sync-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-relay-button",
       "PanelUI-fxa-menu-vpn-button",
@@ -690,7 +693,6 @@ add_task(async function test_experiment_ui_state_signedin() {
       "PanelUI-fxa-menu-sync-prefs-button",
       "PanelUI-fxa-menu-account-signout-button",
       "PanelUI-fxa-cta-menu",
-      "PanelUI-fxa-menu-sync-button",
       "PanelUI-fxa-menu-monitor-button",
       "PanelUI-fxa-menu-relay-button",
       "PanelUI-fxa-menu-vpn-button",
@@ -772,7 +774,7 @@ function checkSyncNowButtons(syncing, tooltip = null) {
   for (const syncButton of syncButtons) {
     is(
       syncButton.getAttribute("syncstatus"),
-      syncing ? "active" : "",
+      syncing ? "active" : null,
       "button active has the right value"
     );
     if (tooltip) {
@@ -894,7 +896,7 @@ function checkItemsVisibilities(itemsIds, expectedShownItemId) {
 
 function promiseObserver(topic) {
   return new Promise(resolve => {
-    let obs = (aSubject, aTopic, aData) => {
+    let obs = (aSubject, aTopic) => {
       Services.obs.removeObserver(obs, aTopic);
       resolve(aSubject);
     };

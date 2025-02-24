@@ -21,6 +21,7 @@
 #include "vm/GeneratorObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Opcodes.h"
+#include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/BytecodeIterator-inl.h"
@@ -1562,6 +1563,30 @@ bool WarpBuilder::build_Typeof(BytecodeLocation loc) {
 
 bool WarpBuilder::build_TypeofExpr(BytecodeLocation loc) {
   return build_Typeof(loc);
+}
+
+bool WarpBuilder::build_TypeofEq(BytecodeLocation loc) {
+  auto operand = loc.getTypeofEqOperand();
+  JSType type = operand.type();
+  JSOp compareOp = operand.compareOp();
+  MDefinition* input = current->pop();
+
+  if (const auto* typesSnapshot = getOpSnapshot<WarpPolymorphicTypes>(loc)) {
+    auto* typeOf = MTypeOf::New(alloc(), input);
+    typeOf->setObservedTypes(typesSnapshot->list());
+    current->add(typeOf);
+
+    auto* typeInt = MConstant::New(alloc(), Int32Value(type));
+    current->add(typeInt);
+
+    auto* ins = MCompare::New(alloc(), typeOf, typeInt, compareOp,
+                              MCompare::Compare_Int32);
+    current->add(ins);
+    current->push(ins);
+    return true;
+  }
+
+  return buildIC(loc, CacheKind::TypeOfEq, {input});
 }
 
 bool WarpBuilder::build_Arguments(BytecodeLocation loc) {
@@ -3402,6 +3427,23 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
       current->push(ins);
       return true;
     }
+    case CacheKind::TypeOfEq: {
+      MOZ_ASSERT(numInputs == 1);
+      auto operand = loc.getTypeofEqOperand();
+      JSType type = operand.type();
+      JSOp compareOp = operand.compareOp();
+      auto* typeOf = MTypeOf::New(alloc(), getInput(0));
+      current->add(typeOf);
+
+      auto* typeInt = MConstant::New(alloc(), Int32Value(type));
+      current->add(typeInt);
+
+      auto* ins = MCompare::New(alloc(), typeOf, typeInt, compareOp,
+                                MCompare::Compare_Int32);
+      current->add(ins);
+      current->push(ins);
+      return true;
+    }
     case CacheKind::NewObject: {
       auto* templateConst = constant(NullValue());
       MNewObject* ins = MNewObject::NewVM(
@@ -3482,6 +3524,7 @@ bool WarpBuilder::buildBailoutForColdIC(BytecodeLocation loc, CacheKind kind) {
     case CacheKind::CheckPrivateField:
     case CacheKind::InstanceOf:
     case CacheKind::OptimizeGetIterator:
+    case CacheKind::TypeOfEq:
       resultType = MIRType::Boolean;
       break;
     case CacheKind::SetProp:

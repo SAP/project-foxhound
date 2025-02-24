@@ -202,7 +202,7 @@ void MediaEngineRemoteVideoSource::SetTrack(const RefPtr<MediaTrack>& aTrack,
 
   if (!mImageContainer) {
     mImageContainer = MakeAndAddRef<layers::ImageContainer>(
-        layers::ImageContainer::ASYNCHRONOUS);
+        layers::ImageUsageType::Webrtc, layers::ImageContainer::ASYNCHRONOUS);
   }
 
   {
@@ -390,6 +390,10 @@ const TrackingId& MediaEngineRemoteVideoSource::GetTrackingId() const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState != kReleased);
   return mTrackingId;
+}
+
+void MediaEngineRemoteVideoSource::OnCaptureEnded() {
+  mCaptureEndedEvent.Notify();
 }
 
 int MediaEngineRemoteVideoSource::DeliverFrame(

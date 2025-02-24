@@ -35,7 +35,7 @@ case `uname -s` in
                 macosx_version_min=10.12
                 ;;
         esac
-        macosx_sdk=14.2
+        macosx_sdk=14.4
         # NOTE: both CFLAGS and CPPFLAGS need to be set here, otherwise
         # configure step fails.
         sysroot_flags="-isysroot ${MOZ_FETCHES_DIR}/MacOSX${macosx_sdk}.sdk -mmacosx-version-min=${macosx_version_min}"
@@ -67,7 +67,7 @@ work_dir=`pwd`
 tardir=python
 
 cd `mktemp -d`
-${python_src}/configure --prefix=/${tardir} --enable-optimizations ${configure_flags_extra} || { exit_status=$? && cat config.log && exit $exit_status ; }
+${python_src}/configure --prefix=/${tardir} --enable-optimizations --with-lto ${configure_flags_extra} || { exit_status=$? && cat config.log && exit $exit_status ; }
 
 export MAKEFLAGS=-j`nproc`
 make

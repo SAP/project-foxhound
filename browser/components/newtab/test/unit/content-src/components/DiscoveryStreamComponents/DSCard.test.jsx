@@ -10,10 +10,7 @@ import {
   StatusMessage,
   SponsorLabel,
 } from "content-src/components/DiscoveryStreamComponents/DSContextFooter/DSContextFooter";
-import {
-  actionCreators as ac,
-  actionTypes as at,
-} from "common/Actions.sys.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { DSLinkMenu } from "content-src/components/DiscoveryStreamComponents/DSLinkMenu/DSLinkMenu";
 import React from "react";
 import { INITIAL_STATE } from "common/Reducers.sys.mjs";
@@ -28,6 +25,8 @@ const DEFAULT_PROPS = {
     isForStartupCache: false,
   },
   DiscoveryStream: INITIAL_STATE.DiscoveryStream,
+  fetchTimestamp: new Date("March 20, 2024 10:30:44").getTime(),
+  firstVisibleTimestamp: new Date("March 21, 2024 10:11:12").getTime(),
 };
 
 describe("<DSCard>", () => {
@@ -71,7 +70,9 @@ describe("<DSCard>", () => {
   });
 
   it("should render DSLinkMenu", () => {
-    assert.equal(wrapper.children().at(3).type(), DSLinkMenu);
+    // Note: <DSLinkMenu> component moved from a direct child element of `.ds-card`. See Bug 1893936
+    const default_link_menu = wrapper.find(DSLinkMenu);
+    assert.ok(default_link_menu.exists());
   });
 
   it("should start with no .active class", () => {
@@ -174,6 +175,8 @@ describe("<DSCard>", () => {
             card_type: "organic",
             recommendation_id: undefined,
             tile_id: "fooidx",
+            fetchTimestamp: DEFAULT_PROPS.fetchTimestamp,
+            firstVisibleTimestamp: DEFAULT_PROPS.firstVisibleTimestamp,
           },
         })
       );
@@ -212,6 +215,8 @@ describe("<DSCard>", () => {
             card_type: "spoc",
             recommendation_id: undefined,
             tile_id: "fooidx",
+            fetchTimestamp: DEFAULT_PROPS.fetchTimestamp,
+            firstVisibleTimestamp: DEFAULT_PROPS.firstVisibleTimestamp,
           },
         })
       );
@@ -258,6 +263,8 @@ describe("<DSCard>", () => {
             recommendation_id: undefined,
             tile_id: "fooidx",
             shim: "click shim",
+            fetchTimestamp: DEFAULT_PROPS.fetchTimestamp,
+            firstVisibleTimestamp: DEFAULT_PROPS.firstVisibleTimestamp,
           },
         })
       );
@@ -370,7 +377,12 @@ describe("<DSCard>", () => {
 
   describe("DSCard onSaveClick", () => {
     it("should fire telemetry for onSaveClick", () => {
-      wrapper.setProps({ id: "fooidx", pos: 1, type: "foo" });
+      wrapper.setProps({
+        id: "fooidx",
+        pos: 1,
+        type: "foo",
+        fetchTimestamp: undefined,
+      });
       wrapper.instance().onSaveClick();
 
       assert.calledThrice(dispatch);
@@ -391,6 +403,8 @@ describe("<DSCard>", () => {
             card_type: "organic",
             recommendation_id: undefined,
             tile_id: "fooidx",
+            fetchTimestamp: undefined,
+            firstVisibleTimestamp: DEFAULT_PROPS.firstVisibleTimestamp,
           },
         })
       );

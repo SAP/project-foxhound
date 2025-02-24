@@ -1,25 +1,35 @@
-@media (height < 700px) {
-  .personalize-button {
-    position: absolute;
-    top: 16px;
-    inset-inline-end: 16px;
-  }
-}
+.personalizeButtonWrapper {
+  margin: 0;
+  padding: 0;
 
-@media (height >= 700px) {
-  .personalize-button {
+  @media (height < 700px) {
+    position: absolute;
+    top: var(--space-xlarge);
+    inset-inline-end: var(--space-xlarge);
+  }
+
+  @media (height >=700px) {
     position: fixed;
-    top: 16px;
-    inset-inline-end: 16px;
+    top: var(--space-xlarge);
+    inset-inline-end: var(--space-xlarge);
     z-index: 1000;
   }
 }
+
 
 .personalize-button {
   border: 0;
   border-radius: 4px;
   background-color: transparent;
   padding: 15px;
+  position: relative;
+  background-size: var(--icon-size-default);
+  background-position: center;
+
+  // Contrast fix for users who have wallpapers set
+  &:not(:hover, :active) {
+    @include wallpaper-contrast-fix;
+  }
 
   &:hover {
     background-color: var(--newtab-element-hover-color);
@@ -47,7 +57,8 @@
   inset-block: 0;
   inset-inline-end: 0;
   z-index: 1001;
-  padding: 16px;
+  padding-block: 0 var(--space-large);
+  padding-inline: var(--space-large);
   overflow: auto;
   transform: translateX(435px);
   visibility: hidden;
@@ -85,9 +96,17 @@
     box-shadow: $shadow-large;
   }
 
+  .close-button-wrapper {
+    position: sticky;
+    top: 0;
+    padding-block-start: var(--space-large);
+    background-color: var(--newtab-background-color-secondary);
+    z-index: 1;
+  }
+
   .close-button {
     margin-inline-start: auto;
-    margin-bottom: 28px;
+    margin-inline-end: var(--space-large);
     white-space: nowrap;
     display: block;
     background-color: var(--newtab-element-secondary-color);
@@ -117,7 +136,11 @@
   grid-template-columns: 1fr;
   grid-template-rows: repeat(4, auto);
   grid-row-gap: 32px;
-  padding: 0 16px;
+  padding: var(--space-large);
+
+  .wallpapers-section h2 {
+    font-size: inherit;
+  }
 
   .section {
     moz-toggle {

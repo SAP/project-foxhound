@@ -198,7 +198,7 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
   // nsIContent
   void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
-  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+  bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
   void InsertChildBefore(nsIContent* aKid, nsIContent* aBeforeThis,
                          bool aNotify, ErrorResult& aRv) override;
@@ -326,6 +326,11 @@ class HTMLSelectElement final : public nsGenericHTMLFormControlElementWithState,
 
   void GetPreviewValue(nsAString& aValue) { aValue = mPreviewValue; }
   void SetPreviewValue(const nsAString& aValue);
+
+  void SetAutofillState(const nsAString& aState) {
+    SetFormAutofillState(aState);
+  }
+  void GetAutofillState(nsAString& aState) { GetFormAutofillState(aState); }
 
  protected:
   virtual ~HTMLSelectElement() = default;

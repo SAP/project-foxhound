@@ -325,6 +325,7 @@ function getEvalResult(
     if (noSideEffectDebugger) {
       noSideEffectDebugger.removeAllDebuggees();
       noSideEffectDebugger.onNativeCall = undefined;
+      noSideEffectDebugger.shouldAvoidSideEffects = false;
     }
   }
 }
@@ -457,11 +458,15 @@ function makeSideeffectFreeDebugger(targetActorDbg) {
     try {
       dbg.addDebuggee(global);
     } catch (e) {
-      // Ignore the following exception which can happen for some globals in the browser toolbox
+      // Ignore exceptions from the following cases:
+      //   * A global from the same compartment (happens with parent process)
+      //   * A dead wrapper (happens when the reference gets nuked after
+      //     findAllGlobals call)
       if (
         !e.message.includes(
           "debugger and debuggee must be in different compartments"
-        )
+        ) &&
+        !e.message.includes("can't access dead object")
       ) {
         throw e;
       }
@@ -544,6 +549,7 @@ function makeSideeffectFreeDebugger(targetActorDbg) {
     // Returning null terminates the current evaluation.
     return null;
   };
+  dbg.shouldAvoidSideEffects = true;
 
   return dbg;
 }

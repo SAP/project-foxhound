@@ -2,7 +2,8 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /*
- * Tests for SearchSERPTelemetry associated with ad links found in data attributes.
+ * Tests for SearchSERPTelemetry associated with ad links found in data
+ * attributes.
  */
 
 "use strict";
@@ -34,9 +35,6 @@ add_setup(async function () {
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.serpEventTelemetry.enabled", true]],
-  });
 
   registerCleanupFunction(async () => {
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
@@ -76,6 +74,7 @@ add_task(async function test_track_ad_on_data_attributes() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -122,6 +121,7 @@ add_task(async function test_track_ad_on_data_attributes_and_hrefs() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -165,6 +165,7 @@ add_task(async function test_track_no_ad_on_data_attributes_and_hrefs() {
         is_shopping_page: "false",
         is_private: "false",
         shopping_tab_displayed: "false",
+        is_signed_in: "false",
       },
     },
   ]);

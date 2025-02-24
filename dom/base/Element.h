@@ -95,7 +95,6 @@ class nsIFrame;
 class nsIHTMLCollection;
 class nsIPrincipal;
 class nsIScreen;
-class nsIScrollableFrame;
 class nsIURI;
 class nsObjectLoadingContent;
 class nsPresContext;
@@ -113,6 +112,7 @@ class MappedDeclarationsBuilder;
 class EditorBase;
 class ErrorResult;
 class OOMReporter;
+class ScrollContainerFrame;
 class SMILAttr;
 struct MutationClosureData;
 class TextEditor;
@@ -123,6 +123,7 @@ namespace dom {
 struct CheckVisibilityOptions;
 struct CustomElementData;
 struct SetHTMLOptions;
+struct GetHTMLOptions;
 struct GetAnimationsOptions;
 struct ScrollIntoViewOptions;
 struct ScrollToOptions;
@@ -255,12 +256,28 @@ class Grid;
     ExplicitlySetAttrElement(nsGkAtoms::attr, aElement); \
   }
 
+// TODO(keithamus): Reference the spec link once merged.
+// https://github.com/whatwg/html/pull/9841/files#diff-41cf6794ba4200b839c53531555f0f3998df4cbb01a4d5cb0b94e3ca5e23947dR86024
+enum class InvokeAction : uint8_t {
+  Invalid,
+  Custom,
+  Auto,
+  TogglePopover,
+  ShowPopover,
+  HidePopover,
+  ShowModal,
+  Toggle,
+  Close,
+  Open,
+};
+
 class Element : public FragmentOrElement {
  public:
 #ifdef MOZILLA_INTERNAL_API
   explicit Element(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
       : FragmentOrElement(std::move(aNodeInfo)),
-        mState(ElementState::READONLY | ElementState::DEFINED) {
+        mState(ElementState::READONLY | ElementState::DEFINED |
+               ElementState::LTR) {
     MOZ_ASSERT(mNodeInfo->NodeType() == ELEMENT_NODE,
                "Bad NodeType in aNodeInfo");
     SetIsElement();
@@ -713,8 +730,8 @@ class Element : public FragmentOrElement {
 
  public:
   MOZ_CAN_RUN_SCRIPT
-  nsIScrollableFrame* GetScrollFrame(nsIFrame** aFrame = nullptr,
-                                     FlushType aFlushType = FlushType::Layout);
+  ScrollContainerFrame* GetScrollContainerFrame(
+      nsIFrame** aFrame = nullptr, FlushType aFlushType = FlushType::Layout);
 
  private:
   // Style state computed from element's state and style locks.
@@ -1114,8 +1131,23 @@ class Element : public FragmentOrElement {
     return FindAttributeDependence(aAttribute, aMaps, N);
   }
 
-  MOZ_CAN_RUN_SCRIPT virtual void HandleInvokeInternal(nsAtom* aAction,
-                                                       ErrorResult& aRv) {}
+  virtual bool IsValidInvokeAction(InvokeAction aAction) const {
+    return aAction == InvokeAction::Auto;
+  }
+
+  /**
+   * Elements can provide their own default behaviours for "Invoke" (see
+   * invoketarget/invokeaction attributes).
+   * If the action is not recognised, they can choose to ignore it and `return
+   * false`. If an action is recognised then they should `return true` to
+   * indicate to sub-classes that this has been handled and no further steps
+   * should be run.
+   */
+  MOZ_CAN_RUN_SCRIPT virtual bool HandleInvokeInternal(Element* invoker,
+                                                       InvokeAction aAction,
+                                                       ErrorResult& aRv) {
+    return false;
+  }
 
  private:
   void DescribeAttribute(uint32_t index, nsAString& aOutDescription) const;
@@ -1371,20 +1403,19 @@ class Element : public FragmentOrElement {
   enum class ShadowRootDeclarative : bool { No, Yes };
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  already_AddRefed<ShadowRoot> AttachShadow(
-      const ShadowRootInit& aInit, ErrorResult& aError,
-      ShadowRootDeclarative aNewShadowIsDeclarative =
-          ShadowRootDeclarative::No);
+  already_AddRefed<ShadowRoot> AttachShadow(const ShadowRootInit& aInit,
+                                            ErrorResult& aError);
   bool CanAttachShadowDOM() const;
 
   enum class DelegatesFocus : bool { No, Yes };
   enum class ShadowRootClonable : bool { No, Yes };
+  enum class ShadowRootSerializable : bool { No, Yes };
 
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
       ShadowRootMode aMode, DelegatesFocus = DelegatesFocus::No,
       SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named,
       ShadowRootClonable aClonable = ShadowRootClonable::No,
-      ShadowRootDeclarative aDeclarative = ShadowRootDeclarative::No);
+      ShadowRootSerializable aSerializable = ShadowRootSerializable::No);
 
   // Attach UA Shadow Root if it is not attached.
   enum class NotifyUAWidgetSetup : bool { No, Yes };
@@ -1518,6 +1549,8 @@ class Element : public FragmentOrElement {
     return CSSPixel::FromAppUnits(GetClientAreaRect().Width());
   }
 
+  MOZ_CAN_RUN_SCRIPT double CurrentCSSZoom();
+
   // This function will return the block size of first line box, no matter if
   // the box is 'block' or 'inline'. The return unit is pixel. If the element
   // can't get a primary frame, we will return be zero.
@@ -1562,6 +1595,7 @@ class Element : public FragmentOrElement {
 
   void SetHTML(const nsAString& aInnerHTML, const SetHTMLOptions& aOptions,
                ErrorResult& aError);
+  void GetHTML(const GetHTMLOptions& aOptions, nsAString& aResult);
 
   void GetTextForTaintCheck(nsAString& aStr) override { GetOuterHTML(aStr); };
 
@@ -2150,17 +2184,29 @@ class Element : public FragmentOrElement {
    */
   virtual already_AddRefed<nsIURI> GetHrefURI() const { return nullptr; }
 
+  // Step 2. of
+  // <https://html.spec.whatwg.org/multipage/semantics.html#get-an-element's-target>
+  //
+  // Sanitize targets that look like they contain dangling markup.
+  static void SanitizeLinkOrFormTarget(nsAString& aTarget);
+
   /**
+   * <https://html.spec.whatwg.org/multipage/semantics.html#get-an-element's-target>
+   * (Excluding <form>)
+   *
    * Get the target of this link element. Consumers should established that
    * this element is a link (probably using IsLink) before calling this
-   * function (or else why call it?)
+   * function (or else why call it?). This method neuters probably markup
+   * injection attempts.
    *
    * Note: for HTML this gets the value of the 'target' attribute; for XLink
    * this gets the value of the xlink:_moz_target attribute, or failing that,
    * the value of xlink:show, converted to a suitably equivalent named target
    * (e.g. _blank).
    */
-  virtual void GetLinkTarget(nsAString& aTarget);
+  void GetLinkTarget(nsAString& aTarget);
+
+  virtual void GetLinkTargetImpl(nsAString& aTarget);
 
   virtual bool Translate() const;
 

@@ -5,13 +5,16 @@
 
 // Test that pseudoelements are displayed correctly in the rule view
 
-const TEST_URI = URL_ROOT + "doc_pseudoelement.html";
+const TEST_URI = URL_ROOT + "doc_pseudoelement.html?#:~:text=fox";
 const PSEUDO_PREF = "devtools.inspector.show_pseudo_elements";
 
 add_task(async function () {
   await pushPref(PSEUDO_PREF, true);
   await pushPref("dom.customHighlightAPI.enabled", true);
+  await pushPref("dom.text_fragments.enabled", true);
   await pushPref("layout.css.modern-range-pseudos.enabled", true);
+  await pushPref("full-screen-api.transition-duration.enter", "0 0");
+  await pushPref("full-screen-api.transition-duration.leave", "0 0");
 
   await addTab(TEST_URI);
   const { inspector, view } = await openRuleView();
@@ -23,9 +26,11 @@ add_task(async function () {
   await testParagraph(inspector, view);
   await testBody(inspector, view);
   await testList(inspector, view);
-  await testDialogBackdrop(inspector, view);
   await testCustomHighlight(inspector, view);
   await testSlider(inspector, view);
+  await testUrlFragmentTextDirective(inspector, view);
+  // keep this one last as it makes the browser go fullscreen and seem to impact other tests
+  await testBackdrop(inspector, view);
 });
 
 async function testTopLeft(inspector, view) {
@@ -288,13 +293,80 @@ async function testList(inspector, view) {
   assertGutters(view);
 }
 
-async function testDialogBackdrop(inspector, view) {
+async function testBackdrop(inspector, view) {
+  info("Test ::backdrop for dialog element");
   await assertPseudoElementRulesNumbers("dialog", inspector, view, {
     elementRulesNb: 3,
     backdropRules: 1,
   });
 
+  info("Test ::backdrop for popover element");
+  await assertPseudoElementRulesNumbers(
+    "#in-dialog[popover]",
+    inspector,
+    view,
+    {
+      elementRulesNb: 3,
+      backdropRules: 1,
+    }
+  );
+
   assertGutters(view);
+
+  info("Test ::backdrop rules are displayed when elements is fullscreen");
+
+  // Wait for the document being activated, so that
+  // fullscreen request won't be denied.
+  const onTabFocused = SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    return ContentTaskUtils.waitForCondition(
+      () => content.browsingContext.isActive && content.document.hasFocus(),
+      "document is active"
+    );
+  });
+  gBrowser.selectedBrowser.focus();
+  await onTabFocused;
+
+  info("Request fullscreen");
+  // Entering fullscreen is triggering an update, wait for it so it doesn't impact
+  // the rest of the test
+  let onInspectorUpdated = view.once("ruleview-refreshed");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    const canvas = content.document.querySelector("canvas");
+    canvas.requestFullscreen();
+
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.fullscreenElement === canvas,
+      "canvas is fullscreen"
+    );
+  });
+  await onInspectorUpdated;
+
+  await assertPseudoElementRulesNumbers("canvas", inspector, view, {
+    elementRulesNb: 3,
+    backdropRules: 1,
+  });
+
+  assertGutters(view);
+
+  // Exiting fullscreen is triggering an update, wait for it so it doesn't impact
+  // the rest of the test
+  onInspectorUpdated = view.once("ruleview-refreshed");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async () => {
+    content.document.exitFullscreen();
+    await ContentTaskUtils.waitForCondition(
+      () => content.document.fullscreenElement === null,
+      "canvas is no longer fullscreen"
+    );
+  });
+  await onInspectorUpdated;
+
+  info(
+    "Test ::backdrop rules are not displayed when elements are not fullscreen"
+  );
+  await assertPseudoElementRulesNumbers("canvas", inspector, view, {
+    elementRulesNb: 3,
+    backdropRules: 0,
+  });
 }
 
 async function testCustomHighlight(inspector, view) {
@@ -376,6 +448,19 @@ async function testSlider(inspector, view) {
   );
 }
 
+async function testUrlFragmentTextDirective(inspector, view) {
+  await assertPseudoElementRulesNumbers(
+    ".url-fragment-text-directives",
+    inspector,
+    view,
+    {
+      elementRulesNb: 3,
+      targetTextRulesNb: 1,
+    }
+  );
+  assertGutters(view);
+}
+
 function convertTextPropsToString(textProps) {
   return textProps
     .map(
@@ -436,6 +521,9 @@ async function assertPseudoElementRulesNumbers(
     sliderTrackRules: elementStyle.rules.filter(
       rule => rule.pseudoElement === "::slider-track"
     ),
+    targetTextRules: elementStyle.rules.filter(
+      rule => rule.pseudoElement === "::target-text"
+    ),
   };
 
   is(
@@ -492,6 +580,11 @@ async function assertPseudoElementRulesNumbers(
     rules.sliderTrackRules.length,
     ruleNbs.sliderTrackRulesNb || 0,
     selector + " has the correct number of ::slider-track rules"
+  );
+  is(
+    rules.targetTextRules.length,
+    ruleNbs.targetTextRulesNb || 0,
+    selector + " has the correct number of ::target-text rules"
   );
 
   // If we do have pseudo element rules displayed, ensure we don't mark their selectors

@@ -38,6 +38,7 @@ export class ActivityStreamStorage {
       return {
         get: this._get.bind(this, storeName),
         getAll: this._getAll.bind(this, storeName),
+        getAllKeys: this._getAllKeys.bind(this, storeName),
         set: this._set.bind(this, storeName),
       };
     }
@@ -61,6 +62,12 @@ export class ActivityStreamStorage {
     );
   }
 
+  _getAllKeys(storeName) {
+    return this._requestWrapper(async () =>
+      (await this._getStore(storeName)).getAllKeys()
+    );
+  }
+
   _set(storeName, key, value) {
     return this._requestWrapper(async () =>
       (await this._getStore(storeName)).put(value, key)
@@ -68,7 +75,7 @@ export class ActivityStreamStorage {
   }
 
   _openDatabase() {
-    return lazy.IndexedDB.open(this.dbName, { version: this.dbVersion }, db => {
+    return lazy.IndexedDB.open(this.dbName, this.dbVersion, db => {
       // If provided with array of objectStore names we need to create all the
       // individual stores
       this.storeNames.forEach(store => {

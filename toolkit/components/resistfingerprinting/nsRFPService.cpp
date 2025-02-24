@@ -1,7 +1,7 @@
 /* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "nsRFPService.h"
 
@@ -19,6 +19,7 @@
 #include "MainThreadUtils.h"
 #include "ScopedNSSTypes.h"
 
+#include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/ArrayIterator.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
@@ -99,6 +100,8 @@ static mozilla::LazyLogModule gResistFingerprintingLog(
 
 static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
 
+static mozilla::LazyLogModule gTimestamps("Timestamps");
+
 #define RESIST_FINGERPRINTINGPROTECTION_OVERRIDE_PREF \
   "privacy.fingerprintingProtection.overrides"
 #define GLEAN_DATA_SUBMISSION_PREF "datareporting.healthreport.uploadEnabled"
@@ -109,6 +112,8 @@ static mozilla::LazyLogModule gFingerprinterDetection("FingerprinterDetection");
 #define LAST_PB_SESSION_EXITED_TOPIC "last-pb-context-exited"
 #define IDLE_TOPIC "browser-idle-startup-tasks-finished"
 #define GFX_FEATURES "gfx-features-ready"
+#define USER_CHARACTERISTICS_TEST_REQUEST \
+  "user-characteristics-testing-please-populate-data"
 
 static constexpr uint32_t kVideoFramesPerSec = 30;
 static constexpr uint32_t kVideoDroppedRatio = 5;
@@ -121,12 +126,21 @@ static constexpr uint32_t kVideoDroppedRatio = 5;
 // Fingerprinting protections that are enabled by default. This can be
 // overridden using the privacy.fingerprintingProtection.overrides pref.
 #if defined(MOZ_WIDGET_ANDROID)
-const RFPTarget kDefaultFingerprintingProtections =
-    RFPTarget::CanvasRandomization;
+// NOLINTNEXTLINE(bugprone-macro-parentheses)
+#  define ANDROID_DEFAULT(name) RFPTarget::name |
+#  define DESKTOP_DEFAULT(name)
 #else
-const RFPTarget kDefaultFingerprintingProtections =
-    RFPTarget::CanvasRandomization | RFPTarget::FontVisibilityLangPack;
+#  define ANDROID_DEFAULT(name)
+// NOLINTNEXTLINE(bugprone-macro-parentheses)
+#  define DESKTOP_DEFAULT(name) RFPTarget::name |
 #endif
+
+const RFPTarget kDefaultFingerprintingProtections =
+#include "RFPTargetsDefault.inc"
+    static_cast<RFPTarget>(0);
+
+#undef ANDROID_DEFAULT
+#undef DESKTOP_DEFAULT
 
 static constexpr uint32_t kSuspiciousFingerprintingActivityThreshold = 1;
 
@@ -189,6 +203,9 @@ nsresult nsRFPService::Init() {
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = obs->AddObserver(this, GFX_FEATURES, false);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = obs->AddObserver(this, USER_CHARACTERISTICS_TEST_REQUEST, false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -289,6 +306,7 @@ void nsRFPService::StartShutdown() {
       obs->RemoveObserver(this, OBSERVER_TOPIC_IDLE_DAILY);
       obs->RemoveObserver(this, IDLE_TOPIC);
       obs->RemoveObserver(this, GFX_FEATURES);
+      obs->RemoveObserver(this, USER_CHARACTERISTICS_TEST_REQUEST);
     }
   }
 
@@ -350,6 +368,12 @@ nsRFPService::Observe(nsISupports* aObject, const char* aTopic,
     }
   }
 
+  if (!strcmp(USER_CHARACTERISTICS_TEST_REQUEST, aTopic) &&
+      xpc::IsInAutomation()) {
+    nsUserCharacteristics::PopulateDataAndEventuallySubmit(
+        /* aUpdatePref = */ false, /* aTesting = */ true);
+  }
+
   if (!strcmp(OBSERVER_TOPIC_IDLE_DAILY, aTopic)) {
     if (StaticPrefs::
             privacy_resistFingerprinting_randomization_daily_reset_enabled()) {
@@ -397,7 +421,7 @@ sec_per_extra_frame = 1 / (extra_frames_per_frame * 60) // 833.33
 min_per_extra_frame = sec_per_extra_frame / 60 // 13.89
 ```
 We expect an extra frame every ~14 minutes, which is enough to be smooth.
-16.67 would be ~1.4 minutes, which is OK, but is more noticable.
+16.67 would be ~1.4 minutes, which is OK, but is more noticeable.
 Put another way, if this is the only unacceptable hitch you have across 14
 minutes, I'm impressed, and we might revisit this.
 */
@@ -618,14 +642,13 @@ double nsRFPService::ReduceTimePrecisionImpl(double aTime, TimeScale aTimeScale,
     nsAutoCString type;
     TypeToText(aType, type);
     MOZ_LOG(
-        gResistFingerprintingLog, LogLevel::Error,
+        gTimestamps, LogLevel::Error,
         ("About to assert. aTime=%lli<%lli aContextMixin=%" PRId64 " aType=%s",
          timeAsInt, kFeb282008, aContextMixin, type.get()));
-    MOZ_ASSERT(
-        false,
-        "ReduceTimePrecisionImpl was given a relative time "
-        "with an empty context mix-in (or your clock is 10+ years off.) "
-        "Run this with MOZ_LOG=nsResistFingerprinting:1 to get more details.");
+    MOZ_ASSERT(false,
+               "ReduceTimePrecisionImpl was given a relative time "
+               "with an empty context mix-in (or your clock is 10+ years off.) "
+               "Run this with MOZ_LOG=Timestamps:1 to get more details.");
   }
 
   // Cast the resolution (in microseconds) to an int.
@@ -660,7 +683,7 @@ double nsRFPService::ReduceTimePrecisionImpl(double aTime, TimeScale aTimeScale,
   double ret = double(clampedAndJittered) / (1000000.0 / double(aTimeScale));
 
   MOZ_LOG(
-      gResistFingerprintingLog, LogLevel::Verbose,
+      gTimestamps, LogLevel::Verbose,
       ("Given: (%.*f, Scaled: %.*f, Converted: %lli), Rounding %s with (%lli, "
        "Originally %.*f), "
        "Intermediate: (%lli), Clamped: (%lli) Jitter: (%i Context: %" PRId64
@@ -1267,7 +1290,10 @@ Maybe<nsTArray<uint8_t>> nsRFPService::GenerateKey(nsIChannel* aChannel) {
 
   // Set the partitionKey using the top level URI to ensure that the key is
   // specific to the top level site.
-  attrs.SetPartitionKey(topLevelURI);
+  bool foreignByAncestorContext =
+      AntiTrackingUtils::IsThirdPartyChannel(aChannel) &&
+      loadInfo->GetIsThirdPartyContextToTopWindow();
+  attrs.SetPartitionKey(topLevelURI, foreignByAncestorContext);
 
   nsAutoCString oaSuffix;
   attrs.CreateSuffix(oaSuffix);
@@ -1337,8 +1363,14 @@ nsRFPService::CleanRandomKeyByPrincipal(nsIPrincipal* aPrincipal) {
 
   OriginAttributes attrs = aPrincipal->OriginAttributesRef();
   nsCOMPtr<nsIURI> uri = aPrincipal->GetURI();
-  attrs.SetPartitionKey(uri);
 
+  attrs.SetPartitionKey(uri, false);
+  ClearBrowsingSessionKey(attrs);
+
+  // We must also include the cross-site embeds of this principal that end up
+  // re-embedded back into the same principal's top level, otherwise state will
+  // persist for this target
+  attrs.SetPartitionKey(uri, true);
   ClearBrowsingSessionKey(attrs);
   return NS_OK;
 }
@@ -1354,14 +1386,21 @@ nsRFPService::CleanRandomKeyByDomain(const nsACString& aDomain) {
 
   // Use the originAttributes to get the partitionKey.
   OriginAttributes attrs;
-  attrs.SetPartitionKey(httpURI);
+  attrs.SetPartitionKey(httpURI, false);
 
   // Create a originAttributesPattern and set the http partitionKey to the
   // pattern.
   OriginAttributesPattern pattern;
   pattern.mPartitionKey.Reset();
   pattern.mPartitionKey.Construct(attrs.mPartitionKey);
+  ClearBrowsingSessionKey(pattern);
 
+  // We must also include the cross-site embeds of this principal that end up
+  // re-embedded back into the same principal's top level, otherwise state will
+  // persist for this target
+  attrs.SetPartitionKey(httpURI, true);
+  pattern.mPartitionKey.Reset();
+  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
   ClearBrowsingSessionKey(pattern);
 
   // Get https URI from the domain.
@@ -1370,10 +1409,17 @@ nsRFPService::CleanRandomKeyByDomain(const nsACString& aDomain) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Use the originAttributes to get the partitionKey and set to the pattern.
-  attrs.SetPartitionKey(httpsURI);
+  attrs.SetPartitionKey(httpsURI, false);
   pattern.mPartitionKey.Reset();
   pattern.mPartitionKey.Construct(attrs.mPartitionKey);
+  ClearBrowsingSessionKey(pattern);
 
+  // We must also include the cross-site embeds of this principal that end up
+  // re-embedded back into the same principal's top level, otherwise state will
+  // persist for this target
+  attrs.SetPartitionKey(httpsURI, true);
+  pattern.mPartitionKey.Reset();
+  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
   ClearBrowsingSessionKey(pattern);
   return NS_OK;
 }
@@ -1395,12 +1441,20 @@ nsRFPService::CleanRandomKeyByHost(const nsACString& aHost,
 
   // Use the originAttributes to get the partitionKey.
   OriginAttributes attrs;
-  attrs.SetPartitionKey(httpURI);
+  attrs.SetPartitionKey(httpURI, false);
 
   // Set the partitionKey to the pattern.
   pattern.mPartitionKey.Reset();
   pattern.mPartitionKey.Construct(attrs.mPartitionKey);
 
+  ClearBrowsingSessionKey(pattern);
+
+  // We must also include the cross-site embeds of this principal that end up
+  // re-embedded back into the same principal's top level, otherwise state will
+  // persist for this target
+  attrs.SetPartitionKey(httpURI, true);
+  pattern.mPartitionKey.Reset();
+  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
   ClearBrowsingSessionKey(pattern);
 
   // Get https URI from the host.
@@ -1409,10 +1463,17 @@ nsRFPService::CleanRandomKeyByHost(const nsACString& aHost,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Use the originAttributes to get the partitionKey and set to the pattern.
-  attrs.SetPartitionKey(httpsURI);
+  attrs.SetPartitionKey(httpsURI, false);
   pattern.mPartitionKey.Reset();
   pattern.mPartitionKey.Construct(attrs.mPartitionKey);
+  ClearBrowsingSessionKey(pattern);
 
+  // We must also include the cross-site embeds of this principal that end up
+  // re-embedded back into the same principal's top level, otherwise state will
+  // persist for this target
+  attrs.SetPartitionKey(httpsURI, true);
+  pattern.mPartitionKey.Reset();
+  pattern.mPartitionKey.Construct(attrs.mPartitionKey);
   ClearBrowsingSessionKey(pattern);
   return NS_OK;
 }
@@ -2011,17 +2072,61 @@ Maybe<RFPTarget> nsRFPService::GetOverriddenFingerprintingSettingsForChannel(
   }
 
   // The channel is for the first-party load.
-  if (!loadInfo->GetIsThirdPartyContextToTopWindow()) {
+  if (!AntiTrackingUtils::IsThirdPartyChannel(aChannel)) {
     return GetOverriddenFingerprintingSettingsForURI(uri, nullptr);
   }
 
   // The channel is for the third-party load. We get the first-party URI from
   // the top-level window global parent.
-  RefPtr<dom::WindowGlobalParent> topWGP =
-      bc->Top()->Canonical()->GetCurrentWindowGlobal();
+  RefPtr<dom::CanonicalBrowsingContext> topBC = bc->Top()->Canonical();
+  RefPtr<dom::WindowGlobalParent> topWGP = topBC->GetCurrentWindowGlobal();
 
   if (NS_WARN_IF(!topWGP)) {
     return Nothing();
+  }
+
+  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+  DebugOnly<nsresult> rv =
+      loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  MOZ_ASSERT(cookieJarSettings);
+
+  uint64_t topWindowContextIdFromCJS =
+      net::CookieJarSettings::Cast(cookieJarSettings)
+          ->GetTopLevelWindowContextId();
+
+  // The top-level window could be navigated away when we get the fingerprinting
+  // override here. For example, the beacon requests. In this case, the
+  // top-level windowContext id won't match the inner window id of the top-level
+  // windowGlobalParent. So, we cannot rely on the URI from the top-level
+  // windowGlobalParent because it could be different from the one that creates
+  // the channel. Instead, we fallback to use the partitionKey in the
+  // cookieJarSettings to get the top-level URI.
+  if (topWGP->InnerWindowId() != topWindowContextIdFromCJS) {
+    nsAutoString partitionKey;
+    rv = cookieJarSettings->GetPartitionKey(partitionKey);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+    // Bail out early if the partitionKey is empty.
+    if (partitionKey.IsEmpty()) {
+      return Nothing();
+    }
+
+    nsAutoString scheme;
+    nsAutoString domain;
+    int32_t unused;
+    bool unused2;
+    if (!OriginAttributes::ParsePartitionKey(partitionKey, scheme, domain,
+                                             unused, unused2)) {
+      MOZ_ASSERT(false);
+      return Nothing();
+    }
+
+    nsCOMPtr<nsIURI> topURI;
+    rv = NS_NewURI(getter_AddRefs(topURI), scheme + u"://"_ns + domain);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+    return GetOverriddenFingerprintingSettingsForURI(topURI, uri);
   }
 
   nsCOMPtr<nsIPrincipal> topPrincipal = topWGP->DocumentPrincipal();
@@ -2049,19 +2154,20 @@ Maybe<RFPTarget> nsRFPService::GetOverriddenFingerprintingSettingsForChannel(
 
 #ifdef DEBUG
   // Verify if the top URI matches the partitionKey of the channel.
-  nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
-  Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
-
   nsAutoString partitionKey;
   cookieJarSettings->GetPartitionKey(partitionKey);
 
   OriginAttributes attrs;
-  attrs.SetPartitionKey(topURI);
+  attrs.SetPartitionKey(topURI, false);
+
+  OriginAttributes attrsForeignByAncestor;
+  attrsForeignByAncestor.SetPartitionKey(topURI, true);
 
   // The partitionKey of the channel could haven't been set here if the loading
   // channel is top-level.
   MOZ_ASSERT_IF(!partitionKey.IsEmpty(),
-                attrs.mPartitionKey.Equals(partitionKey));
+                attrs.mPartitionKey.Equals(partitionKey) ||
+                    attrsForeignByAncestor.mPartitionKey.Equals(partitionKey));
 #endif
 
   return GetOverriddenFingerprintingSettingsForURI(topURI, uri);

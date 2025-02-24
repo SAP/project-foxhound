@@ -16,6 +16,7 @@ class MovedOriginDirectoryCleanupTestCase(MarionetteTestCase):
                 "privacy.sanitize.sanitizeOnShutdown": True,
                 "privacy.clearOnShutdown.offlineApps": True,
                 "dom.quotaManager.backgroundTask.enabled": False,
+                "browser.sanitizer.loglevel": "All",
             }
         )
         self.moved_origin_directory = (
@@ -30,6 +31,13 @@ class MovedOriginDirectoryCleanupTestCase(MarionetteTestCase):
         with self.marionette.using_context("chrome"):
             self.marionette.execute_script(
                 """
+                let promise = new Promise(resolve => {
+                    function observer() {
+                        Services.obs.removeObserver(observer, "cookie-saved-on-disk");
+                        resolve();
+                    }
+                    Services.obs.addObserver(observer, "cookie-saved-on-disk");
+                });
                 Services.cookies.add(
                     "example.local",
                     "path",
@@ -43,6 +51,7 @@ class MovedOriginDirectoryCleanupTestCase(MarionetteTestCase):
                     Ci.nsICookie.SAMESITE_NONE,
                     Ci.nsICookie.SCHEME_UNSET
                 );
+                return promise;
                 """
             )
 

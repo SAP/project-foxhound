@@ -22,6 +22,7 @@
 #include "absl/types/optional.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/stun.h"
+#include "api/turn_customizer.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/p2p_constants.h"
 #include "rtc_base/async_packet_socket.h"
@@ -36,6 +37,7 @@
 
 namespace cricket {
 
+using ::webrtc::IceCandidateType;
 using ::webrtc::SafeTask;
 using ::webrtc::TaskQueueBase;
 using ::webrtc::TimeDelta;
@@ -221,13 +223,14 @@ TurnPort::TurnPort(TaskQueueBase* thread,
                    rtc::SSLCertificateVerifier* tls_cert_verifier,
                    const webrtc::FieldTrialsView* field_trials)
     : Port(thread,
-           RELAY_PORT_TYPE,
+           IceCandidateType::kRelay,
            factory,
            network,
            username,
            password,
            field_trials),
       server_address_(server_address),
+      server_url_(ReconstructServerUrl()),
       tls_alpn_protocols_(tls_alpn_protocols),
       tls_elliptic_curves_(tls_elliptic_curves),
       tls_cert_verifier_(tls_cert_verifier),
@@ -262,7 +265,7 @@ TurnPort::TurnPort(TaskQueueBase* thread,
                    rtc::SSLCertificateVerifier* tls_cert_verifier,
                    const webrtc::FieldTrialsView* field_trials)
     : Port(thread,
-           RELAY_PORT_TYPE,
+           IceCandidateType::kRelay,
            factory,
            network,
            min_port,
@@ -271,6 +274,7 @@ TurnPort::TurnPort(TaskQueueBase* thread,
            password,
            field_trials),
       server_address_(server_address),
+      server_url_(ReconstructServerUrl()),
       tls_alpn_protocols_(tls_alpn_protocols),
       tls_elliptic_curves_(tls_elliptic_curves),
       tls_cert_verifier_(tls_cert_verifier),
@@ -583,9 +587,8 @@ Connection* TurnPort::CreateConnection(const Candidate& remote_candidate,
   // and TURN candidate later.
   for (size_t index = 0; index < Candidates().size(); ++index) {
     const Candidate& local_candidate = Candidates()[index];
-    if (local_candidate.type() == RELAY_PORT_TYPE &&
-        local_candidate.address().family() ==
-            remote_candidate.address().family()) {
+    if (local_candidate.is_relay() && local_candidate.address().family() ==
+                                          remote_candidate.address().family()) {
       ProxyConnection* conn =
           new ProxyConnection(NewWeakPtr(), index, remote_candidate);
       // Create an entry, if needed, so we can get our permissions set up
@@ -885,8 +888,9 @@ void TurnPort::OnAllocateSuccess(const rtc::SocketAddress& address,
              UDP_PROTOCOL_NAME,
              ProtoToString(server_address_.proto),  // The first hop protocol.
              "",  // TCP candidate type, empty for turn candidates.
-             RELAY_PORT_TYPE, GetRelayPreference(server_address_.proto),
-             server_priority_, ReconstructedServerUrl(), true);
+             IceCandidateType::kRelay,
+             GetRelayPreference(server_address_.proto), server_priority_,
+             server_url_, true);
 }
 
 void TurnPort::OnAllocateError(int error_code, absl::string_view reason) {
@@ -902,9 +906,8 @@ void TurnPort::OnAllocateError(int error_code, absl::string_view reason) {
     address.clear();
     port = 0;
   }
-  SignalCandidateError(
-      this, IceCandidateErrorEvent(address, port, ReconstructedServerUrl(),
-                                   error_code, reason));
+  SignalCandidateError(this, IceCandidateErrorEvent(address, port, server_url_,
+                                                    error_code, reason));
 }
 
 void TurnPort::OnRefreshError() {
@@ -1255,15 +1258,13 @@ bool TurnPort::SetEntryChannelId(const rtc::SocketAddress& address,
   return true;
 }
 
-std::string TurnPort::ReconstructedServerUrl() {
-  // draft-petithuguenin-behave-turn-uris-01
-  // turnURI       = scheme ":" turn-host [ ":" turn-port ]
+std::string TurnPort::ReconstructServerUrl() {
+  // https://www.rfc-editor.org/rfc/rfc7065#section-3.1
+  // turnURI       = scheme ":" host [ ":" port ]
   //                 [ "?transport=" transport ]
   // scheme        = "turn" / "turns"
   // transport     = "udp" / "tcp" / transport-ext
   // transport-ext = 1*unreserved
-  // turn-host     = IP-literal / IPv4address / reg-name
-  // turn-port     = *DIGIT
   std::string scheme = "turn";
   std::string transport = "tcp";
   switch (server_address_.proto) {
@@ -1278,7 +1279,7 @@ std::string TurnPort::ReconstructedServerUrl() {
       break;
   }
   rtc::StringBuilder url;
-  url << scheme << ":" << server_address_.address.hostname() << ":"
+  url << scheme << ":" << server_address_.address.HostAsURIString() << ":"
       << server_address_.address.port() << "?transport=" << transport;
   return url.Release();
 }
@@ -1802,7 +1803,7 @@ int TurnEntry::Send(const void* data,
     // If the channel is bound, we can send the data as a Channel Message.
     buf.WriteUInt16(channel_id_);
     buf.WriteUInt16(static_cast<uint16_t>(size));
-    buf.WriteBytes(reinterpret_cast<const char*>(data), size);
+    buf.WriteBytes(reinterpret_cast<const uint8_t*>(data), size);
   }
   rtc::PacketOptions modified_options(options);
   modified_options.info_signaled_after_sent.turn_overhead_bytes =

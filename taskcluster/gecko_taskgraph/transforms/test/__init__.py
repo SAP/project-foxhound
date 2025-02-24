@@ -27,6 +27,7 @@ from taskgraph.util.schema import Schema, optionally_keyed_by, resolve_keyed_by
 from voluptuous import Any, Exclusive, Optional, Required
 
 from gecko_taskgraph.optimize.schema import OptimizationSchema
+from gecko_taskgraph.transforms.job import job_description_schema
 from gecko_taskgraph.transforms.test.other import get_mobile_project
 from gecko_taskgraph.util.chunking import manifest_loaders
 
@@ -74,7 +75,7 @@ test_description_schema = Schema(
         # common attributes)
         Optional("attributes"): {str: object},
         # relative path (from config.path) to the file task was defined in
-        Optional("job-from"): str,
+        Optional("task-from"): str,
         # The `run_on_projects` attribute, defaulting to "all".  This dictates the
         # projects on which this task should be included in the target task set.
         # See the attributes documentation for details.
@@ -118,7 +119,9 @@ test_description_schema = Schema(
         Required("run-without-variant"): optionally_keyed_by("test-platform", bool),
         # The EC2 instance size to run these tests on.
         Required("instance-size"): optionally_keyed_by(
-            "test-platform", Any("default", "large", "xlarge")
+            "test-platform",
+            "variant",
+            Any("default", "large", "large-noscratch", "xlarge", "xlarge-noscratch"),
         ),
         # type of virtualization or hardware required by test.
         Required("virtualization"): optionally_keyed_by(
@@ -265,11 +268,14 @@ test_description_schema = Schema(
                 str,
                 None,
                 {Required("index"): str, Required("name"): str},
+                {Required("upstream-task"): str, Required("name"): str},
             ),
         ),
         # A list of artifacts to install from 'fetch' tasks. Validation deferred
         # to 'job' transforms.
         Optional("fetches"): object,
+        # A list of extra dependencies
+        Optional("dependencies"): object,
         # Raptor / browsertime specific keys, defer validation to 'raptor.py'
         # transform.
         Optional("raptor"): object,
@@ -279,6 +285,8 @@ test_description_schema = Schema(
         Optional("subtest"): str,
         # Define if a given task supports artifact builds or not, see bug 1695325.
         Optional("supports-artifact-builds"): bool,
+        # Version of python used to run the task
+        Optional("use-python"): job_description_schema["use-python"],
     }
 )
 
@@ -346,6 +354,7 @@ def set_defaults(config, tasks):
         task.setdefault("run-without-variant", True)
         task.setdefault("variants", [])
         task.setdefault("supports-artifact-builds", True)
+        task.setdefault("use-python", "system")
 
         task["mozharness"].setdefault("extra-options", [])
         task["mozharness"].setdefault("requires-signed-builds", False)
@@ -476,13 +485,16 @@ def make_job_description(config, tasks):
         jobdesc["description"] = task["description"]
         jobdesc["attributes"] = attributes
         jobdesc["dependencies"] = {"build": build_label}
-        jobdesc["job-from"] = task["job-from"]
+        jobdesc["task-from"] = task["task-from"]
 
         if task.get("fetches"):
             jobdesc["fetches"] = task["fetches"]
 
         if task["mozharness"]["requires-signed-builds"] is True:
             jobdesc["dependencies"]["build-signing"] = task["build-signing-label"]
+
+        if "dependencies" in task:
+            jobdesc["dependencies"].update(task["dependencies"])
 
         if "expires-after" in task:
             jobdesc["expires-after"] = task["expires-after"]

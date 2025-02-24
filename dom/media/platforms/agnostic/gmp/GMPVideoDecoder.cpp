@@ -8,6 +8,7 @@
 #include "GMPDecoderModule.h"
 #include "GMPVideoHost.h"
 #include "GMPLog.h"
+#include "GMPUtils.h"
 #include "MediaData.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -20,19 +21,6 @@
 #include "VideoUtils.h"
 
 namespace mozilla {
-
-#if defined(DEBUG)
-static bool IsOnGMPThread() {
-  nsCOMPtr<mozIGeckoMediaPluginService> mps =
-      do_GetService("@mozilla.org/gecko-media-plugin-service;1");
-  MOZ_ASSERT(mps);
-
-  nsCOMPtr<nsIThread> gmpThread;
-  nsresult rv = mps->GetThread(getter_AddRefs(gmpThread));
-  MOZ_ASSERT(NS_SUCCEEDED(rv) && gmpThread);
-  return gmpThread->IsOnCurrentThread();
-}
-#endif
 
 GMPVideoDecoderParams::GMPVideoDecoderParams(const CreateDecoderParams& aParams)
     : mConfig(aParams.VideoConfig()),
@@ -114,15 +102,17 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
 
   RefPtr<VideoData> v = r.unwrap();
   MOZ_ASSERT(v);
-  mPerformanceRecorder.Record(static_cast<int64_t>(decodedFrame->Timestamp()),
-                              [&](DecodeStage& aStage) {
-                                aStage.SetImageFormat(DecodeStage::YUV420P);
-                                aStage.SetResolution(decodedFrame->Width(),
-                                                     decodedFrame->Height());
-                                aStage.SetYUVColorSpace(b.mYUVColorSpace);
-                                aStage.SetColorDepth(b.mColorDepth);
-                                aStage.SetColorRange(b.mColorRange);
-                              });
+  mPerformanceRecorder.Record(
+      static_cast<int64_t>(decodedFrame->Timestamp()),
+      [&](DecodeStage& aStage) {
+        aStage.SetImageFormat(DecodeStage::YUV420P);
+        aStage.SetResolution(decodedFrame->Width(), decodedFrame->Height());
+        aStage.SetYUVColorSpace(b.mYUVColorSpace);
+        aStage.SetColorDepth(b.mColorDepth);
+        aStage.SetColorRange(b.mColorRange);
+        aStage.SetStartTimeAndEndTime(v->mTime.ToMicroseconds(),
+                                      v->GetEndTime().ToMicroseconds());
+      });
 
   if (mReorderFrames) {
     mReorderQueue.Push(std::move(v));
@@ -130,11 +120,11 @@ void GMPVideoDecoder::Decoded(GMPVideoi420Frame* aDecodedFrame) {
     mUnorderedData.AppendElement(std::move(v));
   }
 
-    if (mSamples.IsEmpty()) {
-      // If we have no remaining samples in the table, then we have processed
-      // all outstanding decode requests.
-      ProcessReorderQueue(mDecodePromise, __func__);
-    }
+  if (mSamples.IsEmpty()) {
+    // If we have no remaining samples in the table, then we have processed
+    // all outstanding decode requests.
+    ProcessReorderQueue(mDecodePromise, __func__);
+  }
 }
 
 void GMPVideoDecoder::ReceivedDecodedReferenceFrame(const uint64_t aPictureId) {
@@ -186,22 +176,19 @@ void GMPVideoDecoder::ResetComplete() {
 void GMPVideoDecoder::Error(GMPErr aErr) {
   GMP_LOG_DEBUG("GMPVideoDecoder::Error");
   MOZ_ASSERT(IsOnGMPThread());
-  auto error = MediaResult(aErr == GMPDecodeErr ? NS_ERROR_DOM_MEDIA_DECODE_ERR
-                                                : NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                           RESULT_DETAIL("GMPErr:%x", aErr));
-  mDecodePromise.RejectIfExists(error, __func__);
-  mDrainPromise.RejectIfExists(error, __func__);
-  mFlushPromise.RejectIfExists(error, __func__);
+  Teardown(ToMediaResult(aErr, "Error GMP callback"_ns), __func__);
 }
 
 void GMPVideoDecoder::Terminated() {
   GMP_LOG_DEBUG("GMPVideoDecoder::Terminated");
   MOZ_ASSERT(IsOnGMPThread());
-  Error(GMPErr::GMPAbortedErr);
+  Teardown(
+      MediaResult(NS_ERROR_DOM_MEDIA_ABORT_ERR, "Terminated GMP callback"_ns),
+      __func__);
 }
 
 void GMPVideoDecoder::ProcessReorderQueue(
-    MozPromiseHolder<DecodePromise>& aPromise, const char* aMethodName) {
+    MozPromiseHolder<DecodePromise>& aPromise, StaticString aMethodName) {
   if (aPromise.IsEmpty()) {
     return;
   }
@@ -471,18 +458,31 @@ RefPtr<MediaDataDecoder::DecodePromise> GMPVideoDecoder::Drain() {
   return p;
 }
 
-RefPtr<ShutdownPromise> GMPVideoDecoder::Shutdown() {
-  mInitPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
-  mFlushPromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
+void GMPVideoDecoder::Teardown(const MediaResult& aResult,
+                               StaticString aCallSite) {
+  MOZ_ASSERT(IsOnGMPThread());
 
-  // Note that this *may* be called from the proxy thread also.
-  // TODO: If that's the case, then this code is racy.
-  if (!mGMP) {
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+  // Ensure we are kept alive at least until we return.
+  RefPtr<GMPVideoDecoder> self(this);
+
+  mInitPromise.RejectIfExists(aResult, aCallSite);
+  mDecodePromise.RejectIfExists(aResult, aCallSite);
+
+  if (mGMP) {
+    // Note this unblocks flush and drain operations waiting for callbacks.
+    mGMP->Close();
+    mGMP = nullptr;
+  } else {
+    mFlushPromise.RejectIfExists(aResult, aCallSite);
+    mDrainPromise.RejectIfExists(aResult, aCallSite);
   }
-  // Note this unblocks flush and drain operations waiting for callbacks.
-  mGMP->Close();
-  mGMP = nullptr;
+
+  mHost = nullptr;
+}
+
+RefPtr<ShutdownPromise> GMPVideoDecoder::Shutdown() {
+  MOZ_ASSERT(IsOnGMPThread());
+  Teardown(MediaResult(NS_ERROR_DOM_MEDIA_CANCELED, "Shutdown"_ns), __func__);
   return ShutdownPromise::CreateAndResolve(true, __func__);
 }
 

@@ -82,6 +82,7 @@
 #include "mozilla/layers/DeviceAttachmentsD3D11.h"
 #include "mozilla/WindowsProcessMitigations.h"
 #include "D3D11Checks.h"
+#include "mozilla/ScreenHelperWin.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -258,8 +259,7 @@ class D3DSharedTexturesReporter final : public nsIMemoryReporter {
 
 NS_IMPL_ISUPPORTS(D3DSharedTexturesReporter, nsIMemoryReporter)
 
-gfxWindowsPlatform::gfxWindowsPlatform()
-    : mRenderMode(RENDER_GDI), mSupportsHDR(false) {
+gfxWindowsPlatform::gfxWindowsPlatform() : mRenderMode(RENDER_GDI) {
   // If win32k is locked down then we can't use COM STA and shouldn't need it.
   // Also, we won't be using any GPU memory in this process.
   if (!IsWin32kLockedDown()) {
@@ -400,7 +400,11 @@ void gfxWindowsPlatform::InitAcceleration() {
   // CanUseHardwareVideoDecoding depends on DeviceManagerDx state,
   // so update the cached value now.
   UpdateCanUseHardwareVideoDecoding();
-  UpdateSupportsHDR();
+
+  // Our ScreenHelperWin also depends on DeviceManagerDx state.
+  if (XRE_IsParentProcess() && !gfxPlatform::IsHeadless()) {
+    ScreenHelperWin::RefreshScreens();
+  }
 
   RecordStartupTelemetry();
 }
@@ -432,12 +436,13 @@ bool gfxWindowsPlatform::InitDWriteSupport() {
 }
 
 bool gfxWindowsPlatform::HandleDeviceReset() {
-  DeviceResetReason resetReason = DeviceResetReason::OK;
+  mozilla::gfx::DeviceResetReason resetReason =
+      mozilla::gfx::DeviceResetReason::OK;
   if (!DidRenderingDeviceReset(&resetReason)) {
     return false;
   }
 
-  if (resetReason != DeviceResetReason::FORCED_RESET) {
+  if (resetReason != mozilla::gfx::DeviceResetReason::FORCED_RESET) {
     Telemetry::Accumulate(Telemetry::DEVICE_RESET_REASON,
                           uint32_t(resetReason));
   }
@@ -529,53 +534,6 @@ void gfxWindowsPlatform::UpdateRenderMode() {
           "GFX: Failed to update reference draw target after device reset");
     }
   }
-}
-
-void gfxWindowsPlatform::UpdateSupportsHDR() {
-  // TODO: This function crashes content processes, for reasons that are not
-  // obvious from the crash reports. For now, this function can only be executed
-  // by the parent process. Therefore SupportsHDR() will always return false for
-  // content processes, as noted in the header.
-  if (!XRE_IsParentProcess()) {
-    return;
-  }
-
-  // Set mSupportsHDR to true if any of the DeviceManager outputs have a BT2020
-  // colorspace with EOTF2084 gamma curve, this indicates the system is sending
-  // an HDR format to at least one monitor.  The colorspace returned by DXGI is
-  // very vague - we only see DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 for HDR
-  // and DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709 for SDR modes, even if the
-  // monitor is using something like YCbCr444 according to Settings
-  // (System -> Display Settings -> Advanced Display).  To get more specific
-  // info we would need to query the DISPLAYCONFIG values in WinGDI.
-  //
-  // Note that the bit depth used to be checked here, but as of Windows 11 22H2,
-  // HDR is supported with 8bpc for lower bandwidth, where DWM converts to
-  // dithered RGB8 rather than RGB10, which doesn't really matter here.
-  //
-  // This only returns true if there is an HDR display connected at app start,
-  // if the user switches to HDR to watch a video, we won't know that here, and
-  // if no displays are connected we return false (e.g. if Windows Update
-  // restarted a laptop with its lid closed and no external displays, we will
-  // see zero outputs here when the app is restarted automatically).
-  //
-  // It would be better to track if HDR is ever used and report that telemetry
-  // so we know if HDR matters, not just when it is detected at app start.
-  //
-  // Further reading:
-  // https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range
-  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-displayconfig_sdr_white_level
-  DeviceManagerDx* dx = DeviceManagerDx::Get();
-  nsTArray<DXGI_OUTPUT_DESC1> outputs = dx->EnumerateOutputs();
-
-  for (auto& output : outputs) {
-    if (output.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020) {
-      mSupportsHDR = true;
-      return;
-    }
-  }
-
-  mSupportsHDR = false;
 }
 
 mozilla::gfx::BackendType gfxWindowsPlatform::GetContentBackendFor(
@@ -914,7 +872,7 @@ void gfxWindowsPlatform::GetCommonFallbackFonts(
 }
 
 bool gfxWindowsPlatform::DidRenderingDeviceReset(
-    DeviceResetReason* aResetReason) {
+    mozilla::gfx::DeviceResetReason* aResetReason) {
   DeviceManagerDx* dm = DeviceManagerDx::Get();
   if (!dm) {
     return false;
@@ -924,7 +882,7 @@ bool gfxWindowsPlatform::DidRenderingDeviceReset(
 
 void gfxWindowsPlatform::CompositorUpdated() {
   DeviceManagerDx::Get()->ForceDeviceReset(
-      ForcedDeviceResetReason::COMPOSITOR_UPDATED);
+      mozilla::gfx::ForcedDeviceResetReason::COMPOSITOR_UPDATED);
   UpdateRenderMode();
 }
 
@@ -937,7 +895,8 @@ BOOL CALLBACK InvalidateWindowForDeviceReset(HWND aWnd, LPARAM aMsg) {
 void gfxWindowsPlatform::SchedulePaintIfDeviceReset() {
   AUTO_PROFILER_LABEL("gfxWindowsPlatform::SchedulePaintIfDeviceReset", OTHER);
 
-  DeviceResetReason resetReason = DeviceResetReason::OK;
+  mozilla::gfx::DeviceResetReason resetReason =
+      mozilla::gfx::DeviceResetReason::OK;
   if (!DidRenderingDeviceReset(&resetReason)) {
     return;
   }

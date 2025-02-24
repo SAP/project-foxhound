@@ -3,10 +3,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <stddef.h>
-#include <stdint.h>
+#include <jxl/memory_manager.h>
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "lib/jxl/base/common.h"
@@ -16,6 +18,7 @@
 #include "lib/jxl/dec_bit_reader.h"
 #include "lib/jxl/enc_aux_out.h"
 #include "lib/jxl/enc_bit_writer.h"
+#include "lib/jxl/test_memory_manager.h"
 #include "lib/jxl/test_utils.h"
 #include "lib/jxl/testing.h"
 
@@ -51,12 +54,13 @@ struct Symbol {
 
 // Reading from output gives the same values.
 TEST(BitReaderTest, TestRoundTrip) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   test::ThreadPoolForTests pool(8);
   EXPECT_TRUE(RunOnPool(
-      &pool, 0, 1000, ThreadPool::NoInit,
-      [](const uint32_t task, size_t /* thread */) {
+      pool.get(), 0, 1000, ThreadPool::NoInit,
+      [&memory_manager](const uint32_t task, size_t /* thread */) {
         constexpr size_t kMaxBits = 8000;
-        BitWriter writer;
+        BitWriter writer{memory_manager};
         BitWriter::Allotment allotment(&writer, kMaxBits);
 
         std::vector<Symbol> symbols;
@@ -85,14 +89,15 @@ TEST(BitReaderTest, TestRoundTrip) {
 
 // SkipBits is the same as reading that many bits.
 TEST(BitReaderTest, TestSkip) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   test::ThreadPoolForTests pool(8);
   EXPECT_TRUE(RunOnPool(
-      &pool, 0, 96, ThreadPool::NoInit,
-      [](const uint32_t task, size_t /* thread */) {
+      pool.get(), 0, 96, ThreadPool::NoInit,
+      [&memory_manager](const uint32_t task, size_t /* thread */) {
         constexpr size_t kSize = 100;
 
         for (size_t skip = 0; skip < 128; ++skip) {
-          BitWriter writer;
+          BitWriter writer{memory_manager};
           BitWriter::Allotment allotment(&writer, kSize * kBitsPerByte);
           // Start with "task" 1-bits.
           for (size_t i = 0; i < task; ++i) {
@@ -141,11 +146,12 @@ TEST(BitReaderTest, TestSkip) {
 
 // Verifies byte order and different groupings of bits.
 TEST(BitReaderTest, TestOrder) {
+  JxlMemoryManager* memory_manager = jxl::test::MemoryManager();
   constexpr size_t kMaxBits = 16;
 
   // u(1) - bits written into LSBs of first byte
   {
-    BitWriter writer;
+    BitWriter writer{memory_manager};
     BitWriter::Allotment allotment(&writer, kMaxBits);
     for (size_t i = 0; i < 5; ++i) {
       writer.Write(1, 1);
@@ -167,7 +173,7 @@ TEST(BitReaderTest, TestOrder) {
 
   // u(8) - get bytes in the same order
   {
-    BitWriter writer;
+    BitWriter writer{memory_manager};
     BitWriter::Allotment allotment(&writer, kMaxBits);
     writer.Write(8, 0xF8);
     writer.Write(8, 0x3F);
@@ -182,7 +188,7 @@ TEST(BitReaderTest, TestOrder) {
 
   // u(16) - little-endian bytes
   {
-    BitWriter writer;
+    BitWriter writer{memory_manager};
     BitWriter::Allotment allotment(&writer, kMaxBits);
     writer.Write(16, 0xF83F);
 
@@ -196,7 +202,7 @@ TEST(BitReaderTest, TestOrder) {
 
   // Non-byte-aligned, mixed sizes
   {
-    BitWriter writer;
+    BitWriter writer{memory_manager};
     BitWriter::Allotment allotment(&writer, kMaxBits);
     writer.Write(1, 1);
     writer.Write(3, 6);

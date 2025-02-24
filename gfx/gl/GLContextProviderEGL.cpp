@@ -30,6 +30,7 @@
 #  ifdef MOZ_WIDGET_ANDROID
 #    include <android/native_window.h>
 #    include <android/native_window_jni.h>
+#    include "mozilla/jni/Utils.h"
 #    include "mozilla/widget/AndroidCompositorWidget.h"
 #  endif
 
@@ -336,23 +337,29 @@ EGLSurface GLContextEGL::CreateEGLSurfaceForCompositorWidget(
   }
 
   MOZ_ASSERT(aCompositorWidget);
-#ifdef MOZ_WAYLAND
-  // RenderCompositorEGL does not like EGL_NO_SURFACE as it fallbacks
-  // to SW rendering or claims itself as paused.
-  // In case we're missing valid native window because aCompositorWidget hidden,
-  // just create a fallback EGLSurface.
-  // Actual EGLSurface will be created by widget code later when
-  // aCompositorWidget becomes visible.
-  if (widget::GdkIsWaylandDisplay() && aCompositorWidget->IsHidden()) {
-    mozilla::gfx::IntSize pbSize(16, 16);
-    return CreateWaylandOffscreenSurface(*egl, aConfig, pbSize);
-  }
-#endif
   EGLNativeWindowType window =
       GET_NATIVE_WINDOW_FROM_COMPOSITOR_WIDGET(aCompositorWidget);
   if (!window) {
+#ifdef MOZ_WIDGET_GTK
+    // RenderCompositorEGL does not like EGL_NO_SURFACE as it fallbacks
+    // to SW rendering or claims itself as paused.
+    // In case we're missing valid native window because aCompositorWidget
+    // hidden, just create a fallback EGLSurface. Actual EGLSurface will be
+    // created by widget code later when aCompositorWidget becomes visible.
+    mozilla::gfx::IntSize pbSize(16, 16);
+#  ifdef MOZ_WAYLAND
+    if (GdkIsWaylandDisplay()) {
+      return CreateWaylandOffscreenSurface(*egl, aConfig, pbSize);
+    } else
+#  endif
+    {
+      return CreatePBufferSurfaceTryingPowerOfTwo(*egl, aConfig, LOCAL_EGL_NONE,
+                                                  pbSize);
+    }
+#else
     gfxCriticalNote << "window is null";
     return EGL_NO_SURFACE;
+#endif
   }
 
   return mozilla::gl::CreateSurfaceFromNativeWindow(*egl, window, aConfig);
@@ -411,6 +418,15 @@ bool GLContextEGL::Init() {
       mEgl->HasKHRImageBase() &&
       mEgl->IsExtensionSupported(EGLExtension::KHR_gl_texture_2D_image) &&
       IsExtensionSupported(OES_EGL_image);
+
+#if MOZ_WIDGET_ANDROID
+  // We see crashes in eglTerminate on devices with Xclipse GPUs running
+  // Android 14. Choose to leak the EGLDisplays in order to avoid the crashes.
+  // See bug 1868825 and bug 1903810.
+  if (Renderer() == GLRenderer::SamsungXclipse && jni::GetAPIVersion() >= 34) {
+    mEgl->SetShouldLeakEGLDisplay();
+  }
+#endif
 
   return true;
 }
@@ -486,16 +502,6 @@ bool GLContextEGL::RenewSurface(CompositorWidget* aWidget) {
 
   EGLNativeWindowType nativeWindow =
       GET_NATIVE_WINDOW_FROM_COMPOSITOR_WIDGET(aWidget);
-#ifdef MOZ_WAYLAND
-  // In case we're missing native window on Wayland CompositorWidget is hidden.
-  // Don't create a fallback EGL surface but fails here.
-  // We need to repeat RenewSurface() when native window is available
-  // (CompositorWidget becomes visible).
-  if (GdkIsWaylandDisplay()) {
-    NS_WARNING("Failed to get native window");
-    return false;
-  }
-#endif
   if (nativeWindow) {
     mSurface = mozilla::gl::CreateSurfaceFromNativeWindow(*mEgl, nativeWindow,
                                                           mSurfaceConfig);
@@ -974,7 +980,7 @@ bool CreateConfig(EglDisplay& aEgl, EGLConfig* aConfig, int32_t aDepth,
 static bool CreateConfigScreen(EglDisplay& egl, EGLConfig* const aConfig,
                                const bool aEnableDepthBuffer,
                                const bool aUseGles) {
-  int32_t depth = gfxVars::ScreenDepth();
+  int32_t depth = gfxVars::PrimaryScreenDepth();
   if (CreateConfig(egl, aConfig, depth, aEnableDepthBuffer, aUseGles)) {
     return true;
   }

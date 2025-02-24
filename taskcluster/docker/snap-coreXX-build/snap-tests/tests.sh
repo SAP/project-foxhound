@@ -46,6 +46,14 @@ fi;
 
 sudo snap refresh --hold=24h firefox
 
+while true; do
+  if snap changes 2>&1 | grep -E '(Doing|Undoing|Do\s|restarting)'; then
+    echo wait; sleep 0.5
+  else
+    break
+  fi
+done
+
 sudo snap install --name firefox --dangerous ./firefox.snap
 
 RUNTIME_VERSION=$(snap run firefox --version | awk '{ print $3 }')
@@ -59,6 +67,16 @@ export TEST_NO_HEADLESS=1
 if [ -n "${MOZ_LOG}" ]; then
   export MOZ_LOG_FILE="${ARTIFACT_DIR}/gecko-log"
 fi
+
+RECORD_SCREEN_PID=0
+if [ "${TEST_RECORD_SCREEN}" = "true" ]; then
+  python3 record.py &
+  RECORD_SCREEN_PID=$!
+  echo "Recording with PID ${RECORD_SCREEN_PID}"
+
+  trap 'echo [EXIT] Stopping screen recording from PID ${RECORD_SCREEN_PID} && kill ${RECORD_SCREEN_PID}' EXIT
+  trap 'echo [ERR] Stopping screen recording from PID ${RECORD_SCREEN_PID} && kill ${RECORD_SCREEN_PID}' ERR
+fi;
 
 if [ "${SUITE}" = "basic" ]; then
   sed -e "s/#RUNTIME_VERSION#/${RUNTIME_VERSION}/#" < basic_tests/expectations.json.in > basic_tests/expectations.json

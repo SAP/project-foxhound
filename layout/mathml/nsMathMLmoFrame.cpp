@@ -8,6 +8,7 @@
 
 #include "gfxContext.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "nsCSSValue.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
@@ -145,15 +146,17 @@ void nsMathMLmoFrame::ProcessTextData() {
   mFlags |= allFlags & NS_MATHML_OPERATOR_ACCENT;
   mFlags |= allFlags & NS_MATHML_OPERATOR_MOVABLELIMITS;
 
-  // see if this is an operator that should be centered to cater for
-  // fonts that are not math-aware
-  if (1 == length) {
-    if ((ch == '+') || (ch == '=') || (ch == '*') ||
-        (ch == 0x2212) ||  // &minus;
-        (ch == 0x2264) ||  // &le;
-        (ch == 0x2265) ||  // &ge;
-        (ch == 0x00D7)) {  // &times;
-      mFlags |= NS_MATHML_OPERATOR_CENTERED;
+  if (!StaticPrefs::mathml_centered_operators_disabled()) {
+    // see if this is an operator that should be centered to cater for
+    // fonts that are not math-aware
+    if (1 == length) {
+      if ((ch == '+') || (ch == '=') || (ch == '*') ||
+          (ch == 0x2212) ||  // &minus;
+          (ch == 0x2264) ||  // &le;
+          (ch == 0x2265) ||  // &ge;
+          (ch == 0x00D7)) {  // &times;
+        mFlags |= NS_MATHML_OPERATOR_CENTERED;
+      }
     }
   }
 
@@ -593,9 +596,15 @@ nsMathMLmoFrame::Stretch(DrawTarget* aDrawTarget,
 
   // get the leading to be left at the top and the bottom of the stretched char
   // this seems more reliable than using fm->GetLeading() on suspicious fonts
-  nscoord em;
-  GetEmHeight(fm, em);
-  nscoord leading = NSToCoordRound(0.2f * em);
+  const nscoord leading = [&fm] {
+    if (StaticPrefs::
+            mathml_top_bottom_spacing_for_stretchy_operators_disabled()) {
+      return 0;
+    }
+    nscoord em;
+    GetEmHeight(fm, em);
+    return NSToCoordRound(0.2f * (float)em);
+  }();
 
   // Operators that are stretchy, or those that are to be centered
   // to cater for fonts that are not math-aware, are handled by the MathMLChar

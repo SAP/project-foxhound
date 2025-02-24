@@ -77,13 +77,11 @@ reason = "Update pref migration is currently Windows only"
 run-if = ["os == 'win'"]
 reason = "Update directory migration is currently Windows only"
 
+["updateEnabledTelemetry.js"]
+
 ["updateManagerXML.js"]
 
 ["updateSyncManager.js"]
 
 ["urlConstruction.js"]
 skip-if = ["socketprocess_networking"] # Bug 1759035
-
-["verifyChannelPrefsFile.js"]
-run-if = ["appname == 'firefox'"]
-reason = "File being verified is Firefox-specific."

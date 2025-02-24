@@ -4,12 +4,12 @@
 
 //! Query features.
 
-use super::condition::KleeneValue;
 use crate::parser::ParserContext;
 use crate::values::computed::{self, CSSPixelLength, Ratio, Resolution};
 use crate::values::AtomString;
 use crate::Atom;
 use cssparser::Parser;
+use selectors::kleene_value::KleeneValue;
 use std::fmt;
 use style_traits::ParseError;
 
@@ -87,12 +87,12 @@ macro_rules! keyword_evaluator {
         fn __evaluate(
             context: &$crate::values::computed::Context,
             value: Option<$crate::queries::feature::KeywordDiscriminant>,
-        ) -> $crate::queries::condition::KleeneValue {
+        ) -> selectors::kleene_value::KleeneValue {
             // This unwrap is ok because the only discriminants that get
             // back to us is the ones that `parse` produces.
             let value: Option<$keyword_type> =
                 value.map(|kw| ::num_traits::cast::FromPrimitive::from_u8(kw).unwrap());
-            $crate::queries::condition::KleeneValue::from($actual_evaluator(context, value))
+            selectors::kleene_value::KleeneValue::from($actual_evaluator(context, value))
         }
 
         $crate::queries::feature::Evaluator::Enumerated {

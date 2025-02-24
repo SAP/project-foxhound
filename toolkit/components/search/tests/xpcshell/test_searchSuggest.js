@@ -3,7 +3,7 @@
 /* eslint-disable mozilla/no-arbitrary-setTimeout */
 
 /**
- * Testing search suggestions from SearchSuggestionController.jsm.
+ * Testing search suggestions from SearchSuggestionController.sys.mjs.
  */
 
 "use strict";
@@ -23,7 +23,7 @@ const SEARCH_TELEMETRY_LATENCY = "SEARCH_SUGGESTIONS_LATENCY_MS";
 
 // We must make sure the FormHistoryStartup component is
 // initialized in order for it to respond to FormHistory
-// requests from nsFormAutoComplete.js.
+// requests from FormHistoryAutoComplete.sys.mjs.
 var formHistoryStartup = Cc[
   "@mozilla.org/satchel/form-history-startup;1"
 ].getService(Ci.nsIObserver);
@@ -72,16 +72,16 @@ add_setup(async function () {
     alternativeJSONType: true,
   };
 
-  getEngine = await SearchTestUtils.promiseNewSearchEngine({
+  getEngine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(getEngineData)}`,
   });
-  postEngine = await SearchTestUtils.promiseNewSearchEngine({
+  postEngine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(postEngineData)}`,
   });
-  unresolvableEngine = await SearchTestUtils.promiseNewSearchEngine({
+  unresolvableEngine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(unresolvableEngineData)}`,
   });
-  alternateJSONEngine = await SearchTestUtils.promiseNewSearchEngine({
+  alternateJSONEngine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(
       alternateJSONSuggestEngineData
     )}`,

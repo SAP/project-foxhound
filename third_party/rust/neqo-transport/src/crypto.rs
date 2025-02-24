@@ -21,7 +21,7 @@ use neqo_crypto::{
     TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256, TLS_CT_HANDSHAKE,
     TLS_EPOCH_APPLICATION_DATA, TLS_EPOCH_HANDSHAKE, TLS_EPOCH_INITIAL, TLS_EPOCH_ZERO_RTT,
     TLS_GRP_EC_SECP256R1, TLS_GRP_EC_SECP384R1, TLS_GRP_EC_SECP521R1, TLS_GRP_EC_X25519,
-    TLS_VERSION_1_3,
+    TLS_GRP_KEM_XYBER768D00, TLS_VERSION_1_3,
 };
 
 use crate::{
@@ -69,7 +69,6 @@ impl Crypto {
         mut agent: Agent,
         protocols: Vec<String>,
         tphandler: TpHandler,
-        fuzzing: bool,
     ) -> Res<Self> {
         agent.set_version_range(TLS_VERSION_1_3, TLS_VERSION_1_3)?;
         agent.set_ciphers(&[
@@ -77,20 +76,36 @@ impl Crypto {
             TLS_AES_256_GCM_SHA384,
             TLS_CHACHA20_POLY1305_SHA256,
         ])?;
-        agent.set_groups(&[
-            TLS_GRP_EC_X25519,
-            TLS_GRP_EC_SECP256R1,
-            TLS_GRP_EC_SECP384R1,
-            TLS_GRP_EC_SECP521R1,
-        ])?;
-        agent.send_additional_key_shares(1)?;
+        match &mut agent {
+            Agent::Server(c) => {
+                // Clients do not send xyber shares by default, but servers should accept them.
+                c.set_groups(&[
+                    TLS_GRP_KEM_XYBER768D00,
+                    TLS_GRP_EC_X25519,
+                    TLS_GRP_EC_SECP256R1,
+                    TLS_GRP_EC_SECP384R1,
+                    TLS_GRP_EC_SECP521R1,
+                ])?;
+            }
+            Agent::Client(c) => {
+                c.set_groups(&[
+                    TLS_GRP_EC_X25519,
+                    TLS_GRP_EC_SECP256R1,
+                    TLS_GRP_EC_SECP384R1,
+                    TLS_GRP_EC_SECP521R1,
+                ])?;
+
+                // Configure clients to send both X25519 and P256 to reduce
+                // the rate of HRRs.
+                c.send_additional_key_shares(1)?;
+
+                // Always enable 0-RTT on the client, but the server needs
+                // more configuration passed to server_enable_0rtt.
+                c.enable_0rtt()?;
+            }
+        }
         agent.set_alpn(&protocols)?;
         agent.disable_end_of_early_data()?;
-        // Always enable 0-RTT on the client, but the server needs
-        // more configuration passed to server_enable_0rtt.
-        if let Agent::Client(c) = &mut agent {
-            c.enable_0rtt()?;
-        }
         let extension = match version {
             Version::Version2 | Version::Version1 => 0x39,
             Version::Draft29 | Version::Draft30 | Version::Draft31 | Version::Draft32 => 0xffa5,
@@ -102,7 +117,6 @@ impl Crypto {
             tls: agent,
             streams: CryptoStreams::default(),
             states: CryptoStates {
-                fuzzing,
                 ..CryptoStates::default()
             },
         })
@@ -317,7 +331,7 @@ impl Crypto {
     }
 
     pub fn acked(&mut self, token: &CryptoRecoveryToken) {
-        qinfo!(
+        qdebug!(
             "Acked crypto frame space={} offset={} length={}",
             token.space,
             token.offset,
@@ -367,7 +381,7 @@ impl Crypto {
                 });
                 enc.encode_vvec(new_token.unwrap_or(&[]));
                 enc.encode(t.as_ref());
-                qinfo!("resumption token {}", hex_snip_middle(enc.as_ref()));
+                qdebug!("resumption token {}", hex_snip_middle(enc.as_ref()));
                 Some(ResumptionToken::new(enc.into(), t.expiration_time()))
             } else {
                 None
@@ -420,7 +434,6 @@ pub struct CryptoDxState {
     /// The total number of operations that are remaining before the keys
     /// become exhausted and can't be used any more.
     invocations: PacketNumber,
-    fuzzing: bool,
 }
 
 impl CryptoDxState {
@@ -431,9 +444,8 @@ impl CryptoDxState {
         epoch: Epoch,
         secret: &SymKey,
         cipher: Cipher,
-        fuzzing: bool,
     ) -> Self {
-        qinfo!(
+        qdebug!(
             "Making {:?} {} CryptoDxState, v={:?} cipher={}",
             direction,
             epoch,
@@ -445,19 +457,11 @@ impl CryptoDxState {
             version,
             direction,
             epoch: usize::from(epoch),
-            aead: Aead::new(
-                fuzzing,
-                TLS_VERSION_1_3,
-                cipher,
-                secret,
-                version.label_prefix(),
-            )
-            .unwrap(),
+            aead: Aead::new(TLS_VERSION_1_3, cipher, secret, version.label_prefix()).unwrap(),
             hpkey: HpKey::extract(TLS_VERSION_1_3, cipher, secret, &hplabel).unwrap(),
             used_pn: 0..0,
             min_pn: 0,
             invocations: Self::limit(direction, cipher),
-            fuzzing,
         }
     }
 
@@ -466,7 +470,6 @@ impl CryptoDxState {
         direction: CryptoDxDirection,
         label: &str,
         dcid: &[u8],
-        fuzzing: bool,
     ) -> Self {
         qtrace!("new_initial {:?} {}", version, ConnectionIdRef::from(dcid));
         let salt = version.initial_salt();
@@ -482,14 +485,7 @@ impl CryptoDxState {
         let secret =
             hkdf::expand_label(TLS_VERSION_1_3, cipher, &initial_secret, &[], label).unwrap();
 
-        Self::new(
-            version,
-            direction,
-            TLS_EPOCH_INITIAL,
-            &secret,
-            cipher,
-            fuzzing,
-        )
+        Self::new(version, direction, TLS_EPOCH_INITIAL, &secret, cipher)
     }
 
     /// Determine the confidentiality and integrity limits for the cipher.
@@ -549,7 +545,6 @@ impl CryptoDxState {
             direction: self.direction,
             epoch: self.epoch + 1,
             aead: Aead::new(
-                self.fuzzing,
                 TLS_VERSION_1_3,
                 cipher,
                 next_secret,
@@ -560,7 +555,6 @@ impl CryptoDxState {
             used_pn: pn..pn,
             min_pn: pn,
             invocations,
-            fuzzing: self.fuzzing,
         }
     }
 
@@ -696,7 +690,7 @@ impl CryptoDxState {
         Ok(res.to_vec())
     }
 
-    #[cfg(all(test, not(feature = "fuzzing")))]
+    #[cfg(all(test, not(feature = "disable-encryption")))]
     pub(crate) fn test_default() -> Self {
         // This matches the value in packet.rs
         const CLIENT_CID: &[u8] = &[0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
@@ -705,7 +699,6 @@ impl CryptoDxState {
             CryptoDxDirection::Write,
             "server in",
             CLIENT_CID,
-            false,
         )
     }
 
@@ -759,7 +752,6 @@ pub(crate) struct CryptoDxAppData {
     cipher: Cipher,
     // Not the secret used to create `self.dx`, but the one needed for the next iteration.
     next_secret: SymKey,
-    fuzzing: bool,
 }
 
 impl CryptoDxAppData {
@@ -768,20 +760,11 @@ impl CryptoDxAppData {
         dir: CryptoDxDirection,
         secret: &SymKey,
         cipher: Cipher,
-        fuzzing: bool,
     ) -> Res<Self> {
         Ok(Self {
-            dx: CryptoDxState::new(
-                version,
-                dir,
-                TLS_EPOCH_APPLICATION_DATA,
-                secret,
-                cipher,
-                fuzzing,
-            ),
+            dx: CryptoDxState::new(version, dir, TLS_EPOCH_APPLICATION_DATA, secret, cipher),
             cipher,
             next_secret: Self::update_secret(cipher, secret)?,
-            fuzzing,
         })
     }
 
@@ -791,7 +774,7 @@ impl CryptoDxAppData {
     }
 
     pub fn next(&self) -> Res<Self> {
-        if self.dx.epoch == usize::max_value() {
+        if self.dx.epoch == usize::MAX {
             // Guard against too many key updates.
             return Err(Error::KeysExhausted);
         }
@@ -800,7 +783,6 @@ impl CryptoDxAppData {
             dx: self.dx.next(&self.next_secret, self.cipher),
             cipher: self.cipher,
             next_secret,
-            fuzzing: self.fuzzing,
         })
     }
 
@@ -834,7 +816,6 @@ pub struct CryptoStates {
     // If this is set, then we have noticed a genuine update.
     // Once this time passes, we should switch in new keys.
     read_update_time: Option<Instant>,
-    fuzzing: bool,
 }
 
 impl CryptoStates {
@@ -980,7 +961,7 @@ impl CryptoStates {
         };
 
         for v in versions {
-            qinfo!(
+            qdebug!(
                 [self],
                 "Creating initial cipher state v={:?}, role={:?} dcid={}",
                 v,
@@ -989,20 +970,8 @@ impl CryptoStates {
             );
 
             let mut initial = CryptoState {
-                tx: CryptoDxState::new_initial(
-                    *v,
-                    CryptoDxDirection::Write,
-                    write,
-                    dcid,
-                    self.fuzzing,
-                ),
-                rx: CryptoDxState::new_initial(
-                    *v,
-                    CryptoDxDirection::Read,
-                    read,
-                    dcid,
-                    self.fuzzing,
-                ),
+                tx: CryptoDxState::new_initial(*v, CryptoDxDirection::Write, write, dcid),
+                rx: CryptoDxState::new_initial(*v, CryptoDxDirection::Read, read, dcid),
             };
             if let Some(prev) = self.initials.get(v) {
                 qinfo!(
@@ -1056,7 +1025,6 @@ impl CryptoStates {
             TLS_EPOCH_ZERO_RTT,
             secret,
             cipher,
-            self.fuzzing,
         ));
     }
 
@@ -1097,7 +1065,6 @@ impl CryptoStates {
                 TLS_EPOCH_HANDSHAKE,
                 write_secret,
                 cipher,
-                self.fuzzing,
             ),
             rx: CryptoDxState::new(
                 version,
@@ -1105,7 +1072,6 @@ impl CryptoStates {
                 TLS_EPOCH_HANDSHAKE,
                 read_secret,
                 cipher,
-                self.fuzzing,
             ),
         });
     }
@@ -1113,13 +1079,7 @@ impl CryptoStates {
     pub fn set_application_write_key(&mut self, version: Version, secret: &SymKey) -> Res<()> {
         debug_assert!(self.app_write.is_none());
         debug_assert_ne!(self.cipher, 0);
-        let mut app = CryptoDxAppData::new(
-            version,
-            CryptoDxDirection::Write,
-            secret,
-            self.cipher,
-            self.fuzzing,
-        )?;
+        let mut app = CryptoDxAppData::new(version, CryptoDxDirection::Write, secret, self.cipher)?;
         if let Some(z) = &self.zero_rtt {
             if z.direction == CryptoDxDirection::Write {
                 app.dx.continuation(z)?;
@@ -1138,13 +1098,7 @@ impl CryptoStates {
     ) -> Res<()> {
         debug_assert!(self.app_write.is_some(), "should have write keys installed");
         debug_assert!(self.app_read.is_none());
-        let mut app = CryptoDxAppData::new(
-            version,
-            CryptoDxDirection::Read,
-            secret,
-            self.cipher,
-            self.fuzzing,
-        )?;
+        let mut app = CryptoDxAppData::new(version, CryptoDxDirection::Read, secret, self.cipher)?;
         if let Some(z) = &self.zero_rtt {
             if z.direction == CryptoDxDirection::Read {
                 app.dx.continuation(z)?;
@@ -1286,7 +1240,7 @@ impl CryptoStates {
     }
 
     /// Make some state for removing protection in tests.
-    #[cfg(not(feature = "fuzzing"))]
+    #[cfg(not(feature = "disable-encryption"))]
     #[cfg(test)]
     pub(crate) fn test_default() -> Self {
         let read = |epoch| {
@@ -1299,7 +1253,6 @@ impl CryptoStates {
             dx: read(epoch),
             cipher: TLS_AES_128_GCM_SHA256,
             next_secret: hkdf::import_key(TLS_VERSION_1_3, &[0xaa; 32]).unwrap(),
-            fuzzing: false,
         };
         let mut initials = HashMap::new();
         initials.insert(
@@ -1319,11 +1272,10 @@ impl CryptoStates {
             app_read: Some(app_read(3)),
             app_read_next: Some(app_read(4)),
             read_update_time: None,
-            fuzzing: false,
         }
     }
 
-    #[cfg(all(not(feature = "fuzzing"), test))]
+    #[cfg(all(not(feature = "disable-encryption"), test))]
     pub(crate) fn test_chacha() -> Self {
         const SECRET: &[u8] = &[
             0x9a, 0xc3, 0x12, 0xa7, 0xf8, 0x77, 0x46, 0x8e, 0xbe, 0x69, 0x42, 0x27, 0x48, 0xad,
@@ -1337,7 +1289,6 @@ impl CryptoStates {
                 direction: CryptoDxDirection::Read,
                 epoch,
                 aead: Aead::new(
-                    false,
                     TLS_VERSION_1_3,
                     TLS_CHACHA20_POLY1305_SHA256,
                     &secret,
@@ -1354,11 +1305,9 @@ impl CryptoStates {
                 used_pn: 0..645_971_972,
                 min_pn: 0,
                 invocations: 10,
-                fuzzing: false,
             },
             cipher: TLS_CHACHA20_POLY1305_SHA256,
             next_secret: secret.clone(),
-            fuzzing: false,
         };
         Self {
             initials: HashMap::new(),
@@ -1369,7 +1318,6 @@ impl CryptoStates {
             app_read: Some(app_read(3)),
             app_read_next: Some(app_read(4)),
             read_update_time: None,
-            fuzzing: false,
         }
     }
 }

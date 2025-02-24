@@ -5,13 +5,13 @@ import datetime
 
 import jsone
 from taskgraph.transforms.base import TransformSequence
+from taskgraph.util.copy import deepcopy
 from taskgraph.util.schema import Schema, validate_schema
+from taskgraph.util.templates import merge
 from taskgraph.util.treeherder import join_symbol, split_symbol
 from voluptuous import Any, Optional, Required
 
 from gecko_taskgraph.util.chunking import TEST_VARIANTS
-from gecko_taskgraph.util.copy_task import copy_task
-from gecko_taskgraph.util.templates import merge
 
 transforms = TransformSequence()
 
@@ -78,6 +78,14 @@ def split_variants(config, tasks):
             remaining_variants.append(name)
         return remaining_variants
 
+    def replace_task_items(task_key, variant_key):
+        for item in variant_key:
+            if isinstance(variant_key[item], dict):
+                task_key[item] = replace_task_items(task_key[item], variant_key[item])
+            else:
+                task_key[item] = variant_key[item]
+        return task_key
+
     def apply_variant(variant, task):
         task["description"] = variant["description"].format(**task)
 
@@ -94,7 +102,9 @@ def split_variants(config, tasks):
         task["variant-suffix"] += suffix
 
         # Replace and/or merge the configuration.
-        task.update(variant.get("replace", {}))
+
+        # we only want to update the leaf node, the the entire top level dict
+        task = replace_task_items(task, variant.get("replace", {}))
         return merge(task, variant.get("merge", {}))
 
     expired_variants = find_expired_variants(TEST_VARIANTS)
@@ -103,12 +113,12 @@ def split_variants(config, tasks):
         variants = remove_expired(variants, expired_variants)
 
         if task.pop("run-without-variant"):
-            yield copy_task(task)
+            yield deepcopy(task)
 
         for name in variants:
             # Apply composite variants (joined by '+') in order.
             parts = name.split("+")
-            taskv = copy_task(task)
+            taskv = deepcopy(task)
             for part in parts:
                 variant = TEST_VARIANTS[part]
 

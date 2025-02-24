@@ -264,10 +264,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
     return;
   }
 
-  bool isStyleFlushNeeded = mResampleNeeded;
   mResampleNeeded = false;
-
-  nsCOMPtr<Document> document(mDocument);  // keeps 'this' alive too
 
   // Set running sample flag -- do this before flushing styles so that when we
   // flush styles we don't end up requesting extra samples
@@ -327,8 +324,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
 
   for (SVGAnimationElement* animElem : mAnimationElementTable.Keys()) {
     SampleTimedElement(animElem, &activeContainers);
-    AddAnimationToCompositorTable(animElem, currentCompositorTable.get(),
-                                  isStyleFlushNeeded);
+    AddAnimationToCompositorTable(animElem, currentCompositorTable.get());
     animElems.AppendElement(animElem);
   }
   activeContainers.Clear();
@@ -374,15 +370,6 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
     mLastCompositorTable = nullptr;
     return;
   }
-
-  if (isStyleFlushNeeded) {
-    document->FlushPendingNotifications(FlushType::Style);
-  }
-
-  // WARNING:
-  // WARNING: the above flush may have destroyed the pres shell and/or
-  // WARNING: frames and other layout related objects.
-  // WARNING:
 
   // STEP 5: Compose currently-animated attributes.
   // XXXdholbert: This step traverses our animation targets in an effectively
@@ -438,7 +425,7 @@ void SMILAnimationController::DoMilestoneSamples() {
   // registered for those times. This way events can fire in the correct order,
   // dependencies can be resolved etc.
 
-  SMILTime sampleTime = INT64_MIN;
+  SMILTime sampleTime = std::numeric_limits<SMILTime>::min();
 
   while (true) {
     // We want to find any milestones AT OR BEFORE the current sample time so we
@@ -533,8 +520,7 @@ void SMILAnimationController::SampleTimedElement(
 
 /*static*/
 void SMILAnimationController::AddAnimationToCompositorTable(
-    SVGAnimationElement* aElement, SMILCompositorTable* aCompositorTable,
-    bool& aStyleFlushNeeded) {
+    SVGAnimationElement* aElement, SMILCompositorTable* aCompositorTable) {
   // Add a compositor to the hash table if there's not already one there
   SMILTargetIdentifier key;
   if (!GetTargetIdentifierForAnimation(aElement, key))
@@ -550,7 +536,6 @@ void SMILAnimationController::AddAnimationToCompositorTable(
     // Look up the compositor for our target, & add our animation function
     // to its list of animation functions.
     SMILCompositor* result = aCompositorTable->PutEntry(key);
-    aStyleFlushNeeded |= func.ValueNeedsReparsingEverySample();
     result->AddAnimationFunction(&func);
 
   } else if (func.HasChanged()) {
@@ -560,7 +545,6 @@ void SMILAnimationController::AddAnimationToCompositorTable(
     // it's got HasChanged() == true), so we need to make sure to recompose
     // its target.
     SMILCompositor* result = aCompositorTable->PutEntry(key);
-    aStyleFlushNeeded |= func.ValueNeedsReparsingEverySample();
     result->ToggleForceCompositing();
 
     // We've now made sure that |func|'s inactivity will be reflected as of
@@ -614,23 +598,20 @@ bool SMILAnimationController::GetTargetIdentifierForAnimation(
   return true;
 }
 
-bool SMILAnimationController::PreTraverse() {
-  return PreTraverseInSubtree(nullptr);
-}
+void SMILAnimationController::PreTraverse() { PreTraverseInSubtree(nullptr); }
 
-bool SMILAnimationController::PreTraverseInSubtree(Element* aRoot) {
+void SMILAnimationController::PreTraverseInSubtree(Element* aRoot) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!mMightHavePendingStyleUpdates) {
-    return false;
+    return;
   }
 
   nsPresContext* context = mDocument->GetPresContext();
   if (!context) {
-    return false;
+    return;
   }
 
-  bool foundElementsNeedingRestyle = false;
   for (SVGAnimationElement* animElement : mAnimationElementTable.Keys()) {
     SMILTargetIdentifier key;
     if (!GetTargetIdentifierForAnimation(animElement, key)) {
@@ -647,8 +628,6 @@ bool SMILAnimationController::PreTraverseInSubtree(Element* aRoot) {
 
     context->RestyleManager()->PostRestyleEventForAnimations(
         key.mElement, PseudoStyleType::NotPseudo, RestyleHint::RESTYLE_SMIL);
-
-    foundElementsNeedingRestyle = true;
   }
 
   // Only clear the mMightHavePendingStyleUpdates flag if we definitely posted
@@ -656,8 +635,6 @@ bool SMILAnimationController::PreTraverseInSubtree(Element* aRoot) {
   if (!aRoot) {
     mMightHavePendingStyleUpdates = false;
   }
-
-  return foundElementsNeedingRestyle;
 }
 
 //----------------------------------------------------------------------

@@ -2,7 +2,7 @@ import {
   actionCreators as ac,
   actionTypes as at,
   actionUtils as au,
-} from "common/Actions.sys.mjs";
+} from "common/Actions.mjs";
 import { combineReducers, createStore } from "redux";
 import { GlobalOverrider } from "test/unit/utils";
 import { DiscoveryStreamFeed } from "lib/DiscoveryStreamFeed.sys.mjs";
@@ -849,6 +849,8 @@ describe("DiscoveryStreamFeed", () => {
         spocs: { items: [{ id: "data" }] },
       });
       sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+      const loadTimestamp = 100;
+      clock.tick(loadTimestamp);
 
       await feed.loadSpocs(feed.store.dispatch);
 
@@ -860,15 +862,15 @@ describe("DiscoveryStreamFeed", () => {
             title: "",
             sponsor: "",
             sponsored_by_override: undefined,
-            items: [{ id: "data", score: 1 }],
+            items: [{ id: "data", score: 1, fetchTimestamp: loadTimestamp }],
           },
         },
-        lastUpdated: 0,
+        lastUpdated: loadTimestamp,
       });
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1 }
+        { id: "data", score: 1, fetchTimestamp: loadTimestamp }
       );
     });
     it("should normalizeSpocsItems for older spoc data", async () => {
@@ -882,7 +884,7 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1 }
+        { id: "data", score: 1, fetchTimestamp: 0 }
       );
     });
     it("should dispatch DISCOVERY_STREAM_PERSONALIZATION_OVERRIDE with feature_flags", async () => {
@@ -936,7 +938,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1 }],
+          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
         },
         placement2: {
           title: "",
@@ -978,7 +980,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "context",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1 }],
+          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
         },
       });
     });
@@ -3444,16 +3446,12 @@ describe("DiscoveryStreamFeed", () => {
         },
       });
       sandbox.stub(global.Region, "home").get(() => "DE");
-      globals.set("NimbusFeatures", {
-        saveToPocket: {
-          getVariable: sandbox.stub(),
-        },
-      });
-      global.NimbusFeatures.saveToPocket.getVariable
-        .withArgs("bffApi")
+      sandbox.stub(global.Services.prefs, "getStringPref");
+      global.Services.prefs.getStringPref
+        .withArgs("extensions.pocket.bffApi")
         .returns("bffApi");
-      global.NimbusFeatures.saveToPocket.getVariable
-        .withArgs("oAuthConsumerKeyBff")
+      global.Services.prefs.getStringPref
+        .withArgs("extensions.pocket.oAuthConsumerKeyBff")
         .returns("oAuthConsumerKeyBff");
     });
     it("should return true with isBff", async () => {
@@ -3467,6 +3465,22 @@ describe("DiscoveryStreamFeed", () => {
       assert.equal(
         layout[0].components[2].feed.url,
         "https://bffApi/desktop/v1/recommendations?locale=$locale&region=$region&count=30"
+      );
+    });
+    it("should update the new feed url with pocketFeedParameters", async () => {
+      globals.set("NimbusFeatures", {
+        pocketNewtab: {
+          getVariable: sandbox.stub(),
+        },
+      });
+      global.NimbusFeatures.pocketNewtab.getVariable
+        .withArgs("pocketFeedParameters")
+        .returns("&enableRankingByRegion=1");
+      await feed.loadLayout(feed.store.dispatch);
+      const { layout } = feed.store.getState().DiscoveryStream;
+      assert.equal(
+        layout[0].components[2].feed.url,
+        "https://bffApi/desktop/v1/recommendations?locale=$locale&region=$region&count=30&enableRankingByRegion=1"
       );
     });
     it("should fetch proper data from getComponentFeed", async () => {

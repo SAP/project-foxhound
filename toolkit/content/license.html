@@ -1496,6 +1496,9 @@ licences.
 #ifdef MOZ_JXL
       <code>third_party/highway/</code><br/>
 #endif
+#ifdef MOZ_PERFETTO
+      <code>third_party/perfetto/</code><br/>
+#endif
     </p>
 
 <pre>
@@ -1682,7 +1685,15 @@ licences.
 
     <h1><a id="apple"></a>Apple License</h1>
 
-    <p>This license applies to certain files in the directories <code>dom/media/webaudio/blink</code>, and <code>widget/cocoa</code>.</p>
+    <p>This license applies to parts of the code in:</p>
+    <ul>
+        <li><code>xpcom/base/DarwinObjectPtr.h</code></li>
+    </ul>
+    <p>and also some files in these directories:</p>
+    <ul>
+        <li><code>dom/media/webaudio/blink</code></li>
+        <li><code>widget/cocoa</code></li>
+    </ul>
 
 <pre>
 Copyright (C) 2008, 2009 Apple Inc. All rights reserved.
@@ -1897,6 +1908,7 @@ into source code and to files in the following directories:
     <li><code>third_party/jpeg-xl/</code></li>
 #endif
     <li><code>third_party/xsimd/</code></li>
+    <li><code>third_party/zstd/</code></li>
 </ul>
 See the individual LICENSE files for copyright owners.</p>
 
@@ -3591,7 +3603,6 @@ SOFTWARE.
         <li><code>devtools/shared/natural-sort.js</code></li>
         <li><code>devtools/shared/node-properties/node-properties.js</code></li>
         <li><code>third_party/rust/ordered-float</code></li>
-        <li><code>third_party/rust/owning_ref</code></li>
         <li><code>third_party/rust/phf</code>,
             <code>third_party/rust/phf_codegen</code>,
             <code>third_party/rust/phf_generator</code>, and
@@ -3616,6 +3627,9 @@ SOFTWARE.
         <li><code>third_party/rust/synstructure</code></li>
         <li><code>third_party/rust/void</code></li>
         <li><code>js/src/zydis</code> (unless otherwise specified)</li>
+        <li><code>js/src/vm/Float16.h</code>(the code contained in the half namespace)</li>
+        <li><code>toolkit/components/resistfingerprinting/content/gl-matrix.js</code></li>
+        <li><code>toolkit/components/resistfingerprinting/content/ssdeep.js</code></li>
     </ul>
     See the individual LICENSE files or headers for copyright owners.</p>
 
@@ -5147,7 +5161,6 @@ ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation a
 
     <ul>
       <li><code>security/nss/lib/dbm</code></li>
-      <li><code>xpcom/ds/nsQuickSort.cpp</code></li>
       <li><code>nsprpub/pr/src/misc/praton.c</code></li>
       <li><code>dom/media/webrtc/transport/third_party/nICEr/src/stun/addrs.c</code></li>
     </ul>

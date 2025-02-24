@@ -114,6 +114,16 @@ set_config("MOZ_GECKO_PROFILER", gecko_profiler_define)
 set_define("MOZ_GECKO_PROFILER", gecko_profiler_define)
 
 
+# Enable perfetto on Android if gecko profiling is enabled and only for
+# nightly builds. Linux support requires at least linux-headers-3.18 for <linux/vm_sockets.h>
+set_config(
+    "MOZ_PERFETTO", gecko_profiler_define, when=target_is_android & milestone.is_nightly
+)
+set_define(
+    "MOZ_PERFETTO", gecko_profiler_define, when=target_is_android & milestone.is_nightly
+)
+
+
 # Whether code to parse ELF binaries should be compiled for the Gecko profiler
 # (for symbol table dumping).
 @depends(gecko_profiler, target)
@@ -205,10 +215,8 @@ def audio_backends_default(target):
         return ("oss",)
     elif target.os == "OpenBSD":
         return ("sndio",)
-    elif target.os == "OSX":
+    elif target.kernel == "Darwin":
         return ("audiounit",)
-    elif target.os == "iOS":
-        return None
     elif target.os == "NetBSD":
         return ("sunaudio",)
     elif target.os == "SunOS":
@@ -259,11 +267,7 @@ def imply_alsa(values, target):
 
 @depends("--enable-audio-backends", target)
 def imply_audiounit(values, target):
-    if (
-        any("audiounit" in value for value in values)
-        and target.os != "OSX"
-        and target.kernel != "Darwin"
-    ):
+    if any("audiounit" in value for value in values) and target.kernel != "Darwin":
         die("Cannot enable AudioUnit on %s", target.os)
     return any("audiounit" in value for value in values) or None
 
@@ -325,19 +329,30 @@ def imply_wasapi(values, target):
 
 set_config("MOZ_AAUDIO", imply_aaudio, when="--enable-audio-backends")
 
-imply_option("--enable-alsa", imply_alsa, reason="--enable-audio-backends")
+imply_option(
+    "--enable-alsa", imply_alsa, reason="--enable-audio-backends", when=use_pkg_config
+)
 
 set_config("MOZ_AUDIOUNIT_RUST", imply_audiounit, when="--enable-audio-backends")
 
-imply_option("--enable-jack", imply_jack, reason="--enable-audio-backends")
+imply_option(
+    "--enable-jack", imply_jack, reason="--enable-audio-backends", when=use_pkg_config
+)
 
 set_config("MOZ_OPENSL", imply_opensl, when="--enable-audio-backends")
 
 set_config("MOZ_OSS", imply_oss, when="--enable-audio-backends")
 
-imply_option("--enable-pulseaudio", imply_pulseaudio, reason="--enable-audio-backends")
+imply_option(
+    "--enable-pulseaudio",
+    imply_pulseaudio,
+    reason="--enable-audio-backends",
+    when=use_pkg_config,
+)
 
-imply_option("--enable-sndio", imply_sndio, reason="--enable-audio-backends")
+imply_option(
+    "--enable-sndio", imply_sndio, reason="--enable-audio-backends", when=use_pkg_config
+)
 
 set_config("MOZ_SUNAUDIO", imply_sunaudio, when="--enable-audio-backends")
 
@@ -345,10 +360,20 @@ set_config("MOZ_WASAPI", imply_wasapi, when="--enable-audio-backends")
 
 # ALSA cubeb backend
 # ==============================================================
-option("--enable-alsa", env="MOZ_ALSA", help="Enable ALSA audio backend.")
+option(
+    "--enable-alsa",
+    env="MOZ_ALSA",
+    help="Enable ALSA audio backend.",
+    when=use_pkg_config,
+)
 
 
-@depends("--enable-alsa", midir_linux_support)
+@depends("--enable-alsa", when=use_pkg_config)
+def enable_alsa_option(enable_alsa):
+    return enable_alsa
+
+
+@depends(enable_alsa_option, midir_linux_support)
 def enable_alsa_or_midir_linux_support(alsa_enabled, midir_linux_support):
     return alsa_enabled or midir_linux_support
 
@@ -360,7 +385,12 @@ set_define("MOZ_ALSA", True, when="--enable-alsa")
 
 # JACK cubeb backend
 # ==============================================================
-system_lib_option("--enable-jack", env="MOZ_JACK", help="Enable JACK audio backend.")
+system_lib_option(
+    "--enable-jack",
+    env="MOZ_JACK",
+    help="Enable JACK audio backend.",
+    when=use_pkg_config,
+)
 
 jack = pkg_check_modules("MOZ_JACK", "jack", when="--enable-jack")
 
@@ -372,6 +402,7 @@ option(
     "--enable-pulseaudio",
     env="MOZ_PULSEAUDIO",
     help="{Enable|Disable} PulseAudio audio backend.",
+    when=use_pkg_config,
 )
 
 pulseaudio = pkg_check_modules("MOZ_PULSEAUDIO", "libpulse", when="--enable-pulseaudio")
@@ -381,7 +412,12 @@ set_define("MOZ_PULSEAUDIO", depends_if(pulseaudio)(lambda _: True))
 
 # sndio cubeb backend
 # ==============================================================
-system_lib_option("--enable-sndio", env="MOZ_SNDIO", help="Enable sndio audio backend.")
+system_lib_option(
+    "--enable-sndio",
+    env="MOZ_SNDIO",
+    help="Enable sndio audio backend.",
+    when=use_pkg_config,
+)
 
 sndio = pkg_check_modules("MOZ_SNDIO", "sndio", when="--enable-sndio")
 
@@ -966,10 +1002,23 @@ project_flag(
 project_flag("MOZ_SERVICES_SYNC", help="Build Sync Services if required")
 
 project_flag(
-    "MOZ_ANDROID_HISTORY",
-    help="Enable Android History instead of Places",
+    "MOZ_GECKOVIEW_HISTORY",
+    help="Enable Geckoview History instead of Places",
     set_as_define=True,
 )
+
+# Profile Management
+# ==============================================================
+# Selectable profiles are temporarily gated behind a build flag
+# while we build and stabilize the backend (bug 1893315).
+
+option(
+    env="MOZ_SELECTABLE_PROFILES",
+    help="Enable experimental and unstable profile groups",
+)
+
+set_define("MOZ_SELECTABLE_PROFILES", True, when="MOZ_SELECTABLE_PROFILES")
+set_config("MOZ_SELECTABLE_PROFILES", True, when="MOZ_SELECTABLE_PROFILES")
 
 project_flag(
     "MOZ_DEDICATED_PROFILES",
@@ -984,12 +1033,12 @@ project_flag(
 )
 
 
-@depends("MOZ_PLACES", "MOZ_ANDROID_HISTORY")
-def check_places_and_android_history(places, android_history):
-    if places and android_history:
-        die("Cannot use MOZ_ANDROID_HISTORY alongside MOZ_PLACES.")
-    if not places and not android_history:
-        die("One of MOZ_ANDROID_HISTORY or MOZ_PLACES must be set.")
+@depends("MOZ_PLACES", "MOZ_GECKOVIEW_HISTORY")
+def check_places_and_geckoview_history(places, geckoview_history):
+    if places and geckoview_history:
+        die("Cannot use MOZ_GECKOVIEW_HISTORY alongside MOZ_PLACES.")
+    if not places and not geckoview_history:
+        die("One of MOZ_GECKOVIEW_HISTORY or MOZ_PLACES must be set.")
 
 
 option(
@@ -1011,10 +1060,15 @@ set_define("MOZ_TELEMETRY_ON_BY_DEFAULT", True, when=telemetry_on_by_default)
 
 # gpsd support
 # ==============================================================
-system_lib_option("--enable-gpsd", env="MOZ_GPSD", help="Enable gpsd support")
+system_lib_option(
+    "--enable-gpsd",
+    env="MOZ_GPSD",
+    help="Enable gpsd support",
+    when=use_pkg_config,
+)
 
 
-@depends("--enable-gpsd")
+@depends("--enable-gpsd", when=use_pkg_config)
 def gpsd(value):
     return bool(value)
 
@@ -1173,7 +1227,9 @@ set_config(
 )
 
 system_lib_option(
-    "--with-system-webp", help="Use system libwebp (located with pkgconfig)"
+    "--with-system-webp",
+    help="Use system libwebp (located with pkgconfig)",
+    when=use_pkg_config,
 )
 
 system_webp = pkg_check_modules(
@@ -2134,8 +2190,14 @@ with only_when(compile_environment):
 
 with only_when(compile_environment):
     system_lib_option(
-        "--with-system-libvpx", help="Use system libvpx (located with pkgconfig)"
+        "--with-system-libvpx",
+        help="Use system libvpx (located with pkgconfig)",
+        when=use_pkg_config,
     )
+
+    @depends("--with-system-libvpx", when=use_pkg_config)
+    def with_system_libvpx_option(with_system_libvpx):
+        return with_system_libvpx
 
     with only_when("--with-system-libvpx"):
         vpx = pkg_check_modules("MOZ_LIBVPX", "vpx >= 1.10.0")
@@ -2161,7 +2223,7 @@ with only_when(compile_environment):
 
         set_config("MOZ_SYSTEM_LIBVPX", True)
 
-    @depends("--with-system-libvpx", target)
+    @depends(with_system_libvpx_option, target)
     def in_tree_vpx(system_libvpx, target):
         if system_libvpx:
             return
@@ -2364,6 +2426,8 @@ with only_when(compile_environment):
         & jpeg_arm_neon_vld1q_u8_x4,
     )
 
+    set_config("MOZ_SYSTEM_JPEG", True, when="--with-system-jpeg")
+
 
 # PNG
 # ===
@@ -2372,9 +2436,10 @@ with only_when(compile_environment):
         "--with-system-png",
         nargs="?",
         help="Use system libpng",
+        when=use_pkg_config,
     )
 
-    @depends("--with-system-png")
+    @depends("--with-system-png", when=use_pkg_config)
     def deprecated_system_png_path(value):
         if len(value) == 1:
             die(
@@ -2783,20 +2848,6 @@ with only_when(compile_environment & wasm_sandboxing.hunspell):
     set_config("MOZ_WASI_EMULATED_CLOCK", True, when=wasi_emulated_clock)
 
 
-# new Notification Store implementation
-# ==============================================================
-
-
-@depends(milestone)
-def new_notification_store(milestone):
-    if milestone.is_nightly:
-        return True
-
-
-set_config("MOZ_NEW_NOTIFICATION_STORE", True, when=new_notification_store)
-set_define("MOZ_NEW_NOTIFICATION_STORE", True, when=new_notification_store)
-
-
 # Auxiliary files persistence on application close
 # ==============================================================
 
@@ -3054,6 +3105,10 @@ def oxidized_breakpad(target):
 set_config("MOZ_OXIDIZED_BREAKPAD", True, when=oxidized_breakpad)
 set_define("MOZ_OXIDIZED_BREAKPAD", True, when=oxidized_breakpad)
 
+# Environment variable to mock the crashreporter for testing
+option(env="MOZ_CRASHREPORTER_MOCK", help="Mock the crashreporter to test native GUIs")
+set_config("MOZ_CRASHREPORTER_MOCK", True, when="MOZ_CRASHREPORTER_MOCK")
+
 
 # Wine
 # ==============================================================
@@ -3082,9 +3137,10 @@ with only_when(compile_environment):
         "--with-system-libevent",
         nargs="?",
         help="Use system libevent",
+        when=use_pkg_config,
     )
 
-    @depends("--with-system-libevent")
+    @depends("--with-system-libevent", when=use_pkg_config)
     def deprecated_system_libevent_path(value):
         if len(value) == 1:
             die(
@@ -3127,17 +3183,6 @@ with only_when(compile_environment):
             when=depends(target)(lambda t: t.os == "GNU" and t.kernel == "Linux"),
         )
 
-        set_config(
-            "MOZ_CRASHREPORTER_INJECTOR",
-            True,
-            when=depends(target)(lambda t: t.os == "WINNT" and t.bitness == 32),
-        )
-        set_define(
-            "MOZ_CRASHREPORTER_INJECTOR",
-            True,
-            when=depends(target)(lambda t: t.os == "WINNT" and t.bitness == 32),
-        )
-
 
 # If we have any service that uploads data (and requires data submission
 # policy alert), set MOZ_DATA_REPORTING.
@@ -3177,9 +3222,13 @@ with only_when(toolkit_gtk):
 # DBus
 # ==============================================================
 with only_when(toolkit_gtk):
-    option("--disable-dbus", help="Disable dbus support")
+    option("--disable-dbus", help="Disable dbus support", when=use_pkg_config)
 
-    with only_when("--enable-dbus"):
+    @depends("--enable-dbus", when=use_pkg_config)
+    def enable_dbus_option(enable_dbus):
+        return enable_dbus
+
+    with only_when(enable_dbus_option):
         pkg_check_modules("MOZ_DBUS", "dbus-1 >= 0.60")
 
         set_config("MOZ_ENABLE_DBUS", True)
@@ -3203,8 +3252,9 @@ set_define("NECKO_WIFI", True, when="--enable-necko-wifi")
 
 @depends(
     depends("--enable-necko-wifi", when=necko_wifi_when)(lambda x: x),
-    depends("--enable-dbus", when=toolkit_gtk)(lambda x: x),
-    when=depends(target)(lambda t: t.os == "GNU" and t.kernel == "Linux"),
+    depends(enable_dbus_option, when=toolkit_gtk)(lambda x: x),
+    when=use_pkg_config
+    & depends(target)(lambda t: t.os == "GNU" and t.kernel == "Linux"),
 )
 def necko_wifi_dbus(necko_wifi, dbus):
     if necko_wifi and not dbus:
@@ -3243,7 +3293,11 @@ set_define("MOZ_LAYERS_HAVE_LOG", True, when="--enable-dump-painting")
 # libproxy support
 # ==============================================================
 with only_when(toolkit_gtk):
-    system_lib_option("--enable-libproxy", help="Enable libproxy support")
+    system_lib_option(
+        "--enable-libproxy",
+        help="Enable libproxy support",
+        when=use_pkg_config,
+    )
 
     with only_when("--enable-libproxy"):
         pkg_check_modules("MOZ_LIBPROXY", "libproxy-1.0")
@@ -3336,17 +3390,23 @@ set_define("ENABLE_SYSTEM_EXTENSION_DIRS", True, when="--enable-system-extension
 # ==============================================================
 with only_when(compile_environment):
     system_lib_option(
-        "--enable-system-pixman", help="Use system pixman (located with pkgconfig)"
+        "--enable-system-pixman",
+        help="Use system pixman (located with pkgconfig)",
+        when=use_pkg_config,
     )
 
-    @depends("--enable-system-pixman")
+    @depends("--enable-system-pixman", when=use_pkg_config)
+    def enable_system_pixman_option(enable_system_pixman):
+        return enable_system_pixman
+
+    @depends(enable_system_pixman_option)
     def in_tree_pixman(pixman):
         return not pixman
 
     set_config("MOZ_TREE_PIXMAN", True, when=in_tree_pixman)
     set_define("MOZ_TREE_PIXMAN", True, when=in_tree_pixman)
 
-    pkg_check_modules("MOZ_PIXMAN", "pixman-1 >= 0.36.0", when="--enable-system-pixman")
+    pkg_check_modules("MOZ_PIXMAN", "pixman-1 >= 0.40.0", when="--enable-system-pixman")
     # Set MOZ_PIXMAN_CFLAGS to an explicit empty value when --enable-system-pixman is *not* used,
     # for layout/style/extra-bindgen-flags
     set_config("MOZ_PIXMAN_CFLAGS", [], when=in_tree_pixman)

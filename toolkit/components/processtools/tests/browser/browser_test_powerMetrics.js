@@ -12,7 +12,7 @@ function GetTestWebBasedURL(fileName) {
   return (
     getRootDirectory(gTestPath).replace(
       "chrome://mochitests/content",
-      "http://example.org"
+      "https://example.org"
     ) + fileName
   );
 }
@@ -87,16 +87,12 @@ add_task(async () => {
       let initalCpuTime = await getChildCpuTime(pid);
       let afterCpuTime;
       do {
-        await SpecialPowers.spawn(
-          firstBrowser,
-          [kBusyWaitForMs],
-          async kBusyWaitForMs => {
-            let startTime = Date.now();
-            while (Date.now() - startTime < 10) {
-              // Burn CPU time...
-            }
+        await SpecialPowers.spawn(firstBrowser, [kBusyWaitForMs], async () => {
+          let startTime = Date.now();
+          while (Date.now() - startTime < 10) {
+            // Burn CPU time...
           }
-        );
+        });
         afterCpuTime = await getChildCpuTime(pid);
       } while (afterCpuTime - initalCpuTime < kBusyWaitForMs * kNS_PER_MS);
       cpuTimeSpentOnBackgroundTab = Math.floor(
@@ -376,7 +372,7 @@ add_task(async function test_tracker_power() {
         [
           GetTestWebBasedURL("dummy.html").replace(
             "example.org",
-            "trackertest.org"
+            "itisatracker.org"
           ),
         ],
         async frameUrl => {

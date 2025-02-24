@@ -1,5 +1,6 @@
 import copy
 import os
+import pathlib
 from unittest import mock
 
 import conftest
@@ -43,7 +44,6 @@ class mock_test(PageloaderTest):
         "gecko_profile_entries",
         "tptimeout",
         "win_counters",
-        "w7_counters",
         "linux_counters",
         "mac_counters",
         "tpscrolltest",
@@ -143,7 +143,6 @@ class Test_get_test(object):
             linux_counters=None,
             mac_counters=[],
             win_counters=["counter_a"],
-            w7_counters=["counter_a", "counter_b"],
             xperf_counters=["counter_a", "counter_extra"],
         )
 
@@ -155,7 +154,6 @@ class Test_get_test(object):
         assert test_dict["linux_counters"] == counters
         assert test_dict["mac_counters"] == counters
         assert test_dict["win_counters"] == counters
-        assert test_dict["w7_counters"] == counters
         assert set(test_dict["xperf_counters"]) == set(counters + ["counter_extra"])
 
 
@@ -310,6 +308,7 @@ class Test_get_config(object):
         cls.argv_perf_reftest_singletons = (
             "--activeTests perf_reftest_singletons -e /some/random/path".split()
         )
+        cls.argv_pdfpaint = "--activeTests pdfpaint -e /some/random/path".split()
 
     @classmethod
     def teardown_class(cls):
@@ -553,7 +552,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 10
         assert test_config["gecko_profile_entries"] == 1000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["preferences"] == {
@@ -578,7 +576,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 10
         assert test_config["gecko_profile_entries"] == 1000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -599,7 +596,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 10
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["preferences"] == {
@@ -624,7 +620,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -647,7 +642,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -670,7 +664,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -693,7 +686,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -716,7 +708,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -739,7 +730,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -762,7 +752,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -785,7 +774,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -808,7 +796,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -831,7 +818,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -854,7 +840,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -877,7 +862,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -900,7 +884,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -923,7 +906,6 @@ class Test_get_config(object):
         assert test_config["gecko_profile_interval"] == 2
         assert test_config["gecko_profile_entries"] == 2000000
         assert "win_counters" not in test_config
-        assert "w7_counters" not in test_config
         assert "linux_counters" not in test_config
         assert "mac_counters" not in test_config
         assert test_config["filters"] is not None
@@ -943,7 +925,6 @@ class Test_get_config(object):
         assert test_config["tpmozafterpaint"] is True
         assert test_config["tptimeout"] == 5000
         assert test_config["mainthread"] is True
-        assert test_config["w7_counters"] == []
         assert test_config["win_counters"] == []
         assert test_config["linux_counters"] == []
         assert test_config["mac_counters"] == []
@@ -1001,7 +982,6 @@ class Test_get_config(object):
         assert test_config["mainthread"] is False
         assert test_config["tpmanifest"] != "${talos}/tests/tp5n/tp5o.manifest"
         assert test_config["win_counters"] == ["% Processor Time"]
-        assert test_config["w7_counters"] == ["% Processor Time"]
         assert test_config["linux_counters"] == ["XRes"]
         assert test_config["mac_counters"] == []
         assert test_config["responsiveness"] is True
@@ -1025,7 +1005,6 @@ class Test_get_config(object):
         assert test_config["mainthread"] is False
         assert test_config["tpmanifest"] != "${talos}/tests/tp5n/tp5o.manifest"
         assert test_config["win_counters"] == ["% Processor Time"]
-        assert test_config["w7_counters"] == ["% Processor Time"]
         assert test_config["linux_counters"] == ["XRes"]
         assert test_config["mac_counters"] == []
         assert test_config["responsiveness"] is True
@@ -1296,6 +1275,110 @@ class Test_get_config(object):
         assert test_config["unit"] == "ms"
         assert test_config["lower_is_better"] is True
         assert test_config["alert_threshold"] == 5.0
+
+
+# The tests in the Test_get_config class don't currently run, so these
+# pdfpaint tests live outside of it for now. See bug 1888132.
+@mock.patch("pathlib.Path.unlink", new=mock.MagicMock())
+@mock.patch("pathlib.Path.symlink_to", new=mock.MagicMock())
+def test_pdfpaint_has_expected_attributes_no_chunk(pdfpaint_dir_info):
+    pdfpaint_dir, pdf_count = pdfpaint_dir_info
+
+    Test_get_config.setup_class()
+    with mock.patch.dict(
+        os.environ, {"MOZ_FETCHES_DIR": "", "MOZBUILD_PATH": str(pdfpaint_dir)}
+    ):
+        config = get_config(Test_get_config.argv_pdfpaint)
+
+    test_config = config["tests"][0]
+
+    assert test_config["name"] == "pdfpaint"
+    assert test_config["tpmanifest"] != "${talos}/tests/pdfpaint/pdfpaint.manifest"
+
+    manifest_content = pathlib.Path(test_config["tpmanifest"]).read_text()
+    manifest_lines = manifest_content.split("\n")
+    assert len([line for line in manifest_lines if line]) == pdf_count
+
+    assert test_config["tpcycles"] == 1
+    assert test_config["tppagecycles"] == 1
+    assert test_config["tptimeout"] == 60000
+    assert test_config["gecko_profile_entries"] == 16777216
+    assert test_config["filters"] is not None
+    assert test_config["unit"] == "ms"
+    assert test_config["lower_is_better"] is True
+    assert test_config["alert_threshold"] == 2.0
+
+
+@mock.patch("pathlib.Path.unlink", new=mock.MagicMock())
+@mock.patch("pathlib.Path.symlink_to", new=mock.MagicMock())
+def test_pdfpaint_has_expected_attributes_with_chunk(pdfpaint_dir_info):
+    pdfpaint_dir, _ = pdfpaint_dir_info
+
+    Test_get_config.setup_class()
+    args = Test_get_config.argv_pdfpaint + ["--pdfPaintChunk", "1"]
+    with mock.patch.dict(
+        os.environ,
+        {"MOZ_FETCHES_DIR": str(pdfpaint_dir), "MOZBUILD_PATH": ""},
+    ):
+        config = get_config(args)
+
+    test_config = config["tests"][0]
+
+    assert test_config["name"] == "pdfpaint"
+    assert test_config["tpmanifest"] != "${talos}/tests/pdfpaint/pdfpaint.manifest"
+
+    manifest_content = pathlib.Path(test_config["tpmanifest"]).read_text()
+    manifest_lines = manifest_content.split("\n")
+    assert len([line for line in manifest_lines if line]) == 100
+
+    assert test_config["tpcycles"] == 1
+    assert test_config["tppagecycles"] == 15
+    assert test_config["tptimeout"] == 60000
+    assert test_config["gecko_profile_entries"] == 16777216
+    assert test_config["filters"] is not None
+    assert test_config["unit"] == "ms"
+    assert test_config["lower_is_better"] is True
+    assert test_config["alert_threshold"] == 2.0
+
+
+def test_pdfpaint_fails_on_bad_chunk(pdfpaint_dir_info):
+    pdfpaint_dir, _ = pdfpaint_dir_info
+
+    Test_get_config.setup_class()
+    args = Test_get_config.argv_pdfpaint + ["--pdfPaintChunk", "10"]
+    with pytest.raises(ConfigurationError):
+        with mock.patch.dict(
+            os.environ,
+            {"MOZ_FETCHES_DIR": str(pdfpaint_dir), "MOZBUILD_PATH": ""},
+        ):
+            get_config(args)
+
+
+@mock.patch("pathlib.Path.unlink", new=mock.MagicMock())
+@mock.patch("pathlib.Path.symlink_to", new=mock.MagicMock())
+def test_pdfpaint_with_pdf_name(pdfpaint_dir_info):
+    pdfpaint_dir, _ = pdfpaint_dir_info
+
+    Test_get_config.setup_class()
+    args = Test_get_config.argv_pdfpaint + ["--pdfPaintName", "1"]
+    with mock.patch.dict(
+        os.environ,
+        {"MOZ_FETCHES_DIR": str(pdfpaint_dir), "MOZBUILD_PATH": ""},
+    ):
+        config = get_config(args)
+
+    test_config = config["tests"][0]
+
+    assert test_config["name"] == "pdfpaint"
+    assert test_config["tpmanifest"] != "${talos}/tests/pdfpaint/pdfpaint.manifest"
+
+    manifest_content = pathlib.Path(test_config["tpmanifest"]).read_text()
+    manifest_lines = manifest_content.split("\n")
+    assert len([line for line in manifest_lines if line]) == 1
+    assert manifest_lines[0].split("/")[-1] == "1"
+
+    assert test_config["tpcycles"] == 1
+    assert test_config["tppagecycles"] == 15
 
 
 @mock.patch("talos.config.get_browser_config")

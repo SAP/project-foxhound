@@ -56,8 +56,16 @@ add_task(defaultsTest.bind(null, uri, testHWConcurrency, expectedResults));
 expectedResults = structuredClone(allSpoofed);
 add_task(simpleRFPTest.bind(null, uri, testHWConcurrency, expectedResults));
 
+// Test a private window with RFP enabled in PBMode
+expectedResults = structuredClone(allSpoofed);
+add_task(simplePBMRFPTest.bind(null, uri, testHWConcurrency, expectedResults));
+
 expectedResults = structuredClone(allSpoofed);
 add_task(simpleFPPTest.bind(null, uri, testHWConcurrency, expectedResults));
+
+// Test a Private Window with FPP Enabled in PBM
+expectedResults = structuredClone(allSpoofed);
+add_task(simplePBMFPPTest.bind(null, uri, testHWConcurrency, expectedResults));
 
 // (A) RFP is exempted on the maker and popup
 expectedResults = structuredClone(allNotSpoofed);
@@ -78,5 +86,10 @@ add_task(testG.bind(null, uri, testHWConcurrency, expectedResults));
 // Test RFP Enabled in PBM and FPP enabled in Normal Browsing Mode
 expectedResults = structuredClone(allNotSpoofed);
 add_task(
-  simpleRFPPBMFPPTest.bind(null, uri, testHWConcurrency, expectedResults)
+  RFPPBMFPP_NormalMode_NoProtectionsTest.bind(
+    null,
+    uri,
+    testHWConcurrency,
+    expectedResults
+  )
 );

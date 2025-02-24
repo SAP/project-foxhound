@@ -294,10 +294,28 @@ int32_t NS_GetDefaultPort(const char* scheme,
                           nsIIOService* ioService = nullptr);
 
 /**
- * This function is a helper function to apply the ToAscii conversion
- * to a string
+ * The UTS #46 ToASCII operation as parametrized by the WHATWG URL Standard.
+ *
+ * Use this function to prepare a host name for network protocols.
  */
-bool NS_StringToACE(const nsACString& idn, nsACString& result);
+nsresult NS_DomainToASCII(const nsACString& aHost, nsACString& aASCII);
+
+/**
+ * The UTS #46 ToUnicode operation as parametrized by the WHATWG URL Standard,
+ * except potentially misleading labels are treated according to ToASCII
+ * instead.
+ *
+ * Use this function to prepare a host name for display to the user.
+ */
+nsresult NS_DomainToDisplay(const nsACString& aHost, nsACString& aDisplay);
+
+/**
+ * The UTS #46 ToUnicode operation as parametrized by the WHATWG URL Standard.
+ *
+ * It's most likely incorrect to call this function, and `NS_DomainToDisplay`
+ * should typically be called instead.
+ */
+nsresult NS_DomainToUnicode(const nsACString& aHost, nsACString& aUnicode);
 
 /**
  * This function is a helper function to get a protocol's default port if the
@@ -1020,7 +1038,7 @@ bool SchemeIsFTP(nsIURI* aURI);
 // step 2.1 in https://url.spec.whatwg.org/#scheme-state
 bool SchemeIsSpecial(const nsACString&);
 bool IsSchemeChangePermitted(nsIURI*, const nsACString&);
-already_AddRefed<nsIURI> TryChangeProtocol(nsIURI*, const nsAString&);
+already_AddRefed<nsIURI> TryChangeProtocol(nsIURI*, const nsACString&);
 
 struct LinkHeader {
   nsString mHref;
@@ -1098,6 +1116,8 @@ nsresult HasRootDomain(const nsACString& aInput, const nsACString& aHost,
 void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI);
 
 bool IsCoepCredentiallessEnabled(bool aIsOriginTrialCoepCredentiallessEnabled);
+
+void ParseSimpleURISchemes(const nsACString& schemeList);
 
 }  // namespace net
 }  // namespace mozilla

@@ -11,11 +11,11 @@ createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "1", "1");
 AddonTestUtils.useRealCertChecks = true;
 
 // A real, signed XPI for use in the test.
-const SIGNED_ADDON_XPI_FILE = do_get_file("../data/webext-implicit-id.xpi");
-const SIGNED_ADDON_ID = "webext_implicit_id@tests.mozilla.org";
-const SIGNED_ADDON_VERSION = "1.0";
+const SIGNED_ADDON_XPI_FILE = do_get_file("amosigned.xpi");
+const SIGNED_ADDON_ID = "amosigned-xpi@tests.mozilla.org";
+const SIGNED_ADDON_VERSION = "2.2";
 const SIGNED_ADDON_KEY = `${SIGNED_ADDON_ID}:${SIGNED_ADDON_VERSION}`;
-const SIGNED_ADDON_SIGN_TIME = 1459980789000; // notBefore of certificate.
+const SIGNED_ADDON_SIGN_TIME = 1711462525000; // notBefore of certificate.
 
 // A real, signed sitepermission XPI for use in the test.
 const SIGNED_SITEPERM_XPI_FILE = do_get_file("webmidi_permission.xpi");
@@ -78,7 +78,7 @@ add_task(async function signed_xpi_initially_unblocked() {
     await Blocklist.getAddonBlocklistEntry(addon),
     {
       state: Ci.nsIBlocklistService.STATE_BLOCKED,
-      url: "https://addons.mozilla.org/en-US/xpcshell/blocked-addon/webext_implicit_id@tests.mozilla.org/1.0/",
+      url: `https://addons.mozilla.org/en-US/firefox/blocked-addon/${SIGNED_ADDON_ID}/${SIGNED_ADDON_VERSION}/`,
     },
     "Blocked addon should have blocked entry"
   );
@@ -174,7 +174,9 @@ add_task(async function signed_temporary() {
 
   await Assert.rejects(
     AddonManager.installTemporaryAddon(SIGNED_ADDON_XPI_FILE),
-    /Add-on webext_implicit_id@tests.mozilla.org is not compatible with application version/,
+    new RegExp(
+      `Add-on ${SIGNED_ADDON_ID} is not compatible with application version`
+    ),
     "Blocklisted add-on cannot be installed"
   );
 });
@@ -183,19 +185,27 @@ add_task(async function signed_temporary() {
 // It can still be blocked by a stash, which is tested in
 // privileged_addon_blocked_by_stash in test_blocklist_mlbf_stashes.js.
 add_task(async function privileged_xpi_not_blocked() {
+  const PRIV_ADDON_ID = "test@tests.mozilla.org";
+  const PRIV_ADDON_VERSION = "2.0buildid20240326.152244";
   mockMLBF({
-    blocked: ["test@tests.mozilla.org:2.0"],
+    blocked: [`${PRIV_ADDON_ID}:${PRIV_ADDON_VERSION}`],
     notblocked: [],
     generationTime: 1546297200000, // 1 jan 2019 = after the cert's notBefore
   });
   await ExtensionBlocklistMLBF._onUpdate();
 
+  // Prevent install to fail due to privileged.xpi version using
+  // an addon version that hits a manifest warning (see PRIV_ADDON_VERSION).
+  // TODO(Bug 1824240): remove this once privileged.xpi can be resigned with a
+  // version format that does not hit a manifest warning.
+  ExtensionTestUtils.failOnSchemaWarnings(false);
   const install = await promiseInstallFile(
     do_get_file("../data/signing_checks/privileged.xpi")
   );
+  ExtensionTestUtils.failOnSchemaWarnings(true);
   Assert.equal(install.error, 0, "Install should not have an error");
 
-  let addon = await promiseAddonByID("test@tests.mozilla.org");
+  let addon = await promiseAddonByID(PRIV_ADDON_ID);
   Assert.equal(addon.signedState, AddonManager.SIGNEDSTATE_PRIVILEGED);
   Assert.equal(addon.blocklistState, Ci.nsIBlocklistService.STATE_NOT_BLOCKED);
   await addon.uninstall();
@@ -205,13 +215,17 @@ add_task(async function privileged_xpi_not_blocked() {
 // It can still be blocked by a stash, which is tested in
 // langpack_blocked_by_stash in test_blocklist_mlbf_stashes.js.
 add_task(
-  // We do not support langpacks on Android.
-  { skip_if: () => AppConstants.platform == "android" },
+  {
+    // langpack_signed.xpi is signed with AMO staging signature.
+    pref_set: [["xpinstall.signatures.dev-root", true]],
+    // We do not support langpacks on Android.
+    skip_if: () => AppConstants.platform == "android",
+  },
   async function langpack_not_blocked_on_Nightly() {
     mockMLBF({
       blocked: ["langpack-klingon@firefox.mozilla.org:1.0"],
       notblocked: [],
-      generationTime: 1546297200000, // 1 jan 2019 = after the cert's notBefore
+      generationTime: 1712243366640, // 4 apr 2024 = after the cert's notBefore
     });
     await ExtensionBlocklistMLBF._onUpdate();
 
@@ -226,12 +240,16 @@ add_task(
       Assert.equal(
         addon.blocklistState,
         Ci.nsIBlocklistService.STATE_NOT_BLOCKED,
-        "Langpacks cannot be blocked via the MLBF"
+        "Langpacks cannot be blocked via the MLBF on nightly"
       );
     } else {
       // On non-Nightly, langpacks are submitted through AMO so we will enforce
       // the MLBF blocklist for them.
-      Assert.equal(addon.blocklistState, Ci.nsIBlocklistService.STATE_BLOCKED);
+      Assert.equal(
+        addon.blocklistState,
+        Ci.nsIBlocklistService.STATE_BLOCKED,
+        "Langpacks can be blocked via the MLBF on non-Nightly channels"
+      );
     }
     await addon.uninstall();
   }

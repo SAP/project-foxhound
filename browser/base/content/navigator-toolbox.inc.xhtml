@@ -100,6 +100,9 @@
         <image class="private-browsing-indicator-icon"/>
         <label data-l10n-id="private-browsing-indicator-label"></label>
       </hbox>
+      <toolbarbutton id="content-analysis-indicator"
+                     oncommand="ContentAnalysis.showPanel(this, PanelUI);"
+                     class="toolbarbutton-1 content-analysis-indicator-icon"/>
 
 #include titlebar-items.inc.xhtml
 
@@ -170,7 +173,7 @@
               focused="true"
               pageproxystate="invalid">
           <hbox id="urlbar-background"/>
-          <hbox id="urlbar-input-container"
+          <hbox class="urlbar-input-container"
                 flex="1"
                 pageproxystate="invalid">
             <box id="remote-control-box"
@@ -178,8 +181,7 @@
                  collapsed="true">
                 <image id="remote-control-icon"/>
             </box>
-            <box id="urlbar-search-button"
-                 class="chromeclass-toolbar-additional"/>
+            <box class="chromeclass-toolbar-additional urlbar-search-button"/>
             <!-- Use onclick instead of normal popup= syntax since the popup
                  code fires onmousedown, and hence eats our favicon drag events. -->
             <box id="tracking-protection-icon-container" align="center"
@@ -197,6 +199,7 @@
               </tooltip>
             </box>
             <box id="identity-box"
+                 class="identity-box"
                  pageproxystate="invalid"
                  ondragstart="gIdentityHandler.onDragStart(event);">
               <box id="identity-icon-box"
@@ -207,7 +210,7 @@
                    onclick="gIdentityHandler.handleIdentityButtonEvent(event); PageProxyClickHandler(event);"
                    onkeypress="gIdentityHandler.handleIdentityButtonEvent(event);">
                 <image id="identity-icon"/>
-                <label id="identity-icon-label" class="plain" crop="center" flex="1"/>
+                <label id="identity-icon-label" crop="center" flex="1"/>
               </box>
               <box id="identity-permission-box"
                    data-l10n-id="urlbar-permissions-granted"
@@ -319,6 +322,7 @@
               <html:input id="urlbar-scheme"
                           required="required"/>
               <html:input id="urlbar-input"
+                          class="urlbar-input"
                           anonid="input"
                           aria-controls="urlbar-results"
                           aria-autocomplete="both"
@@ -326,8 +330,7 @@
                           data-l10n-id="urlbar-placeholder"
                           data-l10n-attrs="placeholder"/>
             </moz-input-box>
-            <image id="urlbar-go-button"
-                   class="urlbar-icon"
+            <image class="urlbar-icon urlbar-go-button"
                    role="button"
                    keyNav="false"
                    onclick="gURLBar.handleCommand(event);"
@@ -472,7 +475,7 @@
     </hbox>
 
     <toolbarbutton id="nav-bar-overflow-button"
-                   class="toolbarbutton-1 chromeclass-toolbar-additional overflow-button"
+                   class="toolbarbutton-1 chromeclass-toolbar-additional"
                    delegatesanchor="true"
                    skipintoolbarset="true"
                    data-l10n-id="navbar-overflow">
@@ -491,13 +494,6 @@
                      tooltiptext="Ion"
                      onmousedown="switchToTabHavingURI('about:ion', true);"
                      onkeypress="switchToTabHavingURI('about:ion', true);"/>
-      <toolbarbutton id="whats-new-menu-button"
-                     class="toolbarbutton-1"
-                     delegatesanchor="true"
-                     hidden="true"
-                     badged="true"
-                     onmousedown="PanelUI.showSubView('PanelUI-whatsNew', this, event);"
-                     onkeypress="PanelUI.showSubView('PanelUI-whatsNew', this, event);"/>
       <toolbarbutton id="PanelUI-menu-button"
                      class="toolbarbutton-1"
                      delegatesanchor="true"
@@ -516,12 +512,12 @@
            customizable="true">
     <toolbartabstop skipintoolbarset="true"/>
 
-    <hbox id="personal-toolbar-empty" skipintoolbarset="true" removable="false" hidden="true">
+    <hbox id="personal-toolbar-empty" skipintoolbarset="true" removable="false" hidden="true" role="alert">
       <description id="personal-toolbar-empty-description"
                    data-l10n-id="bookmarks-toolbar-empty-message"
                    onclick="BookmarkingUI.openLibraryIfLinkClicked(event);"
                    onkeydown="BookmarkingUI.openLibraryIfLinkClicked(event);">
-        <html:a data-l10n-name="manage-bookmarks" class="text-link" tabindex="0"/>
+        <html:a data-l10n-name="manage-bookmarks" class="text-link" tabindex="0" role="link"/>
       </description>
     </hbox>
 
@@ -625,7 +621,7 @@
         <menuitem id="BMB_viewBookmarksSidebar"
                   data-l10n-id="bookmarks-tools-sidebar-visibility"
                   data-l10n-args='{ "isVisible": false }'
-                  oncommand="SidebarUI.toggle('viewBookmarksSidebar');"
+                  oncommand="SidebarController.toggle('viewBookmarksSidebar');"
                   key="viewBookmarksSidebarKb"/>
         <menuitem id="BMB_searchBookmarks"
                   data-l10n-id="bookmarks-search"
@@ -708,7 +704,7 @@
                    ondragenter="homeButtonObserver.onDragOver(event)"
                    ondrop="homeButtonObserver.onDrop(event)"
                    key="goHome"
-                   onclick="BrowserHome(event);"
+                   onclick="BrowserCommands.home(event);"
                    cui-areatype="toolbar"/>
 
     <toolbarbutton id="library-button" class="toolbarbutton-1 chromeclass-toolbar-additional subviewbutton-nav"

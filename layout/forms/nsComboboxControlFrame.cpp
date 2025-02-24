@@ -24,7 +24,6 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "mozilla/dom/Document.h"
-#include "nsIScrollableFrame.h"
 #include "mozilla/ServoStyleSet.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
@@ -190,14 +189,12 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(gfxContext* aRenderingContext,
 
 nscoord nsComboboxControlFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord minISize;
-  DISPLAY_MIN_INLINE_SIZE(this, minISize);
   minISize = GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::MinISize);
   return minISize;
 }
 
 nscoord nsComboboxControlFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord prefISize;
-  DISPLAY_PREF_INLINE_SIZE(this, prefISize);
   prefISize =
       GetIntrinsicISize(aRenderingContext, IntrinsicISizeType::PrefISize);
   return prefISize;

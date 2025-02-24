@@ -71,6 +71,7 @@ const gRuleManagers = [];
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -81,7 +82,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
-const { ExtensionError } = ExtensionUtils;
+const { DefaultWeakMap, ExtensionError } = ExtensionUtils;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -182,15 +183,25 @@ export class Rule {
 
 class Ruleset {
   /**
+   * @typedef {number} integer
+   *
    * @param {string} rulesetId - extension-defined ruleset ID.
    * @param {integer} rulesetPrecedence
    * @param {Rule[]} rules - extension-defined rules
+   * @param {Set<Rule> | null} disabledRuleIds - An optional set of disabled rule ids
    * @param {RuleManager} ruleManager - owner of this ruleset.
    */
-  constructor(rulesetId, rulesetPrecedence, rules, ruleManager) {
+  constructor(
+    rulesetId,
+    rulesetPrecedence,
+    rules,
+    disabledRuleIds,
+    ruleManager
+  ) {
     this.id = rulesetId;
     this.rulesetPrecedence = rulesetPrecedence;
     this.rules = rules;
+    this.disabledRuleIds = disabledRuleIds;
     // For use by MatchedRule.
     this.ruleManager = ruleManager;
   }
@@ -1209,11 +1220,8 @@ class RuleValidator {
 }
 
 export class RuleQuotaCounter {
-  constructor(isStaticRulesets) {
-    this.isStaticRulesets = isStaticRulesets;
-    this.ruleLimitName = isStaticRulesets
-      ? "GUARANTEED_MINIMUM_STATIC_RULES"
-      : "MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES";
+  constructor(ruleLimitName) {
+    this.ruleLimitName = ruleLimitName;
     this.ruleLimitRemaining = lazy.ExtensionDNRLimits[this.ruleLimitName];
     this.regexRemaining = lazy.ExtensionDNRLimits.MAX_NUMBER_OF_REGEX_RULES;
   }
@@ -1239,7 +1247,7 @@ export class RuleQuotaCounter {
   }
 
   #throwQuotaError(rulesetId, what, limitName) {
-    if (this.isStaticRulesets) {
+    if (this.ruleLimitName === "GUARANTEED_MINIMUM_STATIC_RULES") {
       throw new ExtensionError(
         `Number of ${what} across all enabled static rulesets exceeds ${limitName} if ruleset "${rulesetId}" were to be enabled.`
       );
@@ -1316,7 +1324,7 @@ class RequestDetails {
    * @param {string} options.type - ResourceType (MozContentPolicyType).
    * @param {string} [options.method] - HTTP method
    * @param {integer} [options.tabId]
-   * @param {BrowsingContext} [options.browsingContext] - The BrowsingContext
+   * @param {CanonicalBrowsingContext} [options.browsingContext] - The CBC
    *   associated with the request. Typically the bc for which the subresource
    *   request is initiated, if any. For document requests, this is the parent
    *   (i.e. the parent frame for sub_frame, null for main_frame).
@@ -1336,15 +1344,44 @@ class RequestDetails {
     this.tabId = tabId;
     this.browsingContext = browsingContext;
 
-    this.requestDomain = this.#domainFromURI(requestURI);
-    this.initiatorDomain = initiatorURI
+    let requestDomain = this.#domainFromURI(requestURI);
+    let initiatorDomain = initiatorURI
       ? this.#domainFromURI(initiatorURI)
       : null;
+    this.allRequestDomains =
+      requestDomain && this.#getAllDomainsWithin(requestDomain);
+    this.allInitiatorDomains =
+      initiatorDomain && this.#getAllDomainsWithin(initiatorDomain);
+
+    this.domainType = this.#isThirdParty(requestURI, initiatorURI)
+      ? "thirdParty"
+      : "firstParty";
 
     this.requestURIspec = requestURI.spec;
     this.requestDataForUrlFilter = new RequestDataForUrlFilter(
       this.requestURIspec
     );
+  }
+
+  #isThirdParty(requestURI, initiatorURI) {
+    if (!initiatorURI) {
+      // E.g. main_frame request or opaque origin.
+      return true;
+    }
+
+    try {
+      return (
+        Services.eTLD.getBaseDomain(requestURI) !==
+        Services.eTLD.getBaseDomain(initiatorURI)
+      );
+    } catch (err) {
+      // May throw if either domain is an IP address, lacks a public suffix
+      // (e.g. http://localhost or moz-extension://UUID)
+      // or contains characters disallowed in URIs. Fall back:
+      return (
+        this.#domainFromURI(requestURI) !== this.#domainFromURI(initiatorURI)
+      );
+    }
   }
 
   static fromChannelWrapper(channel) {
@@ -1465,7 +1502,33 @@ class RequestDetails {
       return null;
     }
   }
+
+  /**
+   * @param {string} domain - The canonical representation of the host of a URL.
+   * @returns {string[]} A non-empty list of the domain and all superdomains
+   *   within the given domain. This may include items that are not resolvable
+   *   domains, such as "com" (from input "example.com").
+   */
+  #getAllDomainsWithin(domain) {
+    const domains = [domain];
+    let i = 0;
+    // Reminder: domain cannot start with a dot, nor contain consecutive dots.
+    while ((i = domain.indexOf(".", i) + 1) !== 0) {
+      domain = domain.slice(i);
+      // A full domain can end with a dot (FQDN) such as "example.com.", in
+      // which case the last domain should be "com." and not "".
+      if (domain) {
+        domains.push(domain);
+      }
+    }
+    return domains;
+  }
 }
+
+// Domain lists in rule conditions (requestDomains, excludedRequestDomains,
+// initiatorDomains, excludedInitiatorDomains) could be really long, containing
+// thousands of entries. We convert them to Set for faster lookup.
+const gDomainsListToSet = new DefaultWeakMap(domains => new Set(domains));
 
 /**
  * This RequestEvaluator class's logic is documented at the top of this file.
@@ -1699,6 +1762,9 @@ class RequestEvaluator {
   /** @param {Ruleset} ruleset */
   #collectMatchInRuleset(ruleset) {
     for (let rule of ruleset.rules) {
+      if (ruleset.disabledRuleIds?.has(rule.id)) {
+        continue;
+      }
       if (!this.#matchesRuleCondition(rule.condition)) {
         continue;
       }
@@ -1754,23 +1820,26 @@ class RequestEvaluator {
     }
     if (
       cond.excludedRequestDomains &&
-      this.#matchesDomains(cond.excludedRequestDomains, this.req.requestDomain)
+      this.#matchesDomains(
+        cond.excludedRequestDomains,
+        this.req.allRequestDomains
+      )
     ) {
       return false;
     }
     if (
       cond.requestDomains &&
-      !this.#matchesDomains(cond.requestDomains, this.req.requestDomain)
+      !this.#matchesDomains(cond.requestDomains, this.req.allRequestDomains)
     ) {
       return false;
     }
     if (
       cond.excludedInitiatorDomains &&
       // Note: unable to only match null principals (bug 1798225).
-      this.req.initiatorDomain &&
+      this.req.allInitiatorDomains &&
       this.#matchesDomains(
         cond.excludedInitiatorDomains,
-        this.req.initiatorDomain
+        this.req.allInitiatorDomains
       )
     ) {
       return false;
@@ -1778,13 +1847,18 @@ class RequestEvaluator {
     if (
       cond.initiatorDomains &&
       // Note: unable to only match null principals (bug 1798225).
-      (!this.req.initiatorDomain ||
-        !this.#matchesDomains(cond.initiatorDomains, this.req.initiatorDomain))
+      (!this.req.allInitiatorDomains ||
+        !this.#matchesDomains(
+          cond.initiatorDomains,
+          this.req.allInitiatorDomains
+        ))
     ) {
       return false;
     }
 
-    // TODO bug 1797408: domainType
+    if (cond.domainType && cond.domainType !== this.req.domainType) {
+      return false;
+    }
 
     if (cond.requestMethods) {
       if (!cond.requestMethods.includes(this.req.method)) {
@@ -1806,23 +1880,18 @@ class RequestEvaluator {
   }
 
   /**
-   * @param {string[]} domains - A list of canonicalized domain patterns.
+   * @param {string[]} domainsInCondition - A potentially long list of
+   *   canonicalized domain patterns that are part of a rule condition.
    *   Canonical means punycode, no ports, and IPv6 without brackets, and not
    *   starting with a dot. May end with a dot if it is a FQDN.
-   * @param {string} host - The canonical representation of the host of a URL.
-   * @returns {boolean} Whether the given host is a (sub)domain of any of the
-   *   given domains.
+   * @param {string[]} targetDomains - The list of domains and superdomains
+   *   within the original URI (see #getAllDomainsWithin).
+   * @returns {boolean} Whether the actual host (encoded in targetDomains) is a
+   *   (sub)domain of any of the domains in the condition (domainsInCondition).
    */
-  #matchesDomains(domains, host) {
-    return domains.some(domain => {
-      return (
-        host.endsWith(domain) &&
-        // either host === domain
-        (host.length === domain.length ||
-          // or host = "something." + domain (WITH a domain separator).
-          host.charAt(host.length - domain.length - 1) === ".")
-      );
-    });
+  #matchesDomains(domainsInCondition, targetDomains) {
+    const ruleDomainsSet = gDomainsListToSet.get(domainsInCondition);
+    return targetDomains.some(domain => ruleDomainsSet.has(domain));
   }
 
   /**
@@ -1975,7 +2044,10 @@ const NetworkIntegration = {
   /**
    * Applies the actions of the DNR rules.
    *
-   * @param {ChannelWrapper} channel
+   * @typedef {ChannelWrapper & { _dnrMatchedRules?: MatchedRule[] }}
+   *          ChannelWrapperViaDNR
+   *
+   * @param {ChannelWrapperViaDNR} channel
    * @returns {boolean} Whether to ignore any responses from the webRequest API.
    */
   onBeforeRequest(channel) {
@@ -1993,7 +2065,7 @@ const NetworkIntegration = {
         this.applyRedirect(channel, finalMatch);
         return true;
       case "upgradeScheme":
-        this.applyUpgradeScheme(channel, finalMatch);
+        this.applyUpgradeScheme(channel);
         return true;
     }
     // If there are multiple rules, then it may be a combination of allow,
@@ -2121,8 +2193,19 @@ class RuleManager {
     return this.enabledStaticRules.map(ruleset => ruleset.id);
   }
 
-  makeRuleset(rulesetId, rulesetPrecedence, rules = []) {
-    return new Ruleset(rulesetId, rulesetPrecedence, rules, this);
+  makeRuleset(
+    rulesetId,
+    rulesetPrecedence,
+    rules = [],
+    disabledRuleIds = null
+  ) {
+    return new Ruleset(
+      rulesetId,
+      rulesetPrecedence,
+      rules,
+      disabledRuleIds,
+      this
+    );
   }
 
   setSessionRules(validatedSessionRules) {
@@ -2148,16 +2231,24 @@ class RuleManager {
   /**
    * Set the enabled static rulesets.
    *
-   * @param {Array<{ id, rules }>} enabledStaticRulesets
+   * @param {Array<{ id, rules, disabledRuleIds }>} enabledStaticRulesets
    *        Array of objects including the ruleset id and rules.
    *        The order of the rulesets in the Array is expected to
    *        match the order of the rulesets in the extension manifest.
    */
   setEnabledStaticRulesets(enabledStaticRulesets) {
     const rulesets = [];
-    for (const [idx, { id, rules }] of enabledStaticRulesets.entries()) {
+    for (const [
+      idx,
+      { id, rules, disabledRuleIds },
+    ] of enabledStaticRulesets.entries()) {
       rulesets.push(
-        this.makeRuleset(id, idx + PRECEDENCE_STATIC_RULESETS_BASE, rules)
+        this.makeRuleset(
+          id,
+          idx + PRECEDENCE_STATIC_RULESETS_BASE,
+          rules,
+          disabledRuleIds
+        )
       );
     }
     const countRules = rulesets =>
@@ -2169,12 +2260,34 @@ class RuleManager {
     this.#updateAllowAllRequestRules();
   }
 
-  getSessionRules() {
-    return this.sessionRules.rules;
+  /**
+   * Get the session scoped rules.
+   *
+   * @param {Array<integer>|null} ruleIds
+            Optional array of rule IDs to return. By default, all the session
+            scoped rules are returned.
+   */
+  getSessionRules(ruleIds = null) {
+    if (!ruleIds) {
+      return this.sessionRules.rules;
+    }
+
+    return this.sessionRules.rules.filter(rule => ruleIds.includes(rule.id));
   }
 
-  getDynamicRules() {
-    return this.dynamicRules.rules;
+  /**
+   * Get the dynamic rules.
+   *
+   * @param {Array<integer>|null} ruleIds
+            Optional array of rule IDs to return. By default, all the dynamic
+            rules are returned.
+   */
+  getDynamicRules(ruleIds = null) {
+    if (!ruleIds) {
+      return this.dynamicRules.rules;
+    }
+
+    return this.dynamicRules.rules.filter(rule => ruleIds.includes(rule.id));
   }
 
   getRulesCount() {
@@ -2294,7 +2407,7 @@ function beforeWebRequestEvent(channel, kind) {
 /**
  * Applies matching DNR rules, some of which may potentially cancel the request.
  *
- * @param {ChannelWrapper} channel
+ * @param {ChannelWrapperViaDNR} channel
  * @param {string} kind - The name of the webRequest event.
  * @returns {boolean} Whether to ignore any responses from the webRequest API.
  */
@@ -2420,6 +2533,19 @@ async function updateDynamicRules(extension, updateRuleOptions) {
   await lazy.ExtensionDNRStore.updateDynamicRules(extension, updateRuleOptions);
 }
 
+async function updateStaticRules(extension, updateStaticRulesOptions) {
+  await ensureInitialized(extension);
+  await lazy.ExtensionDNRStore.updateStaticRules(
+    extension,
+    updateStaticRulesOptions
+  );
+}
+
+async function getDisabledRuleIds(extension, rulesetId) {
+  await ensureInitialized(extension);
+  return lazy.ExtensionDNRStore.getDisabledRuleIds(extension, rulesetId);
+}
+
 // exports used by the DNR API implementation.
 export const ExtensionDNR = {
   RuleValidator,
@@ -2427,9 +2553,11 @@ export const ExtensionDNR = {
   clearRuleManager,
   ensureInitialized,
   getMatchedRulesForRequest,
+  getDisabledRuleIds,
   getRuleManager,
   updateDynamicRules,
   updateEnabledStaticRulesets,
+  updateStaticRules,
   validateManifestEntry,
   beforeWebRequestEvent,
   handleRequest,

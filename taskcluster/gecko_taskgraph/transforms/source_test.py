@@ -1,3 +1,4 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 """
@@ -62,8 +63,8 @@ transforms.add_validate(source_test_description_schema)
 @transforms.add
 def set_job_name(config, jobs):
     for job in jobs:
-        if "job-from" in job and job["job-from"] != "kind.yml":
-            from_name = os.path.splitext(job["job-from"])[0]
+        if "task-from" in job and job["task-from"] != "kind.yml":
+            from_name = os.path.splitext(job["task-from"])[0]
             job["name"] = "{}-{}".format(from_name, job["name"])
         yield job
 
@@ -264,8 +265,8 @@ def remove_optimization_on_central(config, jobs):
         if not job.get("attributes", {}).get("code-review", False):
             yield job
             continue
-        if "when" not in job:
-            yield job
-            continue
-        del job["when"]
+        if "when" in job:
+            del job["when"]
+        if "optimization" in job and "skip-unless-mozlint" in job["optimization"]:
+            del job["optimization"]
         yield job

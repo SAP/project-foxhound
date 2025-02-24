@@ -435,12 +435,6 @@ void gfxPlatformFontList::ApplyWhitelist() {
   AutoTArray<RefPtr<gfxFontFamily>, 128> accepted;
   bool whitelistedFontFound = false;
   for (const auto& entry : mFontFamilies) {
-    if (entry.GetData()->IsHidden()) {
-      // Hidden system fonts are exempt from whitelisting, but don't count
-      // towards determining whether we "kept" any (user-visible) fonts
-      accepted.AppendElement(entry.GetData());
-      continue;
-    }
     nsAutoCString fontFamilyName(entry.GetKey());
     ToLowerCase(fontFamilyName);
     if (familyNamesWhitelist.Contains(fontFamilyName)) {
@@ -476,8 +470,7 @@ void gfxPlatformFontList::ApplyWhitelist(
   AutoTArray<fontlist::Family::InitData, 128> accepted;
   bool keptNonHidden = false;
   for (auto& f : aFamilies) {
-    if (f.mVisibility == FontVisibility::Hidden ||
-        familyNamesWhitelist.Contains(f.mKey)) {
+    if (familyNamesWhitelist.Contains(f.mKey)) {
       accepted.AppendElement(f);
       if (f.mVisibility != FontVisibility::Hidden) {
         keptNonHidden = true;
@@ -2046,13 +2039,27 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap) {
   }
 }
 
-static void GetSystemUIFontFamilies([[maybe_unused]] nsAtom* aLangGroup,
+static void GetSystemUIFontFamilies(const nsPresContext* aPresContext,
+                                    [[maybe_unused]] nsAtom* aLangGroup,
                                     nsTArray<nsCString>& aFamilies) {
   // TODO: On macOS, use CTCreateUIFontForLanguage or such thing (though the
   // code below ends up using [NSFont systemFontOfSize: 0.0].
   nsFont systemFont;
   gfxFontStyle fontStyle;
   nsAutoString systemFontName;
+  if (aPresContext ? aPresContext->Document()->ShouldResistFingerprinting(
+                         RFPTarget::FontVisibilityRestrictGenerics)
+                   : nsContentUtils::ShouldResistFingerprinting(
+                         "aPresContext not available",
+                         RFPTarget::FontVisibilityRestrictGenerics)) {
+#if defined(XP_MACOSX) || defined(MOZ_WIDGET_UIKIT)
+    *aFamilies.AppendElement() = "-apple-system"_ns;
+    return;
+#elif !defined(MOZ_WIDGET_ANDROID)
+    *aFamilies.AppendElement() = "sans-serif"_ns;
+    return;
+#endif
+  }
   if (!LookAndFeel::GetFont(StyleSystemFont::Menu, systemFontName, fontStyle)) {
     return;
   }
@@ -2088,7 +2095,7 @@ void gfxPlatformFontList::ResolveGenericFontNames(
   MOZ_ASSERT(langGroup, "null lang group for pref lang");
 
   if (aGenericType == StyleGenericFontFamily::SystemUi) {
-    GetSystemUIFontFamilies(langGroup, genericFamilies);
+    GetSystemUIFontFamilies(aPresContext, langGroup, genericFamilies);
   }
 
   GetFontFamiliesFromGenericFamilies(
@@ -2207,6 +2214,12 @@ eFontPrefLang gfxPlatformFontList::GetFontPrefLangFor(const char* aLang) {
   }
   for (uint32_t i = 0; i < ArrayLength(gPrefLangNames); ++i) {
     if (!nsCRT::strcasecmp(gPrefLangNames[i], aLang)) {
+      return eFontPrefLang(i);
+    }
+    // If the pref-lang is a two-character lang tag, try ignoring any trailing
+    // subtags in aLang and see if the base lang matches.
+    if (strlen(gPrefLangNames[i]) == 2 && strlen(aLang) > 3 &&
+        aLang[2] == '-' && !nsCRT::strncasecmp(gPrefLangNames[i], aLang, 2)) {
       return eFontPrefLang(i);
     }
   }

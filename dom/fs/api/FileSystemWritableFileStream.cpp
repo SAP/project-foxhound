@@ -86,7 +86,7 @@ class WritableFileStreamUnderlyingSinkAlgorithms final
       FileSystemWritableFileStream& aStream)
       : mStream(&aStream) {}
 
-  already_AddRefed<Promise> WriteCallback(
+  already_AddRefed<Promise> WriteCallbackImpl(
       JSContext* aCx, JS::Handle<JS::Value> aChunk,
       WritableStreamDefaultController& aController, ErrorResult& aRv) override;
 
@@ -180,8 +180,10 @@ class FileSystemWritableFileStream::CloseHandler {
    * @brief Transition from initial to open state. In initial state
    *
    */
-  void Open() {
+  void Open(std::function<void()>&& aCallback) {
     MOZ_ASSERT(State::Initial == mState);
+
+    mShutdownBlocker->SetCallback(std::move(aCallback));
     mShutdownBlocker->Block();
 
     mState = State::Open;
@@ -193,6 +195,7 @@ class FileSystemWritableFileStream::CloseHandler {
    */
   void Close() {
     mShutdownBlocker->Unblock();
+    mShutdownBlocker = nullptr;
     mState = State::Closed;
     mClosePromiseHolder.ResolveIfExists(true, __func__);
   }
@@ -329,7 +332,17 @@ FileSystemWritableFileStream::Create(
   autoClose.release();
 
   stream->mWorkerRef = std::move(workerRef);
-  stream->mCloseHandler->Open();
+
+  // The close handler passes this callback to `FileSystemShutdownBlocker`
+  // which has separate handling for debug and release builds. Basically,
+  // there's no content process shutdown blocking in release builds, so the
+  // callback might be executed in debug builds only.
+  stream->mCloseHandler->Open([stream]() {
+    if (stream->IsOpen()) {
+      // We don't need the promise, we just begin the closing process.
+      Unused << stream->BeginAbort();
+    }
+  });
 
   // Step 9: Return stream.
   return stream;
@@ -479,23 +492,27 @@ already_AddRefed<Promise> FileSystemWritableFileStream::Write(
   ArrayBufferViewOrArrayBufferOrBlobOrUTF8StringOrWriteParams data;
   if (!data.Init(aCx, aChunk)) {
     aError.StealExceptionFromJSContext(aCx);
+    // XXX(krosylight): The Streams spec does not provide a way to catch errors
+    // thrown from the write algorithm, and the File System spec does not try
+    // catching them either. This is unfortunate, as per the spec the type error
+    // from write() must immediately return a rejected promise without any file
+    // handle closure. For now we handle it here manually. See also:
+    // - https://github.com/whatwg/streams/issues/636
+    // - https://github.com/whatwg/fs/issues/153
+    if (IsOpen()) {
+      (void)BeginAbort();
+    }
     return nullptr;
   }
 
   // Step 2. Let p be a new promise.
-  RefPtr<Promise> promise = Promise::Create(GetParentObject(), aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
-
-  RefPtr<Promise> innerPromise = Promise::Create(GetParentObject(), aError);
-  if (aError.Failed()) {
-    return nullptr;
-  }
+  RefPtr<Promise> promise = Promise::CreateInfallible(GetParentObject());
 
   RefPtr<Command> command = CreateCommand();
 
   // Step 3.3.
+  // XXX: This should ideally be also handled by the streams but we don't
+  // currently have the hook. See https://github.com/whatwg/streams/issues/620.
   Write(data)->Then(
       GetCurrentSerialEventTarget(), __func__,
       [self = RefPtr{this}, command,
@@ -961,7 +978,7 @@ NS_IMPL_CYCLE_COLLECTION_INHERITED(WritableFileStreamUnderlyingSinkAlgorithms,
 // Step 3 of
 // https://fs.spec.whatwg.org/#create-a-new-filesystemwritablefilestream
 already_AddRefed<Promise>
-WritableFileStreamUnderlyingSinkAlgorithms::WriteCallback(
+WritableFileStreamUnderlyingSinkAlgorithms::WriteCallbackImpl(
     JSContext* aCx, JS::Handle<JS::Value> aChunk,
     WritableStreamDefaultController& aController, ErrorResult& aRv) {
   return mStream->Write(aCx, aChunk, aRv);

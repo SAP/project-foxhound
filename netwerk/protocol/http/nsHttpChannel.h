@@ -335,7 +335,10 @@ class nsHttpChannel final : public HttpBaseChannel,
   void OnHTTPSRRAvailable(nsIDNSHTTPSSVCRecord* aRecord);
   [[nodiscard]] nsresult Connect();
   void SpeculativeConnect();
-  [[nodiscard]] nsresult SetupTransaction();
+  [[nodiscard]] nsresult SetupChannelForTransaction();
+  [[nodiscard]] nsresult InitTransaction();
+  [[nodiscard]] nsresult DispatchTransaction(
+      HttpTransactionShell* aTransWithStickyConn);
   [[nodiscard]] nsresult CallOnStartRequest();
   [[nodiscard]] nsresult ProcessResponse();
   void AsyncContinueProcessResponse();
@@ -398,7 +401,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   [[nodiscard]] nsresult UpdateExpirationTime();
   [[nodiscard]] nsresult CheckPartial(nsICacheEntry* aEntry, int64_t* aSize,
                                       int64_t* aContentLength);
-  [[nodiscard]] nsresult ReadFromCache(bool alreadyMarkedValid);
+  [[nodiscard]] nsresult ReadFromCache(void);
   void CloseCacheEntry(bool doomOnFailure);
   [[nodiscard]] nsresult InitCacheEntry();
   void UpdateInhibitPersistentCachingFlag();
@@ -566,6 +569,8 @@ class nsHttpChannel final : public HttpBaseChannel,
   // This method can only be called on the main thread.
   void PerformBackgroundCacheRevalidationNow();
 
+  void SetPriorityHeader();
+
  private:
   nsCOMPtr<nsICancelable> mProxyRequest;
 
@@ -612,7 +617,7 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Total time the channel spent suspended. This value is reported to
   // telemetry in nsHttpChannel::OnStartRequest().
-  uint32_t mSuspendTotalTime{0};
+  TimeDuration mSuspendTotalTime{0};
 
   friend class AutoRedirectVetoNotifier;
   friend class HttpAsyncAborter<nsHttpChannel>;

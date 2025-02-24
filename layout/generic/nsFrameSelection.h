@@ -200,6 +200,7 @@ class SelectionChangeEventDispatcher;
 namespace dom {
 class Highlight;
 class Selection;
+enum class ClickSelectionType { NotApplicable, Double, Triple };
 }  // namespace dom
 
 /**
@@ -216,7 +217,6 @@ enum class TableSelectionMode : uint32_t {
 };
 
 }  // namespace mozilla
-class nsIScrollableFrame;
 
 class nsFrameSelection final {
  public:
@@ -259,14 +259,17 @@ class nsFrameSelection final {
 
  public:
   /**
-   * Sets flag to true if a selection is created by doubleclick or
-   * long tapping a word.
+   * Sets the type of the selection based on whether a selection is created
+   * by doubleclick, long tapping a word or tripleclick.
    *
-   * @param aIsDoubleClickSelection   True if the selection is created by
-   *                                  doubleclick or long tap over a word.
+   * @param aClickSelectionType   ClickSelectionType::Double if the selection
+   *                              is created by doubleclick,
+   *                              ClickSelectionType::Triple if the selection
+   *                              is created by tripleclick.
    */
-  void SetIsDoubleClickSelection(bool aIsDoubleClickSelection) {
-    mIsDoubleClickSelection = aIsDoubleClickSelection;
+  void SetClickSelectionType(
+      mozilla::dom::ClickSelectionType aClickSelectionType) {
+    mClickSelectionType = aClickSelectionType;
   }
 
   /**
@@ -274,7 +277,14 @@ class nsFrameSelection final {
    * long tap over a word.
    */
   [[nodiscard]] bool IsDoubleClickSelection() const {
-    return mIsDoubleClickSelection;
+    return mClickSelectionType == mozilla::dom::ClickSelectionType::Double;
+  }
+
+  /**
+   * Returns true if the selection was created by triple click
+   */
+  [[nodiscard]] bool IsTripleClickSelection() const {
+    return mClickSelectionType == mozilla::dom::ClickSelectionType::Triple;
   }
 
   /**
@@ -899,16 +909,14 @@ class nsFrameSelection final {
 
   bool IsBatching() const { return mBatching.mCounter > 0; }
 
-  void SetChangesDuringBatchingFlag() {
-    MOZ_ASSERT(mBatching.mCounter > 0);
-
-    mBatching.mChangesDuringBatching = true;
-  }
+  enum class IsBatchingEnd : bool { No, Yes };
 
   // nsFrameSelection may get deleted when calling this,
   // so remember to use nsCOMPtr when needed.
   MOZ_CAN_RUN_SCRIPT
-  nsresult NotifySelectionListeners(mozilla::SelectionType aSelectionType);
+  nsresult NotifySelectionListeners(
+      mozilla::SelectionType aSelectionType,
+      IsBatchingEnd aEndBatching = IsBatchingEnd::No);
 
   static nsresult GetCellIndexes(const nsIContent* aCell, int32_t& aRowIndex,
                                  int32_t& aColIndex);
@@ -1033,7 +1041,6 @@ class nsFrameSelection final {
 
   struct Batching {
     uint32_t mCounter = 0;
-    bool mChangesDuringBatching = false;
   };
 
   Batching mBatching;
@@ -1102,11 +1109,12 @@ class nsFrameSelection final {
   bool mDragState = false;  // for drag purposes
   bool mAccessibleCaretEnabled = false;
 
-  // Records if a selection was created by doubleclicking a word.
-  // This information is needed later on to determine if a leading
+  // Records if a selection was created by doubleclicking or tripleclicking
+  // a word. This information is needed later on to determine if a leading
   // or trailing whitespace needs to be removed as well to achieve
   // native behaviour on macOS.
-  bool mIsDoubleClickSelection{false};
+  mozilla::dom::ClickSelectionType mClickSelectionType =
+      mozilla::dom::ClickSelectionType::NotApplicable;
 };
 
 /**

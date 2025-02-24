@@ -14,9 +14,9 @@
 :host(:is(.anonymous-content-host, notification-message)),
 :root {
   --in-content-page-color: rgb(21, 20, 26);
-  --in-content-page-background: #fff;
+  --in-content-page-background: var(--background-color-canvas);
   --in-content-text-color: var(--in-content-page-color);
-  --in-content-box-background: var(--box-background-color);
+  --in-content-box-background: var(--background-color-box);
   --in-content-box-background-odd: rgba(12, 12, 13, 0.05); /* grey 90 a05 */
   --in-content-box-border-color: color-mix(in srgb, currentColor 41%, transparent);
   --in-content-box-info-background: #f0f0f4;
@@ -77,23 +77,15 @@
   --grey-90-a30: rgba(12, 12, 13, 0.3);
   --grey-90-a50: rgba(12, 12, 13, 0.5);
   --grey-90-a60: rgba(12, 12, 13, 0.6);
-  --green-50: #30e60b;
   --green-60: #12bc00;
   --green-70: #058b00;
-  --green-80: #006504;
-  --green-90: #003706;
   --orange-50: #ff9400;
   --red-40: #ff4f5e;
   --red-50: #ff0039;
   --red-60: #d70022;
-  --red-70: #a4000f;
-  --red-80: #5a0002;
-  --red-90: #3e0200;
   --yellow-50: #ffe900;
   --yellow-60: #d7b600;
   --yellow-60-a30: rgba(215, 182, 0, 0.3);
-  --yellow-70: #a47f00;
-  --yellow-80: #715100;
   --yellow-90: #3e2800;
 
   --shadow-10: 0 1px 4px var(--grey-90-a10);
@@ -122,7 +114,6 @@
      * just replace most of these for system colors and remove all this
      * duplication (assuming we honor the preferred color scheme for
      * in-content privileged pages and plain-text documents). */
-    --in-content-page-background: rgb(28,27,34);
     --in-content-page-color: rgb(251,251,254);
 
     --in-content-box-background-odd: rgba(249,249,250,0.05);
@@ -156,20 +147,19 @@
   }
 
   /* For dialogs, use a different background colour. We don't do
-   * this in High Contrast mode, as we should be using system colours then.
+   * this in forced colors mode, as we should be using system colours then.
    */
-  @media not (prefers-contrast) {
+  @media not (forced-colors) {
     :root[dialogroot] {
       --in-content-page-background: #42414d;
     }
   }
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   :host(:is(.anonymous-content-host, notification-message)),
   :root {
     --in-content-page-color: CanvasText;
-    --in-content-page-background: Canvas;
 
     --in-content-box-background-odd: var(--in-content-box-background);
     --in-content-box-border-color: -moz-DialogText;
@@ -304,7 +294,7 @@ xul|tab[selected]:hover:active {
   background-color: var(--in-content-button-background-active);
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   xul|tab:hover,
   xul|tab:hover:active {
     border-bottom-color: currentColor;
@@ -483,7 +473,7 @@ xul|button.primary:not([disabled="true"]):hover:active {
   border-color: var(--in-content-primary-button-border-active);
 }
 
-@media not (prefers-contrast) {
+@media not (forced-colors) {
   html|button.semi-transparent:not(.ghost-button, .primary):enabled {
     background-color: color-mix(in srgb, currentColor 10%, transparent);
   }
@@ -504,7 +494,7 @@ xul|button.primary:not([disabled="true"]):hover:active {
   --in-content-focus-outline-color: var(--in-content-danger-button-background);
 }
 
-@media not (prefers-contrast) {
+@media not (forced-colors) {
   html|button.ghost-button {
     background-color: transparent;
   }
@@ -798,7 +788,7 @@ html|*#categories > html|*.category:dir(rtl) {
   border-color: var(--in-content-button-border-color-active);
 }
 
-@media not (prefers-contrast) {
+@media not (forced-colors) {
   #categories > .category[selected],
   #categories > .category.selected {
     color: var(--in-content-accent-color);
@@ -815,7 +805,7 @@ html|*#categories > html|*.category:dir(rtl) {
   }
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   #categories > .category {
     /* The transition causes issues with the text getting a background while
      * transitioning and it looks weird. */
@@ -963,7 +953,7 @@ xul|treechildren::-moz-tree-row(selected) {
   color: var(--in-content-item-selected-text);
 }
 
-@media not (prefers-contrast) {
+@media not (forced-colors) {
   xul|richlistbox:not(#categories) > xul|richlistitem[selected] {
     /* Ensure buttons/menulists inside richlistitems (containers, applications) look OK */
     --in-content-button-background: color-mix(in srgb, currentColor 15%, transparent);
@@ -981,8 +971,8 @@ xul|richlistitem[selected] xul|menulist:focus-visible {
 }
 
 /* Use a 2px border so that selected row highlight is still visible behind
-    an existing high-contrast border that uses the background color */
-@media (prefers-contrast) {
+    an existing forced colors border that uses the background color */
+@media (forced-colors) {
   xul|treechildren::-moz-tree-row(selected) {
      border: 2px solid currentColor;
      border-radius: 4px;
@@ -1046,7 +1036,7 @@ xul|treecol:not([hideheader="true"], :first-child),
   border-image: linear-gradient(transparent 0%, transparent 20%, var(--in-content-box-border-color) 20%, var(--in-content-box-border-color) 80%, transparent 80%, transparent 100%) 1 1;
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   xul|treecol:not([hideheader="true"], :first-child),
   xul|treecolpicker {
     --in-content-box-border-color: var(--in-content-button-border-color);
@@ -1191,7 +1181,7 @@ input[type="text"][warning]:enabled:not(:focus) {
   align-items: center;
 }
 
-@media (prefers-contrast) {
+@media (forced-colors) {
   .sidebar-footer-link {
     /* We need a true transparent but in HCM this would compute to an actual color,
      * so select the page's background color instead: */

@@ -6,7 +6,7 @@ import {
   actionCreators as ac,
   actionTypes as at,
   actionUtils as au,
-} from "resource://activity-stream/common/Actions.sys.mjs";
+} from "resource://activity-stream/common/Actions.mjs";
 
 import { shortURL } from "resource://activity-stream/lib/ShortURL.sys.mjs";
 
@@ -24,6 +24,7 @@ const { AboutNewTab } = ChromeUtils.importESModule(
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
@@ -274,7 +275,7 @@ export class PlacesFeed {
     const win = action._target.browser.ownerGlobal;
     win.openTrustedLinkIn(
       urlToOpen,
-      where || win.whereToOpenLink(event),
+      where || lazy.BrowserUtils.whereToOpenLink(event),
       params
     );
 

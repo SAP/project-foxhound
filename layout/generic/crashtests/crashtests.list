@@ -394,7 +394,7 @@ load 571618-1.svg
 asserts(0-1) load 571975-1.html # bug 574889
 load 571995.xhtml
 load 574958.xhtml
-asserts(0-6) load 578977.html # bug 757305
+asserts(0-8) load 578977.html # bug 757305
 load 580504-1.xhtml
 load 582793-1.html
 load 585598-1.xhtml
@@ -622,8 +622,8 @@ load flex-nested-abspos-1.html
 pref(dom.meta-viewport.enabled,true) test-pref(font.size.inflation.emPerLine,15) asserts(0-100) load font-inflation-762332.html # bug 762332
 asserts-if(Android||cocoaWidget,0-2) load outline-on-frameset.xhtml # bug 762332, bug 1594135
 load summary-position-out-of-flow.html
-pref(widget.windows.window_occlusion_tracking.enabled,false) load text-overflow-bug666751-1.html # Bug 1819154
-pref(widget.windows.window_occlusion_tracking.enabled,false) load text-overflow-bug666751-2.html # Bug 1819154
+load text-overflow-bug666751-1.html
+load text-overflow-bug666751-2.html
 load text-overflow-bug670564.xhtml
 load text-overflow-bug671796.xhtml
 load text-overflow-bug713610.html
@@ -678,6 +678,7 @@ load 1405443.html
 load 1405813.html
 load 1405896.html
 load 1406252-1.html
+asserts(2) load 1410243-1.html # assertion is bug 574889
 load 1415185.html
 load 1416544.html
 load 1427824.html
@@ -804,6 +805,7 @@ load 1728319.html
 asserts(2-8) load 1730506.html # asserts from integer overflow & bogus sizes
 asserts(1-4) load 1730570.html # asserts from integer overflow & bogus sizes
 load 1734015.html
+skip-if(Android) load 1741488-1.html # printPreview doesn't work on android
 load 1776079.html
 asserts(0-2) load 1791606.html
 load 1799749.html
@@ -812,3 +814,4 @@ load 1816574.html
 load 1821603.html
 load 1822118.html
 load 1825434.html
+asserts(0-85) load 1881375-1.html # bug 1890687 - assertions about fragmentation invariants, failing many times because the test runs in a loop

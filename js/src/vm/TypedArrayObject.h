@@ -22,6 +22,12 @@
 
 namespace js {
 
+enum class ArraySortResult : uint32_t;
+
+namespace jit {
+class TrampolineNativeFrameLayout;
+}
+
 /*
  * TypedArrayObject
  *
@@ -101,11 +107,11 @@ class TypedArrayObject : public ArrayBufferViewObject {
   bool getElementPure(size_t index, Value* vp);
 
   /*
-   * Copy all elements from this typed array to vp. vp must point to rooted
-   * memory.
+   * Copy |length| elements from this typed array to vp. vp must point to rooted
+   * memory. |length| must not exceed the typed array's current length.
    */
   static bool getElements(JSContext* cx, Handle<TypedArrayObject*> tarray,
-                          Value* vp);
+                          size_t length, Value* vp);
 
   static bool GetTemplateObjectForNative(JSContext* cx, Native native,
                                          const JS::HandleValueArray args,
@@ -131,6 +137,7 @@ class TypedArrayObject : public ArrayBufferViewObject {
 
   static bool set(JSContext* cx, unsigned argc, Value* vp);
   static bool copyWithin(JSContext* cx, unsigned argc, Value* vp);
+  static bool sort(JSContext* cx, unsigned argc, Value* vp);
 
   bool convertValue(JSContext* cx, HandleValue v,
                     MutableHandleValue result) const;
@@ -149,6 +156,7 @@ class FixedLengthTypedArrayObject : public TypedArrayObject {
   static constexpr uint32_t INLINE_BUFFER_LIMIT =
       (NativeObject::MAX_FIXED_SLOTS - FIXED_DATA_START) * sizeof(Value);
 
+  inline gc::AllocKind allocKindForTenure() const;
   static inline gc::AllocKind AllocKindForLazyBuffer(size_t nbytes);
 
   size_t byteOffset() const {
@@ -306,10 +314,6 @@ bool DefineTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
                              uint64_t index, Handle<PropertyDescriptor> desc,
                              ObjectOpResult& result);
 
-// Sort a typed array in ascending order. The typed array may be wrapped, but
-// must not be detached.
-bool intrinsic_TypedArrayNativeSort(JSContext* cx, unsigned argc, Value* vp);
-
 static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
   switch (viewType) {
     case Scalar::Int8:
@@ -318,6 +322,7 @@ static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
       return 0;
     case Scalar::Int16:
     case Scalar::Uint16:
+    case Scalar::Float16:
       return 1;
     case Scalar::Int32:
     case Scalar::Uint32:
@@ -336,6 +341,9 @@ static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
 static inline constexpr unsigned TypedArrayElemSize(Scalar::Type viewType) {
   return 1u << TypedArrayShift(viewType);
 }
+
+extern ArraySortResult TypedArraySortFromJit(
+    JSContext* cx, jit::TrampolineNativeFrameLayout* frame);
 
 }  // namespace js
 

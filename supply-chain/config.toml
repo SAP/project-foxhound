@@ -19,9 +19,17 @@ url = "https://raw.githubusercontent.com/divviup/libprio-rs/main/supply-chain/au
 [imports.mozilla]
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
+[policy.any_all_workaround]
+audit-as-crates-io = true
+notes = "This is the upstream code plus the ARM intrinsics workaround from qcms, see bug 1882209."
+
 [policy.autocfg]
 audit-as-crates-io = true
 notes = "This is the upstream code plus a few local fixes, see bug 1685697."
+
+[policy."bindgen:0.69.4"]
+audit-as-crates-io = true
+notes = "This is the upstream code plus a fix for clang trunk. See bug 1894093."
 
 [policy.chardetng]
 audit-as-crates-io = true
@@ -38,14 +46,6 @@ notes = "This is a pinned version of the upstream code, presumably to get a fix 
 [policy.cose]
 audit-as-crates-io = true
 notes = "This is upstream plus a warning fix from bug 1823866."
-
-[policy.cssparser]
-audit-as-crates-io = true
-notes = "Upstream release plus a couple unpublished changes"
-
-[policy.cssparser-macros]
-audit-as-crates-io = true
-notes = "Upstream release plus a couple unpublished changes"
 
 [policy.d3d12]
 audit-as-crates-io = true
@@ -71,6 +71,12 @@ notes = "The dependencies on tokio-reactor and tokio-threadpools are just a hack
 [policy.gluesmith]
 criteria = "safe-to-run"
 notes = "Used for fuzzing."
+
+[policy.gpu-descriptor]
+audit-as-crates-io = true
+
+[policy.gpu-descriptor-types]
+audit-as-crates-io = true
 
 [policy.http3server]
 criteria = "safe-to-run"
@@ -103,10 +109,6 @@ notes = "This is a first-party crate which is also published to crates.io. We ce
 [policy.midir]
 audit-as-crates-io = true
 notes = "This is a pinned version of the upstream code, presumably to get a fix that hadn't been released yet. We should consider switching to the latest official release."
-
-[policy."mio:0.6.23"]
-audit-as-crates-io = true
-notes = "Version 0.6.23 is a local fork of upstream which just twiddles some dependencies."
 
 [policy."mio:0.8.8@git:9a2ef335c366044ffe73b1c4acabe50a1daefe05"]
 audit-as-crates-io = true
@@ -156,6 +158,10 @@ audit-as-crates-io = false
 
 [policy.peek-poke-derive]
 audit-as-crates-io = false
+
+[policy.plist]
+audit-as-crates-io = true
+notes = "This is the upstream code plus one local fix, see bug 1874167."
 
 [policy.pulse]
 audit-as-crates-io = false
@@ -233,6 +239,10 @@ notes = "Local override of the crates.io crate that uses a non-vendored local co
 [policy.wr_malloc_size_of]
 audit-as-crates-io = false
 
+[policy.zip]
+audit-as-crates-io = true
+notes = "Locally patched version of the zip crate to allow for reading omnijars."
+
 [[exemptions.ahash]]
 version = "0.7.6"
 criteria = "safe-to-deploy"
@@ -263,10 +273,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.bincode]]
 version = "1.3.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitflags]]
-version = "1.3.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.bitreader]]
@@ -434,14 +440,6 @@ criteria = "safe-to-deploy"
 version = "2.7.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.fuchsia-zircon]]
-version = "0.3.3"
-criteria = "safe-to-run"
-
-[[exemptions.fuchsia-zircon-sys]]
-version = "0.3.3"
-criteria = "safe-to-run"
-
 [[exemptions.futures-macro]]
 version = "0.3.21"
 criteria = "safe-to-deploy"
@@ -578,21 +576,9 @@ criteria = "safe-to-deploy"
 version = "0.8.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.mio-extras]]
-version = "2.0.6"
-criteria = "safe-to-run"
-
-[[exemptions.miow]]
-version = "0.3.7"
-criteria = "safe-to-run"
-
 [[exemptions.murmurhash3]]
 version = "0.0.5"
 criteria = "safe-to-deploy"
-
-[[exemptions.net2]]
-version = "0.2.37"
-criteria = "safe-to-run"
 
 [[exemptions.nix]]
 version = "0.15.0"
@@ -602,24 +588,12 @@ criteria = "safe-to-deploy"
 version = "0.2.7"
 criteria = "safe-to-deploy"
 
-[[exemptions.objc_exception]]
-version = "0.1.2"
-criteria = "safe-to-deploy"
-
 [[exemptions.object]]
 version = "0.28.4"
 criteria = "safe-to-deploy"
 
 [[exemptions.once_cell]]
 version = "1.12.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.owning_ref]]
-version = "0.4.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.packed_simd]]
-version = "0.3.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.phf]]
@@ -805,7 +779,3 @@ criteria = "safe-to-deploy"
 [[exemptions.xml-rs]]
 version = "0.8.4"
 criteria = "safe-to-deploy"
-
-[[exemptions.zip]]
-version = "0.6.2"
-criteria = "safe-to-run"

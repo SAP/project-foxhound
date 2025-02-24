@@ -36,9 +36,30 @@
 
 /* ::::: primary toolbar buttons ::::: */
 
+toolbarpaletteitem {
+  -moz-window-dragging: no-drag;
+  justify-content: flex-start;
+
+  &[removable="false"] {
+    opacity: 0.5;
+  }
+
+  @media not (-moz-platform: macos) {
+    &:is([place="palette"], [place="panel"], [place="toolbar"]) {
+      -moz-user-focus: normal;
+    }
+  }
+}
+
 .toolbarbutton-1 {
   :root:not([customizing]) &[disabled] {
     opacity: var(--toolbarbutton-disabled-opacity);
+  }
+
+  /* Special-case the overflow and the hamburger button so they show up disabled
+     in customize mode. */
+  &:is(#nav-bar-overflow-button, #PanelUI-menu-button)[disabled] {
+    fill-opacity: var(--toolbarbutton-disabled-opacity);
   }
 
   > .toolbarbutton-icon {
@@ -49,10 +70,6 @@
   > .toolbarbutton-badge-stack > .toolbarbutton-icon {
     width: 16px;
   }
-}
-
-.toolbarbutton-combined-buttons-dropmarker > .toolbarbutton-icon {
-  width: 12px;
 }
 
 toolbar .toolbarbutton-1 {
@@ -113,7 +130,7 @@ toolbar .toolbarbutton-1 {
 }
 
 #TabsToolbar .toolbarbutton-1 {
-  margin: 0 0 var(--tabs-navbar-shadow-size);
+  margin: 0;
 
   > .toolbarbutton-icon,
   > .toolbarbutton-text,
@@ -122,8 +139,8 @@ toolbar .toolbarbutton-1 {
   }
 }
 
-/* Adds padding to end of toolbar while making that space click the first button */
 #PanelUI-menu-button {
+  /* Adds padding to end of toolbar while making that space click the first button */
   padding-inline-end: var(--toolbar-start-end-padding);
 }
 
@@ -159,6 +176,63 @@ toolbar .toolbaritem-combined-buttons {
 
 toolbar[brighttext] .toolbaritem-combined-buttons > separator {
   opacity: .3;
+}
+
+#nav-bar-overflow-button {
+  list-style-image: url("chrome://global/skin/icons/chevron.svg");
+
+  #nav-bar:not([overflowing], [nonemptyoverflow], [customizing]) > & {
+    display: none;
+  }
+
+  /* The button should look both disabled and open in customize mode. */
+  #nav-bar[customizing] > & > .toolbarbutton-icon {
+    background-color: var(--toolbarbutton-active-background);
+  }
+
+  > .toolbarbutton-animatable-box {
+    visibility: hidden;
+    top: calc(50% - 8px); /* Vertically center the 16px tall animatable image */
+    width: 16px; /* Width of each frame within the SVG sprite */
+    height: 16px; /* Height of each frame within the SVG sprite */
+    -moz-context-properties: fill, stroke;
+    fill: var(--toolbarbutton-icon-fill);
+    stroke: var(--toolbarbutton-icon-fill-attention);
+
+    > .toolbarbutton-animatable-image {
+      background-image: url("chrome://browser/skin/chevron-animation.svg");
+      width: 848px;
+      height: 16px;
+      transform: translateX(0);
+    }
+  }
+
+  &[animate] {
+    > .toolbarbutton-icon {
+      fill: transparent;
+    }
+
+    > .toolbarbutton-animatable-box {
+      visibility: visible;
+
+      > .toolbarbutton-animatable-image {
+        animation-name: overflow-animation;
+        animation-timing-function: steps(52);
+        animation-duration: calc(52 * 16.667ms);
+      }
+    }
+  }
+}
+
+@keyframes overflow-animation {
+  from {
+    transform: translateX(0);
+  }
+  /* Bug 1831300 is on file for this. */
+  /* stylelint-disable-next-line keyframe-block-no-duplicate-selectors */
+  from {
+    transform: translateX(-832px);
+  }
 }
 
 /* ::::: bookmark buttons ::::: */
@@ -223,18 +297,6 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   }
 }
 
-/**
- * Ensure that the description is always at least as big as a bookmarks item,
- * where its icon is 16px (which may be more than inline text height);
- */
-#personal-toolbar-empty-description {
-  min-height: calc(16px + 2 * var(--bookmark-block-padding));
-}
-
-#bookmarks-toolbar-placeholder {
-  max-width: unset;
-}
-
 .bookmark-item > .toolbarbutton-icon {
   width: 16px;
   height: 16px;
@@ -242,6 +304,35 @@ toolbarbutton.bookmark-item:not(.subviewbutton) {
   #PlacesToolbarItems > & {
     margin-inline-end: 0;
   }
+}
+
+#personal-toolbar-empty-description {
+  -moz-window-dragging: no-drag;
+
+  /* Ensure that the description is always at least as big as a bookmarks item,
+   * where its icon is 16px (which may be more than inline text height); */
+  min-height: calc(16px + 2 * var(--bookmark-block-padding));
+}
+
+#bookmarks-toolbar-placeholder {
+  max-width: unset;
+}
+
+#bookmarks-toolbar-placeholder,
+#bookmarks-toolbar-button {
+  display: none;
+}
+
+toolbarpaletteitem[place="toolbar"] > #personal-bookmarks > #bookmarks-toolbar-placeholder,
+toolbarpaletteitem[place="palette"] > #personal-bookmarks > #bookmarks-toolbar-button,
+#personal-bookmarks:is([overflowedItem=true], [cui-areatype="panel"]) > #bookmarks-toolbar-button {
+  display: flex;
+}
+
+#nav-bar-customization-target > #personal-bookmarks,
+toolbar:not(#TabsToolbar) > #wrapper-personal-bookmarks,
+toolbar:not(#TabsToolbar) > #personal-bookmarks {
+  flex: 1 auto;
 }
 
 /* Force the display of the label for bookmarks */

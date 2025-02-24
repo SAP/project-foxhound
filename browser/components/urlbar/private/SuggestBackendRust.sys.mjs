@@ -136,11 +136,12 @@ export class SuggestBackendRust extends BaseFeature {
       suggestion.provider = type;
       suggestion.is_sponsored = type == "Amp" || type == "Yelp";
       if (Array.isArray(suggestion.icon)) {
-        suggestion.icon_blob = new Blob(
-          [new Uint8Array(suggestion.icon)],
-          type == "Yelp" ? { type: "image/svg+xml" } : null
-        );
+        suggestion.icon_blob = new Blob([new Uint8Array(suggestion.icon)], {
+          type: suggestion.iconMimetype ?? "",
+        });
+
         delete suggestion.icon;
+        delete suggestion.iconMimetype;
       }
     }
 
@@ -288,7 +289,10 @@ export class SuggestBackendRust extends BaseFeature {
     if (instance != this.#ingestInstance) {
       return;
     }
-    await (this.#ingestPromise = this.#ingestHelper());
+    this.#ingestPromise = new Promise(resolve => {
+      ChromeUtils.idleDispatch(() => this.#ingestHelper().finally(resolve));
+    });
+    await this.#ingestPromise;
   }
 
   async #ingestHelper() {

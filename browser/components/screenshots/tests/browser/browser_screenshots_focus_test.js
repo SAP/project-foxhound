@@ -46,7 +46,7 @@ async function restoreFocusOnEscape(initialFocusElem, helper) {
   );
   EventUtils.synthesizeKey("s", { shiftKey: true, accelKey: true });
 
-  let button = await helper.getPanelButton(".visible-page");
+  let button = await helper.getPanelButton("#visible-page");
   info("Panel is now visible, got button: " + button.className);
   info(
     `focusedElement: ${Services.focus.focusedElement.localName}.${Services.focus.focusedElement.className}`
@@ -88,7 +88,7 @@ add_task(async function testPanelFocused() {
       info("Opening Screenshots and waiting for the panel");
       helper.triggerUIFromToolbar();
 
-      let button = await helper.getPanelButton(".visible-page");
+      let button = await helper.getPanelButton("#visible-page");
       info("Panel is now visible, got button: " + button.className);
       info(
         `focusedElement: ${Services.focus.focusedElement.localName}.${Services.focus.focusedElement.className}`
@@ -117,9 +117,9 @@ add_task(async function testPanelFocused() {
 });
 
 add_task(async function testRestoreFocusToChromeOnEscape() {
-  for (let focusSelector of [
-    "#urlbar-input", // A focusable HTML chrome element
-    "tab[selected='true']", // The selected tab element
+  for (let getInitialFocusElem of [
+    () => gURLBar.inputField, // A focusable HTML chrome element
+    () => gBrowser.selectedTab, // The selected tab element
   ]) {
     await BrowserTestUtils.withNewTab(
       {
@@ -129,9 +129,8 @@ add_task(async function testRestoreFocusToChromeOnEscape() {
       async browser => {
         let helper = new ScreenshotsHelper(browser);
         helper.assertPanelNotVisible();
-        let initialFocusElem = document.querySelector(focusSelector);
         await SimpleTest.promiseFocus(window);
-        await restoreFocusOnEscape(initialFocusElem, helper);
+        await restoreFocusOnEscape(getInitialFocusElem(), helper);
       }
     );
   }
@@ -215,7 +214,7 @@ add_task(async function test_focusLastUsedMethod() {
       helper.triggerUIFromToolbar();
       await helper.waitForOverlay();
 
-      let expectedFocusedButton = await helper.getPanelButton(".visible-page");
+      let expectedFocusedButton = await helper.getPanelButton("#visible-page");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -233,17 +232,16 @@ add_task(async function test_focusLastUsedMethod() {
       let screenshotReady = TestUtils.topicObserved(
         "screenshots-preview-ready"
       );
-      let fullpageButton = await helper.getPanelButton(".full-page");
+      let fullpageButton = await helper.getPanelButton("#full-page");
       fullpageButton.click();
       await screenshotReady;
 
-      let dialog = helper.getDialog();
-      let retryButton = dialog._frame.contentDocument.getElementById("retry");
+      let retryButton = helper.getDialogButton("retry");
       retryButton.click();
 
       await helper.waitForOverlay();
 
-      expectedFocusedButton = await helper.getPanelButton(".full-page");
+      expectedFocusedButton = await helper.getPanelButton("#full-page");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -259,17 +257,16 @@ add_task(async function test_focusLastUsedMethod() {
       );
 
       screenshotReady = TestUtils.topicObserved("screenshots-preview-ready");
-      let visiblepageButton = await helper.getPanelButton(".visible-page");
+      let visiblepageButton = await helper.getPanelButton("#visible-page");
       visiblepageButton.click();
       await screenshotReady;
 
-      dialog = helper.getDialog();
-      retryButton = dialog._frame.contentDocument.getElementById("retry");
+      retryButton = helper.getDialogButton("retry");
       retryButton.click();
 
       await helper.waitForOverlay();
 
-      expectedFocusedButton = await helper.getPanelButton(".visible-page");
+      expectedFocusedButton = await helper.getPanelButton("#visible-page");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -288,10 +285,7 @@ add_task(async function test_focusLastUsedMethod() {
       expectedFocusedButton.click();
       await screenshotReady;
 
-      dialog = helper.getDialog();
-
-      expectedFocusedButton =
-        dialog._frame.contentDocument.getElementById("download");
+      expectedFocusedButton = helper.getDialogButton("download");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -302,28 +296,25 @@ add_task(async function test_focusLastUsedMethod() {
 
       is(
         Services.focus.focusedElement,
-        expectedFocusedButton,
+        expectedFocusedButton.buttonEl,
         "The download button in the preview dialog should have focus"
       );
 
       let screenshotExit = TestUtils.topicObserved("screenshots-exit");
-      let copyButton = dialog._frame.contentDocument.getElementById("copy");
+      let copyButton = helper.getDialogButton("copy");
       copyButton.click();
       await screenshotExit;
 
       helper.triggerUIFromToolbar();
       await helper.waitForOverlay();
 
-      let visibleButton = await helper.getPanelButton(".visible-page");
+      let visibleButton = await helper.getPanelButton("#visible-page");
 
       screenshotReady = TestUtils.topicObserved("screenshots-preview-ready");
       visibleButton.click();
       await screenshotReady;
 
-      dialog = helper.getDialog();
-
-      expectedFocusedButton =
-        dialog._frame.contentDocument.getElementById("copy");
+      expectedFocusedButton = helper.getDialogButton("copy");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -334,13 +325,12 @@ add_task(async function test_focusLastUsedMethod() {
 
       is(
         Services.focus.focusedElement,
-        expectedFocusedButton,
+        expectedFocusedButton.buttonEl,
         "The copy button in the preview dialog should have focus"
       );
 
       screenshotExit = TestUtils.topicObserved("screenshots-exit");
-      let downloadButton =
-        dialog._frame.contentDocument.getElementById("download");
+      let downloadButton = helper.getDialogButton("download");
       downloadButton.click();
 
       await Promise.all([screenshotExit, downloadFinishedPromise]);
@@ -350,16 +340,13 @@ add_task(async function test_focusLastUsedMethod() {
       helper.triggerUIFromToolbar();
       await helper.waitForOverlay();
 
-      visibleButton = await helper.getPanelButton(".visible-page");
+      visibleButton = await helper.getPanelButton("#visible-page");
 
       screenshotReady = TestUtils.topicObserved("screenshots-preview-ready");
       visibleButton.click();
       await screenshotReady;
 
-      dialog = helper.getDialog();
-
-      expectedFocusedButton =
-        dialog._frame.contentDocument.getElementById("download");
+      expectedFocusedButton = helper.getDialogButton("download");
 
       await BrowserTestUtils.waitForCondition(() => {
         return (
@@ -370,7 +357,7 @@ add_task(async function test_focusLastUsedMethod() {
 
       is(
         Services.focus.focusedElement,
-        expectedFocusedButton,
+        expectedFocusedButton.buttonEl,
         "The download button in the preview dialog should have focus"
       );
 
@@ -381,4 +368,90 @@ add_task(async function test_focusLastUsedMethod() {
   );
 
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function testFocusedIsLocked() {
+  await BrowserTestUtils.withNewTab(
+    {
+      gBrowser,
+      url: TEST_PAGE,
+    },
+    async browser => {
+      let helper = new ScreenshotsHelper(browser);
+      helper.triggerUIFromToolbar();
+      await helper.waitForOverlay();
+
+      let panel = await helper.waitForPanel();
+      let mozButtonGroup = panel
+        .querySelector("screenshots-buttons")
+        .shadowRoot.querySelector("moz-button-group");
+      let firstButton = mozButtonGroup.firstElementChild;
+      let lastButton = mozButtonGroup.lastElementChild;
+
+      firstButton.focus();
+
+      await BrowserTestUtils.waitForCondition(() => {
+        return firstButton.getRootNode().activeElement === firstButton;
+      }, "The first button in the panel should have focus");
+      info(
+        `Actual focused id: ${Services.focus.focusedElement.id}. Expected focused id: ${firstButton.id}`
+      );
+      is(
+        Services.focus.focusedElement,
+        firstButton,
+        "The first button in the panel should have focus"
+      );
+
+      EventUtils.synthesizeKey("KEY_Tab");
+
+      await BrowserTestUtils.waitForCondition(() => {
+        return lastButton.getRootNode().activeElement === lastButton;
+      }, "The last button in the panel should have focus");
+      info(
+        `Actual focused id: ${Services.focus.focusedElement.id}. Expected focused id: ${lastButton.id}`
+      );
+      is(
+        Services.focus.focusedElement,
+        lastButton,
+        "The last button in the panel should have focus"
+      );
+
+      EventUtils.synthesizeKey("KEY_Tab");
+
+      // Focus should move to the content document
+      await BrowserTestUtils.waitForCondition(() => {
+        return (
+          firstButton.getRootNode().activeElement !== firstButton &&
+          lastButton.getRootNode().activeElement !== lastButton
+        );
+      }, "The first and last buttons do not have focus");
+      Assert.notEqual(
+        Services.focus.focusedElement,
+        firstButton,
+        "The first button does not have focus"
+      );
+      Assert.notEqual(
+        Services.focus.focusedElement,
+        lastButton,
+        "The last button does not have focus"
+      );
+
+      EventUtils.synthesizeKey("KEY_Tab");
+
+      info(
+        `Actual focused id: ${Services.focus.focusedElement.id}. Expected focused id: ${firstButton.id}`
+      );
+      await BrowserTestUtils.waitForCondition(() => {
+        return firstButton.getRootNode().activeElement === firstButton;
+      }, "The first button in the panel should have focus");
+      info(
+        `Actual focused id: ${Services.focus.focusedElement.id}. Expected focused id: ${firstButton.id}`
+      );
+      is(
+        Services.focus.focusedElement,
+        firstButton,
+        "The first button in the panel should have focus"
+      );
+    }
+  );
 });

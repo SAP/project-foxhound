@@ -1,8 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-/* eslint-env worker */
-
 "use strict";
 
 // Trivial worker definition
@@ -43,7 +41,7 @@ var Agent = {
     return args;
   },
 
-  throwError(msg, ...args) {
+  throwError(msg) {
     throw new Error(msg);
   },
 };

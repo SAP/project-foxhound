@@ -71,17 +71,20 @@ const FILE_ACTIVE_UPDATE_XML = "active-update.xml";
 const FILE_ACTIVE_UPDATE_XML_TMP = "active-update.xml.tmp";
 const FILE_APPLICATION_INI = "application.ini";
 const FILE_BACKUP_UPDATE_CONFIG_JSON = "backup-update-config.json";
-const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
 const FILE_BACKUP_UPDATE_ELEVATED_LOG = "backup-update-elevated.log";
+const FILE_BACKUP_UPDATE_LOG = "backup-update.log";
 const FILE_BT_RESULT = "bt.result";
-const FILE_LAST_UPDATE_LOG = "last-update.log";
+const FILE_CHANNEL_PREFS =
+  AppConstants.platform == "macosx" ? "ChannelPrefs" : "channel-prefs.js";
 const FILE_LAST_UPDATE_ELEVATED_LOG = "last-update-elevated.log";
+const FILE_LAST_UPDATE_LOG = "last-update.log";
 const FILE_PRECOMPLETE = "precomplete";
 const FILE_PRECOMPLETE_BAK = "precomplete.bak";
 const FILE_UPDATE_CONFIG_JSON = "update-config.json";
-const FILE_UPDATE_LOG = "update.log";
 const FILE_UPDATE_ELEVATED_LOG = "update-elevated.log";
+const FILE_UPDATE_LOG = "update.log";
 const FILE_UPDATE_MAR = "update.mar";
+const FILE_UPDATE_SETTINGS_FRAMEWORK = "UpdateSettings";
 const FILE_UPDATE_SETTINGS_INI = "update-settings.ini";
 const FILE_UPDATE_SETTINGS_INI_BAK = "update-settings.ini.bak";
 const FILE_UPDATE_STATUS = "update.status";
@@ -173,15 +176,16 @@ function waitForEvent(topic, status = null) {
 }
 
 /* Triggers post-update processing */
-function testPostUpdateProcessing() {
-  gAUS.observe(null, "test-post-update-processing", "");
+async function testPostUpdateProcessing() {
+  await gAUS.internal.postUpdateProcessing();
 }
 
 /* Initializes the update service stub */
-function initUpdateServiceStub() {
-  Cc["@mozilla.org/updates/update-service-stub;1"].createInstance(
-    Ci.nsISupports
-  );
+async function initUpdateServiceStub() {
+  const updateServiceStub = Cc[
+    "@mozilla.org/updates/update-service-stub;1"
+  ].getService(Ci.nsIApplicationUpdateServiceStub);
+  await updateServiceStub.init();
 }
 
 /**
@@ -193,10 +197,7 @@ function initUpdateServiceStub() {
  *         to populate the update metadata.
  */
 function reloadUpdateManagerData(skipFiles = false) {
-  let observeData = skipFiles ? "skip-files" : "";
-  gUpdateManager
-    .QueryInterface(Ci.nsIObserver)
-    .observe(null, "um-reload-update-data", observeData);
+  gUpdateManager.internal.reload(skipFiles);
 }
 
 const observer = {
@@ -223,6 +224,7 @@ function setUpdateChannel(aChannel) {
   debugDump(
     "setting default pref " + PREF_APP_UPDATE_CHANNEL + " to " + gChannel
   );
+  gDefaultPrefBranch.unlockPref(PREF_APP_UPDATE_CHANNEL);
   gDefaultPrefBranch.setCharPref(PREF_APP_UPDATE_CHANNEL, gChannel);
   gPrefRoot.addObserver(PREF_APP_UPDATE_CHANNEL, observer);
 }

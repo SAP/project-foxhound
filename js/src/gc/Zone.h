@@ -15,6 +15,8 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/TimeStamp.h"
 
+#include <array>
+
 #include "jstypes.h"
 
 #include "ds/Bitmap.h"
@@ -23,6 +25,7 @@
 #include "gc/FindSCCs.h"
 #include "gc/GCMarker.h"
 #include "gc/NurseryAwareHashMap.h"
+#include "gc/Policy.h"
 #include "gc/Pretenuring.h"
 #include "gc/Statistics.h"
 #include "gc/ZoneAllocator.h"
@@ -64,6 +67,23 @@ class ZoneAllCellIter;
 
 template <typename T>
 class ZoneCellIter;
+
+#ifdef JS_GC_ZEAL
+
+class MissingAllocSites {
+ public:
+  using SiteMap = JS::GCHashMap<uint32_t, UniquePtr<AllocSite>,
+                                DefaultHasher<uint32_t>, SystemAllocPolicy>;
+
+  using ScriptMap = JS::GCHashMap<WeakHeapPtr<JSScript*>, SiteMap,
+                                  StableCellHasher<WeakHeapPtr<JSScript*>>,
+                                  SystemAllocPolicy>;
+  WeakCache<ScriptMap> scriptMap;
+
+  explicit MissingAllocSites(JS::Zone* zone) : scriptMap(zone) {}
+};
+
+#endif  // JS_GC_ZEAL
 
 }  // namespace gc
 
@@ -137,6 +157,189 @@ class MOZ_NON_TEMPORARY_CLASS FunctionToStringCache {
 
   MOZ_ALWAYS_INLINE JSString* lookup(BaseScript* script) const;
   MOZ_ALWAYS_INLINE void put(BaseScript* script, JSString* string);
+};
+
+// HashAndLength is a simple class encapsulating the combination of a HashNumber
+// and a (string) length into a single 64-bit value. Having them bundled
+// together like this enables us to compare pairs of hashes and lengths with a
+// single 64-bit comparison.
+class HashAndLength {
+ public:
+  MOZ_ALWAYS_INLINE explicit HashAndLength(uint64_t initialValue = unsetValue())
+      : mHashAndLength(initialValue) {}
+  MOZ_ALWAYS_INLINE HashAndLength(HashNumber hash, uint32_t length)
+      : mHashAndLength(uint64FromHashAndLength(hash, length)) {}
+
+  void MOZ_ALWAYS_INLINE set(HashNumber hash, uint32_t length) {
+    mHashAndLength = uint64FromHashAndLength(hash, length);
+  }
+
+  constexpr MOZ_ALWAYS_INLINE HashNumber hash() const {
+    return hashFromUint64(mHashAndLength);
+  }
+  constexpr MOZ_ALWAYS_INLINE uint32_t length() const {
+    return lengthFromUint64(mHashAndLength);
+  }
+
+  constexpr MOZ_ALWAYS_INLINE bool isEqual(HashNumber hash,
+                                           uint32_t length) const {
+    return mHashAndLength == uint64FromHashAndLength(hash, length);
+  }
+
+  // This function is used at compile-time to verify and that we pack and unpack
+  // hash and length values consistently.
+  static constexpr bool staticChecks() {
+    std::array<HashNumber, 5> hashes{0x00000000, 0xffffffff, 0xf0f0f0f0,
+                                     0x0f0f0f0f, 0x73737373};
+    std::array<uint32_t, 6> lengths{0, 1, 2, 3, 11, 56};
+
+    for (const HashNumber hash : hashes) {
+      for (const uint32_t length : lengths) {
+        const uint64_t lengthAndHash = uint64FromHashAndLength(hash, length);
+        if (hashFromUint64(lengthAndHash) != hash) {
+          return false;
+        }
+        if (lengthFromUint64(lengthAndHash) != length) {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  static constexpr MOZ_ALWAYS_INLINE uint64_t unsetValue() {
+    // This needs to be a combination of hash and length that would never occur
+    // together. There is only one string of length zero, and its hash is zero,
+    // so the hash here can be anything except zero.
+    return uint64FromHashAndLength(0xffffffff, 0);
+  }
+
+ private:
+  uint64_t mHashAndLength;
+
+  static constexpr MOZ_ALWAYS_INLINE uint64_t
+  uint64FromHashAndLength(HashNumber hash, uint32_t length) {
+    return (static_cast<uint64_t>(length) << 32) | hash;
+  }
+
+  static constexpr MOZ_ALWAYS_INLINE uint32_t
+  lengthFromUint64(uint64_t hashAndLength) {
+    return static_cast<uint32_t>(hashAndLength >> 32);
+  }
+
+  static constexpr MOZ_ALWAYS_INLINE HashNumber
+  hashFromUint64(uint64_t hashAndLength) {
+    return hashAndLength & 0xffffffff;
+  }
+};
+
+static_assert(HashAndLength::staticChecks());
+
+// AtomCacheHashTable is a medium-capacity, low-overhead cache for matching
+// strings to previously-added JSAtoms.
+// This cache is very similar to a typical CPU memory cache. We use the low bits
+// of the hash as an index into a table of sets of entries. Cache eviction
+// follows a "least recently added" policy.
+// All of the operations here are designed to be low-cost and efficient for
+// modern CPU architectures. Failed lookups should incur at most one CPU memory
+// cache miss and successful lookups should incur at most three (depending on
+// whether or not the underlying chararacter buffers are already in the cache).
+class AtomCacheHashTable {
+ public:
+  static MOZ_ALWAYS_INLINE constexpr uint32_t computeIndexFromHash(
+      const HashNumber hash) {
+    // Simply use the low bits of the hash value as the cache index.
+    return hash & (sSize - 1);
+  }
+
+  MOZ_ALWAYS_INLINE JSAtom* lookupForAdd(
+      const AtomHasher::Lookup& lookup) const {
+    MOZ_ASSERT(lookup.atom == nullptr, "Lookup by atom is not supported");
+
+    const uint32_t index = computeIndexFromHash(lookup.hash);
+
+    const EntrySet& entrySet = mEntrySets[index];
+    for (const Entry& entry : entrySet.mEntries) {
+      JSAtom* const atom = entry.mAtom;
+
+      if (!entry.mHashAndLength.isEqual(lookup.hash, lookup.length)) {
+        continue;
+      }
+
+      // This is annotated with MOZ_UNLIKELY because it virtually never happens
+      // that, after matching the hash and the length, the string isn't a match.
+      if (MOZ_UNLIKELY(!lookup.StringsMatch(*atom))) {
+        continue;
+      }
+
+      return atom;
+    }
+
+    return nullptr;
+  }
+
+  MOZ_ALWAYS_INLINE void add(const HashNumber hash, JSAtom* atom) {
+    const uint32_t index = computeIndexFromHash(hash);
+
+    mEntrySets[index].add(hash, atom->length(), atom);
+  }
+
+ private:
+  struct Entry {
+    MOZ_ALWAYS_INLINE Entry()
+        : mHashAndLength(HashAndLength::unsetValue()), mAtom(nullptr) {}
+
+    MOZ_ALWAYS_INLINE void set(const HashNumber hash, const uint32_t length,
+                               JSAtom* const atom) {
+      mHashAndLength.set(hash, length);
+      mAtom = atom;
+    }
+
+    // Hash and length are also available, from JSAtom and JSString
+    // respectively, but are cached here to avoid likely cache misses in the
+    // frequent case of a missed lookup.
+    HashAndLength mHashAndLength;
+    // No read barrier is required here because the table is cleared at the
+    // start of GC.
+    JSAtom* mAtom;
+  };
+
+  static_assert(sizeof(Entry) <= 16);
+
+  // EntrySet represents a bundling of all of the Entry's that are mapped to the
+  // same index.
+  // NOTE/TODO: Since we have a tendency to use the entirety of this structure
+  // together, it would be really nice to mark this class with alignas(64) to
+  // ensure that the entire thing ends up on a single (hardware) cache line but
+  // we can't do that because AtomCacheHashTable is allocated with js::UniquePtr
+  // which doesn't support alignments greater than 8. In practice, on my Windows
+  // machine at least, I am seeing that these objects *are* 64-byte aligned, but
+  // it would be nice to guarantee that this will be the case.
+  struct EntrySet {
+    MOZ_ALWAYS_INLINE void add(const HashNumber hash, const uint32_t length,
+                               JSAtom* const atom) {
+      MOZ_ASSERT(mEntries[0].mAtom != atom);
+      MOZ_ASSERT(mEntries[1].mAtom != atom);
+      MOZ_ASSERT(mEntries[2].mAtom != atom);
+      MOZ_ASSERT(mEntries[3].mAtom != atom);
+      mEntries[3] = mEntries[2];
+      mEntries[2] = mEntries[1];
+      mEntries[1] = mEntries[0];
+      mEntries[0].set(hash, length, atom);
+    }
+
+    std::array<Entry, 4> mEntries;
+  };
+
+  static_assert(sizeof(EntrySet) <= 64,
+                "EntrySet will not fit in a cache line");
+
+  // This value was picked empirically based on performance testing using SP2
+  // and SP3. 2k was better than 1k but 4k was not much better than 2k.
+  static constexpr uint32_t sSize = 2 * 1024;
+  static_assert(mozilla::IsPowerOfTwo(sSize));
+  std::array<EntrySet, sSize> mEntrySets;
 };
 
 }  // namespace js
@@ -281,7 +484,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   js::MainThreadOrGCTaskData<js::SparseBitmap> markedAtoms_;
 
   // Set of atoms recently used by this Zone. Purged on GC.
-  js::MainThreadOrGCTaskData<js::AtomSet> atomCache_;
+  js::MainThreadOrGCTaskData<js::UniquePtr<js::AtomCacheHashTable>> atomCache_;
 
   // Cache storing allocated external strings. Purged on GC.
   js::MainThreadOrGCTaskData<js::ExternalStringCache> externalStringCache_;
@@ -339,6 +542,11 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   js::MainThreadOrGCTaskData<ObjectVector> objectsWithWeakPointers;
 
  public:
+#ifdef JS_GC_ZEAL
+  // Must come after weakCaches_ above.
+  js::UniquePtr<js::gc::MissingAllocSites> missingSites;
+#endif  // JS_GC_ZEAL
+
   static JS::Zone* from(ZoneAllocator* zoneAlloc) {
     return static_cast<Zone*>(zoneAlloc);
   }
@@ -571,14 +779,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     }
   }
 
-  void afterAddDelegate(JSObject* wrapper) {
-    if (needsIncrementalBarrier()) {
-      afterAddDelegateInternal(wrapper);
-    }
-  }
-
   void beforeClearDelegateInternal(JSObject* wrapper, JSObject* delegate);
-  void afterAddDelegateInternal(JSObject* wrapper);
   js::gc::EphemeronEdgeTable& gcEphemeronEdges() {
     return gcEphemeronEdges_.ref();
   }
@@ -613,7 +814,16 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   js::SparseBitmap& markedAtoms() { return markedAtoms_.ref(); }
 
-  js::AtomSet& atomCache() { return atomCache_.ref(); }
+  // The atom cache is "allocate-on-demand". This function can return nullptr if
+  // the allocation failed.
+  js::AtomCacheHashTable* atomCache() {
+    if (atomCache_.ref()) {
+      return atomCache_.ref().get();
+    }
+
+    atomCache_ = js::MakeUnique<js::AtomCacheHashTable>();
+    return atomCache_.ref().get();
+  }
 
   void purgeAtomCache();
 
@@ -677,18 +887,7 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 #endif
 
   // Support for invalidating fuses
-
-  // A dependent script set pairs a fuse with a set of scripts which depend
-  // on said fuse; this is a vector of script sets because the expectation for
-  // now is that the number of runtime wide invalidating fuses will be small.
-  // This will need to be revisited (convert to HashMap?) should that no
-  // longer be the case
-  //
-  // Note: This isn't  traced through the zone, but rather through the use
-  // of JS::WeakCache.
-  js::Vector<js::DependentScriptSet, 1, js::SystemAllocPolicy> fuseDependencies;
-  js::DependentScriptSet* getOrCreateDependentScriptSet(
-      JSContext* cx, js::InvalidatingFuse* fuse);
+  js::DependentScriptGroup fuseDependencies;
 
  private:
   js::jit::JitZone* createJitZone(JSContext* cx);

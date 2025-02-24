@@ -102,6 +102,8 @@ class SVGImageElement final : public SVGImageElementBase,
   gfx::Rect GeometryBounds(const gfx::Matrix& aToBoundsSpace);
 
  protected:
+  void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute) override;
+
   nsresult LoadSVGImage(bool aForce, bool aNotify);
   bool ShouldLoadImage() const;
 

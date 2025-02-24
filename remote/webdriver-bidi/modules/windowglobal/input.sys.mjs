@@ -34,6 +34,10 @@ class InputModule extends WindowGlobalBiDiModule {
     const actionChain = lazy.action.Chain.fromJSON(this.#actionState, actions);
 
     await actionChain.dispatch(this.#actionState, this.messageHandler.window);
+
+    // Terminate the current wheel transaction if there is one. Wheel
+    // transactions should not live longer than a single action chain.
+    ChromeUtils.endWheelTransaction();
   }
 
   async releaseActions() {
@@ -72,7 +76,7 @@ class InputModule extends WindowGlobalBiDiModule {
       try {
         fileObjects.push(await File.createFromFileName(file));
       } catch (e) {
-        throw new lazy.error.InvalidArgumentError(
+        throw new lazy.error.UnsupportedOperationError(
           `Failed to add file ${file} (${e})`
         );
       }

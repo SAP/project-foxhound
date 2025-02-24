@@ -1,4 +1,4 @@
-// |reftest| skip-if(xulRuntime.OS=="WINNT") -- Windows doesn't accept IANA names for the TZ env variable
+// |reftest| skip-if(winWidget) -- Windows doesn't accept IANA names for the TZ env variable
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -28,6 +28,7 @@ inTimeZone("MST", () => {
 
     // 1-12 for first number should be month
     "1-09-12": new Date(2012, Month.January, 9),
+    "1-09-0012": new Date(2012, Month.January, 9),
     "1-09-2012": new Date(2012, Month.January, 9),
     "12-09-12": new Date(2012, Month.December, 9),
 

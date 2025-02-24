@@ -270,6 +270,9 @@
 #ifdef MOZ_WIDGET_GTK
 #  include "nsAppShell.h"
 #endif
+#ifdef MOZ_ENABLE_DBUS
+#  include "DBusService.h"
+#endif
 
 extern uint32_t gRestartMode;
 extern void InstallSignalHandlers(const char* ProgramName);
@@ -288,8 +291,6 @@ static const char kPrefHealthReportUploadEnabled[] =
 static const char kPrefDefaultAgentEnabled[] = "default-browser-agent.enabled";
 
 static const char kPrefServicesSettingsServer[] = "services.settings.server";
-static const char kPrefSecurityContentSignatureRootHash[] =
-    "security.content.signature.root_hash";
 static const char kPrefSetDefaultBrowserUserChoicePref[] =
     "browser.shell.setDefaultBrowserUserChoice";
 #endif  // defined(MOZ_DEFAULT_BROWSER_AGENT)
@@ -580,7 +581,7 @@ bool BrowserTabsRemoteAutostart() {
   // then we could remove this automation-only env variable.
   if (gBrowserTabsRemoteAutostart && xpc::AreNonLocalConnectionsDisabled()) {
     const char* forceDisable = PR_GetEnv("MOZ_FORCE_DISABLE_E10S");
-    if (forceDisable && *forceDisable == '1') {
+    if (forceDisable && !strcmp(forceDisable, "1")) {
       gBrowserTabsRemoteAutostart = false;
       status = kE10sForceDisabled;
     }
@@ -793,11 +794,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetLiveWin32kLockdownState() {
       return nsIXULRuntime::ContentWin32kLockdownState::
           IncompatibleMitigationPolicy;
     }
-  }
-
-  // Non-native theming is required as well
-  if (!StaticPrefs::widget_non_native_theme_enabled()) {
-    return nsIXULRuntime::ContentWin32kLockdownState::MissingNonNativeTheming;
   }
 
   // Win32k Lockdown requires Remote WebGL, but it may be disabled on
@@ -2150,6 +2146,14 @@ static void DumpHelp() {
   printf("  --headless         Run without a GUI.\n");
 #endif
 
+#if defined(MOZ_ENABLE_DBUS)
+  printf(
+      "  --dbus-service <launcher>  Run as DBus service for "
+      "org.freedesktop.Application and\n"
+      "                             set a launcher (usually /usr/bin/appname "
+      "script) for it.");
+#endif
+
   // this works, but only after the components have registered.  so if you drop
   // in a new command line handler, --help won't not until the second run. out
   // of the bug, because we ship a component.reg file, it works correctly.
@@ -2450,8 +2454,6 @@ static void OnDefaultAgentRemoteSettingsPrefChanged(const char* aPref,
   nsAutoString valueName;
   if (strcmp(aPref, kPrefServicesSettingsServer) == 0) {
     valueName.AssignLiteral("ServicesSettingsServer");
-  } else if (strcmp(aPref, kPrefSecurityContentSignatureRootHash) == 0) {
-    valueName.AssignLiteral("SecurityContentSignatureRootHash");
   } else {
     return;
   }
@@ -2648,8 +2650,8 @@ static nsresult ProfileMissingDialog(nsINativeAppSupport* aNative) {
 #  ifdef MOZ_BACKGROUNDTASKS
   if (BackgroundTasks::IsBackgroundTaskMode()) {
     // We should never get to this point in background task mode.
-    Output(false,
-           "Could not determine any profile running in backgroundtask mode!\n");
+    printf_stderr(
+        "Could not determine any profile running in backgroundtask mode!\n");
     return NS_ERROR_ABORT;
   }
 #  endif  // MOZ_BACKGROUNDTASKS
@@ -3776,8 +3778,15 @@ static bool CheckForUserMismatch() { return false; }
 void mozilla::startup::IncreaseDescriptorLimits() {
 #ifdef XP_UNIX
   // Increase the fd limit to accomodate IPC resources like shared memory.
+#  ifdef XP_DARWIN
+  // We use Mach IPC for shared memory, so a lower limit suffices.
   // See also the Darwin case in config/external/nspr/pr/moz.build
-  static const rlim_t kFDs = 4096;
+  static constexpr rlim_t kFDs = 4096;
+#  else   // Unix but not Darwin
+  // This can be increased if needed, but also be aware that Linux
+  // distributions may impose hard limits less than this.
+  static constexpr rlim_t kFDs = 65536;
+#  endif  // Darwin or not
   struct rlimit rlim;
 
   if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
@@ -4389,6 +4398,24 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     *aExitFlag = true;
     return 0;
   }
+
+#ifdef MOZ_ENABLE_DBUS
+  const char* dbusServiceLauncher = nullptr;
+  ar = CheckArg("dbus-service", &dbusServiceLauncher, CheckArgFlag::None);
+  if (ar == ARG_BAD) {
+    Output(true, "Missing launcher param for --dbus-service\n");
+    return 1;
+  }
+  if (ar == ARG_FOUND) {
+    UniquePtr<DBusService> dbusService =
+        MakeUnique<DBusService>(dbusServiceLauncher);
+    if (dbusService->Init()) {
+      dbusService->Run();
+    }
+    *aExitFlag = true;
+    return 0;
+  }
+#endif
 
   rv = XRE_InitCommandLine(gArgc, gArgv);
   NS_ENSURE_SUCCESS(rv, 1);
@@ -5160,6 +5187,9 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   // the command line regardless of whether this is a downgrade or not.
   if (!CheckArg("allow-downgrade") && isDowngrade &&
       !EnvHasValue("MOZ_ALLOW_DOWNGRADE")) {
+#  ifdef XP_MACOSX
+    InitializeMacApp();
+#  endif
     rv = CheckDowngrade(mProfD, mNativeApp, mProfileSvc, lastVersion);
     if (rv == NS_ERROR_LAUNCHED_CHILD_PROCESS || rv == NS_ERROR_ABORT) {
       *aExitFlag = true;
@@ -5604,9 +5634,6 @@ nsresult XREMain::XRE_mainRun() {
         Preferences::RegisterCallbackAndCall(
             &OnDefaultAgentRemoteSettingsPrefChanged,
             kPrefServicesSettingsServer);
-        Preferences::RegisterCallbackAndCall(
-            &OnDefaultAgentRemoteSettingsPrefChanged,
-            kPrefSecurityContentSignatureRootHash);
 
         Preferences::RegisterCallbackAndCall(
             &OnSetDefaultBrowserUserChoicePrefChanged,

@@ -517,9 +517,7 @@ already_AddRefed<WorkerScriptLoader> WorkerScriptLoader::Create(
   }
 
   // Set up the module loader, if it has not been initialzied yet.
-  if (!aWorkerPrivate->IsServiceWorker()) {
-    self->InitModuleLoader();
-  }
+  self->InitModuleLoader();
 
   return self.forget();
 }
@@ -1027,6 +1025,18 @@ nsresult WorkerScriptLoader::LoadScript(
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+
+    // Set the IsInThirdPartyContext for the channel's loadInfo according to the
+    // partitionKey of the principal. The worker is foreign if it's using
+    // partitioned principal, i.e. the partitionKey is not empty. In this case,
+    // we need to set the bit to the channel's loadInfo.
+    if (!principal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
+      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+      rv = loadInfo->SetIsInThirdPartyContext(true);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+    }
   }
 
   // Associate any originating stack with the channel.
@@ -1065,8 +1075,8 @@ nsresult WorkerScriptLoader::LoadScript(
     // This flag reflects the fact that if the worker is created under a
     // third-party context.
     nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-    loadInfo->SetIsThirdPartyContextToTopWindow(
-        mWorkerRef->Private()->IsThirdPartyContextToTopWindow());
+    loadInfo->SetIsInThirdPartyContext(
+        mWorkerRef->Private()->IsThirdPartyContext());
 
     Maybe<ClientInfo> clientInfo;
     clientInfo.emplace(loadContext->mClientInfo.ref());
@@ -1643,7 +1653,8 @@ void ScriptLoaderRunnable::DispatchProcessPendingRequests() {
         Span<RefPtr<ThreadSafeRequestHandle>>{maybeRangeToExecute->first,
                                               maybeRangeToExecute->second});
 
-    if (!runnable->Dispatch() && mScriptLoader->mSyncLoopTarget) {
+    if (!runnable->Dispatch(mWorkerRef->Private()) &&
+        mScriptLoader->mSyncLoopTarget) {
       MOZ_ASSERT(false, "This should never fail!");
     }
   }
@@ -1653,8 +1664,7 @@ ScriptExecutorRunnable::ScriptExecutorRunnable(
     WorkerScriptLoader* aScriptLoader, WorkerPrivate* aWorkerPrivate,
     nsISerialEventTarget* aSyncLoopTarget,
     Span<RefPtr<ThreadSafeRequestHandle>> aLoadedRequests)
-    : MainThreadWorkerSyncRunnable(aWorkerPrivate, aSyncLoopTarget,
-                                   "ScriptExecutorRunnable"),
+    : MainThreadWorkerSyncRunnable(aSyncLoopTarget, "ScriptExecutorRunnable"),
       mScriptLoader(aScriptLoader),
       mLoadedRequests(aLoadedRequests) {}
 
@@ -1856,12 +1866,6 @@ void ReportLoadError(ErrorResult& aRv, nsresult aLoadResult,
                       NS_ConvertUTF16toUTF8(aScriptURL).get());
 
   switch (aLoadResult) {
-    case NS_ERROR_FILE_NOT_FOUND:
-    case NS_ERROR_NOT_AVAILABLE:
-    case NS_ERROR_CORRUPTED_CONTENT:
-      aRv.Throw(NS_ERROR_DOM_NETWORK_ERR);
-      break;
-
     case NS_ERROR_MALFORMED_URI:
     case NS_ERROR_DOM_SYNTAX_ERR:
       aRv.ThrowSyntaxError(err);
@@ -1877,7 +1881,7 @@ void ReportLoadError(ErrorResult& aRv, nsresult aLoadResult,
       // make it impossible for consumers to realize that our error was
       // NS_BINDING_ABORTED.
       aRv.Throw(aLoadResult);
-      return;
+      break;
 
     case NS_ERROR_DOM_BAD_URI:
       // This is actually a security error.
@@ -1885,15 +1889,16 @@ void ReportLoadError(ErrorResult& aRv, nsresult aLoadResult,
       aRv.ThrowSecurityError(err);
       break;
 
+    case NS_ERROR_FILE_NOT_FOUND:
+    case NS_ERROR_NOT_AVAILABLE:
+    case NS_ERROR_CORRUPTED_CONTENT:
+    case NS_ERROR_DOM_NETWORK_ERR:
+    // For lack of anything better, go ahead and throw a NetworkError here.
+    // We don't want to throw a JS exception, because for toplevel script
+    // loads that would get squelched.
     default:
-      // For lack of anything better, go ahead and throw a NetworkError here.
-      // We don't want to throw a JS exception, because for toplevel script
-      // loads that would get squelched.
-      aRv.ThrowNetworkError(nsPrintfCString(
-          "Failed to load worker script at %s (nsresult = 0x%" PRIx32 ")",
-          NS_ConvertUTF16toUTF8(aScriptURL).get(),
-          static_cast<uint32_t>(aLoadResult)));
-      return;
+      aRv.Throw(NS_ERROR_DOM_NETWORK_ERR);
+      break;
   }
 }
 

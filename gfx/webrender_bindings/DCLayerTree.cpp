@@ -70,8 +70,8 @@ UniquePtr<DCLayerTree> DCLayerTree::Create(gl::GLContext* aGL,
     return nullptr;
   }
 
-  auto layerTree =
-      MakeUnique<DCLayerTree>(aGL, aEGLConfig, aDevice, aCtx, dCompDevice);
+  auto layerTree = MakeUnique<DCLayerTree>(aGL, aEGLConfig, aDevice, aCtx,
+                                           aHwnd, dCompDevice);
   if (!layerTree->Initialize(aHwnd, aError)) {
     return nullptr;
   }
@@ -83,11 +83,12 @@ void DCLayerTree::Shutdown() { DCLayerTree::sGpuOverlayInfo = nullptr; }
 
 DCLayerTree::DCLayerTree(gl::GLContext* aGL, EGLConfig aEGLConfig,
                          ID3D11Device* aDevice, ID3D11DeviceContext* aCtx,
-                         IDCompositionDevice2* aCompositionDevice)
+                         HWND aHwnd, IDCompositionDevice2* aCompositionDevice)
     : mGL(aGL),
       mEGLConfig(aEGLConfig),
       mDevice(aDevice),
       mCtx(aCtx),
+      mHwnd(aHwnd),
       mCompositionDevice(aCompositionDevice),
       mDebugCounter(false),
       mDebugVisualRedrawRegions(false),
@@ -750,9 +751,9 @@ DCSurface* DCExternalSurfaceWrapper::EnsureSurfaceForExternalImage(
     auto cprofileOut = mDCLayerTree->OutputColorProfile();
     bool pretendSrgb = true;
     if (pretendSrgb) {
-      cprofileOut = color::ColorProfileDesc::From({
-          color::Chromaticities::Srgb(),
-          color::PiecewiseGammaDesc::Srgb(),
+      cprofileOut = color::ColorProfileDesc::From(color::ColorspaceDesc{
+          .chrom = color::Chromaticities::Srgb(),
+          .tf = color::PiecewiseGammaDesc::Srgb(),
       });
     }
     const auto conversion = color::ColorProfileConversionDesc::From({
@@ -1190,6 +1191,44 @@ static UINT GetVendorId(ID3D11VideoDevice* const aVideoDevice) {
   return adapterDesc.VendorId;
 }
 
+struct NvidiaVSRGetData_v1 {
+  UINT vsrGPUisVSRCapable : 1;   // 01/32, 1: GPU is VSR capable
+  UINT vsrOtherFieldsValid : 1;  // 02/32, 1: Other status fields are valid
+  // remaining fields are valid if vsrOtherFieldsValid is set - requires
+  // previous execution of VPBlt with SetStreamExtension for VSR enabled.
+  UINT vsrEnabled : 1;           // 03/32, 1: VSR is enabled
+  UINT vsrIsInUseForThisVP : 1;  // 04/32, 1: VSR is in use by this Video
+                                 // Processor
+  UINT vsrLevel : 3;             // 05-07/32, 0-4 current level
+  UINT vsrReserved : 21;         // 32-07
+};
+
+static void AddProfileMarkerForNvidiaVpSuperResolutionInfo(
+    ID3D11VideoContext* aVideoContext, ID3D11VideoProcessor* aVideoProcessor) {
+  MOZ_ASSERT(profiler_thread_is_being_profiled_for_markers());
+
+  // Undocumented NVIDIA driver constants
+  constexpr GUID nvGUID = {0xD43CE1B3,
+                           0x1F4B,
+                           0x48AC,
+                           {0xBA, 0xEE, 0xC3, 0xC2, 0x53, 0x75, 0xE6, 0xF7}};
+
+  NvidiaVSRGetData_v1 data{};
+  HRESULT hr = aVideoContext->VideoProcessorGetStreamExtension(
+      aVideoProcessor, 0, &nvGUID, sizeof(data), &data);
+
+  if (FAILED(hr)) {
+    return;
+  }
+
+  nsPrintfCString str(
+      "SuperResolution VP Capable %u OtherFieldsValid %u Enabled %u InUse %u "
+      "Level %u",
+      data.vsrGPUisVSRCapable, data.vsrOtherFieldsValid, data.vsrEnabled,
+      data.vsrIsInUseForThisVP, data.vsrLevel);
+  PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, str);
+}
+
 static HRESULT SetNvidiaVpSuperResolution(ID3D11VideoContext* aVideoContext,
                                           ID3D11VideoProcessor* aVideoProcessor,
                                           bool aEnable) {
@@ -1354,16 +1393,26 @@ bool DCSurfaceVideo::CalculateSwapChainSize(gfx::Matrix& aTransform) {
   MOZ_ASSERT(mDCLayerTree->GetVideoProcessor());
 
   const UINT vendorId = GetVendorId(mDCLayerTree->GetVideoDevice());
-  const bool driverSupportsTrueHDR =
+  const bool driverSupportsAutoHDR =
       GetVpAutoHDRSupported(vendorId, mDCLayerTree->GetVideoContext(),
                             mDCLayerTree->GetVideoProcessor());
   const bool contentIsHDR = false;  // XXX for now, only non-HDR is supported.
-  const bool monitorIsHDR = gfx::DeviceManagerDx::Get()->SystemHDREnabled();
+  const bool monitorIsHDR =
+      gfx::DeviceManagerDx::Get()->WindowHDREnabled(mDCLayerTree->GetHwnd());
   const bool powerIsCharging = RenderThread::Get()->GetPowerIsCharging();
 
   bool useVpAutoHDR = gfx::gfxVars::WebRenderOverlayVpAutoHDR() &&
-                      !contentIsHDR && monitorIsHDR && driverSupportsTrueHDR &&
+                      !contentIsHDR && monitorIsHDR && driverSupportsAutoHDR &&
                       powerIsCharging && !mVpAutoHDRFailed;
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString str(
+        "useVpAutoHDR %d gfxVars %d contentIsHDR %d monitor %d driver %d "
+        "charging %d failed %d",
+        useVpAutoHDR, gfx::gfxVars::WebRenderOverlayVpAutoHDR(), contentIsHDR,
+        monitorIsHDR, driverSupportsAutoHDR, powerIsCharging, mVpAutoHDRFailed);
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, str);
+  }
 
   if (!mVideoSwapChain || mSwapChainSize != swapChainSize || mIsDRM != isDRM ||
       mUseVpAutoHDR != useVpAutoHDR) {
@@ -1789,8 +1838,22 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
 
   const UINT vendorId = GetVendorId(videoDevice);
   const auto powerIsCharging = RenderThread::Get()->GetPowerIsCharging();
-  if (gfx::gfxVars::WebRenderOverlayVpSuperResolution() &&
-      !mVpSuperResolutionFailed && powerIsCharging) {
+  const bool useSuperResolution =
+      gfx::gfxVars::WebRenderOverlayVpSuperResolution() && powerIsCharging &&
+      !mVpSuperResolutionFailed;
+
+  if (profiler_thread_is_being_profiled_for_markers()) {
+    nsPrintfCString str(
+        "useSuperResolution %d gfxVars %d charging %d failed %d",
+        useSuperResolution, gfx::gfxVars::WebRenderOverlayVpSuperResolution(),
+        powerIsCharging, mVpSuperResolutionFailed);
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, str);
+  }
+
+  if (useSuperResolution) {
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {},
+                         "SetVpSuperResolution"_ns);
+
     hr = SetVpSuperResolution(vendorId, videoContext, videoProcessor, true);
     if (FAILED(hr)) {
       if (hr != E_NOTIMPL) {
@@ -1800,7 +1863,14 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
     }
   }
 
+  if (profiler_thread_is_being_profiled_for_markers() && vendorId == 0x10DE) {
+    AddProfileMarkerForNvidiaVpSuperResolutionInfo(videoContext,
+                                                   videoProcessor);
+  }
+
   if (mUseVpAutoHDR) {
+    PROFILER_MARKER_TEXT("DCSurfaceVideo", GRAPHICS, {}, "SetVpAutoHDR"_ns);
+
     hr = SetVpAutoHDR(vendorId, videoContext, videoProcessor, true);
     if (FAILED(hr)) {
       gfxCriticalNoteOnce << "SetVpAutoHDR failed: " << gfx::hexa(hr);
@@ -2070,7 +2140,10 @@ void DCLayerTree::DestroyEGLSurface() {
 
 // -
 
-color::ColorProfileDesc DCLayerTree::QueryOutputColorProfile() {
+}  // namespace wr
+namespace gfx {
+
+color::ColorProfileDesc QueryOutputColorProfile() {
   // GPU process can't simply init gfxPlatform, (and we don't need most of it)
   // but we do need gfxPlatform::GetCMSOutputProfile().
   // So we steal what we need through the window:
@@ -2123,6 +2196,9 @@ color::ColorProfileDesc DCLayerTree::QueryOutputColorProfile() {
 
   return ret;
 }
+
+}  // namespace gfx
+namespace wr {
 
 inline D2D1_MATRIX_5X4_F to_D2D1_MATRIX_5X4_F(const color::mat4& m) {
   return D2D1_MATRIX_5X4_F{{{

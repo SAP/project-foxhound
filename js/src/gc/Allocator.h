@@ -21,6 +21,7 @@ namespace gc {
 class AllocSite;
 struct Cell;
 class TenuredCell;
+class TenuringTracer;
 
 // Allocator implementation functions. SpiderMonkey code outside this file
 // should use:
@@ -70,6 +71,12 @@ class CellAllocator {
   }
 #endif
 
+#ifdef JS_GC_ZEAL
+  static AllocSite* MaybeGenerateMissingAllocSite(JSContext* cx,
+                                                  JS::TraceKind traceKind,
+                                                  AllocSite* site);
+#endif
+
 #ifdef DEBUG
   static void CheckIncrementalZoneState(JSContext* cx, void* ptr);
 #endif
@@ -82,6 +89,7 @@ class CellAllocator {
   static void* AllocNurseryOrTenuredCell(JSContext* cx, gc::AllocKind allocKind,
                                          size_t thingSize, gc::Heap heap,
                                          AllocSite* site);
+  friend class TenuringTracer;
 
   // Allocate a cell in the tenured heap.
   template <AllowGC allowGC>

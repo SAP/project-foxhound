@@ -20,13 +20,13 @@ macro_rules! define_config {
             /// Defaults to `None` which means that any arbitrary import can be
             /// generated.
             ///
-            /// To only allow specific imports, override this method to return a
-            /// WebAssembly module which describes the imports allowed.
+            /// To only allow specific imports, set this field to a WebAssembly
+            /// module which describes the imports allowed.
             ///
             /// Note that [`Self::min_imports`] is ignored when
             /// `available_imports` are enabled.
             ///
-            /// The returned value must be a valid binary encoding of a
+            /// The provided value must be a valid binary encoding of a
             /// WebAssembly module. `wasm-smith` will panic if the module cannot
             /// be parsed.
             ///
@@ -49,6 +49,51 @@ macro_rules! define_config {
             /// ```
             pub available_imports: Option<Vec<u8>>,
 
+            /// If provided, the generated module will have exports with exactly
+            /// the same names and types as those in the provided WebAssembly
+            /// module. The implementation (e.g. function bodies, global
+            /// initializers) of each export in the generated module will be
+            /// random and unrelated to the implementation in the provided
+            /// module. Only globals and functions are supported.
+            ///
+            ///
+            /// Defaults to `None` which means arbitrary exports will be
+            /// generated.
+            ///
+            /// To specify which exports the generated modules should have, set
+            /// this field to a WebAssembly module which describes the desired
+            /// exports. To generate modules with varying exports that meet some
+            /// constraints, consider randomly generating the value for this
+            /// field.
+            ///
+            /// The provided value must be a valid binary encoding of a
+            /// WebAssembly module. `wasm-smith` will panic if the module cannot
+            /// be parsed.
+            ///
+            /// # Module Limits
+            ///
+            /// All types, functions, globals, and exports that are needed to
+            /// provide the required exports will be generated, even if it
+            /// causes the resulting module to exceed the limits defined in
+            /// [`Self::max_type_size`], [`Self::max_types`],
+            /// [`Self::max_funcs`], [`Self::max_globals`], or
+            /// [`Self::max_exports`].
+            ///
+            /// # Example
+            ///
+            /// As for [`Self::available_imports`], the `wat` crate can be used
+            /// to provide an human-readable description of the desired exports:
+            ///
+            /// ```rust
+            /// Some(wat::parse_str(r#"
+            ///     (module
+            ///         (func (export "foo") (param i32) (result i64) unreachable)
+            ///         (global (export "bar") f32 f32.const 0)
+            ///     )
+            /// "#));
+            /// ```
+            pub exports: Option<Vec<u8>>,
+
             $(
                 $(#[$field_attr])*
                 pub $field: $field_ty,
@@ -59,6 +104,7 @@ macro_rules! define_config {
             fn default() -> Config {
                 Config {
                     available_imports: None,
+                    exports: None,
 
                     $(
                         $field: $default,
@@ -82,11 +128,43 @@ macro_rules! define_config {
             /// Note that [`Self::min_imports`] is ignored when
             /// `available_imports` are enabled.
             ///
-            /// The returned value must be a valid binary encoding of a
+            /// The provided value must be a valid binary encoding of a
             /// WebAssembly module. `wasm-smith` will panic if the module cannot
             /// be parsed.
             #[cfg_attr(feature = "clap", clap(long))]
             available_imports: Option<std::path::PathBuf>,
+
+            /// If provided, the generated module will have exports with exactly
+            /// the same names and types as those in the provided WebAssembly
+            /// module. The implementation (e.g. function bodies, global
+            /// initializers) of each export in the generated module will be
+            /// random and unrelated to the implementation in the provided
+            /// module. Only globals and functions are supported.
+            ///
+            /// Defaults to `None` which means arbitrary exports will be
+            /// generated.
+            ///
+            /// To specify which exports the generated modules should have, set
+            /// this field to a WebAssembly module which describes the desired
+            /// exports. To generate modules with varying exports that meet some
+            /// constraints, consider randomly generating the value for this
+            /// field.
+            ///
+            /// The provided value must be a valid binary encoding of a
+            /// WebAssembly module. `wasm-smith` will panic if the module cannot
+            /// be parsed.
+            ///
+            /// # Module Limits
+            ///
+            /// All types, functions, globals, and exports that are needed to
+            /// provide the required exports will be generated, even if it
+            /// causes the resulting module to exceed the limits defined in
+            /// [`Self::max_type_size`], [`Self::max_types`],
+            /// [`Self::max_funcs`], [`Self::max_globals`], or
+            /// [`Self::max_exports`].
+            ///
+            #[cfg_attr(feature = "clap", clap(long))]
+            exports: Option<std::path::PathBuf>,
 
             $(
                 $(#[$field_attr])*
@@ -100,6 +178,7 @@ macro_rules! define_config {
             pub fn or(self, other: Self) -> Self {
                 Self {
                     available_imports: self.available_imports.or(other.available_imports),
+                    exports: self.exports.or(other.exports),
 
                     $(
                         $field: self.$field.or(other.$field),
@@ -116,6 +195,13 @@ macro_rules! define_config {
                 Ok(Config {
                     available_imports: if let Some(file) = config
                         .available_imports
+                        .as_ref() {
+                            Some(wat::parse_file(file)?)
+                        } else {
+                            None
+                        },
+                    exports: if let Some(file) = config
+                        .exports
                         .as_ref() {
                             Some(wat::parse_file(file)?)
                         } else {
@@ -226,6 +312,12 @@ define_config! {
         ///
         /// Defaults to `false`.
         pub gc_enabled: bool = false,
+
+        /// Determines whether the custom-page-sizes proposal is enabled when
+        /// generating a Wasm module.
+        ///
+        /// Defaults to `false`.
+        pub custom_page_sizes_enabled: bool = false,
 
         /// Returns whether we should generate custom sections or not. Defaults
         /// to false.
@@ -481,6 +573,18 @@ define_config! {
         ///
         /// Defaults to `false`.
         pub threads_enabled: bool = false,
+
+        /// Indicates whether wasm-smith is allowed to generate invalid function
+        /// bodies.
+        ///
+        /// When enabled this option will enable taking raw bytes from the input
+        /// byte stream and using them as a wasm function body. This means that
+        /// the output module is not guaranteed to be valid but can help tickle
+        /// various parts of validation/compilation in some circumstances as
+        /// well.
+        ///
+        /// Defaults to `false`.
+        pub allow_invalid_funcs: bool = false,
     }
 }
 
@@ -583,6 +687,7 @@ impl<'a> Arbitrary<'a> for Config {
             },
             table_max_size_required: u.arbitrary()?,
             max_table_elements: u.int_in_range(0..=1_000_000)?,
+            disallow_traps: u.arbitrary()?,
 
             // These fields, unlike the ones above, are less useful to set.
             // They either make weird inputs or are for features not widely
@@ -611,12 +716,14 @@ impl<'a> Arbitrary<'a> for Config {
             max_type_size: 1000,
             canonicalize_nans: false,
             available_imports: None,
+            exports: None,
             threads_enabled: false,
             export_everything: false,
-            disallow_traps: false,
             tail_call_enabled: false,
             gc_enabled: false,
+            custom_page_sizes_enabled: false,
             generate_custom_sections: false,
+            allow_invalid_funcs: false,
         })
     }
 }

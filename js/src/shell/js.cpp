@@ -127,10 +127,10 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions, JS::CompileOptions, JS::OwningCompileOptions, JS::DecodeOptions, JS::InstantiateOptions
 #include "js/ContextOptions.h"  // JS::ContextOptions{,Ref}
-#include "js/Debug.h"
-#include "js/Equality.h"                    // JS::SameValue
-#include "js/ErrorReport.h"                 // JS::PrintError
-#include "js/Exception.h"                   // JS::StealPendingExceptionStack
+#include "js/Debug.h"           // JS::dbg::ShouldAvoidSideEffects
+#include "js/Equality.h"        // JS::SameValue
+#include "js/ErrorReport.h"     // JS::PrintError
+#include "js/Exception.h"       // JS::StealPendingExceptionStack
 #include "js/experimental/CodeCoverage.h"   // js::EnableCodeCoverage
 #include "js/experimental/CompileScript.h"  // JS::NewFrontendContext, JS::DestroyFrontendContext, JS::HadFrontendErrors, JS::ConvertFrontendErrorsToRuntimeErrors, JS::CompileGlobalScriptToStencil, JS::CompileModuleScriptToStencil
 #include "js/experimental/CTypes.h"         // JS::InitCTypesClass
@@ -367,11 +367,9 @@ void counters_dump(int) { __gcov_dump(); }
 
 void counters_reset(int) { __gcov_reset(); }
 #  else
-void counters_dump(int) { /* Do nothing */
-}
+void counters_dump(int) { /* Do nothing */ }
 
-void counters_reset(int) { /* Do nothing */
-}
+void counters_reset(int) { /* Do nothing */ }
 #  endif
 
 static void InstallCoverageSignalHandlers() {
@@ -733,9 +731,6 @@ bool shell::enableSourcePragmas = true;
 bool shell::enableAsyncStacks = false;
 bool shell::enableAsyncStackCaptureDebuggeeOnly = false;
 bool shell::enableToSource = false;
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-bool shell::enableJSONParseWithSource = false;
-#endif
 bool shell::enableImportAttributes = false;
 bool shell::enableImportAttributesAssertSyntax = false;
 #ifdef JS_GC_ZEAL
@@ -1320,6 +1315,13 @@ static bool DrainJobQueue(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  if (cx->isEvaluatingModule != 0) {
+    JS_ReportErrorASCII(
+        cx,
+        "Can't drain the job queue when executing the top level of a module");
+    return false;
+  }
+
   RunShellJobs(cx);
 
   if (GetShellContext(cx)->quitting) {
@@ -1507,6 +1509,54 @@ static void WriteTelemetryDataToDisk(const char* dir) {
 }
 
 #undef MAP_TELEMETRY
+
+// Use Counter introspection
+static Mutex useCounterLock(mutexid::ShellUseCounters);
+class MOZ_RAII AutoLockUseCounters : public LockGuard<Mutex> {
+  using Base = LockGuard<Mutex>;
+
+ public:
+  AutoLockUseCounters() : Base(useCounterLock) {}
+};
+
+using UseCounterArray =
+    mozilla::Array<uint32_t, static_cast<size_t>(JSUseCounter::COUNT)>;
+static UseCounterArray useCounterResults;
+static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
+  MOZ_RELEASE_ASSERT(obj);
+  AutoLockUseCounters aluc;
+  // Maybe should ensure obj is a global object?
+  useCounterResults[static_cast<size_t>(counter)]++;
+}
+
+static bool GetUseCounterResults(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+  Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
+  if (!obj) {
+    return false;
+  }
+
+  // Make a private copy holding the lock then release, because we can't
+  // hold this mutex while doing JS_DefineProperty, which holds MemoryTracker
+  // mutex.
+  UseCounterArray local;
+  {
+    AutoLockUseCounters aluc;
+    local = useCounterResults;
+  }
+
+  RootedValue val(cx);
+#define ADD_VALUE(ENUM, NAME)                                      \
+  val.setInt32(local[static_cast<size_t>(JSUseCounter::ENUM)]);    \
+  if (!JS_DefineProperty(cx, obj, #NAME, val, JSPROP_ENUMERATE)) { \
+    return false;                                                  \
+  }
+
+  FOR_EACH_JS_USE_COUNTER(ADD_VALUE);
+
+  args.rval().setObject(*obj);
+  return true;
+}
 
 static bool BoundToAsyncStack(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -2496,6 +2546,20 @@ static bool ConvertTranscodeResultToJSException(JSContext* cx,
   }
 }
 
+static void SetQuitting(JSContext* cx, int32_t code) {
+  ShellContext* sc = GetShellContext(cx);
+  js::StopDrainingJobQueue(cx);
+  sc->exitCode = code;
+  sc->quitting = true;
+}
+
+static void UnsetQuitting(JSContext* cx) {
+  ShellContext* sc = GetShellContext(cx);
+  js::RestartDrainingJobQueue(cx);
+  sc->exitCode = 0;
+  sc->quitting = false;
+}
+
 static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
@@ -2649,13 +2713,19 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
         return false;
       }
 
-      JSObject* obj = &v.toObject();
-      if (obj->isUnqualifiedVarObj()) {
-        JS_ReportErrorASCII(
-            cx,
-            "\"envChainObject\" passed to evaluate() should not be an "
-            "unqualified variables object");
-        return false;
+      RootedObject obj(cx, &v.toObject());
+      {
+        // This may be a CCW, so try to unwrap before checking
+        // if it is an unqualified variables object. We still append
+        // the original object to the environment chain however.
+        JSObject* unwrappedObj = js::UncheckedUnwrap(obj, cx);
+        if (unwrappedObj->isUnqualifiedVarObj()) {
+          JS_ReportErrorASCII(
+              cx,
+              "\"envChainObject\" passed to evaluate() should not be an "
+              "unqualified variables object");
+          return false;
+        }
       }
 
       if (!envChain.append(obj)) {
@@ -2784,6 +2854,11 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
                 ? JS_ExecuteScript(cx, script, args.rval())
                 : JS_ExecuteScript(cx, envChain, script, args.rval()))) {
         if (catchTermination && !JS_IsExceptionPending(cx)) {
+          ShellContext* sc = GetShellContext(cx);
+          if (sc->quitting) {
+            UnsetQuitting(cx);
+          }
+
           JSAutoRealm ar1(cx, callerGlobal);
           JSString* str = JS_NewStringCopyZ(cx, "terminated");
           if (!str) {
@@ -3233,8 +3308,6 @@ static bool PrintErr(JSContext* cx, unsigned argc, Value* vp) {
 static bool Help(JSContext* cx, unsigned argc, Value* vp);
 
 static bool Quit(JSContext* cx, unsigned argc, Value* vp) {
-  ShellContext* sc = GetShellContext(cx);
-
   // Print a message to stderr in differential testing to help jsfunfuzz
   // find uncatchable-exception bugs.
   if (js::SupportDifferentialTesting()) {
@@ -3257,9 +3330,7 @@ static bool Quit(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  js::StopDrainingJobQueue(cx);
-  sc->exitCode = code;
-  sc->quitting = true;
+  SetQuitting(cx, code);
   return false;
 }
 
@@ -4176,11 +4247,7 @@ static void SetStandardRealmOptions(JS::RealmOptions& options) {
   options.creationOptions()
       .setSharedMemoryAndAtomicsEnabled(enableSharedMemory)
       .setCoopAndCoepEnabled(false)
-      .setToSourceEnabled(enableToSource)
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-      .setJSONParseWithSource(enableJSONParseWithSource)
-#endif
-      ;
+      .setToSourceEnabled(enableToSource);
 }
 
 [[nodiscard]] static bool CheckRealmOptions(JSContext* cx,
@@ -4619,7 +4686,7 @@ static void WatchdogMain(JSContext* cx) {
          */
         sc->watchdogTimeout = Nothing();
         {
-          UnlockGuard<Mutex> unlock(guard);
+          UnlockGuard unlock(guard);
           CancelExecution(cx);
         }
 
@@ -5469,8 +5536,9 @@ static bool RegisterModule(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
+  Rooted<UniquePtr<ImportAttributeVector>> attributes(cx);
   RootedObject moduleRequest(
-      cx, ModuleRequestObject::create(cx, specifier, nullptr));
+      cx, ModuleRequestObject::create(cx, specifier, &attributes));
   if (!moduleRequest) {
     return false;
   }
@@ -5516,7 +5584,7 @@ static bool ModuleLink(JSContext* cx, unsigned argc, Value* vp) {
 
   Rooted<ModuleObject*> module(cx,
                                object->as<ShellModuleObjectWrapper>().get());
-  if (!js::ModuleLink(cx, module)) {
+  if (!JS::ModuleLink(cx, module)) {
     return false;
   }
 
@@ -5545,7 +5613,7 @@ static bool ModuleEvaluate(JSContext* cx, unsigned argc, Value* vp) {
 
     Rooted<ModuleObject*> module(cx,
                                  object->as<ShellModuleObjectWrapper>().get());
-    if (!js::ModuleEvaluate(cx, module, args.rval())) {
+    if (!JS::ModuleEvaluate(cx, module, args.rval())) {
       return false;
     }
   }
@@ -5791,6 +5859,11 @@ static bool FrontendTest(JSContext* cx, unsigned argc, Value* vp,
       return false;
     }
     if (!js::ParseCompileOptions(cx, options, objOptions, nullptr)) {
+      return false;
+    }
+
+    if (goal == frontend::ParseGoal::Module && options.lineno == 0) {
+      JS_ReportErrorASCII(cx, "Module cannot be compiled with lineNumber == 0");
       return false;
     }
 
@@ -6211,8 +6284,7 @@ static bool OffThreadCompileModuleToStencil(JSContext* cx, unsigned argc,
       return false;
     }
 
-    if (options.lineno == 0) {
-      JS_ReportErrorASCII(cx, "Module cannot be compiled with lineNumber == 0");
+    if (!ValidateModuleCompileOptions(cx, options)) {
       return false;
     }
   }
@@ -6862,6 +6934,10 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
     creationOptions.setNewCompartmentAndZone();
   }
 
+  // Ensure the target compartment/zone is kept alive when sameCompartmentAs or
+  // sameZoneAs is used.
+  Rooted<JSObject*> compartmentRoot(cx);
+
   JS::AutoHoldPrincipals principals(cx);
 
   if (args.length() == 1 && args[0].isObject()) {
@@ -6879,15 +6955,16 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
     if (v.isObject()) {
-      creationOptions.setNewCompartmentInExistingZone(
-          UncheckedUnwrap(&v.toObject()));
+      compartmentRoot = UncheckedUnwrap(&v.toObject());
+      creationOptions.setNewCompartmentInExistingZone(compartmentRoot);
     }
 
     if (!JS_GetProperty(cx, opts, "sameCompartmentAs", &v)) {
       return false;
     }
     if (v.isObject()) {
-      creationOptions.setExistingCompartment(UncheckedUnwrap(&v.toObject()));
+      compartmentRoot = UncheckedUnwrap(&v.toObject());
+      creationOptions.setExistingCompartment(compartmentRoot);
     }
 
     if (!JS_GetProperty(cx, opts, "newCompartment", &v)) {
@@ -9185,6 +9262,59 @@ static bool DecompressLZ4(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
+static bool SideEffectfulResolveObject_enumerate(
+    JSContext* cx, JS::HandleObject obj, JS::MutableHandleIdVector properties,
+    bool enumerableOnly) {
+  return properties.append(NameToId(cx->names().test));
+}
+
+static bool SideEffectfulResolveObject_resolve(JSContext* cx, HandleObject obj,
+                                               HandleId id, bool* resolvedp) {
+  *resolvedp = false;
+  if (JS::dbg::ShouldAvoidSideEffects(cx)) {
+    return false;
+  }
+
+  if (id == NameToId(cx->names().test)) {
+    RootedValue value(cx, JS::NumberValue(42));
+    if (!JS_DefinePropertyById(cx, obj, id, value, JSPROP_ENUMERATE)) {
+      return false;
+    }
+    *resolvedp = true;
+  }
+
+  return true;
+}
+
+static const JSClassOps SideEffectfulResolveObject_classOps = {
+    nullptr,                               // addProperty
+    nullptr,                               // delProperty
+    nullptr,                               // enumerate
+    SideEffectfulResolveObject_enumerate,  // newEnumerate
+    SideEffectfulResolveObject_resolve,    // resolve
+    nullptr,                               // mayResolve
+    nullptr,                               // finalize
+    nullptr,                               // call
+    nullptr,                               // construct
+    nullptr,
+};
+
+static const JSClass SideEffectfulResolveObject_class = {
+    "SideEffectfulResolveObject", 0, &SideEffectfulResolveObject_classOps};
+
+static bool CreateSideEffectfulResolveObject(JSContext* cx, unsigned argc,
+                                             JS::Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  RootedObject obj(cx, JS_NewObject(cx, &SideEffectfulResolveObject_class));
+  if (!obj) {
+    return false;
+  }
+
+  args.rval().setObject(*obj);
+  return true;
+}
+
 // clang-format off
 static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("options", Options, 0, 0,
@@ -9800,16 +9930,6 @@ JS_FN_HELP("createUserArrayBuffer", CreateUserArrayBuffer, 1, 0,
 "            or only when there are no other JavaScript frames on the stack\n"
 "            below it (false). If omitted, this is treated as 'true'."),
 
-#ifdef JS_HAS_INTL_API
-    JS_FN_HELP("addIntlExtras", AddIntlExtras, 1, 0,
-"addIntlExtras(obj)",
-"Adds various not-yet-standardized Intl functions as properties on the\n"
-"provided object (this should generally be Intl itself).  The added\n"
-"functions and their behavior are experimental: don't depend upon them\n"
-"unless you're willing to update your code if these experimental APIs change\n"
-"underneath you."),
-#endif // JS_HAS_INTL_API
-
 #ifndef __wasi__
     JS_FN_HELP("wasmCompileInSeparateProcess", WasmCompileInSeparateProcess, 1, 0,
 "wasmCompileInSeparateProcess(buffer)",
@@ -9864,9 +9984,18 @@ JS_FN_HELP("createUserArrayBuffer", CreateUserArrayBuffer, 1, 0,
 "decompressLZ4(bytes)",
 " Return a decompressed copy of bytes using LZ4."),
 
-    JS_FN_HELP("taint", Taint, 1, 0,
+    JS_FN_HELP("createSideEffectfulResolveObject", CreateSideEffectfulResolveObject, 0, 0,
+"createSideEffectfulResolveObject()",
+" Return an object with a property 'obj.test == 42', backed by a resolve hook "
+" with the Debugger shouldAvoidSideEffects flag integration."),
+
+  JS_FN_HELP("getUseCounterResults", GetUseCounterResults, 0, 0,
+"getUseCounterResults()",
+" Return the values of the shell use counters."),
+
+  JS_FN_HELP("taint", Taint, 1, 0,
 "taint(str)",
-"  Return a copy of the provided string that is fully tainted.\n"),
+"  Return a copy of the provided string that is fully tainted."),
 
     JS_FS_HELP_END
 };
@@ -9964,6 +10093,20 @@ TestAssertRecoveredOnBailout,
 "debugGetQueuedJobs()",
 "  Returns an array of queued jobs."),
 #endif
+
+#ifdef JS_HAS_INTL_API
+  // One of the extras is AddMozDateTimeFormatConstructor, which is not fuzzing
+  // safe, since it doesn't validate the custom format pattern.
+  //
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1887585#c1
+    JS_FN_HELP("addIntlExtras", AddIntlExtras, 1, 0,
+"addIntlExtras(obj)",
+"Adds various not-yet-standardized Intl functions as properties on the\n"
+"provided object (this should generally be Intl itself).  The added\n"
+"functions and their behavior are experimental: don't depend upon them\n"
+"unless you're willing to update your code if these experimental APIs change\n"
+"underneath you."),
+#endif // JS_HAS_INTL_API
 
     JS_FS_HELP_END
 };
@@ -11394,13 +11537,6 @@ static int Shell(JSContext* cx, OptionParser* op) {
     nocgc.emplace(cx);
   }
 
-  if (op->getBoolOption("fuzzing-safe")) {
-    fuzzingSafe = true;
-  } else {
-    fuzzingSafe =
-        (getenv("MOZ_FUZZING_SAFE") && getenv("MOZ_FUZZING_SAFE")[0] != '0');
-  }
-
 #ifdef DEBUG
   if (op->getBoolOption("differential-testing")) {
     JS::SetSupportDifferentialTesting(true);
@@ -11476,15 +11612,20 @@ static int Shell(JSContext* cx, OptionParser* op) {
       fflush(stdout);
       fflush(stderr);
       // Send return code to parent and reset edge counters.
-      struct {
-        int status;
-        uint32_t execHash;
-        uint32_t execHashInputs;
-      } s;
-      s.status = (result & 0xff) << 8;
-      s.execHash = cx->executionHash;
-      s.execHashInputs = cx->executionHashInputs;
-      MOZ_RELEASE_ASSERT(write(REPRL_CWFD, &s, 12) == 12);
+      int status = (result & 0xff) << 8;
+      if (js::SupportDifferentialTesting()) {
+        struct {
+          int status;
+          uint32_t execHash;
+          uint32_t execHashInputs;
+        } s;
+        s.status = status;
+        s.execHash = cx->executionHash;
+        s.execHashInputs = cx->executionHashInputs;
+        MOZ_RELEASE_ASSERT(write(REPRL_CWFD, &s, 12) == 12);
+      } else {
+        MOZ_RELEASE_ASSERT(write(REPRL_CWFD, &status, 4) == 4);
+      }
       __sanitizer_cov_reset_edgeguards();
       cx->executionHash = 1;
       cx->executionHashInputs = 0;
@@ -11659,7 +11800,13 @@ static bool SetJSPrefToTrueForBool(const char* name) {
   FOR_EACH_JS_PREF(CHECK_PREF)
 #undef CHECK_PREF
 
-  // Nothing matched, return false
+  // Nothing matched. If --fuzzing-safe is used, return true after printing a
+  // message, to continue execution without breaking fuzzing when a pref is
+  // removed.
+  if (fuzzingSafe) {
+    fprintf(stderr, "Warning: Ignoring unknown pref name: %s\n", name);
+    return true;
+  }
   fprintf(stderr, "Invalid pref name: %s\n", name);
   return false;
 }
@@ -11679,7 +11826,13 @@ static bool SetJSPrefToValue(const char* name, size_t nameLen,
   FOR_EACH_JS_PREF(CHECK_PREF)
 #undef CHECK_PREF
 
-  // Nothing matched, return false
+  // Nothing matched. If --fuzzing-safe is used, return true after printing a
+  // message, to continue execution without breaking fuzzing when a pref is
+  // removed.
+  if (fuzzingSafe) {
+    fprintf(stderr, "Warning: Ignoring unknown pref name: %s\n", name);
+    return true;
+  }
   fprintf(stderr, "Invalid pref name: %s\n", name);
   return false;
 }
@@ -11869,6 +12022,7 @@ int main(int argc, char** argv) {
   if (telemetryLock) {
     JS_SetAccumulateTelemetryCallback(cx, AccumulateTelemetryDataCallback);
   }
+  JS_SetSetUseCounterCallback(cx, SetUseCounterCallback);
 
   auto destroyCx = MakeScopeExit([cx] { JS_DestroyContext(cx); });
 
@@ -12078,10 +12232,10 @@ bool InitOptionParser(OptionParser& op) {
                         "property of null or undefined") ||
       !op.addBoolOption('\0', "enable-iterator-helpers",
                         "Enable iterator helpers") ||
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+      !op.addBoolOption('\0', "enable-async-iterator-helpers",
+                        "Enable async iterator helpers") ||
       !op.addBoolOption('\0', "enable-json-parse-with-source",
                         "Enable JSON.parse with source") ||
-#endif
       !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "disable-array-grouping",
                         "Disable Object.groupBy and Map.groupBy") ||
@@ -12097,10 +12251,13 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption(
           '\0', "enable-arraybuffer-resizable",
           "Enable resizable ArrayBuffers and growable SharedArrayBuffers") ||
+      !op.addBoolOption('\0', "enable-uint8array-base64",
+                        "Enable Uint8Array base64/hex methods") ||
+      !op.addBoolOption('\0', "enable-float16array", "Enable Float16Array") ||
+      !op.addBoolOption('\0', "enable-regexp-duplicate-named-groups",
+                        "Enable Duplicate Named Capture Groups") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
-      !op.addBoolOption('\0', "enable-class-static-blocks",
-                        "(no-op) Enable class static blocks") ||
       !op.addBoolOption('\0', "enable-import-assertions",
                         "Enable import attributes with old assert syntax") ||
       !op.addBoolOption('\0', "enable-import-attributes",
@@ -12146,10 +12303,6 @@ bool InitOptionParser(OptionParser& op) {
                           "Range analysis (default: on, off to disable)") ||
       !op.addStringOption('\0', "ion-sink", "on/off",
                           "Sink code motion (default: off, on to enable)") ||
-      !op.addStringOption('\0', "ion-optimization-levels", "on/off",
-                          "No-op for fuzzing") ||
-      !op.addStringOption('\0', "ion-loop-unrolling", "on/off",
-                          "(NOP for fuzzers)") ||
       !op.addStringOption(
           '\0', "ion-instruction-reordering", "on/off",
           "Instruction reordering (default: off, on to enable)") ||
@@ -12188,8 +12341,6 @@ bool InitOptionParser(OptionParser& op) {
                        "Wait for COUNT calls or iterations before compiling "
                        "at the normal optimization level (default: 1000)",
                        -1) ||
-      !op.addIntOption('\0', "ion-full-warmup-threshold", "COUNT",
-                       "No-op for fuzzing", -1) ||
       !op.addStringOption(
           '\0', "ion-regalloc", "[mode]",
           "Specify Ion register allocation:\n"
@@ -12253,9 +12404,6 @@ bool InitOptionParser(OptionParser& op) {
           "Whether monomorphic inlining is used instead of trial inlining "
           "always, never, or based on heuristics (default)") ||
       !op.addBoolOption(
-          '\0', "non-writable-jitcode",
-          "(NOP for fuzzers) Allocate JIT code as non-writable memory.") ||
-      !op.addBoolOption(
           '\0', "no-sse3",
           "Pretend CPU does not support SSE3 instructions and above "
           "to test JIT codegen (no-op on platforms other than x86 and x64).") ||
@@ -12316,9 +12464,6 @@ bool InitOptionParser(OptionParser& op) {
                         "Disable GC parallel marking") ||
       !op.addBoolOption('\0', "enable-parallel-marking",
                         "Enable GC parallel marking") ||
-      !op.addIntOption(
-          '\0', "marking-threads", "COUNT",
-          "Set the number of threads used for parallel marking to COUNT.", 0) ||
       !op.addStringOption('\0', "nursery-strings", "on/off",
                           "Allocate strings in the nursery") ||
       !op.addStringOption('\0', "nursery-bigints", "on/off",
@@ -12445,10 +12590,21 @@ bool InitOptionParser(OptionParser& op) {
   op.setArgTerminatesOptions("script", true);
   op.setArgCapturesRest("scriptArgs");
 
+  // If --fuzzing-safe is used, print a warning for unknown shell flags instead
+  // of aborting execution.
+  op.setIgnoresUnknownOptions("fuzzing-safe", true);
+
   return true;
 }
 
 bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
+  if (op.getBoolOption("fuzzing-safe")) {
+    fuzzingSafe = true;
+  } else {
+    fuzzingSafe =
+        (getenv("MOZ_FUZZING_SAFE") && getenv("MOZ_FUZZING_SAFE")[0] != '0');
+  }
+
   for (MultiStringRange args = op.getMultiStringOption("setpref");
        !args.empty(); args.popFront()) {
     if (!SetJSPref(args.front())) {
@@ -12471,19 +12627,39 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("disable-well-formed-unicode-strings")) {
     JS::Prefs::setAtStartup_well_formed_unicode_strings(false);
   }
-#ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-arraybuffer-resizable")) {
     JS::Prefs::setAtStartup_experimental_arraybuffer_resizable(true);
     JS::Prefs::setAtStartup_experimental_sharedarraybuffer_growable(true);
   }
+#ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-iterator-helpers")) {
     JS::Prefs::setAtStartup_experimental_iterator_helpers(true);
+  }
+  if (op.getBoolOption("enable-async-iterator-helpers")) {
+    JS::Prefs::setAtStartup_experimental_async_iterator_helpers(true);
   }
   if (op.getBoolOption("enable-new-set-methods")) {
     JS::Prefs::setAtStartup_experimental_new_set_methods(true);
   }
   if (op.getBoolOption("enable-symbols-as-weakmap-keys")) {
     JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(true);
+  }
+  if (op.getBoolOption("enable-uint8array-base64")) {
+    JS::Prefs::setAtStartup_experimental_uint8array_base64(true);
+  }
+  if (op.getBoolOption("enable-float16array")) {
+    JS::Prefs::setAtStartup_experimental_float16array(true);
+  }
+  if (op.getBoolOption("enable-regexp-duplicate-named-groups")) {
+    JS::Prefs::setAtStartup_experimental_regexp_duplicate_named_groups(true);
+  }
+#endif
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  JS::Prefs::setAtStartup_experimental_json_parse_with_source(
+      op.getBoolOption("enable-json-parse-with-source"));
+#else
+  if (op.getBoolOption("enable-json-parse-with-source")) {
+    fprintf(stderr, "JSON.parse with source is not enabled on this build.\n");
   }
 #endif
 
@@ -12705,14 +12881,10 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
   enableAsyncStackCaptureDebuggeeOnly =
       op.getBoolOption("async-stacks-capture-debuggee-only");
   enableToSource = !op.getBoolOption("disable-tosource");
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
-  enableJSONParseWithSource = op.getBoolOption("enable-json-parse-with-source");
-#endif
   enableImportAttributesAssertSyntax =
       op.getBoolOption("enable-import-assertions");
   enableImportAttributes = op.getBoolOption("enable-import-attributes") ||
                            enableImportAttributesAssertSyntax;
-
   JS::ContextOptionsRef(cx)
       .setSourcePragmas(enableSourcePragmas)
       .setAsyncStack(enableAsyncStacks)
@@ -13292,6 +13464,11 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
 #  endif
 #endif
 
+#ifdef NIGHTLY_BUILD
+  if (op.getBoolOption("enable-regexp-duplicate-named-groups")) {
+    jit::JitOptions.js_regexp_duplicate_named_groups = true;
+  }
+#endif
   return true;
 }
 
@@ -13348,12 +13525,7 @@ bool SetContextGCOptions(JSContext* cx, const OptionParser& op) {
   }
   JS_SetGCParameter(cx, JSGC_PARALLEL_MARKING_ENABLED, parallelMarking);
 
-  int32_t markingThreads = op.getIntOption("marking-threads");
-  if (markingThreads > 0) {
-    JS_SetGCParameter(cx, JSGC_MARKING_THREAD_COUNT, markingThreads);
-  }
-
-  JS_SetGCParameter(cx, JSGC_SLICE_TIME_BUDGET_MS, 5);
+  JS_SetGCParameter(cx, JSGC_SLICE_TIME_BUDGET_MS, 10);
 
   JS_SetGCParameter(cx, JSGC_PER_ZONE_GC_ENABLED, true);
 

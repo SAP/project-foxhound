@@ -12,11 +12,21 @@ namespace mozilla {
 extern LazyLogModule sPEMLog;
 
 bool WMFEncoderModule::SupportsCodec(CodecType aCodecType) const {
+  if (aCodecType > CodecType::_BeginAudio_ &&
+      aCodecType < CodecType::_EndAudio_) {
+    return false;
+  }
   return CanCreateWMFEncoder(aCodecType);
 }
 
 bool WMFEncoderModule::Supports(const EncoderConfig& aConfig) const {
   if (!CanLikelyEncode(aConfig)) {
+    return false;
+  }
+  if (aConfig.IsAudio()) {
+    return false;
+  }
+  if (aConfig.mScalabilityMode != ScalabilityMode::None) {
     return false;
   }
   return SupportsCodec(aConfig.mCodec);

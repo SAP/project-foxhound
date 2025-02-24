@@ -17,6 +17,8 @@
 #include "ScaledFontBase.h"
 #include "SFNTData.h"
 
+#include "mozilla/layers/LayersSurfaces.h"
+
 namespace mozilla {
 namespace gfx {
 
@@ -846,6 +848,41 @@ class RecordedDrawSurface : public RecordedEventDerived<RecordedDrawSurface> {
   MOZ_IMPLICIT RecordedDrawSurface(S& aStream);
 
   ReferencePtr mRefSource;
+  Rect mDest;
+  Rect mSource;
+  DrawSurfaceOptions mDSOptions;
+  DrawOptions mOptions;
+};
+
+class RecordedDrawSurfaceDescriptor
+    : public RecordedEventDerived<RecordedDrawSurfaceDescriptor> {
+ public:
+  RecordedDrawSurfaceDescriptor(const layers::SurfaceDescriptor& aDesc,
+                                const Rect& aDest, const Rect& aSource,
+                                const DrawSurfaceOptions& aDSOptions,
+                                const DrawOptions& aOptions)
+      : RecordedEventDerived(DRAWSURFACEDESCRIPTOR),
+        mDesc(aDesc),
+        mDest(aDest),
+        mSource(aSource),
+        mDSOptions(aDSOptions),
+        mOptions(aOptions) {}
+
+  bool PlayEvent(Translator* aTranslator) const override;
+
+  template <class S>
+  void Record(S& aStream) const;
+  void OutputSimpleEventInfo(std::stringstream& aStringStream) const override;
+
+  std::string GetName() const override { return "DrawSurfaceDescriptor"; }
+
+ private:
+  friend class RecordedEvent;
+
+  template <class S>
+  MOZ_IMPLICIT RecordedDrawSurfaceDescriptor(S& aStream);
+
+  layers::SurfaceDescriptor mDesc;
   Rect mDest;
   Rect mSource;
   DrawSurfaceOptions mDSOptions;
@@ -1726,8 +1763,11 @@ class RecordedFilterNodeSetInput
 
 class RecordedLink : public RecordedEventDerived<RecordedLink> {
  public:
-  RecordedLink(const char* aDestination, const Rect& aRect)
-      : RecordedEventDerived(LINK), mDestination(aDestination), mRect(aRect) {}
+  RecordedLink(const char* aLocalDest, const char* aURI, const Rect& aRect)
+      : RecordedEventDerived(LINK),
+        mLocalDest(aLocalDest),
+        mURI(aURI),
+        mRect(aRect) {}
 
   bool PlayEvent(Translator* aTranslator) const override;
   template <class S>
@@ -1739,7 +1779,8 @@ class RecordedLink : public RecordedEventDerived<RecordedLink> {
  private:
   friend class RecordedEvent;
 
-  std::string mDestination;
+  std::string mLocalDest;
+  std::string mURI;
   Rect mRect;
 
   template <class S>
@@ -3141,6 +3182,52 @@ inline void RecordedDrawSurface::OutputSimpleEventInfo(
   aStringStream << "DrawSurface (" << mRefSource << ")";
 }
 
+inline bool RecordedDrawSurfaceDescriptor::PlayEvent(
+    Translator* aTranslator) const {
+  DrawTarget* dt = aTranslator->GetCurrentDrawTarget();
+  if (!dt) {
+    return false;
+  }
+
+  RefPtr<SourceSurface> surface =
+      aTranslator->LookupSourceSurfaceFromSurfaceDescriptor(mDesc);
+  if (!surface) {
+    return false;
+  }
+
+  RefPtr<SourceSurface> opt = dt->OptimizeSourceSurface(surface);
+  if (opt) {
+    surface = opt;
+  }
+
+  dt->DrawSurface(surface, mDest, mSource, mDSOptions, mOptions);
+  return true;
+}
+
+template <class S>
+void RecordedDrawSurfaceDescriptor::Record(S& aStream) const {
+  WriteElement(aStream, mDesc);
+  WriteElement(aStream, mDest);
+  WriteElement(aStream, mSource);
+  WriteElement(aStream, mDSOptions);
+  WriteElement(aStream, mOptions);
+}
+
+template <class S>
+RecordedDrawSurfaceDescriptor::RecordedDrawSurfaceDescriptor(S& aStream)
+    : RecordedEventDerived(DRAWSURFACEDESCRIPTOR) {
+  ReadElement(aStream, mDesc);
+  ReadElement(aStream, mDest);
+  ReadElement(aStream, mSource);
+  ReadDrawSurfaceOptions(aStream, mDSOptions);
+  ReadDrawOptions(aStream, mOptions);
+}
+
+inline void RecordedDrawSurfaceDescriptor::OutputSimpleEventInfo(
+    std::stringstream& aStringStream) const {
+  aStringStream << "DrawSurfaceDescriptor (" << mDesc.type() << ")";
+}
+
 inline bool RecordedDrawDependentSurface::PlayEvent(
     Translator* aTranslator) const {
   aTranslator->DrawDependentSurface(mId, mDest);
@@ -4291,17 +4378,22 @@ inline bool RecordedLink::PlayEvent(Translator* aTranslator) const {
   if (!dt) {
     return false;
   }
-  dt->Link(mDestination.c_str(), mRect);
+  dt->Link(mLocalDest.c_str(), mURI.c_str(), mRect);
   return true;
 }
 
 template <class S>
 void RecordedLink::Record(S& aStream) const {
   WriteElement(aStream, mRect);
-  uint32_t len = mDestination.length();
+  uint32_t len = mLocalDest.length();
   WriteElement(aStream, len);
   if (len) {
-    aStream.write(mDestination.data(), len);
+    aStream.write(mLocalDest.data(), len);
+  }
+  len = mURI.length();
+  WriteElement(aStream, len);
+  if (len) {
+    aStream.write(mURI.data(), len);
   }
 }
 
@@ -4310,15 +4402,25 @@ RecordedLink::RecordedLink(S& aStream) : RecordedEventDerived(LINK) {
   ReadElement(aStream, mRect);
   uint32_t len;
   ReadElement(aStream, len);
-  mDestination.resize(size_t(len));
+  mLocalDest.resize(size_t(len));
   if (len && aStream.good()) {
-    aStream.read(&mDestination.front(), len);
+    aStream.read(&mLocalDest.front(), len);
+  }
+  ReadElement(aStream, len);
+  mURI.resize(size_t(len));
+  if (len && aStream.good()) {
+    aStream.read(&mURI.front(), len);
   }
 }
 
 inline void RecordedLink::OutputSimpleEventInfo(
     std::stringstream& aStringStream) const {
-  aStringStream << "Link [" << mDestination << " @ " << mRect << "]";
+  if (mLocalDest.empty()) {
+    aStringStream << "Link [" << mURI << " @ " << mRect << "]";
+  } else {
+    aStringStream << "Link [" << mLocalDest << " / " << mURI << " @ " << mRect
+                  << "]";
+  }
 }
 
 inline bool RecordedDestination::PlayEvent(Translator* aTranslator) const {
@@ -4379,6 +4481,7 @@ inline void RecordedDestination::OutputSimpleEventInfo(
   f(MASK, RecordedMask);                                           \
   f(STROKE, RecordedStroke);                                       \
   f(DRAWSURFACE, RecordedDrawSurface);                             \
+  f(DRAWSURFACEDESCRIPTOR, RecordedDrawSurfaceDescriptor);         \
   f(DRAWDEPENDENTSURFACE, RecordedDrawDependentSurface);           \
   f(DRAWSURFACEWITHSHADOW, RecordedDrawSurfaceWithShadow);         \
   f(DRAWSHADOW, RecordedDrawShadow);                               \

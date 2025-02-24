@@ -338,6 +338,12 @@ nsTArray<uint8_t> NSDataToArray(NSData* data) {
       }
 #endif
     } else {
+      // The platform didn't tell us what transport was used, but we know it
+      // wasn't the internal transport. The transport response is not signed by
+      // the authenticator. It represents the "transports that the authenticator
+      // is believed to support, or an empty sequence if the information is
+      // unavailable". We believe macOS supports usb, so we return usb.
+      transports.AppendElement(u"usb"_ns);
       authenticatorAttachment.emplace(u"cross-platform"_ns);
     }
     mCallback->FinishMakeCredential(rawAttestationObject, credentialId,
@@ -605,6 +611,9 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
             userVerificationPreference = Nothing();
         nsAutoString userVerification;
         Unused << aArgs->GetUserVerification(userVerification);
+        // This mapping needs to be reviewed if values are added to the
+        // UserVerificationRequirement enum.
+        static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
         if (userVerification.EqualsLiteral(
                 MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
           userVerificationPreference.emplace(
@@ -620,12 +629,51 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
               ASAuthorizationPublicKeyCredentialUserVerificationPreferenceDiscouraged);
         }
 
-        // The API doesn't support attestation for platform passkeys and shows
-        // no consent UI for non-none attestation for cross-platform devices,
-        // so this must always be none.
-        ASAuthorizationPublicKeyCredentialAttestationKind
-            attestationPreference =
-                ASAuthorizationPublicKeyCredentialAttestationKindNone;
+        // The API doesn't support attestation for platform passkeys, so this is
+        // only used for security keys.
+        ASAuthorizationPublicKeyCredentialAttestationKind attestationPreference;
+        nsAutoString mozAttestationPreference;
+        Unused << aArgs->GetAttestationConveyancePreference(
+            mozAttestationPreference);
+        if (mozAttestationPreference.EqualsLiteral(
+                MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_INDIRECT)) {
+          attestationPreference =
+              ASAuthorizationPublicKeyCredentialAttestationKindIndirect;
+        } else if (mozAttestationPreference.EqualsLiteral(
+                       MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_DIRECT)) {
+          attestationPreference =
+              ASAuthorizationPublicKeyCredentialAttestationKindDirect;
+        } else if (
+            mozAttestationPreference.EqualsLiteral(
+                MOZ_WEBAUTHN_ATTESTATION_CONVEYANCE_PREFERENCE_ENTERPRISE)) {
+          attestationPreference =
+              ASAuthorizationPublicKeyCredentialAttestationKindEnterprise;
+        } else {
+          attestationPreference =
+              ASAuthorizationPublicKeyCredentialAttestationKindNone;
+        }
+
+        ASAuthorizationPublicKeyCredentialResidentKeyPreference
+            residentKeyPreference;
+        nsAutoString mozResidentKey;
+        Unused << aArgs->GetResidentKey(mozResidentKey);
+        // This mapping needs to be reviewed if values are added to the
+        // ResidentKeyRequirement enum.
+        static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
+        if (mozResidentKey.EqualsLiteral(
+                MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_REQUIRED)) {
+          residentKeyPreference =
+              ASAuthorizationPublicKeyCredentialResidentKeyPreferenceRequired;
+        } else if (mozResidentKey.EqualsLiteral(
+                       MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_PREFERRED)) {
+          residentKeyPreference =
+              ASAuthorizationPublicKeyCredentialResidentKeyPreferencePreferred;
+        } else {
+          MOZ_ASSERT(mozResidentKey.EqualsLiteral(
+              MOZ_WEBAUTHN_RESIDENT_KEY_REQUIREMENT_DISCOURAGED));
+          residentKeyPreference =
+              ASAuthorizationPublicKeyCredentialResidentKeyPreferenceDiscouraged;
+        }
 
         // Initialize the platform provider with the rpId.
         ASAuthorizationPlatformPublicKeyCredentialProvider* platformProvider =
@@ -639,8 +687,10 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
                                                             name:userNameNS
                                                           userID:userIdNS];
         [platformProvider release];
+
+        // The API doesn't support attestation for platform passkeys
         platformRegistrationRequest.attestationPreference =
-            attestationPreference;
+            ASAuthorizationPublicKeyCredentialAttestationKindNone;
         if (userVerificationPreference.isSome()) {
           platformRegistrationRequest.userVerificationPreference =
               *userVerificationPreference;
@@ -665,6 +715,8 @@ MacOSWebAuthnService::MakeCredential(uint64_t aTransactionId,
             attestationPreference;
         crossPlatformRegistrationRequest.credentialParameters =
             credentialParameters;
+        crossPlatformRegistrationRequest.residentKeyPreference =
+            residentKeyPreference;
         if (userVerificationPreference.isSome()) {
           crossPlatformRegistrationRequest.userVerificationPreference =
               *userVerificationPreference;
@@ -889,6 +941,17 @@ void MacOSWebAuthnService::DoGetAssertion(
           Unused << aArgs->GetAllowList(allowList);
           Unused << aArgs->GetAllowListTransports(allowListTransports);
         }
+        // Compute the union of the transport sets.
+        uint8_t transports = 0;
+        for (uint8_t credTransports : allowListTransports) {
+          if (credTransports == 0) {
+            // treat the empty transport set as "all transports".
+            transports = ~0;
+            break;
+          }
+          transports |= credTransports;
+        }
+
         NSMutableArray* platformAllowedCredentials =
             [[NSMutableArray alloc] init];
         for (const auto& allowedCredentialId : allowList) {
@@ -914,6 +977,9 @@ void MacOSWebAuthnService::DoGetAssertion(
             userVerificationPreference = Nothing();
         nsAutoString userVerification;
         Unused << aArgs->GetUserVerification(userVerification);
+        // This mapping needs to be reviewed if values are added to the
+        // UserVerificationRequirement enum.
+        static_assert(MOZ_WEBAUTHN_ENUM_STRINGS_VERSION == 3);
         if (userVerification.EqualsLiteral(
                 MOZ_WEBAUTHN_USER_VERIFICATION_REQUIREMENT_REQUIRED)) {
           userVerificationPreference.emplace(
@@ -943,6 +1009,15 @@ void MacOSWebAuthnService::DoGetAssertion(
         if (userVerificationPreference.isSome()) {
           platformAssertionRequest.userVerificationPreference =
               *userVerificationPreference;
+        }
+        if (__builtin_available(macos 13.5, *)) {
+          // Show the hybrid transport option if (1) we have no transport hints
+          // or (2) at least one allow list entry lists the hybrid transport.
+          bool shouldShowHybridTransport =
+              !transports ||
+              (transports & MOZ_WEBAUTHN_AUTHENTICATOR_TRANSPORT_ID_HYBRID);
+          platformAssertionRequest.shouldShowHybridTransport =
+              shouldShowHybridTransport;
         }
 
         // Initialize the cross-platform provider with the rpId.
@@ -1115,8 +1190,8 @@ MacOSWebAuthnService::PinCallback(uint64_t aTransactionId,
 }
 
 NS_IMETHODIMP
-MacOSWebAuthnService::ResumeMakeCredential(uint64_t aTransactionId,
-                                           bool aForceNoneAttestation) {
+MacOSWebAuthnService::SetHasAttestationConsent(uint64_t aTransactionId,
+                                               bool aHasConsent) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

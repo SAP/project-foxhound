@@ -2,10 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import {
-  actionCreators as ac,
-  actionTypes as at,
-} from "common/Actions.sys.mjs";
+import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
 import { DSImage } from "../DSImage/DSImage.jsx";
 import { DSLinkMenu } from "../DSLinkMenu/DSLinkMenu";
 import { ImpressionStats } from "../../DiscoveryStreamImpressionStats/ImpressionStats";
@@ -198,6 +195,8 @@ export class _DSCard extends React.PureComponent {
             ...(this.props.shim && this.props.shim.click
               ? { shim: this.props.shim.click }
               : {}),
+            fetchTimestamp: this.props.fetchTimestamp,
+            firstVisibleTimestamp: this.props.firstVisibleTimestamp,
           },
         })
       );
@@ -245,6 +244,8 @@ export class _DSCard extends React.PureComponent {
             ...(this.props.shim && this.props.shim.save
               ? { shim: this.props.shim.save }
               : {}),
+            fetchTimestamp: this.props.fetchTimestamp,
+            firstVisibleTimestamp: this.props.firstVisibleTimestamp,
           },
         })
       );
@@ -441,10 +442,12 @@ export class _DSCard extends React.PureComponent {
                   ? { shim: this.props.shim.impression }
                   : {}),
                 recommendation_id: this.props.recommendation_id,
+                fetchTimestamp: this.props.fetchTimestamp,
               },
             ]}
             dispatch={this.props.dispatch}
             source={this.props.type}
+            firstVisibleTimestamp={this.props.firstVisibleTimestamp}
           />
         </SafeAnchor>
         {ctaButtonVariant === "variant-b" && (
@@ -465,57 +468,34 @@ export class _DSCard extends React.PureComponent {
           dispatch={this.props.dispatch}
           spocMessageVariant={this.props.spocMessageVariant}
         />
-        {saveToPocketCard && (
-          <div className="card-stp-button-hover-background">
-            <div className="card-stp-button-position-wrapper">
-              {!this.props.flightId && stpButton()}
-              <DSLinkMenu
-                id={this.props.id}
-                index={this.props.pos}
-                dispatch={this.props.dispatch}
-                url={this.props.url}
-                title={this.props.title}
-                source={source}
-                type={this.props.type}
-                pocket_id={this.props.pocket_id}
-                shim={this.props.shim}
-                bookmarkGuid={this.props.bookmarkGuid}
-                flightId={
-                  !this.props.is_collection ? this.props.flightId : undefined
-                }
-                showPrivacyInfo={!!this.props.flightId}
-                onMenuUpdate={this.onMenuUpdate}
-                onMenuShow={this.onMenuShow}
-                saveToPocketCard={saveToPocketCard}
-                pocket_button_enabled={pocketButtonEnabled}
-                isRecentSave={isRecentSave}
-              />
-            </div>
+
+        <div className="card-stp-button-hover-background">
+          <div className="card-stp-button-position-wrapper">
+            {saveToPocketCard && <>{!this.props.flightId && stpButton()}</>}
+
+            <DSLinkMenu
+              id={this.props.id}
+              index={this.props.pos}
+              dispatch={this.props.dispatch}
+              url={this.props.url}
+              title={this.props.title}
+              source={source}
+              type={this.props.type}
+              pocket_id={this.props.pocket_id}
+              shim={this.props.shim}
+              bookmarkGuid={this.props.bookmarkGuid}
+              flightId={
+                !this.props.is_collection ? this.props.flightId : undefined
+              }
+              showPrivacyInfo={!!this.props.flightId}
+              onMenuUpdate={this.onMenuUpdate}
+              onMenuShow={this.onMenuShow}
+              saveToPocketCard={saveToPocketCard}
+              pocket_button_enabled={pocketButtonEnabled}
+              isRecentSave={isRecentSave}
+            />
           </div>
-        )}
-        {!saveToPocketCard && (
-          <DSLinkMenu
-            id={this.props.id}
-            index={this.props.pos}
-            dispatch={this.props.dispatch}
-            url={this.props.url}
-            title={this.props.title}
-            source={source}
-            type={this.props.type}
-            pocket_id={this.props.pocket_id}
-            shim={this.props.shim}
-            bookmarkGuid={this.props.bookmarkGuid}
-            flightId={
-              !this.props.is_collection ? this.props.flightId : undefined
-            }
-            showPrivacyInfo={!!this.props.flightId}
-            hostRef={this.contextMenuButtonHostRef}
-            onMenuUpdate={this.onMenuUpdate}
-            onMenuShow={this.onMenuShow}
-            pocket_button_enabled={pocketButtonEnabled}
-            isRecentSave={isRecentSave}
-          />
-        )}
+        </div>
       </article>
     );
   }

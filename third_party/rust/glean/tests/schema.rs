@@ -6,8 +6,7 @@ use std::collections::HashMap;
 use std::io::Read;
 
 use flate2::read::GzDecoder;
-use glean_core::TextMetric;
-use jsonschema_valid::{self, schemas::Draft};
+use jsonschema_valid::schemas::Draft;
 use serde_json::Value;
 
 use glean::net::{PingUploadRequest, UploadResult};
@@ -171,7 +170,8 @@ fn validate_against_schema() {
     text_metric.set("loooooong text".repeat(100));
 
     // Define a new ping and submit it.
-    let custom_ping = glean::private::PingType::new(PING_NAME, true, true, true, true, vec![]);
+    let custom_ping =
+        glean::private::PingType::new(PING_NAME, true, true, true, true, true, vec![], vec![]);
     custom_ping.submit(None);
 
     // Wait for the ping to arrive.

@@ -40,8 +40,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     eSquareBezelPushButton,
     eArrowButton,
     eHelpButton,
-    eTreeTwistyPointingRight,
-    eTreeTwistyPointingDown,
     eDisclosureButtonClosed,
     eDisclosureButtonOpen
   };
@@ -131,12 +129,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     bool rtl = false;
   };
 
-  struct TreeHeaderCellParams {
-    ControlParams controlParams;
-    TreeSortDirection sortDirection = eTreeSortDirection_Natural;
-    bool lastTreeHeaderCell = false;
-  };
-
   struct ScaleParams {
     int32_t value = 0;
     int32_t min = 0;
@@ -159,14 +151,12 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     eSpinButtonDown,  // SpinButtonParams
     eSegment,         // SegmentParams
     eSeparator,
-    eToolbar,    // bool
     eStatusBar,  // bool
     eGroupBox,
     eTextField,           // TextFieldParams
     eSearchField,         // TextFieldParams
     eProgressBar,         // ProgressParams
     eMeter,               // MeterParams
-    eTreeHeaderCell,      // TreeHeaderCellParams
     eScale,               // ScaleParams
     eMultilineTextField,  // bool
     eListBox,
@@ -204,9 +194,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     static WidgetInfo Separator() {
       return WidgetInfo(Widget::eSeparator, false);
     }
-    static WidgetInfo Toolbar(bool aParams) {
-      return WidgetInfo(Widget::eToolbar, aParams);
-    }
     static WidgetInfo StatusBar(bool aParams) {
       return WidgetInfo(Widget::eStatusBar, aParams);
     }
@@ -224,9 +211,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     }
     static WidgetInfo Meter(const MeterParams& aParams) {
       return WidgetInfo(Widget::eMeter, aParams);
-    }
-    static WidgetInfo TreeHeaderCell(const TreeHeaderCellParams& aParams) {
-      return WidgetInfo(Widget::eTreeHeaderCell, aParams);
     }
     static WidgetInfo Scale(const ScaleParams& aParams) {
       return WidgetInfo(Widget::eScale, aParams);
@@ -255,7 +239,7 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
     mozilla::Variant<mozilla::gfx::sRGBColor, CheckboxOrRadioParams,
                      ButtonParams, DropdownParams, SpinButtonParams,
                      SegmentParams, TextFieldParams, ProgressParams,
-                     MeterParams, TreeHeaderCellParams, ScaleParams, bool>
+                     MeterParams, ScaleParams, bool>
         mVariant;
 
     enum Widget mWidget;
@@ -266,47 +250,42 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
   NS_DECL_ISUPPORTS_INHERITED
 
   // The nsITheme interface.
-  NS_IMETHOD DrawWidgetBackground(gfxContext* aContext, nsIFrame* aFrame,
-                                  StyleAppearance aAppearance,
-                                  const nsRect& aRect, const nsRect& aDirtyRect,
+  NS_IMETHOD DrawWidgetBackground(gfxContext* aContext, nsIFrame*,
+                                  StyleAppearance, const nsRect& aRect,
+                                  const nsRect& aDirtyRect,
                                   DrawOverflow) override;
   bool CreateWebRenderCommandsForWidget(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,
-      mozilla::layers::RenderRootStateManager* aManager, nsIFrame* aFrame,
-      StyleAppearance aAppearance, const nsRect& aRect) override;
-  [[nodiscard]] LayoutDeviceIntMargin GetWidgetBorder(
-      nsDeviceContext* aContext, nsIFrame* aFrame,
-      StyleAppearance aAppearance) override;
+      mozilla::layers::RenderRootStateManager* aManager, nsIFrame*,
+      StyleAppearance, const nsRect& aRect) override;
+  [[nodiscard]] LayoutDeviceIntMargin GetWidgetBorder(nsDeviceContext* aContext,
+                                                      nsIFrame*,
+                                                      StyleAppearance) override;
 
-  bool GetWidgetPadding(nsDeviceContext* aContext, nsIFrame* aFrame,
-                        StyleAppearance aAppearance,
+  bool GetWidgetPadding(nsDeviceContext* aContext, nsIFrame*, StyleAppearance,
                         LayoutDeviceIntMargin* aResult) override;
 
-  virtual bool GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame* aFrame,
-                                 StyleAppearance aAppearance,
-                                 nsRect* aOverflowRect) override;
+  bool GetWidgetOverflow(nsDeviceContext* aContext, nsIFrame*, StyleAppearance,
+                         nsRect* aOverflowRect) override;
 
   LayoutDeviceIntSize GetMinimumWidgetSize(nsPresContext*, nsIFrame*,
                                            StyleAppearance) override;
-  NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aAppearance,
-                                nsAtom* aAttribute, bool* aShouldRepaint,
+  NS_IMETHOD WidgetStateChanged(nsIFrame*, StyleAppearance, nsAtom* aAttribute,
+                                bool* aShouldRepaint,
                                 const nsAttrValue* aOldValue) override;
   NS_IMETHOD ThemeChanged() override;
-  bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame* aFrame,
-                           StyleAppearance aAppearance) override;
-  bool WidgetIsContainer(StyleAppearance aAppearance) override;
+  bool ThemeSupportsWidget(nsPresContext* aPresContext, nsIFrame*,
+                           StyleAppearance) override;
+  bool WidgetIsContainer(StyleAppearance) override;
   bool ThemeDrawsFocusForWidget(nsIFrame*, StyleAppearance) override;
   bool ThemeNeedsComboboxDropmarker() override;
-  virtual bool WidgetAppearanceDependsOnWindowFocus(
-      StyleAppearance aAppearance) override;
-  virtual ThemeGeometryType ThemeGeometryTypeForWidget(
-      nsIFrame* aFrame, StyleAppearance aAppearance) override;
-  virtual Transparency GetWidgetTransparency(
-      nsIFrame* aFrame, StyleAppearance aAppearance) override;
-  mozilla::Maybe<WidgetInfo> ComputeWidgetInfo(nsIFrame* aFrame,
-                                               StyleAppearance aAppearance,
+  bool WidgetAppearanceDependsOnWindowFocus(StyleAppearance) override;
+  ThemeGeometryType ThemeGeometryTypeForWidget(nsIFrame*,
+                                               StyleAppearance) override;
+  Transparency GetWidgetTransparency(nsIFrame*, StyleAppearance) override;
+  mozilla::Maybe<WidgetInfo> ComputeWidgetInfo(nsIFrame*, StyleAppearance,
                                                const nsRect& aRect);
   void DrawProgress(CGContextRef context, const HIRect& inBoxRect,
                     const ProgressParams& aParams);
@@ -314,24 +293,18 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
  protected:
   virtual ~nsNativeThemeCocoa();
 
-  LayoutDeviceIntMargin DirectionAwareMargin(
-      const LayoutDeviceIntMargin& aMargin, nsIFrame* aFrame);
+  LayoutDeviceIntMargin DirectionAwareMargin(const LayoutDeviceIntMargin&,
+                                             nsIFrame*);
   nsIFrame* SeparatorResponsibility(nsIFrame* aBefore, nsIFrame* aAfter);
-  ControlParams ComputeControlParams(nsIFrame* aFrame,
-                                     mozilla::dom::ElementState aEventState);
-  SegmentParams ComputeSegmentParams(nsIFrame* aFrame,
-                                     mozilla::dom::ElementState aEventState,
-                                     SegmentType aSegmentType);
-  TextFieldParams ComputeTextFieldParams(
-      nsIFrame* aFrame, mozilla::dom::ElementState aEventState);
-  ProgressParams ComputeProgressParams(nsIFrame* aFrame,
-                                       mozilla::dom::ElementState aEventState,
+  ControlParams ComputeControlParams(nsIFrame*, mozilla::dom::ElementState);
+  SegmentParams ComputeSegmentParams(nsIFrame*, mozilla::dom::ElementState,
+                                     SegmentType);
+  TextFieldParams ComputeTextFieldParams(nsIFrame*, mozilla::dom::ElementState);
+  ProgressParams ComputeProgressParams(nsIFrame*, mozilla::dom::ElementState,
                                        bool aIsHorizontal);
-  MeterParams ComputeMeterParams(nsIFrame* aFrame);
-  TreeHeaderCellParams ComputeTreeHeaderCellParams(
-      nsIFrame* aFrame, mozilla::dom::ElementState aEventState);
+  MeterParams ComputeMeterParams(nsIFrame*);
   mozilla::Maybe<ScaleParams> ComputeHTMLScaleParams(
-      nsIFrame* aFrame, mozilla::dom::ElementState aEventState);
+      nsIFrame*, mozilla::dom::ElementState);
 
   // HITheme drawing routines
   void DrawMeter(CGContextRef context, const HIRect& inBoxRect,
@@ -367,8 +340,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
                          const ControlParams& aParams);
   void DrawButton(CGContextRef context, const HIRect& inBoxRect,
                   const ButtonParams& aParams);
-  void DrawTreeHeaderCell(CGContextRef context, const HIRect& inBoxRect,
-                          const TreeHeaderCellParams& aParams);
   void DrawDropdown(CGContextRef context, const HIRect& inBoxRect,
                     const DropdownParams& aParams);
   HIThemeButtonDrawInfo SpinButtonDrawInfo(ThemeButtonKind aKind,
@@ -400,7 +371,6 @@ class nsNativeThemeCocoa : public mozilla::widget::ThemeCocoa {
   NSComboBoxCell* mComboBoxCell;
   NSProgressBarCell* mProgressBarCell;
   NSLevelIndicatorCell* mMeterBarCell;
-  NSTableHeaderCell* mTreeHeaderCell;
   MOZCellDrawWindow* mCellDrawWindow = nil;
   MOZCellDrawView* mCellDrawView;
 };

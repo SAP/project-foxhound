@@ -89,6 +89,7 @@ class nsISerialEventTarget;
 
 namespace mozilla {
 class SchedulerGroup;
+class UntypedManagedContainer;
 
 namespace dom {
 class ContentParent;
@@ -110,9 +111,6 @@ struct ActorHandle {
   int mId;
 };
 
-// What happens if Interrupt calls race?
-enum RacyInterruptPolicy { RIPError, RIPChildWins, RIPParentWins };
-
 enum class LinkStatus : uint8_t {
   // The actor has not established a link yet, or the actor is no longer in use
   // by IPC, and its 'Dealloc' method has been called or is being called.
@@ -127,12 +125,16 @@ enum class LinkStatus : uint8_t {
   // A live link is connected to the other side of this actor.
   Connected,
 
-  // The link has begun being destroyed. Messages may still be received, but
-  // cannot be sent. (exception: sync/intr replies may be sent while Doomed).
+  // The link has begun being destroyed. Messages may no longer be sent. The
+  // ActorDestroy method is queued to be called, but has not been invoked yet,
+  // as managed actors still need to be destroyed first.
+  //
+  // NOTE: While no new IPC can be received at this point, `CanRecv` will still
+  // be true until `LinkStatus::Destroyed`.
   Doomed,
 
-  // The link has been destroyed, and messages will no longer be sent or
-  // received.
+  // The actor has been destroyed, and ActorDestroy has been called, however an
+  // ActorLifecycleProxy still holds a reference to the actor.
   Destroyed,
 };
 
@@ -174,12 +176,8 @@ class IProtocol : public HasResultCodes {
   IToplevelProtocol* ToplevelProtocol() { return mToplevel; }
   const IToplevelProtocol* ToplevelProtocol() const { return mToplevel; }
 
-  // The following methods either directly forward to the toplevel protocol, or
-  // almost directly do.
-  int32_t Register(IProtocol* aRouted);
-  int32_t RegisterID(IProtocol* aRouted, int32_t aId);
+  // Lookup() is forwarded directly to the toplevel protocol.
   IProtocol* Lookup(int32_t aId);
-  void Unregister(int32_t aId);
 
   Shmem::SharedMemory* CreateSharedMemory(size_t aSize, bool aUnsafe,
                                           int32_t* aId);
@@ -200,20 +198,24 @@ class IProtocol : public HasResultCodes {
   const char* GetProtocolName() const { return ProtocolIdToName(mProtocolId); }
 
   int32_t Id() const { return mId; }
-  IProtocol* Manager() const { return mManager; }
+  IRefCountedProtocol* Manager() const { return mManager; }
+
+  uint32_t AllManagedActorsCount() const;
 
   ActorLifecycleProxy* GetLifecycleProxy() { return mLifecycleProxy; }
   WeakActorLifecycleProxy* GetWeakLifecycleProxy();
 
   Side GetSide() const { return mSide; }
   bool CanSend() const { return mLinkStatus == LinkStatus::Connected; }
+
+  // Returns `true` for an active actor until the actor's `ActorDestroy` method
+  // has been called.
   bool CanRecv() const {
     return mLinkStatus == LinkStatus::Connected ||
            mLinkStatus == LinkStatus::Doomed;
   }
 
-  // Remove or deallocate a managee given its type.
-  virtual void RemoveManagee(int32_t, IProtocol*) = 0;
+  // Deallocate a managee given its type.
   virtual void DeallocManagee(int32_t, IProtocol*) = 0;
 
   Maybe<IProtocol*> ReadActor(IPC::MessageReader* aReader, bool aNullable,
@@ -223,8 +225,6 @@ class IProtocol : public HasResultCodes {
   virtual Result OnMessageReceived(const Message& aMessage) = 0;
   virtual Result OnMessageReceived(const Message& aMessage,
                                    UniquePtr<Message>& aReply) = 0;
-  virtual Result OnCallReceived(const Message& aMessage,
-                                UniquePtr<Message>& aReply) = 0;
   bool AllocShmem(size_t aSize, Shmem* aOutMem);
   bool AllocUnsafeShmem(size_t aSize, Shmem* aOutMem);
   bool DeallocShmem(Shmem& aMem);
@@ -240,17 +240,20 @@ class IProtocol : public HasResultCodes {
   friend class IPDLResolverInner;
   friend class UntypedManagedEndpoint;
 
-  void SetId(int32_t aId);
+  // We have separate functions because the accessibility code and BrowserParent
+  // manually calls SetManager.
+  void SetManager(IRefCountedProtocol* aManager);
 
-  // We have separate functions because the accessibility code manually
-  // calls SetManager.
-  void SetManager(IProtocol* aManager);
+  // Clear `mManager` and `mToplevel` to nullptr. Only intended to be called
+  // within the unlink implementation of cycle collected IPDL actors with cycle
+  // collected managers.
+  void UnlinkManager();
 
   // Sets the manager for the protocol and registers the protocol with
   // its manager, setting up channels for the protocol as well.  Not
   // for use outside of IPDL.
-  void SetManagerAndRegister(IProtocol* aManager);
-  void SetManagerAndRegister(IProtocol* aManager, int32_t aId);
+  bool SetManagerAndRegister(IRefCountedProtocol* aManager,
+                             int32_t aId = kNullActorId);
 
   // Helpers for calling `Send` on our underlying IPC channel.
   bool ChannelSend(UniquePtr<IPC::Message> aMsg);
@@ -270,28 +273,26 @@ class IProtocol : public HasResultCodes {
     }
   }
 
-  // Collect all actors managed by this object in an array. To make this safer
-  // to iterate, `ActorLifecycleProxy` references are returned rather than raw
-  // actor pointers.
-  virtual void AllManagedActors(
-      nsTArray<RefPtr<ActorLifecycleProxy>>& aActors) const = 0;
-
-  virtual uint32_t AllManagedActorsCount() const = 0;
-
   // Internal method called when the actor becomes connected.
-  void ActorConnected();
+  already_AddRefed<ActorLifecycleProxy> ActorConnected();
 
-  // Called immediately before setting the actor state to doomed, and triggering
-  // async actor destruction. Messages may be sent from this callback, but no
-  // later.
-  // FIXME(nika): This is currently unused!
-  virtual void ActorDoom() {}
-  void DoomSubtree();
+  // Internal method called when actor becomes disconnected.
+  void ActorDisconnected(ActorDestroyReason aWhy);
+
+  // Gets the list of ProtocolIds managed by this protocol.
+  virtual Span<const ProtocolId> ManagedProtocolIds() const = 0;
+
+  // Get the ManagedContainer for actors of the given protocol managed by this
+  // protocol. This returns a container if and only if passed a ProtocolId in
+  // `ManagedProtocolIds()`.
+  virtual UntypedManagedContainer* GetManagedActors(ProtocolId aProtocol) = 0;
+  const UntypedManagedContainer* GetManagedActors(ProtocolId aProtocol) const {
+    return const_cast<IProtocol*>(this)->GetManagedActors(aProtocol);
+  }
 
   // Called when the actor has been destroyed due to an error, a __delete__
   // message, or a __doom__ reply.
   virtual void ActorDestroy(ActorDestroyReason aWhy) {}
-  void DestroySubtree(ActorDestroyReason aWhy);
 
   // Called when IPC has acquired its first reference to the actor. This method
   // may take references which will later be freed by `ActorDealloc`.
@@ -313,12 +314,18 @@ class IProtocol : public HasResultCodes {
   void WarnMessageDiscarded(IPC::Message*) {}
 #endif
 
+  void DoomSubtree();
+
+  // Internal function returning an arbitrary directly managed actor. Used to
+  // identify managed actors to destroy when tearing down an actor tree.
+  IProtocol* PeekManagedActor() const;
+
   int32_t mId;
-  ProtocolId mProtocolId;
-  Side mSide;
+  const ProtocolId mProtocolId;
+  const Side mSide;
   LinkStatus mLinkStatus;
   ActorLifecycleProxy* mLifecycleProxy;
-  IProtocol* mManager;
+  RefPtr<IRefCountedProtocol> mManager;
   IToplevelProtocol* mToplevel;
 };
 
@@ -419,6 +426,7 @@ class IRefCountedProtocol : public IProtocol {
  * this protocol actor.
  */
 class IToplevelProtocol : public IRefCountedProtocol {
+  friend class IProtocol;
   template <class PFooSide>
   friend class Endpoint;
 
@@ -428,12 +436,8 @@ class IToplevelProtocol : public IRefCountedProtocol {
   ~IToplevelProtocol() = default;
 
  public:
-  // Shadow methods on IProtocol which are implemented directly on toplevel
-  // actors.
-  int32_t Register(IProtocol* aRouted);
-  int32_t RegisterID(IProtocol* aRouted, int32_t aId);
+  // Shadows the method on IProtocol, which will forward to the top.
   IProtocol* Lookup(int32_t aId);
-  void Unregister(int32_t aId);
 
   Shmem::SharedMemory* CreateSharedMemory(size_t aSize, bool aUnsafe,
                                           int32_t* aId);
@@ -446,8 +450,6 @@ class IToplevelProtocol : public IRefCountedProtocol {
 
   void SetOtherProcessId(base::ProcessId aOtherPid);
 
-  virtual void OnChannelClose() = 0;
-  virtual void OnChannelError() = 0;
   virtual void ProcessingError(Result aError, const char* aMsgName) {}
 
   bool Open(ScopedPort aPort, const nsID& aMessageChannelId,
@@ -461,8 +463,7 @@ class IToplevelProtocol : public IRefCountedProtocol {
   // the same thread. This method should be called on the thread to perform
   // the link.
   //
-  // WARNING: Attempting to send a sync or intr message on the same thread
-  // will crash.
+  // WARNING: Attempting to send a sync message on the same thread will crash.
   bool OpenOnSameThread(IToplevelProtocol* aTarget,
                         mozilla::ipc::Side aSide = mozilla::ipc::UnknownSide);
 
@@ -514,7 +515,26 @@ class IToplevelProtocol : public IRefCountedProtocol {
 
   virtual void OnChannelReceivedMessage(const Message& aMsg) {}
 
-  void OnIPCChannelOpened() { ActorConnected(); }
+  // MessageChannel lifecycle callbacks.
+  void OnIPCChannelOpened() {
+    // Leak the returned ActorLifecycleProxy reference. It will be destroyed in
+    // `OnChannelClose` or `OnChannelError`.
+    Unused << ActorConnected();
+  }
+  void OnChannelClose() {
+    // Re-acquire the ActorLifecycleProxy reference acquired in
+    // OnIPCChannelOpened.
+    RefPtr<ActorLifecycleProxy> proxy = dont_AddRef(GetLifecycleProxy());
+    ActorDisconnected(NormalShutdown);
+    DeallocShmems();
+  }
+  void OnChannelError() {
+    // Re-acquire the ActorLifecycleProxy reference acquired in
+    // OnIPCChannelOpened.
+    RefPtr<ActorLifecycleProxy> proxy = dont_AddRef(GetLifecycleProxy());
+    ActorDisconnected(AbnormalShutdown);
+    DeallocShmems();
+  }
 
   base::ProcessId OtherPidMaybeInvalid() const { return mOtherPid; }
 
@@ -529,7 +549,7 @@ class IToplevelProtocol : public IRefCountedProtocol {
   // NOTE NOTE NOTE
   // Used to be on mState
   int32_t mLastLocalId;
-  IDMap<IProtocol*> mActorMap;
+  IDMap<RefPtr<ActorLifecycleProxy>> mActorMap;
   IDMap<RefPtr<Shmem::SharedMemory>> mShmemMap;
 
   MessageChannel mChannel;
@@ -658,10 +678,6 @@ class ActorLifecycleProxy {
 
   IProtocol* MOZ_NON_OWNING_REF mActor;
 
-  // Hold a reference to the actor's manager's ActorLifecycleProxy to help
-  // prevent it from dying while we're still alive!
-  RefPtr<ActorLifecycleProxy> mManager;
-
   // When requested, the current self-referencing weak reference for this
   // ActorLifecycleProxy.
   RefPtr<WeakActorLifecycleProxy> mWeakProxy;
@@ -729,40 +745,98 @@ class IPDLResolverInner final {
 
 }  // namespace ipc
 
-template <typename Protocol>
-class ManagedContainer {
+// Base class for `ManagedContainer` - contains a series of IProtocol* instances
+// of the same type (as specified by the subclass), and allows iterating over
+// them.
+class UntypedManagedContainer {
  public:
-  using iterator = typename nsTArray<Protocol*>::const_iterator;
+  using iterator = nsTArray<mozilla::ipc::IProtocol*>::const_iterator;
 
-  iterator begin() const { return mArray.begin(); }
-  iterator end() const { return mArray.end(); }
-  iterator cbegin() const { return begin(); }
-  iterator cend() const { return end(); }
+  iterator begin() const { return mArray.cbegin(); }
+  iterator end() const { return mArray.cend(); }
 
   bool IsEmpty() const { return mArray.IsEmpty(); }
   uint32_t Count() const { return mArray.Length(); }
 
-  void ToArray(nsTArray<Protocol*>& aArray) const {
-    aArray.AppendElements(mArray);
+ protected:
+  explicit UntypedManagedContainer(mozilla::ipc::ProtocolId aProtocolId)
+#ifdef DEBUG
+      : mProtocolId(aProtocolId)
+#endif
+  {
   }
 
-  bool EnsureRemoved(Protocol* aElement) {
+ private:
+  friend class mozilla::ipc::IProtocol;
+
+  bool EnsureRemoved(mozilla::ipc::IProtocol* aElement) {
     return mArray.RemoveElementSorted(aElement);
   }
 
-  void Insert(Protocol* aElement) {
+  void Insert(mozilla::ipc::IProtocol* aElement) {
+    MOZ_ASSERT(aElement->GetProtocolId() == mProtocolId,
+               "ManagedContainer can only contain a single protocol");
     // Equivalent to `InsertElementSorted`, avoiding inserting a duplicate
-    // element.
+    // element. See bug 1896166.
     size_t index = mArray.IndexOfFirstElementGt(aElement);
     if (index == 0 || mArray[index - 1] != aElement) {
       mArray.InsertElementAt(index, aElement);
     }
   }
 
-  void Clear() { mArray.Clear(); }
+  nsTArray<mozilla::ipc::IProtocol*> mArray;
+#ifdef DEBUG
+  mozilla::ipc::ProtocolId mProtocolId;
+#endif
+};
 
- private:
-  nsTArray<Protocol*> mArray;
+template <typename Protocol>
+class ManagedContainer : public UntypedManagedContainer {
+ public:
+  ManagedContainer() : UntypedManagedContainer(Protocol::kProtocolId) {}
+
+  // Input iterator which downcasts to the protocol type while iterating over
+  // the untyped container.
+  class iterator {
+   public:
+    using value_type = Protocol*;
+    using difference_type = ptrdiff_t;
+    using pointer = value_type*;
+    using reference = value_type;
+    using iterator_category = std::input_iterator_tag;
+
+   private:
+    friend class ManagedContainer;
+    explicit iterator(const UntypedManagedContainer::iterator& aIter)
+        : mIter(aIter) {}
+    UntypedManagedContainer::iterator mIter;
+
+   public:
+    iterator() = default;
+
+    bool operator==(const iterator& aRhs) const { return mIter == aRhs.mIter; }
+    bool operator!=(const iterator& aRhs) const { return mIter != aRhs.mIter; }
+
+    // NOTE: operator->() cannot be implemented without a proxy type.
+    // This is OK, and the same approach taken by C++20's transform_view.
+    reference operator*() const { return static_cast<value_type>(*mIter); }
+
+    iterator& operator++() {
+      ++mIter;
+      return *this;
+    }
+    iterator operator++(int) { return iterator{mIter++}; }
+  };
+
+  iterator begin() const { return iterator{UntypedManagedContainer::begin()}; }
+  iterator end() const { return iterator{UntypedManagedContainer::end()}; }
+
+  void ToArray(nsTArray<Protocol*>& aArray) const {
+    aArray.SetCapacity(Count());
+    for (Protocol* p : *this) {
+      aArray.AppendElement(p);
+    }
+  }
 };
 
 template <typename Protocol>
@@ -772,7 +846,7 @@ Protocol* LoneManagedOrNullAsserts(
     return nullptr;
   }
   MOZ_ASSERT(aManagees.Count() == 1);
-  return *aManagees.cbegin();
+  return *aManagees.begin();
 }
 
 template <typename Protocol>
@@ -780,7 +854,7 @@ Protocol* SingleManagedOrNull(const ManagedContainer<Protocol>& aManagees) {
   if (aManagees.Count() != 1) {
     return nullptr;
   }
-  return *aManagees.cbegin();
+  return *aManagees.begin();
 }
 
 }  // namespace mozilla

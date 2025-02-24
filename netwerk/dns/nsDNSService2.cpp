@@ -874,7 +874,7 @@ nsDNSService::Init() {
       do_GetService("@mozilla.org/network/oblivious-http-service;1"));
 
   mTrrService = new TRRService();
-  if (NS_FAILED(mTrrService->Init())) {
+  if (NS_FAILED(mTrrService->Init(mResolver->IsNativeHTTPSEnabled()))) {
     mTrrService = nullptr;
   }
 
@@ -975,6 +975,15 @@ nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
   return NS_OK;
 }
 
+bool nsDNSService::IsLocalDomain(const nsACString& aHostname) const {
+  bool localDomain = mLocalDomains.Contains(aHostname);
+  if (StringEndsWith(aHostname, "."_ns)) {
+    localDomain = localDomain || mLocalDomains.Contains(Substring(
+                                     aHostname, 0, aHostname.Length() - 1));
+  }
+  return localDomain;
+}
+
 nsresult nsDNSService::AsyncResolveInternal(
     const nsACString& aHostname, uint16_t type, nsIDNSService::DNSFlags flags,
     nsIDNSAdditionalInfo* aInfo, nsIDNSListener* aListener,
@@ -996,7 +1005,8 @@ nsresult nsDNSService::AsyncResolveInternal(
 
     res = mResolver;
     idn = mIDN;
-    localDomain = mLocalDomains.Contains(aHostname);
+
+    localDomain = IsLocalDomain(aHostname);
   }
 
   if (mNotifyResolution) {
@@ -1076,7 +1086,7 @@ nsresult nsDNSService::CancelAsyncResolveInternal(
 
     res = mResolver;
     idn = mIDN;
-    localDomain = mLocalDomains.Contains(aHostname);
+    localDomain = IsLocalDomain(aHostname);
   }
   if (!res) {
     return NS_ERROR_OFFLINE;
@@ -1212,7 +1222,7 @@ nsresult nsDNSService::ResolveInternal(
     MutexAutoLock lock(mLock);
     res = mResolver;
     idn = mIDN;
-    localDomain = mLocalDomains.Contains(aHostname);
+    localDomain = IsLocalDomain(aHostname);
   }
 
   if (mNotifyResolution) {
@@ -1593,7 +1603,7 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
   static_assert(TRRSkippedReason::TRR_DISABLED_FLAG == 10);
   static_assert(TRRSkippedReason::TRR_TIMEOUT == 11);
   static_assert(TRRSkippedReason::TRR_CHANNEL_DNS_FAIL == 12);
-  static_assert(TRRSkippedReason::TRR_IS_OFFLINE == 13);
+  static_assert(TRRSkippedReason::TRR_BROWSER_IS_OFFLINE == 13);
   static_assert(TRRSkippedReason::TRR_NOT_CONFIRMED == 14);
   static_assert(TRRSkippedReason::TRR_DID_NOT_MAKE_QUERY == 15);
   static_assert(TRRSkippedReason::TRR_UNKNOWN_CHANNEL_FAILURE == 16);
@@ -1675,8 +1685,8 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
     case TRRSkippedReason::TRR_CHANNEL_DNS_FAIL:
       aName = "TRR_CHANNEL_DNS_FAIL"_ns;
       break;
-    case TRRSkippedReason::TRR_IS_OFFLINE:
-      aName = "TRR_IS_OFFLINE"_ns;
+    case TRRSkippedReason::TRR_BROWSER_IS_OFFLINE:
+      aName = "TRR_BROWSER_IS_OFFLINE"_ns;
       break;
     case TRRSkippedReason::TRR_NOT_CONFIRMED:
       aName = "TRR_NOT_CONFIRMED"_ns;

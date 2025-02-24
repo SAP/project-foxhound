@@ -788,9 +788,9 @@ class ScriptReaderRunnable final : public nsIRunnable,
     mRv = aRv;
 
     RefPtr<dom::MainThreadStopSyncLoopRunnable> runnable =
-        new dom::MainThreadStopSyncLoopRunnable(
-            mWorkerPrivate, std::move(mSyncLoopTarget), mRv);
-    MOZ_ALWAYS_TRUE(runnable->Dispatch());
+        new dom::MainThreadStopSyncLoopRunnable(std::move(mSyncLoopTarget),
+                                                mRv);
+    MOZ_ALWAYS_TRUE(runnable->Dispatch(mWorkerPrivate));
 
     mWorkerPrivate = nullptr;
     mSyncLoopTarget = nullptr;
@@ -1279,7 +1279,10 @@ nsresult mozJSModuleLoader::GetScriptForLocation(
 }
 
 void mozJSModuleLoader::UnloadModules() {
+  MOZ_ASSERT(!mIsUnloaded);
+
   mInitialized = false;
+  mIsUnloaded = true;
 
   if (mLoaderGlobal) {
     MOZ_ASSERT(JS_HasExtensibleLexicalEnvironment(mLoaderGlobal));
@@ -1387,6 +1390,11 @@ nsresult mozJSModuleLoader::IsModuleLoaded(const nsACString& aLocation,
                                            bool* retval) {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome());
 
+  if (mIsUnloaded) {
+    *retval = false;
+    return NS_OK;
+  }
+
   mInitialized = true;
   ModuleLoaderInfo info(aLocation);
   if (mImports.Get(info.Key())) {
@@ -1420,6 +1428,11 @@ nsresult mozJSModuleLoader::IsJSModuleLoaded(const nsACString& aLocation,
                                              bool* retval) {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome());
 
+  if (mIsUnloaded) {
+    *retval = false;
+    return NS_OK;
+  }
+
   mInitialized = true;
   ModuleLoaderInfo info(aLocation);
   if (mImports.Get(info.Key())) {
@@ -1434,6 +1447,11 @@ nsresult mozJSModuleLoader::IsJSModuleLoaded(const nsACString& aLocation,
 nsresult mozJSModuleLoader::IsESModuleLoaded(const nsACString& aLocation,
                                              bool* retval) {
   MOZ_ASSERT(nsContentUtils::IsCallerChrome());
+
+  if (mIsUnloaded) {
+    *retval = false;
+    return NS_OK;
+  }
 
   mInitialized = true;
   ModuleLoaderInfo info(aLocation);
@@ -1487,7 +1505,7 @@ nsresult mozJSModuleLoader::GetLoadedJSAndESModules(
 #ifdef STARTUP_RECORDER_ENABLED
 void mozJSModuleLoader::RecordImportStack(JSContext* aCx,
                                           const nsACString& aLocation) {
-  if (!Preferences::GetBool("browser.startup.record", false)) {
+  if (!StaticPrefs::browser_startup_record()) {
     return;
   }
 
@@ -1497,7 +1515,7 @@ void mozJSModuleLoader::RecordImportStack(JSContext* aCx,
 
 void mozJSModuleLoader::RecordImportStack(
     JSContext* aCx, JS::loader::ModuleLoadRequest* aRequest) {
-  if (!Preferences::GetBool("browser.startup.record", false)) {
+  if (!StaticPrefs::browser_startup_record()) {
     return;
   }
 
@@ -1728,6 +1746,11 @@ nsresult mozJSModuleLoader::Import(JSContext* aCx, const nsACString& aLocation,
                                    JS::MutableHandleObject aModuleGlobal,
                                    JS::MutableHandleObject aModuleExports,
                                    bool aIgnoreExports) {
+  if (mIsUnloaded) {
+    JS_ReportErrorASCII(aCx, "Module loaded is already unloaded");
+    return NS_ERROR_FAILURE;
+  }
+
   mInitialized = true;
 
   AUTO_PROFILER_MARKER_TEXT(
@@ -2012,6 +2035,11 @@ nsresult mozJSModuleLoader::ImportESModule(
     SkipCheckForBrokenURLOrZeroSized
         aSkipCheck /* = SkipCheckForBrokenURLOrZeroSized::No */) {
   using namespace JS::loader;
+
+  if (mIsUnloaded) {
+    JS_ReportErrorASCII(aCx, "Module loaded is already unloaded");
+    return NS_ERROR_FAILURE;
+  }
 
   mInitialized = true;
 

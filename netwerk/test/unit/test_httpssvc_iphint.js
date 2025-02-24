@@ -208,8 +208,6 @@ function channelOpenPromise(chan, flags) {
     function finish(req, buffer) {
       resolve([req, buffer]);
     }
-    let internal = chan.QueryInterface(Ci.nsIHttpChannelInternal);
-    internal.setWaitForHTTPSSVCRecord();
     chan.asyncOpen(new ChannelListener(finish, null, flags));
   });
 }
@@ -316,7 +314,7 @@ add_task(async function testIPHintWithFreshDNS() {
   );
 
   let chan = makeChan(`https://test.iphint.org/server-timing`);
-  chan.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+  chan.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
   let [req] = await channelOpenPromise(
     chan,
     CL_EXPECT_FAILURE | CL_ALLOW_UNKNOWN_CL
@@ -337,7 +335,7 @@ add_task(async function testIPHintWithFreshDNS() {
   });
 
   chan = makeChan(`https://test.iphint.org/server-timing`);
-  chan.loadFlags |= Ci.nsIRequest.LOAD_BYPASS_CACHE;
+  chan.loadFlags |= Ci.nsIRequest.LOAD_FRESH_CONNECTION;
   [req] = await channelOpenPromise(chan);
   Assert.equal(req.protocolVersion, "h2");
   let internal = req.QueryInterface(Ci.nsIHttpChannelInternal);

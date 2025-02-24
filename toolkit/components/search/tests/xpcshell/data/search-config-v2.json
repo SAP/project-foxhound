@@ -20,7 +20,7 @@
             "searchTermParamName": "q"
           },
           "suggestions": {
-            "base": "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox&hl={moz:locale}",
+            "base": "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox",
             "searchTermParamName": "q"
           }
         }
@@ -112,6 +112,7 @@
       "recordType": "engine",
       "identifier": "engine-resourceicon",
       "base": {
+        "classification": "general",
         "name": "engine-resourceicon",
         "urls": {
           "search": {
@@ -151,6 +152,7 @@
       "recordType": "engine",
       "identifier": "engine-reordered",
       "base": {
+        "classification": "general",
         "name": "Test search engine (Reordered)",
         "urls": {
           "search": {
@@ -167,7 +169,7 @@
             "searchTermParamName": "q"
           },
           "suggestions": {
-            "base": "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox&hl={moz:locale}",
+            "base": "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox",
             "searchTermParamName": "q"
           }
         }

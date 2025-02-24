@@ -78,7 +78,16 @@ support-files = [
 
 ["test_appDefaultEngine.js"]
 
+["test_appProvided_engine.js"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
+support-files = [
+  "../../schema/search-config-v2-schema.json",
+]
+
 ["test_appProvided_icons.js"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
+
+["test_appProvided_icons_updates.js"]
 prefs = ["browser.search.newSearchConfig.enabled=true"]
 
 ["test_async.js"]
@@ -110,23 +119,27 @@ support-files = [
 ["test_engine_old_selector_application.js"]
 
 ["test_engine_old_selector_application_distribution.js"]
+skip-if = ["true"] # Will be permanently removed as part of bug 1870686
 
 ["test_engine_old_selector_application_name.js"]
+skip-if = ["true"] # Will be permanently removed as part of bug 1870686
 
 ["test_engine_old_selector_order.js"]
 
 ["test_engine_old_selector_override.js"]
-
-["test_engine_old_selector_remote_override.js"]
-
-["test_engine_old_selector_remote_settings.js"]
-tags = "remotesettings searchmain"
 
 ["test_engine_selector_defaults.js"]
 
 ["test_engine_selector_engine_orders.js"]
 
 ["test_engine_selector_environment.js"]
+
+["test_engine_selector_remote_override.js"]
+
+["test_engine_selector_remote_settings.js"]
+tags = "remotesettings searchmain"
+
+["test_engine_selector_subvariants.js"]
 
 ["test_engine_selector_variants.js"]
 
@@ -169,6 +182,8 @@ tags = "remotesettings searchmain"
 ["test_migrateWebExtensionEngine.js"]
 
 ["test_missing_engine.js"]
+prefs = ["browser.search.newSearchConfig.enabled=false"]
+skip-if = ["true"] # Will be permanently removed as part of bug 1870686
 
 ["test_nodb_pluschanges.js"]
 
@@ -254,6 +269,10 @@ support-files = [
 
 ["test_searchUrlDomain.js"]
 
+["test_search_config_v2_nimbus.js"]
+prefs = ["browser.search.newSearchConfig.enabled=false"]
+skip-if = ["true"] # Will be permanently removed as part of bug 1870686
+
 ["test_selectedEngine.js"]
 
 ["test_sendSubmissionURL.js"]
@@ -274,6 +293,10 @@ support-files = ["data/search_ignorelist.json"]
 ["test_settings_migration_ids.js"]
 
 ["test_settings_migration_loadPath.js"]
+
+["test_settings_migration_renames.js"]
+support-files = ["data/search-migration-renames.json"]
+prefs = ["browser.search.newSearchConfig.enabled=true"]
 
 ["test_settings_none.js"]
 
@@ -307,6 +330,8 @@ support-files = ["data/search-migration.json"]
 ["test_webextensions_startup_duplicate.js"]
 
 ["test_webextensions_startup_remove.js"]
+
+["test_webextensions_startup.js"]
 
 ["test_webextensions_upgrade.js"]
 

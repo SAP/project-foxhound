@@ -77,13 +77,16 @@
               data-lazy-l10n-id="tab-context-close-n-tabs"
               data-l10n-args='{"tabCount": 1}'
               oncommand="TabContextMenu.closeContextTabs();"/>
+    <menuitem id="context_closeDuplicateTabs"
+              data-lazy-l10n-id="tab-context-close-duplicate-tabs"
+              oncommand="gBrowser.removeDuplicateTabs(TabContextMenu.contextTab);"/>
     <menu id="context_closeTabOptions"
           data-lazy-l10n-id="tab-context-close-multiple-tabs">
       <menupopup id="closeTabOptions">
         <menuitem id="context_closeTabsToTheStart" data-lazy-l10n-id="close-tabs-to-the-start"
-                  oncommand="gBrowser.removeTabsToTheStartFrom(TabContextMenu.contextTab, {animate: true});"/>
+                  oncommand="gBrowser.removeTabsToTheStartFrom(TabContextMenu.contextTab);"/>
         <menuitem id="context_closeTabsToTheEnd" data-lazy-l10n-id="close-tabs-to-the-end"
-                  oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab, {animate: true});"/>
+                  oncommand="gBrowser.removeTabsToTheEndFrom(TabContextMenu.contextTab);"/>
         <menuitem id="context_closeOtherTabs" data-lazy-l10n-id="close-other-tabs"
                   oncommand="gBrowser.removeAllTabsBut(TabContextMenu.contextTab);"/>
       </menupopup>
@@ -100,7 +103,7 @@
               oncommand="FullScreen.setAutohide();"/>
     <menuitem contexttype="fullscreen"
               data-lazy-l10n-id="full-screen-exit"
-              oncommand="BrowserFullScreen();"/>
+              oncommand="BrowserCommands.fullScreen();"/>
   </menupopup>
 
   <!-- bug 415444/582485: event.stopPropagation is here for the cloned version
@@ -109,7 +112,7 @@
   -->
   <menupopup id="backForwardMenu"
              onpopupshowing="return FillHistoryMenu(event.target);"
-             oncommand="gotoHistoryIndex(event); event.stopPropagation();"/>
+             oncommand="BrowserCommands.gotoHistoryIndex(event); event.stopPropagation();"/>
   <tooltip id="aHTMLTooltip" page="true"/>
   <tooltip id="remoteBrowserTooltip"/>
 
@@ -253,23 +256,35 @@
     <menuitem id="sidebar-switcher-bookmarks"
               data-l10n-id="sidebar-menu-bookmarks"
               key="viewBookmarksSidebarKb"
-              oncommand="SidebarUI.show('viewBookmarksSidebar');"/>
+              oncommand="SidebarController.show('viewBookmarksSidebar');"/>
     <menuitem id="sidebar-switcher-history"
               data-l10n-id="sidebar-menu-history"
               key="key_gotoHistory"
-              oncommand="SidebarUI.show('viewHistorySidebar');"/>
+              oncommand="SidebarController.show('viewHistorySidebar');"/>
     <menuitem id="sidebar-switcher-tabs"
               data-l10n-id="sidebar-menu-synced-tabs"
               class="sync-ui-item"
-              oncommand="SidebarUI.show('viewTabsSidebar');"/>
+              oncommand="SidebarController.show('viewTabsSidebar');"/>
     <menuseparator/>
     <!-- Extension toolbarbuttons go here. -->
     <menuseparator id="sidebar-extensions-separator"/>
     <menuitem id="sidebar-reverse-position"
-              oncommand="SidebarUI.reversePosition()"/>
+              oncommand="SidebarController.reversePosition()"/>
     <menuseparator/>
     <menuitem data-l10n-id="sidebar-menu-close"
-              oncommand="SidebarUI.hide()"/>
+              oncommand="SidebarController.hide()"/>
+  </menupopup>
+
+  <menupopup id="sidebar-context-menu">
+    <menuitem data-l10n-id="sidebar-context-menu-manage-extension"
+              id="sidebar-context-menu-manage-extension"
+              contexttype="extension-action"/>
+    <menuitem data-l10n-id="sidebar-context-menu-remove-extension"
+              id="sidebar-context-menu-remove-extension"
+              contexttype="extension-action"/>
+    <menuitem data-l10n-id="sidebar-context-menu-report-extension"
+              id="sidebar-context-menu-report-extension"
+              contexttype="extension-action"/>
   </menupopup>
 
   <menupopup id="toolbar-context-menu"
@@ -360,7 +375,7 @@
               oncommand="FullScreen.setAutohide();"/>
     <menuitem contexttype="fullscreen"
               data-lazy-l10n-id="full-screen-exit"
-              oncommand="BrowserFullScreen();"/>
+              oncommand="BrowserCommands.fullScreen();"/>
   </menupopup>
 
   <menupopup id="blockedPopupOptions"
@@ -412,7 +427,24 @@
     <hbox id="ctrlTab-showAll-container" pack="center"/>
   </panel>
 
-  <html:tab-preview id="tabbrowser-tab-preview" hidden="true" />
+  <!-- TODO: create lazily? -->
+  <panel id="tab-preview-panel"
+         type="arrow"
+         orient="vertical"
+         noautofocus="true"
+         norolluponanchor="true"
+         rolluponmousewheel="true"
+         consumeoutsideclicks="false">
+    <html:div class="tab-preview-text-container">
+      <html:div class="tab-preview-title"></html:div>
+      <html:div class="tab-preview-uri"></html:div>
+      <html:div class="tab-preview-pid-activeness">
+        <html:div class="tab-preview-pid"></html:div>
+        <html:div class="tab-preview-activeness"></html:div>
+      </html:div>
+    </html:div>
+    <html:div class="tab-preview-thumbnail-container"></html:div>
+  </panel>
 
   <html:template id="pageActionPanelTemplate">
     <panel id="pageActionPanel"
@@ -498,7 +530,7 @@
 #include ../../components/downloads/content/downloadsPanel.inc.xhtml
 #include ../../components/translations/content/selectTranslationsPanel.inc.xhtml
 #include ../../components/translations/content/fullPageTranslationsPanel.inc.xhtml
-#include browser-allTabsMenu.inc.xhtml
+#include ../../components/tabbrowser/content/browser-allTabsMenu.inc.xhtml
 
   <tooltip id="dynamic-shortcut-tooltip"
            onpopupshowing="UpdateDynamicShortcutTooltipText(this);"/>
@@ -624,7 +656,7 @@
               oncommand="gUnifiedExtensions.reportExtension(this.parentElement)" />
   </menupopup>
 
-  <menupopup id="translations-panel-settings-menupopup"
+  <menupopup id="full-page-translations-panel-settings-menupopup"
              onpopupshown="FullPageTranslationsPanel.handleSettingsPopupShownEvent()"
              onpopuphidden="FullPageTranslationsPanel.handleSettingsPopupHiddenEvent()">
     <menuitem class="always-offer-translations-menuitem"
@@ -658,5 +690,15 @@
               oncommand="FullPageTranslationsPanel.openManageLanguages()"/>
     <menuitem data-l10n-id="translations-panel-settings-about2"
               oncommand="FullPageTranslationsPanel.onAboutTranslations()"/>
+  </menupopup>
+
+  <menupopup id="select-translations-panel-settings-menupopup">
+    <menuitem id="select-translations-panel-open-settings-page-menuitem"
+              class="manage-languages-menuitem"
+              data-l10n-id="select-translations-panel-open-translations-settings-menuitem"
+              oncommand="SelectTranslationsPanel.openTranslationsSettingsPage()"/>
+    <menuitem id="select-translations-panel-about-translations-menuitem"
+              data-l10n-id="translations-panel-settings-about2"
+              oncommand="SelectTranslationsPanel.onAboutTranslations()"/>
   </menupopup>
 </popupset>

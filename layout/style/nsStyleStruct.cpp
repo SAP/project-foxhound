@@ -212,9 +212,9 @@ nsStyleFont::nsStyleFont(const nsStyleFont& aSrc)
       mFontPalette(aSrc.mFontPalette),
       mMathDepth(aSrc.mMathDepth),
       mLineHeight(aSrc.mLineHeight),
+      mMinFontSizeRatio(aSrc.mMinFontSizeRatio),
       mMathVariant(aSrc.mMathVariant),
       mMathStyle(aSrc.mMathStyle),
-      mMinFontSizeRatio(aSrc.mMinFontSizeRatio),
       mExplicitLanguage(aSrc.mExplicitLanguage),
       mXTextScale(aSrc.mXTextScale),
       mScriptUnconstrainedSize(aSrc.mScriptUnconstrainedSize),
@@ -605,17 +605,16 @@ nsSize nsStyleOutline::EffectiveOffsetFor(const nsRect& aRect) const {
 //
 nsStyleList::nsStyleList()
     : mListStylePosition(StyleListStylePosition::Outside),
+      mListStyleType(StyleCounterStyle::Name({StyleAtom(nsGkAtoms::disc)})),
       mQuotes(StyleQuotes::Auto()),
       mListStyleImage(StyleImage::None()) {
   MOZ_COUNT_CTOR(nsStyleList);
   MOZ_ASSERT(NS_IsMainThread());
-
-  mCounterStyle = nsGkAtoms::disc;
 }
 
 nsStyleList::nsStyleList(const nsStyleList& aSource)
     : mListStylePosition(aSource.mListStylePosition),
-      mCounterStyle(aSource.mCounterStyle),
+      mListStyleType(aSource.mListStyleType),
       mQuotes(aSource.mQuotes),
       mListStyleImage(aSource.mListStyleImage) {
   MOZ_COUNT_CTOR(nsStyleList);
@@ -641,7 +640,7 @@ nsChangeHint nsStyleList::CalcDifference(const nsStyleList& aNewData,
   // value changes from something else to list-item, that change itself would
   // cause ReconstructFrame.
   if (mListStylePosition != aNewData.mListStylePosition ||
-      mCounterStyle != aNewData.mCounterStyle ||
+      mListStyleType != aNewData.mListStyleType ||
       mListStyleImage != aNewData.mListStyleImage) {
     if (aOldStyle.StyleDisplay()->IsListItem()) {
       return nsChangeHint_ReconstructFrame;
@@ -700,8 +699,6 @@ nsChangeHint nsStyleXUL::CalcDifference(const nsStyleXUL& aNewData) const {
 // --------------------
 // nsStyleColumn
 //
-/* static */ const uint32_t nsStyleColumn::kMaxColumnCount;
-/* static */ const uint32_t nsStyleColumn::kColumnCountAuto;
 
 nsStyleColumn::nsStyleColumn()
     : mColumnWidth(LengthOrAuto::Auto()),
@@ -1052,6 +1049,12 @@ nsStylePosition::nsStylePosition()
       mHeight(StyleSize::Auto()),
       mMinHeight(StyleSize::Auto()),
       mMaxHeight(StyleMaxSize::None()),
+      mPositionAnchor(StylePositionAnchor::Auto()),
+      mPositionVisibility(StylePositionVisibility::ALWAYS),
+      mPositionTryOptions(StylePositionTryOptions()),
+      mPositionTryOrder(StylePositionTryOrder::Normal),
+      mInsetArea(StyleInsetArea{StyleInsetAreaKeyword::None,
+                                StyleInsetAreaKeyword::None}),
       mFlexBasis(StyleFlexBasis::Size(StyleSize::Auto())),
       mAspectRatio(StyleAspectRatio::Auto()),
       mGridAutoFlow(StyleGridAutoFlow::ROW),
@@ -1090,9 +1093,7 @@ nsStylePosition::nsStylePosition()
 }
 
 nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
-    : mAlignTracks(aSource.mAlignTracks),
-      mJustifyTracks(aSource.mJustifyTracks),
-      mObjectPosition(aSource.mObjectPosition),
+    : mObjectPosition(aSource.mObjectPosition),
       mOffset(aSource.mOffset),
       mWidth(aSource.mWidth),
       mMinWidth(aSource.mMinWidth),
@@ -1100,6 +1101,11 @@ nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
       mHeight(aSource.mHeight),
       mMinHeight(aSource.mMinHeight),
       mMaxHeight(aSource.mMaxHeight),
+      mPositionAnchor(aSource.mPositionAnchor),
+      mPositionVisibility(aSource.mPositionVisibility),
+      mPositionTryOptions(aSource.mPositionTryOptions),
+      mPositionTryOrder(aSource.mPositionTryOrder),
+      mInsetArea(aSource.mInsetArea),
       mFlexBasis(aSource.mFlexBasis),
       mGridAutoColumns(aSource.mGridAutoColumns),
       mGridAutoRows(aSource.mGridAutoRows),
@@ -1190,9 +1196,7 @@ nsChangeHint nsStylePosition::CalcDifference(
   }
 
   if (mAlignItems != aNewData.mAlignItems ||
-      mAlignSelf != aNewData.mAlignSelf ||
-      mJustifyTracks != aNewData.mJustifyTracks ||
-      mAlignTracks != aNewData.mAlignTracks) {
+      mAlignSelf != aNewData.mAlignSelf) {
     return hint | nsChangeHint_AllReflowHints;
   }
 
@@ -1275,6 +1279,20 @@ nsChangeHint nsStylePosition::CalcDifference(
     if (isVertical ? heightChanged : widthChanged) {
       hint |= nsChangeHint_ReflowHintsForISizeChange;
     }
+  }
+
+  if (mPositionAnchor != aNewData.mPositionAnchor) {
+    // 'position-anchor' provides a default anchor for other anchor positioning
+    // properties in the event that they don't specify one explicitly.
+    // TODO(jwatt): Re-evaluate what we're doing here.
+    hint |= nsChangeHint_NeutralChange;
+  }
+
+  if (mPositionVisibility != aNewData.mPositionVisibility ||
+      mPositionTryOptions != aNewData.mPositionTryOptions ||
+      mPositionTryOrder != aNewData.mPositionTryOrder ||
+      mInsetArea != aNewData.mInsetArea) {
+    hint |= nsChangeHint_NeutralChange;
   }
 
   if (mAspectRatio != aNewData.mAspectRatio) {
@@ -1364,8 +1382,7 @@ nsChangeHint nsStyleTable::CalcDifference(const nsStyleTable& aNewData) const {
 // nsStyleTableBorder
 
 nsStyleTableBorder::nsStyleTableBorder()
-    : mBorderSpacingCol(0),
-      mBorderSpacingRow(0),
+    : mBorderSpacing{Length::Zero(), Length::Zero()},
       mBorderCollapse(StyleBorderCollapse::Separate),
       mCaptionSide(StyleCaptionSide::Top),
       mEmptyCells(StyleEmptyCells::Show) {
@@ -1373,8 +1390,7 @@ nsStyleTableBorder::nsStyleTableBorder()
 }
 
 nsStyleTableBorder::nsStyleTableBorder(const nsStyleTableBorder& aSource)
-    : mBorderSpacingCol(aSource.mBorderSpacingCol),
-      mBorderSpacingRow(aSource.mBorderSpacingRow),
+    : mBorderSpacing(aSource.mBorderSpacing),
       mBorderCollapse(aSource.mBorderCollapse),
       mCaptionSide(aSource.mCaptionSide),
       mEmptyCells(aSource.mEmptyCells) {
@@ -1390,16 +1406,14 @@ nsChangeHint nsStyleTableBorder::CalcDifference(
   if (mBorderCollapse != aNewData.mBorderCollapse) {
     return nsChangeHint_ReconstructFrame;
   }
-
-  if (mCaptionSide == aNewData.mCaptionSide &&
-      mBorderSpacingCol == aNewData.mBorderSpacingCol &&
-      mBorderSpacingRow == aNewData.mBorderSpacingRow) {
-    if (mEmptyCells == aNewData.mEmptyCells) {
-      return nsChangeHint(0);
-    }
+  if (mCaptionSide != aNewData.mCaptionSide ||
+      mBorderSpacing != aNewData.mBorderSpacing) {
+    return NS_STYLE_HINT_REFLOW;
+  }
+  if (mEmptyCells != aNewData.mEmptyCells) {
     return NS_STYLE_HINT_VISUAL;
   }
-  return NS_STYLE_HINT_REFLOW;
+  return nsChangeHint(0);
 }
 
 template <typename T>
@@ -2093,7 +2107,8 @@ nsStyleDisplay::nsStyleDisplay()
       mBaselineSource(StyleBaselineSource::Auto),
       mWebkitLineClamp(0),
       mShapeMargin(LengthPercentage::Zero()),
-      mShapeOutside(StyleShapeOutside::None()) {
+      mShapeOutside(StyleShapeOutside::None()),
+      mAnchorScope(StyleAnchorScope::None()) {
   MOZ_COUNT_CTOR(nsStyleDisplay);
 }
 
@@ -2151,7 +2166,9 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mWebkitLineClamp(aSource.mWebkitLineClamp),
       mShapeImageThreshold(aSource.mShapeImageThreshold),
       mShapeMargin(aSource.mShapeMargin),
-      mShapeOutside(aSource.mShapeOutside) {
+      mShapeOutside(aSource.mShapeOutside),
+      mAnchorName(aSource.mAnchorName),
+      mAnchorScope(aSource.mAnchorScope) {
   MOZ_COUNT_CTOR(nsStyleDisplay);
 }
 
@@ -2237,6 +2254,7 @@ static bool AppearanceValueAffectsFrames(StyleAppearance aAppearance,
       // We need to reframe since this affects the spinbox creation in
       // nsNumber/SearchControlFrame::CreateAnonymousContent.
       return aDefaultAppearance == StyleAppearance::NumberInput ||
+             aDefaultAppearance == StyleAppearance::PasswordInput ||
              aDefaultAppearance == StyleAppearance::Searchfield;
     case StyleAppearance::Menulist:
       // This affects the menulist button creation.
@@ -2331,7 +2349,7 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     } else if (isScrollable) {
       if (ScrollbarGenerationChanged(*this, aNewData)) {
         // We might need to reframe in the case of hidden -> non-hidden case
-        // though, since nsHTMLScrollFrame::CreateAnonymousContent avoids
+        // though, since ScrollContainerFrame::CreateAnonymousContent avoids
         // creating scrollbars altogether for overflow: hidden. That seems it
         // could create some interesting perf cliffs...
         hint |= nsChangeHint_ScrollbarChange;
@@ -2521,7 +2539,9 @@ nsChangeHint nsStyleDisplay::CalcDifference(
                 mContentVisibility != aNewData.mContentVisibility ||
                 mContainerType != aNewData.mContainerType ||
                 mContain != aNewData.mContain ||
-                mContainerName != aNewData.mContainerName)) {
+                mContainerName != aNewData.mContainerName ||
+                mAnchorName != aNewData.mAnchorName ||
+                mAnchorScope != aNewData.mAnchorScope)) {
     hint |= nsChangeHint_NeutralChange;
   }
 
@@ -2697,12 +2717,11 @@ void nsStyleContent::TriggerImageLoads(Document& aDoc,
   }
 
   Span<const StyleContentItem> oldItems;
-  if (aOld && aOld->mContent.IsItems()) {
-    oldItems = aOld->mContent.AsItems().AsSpan();
+  if (aOld) {
+    oldItems = aOld->NonAltContentItems();
   }
 
-  auto items = mContent.AsItems().AsSpan();
-
+  auto items = NonAltContentItems();
   for (size_t i = 0; i < items.Length(); ++i) {
     const auto& item = items[i];
     if (!item.IsImage()) {
@@ -2724,8 +2743,7 @@ nsStyleTextReset::nsStyleTextReset()
     : mTextDecorationLine(StyleTextDecorationLine::NONE),
       mTextDecorationStyle(StyleTextDecorationStyle::Solid),
       mUnicodeBidi(StyleUnicodeBidi::Normal),
-      mInitialLetterSink(0),
-      mInitialLetterSize(0.0f),
+      mInitialLetter{0, 0},
       mTextDecorationColor(StyleColor::CurrentColor()),
       mTextDecorationThickness(StyleTextDecorationLength::Auto()) {
   MOZ_COUNT_CTOR(nsStyleTextReset);
@@ -2736,8 +2754,7 @@ nsStyleTextReset::nsStyleTextReset(const nsStyleTextReset& aSource)
       mTextDecorationLine(aSource.mTextDecorationLine),
       mTextDecorationStyle(aSource.mTextDecorationStyle),
       mUnicodeBidi(aSource.mUnicodeBidi),
-      mInitialLetterSink(aSource.mInitialLetterSink),
-      mInitialLetterSize(aSource.mInitialLetterSize),
+      mInitialLetter(aSource.mInitialLetter),
       mTextDecorationColor(aSource.mTextDecorationColor),
       mTextDecorationThickness(aSource.mTextDecorationThickness) {
   MOZ_COUNT_CTOR(nsStyleTextReset);
@@ -2746,8 +2763,7 @@ nsStyleTextReset::nsStyleTextReset(const nsStyleTextReset& aSource)
 nsChangeHint nsStyleTextReset::CalcDifference(
     const nsStyleTextReset& aNewData) const {
   if (mUnicodeBidi != aNewData.mUnicodeBidi ||
-      mInitialLetterSink != aNewData.mInitialLetterSink ||
-      mInitialLetterSize != aNewData.mInitialLetterSize) {
+      mInitialLetter != aNewData.mInitialLetter) {
     return NS_STYLE_HINT_REFLOW;
   }
 
@@ -2761,12 +2777,9 @@ nsChangeHint nsStyleTextReset::CalcDifference(
            nsChangeHint_SchedulePaint;
   }
 
-  // Repaint for decoration color changes
-  if (mTextDecorationColor != aNewData.mTextDecorationColor) {
-    return nsChangeHint_RepaintFrame;
-  }
-
-  if (mTextOverflow != aNewData.mTextOverflow) {
+  // Repaint for decoration color changes or text-overflow.
+  if (mTextDecorationColor != aNewData.mTextDecorationColor ||
+      mTextOverflow != aNewData.mTextOverflow) {
     return nsChangeHint_RepaintFrame;
   }
 
@@ -2787,7 +2800,7 @@ static StyleAbsoluteColor DefaultColor(const Document& aDocument) {
 nsStyleText::nsStyleText(const Document& aDocument)
     : mColor(DefaultColor(aDocument)),
       mForcedColorAdjust(StyleForcedColorAdjust::Auto),
-      mTextTransform(StyleTextTransform::None()),
+      mTextTransform(StyleTextTransform::NONE),
       mTextAlign(StyleTextAlign::Start),
       mTextAlignLast(StyleTextAlignLast::Auto),
       mTextJustify(StyleTextJustify::Auto),
@@ -3536,7 +3549,7 @@ static nscoord Resolve(const StyleContainIntrinsicSize& aSize,
   }
   MOZ_ASSERT(aSize.HasAuto());
   if (const auto* element = Element::FromNodeOrNull(aFrame.GetContent())) {
-    Maybe<float> lastSize = aAxis == eLogicalAxisBlock
+    Maybe<float> lastSize = aAxis == LogicalAxis::Block
                                 ? element->GetLastRememberedBSize()
                                 : element->GetLastRememberedISize();
     if (lastSize && aFrame.HidesContent()) {
@@ -3556,7 +3569,7 @@ Maybe<nscoord> ContainSizeAxes::ContainIntrinsicBSize(
   }
   const StyleContainIntrinsicSize& bSize =
       aFrame.StylePosition()->ContainIntrinsicBSize(aFrame.GetWritingMode());
-  return Some(Resolve(bSize, aNoneValue, aFrame, eLogicalAxisBlock));
+  return Some(Resolve(bSize, aNoneValue, aFrame, LogicalAxis::Block));
 }
 
 Maybe<nscoord> ContainSizeAxes::ContainIntrinsicISize(
@@ -3566,7 +3579,7 @@ Maybe<nscoord> ContainSizeAxes::ContainIntrinsicISize(
   }
   const StyleContainIntrinsicSize& iSize =
       aFrame.StylePosition()->ContainIntrinsicISize(aFrame.GetWritingMode());
-  return Some(Resolve(iSize, aNoneValue, aFrame, eLogicalAxisInline));
+  return Some(Resolve(iSize, aNoneValue, aFrame, LogicalAxis::Inline));
 }
 
 nsSize ContainSizeAxes::ContainSize(const nsSize& aUncontainedSize,

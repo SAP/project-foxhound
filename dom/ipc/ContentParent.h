@@ -50,8 +50,6 @@
 #include "DriverCrashGuard.h"
 #include "nsIReferrerInfo.h"
 
-#define CHILD_PROCESS_SHUTDOWN_MESSAGE u"child-process-shutdown"_ns
-
 class nsConsoleService;
 class nsIContentProcessInfo;
 class nsICycleCollectorLogSink;
@@ -412,7 +410,7 @@ class ContentParent final : public PContentParent,
    * WARNING: aReason appears in telemetry, so any new value passed in requires
    * data review.
    */
-  void KillHard(const char* aWhy);
+  void KillHard(const char* aReason);
 
   ContentParentId ChildID() const { return mChildID; }
 
@@ -423,8 +421,6 @@ class ContentParent final : public PContentParent,
    * ContentParent based on the value returned here.
    */
   void FriendlyName(nsAString& aName, bool aAnonymize = false);
-
-  virtual void OnChannelError() override;
 
   mozilla::ipc::IPCResult RecvInitCrashReporter(
       const NativeThreadId& aThreadId);
@@ -446,6 +442,15 @@ class ContentParent final : public PContentParent,
       PHalParent* aActor) override {
     return PContentParent::RecvPHalConstructor(aActor);
   }
+
+  mozilla::ipc::IPCResult RecvAttributionEvent(
+      const nsACString& aHost, PrivateAttributionImpressionType aType,
+      uint32_t aIndex, const nsAString& aAd, const nsACString& aTargetHost);
+  mozilla::ipc::IPCResult RecvAttributionConversion(
+      const nsACString& aHost, const nsAString& aTask, uint32_t aHistogramSize,
+      const Maybe<uint32_t>& aLoopbackDays,
+      const Maybe<PrivateAttributionImpressionType>& aImpressionType,
+      const nsTArray<nsString>& aAds, const nsTArray<nsCString>& aSourceHosts);
 
   PHeapSnapshotTempFileHelperParent* AllocPHeapSnapshotTempFileHelperParent();
 
@@ -475,10 +480,10 @@ class ContentParent final : public PContentParent,
   void ForkNewProcess(bool aBlocking);
 
   mozilla::ipc::IPCResult RecvCreateWindow(
-      PBrowserParent* aThisBrowserParent,
-      const MaybeDiscarded<BrowsingContext>& aParent, PBrowserParent* aNewTab,
-      const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-      const bool& aForPrinting, const bool& aForWindowDotPrint,
+      PBrowserParent* aThisTab, const MaybeDiscarded<BrowsingContext>& aParent,
+      PBrowserParent* aNewTab, const uint32_t& aChromeFlags,
+      const bool& aCalledFromJS, const bool& aForPrinting,
+      const bool& aForWindowDotPrint, const bool& aTopLevelCreatedByWebContent,
       nsIURI* aURIToLoad, const nsACString& aFeatures,
       const UserActivation::Modifiers& aModifiers,
       nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
@@ -488,10 +493,10 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvCreateWindowInDifferentProcess(
       PBrowserParent* aThisTab, const MaybeDiscarded<BrowsingContext>& aParent,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-      nsIURI* aURIToLoad, const nsACString& aFeatures,
-      const UserActivation::Modifiers& aModifiers, const nsAString& aName,
-      nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
-      nsIReferrerInfo* aReferrerInfo,
+      const bool& aTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
+      const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
+      const nsAString& aName, nsIPrincipal* aTriggeringPrincipal,
+      nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
       const OriginAttributes& aOriginAttributes);
 
   static void BroadcastBlobURLRegistration(
@@ -551,12 +556,12 @@ class ContentParent final : public PContentParent,
   void SetMainThreadQoSPriority(nsIThread::QoSPriority aQoSPriority);
 
   // This function is called when we are about to load a document from an
-  // HTTP(S) or FTP channel for a content process.  It is a useful place
+  // HTTP(S) channel for a content process.  It is a useful place
   // to start to kick off work as early as possible in response to such
   // document loads.
   // aShouldWaitForPermissionCookieUpdate is set to true if main thread IPCs for
   // updating permissions/cookies are sent.
-  nsresult AboutToLoadHttpFtpDocumentForChild(
+  nsresult AboutToLoadHttpDocumentForChild(
       nsIChannel* aChannel,
       bool* aShouldWaitForPermissionCookieUpdate = nullptr);
 
@@ -618,7 +623,8 @@ class ContentParent final : public PContentParent,
       uint64_t aActionId);
   mozilla::ipc::IPCResult RecvAdjustWindowFocus(
       const MaybeDiscarded<BrowsingContext>& aContext, bool aIsVisible,
-      uint64_t aActionId);
+      uint64_t aActionId, bool aShouldClearFocus,
+      const MaybeDiscarded<BrowsingContext>& aAncestorBrowsingContextToFocus);
   mozilla::ipc::IPCResult RecvClearFocus(
       const MaybeDiscarded<BrowsingContext>& aContext);
   mozilla::ipc::IPCResult RecvSetFocusedBrowsingContext(
@@ -704,8 +710,8 @@ class ContentParent final : public PContentParent,
       PBrowserParent* aThisTab, BrowsingContext& aParent, bool aSetOpener,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
       const bool& aForPrinting, const bool& aForWindowDotPrint,
-      nsIURI* aURIToLoad, const nsACString& aFeatures,
-      const UserActivation::Modifiers& aModifiers,
+      const bool& aIsTopLevelCreatedByWebContent, nsIURI* aURIToLoad,
+      const nsACString& aFeatures, const UserActivation::Modifiers& aModifiers,
       BrowserParent* aNextRemoteBrowser, const nsAString& aName,
       nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewRemoteTab,
       bool* aWindowIsNew, int32_t& aOpenLocation,
@@ -880,7 +886,7 @@ class ContentParent final : public PContentParent,
       const MaybeDiscarded<BrowsingContext>& aTarget, PrintData&& aPrintData);
 
   mozilla::ipc::IPCResult RecvConstructPopupBrowser(
-      ManagedEndpoint<PBrowserParent>&& actor,
+      ManagedEndpoint<PBrowserParent>&& aBrowserEp,
       ManagedEndpoint<PWindowGlobalParent>&& windowEp, const TabId& tabId,
       const IPCTabContext& context, const WindowGlobalInit& initialWindowInit,
       const uint32_t& chromeFlags);
@@ -950,13 +956,14 @@ class ContentParent final : public PContentParent,
       PBrowserParent* aBrowser,
       const MaybeDiscarded<BrowsingContext>& aContext);
 
-  mozilla::ipc::IPCResult RecvSetClipboard(const IPCTransferable& aTransferable,
-                                           const int32_t& aWhichClipboard);
+  mozilla::ipc::IPCResult RecvSetClipboard(
+      const IPCTransferable& aTransferable, const int32_t& aWhichClipboard,
+      const MaybeDiscarded<WindowContext>& aRequestingWindowContext);
 
   mozilla::ipc::IPCResult RecvGetClipboard(
       nsTArray<nsCString>&& aTypes, const int32_t& aWhichClipboard,
       const MaybeDiscarded<WindowContext>& aRequestingWindowContext,
-      IPCTransferableData* aTransferableData);
+      IPCTransferableDataOrError* aTransferableDataOrError);
 
   mozilla::ipc::IPCResult RecvEmptyClipboard(const int32_t& aWhichClipboard);
 
@@ -976,7 +983,9 @@ class ContentParent final : public PContentParent,
       ClipboardReadRequestOrError* aRequestOrError);
 
   already_AddRefed<PClipboardWriteRequestParent>
-  AllocPClipboardWriteRequestParent(const int32_t& aClipboardType);
+  AllocPClipboardWriteRequestParent(
+      const int32_t& aClipboardType,
+      const MaybeDiscarded<WindowContext>& aSettingWindowContext);
 
   mozilla::ipc::IPCResult RecvGetIconForExtension(const nsACString& aFileExt,
                                                   const uint32_t& aIconSize,
@@ -1086,10 +1095,10 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvEndDriverCrashGuard(const uint32_t& aGuardType);
 
-  mozilla::ipc::IPCResult RecvAddIdleObserver(const uint64_t& observerId,
+  mozilla::ipc::IPCResult RecvAddIdleObserver(const uint64_t& aObserverId,
                                               const uint32_t& aIdleTimeInS);
 
-  mozilla::ipc::IPCResult RecvRemoveIdleObserver(const uint64_t& observerId,
+  mozilla::ipc::IPCResult RecvRemoveIdleObserver(const uint64_t& aObserverId,
                                                  const uint32_t& aIdleTimeInS);
 
   mozilla::ipc::IPCResult RecvBackUpXResources(
@@ -1185,7 +1194,7 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvRecordDiscardedData(
       const DiscardedData& aDiscardedData);
   mozilla::ipc::IPCResult RecvRecordPageLoadEvent(
-      const mozilla::glean::perf::PageLoadExtra& aPageLoadEventExtra);
+      mozilla::glean::perf::PageLoadExtra&& aPageLoadEventExtra);
   mozilla::ipc::IPCResult RecvRecordOrigin(const uint32_t& aMetricId,
                                            const nsACString& aOrigin);
   mozilla::ipc::IPCResult RecvReportContentBlockingLog(
@@ -1271,6 +1280,10 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvNotifyPositionStateChanged(
       const MaybeDiscarded<BrowsingContext>& aContext,
+      const Maybe<PositionState>& aState);
+
+  mozilla::ipc::IPCResult RecvNotifyGuessedPositionStateChanged(
+      const MaybeDiscarded<BrowsingContext>& aContext, const nsID& aMediaId,
       const Maybe<PositionState>& aState);
 
   mozilla::ipc::IPCResult RecvAddOrRemovePageAwakeRequest(
@@ -1376,7 +1389,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvSetContainerFeaturePolicy(
       const MaybeDiscardedBrowsingContext& aContainerContext,
-      FeaturePolicy* aContainerFeaturePolicy);
+      MaybeFeaturePolicyInfo&& aContainerFeaturePolicyInfo);
 
   mozilla::ipc::IPCResult RecvGetSystemIcon(nsIURI* aURI,
                                             GetSystemIconResolver&& aResolver);
@@ -1661,8 +1674,7 @@ class ThreadsafeContentParentHandle final {
 };
 
 // This is the C++ version of remoteTypePrefix in E10SUtils.sys.mjs.
-const nsDependentCSubstring RemoteTypePrefix(
-    const nsACString& aContentProcessType);
+nsDependentCSubstring RemoteTypePrefix(const nsACString& aContentProcessType);
 
 // This is based on isWebRemoteType in E10SUtils.sys.mjs.
 bool IsWebRemoteType(const nsACString& aContentProcessType);

@@ -10,13 +10,16 @@
 #include "AudioDeviceInfo.h"
 #include "AudioStreamTrack.h"
 #include "CubebDeviceEnumerator.h"
+#include "CubebInputStream.h"
 #include "MediaTimer.h"
 #include "MediaTrackConstraints.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
 #include "VideoStreamTrack.h"
+#include "Tracing.h"
 #include "VideoUtils.h"
 #include "mozilla/Base64.h"
+#include "mozilla/EventTargetCapability.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/PeerIdentity.h"
@@ -291,6 +294,72 @@ void MediaManager::CallOnSuccess(GetUserMediaSuccessCallback& aCallback,
   aCallback.Call(aStream);
 }
 
+enum class PersistentPermissionState : uint32_t {
+  Unknown = nsIPermissionManager::UNKNOWN_ACTION,
+  Allow = nsIPermissionManager::ALLOW_ACTION,
+  Deny = nsIPermissionManager::DENY_ACTION,
+  Prompt = nsIPermissionManager::PROMPT_ACTION,
+};
+
+static PersistentPermissionState CheckPermission(
+    PersistentPermissionState aPermission) {
+  switch (aPermission) {
+    case PersistentPermissionState::Unknown:
+    case PersistentPermissionState::Allow:
+    case PersistentPermissionState::Deny:
+    case PersistentPermissionState::Prompt:
+      return aPermission;
+  }
+  MOZ_CRASH("Unexpected permission value");
+}
+
+struct WindowPersistentPermissionState {
+  PersistentPermissionState mCameraPermission;
+  PersistentPermissionState mMicrophonePermission;
+};
+
+static Result<WindowPersistentPermissionState, nsresult>
+GetPersistentPermissions(uint64_t aWindowId) {
+  auto* window = nsGlobalWindowInner::GetInnerWindowWithId(aWindowId);
+  if (NS_WARN_IF(!window) || NS_WARN_IF(!window->GetPrincipal())) {
+    return Err(NS_ERROR_INVALID_ARG);
+  }
+
+  Document* doc = window->GetExtantDoc();
+  if (NS_WARN_IF(!doc)) {
+    return Err(NS_ERROR_INVALID_ARG);
+  }
+
+  nsIPrincipal* principal = window->GetPrincipal();
+  if (NS_WARN_IF(!principal)) {
+    return Err(NS_ERROR_INVALID_ARG);
+  }
+
+  nsresult rv;
+  RefPtr<PermissionDelegateHandler> permDelegate =
+      doc->GetPermissionDelegateHandler();
+  if (NS_WARN_IF(!permDelegate)) {
+    return Err(NS_ERROR_INVALID_ARG);
+  }
+
+  uint32_t audio = nsIPermissionManager::UNKNOWN_ACTION;
+  uint32_t video = nsIPermissionManager::UNKNOWN_ACTION;
+  {
+    rv = permDelegate->GetPermission("microphone"_ns, &audio, true);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return Err(rv);
+    }
+    rv = permDelegate->GetPermission("camera"_ns, &video, true);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return Err(rv);
+    }
+  }
+
+  return WindowPersistentPermissionState{
+      CheckPermission(static_cast<PersistentPermissionState>(video)),
+      CheckPermission(static_cast<PersistentPermissionState>(audio))};
+}
+
 /**
  * DeviceListener has threadsafe refcounting for use across the main, media and
  * MTG threads. But it has a non-threadsafe SupportsWeakPtr for WeakPtr usage
@@ -441,6 +510,8 @@ class DeviceListener : public SupportsWeakPtr {
   // Accessed from MediaTrackGraph thread, MediaManager thread, and MainThread
   // No locking needed as it's set on Activate() and never assigned to again.
   UniquePtr<DeviceState> mDeviceState;
+
+  MediaEventListener mCaptureEndedListener;
 };
 
 /**
@@ -1458,8 +1529,62 @@ class GetUserMediaStreamTask final : public GetUserMediaTask {
 
   const MediaStreamConstraints& GetConstraints() { return mConstraints; }
 
+  void PrimeVoiceProcessing() {
+    mPrimingStream = MakeAndAddRef<PrimingCubebVoiceInputStream>();
+    mPrimingStream->Init();
+  }
+
  private:
   void PrepareDOMStream();
+
+  class PrimingCubebVoiceInputStream {
+    class Listener final : public CubebInputStream::Listener {
+      NS_INLINE_DECL_THREADSAFE_REFCOUNTING(Listener, override);
+
+     private:
+      ~Listener() = default;
+
+      long DataCallback(const void*, long) override {
+        MOZ_CRASH("Unexpected data callback");
+      }
+      void StateCallback(cubeb_state) override {}
+      void DeviceChangedCallback() override {}
+    };
+
+    NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_EVENT_TARGET(
+        PrimingCubebVoiceInputStream, mCubebThread.GetEventTarget())
+
+   public:
+    void Init() {
+      mCubebThread.GetEventTarget()->Dispatch(
+          NS_NewRunnableFunction(__func__, [this, self = RefPtr(this)] {
+            mCubebThread.AssertOnCurrentThread();
+            LOG("Priming voice processing with stream %p", this);
+            TRACE("PrimingCubebVoiceInputStream::Init");
+            const cubeb_devid default_device = nullptr;
+            const uint32_t mono = 1;
+            const uint32_t rate = CubebUtils::PreferredSampleRate(false);
+            const bool isVoice = true;
+            mCubebStream =
+                CubebInputStream::Create(default_device, mono, rate, isVoice,
+                                         MakeRefPtr<Listener>().get());
+          }));
+    }
+
+   private:
+    ~PrimingCubebVoiceInputStream() {
+      mCubebThread.AssertOnCurrentThread();
+      LOG("Releasing primed voice processing stream %p", this);
+      mCubebStream = nullptr;
+    }
+
+    const EventTargetCapability<nsISerialEventTarget> mCubebThread =
+        EventTargetCapability<nsISerialEventTarget>(
+            TaskQueue::Create(CubebUtils::GetCubebOperationThread(),
+                              "PrimingCubebInputStream::mCubebThread")
+                .get());
+    UniquePtr<CubebInputStream> mCubebStream MOZ_GUARDED_BY(mCubebThread);
+  };
 
   // Constraints derived from those passed to getUserMedia() but adjusted for
   // preferences, defaults, and security
@@ -1473,6 +1598,7 @@ class GetUserMediaStreamTask final : public GetUserMediaTask {
   // MediaDevices are set when selected and Allowed() by the UI.
   RefPtr<LocalMediaDevice> mAudioDevice;
   RefPtr<LocalMediaDevice> mVideoDevice;
+  RefPtr<PrimingCubebVoiceInputStream> mPrimingStream;
   // Tracking id unique for a video frame source. Set when the corresponding
   // device has been allocated.
   Maybe<TrackingId> mVideoTrackingId;
@@ -2220,6 +2346,7 @@ MediaManager::MediaManager(already_AddRefed<TaskQueue> aMediaThread)
   mPrefs.mWidth = 0;    // adaptive default
   mPrefs.mHeight = 0;   // adaptive default
   mPrefs.mFPS = MediaEnginePrefs::DEFAULT_VIDEO_FPS;
+  mPrefs.mUsePlatformProcessing = false;
   mPrefs.mAecOn = false;
   mPrefs.mUseAecMobile = false;
   mPrefs.mAgcOn = false;
@@ -2227,6 +2354,7 @@ MediaManager::MediaManager(already_AddRefed<TaskQueue> aMediaThread)
   mPrefs.mNoiseOn = false;
   mPrefs.mTransientOn = false;
   mPrefs.mAgc2Forced = false;
+  mPrefs.mExpectDrift = -1;  // auto
 #ifdef MOZ_WEBRTC
   mPrefs.mAgc =
       webrtc::AudioProcessing::Config::GainController1::Mode::kAdaptiveDigital;
@@ -2271,14 +2399,14 @@ static void ForeachObservedPref(const Function& aFunction) {
   aFunction("media.video_loopback_dev"_ns);
   aFunction("media.getusermedia.fake-camera-name"_ns);
 #ifdef MOZ_WEBRTC
-  aFunction("media.getusermedia.aec_enabled"_ns);
-  aFunction("media.getusermedia.aec"_ns);
-  aFunction("media.getusermedia.agc_enabled"_ns);
-  aFunction("media.getusermedia.agc"_ns);
-  aFunction("media.getusermedia.hpf_enabled"_ns);
-  aFunction("media.getusermedia.noise_enabled"_ns);
-  aFunction("media.getusermedia.noise"_ns);
-  aFunction("media.getusermedia.channels"_ns);
+  aFunction("media.getusermedia.audio.processing.aec.enabled"_ns);
+  aFunction("media.getusermedia.audio.processing.aec"_ns);
+  aFunction("media.getusermedia.audio.processing.agc.enabled"_ns);
+  aFunction("media.getusermedia.audio.processing.agc"_ns);
+  aFunction("media.getusermedia.audio.processing.hpf.enabled"_ns);
+  aFunction("media.getusermedia.audio.processing.noise.enabled"_ns);
+  aFunction("media.getusermedia.audio.processing.noise"_ns);
+  aFunction("media.getusermedia.audio.max_channels"_ns);
   aFunction("media.navigator.streams.fake"_ns);
 #endif
 }
@@ -2391,7 +2519,7 @@ void MediaManager::Dispatch(already_AddRefed<Runnable> task) {
 
 template <typename MozPromiseType, typename FunctionType>
 /* static */
-RefPtr<MozPromiseType> MediaManager::Dispatch(const char* aName,
+RefPtr<MozPromiseType> MediaManager::Dispatch(StaticString aName,
                                               FunctionType&& aFunction) {
   MozPromiseHolder<MozPromiseType> holder;
   RefPtr<MozPromiseType> promise = holder.Ensure(aName);
@@ -2850,7 +2978,7 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
       case MediaSourceEnum::AudioCapture:
         // Only enable AudioCapture if the pref is enabled. If it's not, we can
         // deny right away.
-        if (!Preferences::GetBool("media.getusermedia.audiocapture.enabled")) {
+        if (!Preferences::GetBool("media.getusermedia.audio.capture.enabled")) {
           return StreamPromise::CreateAndReject(
               MakeRefPtr<MediaMgrError>(MediaMgrError::Name::NotAllowedError),
               __func__);
@@ -3042,6 +3170,36 @@ RefPtr<MediaManager::StreamPromise> MediaManager::GetUserMedia(
                 c, std::move(holder), windowID, std::move(windowListener),
                 std::move(audioListener), std::move(videoListener), prefs,
                 principalInfo, aCallerType, focusSource);
+
+            // It is time to ask for user permission, prime voice processing
+            // now. Use a local lambda to enable a guard pattern.
+            [&] {
+              if (!StaticPrefs::
+                      media_getusermedia_microphone_voice_stream_priming_enabled() ||
+                  !StaticPrefs::
+                      media_getusermedia_microphone_prefer_voice_stream_with_processing_enabled()) {
+                return;
+              }
+
+              if (const auto fc = FlattenedConstraints(
+                      NormalizedConstraints(GetInvariant(c.mAudio)));
+                  !fc.mEchoCancellation.Get(prefs.mAecOn) &&
+                  !fc.mAutoGainControl.Get(prefs.mAgcOn && prefs.mAecOn) &&
+                  !fc.mNoiseSuppression.Get(prefs.mNoiseOn && prefs.mAecOn)) {
+                return;
+              }
+
+              if (GetPersistentPermissions(windowID)
+                      .map([](auto&& aState) {
+                        return aState.mMicrophonePermission ==
+                               PersistentPermissionState::Deny;
+                      })
+                      .unwrapOr(true)) {
+                return;
+              }
+
+              task->PrimeVoiceProcessing();
+            }();
 
             size_t taskCount =
                 self->AddTaskAndGetCount(windowID, callID, std::move(task));
@@ -3473,26 +3631,45 @@ void MediaManager::GetPrefs(nsIPrefBranch* aBranch, const char* aData) {
   GetPref(aBranch, "media.navigator.audio.fake_frequency", aData,
           &mPrefs.mFreq);
 #ifdef MOZ_WEBRTC
-  GetPrefBool(aBranch, "media.getusermedia.aec_enabled", aData, &mPrefs.mAecOn);
-  GetPrefBool(aBranch, "media.getusermedia.agc_enabled", aData, &mPrefs.mAgcOn);
-  GetPrefBool(aBranch, "media.getusermedia.hpf_enabled", aData, &mPrefs.mHPFOn);
-  GetPrefBool(aBranch, "media.getusermedia.noise_enabled", aData,
-              &mPrefs.mNoiseOn);
-  GetPrefBool(aBranch, "media.getusermedia.transient_enabled", aData,
-              &mPrefs.mTransientOn);
-  GetPrefBool(aBranch, "media.getusermedia.agc2_forced", aData,
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.platform.enabled",
+              aData, &mPrefs.mUsePlatformProcessing);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.aec.enabled", aData,
+              &mPrefs.mAecOn);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.agc.enabled", aData,
+              &mPrefs.mAgcOn);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.hpf.enabled", aData,
+              &mPrefs.mHPFOn);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.noise.enabled",
+              aData, &mPrefs.mNoiseOn);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.transient.enabled",
+              aData, &mPrefs.mTransientOn);
+  GetPrefBool(aBranch, "media.getusermedia.audio.processing.agc2.forced", aData,
               &mPrefs.mAgc2Forced);
-  GetPref(aBranch, "media.getusermedia.agc", aData, &mPrefs.mAgc);
-  GetPref(aBranch, "media.getusermedia.noise", aData, &mPrefs.mNoise);
-  GetPref(aBranch, "media.getusermedia.channels", aData, &mPrefs.mChannels);
+  // Use 0 or 1 to force to false or true
+  // EchoCanceller3Config::echo_removal_control.has_clock_drift.
+  // -1 is the default, which means automatically set has_clock_drift as
+  // deemed appropriate.
+  GetPref(aBranch, "media.getusermedia.audio.processing.aec.expect_drift",
+          aData, &mPrefs.mExpectDrift);
+  GetPref(aBranch, "media.getusermedia.audio.processing.agc", aData,
+          &mPrefs.mAgc);
+  GetPref(aBranch, "media.getusermedia.audio.processing.noise", aData,
+          &mPrefs.mNoise);
+  GetPref(aBranch, "media.getusermedia.audio.max_channels", aData,
+          &mPrefs.mChannels);
 #endif
-  LOG("%s: default prefs: %dx%d @%dfps, %dHz test tones, aec: %s, "
-      "agc: %s, hpf: %s, noise: %s, agc level: %d, agc version: %s, noise "
-      "level: %d, transient: %s, channels %d",
+  LOG("%s: default prefs: %dx%d @%dfps, %dHz test tones, platform processing: "
+      "%s, aec: %s, agc: %s, hpf: %s, noise: %s, drift: %s, agc level: %d, agc "
+      "version: "
+      "%s, noise level: %d, transient: %s, channels %d",
       __FUNCTION__, mPrefs.mWidth, mPrefs.mHeight, mPrefs.mFPS, mPrefs.mFreq,
+      mPrefs.mUsePlatformProcessing ? "on" : "off",
       mPrefs.mAecOn ? "on" : "off", mPrefs.mAgcOn ? "on" : "off",
-      mPrefs.mHPFOn ? "on" : "off", mPrefs.mNoiseOn ? "on" : "off", mPrefs.mAgc,
-      mPrefs.mAgc2Forced ? "2" : "1", mPrefs.mNoise,
+      mPrefs.mHPFOn ? "on" : "off", mPrefs.mNoiseOn ? "on" : "off",
+      mPrefs.mExpectDrift < 0 ? "auto"
+      : mPrefs.mExpectDrift   ? "on"
+                              : "off",
+      mPrefs.mAgc, mPrefs.mAgc2Forced ? "2" : "1", mPrefs.mNoise,
       mPrefs.mTransientOn ? "on" : "off", mPrefs.mChannels);
 }
 
@@ -3938,43 +4115,13 @@ bool MediaManager::IsActivelyCapturingOrHasAPermission(uint64_t aWindowId) {
 
   // Or are persistent permissions (audio or video) granted?
 
-  auto* window = nsGlobalWindowInner::GetInnerWindowWithId(aWindowId);
-  if (NS_WARN_IF(!window) || NS_WARN_IF(!window->GetPrincipal())) {
-    return false;
-  }
-
-  Document* doc = window->GetExtantDoc();
-  if (NS_WARN_IF(!doc)) {
-    return false;
-  }
-
-  nsIPrincipal* principal = window->GetPrincipal();
-  if (NS_WARN_IF(!principal)) {
-    return false;
-  }
-
-  // Check if this site has persistent permissions.
-  nsresult rv;
-  RefPtr<PermissionDelegateHandler> permDelegate =
-      doc->GetPermissionDelegateHandler();
-  if (NS_WARN_IF(!permDelegate)) {
-    return false;
-  }
-
-  uint32_t audio = nsIPermissionManager::UNKNOWN_ACTION;
-  uint32_t video = nsIPermissionManager::UNKNOWN_ACTION;
-  {
-    rv = permDelegate->GetPermission("microphone"_ns, &audio, true);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return false;
-    }
-    rv = permDelegate->GetPermission("camera"_ns, &video, true);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return false;
-    }
-  }
-  return audio == nsIPermissionManager::ALLOW_ACTION ||
-         video == nsIPermissionManager::ALLOW_ACTION;
+  return GetPersistentPermissions(aWindowId)
+      .map([](auto&& aState) {
+        return aState.mMicrophonePermission ==
+                   PersistentPermissionState::Allow ||
+               aState.mCameraPermission == PersistentPermissionState::Allow;
+      })
+      .unwrapOr(false);
 }
 
 DeviceListener::DeviceListener()
@@ -4013,6 +4160,12 @@ void DeviceListener::Activate(RefPtr<LocalMediaDevice> aDevice,
       (aDevice->GetMediaSource() == MediaSourceEnum::Camera &&
        Preferences::GetBool(
            "media.getusermedia.camera.off_while_disabled.enabled", true));
+
+  if (MediaEventSource<void>* event = aDevice->Source()->CaptureEndedEvent()) {
+    mCaptureEndedListener = event->Connect(AbstractThread::MainThread(), this,
+                                           &DeviceListener::Stop);
+  }
+
   mDeviceState = MakeUnique<DeviceState>(
       std::move(aDevice), std::move(aTrackSource), offWhileDisabled);
   mDeviceState->mDeviceMuted = aStartMuted;
@@ -4130,6 +4283,8 @@ void DeviceListener::Stop() {
 
     mWindowListener->ChromeAffectingStateChanged();
   }
+
+  mCaptureEndedListener.DisconnectIfExists();
 
   // Keep a strong ref to the removed window listener.
   RefPtr<GetUserMediaWindowListener> windowListener = mWindowListener;

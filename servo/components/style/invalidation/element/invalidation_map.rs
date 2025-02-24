@@ -9,6 +9,7 @@ use crate::selector_map::{
     MaybeCaseInsensitiveHashMap, PrecomputedHashMap, SelectorMap, SelectorMapEntry,
 };
 use crate::selector_parser::{NonTSPseudoClass, SelectorImpl};
+use crate::values::AtomIdent;
 use crate::AllocErr;
 use crate::{Atom, LocalName, Namespace, ShrinkIfNeeded};
 use dom::{DocumentState, ElementState};
@@ -259,6 +260,8 @@ pub type IdOrClassDependencyMap = MaybeCaseInsensitiveHashMap<Atom, SmallVec<[De
 pub type StateDependencyMap = SelectorMap<StateDependency>;
 /// Dependency mapping for local names.
 pub type LocalNameDependencyMap = PrecomputedHashMap<LocalName, SmallVec<[Dependency; 1]>>;
+/// Dependency mapping for customstates
+pub type CustomStateDependencyMap = PrecomputedHashMap<AtomIdent, SmallVec<[Dependency; 1]>>;
 
 /// A map where we store invalidations.
 ///
@@ -282,6 +285,8 @@ pub struct InvalidationMap {
     pub document_state_selectors: Vec<DocumentStateDependency>,
     /// A map of other attribute affecting selectors.
     pub other_attribute_affecting_selectors: LocalNameDependencyMap,
+    /// A map of CSS custom states
+    pub custom_state_affecting_selectors: CustomStateDependencyMap,
 }
 
 /// Tree-structural pseudoclasses that we care about for (Relative selector) invalidation.
@@ -293,11 +298,18 @@ bitflags! {
     impl TSStateForInvalidation : u8 {
         /// :empty
         const EMPTY = 1 << 0;
-        /// :nth etc, without of.
+        /// :nth and related selectors, without of.
         const NTH = 1 << 1;
         /// "Simple" edge child selectors, like :first-child, :last-child, etc.
-        /// Excludes :*-of-type.
+        /// Excludes :*-of-type as well as :only-child.
         const NTH_EDGE = 1 << 2;
+    }
+}
+
+impl TSStateForInvalidation {
+    /// Return true if this state invalidation should not result in a blanket
+    pub fn avoid_blanket_invalidation_on_dom_mutation(&self) -> bool {
+        (Self::EMPTY | Self::NTH_EDGE).contains(*self)
     }
 }
 
@@ -383,6 +395,7 @@ impl InvalidationMap {
             state_affecting_selectors: StateDependencyMap::new(),
             document_state_selectors: Vec::new(),
             other_attribute_affecting_selectors: LocalNameDependencyMap::default(),
+            custom_state_affecting_selectors: CustomStateDependencyMap::default(),
         }
     }
 
@@ -398,6 +411,9 @@ impl InvalidationMap {
                 .fold(0, |accum, (_, ref v)| accum + v.len()) +
             self.class_to_selector
                 .iter()
+                .fold(0, |accum, (_, ref v)| accum + v.len()) +
+            self.custom_state_affecting_selectors
+                .iter()
                 .fold(0, |accum, (_, ref v)| accum + v.len())
     }
 
@@ -408,6 +424,7 @@ impl InvalidationMap {
         self.state_affecting_selectors.clear();
         self.document_state_selectors.clear();
         self.other_attribute_affecting_selectors.clear();
+        self.custom_state_affecting_selectors.clear();
     }
 
     /// Shrink the capacity of hash maps if needed.
@@ -416,6 +433,7 @@ impl InvalidationMap {
         self.id_to_selector.shrink_if_needed();
         self.state_affecting_selectors.shrink_if_needed();
         self.other_attribute_affecting_selectors.shrink_if_needed();
+        self.custom_state_affecting_selectors.shrink_if_needed();
     }
 }
 
@@ -489,6 +507,7 @@ trait Collector {
     fn class_map(&mut self) -> &mut IdOrClassDependencyMap;
     fn state_map(&mut self) -> &mut StateDependencyMap;
     fn attribute_map(&mut self) -> &mut LocalNameDependencyMap;
+    fn custom_state_map(&mut self) -> &mut LocalNameDependencyMap;
     fn update_states(&mut self, element_state: ElementState, document_state: DocumentState);
 
     // In normal invalidations, type-based dependencies don't need to be explicitly tracked;
@@ -551,6 +570,19 @@ fn add_attr_dependency<C: Collector>(name: LocalName, collector: &mut C) -> Resu
     add_local_name(name, dependency, map)
 }
 
+fn add_custom_state_dependency<C: Collector>(
+    name: AtomIdent,
+    collector: &mut C,
+) -> Result<(), AllocErr> {
+    let dependency = collector.dependency();
+    let map = collector.custom_state_map();
+    map.try_reserve(1)?;
+    let vec = map.entry(name).or_default();
+    vec.try_reserve(1)?;
+    vec.push(dependency);
+    Ok(())
+}
+
 fn add_local_name(
     name: LocalName,
     dependency: Dependency,
@@ -576,6 +608,9 @@ fn on_pseudo_class<C: Collector>(pc: &NonTSPseudoClass, collector: &mut C) -> Re
             return add_attr_dependency(local_name!("size"), collector);
         },
         NonTSPseudoClass::Lang(..) => local_name!("lang"),
+        NonTSPseudoClass::CustomState(ref name) => {
+            return add_custom_state_dependency(name.0.clone(), collector);
+        },
         _ => return Ok(()),
     };
 
@@ -701,6 +736,10 @@ impl<'a> Collector for SelectorDependencyCollector<'a> {
     fn update_states(&mut self, element_state: ElementState, document_state: DocumentState) {
         self.compound_state.element_state |= element_state;
         *self.document_state |= document_state;
+    }
+
+    fn custom_state_map(&mut self) -> &mut CustomStateDependencyMap {
+        &mut self.map.custom_state_affecting_selectors
     }
 }
 
@@ -992,6 +1031,7 @@ impl<'a> RelativeSelectorDependencyCollector<'a> {
                 *self.alloc_error = Some(err);
                 return false;
             }
+
             if let Err(err) =
                 add_ts_pseudo_class_dependency(self.compound_state.ts_state, self.quirks_mode, self)
             {
@@ -1074,6 +1114,10 @@ impl<'a> Collector for RelativeSelectorDependencyCollector<'a> {
         &mut self.map.map.other_attribute_affecting_selectors
     }
 
+    fn custom_state_map(&mut self) -> &mut CustomStateDependencyMap {
+        &mut self.map.map.custom_state_affecting_selectors
+    }
+
     fn update_states(&mut self, element_state: ElementState, document_state: DocumentState) {
         self.compound_state.state.element_state |= element_state;
         *self.document_state |= document_state;
@@ -1089,6 +1133,47 @@ impl<'a> Collector for RelativeSelectorDependencyCollector<'a> {
 
     fn any_vec(&mut self) -> &mut AnyDependencyMap {
         &mut self.map.any_to_selector
+    }
+}
+
+enum ComponentVisitResult {
+    /// This component is not relevant for building up the invalidation map.
+    IsIrrelevant,
+    /// This component has been added to the invalidation map. Any additional
+    /// tree-structural pseudo-class dependency is also included, if required.
+    Handled(TSStateForInvalidation),
+}
+
+#[inline(always)]
+fn on_simple_selector<C: Collector>(
+    s: &Component<SelectorImpl>,
+    quirks_mode: QuirksMode,
+    collector: &mut C,
+) -> Result<ComponentVisitResult, AllocErr> {
+    match *s {
+        Component::ID(..) | Component::Class(..) => {
+            on_id_or_class(s, quirks_mode, collector)?;
+            Ok(ComponentVisitResult::Handled(
+                TSStateForInvalidation::empty(),
+            ))
+        },
+        Component::NonTSPseudoClass(ref pc) => {
+            on_pseudo_class(pc, collector)?;
+            Ok(ComponentVisitResult::Handled(
+                TSStateForInvalidation::empty(),
+            ))
+        },
+        Component::Empty => Ok(ComponentVisitResult::Handled(TSStateForInvalidation::EMPTY)),
+        Component::Nth(data) => {
+            let kind = if data.is_simple_edge() {
+                TSStateForInvalidation::NTH_EDGE
+            } else {
+                TSStateForInvalidation::NTH
+            };
+            Ok(ComponentVisitResult::Handled(kind))
+        },
+        Component::RelativeSelectorAnchor => unreachable!("Should not visit this far"),
+        _ => Ok(ComponentVisitResult::IsIrrelevant),
     }
 }
 
@@ -1133,48 +1218,18 @@ impl<'a> SelectorVisitor for RelativeSelectorDependencyCollector<'a> {
     }
 
     fn visit_simple_selector(&mut self, s: &Component<SelectorImpl>) -> bool {
-        match *s {
-            Component::ID(..) | Component::Class(..) => {
-                self.compound_state.added_entry = true;
-                if let Err(err) = on_id_or_class(s, self.quirks_mode, self) {
-                    *self.alloc_error = Some(err.into());
-                    return false;
-                }
-                true
-            },
-            Component::NonTSPseudoClass(ref pc) => {
-                if !pc
-                    .state_flag()
-                    .intersects(ElementState::VISITED_OR_UNVISITED)
-                {
-                    // Visited/Unvisited styling doesn't take the usual state invalidation path.
+        match on_simple_selector(s, self.quirks_mode, self) {
+            Ok(result) => {
+                if let ComponentVisitResult::Handled(state) = result {
                     self.compound_state.added_entry = true;
-                }
-                if let Err(err) = on_pseudo_class(pc, self) {
-                    *self.alloc_error = Some(err.into());
-                    return false;
+                    self.compound_state.ts_state.insert(state);
                 }
                 true
             },
-            Component::Empty => {
-                self.compound_state
-                    .ts_state
-                    .insert(TSStateForInvalidation::EMPTY);
-                true
+            Err(err) => {
+                *self.alloc_error = Some(err.into());
+                false
             },
-            Component::Nth(data) => {
-                let kind = if data.is_simple_edge() {
-                    TSStateForInvalidation::NTH_EDGE
-                } else {
-                    TSStateForInvalidation::NTH
-                };
-                self.compound_state
-                    .ts_state
-                    .insert(kind);
-                true
-            },
-            Component::RelativeSelectorAnchor => unreachable!("Should not visit this far"),
-            _ => true,
         }
     }
 
@@ -1253,6 +1308,10 @@ impl<'a, 'b> Collector for RelativeSelectorInnerDependencyCollector<'a, 'b> {
 
     fn attribute_map(&mut self) -> &mut LocalNameDependencyMap {
         &mut self.map.map.other_attribute_affecting_selectors
+    }
+
+    fn custom_state_map(&mut self) -> &mut CustomStateDependencyMap {
+        &mut self.map.map.custom_state_affecting_selectors
     }
 
     fn update_states(&mut self, element_state: ElementState, document_state: DocumentState) {
@@ -1364,48 +1423,18 @@ impl<'a, 'b> SelectorVisitor for RelativeSelectorInnerDependencyCollector<'a, 'b
     }
 
     fn visit_simple_selector(&mut self, s: &Component<SelectorImpl>) -> bool {
-        match *s {
-            Component::ID(..) | Component::Class(..) => {
-                self.compound_state.added_entry = true;
-                if let Err(err) = on_id_or_class(s, self.quirks_mode, self) {
-                    *self.alloc_error = Some(err.into());
-                    return false;
-                }
-                true
-            },
-            Component::NonTSPseudoClass(ref pc) => {
-                if !pc
-                    .state_flag()
-                    .intersects(ElementState::VISITED_OR_UNVISITED)
-                {
-                    // Visited/Unvisited styling doesn't take the usual state invalidation path.
+        match on_simple_selector(s, self.quirks_mode, self) {
+            Ok(result) => {
+                if let ComponentVisitResult::Handled(state) = result {
                     self.compound_state.added_entry = true;
-                }
-                if let Err(err) = on_pseudo_class(pc, self) {
-                    *self.alloc_error = Some(err.into());
-                    return false;
+                    self.compound_state.ts_state.insert(state);
                 }
                 true
             },
-            Component::Empty => {
-                self.compound_state
-                    .ts_state
-                    .insert(TSStateForInvalidation::EMPTY);
-                true
+            Err(err) => {
+                *self.alloc_error = Some(err.into());
+                false
             },
-            Component::Nth(data) => {
-                let kind = if data.is_simple_edge() {
-                    TSStateForInvalidation::NTH_EDGE
-                } else {
-                    TSStateForInvalidation::NTH
-                };
-                self.compound_state
-                    .ts_state
-                    .insert(kind);
-                true
-            },
-            Component::RelativeSelectorAnchor => unreachable!("Should not visit this far"),
-            _ => true,
         }
     }
 

@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "builtin/ModuleObject.h"
+#include "builtin/Sorting.h"
 #include "gc/GC.h"
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineIC.h"
@@ -35,6 +36,7 @@
 #include "wasm/WasmBuiltins.h"
 #include "wasm/WasmInstance.h"
 
+#include "builtin/Sorting-inl.h"
 #include "debugger/DebugAPI-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -81,6 +83,28 @@ static inline bool ReadFrameBooleanSlot(JitFrameLayout* fp, int32_t slot) {
 static uint32_t NumArgAndLocalSlots(const InlineFrameIterator& frame) {
   JSScript* script = frame.script();
   return CountArgSlots(script, frame.maybeCalleeTemplate()) + script->nfixed();
+}
+
+static TrampolineNative TrampolineNativeForFrame(
+    JSRuntime* rt, TrampolineNativeFrameLayout* layout) {
+  JSFunction* nativeFun = CalleeTokenToFunction(layout->calleeToken());
+  MOZ_ASSERT(nativeFun->isBuiltinNative());
+  void** jitEntry = nativeFun->nativeJitEntry();
+  return rt->jitRuntime()->trampolineNativeForJitEntry(jitEntry);
+}
+
+static void UnwindTrampolineNativeFrame(JSRuntime* rt,
+                                        const JSJitFrameIter& frame) {
+  auto* layout = (TrampolineNativeFrameLayout*)frame.fp();
+  TrampolineNative native = TrampolineNativeForFrame(rt, layout);
+  switch (native) {
+    case TrampolineNative::ArraySort:
+    case TrampolineNative::TypedArraySort:
+      layout->getFrameData<ArraySortData>()->freeMallocData();
+      break;
+    case TrampolineNative::Count:
+      MOZ_CRASH("Invalid value");
+  }
 }
 
 static void CloseLiveIteratorIon(JSContext* cx,
@@ -204,13 +228,8 @@ static void OnLeaveIonFrame(JSContext* cx, const InlineFrameIterator& frame,
   RematerializedFrame* rematFrame = nullptr;
   {
     JS::AutoSaveExceptionState savedExc(cx);
-
-    // We can run recover instructions without invalidating because we're
-    // already leaving the frame.
-    MaybeReadFallback::FallbackConsequence consequence =
-        MaybeReadFallback::Fallback_DoNothing;
     rematFrame = act->getRematerializedFrame(cx, frame.frame(), frame.frameNo(),
-                                             consequence);
+                                             IsLeavingFrame::Yes);
     if (!rematFrame) {
       return;
     }
@@ -739,7 +758,7 @@ void HandleException(ResumeFromException* rfe) {
 
     // JIT code can enter same-compartment realms, so reset cx->realm to
     // this frame's realm.
-    if (frame.isScripted()) {
+    if (frame.isScripted() || frame.isTrampolineNative()) {
       cx->setRealmForJitExceptionHandler(iter.realm());
     }
 
@@ -809,6 +828,8 @@ void HandleException(ResumeFromException* rfe) {
       if (rfe->kind == ExceptionResumeKind::ForcedReturnBaseline) {
         return;
       }
+    } else if (frame.isTrampolineNative()) {
+      UnwindTrampolineNativeFrame(cx->runtime(), frame);
     }
 
     prevJitFrame = frame.current();
@@ -910,12 +931,15 @@ static inline uintptr_t ReadAllocation(const JSJitFrameIter& frame,
 
 static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
                                   JitFrameLayout* layout) {
-  // Trace |this| and any extra actual arguments for an Ion frame. Tracing
-  // of formal arguments is taken care of by the frame's safepoint/snapshot,
-  // except when the script might have lazy arguments or rest, in which case
-  // we trace them as well. We also have to trace formals if we have a
-  // LazyLink frame or an InterpreterStub frame or a special JSJit to wasm
-  // frame (since wasm doesn't use snapshots).
+  // Trace |this| and the actual and formal arguments of a JIT frame.
+  //
+  // Tracing of formal arguments of an Ion frame is taken care of by the frame's
+  // safepoint/snapshot. We skip tracing formal arguments if the script doesn't
+  // use |arguments| or rest, because the register allocator can spill values to
+  // argument slots in this case.
+  //
+  // For other frames such as LazyLink frames or InterpreterStub frames, we
+  // always trace all actual and formal arguments.
 
   if (!CalleeTokenIsFunction(layout->calleeToken())) {
     return;
@@ -927,8 +951,7 @@ static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
   size_t numArgs = std::max(layout->numActualArgs(), numFormals);
   size_t firstArg = 0;
 
-  if (frame.type() != FrameType::JSJitToWasm &&
-      !frame.isExitFrameLayout<CalledFromJitExitFrameLayout>() &&
+  if (frame.isIonScripted() &&
       !fun->nonLazyScript()->mayReadFrameArgsDirectly()) {
     firstArg = numFormals;
   }
@@ -936,17 +959,17 @@ static void TraceThisAndArguments(JSTracer* trc, const JSJitFrameIter& frame,
   Value* argv = layout->thisAndActualArgs();
 
   // Trace |this|.
-  TraceRoot(trc, argv, "ion-thisv");
+  TraceRoot(trc, argv, "jit-thisv");
 
   // Trace arguments. Note + 1 for thisv.
   for (size_t i = firstArg; i < numArgs; i++) {
-    TraceRoot(trc, &argv[i + 1], "ion-argv");
+    TraceRoot(trc, &argv[i + 1], "jit-argv");
   }
 
   // Always trace the new.target from the frame. It's not in the snapshots.
   // +1 to pass |this|
   if (CalleeTokenIsConstructing(layout->calleeToken())) {
-    TraceRoot(trc, &argv[1 + numArgs], "ion-newTarget");
+    TraceRoot(trc, &argv[1 + numArgs], "jit-newTarget");
   }
 }
 
@@ -1397,6 +1420,23 @@ static void TraceJSJitToWasmFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   TraceThisAndArguments(trc, frame, layout);
 }
 
+static void TraceTrampolineNativeFrame(JSTracer* trc,
+                                       const JSJitFrameIter& frame) {
+  auto* layout = (TrampolineNativeFrameLayout*)frame.fp();
+  layout->replaceCalleeToken(TraceCalleeToken(trc, layout->calleeToken()));
+  TraceThisAndArguments(trc, frame, layout);
+
+  TrampolineNative native = TrampolineNativeForFrame(trc->runtime(), layout);
+  switch (native) {
+    case TrampolineNative::ArraySort:
+    case TrampolineNative::TypedArraySort:
+      layout->getFrameData<ArraySortData>()->trace(trc);
+      break;
+    case TrampolineNative::Count:
+      MOZ_CRASH("Invalid value");
+  }
+}
+
 static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
 #ifdef CHECK_OSIPOINT_REGISTERS
   if (JitOptions.checkOsiPointRegisters) {
@@ -1439,6 +1479,9 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
         case FrameType::Rectifier:
           TraceRectifierFrame(trc, jitFrame);
           break;
+        case FrameType::TrampolineNative:
+          TraceTrampolineNativeFrame(trc, jitFrame);
+          break;
         case FrameType::IonICCall:
           TraceIonICCallFrame(trc, jitFrame);
           break;
@@ -1459,6 +1502,11 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
       uint8_t* nextPC = frames.resumePCinCurrentFrame();
       MOZ_ASSERT(nextPC != 0);
       wasm::WasmFrameIter& wasmFrameIter = frames.asWasm();
+#ifdef ENABLE_WASM_JSPI
+      if (wasmFrameIter.stackSwitched()) {
+        highestByteVisitedInPrevWasmFrame = 0;
+      }
+#endif
       wasm::Instance* instance = wasmFrameIter.instance();
       wasm::TraceInstanceEdge(trc, instance, "WasmFrameIter instance");
       highestByteVisitedInPrevWasmFrame = instance->traceFrame(
@@ -1472,6 +1520,9 @@ void TraceJitActivations(JSContext* cx, JSTracer* trc) {
        ++activations) {
     TraceJitActivation(trc, activations->asJit());
   }
+#ifdef ENABLE_WASM_JSPI
+  cx->wasm().promiseIntegration.traceRoots(trc);
+#endif
 }
 
 void TraceWeakJitActivationsInSweepingZones(JSContext* cx, JSTracer* trc) {

@@ -62,6 +62,15 @@ Span<AudioDataValue> AudioData::Data() const {
   return Span{GetAdjustedData(), mFrames * mChannels};
 }
 
+nsCString AudioData::ToString() const {
+  nsCString rv;
+  rv.AppendPrintf("AudioData: %s %s %" PRIu32 " frames %" PRIu32 "Hz, %" PRIu32
+                  "ch",
+                  mTime.ToString().get(), mDuration.ToString().get(), mFrames,
+                  mRate, mChannels);
+  return rv;
+}
+
 void AudioData::SetOriginalStartTime(const media::TimeUnit& aStartTime) {
   MOZ_ASSERT(mTime == mOriginalTime,
              "Do not call this if data has been trimmed!");
@@ -588,15 +597,53 @@ void MediaRawDataWriter::PopFront(size_t aSize) {
 const char* CryptoSchemeToString(const CryptoScheme& aScheme) {
   switch (aScheme) {
     case CryptoScheme::None:
-      return "None";
+      return "none";
     case CryptoScheme::Cenc:
-      return "Cenc";
+      return "cenc";
     case CryptoScheme::Cbcs:
-      return "Cbcs";
+      return "cbcs";
+    case CryptoScheme::Cbcs_1_9:
+      return "cbcs-1-9";
     default:
-      MOZ_ASSERT_UNREACHABLE();
-      return "";
+      MOZ_ASSERT_UNREACHABLE("not supported scheme!");
+      return "not supported scheme!";
   }
+}
+
+nsCString CryptoSchemeSetToString(const CryptoSchemeSet& aSchemes) {
+  nsAutoCString rv;
+  if (aSchemes.contains(CryptoScheme::Cenc)) {
+    rv.AppendLiteral("cenc");
+  }
+  if (aSchemes.contains(CryptoScheme::Cbcs)) {
+    if (!rv.IsEmpty()) {
+      rv.AppendLiteral("/");
+    }
+    rv.AppendLiteral("cbcs");
+  }
+  if (aSchemes.contains(CryptoScheme::Cbcs_1_9)) {
+    if (!rv.IsEmpty()) {
+      rv.AppendLiteral("/");
+    }
+    rv.AppendLiteral("cbcs-1-9");
+  }
+  if (rv.IsEmpty()) {
+    rv.AppendLiteral("none");
+  }
+  return std::move(rv);
+}
+
+CryptoScheme StringToCryptoScheme(const nsAString& aString) {
+  if (aString.EqualsLiteral("cenc")) {
+    return CryptoScheme::Cenc;
+  }
+  if (aString.EqualsLiteral("cbcs")) {
+    return CryptoScheme::Cbcs;
+  }
+  if (aString.EqualsLiteral("cbcs-1-9")) {
+    return CryptoScheme::Cbcs_1_9;
+  }
+  return CryptoScheme::None;
 }
 
 }  // namespace mozilla

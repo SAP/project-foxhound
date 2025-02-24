@@ -1525,7 +1525,7 @@ pub trait Visitor<'de>: Sized {
     /// `String`.
     #[inline]
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
     where
         E: Error,
@@ -1584,7 +1584,7 @@ pub trait Visitor<'de>: Sized {
     /// The default implementation forwards to `visit_bytes` and then drops the
     /// `Vec<u8>`.
     #[cfg(any(feature = "std", feature = "alloc"))]
-    #[cfg_attr(doc_cfg, doc(cfg(any(feature = "std", feature = "alloc"))))]
+    #[cfg_attr(docsrs, doc(cfg(any(feature = "std", feature = "alloc"))))]
     fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
     where
         E: Error,
@@ -1735,9 +1735,9 @@ pub trait SeqAccess<'de> {
     }
 }
 
-impl<'de, 'a, A: ?Sized> SeqAccess<'de> for &'a mut A
+impl<'de, 'a, A> SeqAccess<'de> for &'a mut A
 where
-    A: SeqAccess<'de>,
+    A: ?Sized + SeqAccess<'de>,
 {
     type Error = A::Error;
 
@@ -1888,9 +1888,9 @@ pub trait MapAccess<'de> {
     }
 }
 
-impl<'de, 'a, A: ?Sized> MapAccess<'de> for &'a mut A
+impl<'de, 'a, A> MapAccess<'de> for &'a mut A
 where
-    A: MapAccess<'de>,
+    A: ?Sized + MapAccess<'de>,
 {
     type Error = A::Error;
 
@@ -2312,13 +2312,17 @@ impl Display for WithDecimalPoint {
             }
         }
 
-        let mut writer = LookForDecimalPoint {
-            formatter,
-            has_decimal_point: false,
-        };
-        tri!(write!(writer, "{}", self.0));
-        if !writer.has_decimal_point {
-            tri!(formatter.write_str(".0"));
+        if self.0.is_finite() {
+            let mut writer = LookForDecimalPoint {
+                formatter,
+                has_decimal_point: false,
+            };
+            tri!(write!(writer, "{}", self.0));
+            if !writer.has_decimal_point {
+                tri!(formatter.write_str(".0"));
+            }
+        } else {
+            tri!(write!(formatter, "{}", self.0));
         }
         Ok(())
     }

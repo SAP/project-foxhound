@@ -14,12 +14,13 @@ use crate::context::{PostAnimationTasks, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::media_queries::Device;
 use crate::properties::{AnimationDeclarations, ComputedValues, PropertyDeclarationBlock};
-use crate::selector_parser::{AttrValue, CustomState, Lang, PseudoElement, SelectorImpl};
+use crate::selector_parser::{AttrValue, Lang, PseudoElement, SelectorImpl};
 use crate::shared_lock::{Locked, SharedRwLock};
+use crate::stylesheets::scope_rule::ImplicitScopeRoot;
 use crate::stylist::CascadeData;
 use crate::values::computed::Display;
 use crate::values::AtomIdent;
-use crate::WeakAtom;
+use crate::{LocalName, WeakAtom};
 use atomic_refcell::{AtomicRef, AtomicRefMut};
 use dom::ElementState;
 use selectors::matching::{ElementSelectorFlags, QuirksMode, VisitedHandlingMode};
@@ -375,6 +376,11 @@ pub trait TShadowRoot: Sized + Copy + Clone + Debug + PartialEq {
     {
         Err(())
     }
+
+    /// Get the implicit scope for a stylesheet in given index.
+    fn implicit_scope_for_sheet(&self, _sheet_index: usize) -> Option<ImplicitScopeRoot> {
+        None
+    }
 }
 
 /// The element trait, the main abstraction the style crate acts over.
@@ -511,11 +517,6 @@ pub trait TElement:
     /// Get this element's state, for non-tree-structural pseudos.
     fn state(&self) -> ElementState;
 
-    /// Returns whether this element's CustomStateSet contains a given state.
-    fn has_custom_state(&self, _state: &CustomState) -> bool {
-        false
-    }
-
     /// Returns whether this element has a `part` attribute.
     fn has_part_attr(&self) -> bool;
 
@@ -530,6 +531,11 @@ pub trait TElement:
     where
         F: FnMut(&AtomIdent);
 
+    /// Internal iterator for the classes of this element.
+    fn each_custom_state<F>(&self, callback: F)
+    where
+        F: FnMut(&AtomIdent);
+
     /// Internal iterator for the part names of this element.
     fn each_part<F>(&self, _callback: F)
     where
@@ -540,7 +546,7 @@ pub trait TElement:
     /// Internal iterator for the attribute names of this element.
     fn each_attr_name<F>(&self, callback: F)
     where
-        F: FnMut(&AtomIdent);
+        F: FnMut(&LocalName);
 
     /// Internal iterator for the part names that this element exports for a
     /// given part name.
@@ -906,7 +912,7 @@ pub trait TElement:
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool;
 
     /// Returns the search direction for relative selector invalidation, if it is on the search path.
-    fn relative_selector_search_direction(&self) -> Option<ElementSelectorFlags>;
+    fn relative_selector_search_direction(&self) -> ElementSelectorFlags;
 }
 
 /// TNode and TElement aren't Send because we want to be careful and explicit

@@ -17,7 +17,7 @@ use std::{
 use neqo_common::{qdebug, qerror, qinfo, qtrace, qwarn, Decoder, Header, MessageType, Role};
 use neqo_qpack::{decoder::QPackDecoder, encoder::QPackEncoder};
 use neqo_transport::{
-    streams::SendOrder, AppError, Connection, ConnectionError, DatagramTracking, State, StreamId,
+    streams::SendOrder, AppError, CloseReason, Connection, DatagramTracking, State, StreamId,
     StreamType, ZeroRttState,
 };
 
@@ -81,22 +81,22 @@ enum Http3RemoteSettingsState {
 /// - `ZeroRtt`: 0-RTT has been enabled and is active
 /// - Connected
 /// - GoingAway(StreamId): The connection has received a `GOAWAY` frame
-/// - Closing(ConnectionError): The connection is closed. The closing has been initiated by this end
-///   of the connection, e.g., the `CONNECTION_CLOSE` frame has been sent. In this state, the
+/// - Closing(CloseReason): The connection is closed. The closing has been initiated by this end of
+///   the connection, e.g., the `CONNECTION_CLOSE` frame has been sent. In this state, the
 ///   connection waits a certain amount of time to retransmit the `CONNECTION_CLOSE` frame if
 ///   needed.
-/// - Closed(ConnectionError): This is the final close state: closing has been initialized by the
-///   peer and an ack for the `CONNECTION_CLOSE` frame has been sent or the closing has been
-///   initiated by this end of the connection and the ack for the `CONNECTION_CLOSE` has been
-///   received or the waiting time has passed.
+/// - Closed(CloseReason): This is the final close state: closing has been initialized by the peer
+///   and an ack for the `CONNECTION_CLOSE` frame has been sent or the closing has been initiated by
+///   this end of the connection and the ack for the `CONNECTION_CLOSE` has been received or the
+///   waiting time has passed.
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone)]
 pub enum Http3State {
     Initializing,
     ZeroRtt,
     Connected,
     GoingAway(StreamId),
-    Closing(ConnectionError),
-    Closed(ConnectionError),
+    Closing(CloseReason),
+    Closed(CloseReason),
 }
 
 impl Http3State {
@@ -354,7 +354,7 @@ impl Http3Connection {
     /// This function creates and initializes, i.e. send stream type, the control and qpack
     /// streams.
     fn initialize_http3_connection(&mut self, conn: &mut Connection) -> Res<()> {
-        qinfo!([self], "Initialize the http3 connection.");
+        qdebug!([self], "Initialize the http3 connection.");
         self.control_stream_local.create(conn)?;
 
         self.send_settings();
@@ -386,8 +386,8 @@ impl Http3Connection {
         Ok(())
     }
 
-    /// Inform a `HttpConnection` that a stream has data to send and that `send` should be called
-    /// for the stream.
+    /// Inform an [`Http3Connection`] that a stream has data to send and that
+    /// [`SendStream::send`] should be called for the stream.
     pub fn stream_has_pending_data(&mut self, stream_id: StreamId) {
         self.streams_with_pending_data.insert(stream_id);
     }
@@ -704,7 +704,7 @@ impl Http3Connection {
                 );
             }
             NewStreamType::Decoder => {
-                qinfo!([self], "A new remote qpack encoder stream {}", stream_id);
+                qdebug!([self], "A new remote qpack encoder stream {}", stream_id);
                 self.check_stream_exists(Http3StreamType::Decoder)?;
                 self.recv_streams.insert(
                     stream_id,
@@ -715,7 +715,7 @@ impl Http3Connection {
                 );
             }
             NewStreamType::Encoder => {
-                qinfo!([self], "A new remote qpack decoder stream {}", stream_id);
+                qdebug!([self], "A new remote qpack decoder stream {}", stream_id);
                 self.check_stream_exists(Http3StreamType::Encoder)?;
                 self.recv_streams.insert(
                     stream_id,
@@ -766,8 +766,8 @@ impl Http3Connection {
 
     /// This is called when an application closes the connection.
     pub fn close(&mut self, error: AppError) {
-        qinfo!([self], "Close connection error {:?}.", error);
-        self.state = Http3State::Closing(ConnectionError::Application(error));
+        qdebug!([self], "Close connection error {:?}.", error);
+        self.state = Http3State::Closing(CloseReason::Application(error));
         if (!self.send_streams.is_empty() || !self.recv_streams.is_empty()) && (error == 0) {
             qwarn!("close(0) called when streams still active");
         }
@@ -952,7 +952,7 @@ impl Http3Connection {
         stream_id: StreamId,
         buf: &mut [u8],
     ) -> Res<(usize, bool)> {
-        qinfo!([self], "read_data from stream {}.", stream_id);
+        qdebug!([self], "read_data from stream {}.", stream_id);
         let res = self
             .recv_streams
             .get_mut(&stream_id)
@@ -1091,7 +1091,7 @@ impl Http3Connection {
 
     /// This is called when an application wants to close the sending side of a stream.
     pub fn stream_close_send(&mut self, conn: &mut Connection, stream_id: StreamId) -> Res<()> {
-        qinfo!([self], "Close the sending side for stream {}.", stream_id);
+        qdebug!([self], "Close the sending side for stream {}.", stream_id);
         debug_assert!(self.state.active());
         let send_stream = self
             .send_streams
@@ -1402,7 +1402,7 @@ impl Http3Connection {
     /// `PriorityUpdateRequestPush` which handling is specific to the client and server, we must
     /// give them to the specific client/server handler.
     fn handle_control_frame(&mut self, f: HFrame) -> Res<Option<HFrame>> {
-        qinfo!([self], "Handle a control frame {:?}", f);
+        qdebug!([self], "Handle a control frame {:?}", f);
         if !matches!(f, HFrame::Settings { .. })
             && !matches!(
                 self.settings_state,
@@ -1433,7 +1433,7 @@ impl Http3Connection {
     }
 
     fn handle_settings(&mut self, new_settings: HSettings) -> Res<()> {
-        qinfo!([self], "Handle SETTINGS frame.");
+        qdebug!([self], "Handle SETTINGS frame.");
         match &self.settings_state {
             Http3RemoteSettingsState::NotReceived => {
                 self.set_qpack_settings(&new_settings)?;

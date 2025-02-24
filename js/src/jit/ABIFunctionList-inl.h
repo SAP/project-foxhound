@@ -21,6 +21,7 @@
 #include "builtin/Object.h"            // js::ObjectClassToString
 #include "builtin/RegExp.h"            // js::RegExpPrototypeOptimizableRaw,
                                        // js::RegExpInstanceOptimizableRaw
+#include "builtin/Sorting.h"           // js::ArraySortData
 #include "builtin/TestingFunctions.h"  // js::FuzzilliHash*
 
 #include "irregexp/RegExpAPI.h"
@@ -45,11 +46,12 @@
 
 #include "proxy/Proxy.h"  // js::ProxyGetProperty
 
-#include "vm/ArgumentsObject.h"  // js::ArgumentsObject::finishForIonPure
-#include "vm/Interpreter.h"      // js::TypeOfObject
-#include "vm/NativeObject.h"     // js::NativeObject
-#include "vm/RegExpShared.h"     // js::ExecuteRegExpAtomRaw
-#include "wasm/WasmBuiltins.h"   // js::wasm::*
+#include "vm/ArgumentsObject.h"   // js::ArgumentsObject::finishForIonPure
+#include "vm/Interpreter.h"       // js::TypeOfObject
+#include "vm/NativeObject.h"      // js::NativeObject
+#include "vm/RegExpShared.h"      // js::ExecuteRegExpAtomRaw
+#include "vm/TypedArrayObject.h"  // js::TypedArraySortFromJit
+#include "wasm/WasmBuiltins.h"    // js::wasm::*
 
 #include "builtin/Boolean-inl.h"  // js::EmulatesUndefined
 
@@ -103,6 +105,9 @@ namespace jit {
   _(js::ArgumentsObject::finishForIonPure)                            \
   _(js::ArgumentsObject::finishInlineForIonPure)                      \
   _(js::ArrayShiftMoveElements)                                       \
+  _(js::ArraySortData::sortArrayWithComparator)                       \
+  _(js::ArraySortData::sortTypedArrayWithComparator)                  \
+  _(js::ArraySortFromJit)                                             \
   _(js::ecmaAtan2)                                                    \
   _(js::ecmaHypot)                                                    \
   _(js::ecmaPow)                                                      \
@@ -173,6 +178,7 @@ namespace jit {
   _(js::jit::StringTrimEndIndex)                                      \
   _(js::jit::StringTrimStartIndex)                                    \
   _(js::jit::TypeOfNameObject)                                        \
+  _(js::jit::TypeOfEqObject)                                          \
   _(js::jit::WrapObjectPure)                                          \
   ABIFUNCTION_FUZZILLI_LIST(_)                                        \
   _(js::MapIteratorObject::next)                                      \
@@ -187,6 +193,7 @@ namespace jit {
   _(js::RegExpPrototypeOptimizableRaw)                                \
   _(js::SetIteratorObject::next)                                      \
   _(js::StringToNumberPure)                                           \
+  _(js::TypedArraySortFromJit)                                        \
   _(js::TypeOfObject)                                                 \
   _(mozilla::SIMD::memchr16)                                          \
   _(mozilla::SIMD::memchr2x16)                                        \

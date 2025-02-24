@@ -61,7 +61,8 @@ static ImageBitmapShutdownObserver* sShutdownObserver = nullptr;
 class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
  public:
   explicit SendShutdownToWorkerThread(ImageBitmap* aImageBitmap)
-      : MainThreadWorkerControlRunnable(GetCurrentThreadWorkerPrivate()),
+      : MainThreadWorkerControlRunnable("SendShutdownToWorkerThread"),
+        mWorkerPrivate(GetCurrentThreadWorkerPrivate()),
         mImageBitmap(aImageBitmap) {
     MOZ_ASSERT(GetCurrentThreadWorkerPrivate());
   }
@@ -74,6 +75,7 @@ class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
     return true;
   }
 
+  WorkerPrivate* mWorkerPrivate;
   ImageBitmap* mImageBitmap;
 };
 
@@ -146,7 +148,7 @@ ImageBitmapShutdownObserver::Observe(nsISupports* aSubject, const char* aTopic,
     for (const auto& bitmap : mBitmaps) {
       const auto& runnable = bitmap->mShutdownRunnable;
       if (runnable) {
-        runnable->Dispatch();
+        runnable->Dispatch(runnable->mWorkerPrivate);
       } else {
         bitmap->OnShutdown();
       }
@@ -286,7 +288,9 @@ static already_AddRefed<DataSourceSurface> CropAndCopyDataSourceSurface(
  */
 static already_AddRefed<DataSourceSurface> ScaleDataSourceSurface(
     DataSourceSurface* aSurface, const ImageBitmapOptions& aOptions) {
-  MOZ_ASSERT(aSurface);
+  if (NS_WARN_IF(!aSurface)) {
+    return nullptr;
+  }
 
   const SurfaceFormat format = aSurface->GetFormat();
   const int bytesPerPixel = BytesPerPixel(format);
@@ -1578,8 +1582,7 @@ class FulfillImageBitmapPromiseWorkerTask final
  public:
   FulfillImageBitmapPromiseWorkerTask(Promise* aPromise,
                                       ImageBitmap* aImageBitmap)
-      : WorkerSameThreadRunnable(GetCurrentThreadWorkerPrivate(),
-                                 "FulfillImageBitmapPromiseWorkerTask"),
+      : WorkerSameThreadRunnable("FulfillImageBitmapPromiseWorkerTask"),
         FulfillImageBitmapPromise(aPromise, aImageBitmap) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
@@ -1597,7 +1600,8 @@ static void AsyncFulfillImageBitmapPromise(Promise* aPromise,
   } else {
     RefPtr<FulfillImageBitmapPromiseWorkerTask> task =
         new FulfillImageBitmapPromiseWorkerTask(aPromise, aImageBitmap);
-    task->Dispatch();  // Actually, to the current worker-thread.
+    task->Dispatch(GetCurrentThreadWorkerPrivate());  // Actually, to the
+                                                      // current worker-thread.
   }
 }
 
@@ -1700,13 +1704,13 @@ class CreateImageBitmapFromBlob final : public DiscardableRunnable,
 NS_IMPL_ISUPPORTS_INHERITED(CreateImageBitmapFromBlob, DiscardableRunnable,
                             imgIContainerCallback, nsIInputStreamCallback)
 
-class CreateImageBitmapFromBlobRunnable final : public WorkerRunnable {
+class CreateImageBitmapFromBlobRunnable final : public WorkerThreadRunnable {
  public:
   explicit CreateImageBitmapFromBlobRunnable(WorkerPrivate* aWorkerPrivate,
                                              CreateImageBitmapFromBlob* aTask,
                                              layers::Image* aImage,
                                              nsresult aStatus)
-      : WorkerRunnable(aWorkerPrivate, "CreateImageBitmapFromBlobRunnable"),
+      : WorkerThreadRunnable("CreateImageBitmapFromBlobRunnable"),
         mTask(aTask),
         mImage(aImage),
         mStatus(aStatus) {}
@@ -2287,7 +2291,7 @@ void CreateImageBitmapFromBlob::MimeTypeAndDecodeAndCropBlobCompletedMainThread(
     RefPtr<CreateImageBitmapFromBlobRunnable> r =
         new CreateImageBitmapFromBlobRunnable(mWorkerRef->Private(), this,
                                               aImage, aStatus);
-    r->Dispatch();
+    r->Dispatch(mWorkerRef->Private());
     return;
   }
 

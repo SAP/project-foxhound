@@ -1,4 +1,4 @@
-import { CONTENT_MESSAGE_TYPE } from "common/Actions.sys.mjs";
+import { CONTENT_MESSAGE_TYPE } from "common/Actions.mjs";
 import { ActivityStream, PREFS_CONFIG } from "lib/ActivityStream.sys.mjs";
 import { GlobalOverrider } from "test/unit/utils";
 
@@ -309,6 +309,38 @@ describe("ActivityStream", () => {
       assert.isFalse(
         PREFS_CONFIG.get("discoverystream.region-basic-layout").value
       );
+    });
+  });
+  describe("discoverystream.region-weather-config", () => {
+    let getVariableStub;
+    beforeEach(() => {
+      getVariableStub = sandbox.stub(
+        global.NimbusFeatures.pocketNewtab,
+        "getVariable"
+      );
+      sandbox.stub(global.Region, "home").get(() => "CA");
+    });
+    it("should turn off weather system pref if no region weather config is set and no geo is set", () => {
+      getVariableStub.withArgs("regionWeatherConfig").returns("");
+      sandbox.stub(global.Region, "home").get(() => "");
+
+      as._updateDynamicPrefs();
+
+      assert.isFalse(PREFS_CONFIG.get("system.showWeather").value);
+    });
+    it("should turn on weather system pref based on region weather config pref", () => {
+      getVariableStub.withArgs("regionWeatherConfig").returns("CA");
+
+      as._updateDynamicPrefs();
+
+      assert.isTrue(PREFS_CONFIG.get("system.showWeather").value);
+    });
+    it("should turn off weather system pref if no region weather config is set", () => {
+      getVariableStub.withArgs("regionWeatherConfig").returns("");
+
+      as._updateDynamicPrefs();
+
+      assert.isFalse(PREFS_CONFIG.get("system.showWeather").value);
     });
   });
   describe("_updateDynamicPrefs topstories default value", () => {

@@ -13,15 +13,16 @@
 #include "base/task.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/process_watcher.h"
-#include "mozilla/ProcessType.h"
-#ifdef MOZ_WIDGET_COCOA
-#  include <bsm/libbsm.h>
+#ifdef XP_DARWIN
 #  include <mach/mach_traps.h>
-#  include <servers/bootstrap.h>
 #  include "SharedMemoryBasic.h"
 #  include "base/rand_util.h"
 #  include "chrome/common/mach_ipc_mac.h"
 #  include "mozilla/StaticPrefs_media.h"
+#endif
+#ifdef MOZ_WIDGET_COCOA
+#  include <bsm/libbsm.h>
+#  include <servers/bootstrap.h>
 #  include "nsILocalFileMac.h"
 #endif
 
@@ -67,7 +68,6 @@
 #ifdef XP_WIN
 #  include <stdlib.h>
 
-#  include "mozilla/WindowsVersion.h"
 #  include "nsIWinTaskbar.h"
 #  define NS_TASKBAR_CONTRACTID "@mozilla.org/windows-taskbar;1"
 
@@ -129,8 +129,13 @@ namespace ipc {
 
 struct LaunchResults {
   base::ProcessHandle mHandle = 0;
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
   task_t mChildTask = MACH_PORT_NULL;
+#endif
+#ifdef XP_IOS
+  Maybe<ExtensionKitProcess> mExtensionKitProcess;
+  DarwinObjectPtr<xpc_connection_t> mXPCConnection;
+  UniqueBEProcessCapabilityGrant mForegroundCapabilityGrant;
 #endif
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
   RefPtr<AbstractSandboxBroker> mSandboxBroker;
@@ -251,7 +256,7 @@ class BaseProcessLauncher {
 };
 
 #ifdef XP_WIN
-class WindowsProcessLauncher final : public BaseProcessLauncher {
+class WindowsProcessLauncher : public BaseProcessLauncher {
  public:
   WindowsProcessLauncher(GeckoChildProcessHost* aHost,
                          std::vector<std::string>&& aExtraOpts)
@@ -262,9 +267,6 @@ class WindowsProcessLauncher final : public BaseProcessLauncher {
   virtual Result<Ok, LaunchError> DoSetup() override;
   virtual RefPtr<ProcessHandlePromise> DoLaunch() override;
   virtual Result<Ok, LaunchError> DoFinishLaunch() override;
-
- private:
-  void AddApplicationPrefetchArgument();
 
   mozilla::Maybe<CommandLine> mCmdLine;
 #  ifdef MOZ_SANDBOX
@@ -358,9 +360,9 @@ class IosProcessLauncher : public PosixProcessLauncher {
       : PosixProcessLauncher(aHost, std::move(aExtraOpts)) {}
 
  protected:
-  virtual RefPtr<ProcessHandlePromise> DoLaunch() override {
-    MOZ_CRASH("IosProcessLauncher::DoLaunch not implemented");
-  }
+  virtual RefPtr<ProcessHandlePromise> DoLaunch() override;
+
+  DarwinObjectPtr<xpc_object_t> mBootstrapMessage;
 };
 typedef IosProcessLauncher ProcessLauncher;
 #  else
@@ -394,7 +396,7 @@ GeckoChildProcessHost::GeckoChildProcessHost(GeckoProcessType aProcessType,
 #endif
       mHandleLock("mozilla.ipc.GeckoChildProcessHost.mHandleLock"),
       mChildProcessHandle(0),
-#if defined(MOZ_WIDGET_COCOA)
+#if defined(XP_DARWIN)
       mChildTask(MACH_PORT_NULL),
 #endif
 #if defined(MOZ_SANDBOX) && defined(XP_MACOSX)
@@ -447,9 +449,20 @@ GeckoChildProcessHost::~GeckoChildProcessHost()
 
   {
     mozilla::AutoWriteLock hLock(mHandleLock);
-#if defined(MOZ_WIDGET_COCOA)
+#if defined(XP_DARWIN)
     if (mChildTask != MACH_PORT_NULL) {
       mach_port_deallocate(mach_task_self(), mChildTask);
+    }
+#endif
+#if defined(XP_IOS)
+    if (mForegroundCapabilityGrant) {
+      mForegroundCapabilityGrant.reset();
+    }
+    if (mExtensionKitProcess) {
+      mExtensionKitProcess->Invalidate();
+    }
+    if (mXPCConnection) {
+      xpc_connection_cancel(mXPCConnection.get());
     }
 #endif
 
@@ -487,7 +500,7 @@ base::ProcessId GeckoChildProcessHost::GetChildProcessId() {
   return base::GetProcId(mChildProcessHandle);
 }
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 task_t GeckoChildProcessHost::GetChildTask() {
   mozilla::AutoReadLock handleLock(mHandleLock);
   return mChildTask;
@@ -769,14 +782,20 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
                     // "safe" invalid value to use in places like this.
                     aResults.mHandle = 0;
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
                     this->mChildTask = aResults.mChildTask;
+#endif
+#ifdef XP_IOS
+                    this->mExtensionKitProcess = aResults.mExtensionKitProcess;
+                    this->mXPCConnection = aResults.mXPCConnection;
+                    this->mForegroundCapabilityGrant =
+                        std::move(aResults.mForegroundCapabilityGrant);
 #endif
 
                     if (mNodeChannel) {
                       mNodeChannel->SetOtherPid(
                           base::GetProcId(this->mChildProcessHandle));
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
                       mNodeChannel->SetMachTaskPort(this->mChildTask);
 #endif
                     }
@@ -802,7 +821,8 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
                 CHROMIUM_LOG(ERROR)
                     << "Failed to launch "
                     << XRE_GeckoProcessTypeToString(mProcessType)
-                    << " subprocess";
+                    << " subprocess @" << aError.FunctionName()
+                    << " (Error:" << aError.ErrorCode() << ")";
                 Telemetry::Accumulate(
                     Telemetry::SUBPROCESS_LAUNCH_FAILURE,
                     nsDependentCString(
@@ -811,9 +831,9 @@ bool GeckoChildProcessHost::AsyncLaunch(std::vector<std::string> aExtraOpts) {
 #if defined(XP_WIN)
                     "%s,0x%lx,%s",
 #else
-                    "%s,%d,%s",
+                    "%s,%ld,%s",
 #endif
-                    aError.FunctionName(), aError.ErrorCode(),
+                    aError.FunctionName().get(), aError.ErrorCode(),
                     XRE_GeckoProcessTypeToString(mProcessType));
                 // Max telemetry key is 72 chars
                 // https://searchfox.org/mozilla-central/rev/c244b16815d1fc827d141472b9faac5610f250e7/toolkit/components/telemetry/core/TelemetryScalar.cpp#105
@@ -1247,16 +1267,13 @@ Result<Ok, LaunchError> PosixProcessLauncher::DoSetup() {
   // STDOUT_FILENO, for example
   // The fork server doesn't use IPC::Channel, so can skip this step.
   if (mProcessType != GeckoProcessType_ForkServer) {
-#  ifdef MOZ_WIDGET_ANDROID
-    // On Android mChannelDstFd is uninitialised and the launching code uses
-    // only the first of each pair.
-    mLaunchOptions->fds_to_remap.push_back(
-        std::pair<int, int>(mClientChannelHandle.get(), -1));
-#  else
+#  if !defined(MOZ_WIDGET_ANDROID) && !defined(MOZ_WIDGET_UIKIT)
+    // On Android/iOS, mChannelDstFd is initialised to -1 and the launching
+    // code uses only the first of each pair.
     MOZ_ASSERT(mChannelDstFd >= 0);
+#  endif
     mLaunchOptions->fds_to_remap.push_back(
         std::pair<int, int>(mClientChannelHandle.get(), mChannelDstFd));
-#  endif
   }
 
   // no need for kProcessChannelID, the child process inherits the
@@ -1360,6 +1377,143 @@ RefPtr<ProcessHandlePromise> PosixProcessLauncher::DoLaunch() {
 }
 #endif  // XP_UNIX
 
+#ifdef XP_IOS
+RefPtr<ProcessHandlePromise> IosProcessLauncher::DoLaunch() {
+  MOZ_RELEASE_ASSERT(mLaunchOptions->fds_to_remap.size() == 3,
+                     "Unexpected fds_to_remap on iOS");
+
+  ExtensionKitProcess::Kind kind = ExtensionKitProcess::Kind::WebContent;
+  if (mProcessType == GeckoProcessType_GPU) {
+    kind = ExtensionKitProcess::Kind::Rendering;
+  } else if (mProcessType == GeckoProcessType_Socket) {
+    kind = ExtensionKitProcess::Kind::Networking;
+  }
+
+  DarwinObjectPtr<xpc_object_t> bootstrapMessage =
+      AdoptDarwinObject(xpc_dictionary_create_empty());
+  xpc_dictionary_set_string(bootstrapMessage.get(), "message-name",
+                            "bootstrap");
+
+  DarwinObjectPtr<xpc_object_t> environDict =
+      AdoptDarwinObject(xpc_dictionary_create_empty());
+  for (auto& [envKey, envValue] : mLaunchOptions->env_map) {
+    xpc_dictionary_set_string(environDict.get(), envKey.c_str(),
+                              envValue.c_str());
+  }
+  xpc_dictionary_set_value(bootstrapMessage.get(), "environ",
+                           environDict.get());
+
+  // XXX: this processing depends entirely on the internals of
+  // ContentParent::LaunchSubprocess()
+  // GeckoChildProcessHost::PerformAsyncLaunch(), and the order in
+  // which they append to fds_to_remap. There must be a better way to do it.
+  // See bug 1440207.
+  int prefsFd = mLaunchOptions->fds_to_remap[0].first;
+  int prefMapFd = mLaunchOptions->fds_to_remap[1].first;
+  int ipcFd = mLaunchOptions->fds_to_remap[2].first;
+  xpc_dictionary_set_fd(bootstrapMessage.get(), "prefs", prefsFd);
+  xpc_dictionary_set_fd(bootstrapMessage.get(), "prefmap", prefMapFd);
+  xpc_dictionary_set_fd(bootstrapMessage.get(), "channel", ipcFd);
+
+  // Setup stdout and stderr to inherit.
+  xpc_dictionary_set_fd(bootstrapMessage.get(), "stdout", STDOUT_FILENO);
+  xpc_dictionary_set_fd(bootstrapMessage.get(), "stderr", STDERR_FILENO);
+
+  DarwinObjectPtr<xpc_object_t> argsArray =
+      AdoptDarwinObject(xpc_array_create_empty());
+  for (auto& argv : mChildArgv) {
+    xpc_array_set_string(argsArray.get(), XPC_ARRAY_APPEND, argv.c_str());
+  }
+  MOZ_ASSERT(xpc_array_get_count(argsArray.get()) == mChildArgv.size());
+  xpc_dictionary_set_value(bootstrapMessage.get(), "argv", argsArray.get());
+
+  auto promise = MakeRefPtr<ProcessHandlePromise::Private>(__func__);
+  ExtensionKitProcess::StartProcess(kind, [self = RefPtr{this}, promise,
+                                           bootstrapMessage =
+                                               std::move(bootstrapMessage)](
+                                              Result<ExtensionKitProcess,
+                                                     LaunchError>&& result) {
+    if (result.isErr()) {
+      CHROMIUM_LOG(ERROR) << "ExtensionKitProcess::StartProcess failed";
+      promise->Reject(result.unwrapErr(), __func__);
+      return;
+    }
+
+    auto process = result.unwrap();
+    self->mResults.mForegroundCapabilityGrant =
+        process.GrantForegroundCapability();
+    self->mResults.mXPCConnection = process.MakeLibXPCConnection();
+    self->mResults.mExtensionKitProcess = Some(std::move(process));
+
+    // We don't actually use the event handler for anything other than
+    // watching for errors. Once the promise is resolved, this becomes a
+    // no-op.
+    xpc_connection_set_event_handler(self->mResults.mXPCConnection.get(), ^(
+                                         xpc_object_t event) {
+      if (!event || xpc_get_type(event) == XPC_TYPE_ERROR) {
+        CHROMIUM_LOG(WARNING) << "XPC connection received encountered an error";
+        promise->Reject(LaunchError("xpc_connection_event_handler"), __func__);
+      }
+    });
+    xpc_connection_resume(self->mResults.mXPCConnection.get());
+
+    // Send our bootstrap message to the content and wait for it to reply with
+    // the task port before resolving.
+    // FIXME: Should we have a time-out for if the child process doesn't respond
+    // in time? The main thread may be blocked while we're starting this
+    // process.
+    xpc_connection_send_message_with_reply(
+        self->mResults.mXPCConnection.get(), bootstrapMessage.get(), nullptr,
+        ^(xpc_object_t reply) {
+          if (xpc_get_type(reply) == XPC_TYPE_ERROR) {
+            CHROMIUM_LOG(ERROR)
+                << "Got error sending XPC bootstrap message to child";
+            promise->Reject(
+                LaunchError("xpc_connection_send_message_with_reply error"),
+                __func__);
+            return;
+          }
+
+          if (xpc_get_type(reply) != XPC_TYPE_DICTIONARY) {
+            CHROMIUM_LOG(ERROR)
+                << "Unexpected reply type for bootstrap message from child";
+            promise->Reject(
+                LaunchError(
+                    "xpc_connection_send_message_with_reply non-dictionary"),
+                __func__);
+            return;
+          }
+
+          // FIXME: We have to trust the child to tell us its pid & mach task.
+          // WebKit uses `xpc_connection_get_pid` to get the pid, however this
+          // is marked as unavailable on iOS.
+          //
+          // Given how the process is started, however, validating this
+          // information it sends us this early during startup may be
+          // unnecessary.
+          self->mResults.mChildTask =
+              xpc_dictionary_copy_mach_send(reply, "task");
+          pid_t pid =
+              static_cast<pid_t>(xpc_dictionary_get_int64(reply, "pid"));
+          CHROMIUM_LOG(INFO) << "ExtensionKit process started, task: "
+                             << self->mResults.mChildTask << ", pid: " << pid;
+
+          pid_t taskPid;
+          kern_return_t kr = pid_for_task(self->mResults.mChildTask, &taskPid);
+          if (kr != KERN_SUCCESS || pid != taskPid) {
+            CHROMIUM_LOG(ERROR) << "Could not validate child task matches pid";
+            promise->Reject(LaunchError("pid_for_task mismatch"), __func__);
+            return;
+          }
+
+          promise->Resolve(pid, __func__);
+        });
+  });
+
+  return promise;
+}
+#endif
+
 #ifdef XP_MACOSX
 Result<Ok, LaunchError> MacProcessLauncher::DoFinishLaunch() {
   Result<Ok, LaunchError> aError = PosixProcessLauncher::DoFinishLaunch();
@@ -1408,97 +1562,6 @@ Result<Ok, LaunchError> MacProcessLauncher::DoFinishLaunch() {
 #endif  // XP_MACOSX
 
 #ifdef XP_WIN
-void WindowsProcessLauncher::AddApplicationPrefetchArgument() {
-  // The Application Launch Prefetcher (ALPF) is an ill-documented Windows
-  // subsystem that's intended to speed up process launching, apparently mostly
-  // by assuming that a binary is going to want to load the same DLLs as it did
-  // the last time it launched, and getting those prepped for loading as well.
-  //
-  // For most applications, that's a good bet. For Firefox, it's less so, since
-  // we use the same binary with different arguments to do completely different
-  // things. Windows does allow applications to take up multiple slots in this
-  // cache, but the "which bucket does this invocation go in?" mechanism is
-  // highly unusual: the OS scans the command line and looks for a command-line
-  // switch of a particular form.
-  //
-  // (There is allegedly a way to do this without involving the command line,
-  // OVERRIDE_PREFETCH_PARAMETER, but it's even more poorly documented.)
-
-  // Applications' different prefetch-cache buckets are named with numbers from
-  // "1" to some OS-version-determined limit, with an additional implicit "0"
-  // cache bucket which is used when no valid prefetch cache slot is named.
-  //
-  // (The "0" bucket's existence and behavior is not documented, but has been
-  // confirmed by observing the creation and enumeration of cache files in the
-  // C:\Windows\Prefetch folder.)
-  static size_t const kMaxSlotNo = IsWin1122H2OrLater() ? 16 : 8;
-
-  // Determine the prefetch-slot number to be used for the process we're about
-  // to launch.
-  //
-  // This may be changed freely between Firefox versions, as a Firefox update
-  // will completely invalidate the prefetch cache anyway.
-  size_t const prefetchSlot = [&]() -> size_t {
-    switch (mProcessType) {
-      // This code path is not used when starting the main process...
-      case GeckoProcessType_Default:
-      // ...ForkServer is not used on Windows...
-      case GeckoProcessType_ForkServer:
-      // ..."End" isn't a process-type, just a limit...
-      case GeckoProcessType_End:
-      // ...and any new process-types should be considered explicitly here.
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid process type");
-        return 0;
-
-      // We reserve 1 for the main process as started by the launcher process.
-      // (See LauncherProcessWin.cpp.) Otherwise, we mostly match the process-
-      // type enumeration.
-      case GeckoProcessType_Content:
-        return 2;
-      case GeckoProcessType_Socket:
-        return 3;  // usurps IPDLUnitTest
-      case GeckoProcessType_GMPlugin:
-        return 4;
-      case GeckoProcessType_GPU:
-        return 5;
-      case GeckoProcessType_RemoteSandboxBroker:
-        return 6;  // usurps VR
-      case GeckoProcessType_RDD:
-        return 7;
-
-      case GeckoProcessType_Utility: {
-        // Continue the enumeration, using the SandboxingKind as a
-        // probably-passably-precise proxy for the process's purpose.
-        //
-        // (On Win10 and earlier, or when sandboxing is not used, this will lump
-        // all utility processes into slot 8.)
-#  ifndef MOZ_SANDBOX
-        size_t const val = 0;
-#  else
-        size_t const val = static_cast<size_t>(mSandbox);
-#  endif
-        return std::min(kMaxSlotNo, 8 + val);
-      }
-
-      // These process types are started so rarely that we're not concerned
-      // about their interaction with the prefetch cache. Lump them together at
-      // the end (possibly alongside other process types).
-      case GeckoProcessType_IPDLUnitTest:
-      case GeckoProcessType_VR:
-        return kMaxSlotNo;
-    }
-  }();
-  MOZ_ASSERT(prefetchSlot <= kMaxSlotNo);
-
-  if (prefetchSlot == 0) {
-    // default; no explicit argument needed
-    return;
-  }
-
-  mCmdLine->AppendLooseValue(StringPrintf(L"/prefetch:%zu", prefetchSlot));
-}
-
 Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
   Result<Ok, LaunchError> aError = BaseProcessLauncher::DoSetup();
   if (aError.isErr()) {
@@ -1679,9 +1742,6 @@ Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
   // Process type
   mCmdLine->AppendLooseValue(UTF8ToWide(ChildProcessType()));
 
-  // Prefetch cache hint
-  AddApplicationPrefetchArgument();
-
 #  ifdef MOZ_SANDBOX
   if (mUseSandbox) {
     // Mark the handles to inherit as inheritable.
@@ -1745,7 +1805,7 @@ RefPtr<ProcessLaunchPromise> BaseProcessLauncher::FinishLaunch() {
   Telemetry::AccumulateTimeDelta(Telemetry::CHILD_PROCESS_LAUNCH_MS,
                                  mStartTimeStamp);
 
-  return ProcessLaunchPromise::CreateAndResolve(mResults, __func__);
+  return ProcessLaunchPromise::CreateAndResolve(std::move(mResults), __func__);
 }
 
 bool GeckoChildProcessHost::OpenPrivilegedHandle(base::ProcessId aPid) {

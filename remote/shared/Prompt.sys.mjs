@@ -42,7 +42,7 @@ modal.findPrompt = function (context) {
       win.opener === context.window
     ) {
       lazy.logger.trace("Found open window modal prompt");
-      return new modal.Dialog(() => context, win);
+      return new modal.Dialog(win);
     }
   }
 
@@ -51,7 +51,7 @@ modal.findPrompt = function (context) {
     if (geckoViewPrompts.length) {
       lazy.logger.trace("Found open GeckoView prompt");
       const prompt = geckoViewPrompts[0];
-      return new modal.Dialog(() => context, prompt);
+      return new modal.Dialog(prompt);
     }
   }
 
@@ -65,7 +65,7 @@ modal.findPrompt = function (context) {
     let dialogs = contentBrowser.tabDialogBox.getTabDialogManager().dialogs;
     if (dialogs.length) {
       lazy.logger.trace("Found open tab modal prompt");
-      return new modal.Dialog(() => context, dialogs[0].frameContentWindow);
+      return new modal.Dialog(dialogs[0].frameContentWindow);
     }
 
     dialogs = contentBrowser.tabDialogBox.getContentDialogManager().dialogs;
@@ -74,36 +74,23 @@ modal.findPrompt = function (context) {
     // gets lazily added. If it's not set yet, ignore the dialog for now.
     if (dialogs.length && dialogs[0].frameContentWindow.Dialog) {
       lazy.logger.trace("Found open content prompt");
-      return new modal.Dialog(() => context, dialogs[0].frameContentWindow);
+      return new modal.Dialog(dialogs[0].frameContentWindow);
     }
   }
-
-  // If no modal dialog has been found yet, check for old non SubDialog based
-  // content modal dialogs. Even with those deprecated in Firefox 89 we should
-  // keep supporting applications that don't have them implemented yet.
-  if (contentBrowser?.tabModalPromptBox) {
-    const prompts = contentBrowser.tabModalPromptBox.listPrompts();
-    if (prompts.length) {
-      lazy.logger.trace("Found open old-style content prompt");
-      return new modal.Dialog(() => context, null);
-    }
-  }
-
   return null;
 };
 
 /**
  * Represents a modal dialog.
  *
- * @param {function(): browser.Context} curBrowserFn
- *     Function that returns the current |browser.Context|.
  * @param {DOMWindow} dialog
  *     DOMWindow of the dialog.
  */
 modal.Dialog = class {
-  constructor(curBrowserFn, dialog) {
-    this.curBrowserFn_ = curBrowserFn;
-    this.win_ = Cu.getWeakReference(dialog);
+  #win;
+
+  constructor(dialog) {
+    this.#win = Cu.getWeakReference(dialog);
   }
 
   get args() {
@@ -112,10 +99,6 @@ modal.Dialog = class {
     }
     let tm = this.tabModal;
     return tm ? tm.args : null;
-  }
-
-  get curBrowser_() {
-    return this.curBrowserFn_();
   }
 
   get isOpen() {
@@ -136,11 +119,7 @@ modal.Dialog = class {
   }
 
   get tabModal() {
-    let win = this.window;
-    if (win) {
-      return win.Dialog;
-    }
-    return this.curBrowser_.getTabModal();
+    return this.window?.Dialog;
   }
 
   get promptType() {
@@ -164,8 +143,8 @@ modal.Dialog = class {
    * it is currently attached to the DOM.
    */
   get window() {
-    if (this.win_) {
-      let win = this.win_.get();
+    if (this.#win) {
+      let win = this.#win.get();
       if (win && (lazy.AppInfo.isAndroid || win.parent)) {
         return win;
       }

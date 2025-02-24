@@ -150,10 +150,110 @@ const VERIFY_SIGNATURES_FROM_FS = false;
  */
 
 /**
- * The translations parent is used to orchestrate translations in Firefox. It can
- * download the wasm translation engines, and the machine learning language models.
+ * The state that is stored per a "top" ChromeWindow. This "top" ChromeWindow is the JS
+ * global associated with a browser window. Some state is unique to a browser window, and
+ * using the top ChromeWindow is a unique key that ensures the state will be unique to
+ * that browser window.
  *
- * See Bug 971044 for more details of planned work.
+ * See BrowsingContext.webidl for information on the "top"
+ * See the TranslationsParent JSDoc for more information on the state management.
+ */
+class StatePerTopChromeWindow {
+  /**
+   * The storage backing for the states.
+   *
+   * @type {WeakMap<ChromeWindow, StatePerTopChromeWindow>}
+   */
+  static #states = new WeakMap();
+
+  /**
+   * When reloading the page, store the translation pair that needs translating.
+   *
+   * @type {null | TranslationPair}
+   */
+  translateOnPageReload = null;
+
+  /**
+   * The page may auto-translate due to user settings. On a page restore, always
+   * skip the page restore logic.
+   *
+   * @type {boolean}
+   */
+  isPageRestored = false;
+
+  /**
+   * Remember the detected languages on a page reload. This will keep the translations
+   * button from disappearing and reappearing, which causes the button to lose focus.
+   *
+   * @type {LangTags | null} previousDetectedLanguages
+   */
+  previousDetectedLanguages = null;
+
+  static #id = 0;
+  /**
+   * @param {ChromeWindow} topChromeWindow
+   */
+  constructor(topChromeWindow) {
+    this.id = StatePerTopChromeWindow.#id++;
+    StatePerTopChromeWindow.#states.set(topChromeWindow, this);
+  }
+
+  /**
+   * @param {ChromeWindow} topChromeWindow
+   * @returns {StatePerTopChromeWindow}
+   */
+  static getOrCreate(topChromeWindow) {
+    let state = StatePerTopChromeWindow.#states.get(topChromeWindow);
+    if (state) {
+      return state;
+    }
+    state = new StatePerTopChromeWindow(topChromeWindow);
+    StatePerTopChromeWindow.#states.set(topChromeWindow, state);
+    return state;
+  }
+}
+
+/**
+ * The TranslationsParent is used to orchestrate translations in Firefox. It can
+ * download the Wasm translation engine, and the language models. It manages the life
+ * cycle for offering and performing translations.
+ *
+ * Care must be taken for the life cycle of the state management and data caching. The
+ * following examples use a fictitious `myState` property to show how state can be stored.
+ *
+ * There is only 1 TranslationsParent static class in the parent process. At this
+ * layer it is safe to store things like translation models and general browser
+ * configuration as these don't change across browser windows. This is accessed like
+ * `TranslationsParent.myState`
+ *
+ * The next layer down are the top ChromeWindows. These map to the UI and user's conception
+ * of a browser window, such as what you would get by hitting cmd+n or ctrl+n to get a new
+ * browser window. State such as whether a page is reloaded or general navigation events
+ * must be unique per ChromeWindow. State here is stored in the `StatePerTopChromeWindow`
+ * abstraction, like `this.getWindowState().myState`. This layer also consists of a
+ * `FullPageTranslationsPanel` instance per top ChromeWindow (at least on Desktop).
+ *
+ * The final layer consists of the multiple tabs and navigation history inside of a
+ * ChromeWindow. Data for this layer is safe to store on the TranslationsParent instance,
+ * like `this.myState`.
+ *
+ * Below is an ascii diagram of this relationship.
+ *
+ *   ┌─────────────────────────────────────────────────────────────────────────────┐
+ *   │                           static TranslationsParent                         │
+ *   └─────────────────────────────────────────────────────────────────────────────┘
+ *                  |                                       |
+ *                  v                                       v
+ * ┌──────────────────────────────────────┐   ┌──────────────────────────────────────┐
+ * │         top ChromeWindow             │   │        top ChromeWindow              │
+ * │ (FullPageTranslationsPanel instance) │   │ (FullPageTranslationsPanel instance) │
+ * └──────────────────────────────────────┘   └──────────────────────────────────────┘
+ *             |               |       |                |              |       |
+ *             v               v       v                v              v       v
+ *   ┌────────────────────┐ ┌─────┐ ┌─────┐  ┌────────────────────┐ ┌─────┐ ┌─────┐
+ *   │ TranslationsParent │ │ ... │ │ ... │  │ TranslationsParent │ │ ... │ │ ... │
+ *   │  (actor instance)  │ │     │ │     │  │  (actor instance)  │ │     │ │     │
+ *   └────────────────────┘ └─────┘ └─────┘  └────────────────────┘ └─────┘ └─────┘
  */
 export class TranslationsParent extends JSWindowActorParent {
   /**
@@ -205,26 +305,32 @@ export class TranslationsParent extends JSWindowActorParent {
   #isDestroyed = false;
 
   /**
-   * Remember the detected languages on a page reload. This will keep the translations
-   * button from disappearing and reappearing, which causes the button to lose focus.
+   * There is only one static TranslationsParent for all of the top ChromeWindows.
+   * The top ChromeWindow maps to the user's conception of a window such as when you hit
+   * cmd+n or ctrl+n.
    *
-   * @type {LangTags | null} previousDetectedLanguages
+   * @returns {StatePerTopChromeWindow}
    */
-  static #previousDetectedLanguages = null;
+  getWindowState() {
+    const state = StatePerTopChromeWindow.getOrCreate(
+      this.browsingContext.top.embedderWindowGlobal
+    );
+    return state;
+  }
 
   actorCreated() {
     this.innerWindowId = this.browsingContext.top.embedderElement.innerWindowID;
+    const windowState = this.getWindowState();
     this.languageState = new TranslationsLanguageState(
       this,
-      TranslationsParent.#previousDetectedLanguages
+      windowState.previousDetectedLanguages
     );
-    TranslationsParent.#previousDetectedLanguages = null;
+    windowState.previousDetectedLanguages = null;
 
-    if (TranslationsParent.#translateOnPageReload) {
+    if (windowState.translateOnPageReload) {
       // The actor was recreated after a page reload, start the translation.
-      const { fromLanguage, toLanguage } =
-        TranslationsParent.#translateOnPageReload;
-      TranslationsParent.#translateOnPageReload = null;
+      const { fromLanguage, toLanguage } = windowState.translateOnPageReload;
+      windowState.translateOnPageReload = null;
 
       lazy.console.log(
         `Translating on a page reload from "${fromLanguage}" to "${toLanguage}".`
@@ -261,12 +367,6 @@ export class TranslationsParent extends JSWindowActorParent {
   static #translationsWasmRemoteClient = null;
 
   /**
-   * The page may auto-translate due to user settings. On a page restore, always
-   * skip the page restore logic.
-   */
-  static #isPageRestored = false;
-
-  /**
    * Allows the actor's behavior to be changed when the translations engine is mocked via
    * a dummy RemoteSettingsClient.
    *
@@ -278,13 +378,6 @@ export class TranslationsParent extends JSWindowActorParent {
    * @type {null | Promise<boolean>}
    */
   static #isTranslationsEngineSupported = null;
-
-  /**
-   * When reloading the page, store the translation pair that needs translating.
-   *
-   * @type {null | TranslationPair}
-   */
-  static #translateOnPageReload = null;
 
   /**
    * An ordered list of preferred languages based on:
@@ -350,6 +443,15 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
+   * Returns whether the Translations Engine is mocked for testing.
+   *
+   * @returns {boolean}
+   */
+  static isTranslationsEngineMocked() {
+    return TranslationsParent.#isTranslationsEngineMocked;
+  }
+
+  /**
    * Offer translations (for instance by automatically opening the popup panel) whenever
    * languages are detected, but only do it once per host per session.
    *
@@ -362,7 +464,10 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!lazy.automaticallyPopupPref) {
       return;
     }
-    if (lazy.BrowserHandler?.kiosk) {
+
+    // On Android the BrowserHandler is intermittently not available (for unknown reasons).
+    // Check that the component is available before de-lazifying lazy.BrowserHandler.
+    if (Cc["@mozilla.org/browser/clh;1"] && lazy.BrowserHandler?.kiosk) {
       // Pop-ups should not be shown in kiosk mode.
       return;
     }
@@ -477,6 +582,39 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
+   * Returns the word count of the text for a given language.
+   *
+   * @param {string} langTag - A BCP-47 language tag.
+   * @param {string} text - The text for which to count words.
+   *
+   * @returns {number} - The count of words in the text.
+   * @throws If a segmenter could not be created for the given language tag.
+   */
+  static countWords(langTag, text) {
+    const segmenter = new Intl.Segmenter(langTag, { granularity: "word" });
+    const segments = Array.from(segmenter.segment(text));
+    return segments.filter(segment => segment.isWordLike).length;
+  }
+
+  /**
+   * Retrieves the Translations actor from the current browser context.
+   *
+   * @param {object} browser - The browser object from which to get the context.
+   *
+   * @returns {object} The Translations actor for handling translation actions.
+   * @throws {Error} Throws an error if the TranslationsParent actor cannot be found.
+   */
+  static getTranslationsActor(browser) {
+    const actor =
+      browser.browsingContext.currentWindowGlobal.getActor("Translations");
+
+    if (!actor) {
+      throw new Error("Unable to get the TranslationsParent actor.");
+    }
+    return actor;
+  }
+
+  /**
    * Detect if Wasm SIMD is supported, and cache the value. It's better to check
    * for support before downloading large binary blobs to a user who can't even
    * use the feature. This function also respects mocks and simulating unsupported
@@ -517,7 +655,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {object} gBrowser
    * @returns {boolean}
    */
-  static isRestrictedPage(gBrowser) {
+  static isFullPageTranslationsRestrictedForPage(gBrowser) {
     const contentType = gBrowser.selectedBrowser.documentContentType;
     const scheme = gBrowser.currentURI.scheme;
 
@@ -525,7 +663,8 @@ export class TranslationsParent extends JSWindowActorParent {
       return true;
     }
 
-    // Keep this logic up to date with TranslationsChild.prototype.#isRestrictedPage.
+    // Keep this logic up to date with the "matches" array in the
+    // `toolkit/modules/ActorManagerParent.sys.mjs` definition.
     switch (scheme) {
       case "https":
       case "http":
@@ -670,6 +809,42 @@ export class TranslationsParent extends JSWindowActorParent {
     return TranslationsParent.#preferredLanguages;
   }
 
+  /**
+   * Requests a new translations port.
+   *
+   * @param {number} innerWindowId - The id of the current window.
+   * @param {string} fromLanguage - The BCP-47 from-language tag.
+   * @param {string} toLanguage - The BCP-47 to-language tag.
+   *
+   * @returns {Promise<MessagePort | undefined>} The port for communication with the translation engine, or undefined on failure.
+   */
+  static async requestTranslationsPort(
+    innerWindowId,
+    fromLanguage,
+    toLanguage
+  ) {
+    let translationsEngineParent;
+    try {
+      translationsEngineParent =
+        await lazy.EngineProcess.getTranslationsEngineParent();
+    } catch (error) {
+      console.error("Failed to get the translation engine process", error);
+      return undefined;
+    }
+
+    // The MessageChannel will be used for communicating directly between the content
+    // process and the engine's process.
+    const { port1, port2 } = new MessageChannel();
+    translationsEngineParent.startTranslation(
+      fromLanguage,
+      toLanguage,
+      port1,
+      innerWindowId
+    );
+
+    return port2;
+  }
+
   async receiveMessage({ name, data }) {
     switch (name) {
       case "Translations:ReportLangTags": {
@@ -751,6 +926,9 @@ export class TranslationsParent extends JSWindowActorParent {
 
         return undefined;
       }
+      case "Translations:ReportFirstVisibleChange": {
+        this.languageState.hasVisibleChange = true;
+      }
     }
     return undefined;
   }
@@ -826,10 +1004,11 @@ export class TranslationsParent extends JSWindowActorParent {
    * @param {LangTags} langTags
    * @returns {boolean}
    */
-  static #maybeAutoTranslate(langTags) {
-    if (TranslationsParent.#isPageRestored) {
+  #maybeAutoTranslate(langTags) {
+    const windowState = this.getWindowState();
+    if (windowState.isPageRestored) {
       // The user clicked the restore button. Respect it for one page load.
-      TranslationsParent.#isPageRestored = false;
+      windowState.isPageRestored = false;
 
       // Skip this auto-translation.
       return false;
@@ -875,6 +1054,9 @@ export class TranslationsParent extends JSWindowActorParent {
           }
           return Array.from(languagePairMap.values());
         });
+      TranslationsParent.#languagePairs.catch(() => {
+        TranslationsParent.#languagePairs = null;
+      });
     }
     return TranslationsParent.#languagePairs;
   }
@@ -890,6 +1072,7 @@ export class TranslationsParent extends JSWindowActorParent {
    * @returns {Promise<SupportedLanguages>}
    */
   static async getSupportedLanguages() {
+    await chaosMode(1 / 4);
     const languagePairs = await TranslationsParent.getLanguagePairs();
 
     /** @type {Set<string>} */
@@ -1671,7 +1854,8 @@ export class TranslationsParent extends JSWindowActorParent {
           `Translation model fetched in ${duration / 1000} seconds:`,
           record.fromLang,
           record.toLang,
-          record.fileType
+          record.fileType,
+          record.version
         );
       })
     );
@@ -1901,7 +2085,8 @@ export class TranslationsParent extends JSWindowActorParent {
     if (this.languageState.requestedTranslationPair) {
       // This page has already been translated, restore it and translate it
       // again once the actor has been recreated.
-      TranslationsParent.#translateOnPageReload = { fromLanguage, toLanguage };
+      const windowState = this.getWindowState();
+      windowState.translateOnPageReload = { fromLanguage, toLanguage };
       this.restorePage(fromLanguage);
     } else {
       const { docLangTag } = this.languageState.detectedLanguages;
@@ -1948,6 +2133,7 @@ export class TranslationsParent extends JSWindowActorParent {
         toLanguage,
         topPreferredLanguage,
         autoTranslate: reportAsAutoTranslate,
+        requestTarget: "full_page",
       });
 
       this.sendAsyncMessage(
@@ -1970,47 +2156,30 @@ export class TranslationsParent extends JSWindowActorParent {
   restorePage() {
     TranslationsParent.telemetry().onRestorePage();
     // Skip auto-translate for one page load.
-    TranslationsParent.#isPageRestored = true;
+    const windowState = this.getWindowState();
+    windowState.isPageRestored = true;
+    this.languageState.hasVisibleChange = false;
     this.languageState.requestedTranslationPair = null;
-    TranslationsParent.#previousDetectedLanguages =
+    windowState.previousDetectedLanguages =
       this.languageState.detectedLanguages;
 
     const browser = this.browsingContext.embedderElement;
     browser.reload();
   }
 
-  /**
-   * Keep track of when the location changes.
-   */
-  static #locationChangeId = 0;
-
   static onLocationChange(browser) {
     if (!lazy.translationsEnabledPref) {
       // The pref isn't enabled, so don't attempt to get the actor.
       return;
     }
-    let windowGlobal = browser.browsingContext.currentWindowGlobal;
-    TranslationsParent.#locationChangeId++;
     let actor;
     try {
-      actor = windowGlobal.getActor("Translations");
-    } catch (_) {
-      // The actor may not be supported on this page.
+      actor =
+        browser.browsingContext.currentWindowGlobal.getActor("Translations");
+    } catch {
+      // The actor may not be supported on this page, which throws an error.
     }
-    if (actor) {
-      actor.languageState.locationChangeId =
-        TranslationsParent.#locationChangeId;
-    }
-  }
-
-  /**
-   * Is this actor active for the current location change?
-   *
-   * @param {number} locationChangeId - The id sent by the "TranslationsParent:LanguageState" event.
-   * @returns {boolean}
-   */
-  static isActiveLocation(locationChangeId) {
-    return locationChangeId === TranslationsParent.#locationChangeId;
+    actor?.languageState.locationChanged();
   }
 
   async queryIdentifyLanguage() {
@@ -2046,7 +2215,7 @@ export class TranslationsParent extends JSWindowActorParent {
       langTags.docLangTag &&
       langTags.userLangTag &&
       langTags.isDocLangTagSupported &&
-      TranslationsParent.#maybeAutoTranslate(langTags) &&
+      this.#maybeAutoTranslate(langTags) &&
       !TranslationsParent.shouldNeverTranslateLanguage(langTags.docLangTag) &&
       !this.shouldNeverTranslateSite()
     ) {
@@ -2083,7 +2252,7 @@ export class TranslationsParent extends JSWindowActorParent {
       return false;
     }
     let languagePairs = await TranslationsParent.getLanguagePairs();
-    return Boolean(languagePairs.find(({ fromLang }) => fromLang === langTag));
+    return Boolean(languagePairs.find(({ toLang }) => toLang === langTag));
   }
 
   /**
@@ -2091,9 +2260,12 @@ export class TranslationsParent extends JSWindowActorParent {
    * is supported when translating to that language.
    */
   static async getTopPreferredSupportedToLang() {
-    return TranslationsParent.getPreferredLanguages().find(
-      async langTag => await TranslationsParent.isSupportedAsToLang(langTag)
-    );
+    for (const langTag of TranslationsParent.getPreferredLanguages()) {
+      if (await TranslationsParent.isSupportedAsToLang(langTag)) {
+        return langTag;
+      }
+    }
+    return PIVOT_LANGUAGE;
   }
 
   /**
@@ -2179,7 +2351,7 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!langTags.docLangTag) {
       const message = "No valid language detected.";
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2204,7 +2376,7 @@ export class TranslationsParent extends JSWindowActorParent {
       const message =
         "The app and document languages match, so not translating.";
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2257,7 +2429,7 @@ export class TranslationsParent extends JSWindowActorParent {
       // No language pairs match.
       const message = `No matching translation pairs were found for translating from "${langTags.docLangTag}".`;
       ChromeUtils.addProfilerMarker(
-        "TranslationsChild",
+        "TranslationsParent",
         { innerWindowId: this.innerWindowId },
         message
       );
@@ -2599,7 +2771,6 @@ class TranslationsLanguageState {
   constructor(actor, previousDetectedLanguages = null) {
     this.#actor = actor;
     this.#detectedLanguages = previousDetectedLanguages;
-    this.dispatch();
   }
 
   /**
@@ -2616,8 +2787,8 @@ class TranslationsLanguageState {
   /** @type {LangTags | null} */
   #detectedLanguages = null;
 
-  /** @type {number} */
-  #locationChangeId = -1;
+  /** @type {boolean} */
+  #hasVisibleChange = false;
 
   /** @type {null | TranslationErrors} */
   #error = null;
@@ -2628,11 +2799,6 @@ class TranslationsLanguageState {
    * Dispatch anytime the language details change, so that any UI can react to it.
    */
   dispatch() {
-    if (!TranslationsParent.isActiveLocation(this.#locationChangeId)) {
-      // Do not dispatch as this location is not active.
-      return;
-    }
-
     const browser = this.#actor.browsingContext.top.embedderElement;
     if (!browser) {
       return;
@@ -2671,8 +2837,7 @@ class TranslationsLanguageState {
   }
 
   /**
-   * The TranslationsChild will detect languages and offer them up for translation.
-   * The results are stored here.
+   * The stored results for the detected languages.
    *
    * @returns {LangTags | null}
    */
@@ -2690,26 +2855,29 @@ class TranslationsLanguageState {
   }
 
   /**
-   * This id represents the last location change that happened for this actor. This
-   * allows the UI to disambiguate when there are races and out of order events that
-   * are dispatched. Only the most up to date `locationChangeId` is used.
+   * A visual translation change occurred on the DOM.
    *
-   * @returns {number}
+   * @returns {boolean}
    */
-  get locationChangeId() {
-    return this.#locationChangeId;
+  get hasVisibleChange() {
+    return this.#hasVisibleChange;
   }
 
-  set locationChangeId(locationChangeId) {
-    if (this.#locationChangeId === locationChangeId) {
+  set hasVisibleChange(hasVisibleChange) {
+    if (this.#hasVisibleChange === hasVisibleChange) {
       return;
     }
 
-    this.#locationChangeId = locationChangeId;
+    this.#hasVisibleChange = hasVisibleChange;
+    this.dispatch();
+  }
 
-    // When the location changes remove the previous error.
+  /**
+   * When the location changes remove the previous error and dispatch a change event
+   * so that any browser chrome UI that needs to be updated can get the latest state.
+   */
+  locationChanged() {
     this.#error = null;
-
     this.dispatch();
   }
 

@@ -8,15 +8,18 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddressResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
   AutoCompleteChild: "resource://gre/actors/AutoCompleteChild.sys.mjs",
   AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
+  CreditCardResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
+  GenericAutocompleteItem: "resource://gre/modules/FillHelpers.sys.mjs",
+  InsecurePasswordUtils: "resource://gre/modules/InsecurePasswordUtils.sys.mjs",
   FormAutofill: "resource://autofill/FormAutofill.sys.mjs",
   FormAutofillContent: "resource://autofill/FormAutofillContent.sys.mjs",
   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
+  FormScenarios: "resource://gre/modules/FormScenarios.sys.mjs",
   FormStateManager: "resource://gre/modules/shared/FormStateManager.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
-  ProfileAutocomplete:
-    "resource://autofill/AutofillProfileAutoComplete.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   FORM_SUBMISSION_REASON: "resource://gre/actors/FormHandlerChild.sys.mjs",
 });
@@ -32,68 +35,13 @@ const formFillController = Cc[
   "@mozilla.org/satchel/form-fill-controller;1"
 ].getService(Ci.nsIFormFillController);
 
-const observer = {
-  QueryInterface: ChromeUtils.generateQI([
-    "nsIWebProgressListener",
-    "nsISupportsWeakReference",
-  ]),
-
-  onLocationChange(aWebProgress, aRequest, aLocation, aFlags) {
-    // Only handle pushState/replaceState here.
-    if (
-      !(aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT) ||
-      !(aWebProgress.loadType & Ci.nsIDocShell.LOAD_CMD_PUSHSTATE)
-    ) {
-      return;
-    }
-    const window = aWebProgress.DOMWindow;
-    const formAutofillChild = window.windowGlobalChild.getActor("FormAutofill");
-    formAutofillChild.onPageNavigation();
-  },
-
-  onStateChange(aWebProgress, aRequest, aStateFlags, _aStatus) {
-    if (
-      // if restoring a previously-rendered presentation (bfcache)
-      aStateFlags & Ci.nsIWebProgressListener.STATE_RESTORING &&
-      aStateFlags & Ci.nsIWebProgressListener.STATE_STOP
-    ) {
-      return;
-    }
-
-    if (!(aStateFlags & Ci.nsIWebProgressListener.STATE_START)) {
-      return;
-    }
-
-    // We only care about when a page triggered a load, not the user. For example:
-    // clicking refresh/back/forward, typing a URL and hitting enter, and loading a bookmark aren't
-    // likely to be when a user wants to save a formautofill data.
-    let channel = aRequest.QueryInterface(Ci.nsIChannel);
-    let triggeringPrincipal = channel.loadInfo.triggeringPrincipal;
-    if (
-      triggeringPrincipal.isNullPrincipal ||
-      triggeringPrincipal.equals(
-        Services.scriptSecurityManager.getSystemPrincipal()
-      )
-    ) {
-      return;
-    }
-
-    // Don't handle history navigation, reload, or pushState not triggered via chrome UI.
-    // e.g. history.go(-1), location.reload(), history.replaceState()
-    if (!(aWebProgress.loadType & Ci.nsIDocShell.LOAD_CMD_NORMAL)) {
-      return;
-    }
-
-    const window = aWebProgress.DOMWindow;
-    const formAutofillChild = window.windowGlobalChild.getActor("FormAutofill");
-    formAutofillChild.onPageNavigation();
-  },
-};
-
 /**
  * Handles content's interactions for the frame.
  */
 export class FormAutofillChild extends JSWindowActorChild {
+  // Flag indicating whether the form is waiting to be filled by Autofill.
+  #autofillPending = false;
+
   constructor() {
     super();
 
@@ -104,9 +52,6 @@ export class FormAutofillChild extends JSWindowActorChild {
     this._hasDOMContentLoadedHandler = false;
     this._hasPendingTask = false;
 
-    // Flag indicating whether the form is waiting to be filled by Autofill.
-    this._autofillPending = false;
-
     /**
      * @type {FormAutofillFieldDetailsManager} handling state management of current forms and handlers.
      */
@@ -116,6 +61,12 @@ export class FormAutofillChild extends JSWindowActorChild {
     );
 
     lazy.AutoCompleteChild.addPopupStateListener(this);
+
+    /**
+     * Tracks whether the last form submission was triggered by a form submit event,
+     * if so we'll ignore the page navigation that follows
+     */
+    this.isFollowingSubmitEvent = false;
   }
 
   didDestroy() {
@@ -124,33 +75,18 @@ export class FormAutofillChild extends JSWindowActorChild {
     lazy.AutoCompleteChild.removePopupStateListener(this);
   }
 
-  popupStateChanged(messageName, data, _target) {
-    let docShell;
-    try {
-      docShell = this.docShell;
-    } catch (ex) {
-      lazy.AutoCompleteChild.removePopupStateListener(this);
-      return;
-    }
-
+  popupStateChanged(messageName, _data, _target) {
     if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
-    const { chromeEventHandler } = docShell;
-
     switch (messageName) {
-      case "FormAutoComplete:PopupClosed": {
-        this.onPopupClosed(data.selectedRowStyle);
-        Services.tm.dispatchToMainThread(() => {
-          chromeEventHandler.removeEventListener("keydown", this, true);
-        });
-
+      case "AutoComplete:PopupClosed": {
+        this.onPopupClosed();
         break;
       }
-      case "FormAutoComplete:PopupOpened": {
+      case "AutoComplete:PopupOpened": {
         this.onPopupOpened();
-        chromeEventHandler.addEventListener("keydown", this, true);
         break;
       }
     }
@@ -189,12 +125,12 @@ export class FormAutofillChild extends JSWindowActorChild {
         this._markAsAutofillField(detail.element)
       );
       if (validDetails.length) {
-        if (lazy.FormAutofill.captureOnFormRemoval) {
-          this.registerDOMDocFetchSuccessEventListener();
-        }
-        if (lazy.FormAutofill.captureOnPageNavigation) {
-          this.registerProgressListener();
-        }
+        this.manager
+          .getActor("FormHandler")
+          .registerFormSubmissionInterest(this, {
+            includesFormRemoval: lazy.FormAutofill.captureOnFormRemoval,
+            includesPageNavigation: lazy.FormAutofill.captureOnPageNavigation,
+          });
       }
 
       this._hasPendingTask = false;
@@ -207,162 +143,49 @@ export class FormAutofillChild extends JSWindowActorChild {
   }
 
   /**
-   * Gets the highest accessible docShell
-   *
-   * @returns {DocShell} highest accessible docShell
-   */
-  getHighestDocShell() {
-    const window = this.document.defaultView;
-
-    let docShell;
-    for (
-      let browsingContext = BrowsingContext.getFromWindow(window);
-      browsingContext?.docShell;
-      browsingContext = browsingContext.parent
-    ) {
-      docShell = browsingContext.docShell;
-    }
-
-    return docShell
-      .QueryInterface(Ci.nsIInterfaceRequestor)
-      .getInterface(Ci.nsIWebProgress);
-  }
-
-  /**
-   * After being notified of a page navigation, we check whether
-   * the navigated window is the active window or one of its parents
-   * (active window = activeHandler.window)
-   *
-   * @returns {boolean} whether the navigation affects the active window
-   */
-  isActiveWindowNavigation() {
-    const activeWindow = lazy.FormAutofillContent.activeHandler?.window;
-    const navigatedWindow = this.document.defaultView;
-
-    if (!activeWindow || !navigatedWindow) {
-      return false;
-    }
-
-    const navigatedBrowsingContext =
-      BrowsingContext.getFromWindow(navigatedWindow);
-
-    for (
-      let browsingContext = BrowsingContext.getFromWindow(activeWindow);
-      browsingContext?.docShell;
-      browsingContext = browsingContext.parent
-    ) {
-      if (navigatedBrowsingContext === browsingContext) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
-   * Infer a form submission after document is navigated
+   * We received a form-submission-detected event because
+   * the page was navigated.
    */
   onPageNavigation() {
-    if (!this.isActiveWindowNavigation()) {
+    if (!lazy.FormAutofill.captureOnPageNavigation) {
       return;
     }
 
-    // TODO: We should not use FormAutofillContent and let the
-    //       parent decides which child to notify
-    const activeChild = lazy.FormAutofillContent.activeAutofillChild;
-    const activeElement = activeChild.activeFieldDetail?.elementWeakRef.deref();
-    if (!activeElement) {
+    if (this.isFollowingSubmitEvent) {
+      // The next page navigation should be handled as form submission again
+      this.isFollowingSubmitEvent = false;
       return;
     }
-
+    let weakIdentifiedForms = ChromeUtils.nondeterministicGetWeakMapKeys(
+      this._fieldDetailsManager._formsDetails
+    );
     const formSubmissionReason = lazy.FORM_SUBMISSION_REASON.PAGE_NAVIGATION;
 
-    // We only capture the form of the active field right now,
-    // this means that we might miss some fields (see bug 1871356)
-    activeChild.formSubmitted(activeElement, formSubmissionReason);
-  }
-
-  /**
-   * After a form submission we unregister the
-   * nsIWebProgressListener from the top level doc shell
-   */
-  unregisterProgressListener() {
-    const docShell = this.getHighestDocShell();
-    try {
-      docShell.removeProgressListener(observer);
-    } catch (ex) {
-      // Ignore NS_ERROR_FAILURE if the progress listener was not registered
+    for (const form of weakIdentifiedForms) {
+      // Disconnected forms are captured by the form removal heuristic
+      if (!form.isConnected) {
+        continue;
+      }
+      this.formSubmitted(form, formSubmissionReason);
     }
   }
 
   /**
-   * After a focusin event and after we identified formautofill fields,
-   * we set up a nsIWebProgressListener that notifies of a request state
-   * change or window location change in the top level doc shell
+   * We received a form-submission-detected event because
+   * a form was removed from the DOM after a successful
+   * xhr/fetch request
+   *
+   * @param {Event} form form to be submitted
    */
-  registerProgressListener() {
-    const docShell = this.getHighestDocShell();
-
-    const flags =
-      Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT |
-      Ci.nsIWebProgress.NOTIFY_LOCATION;
-    try {
-      docShell.addProgressListener(observer, flags);
-    } catch (ex) {
-      // Ignore NS_ERROR_FAILURE if the progress listener was already added
+  onFormRemoval(form) {
+    if (!lazy.FormAutofill.captureOnFormRemoval) {
+      return;
     }
-  }
 
-  /**
-   * After a focusin event and after we identify formautofill fields,
-   * we set up an event listener for the DOMDocFetchSuccess event
-   */
-  registerDOMDocFetchSuccessEventListener() {
-    this.document.setNotifyFetchSuccess(true);
-
-    // Is removed after a DOMDocFetchSuccess event (bug 1864855)
-    /* eslint-disable mozilla/balanced-listeners */
-    this.docShell.chromeEventHandler.addEventListener(
-      "DOMDocFetchSuccess",
-      this,
-      true
-    );
-  }
-
-  /**
-   * After a DOMDocFetchSuccess event, we register an event listener for the DOMFormRemoved event
-   */
-  registerDOMFormRemovedEventListener() {
-    this.document.setNotifyFormOrPasswordRemoved(true);
-
-    // Is removed after a DOMFormRemoved event (bug 1864855)
-    /* eslint-disable mozilla/balanced-listeners */
-    this.docShell.chromeEventHandler.addEventListener(
-      "DOMFormRemoved",
-      this,
-      true
-    );
-  }
-
-  /**
-   * After a DOMDocFetchSuccess event we remove the DOMDocFetchSuccess event listener
-   */
-  unregisterDOMDocFetchSuccessEventListener() {
-    this.document.setNotifyFetchSuccess(false);
-    this.docShell.chromeEventHandler.removeEventListener(
-      "DOMDocFetchSuccess",
-      this
-    );
-  }
-
-  /**
-   * After a DOMFormRemoved event we remove the DOMFormRemoved event listener
-   */
-  unregisterDOMFormRemovedEventListener() {
-    this.document.setNotifyFormOrPasswordRemoved(false);
-    this.docShell.chromeEventHandler.removeEventListener(
-      "DOMFormRemoved",
-      this
-    );
+    const formSubmissionReason =
+      lazy.FORM_SUBMISSION_REASON.FORM_REMOVAL_AFTER_FETCH;
+    this.formSubmitted(form, formSubmissionReason);
+    this.manager.getActor("FormHandler").unregisterFormRemovalInterest(this);
   }
 
   shouldIgnoreFormAutofillEvent(event) {
@@ -385,27 +208,17 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     switch (evt.type) {
-      case "keydown": {
-        this._onKeyDown(evt);
-        break;
-      }
       case "focusin": {
         if (lazy.FormAutofill.isAutofillEnabled) {
           this.onFocusIn(evt);
         }
         break;
       }
-      case "DOMFormRemoved": {
-        this.onDOMFormRemoved(evt);
-        break;
-      }
-      case "DOMDocFetchSuccess": {
-        this.onDOMDocFetchSuccess();
-        break;
-      }
       case "form-submission-detected": {
         if (lazy.FormAutofill.isAutofillEnabled) {
-          this.onFormSubmission(evt);
+          const formElement = evt.detail.form;
+          const formSubmissionReason = evt.detail.reason;
+          this.onFormSubmission(formElement, formSubmissionReason);
         }
         break;
       }
@@ -446,62 +259,35 @@ export class FormAutofillChild extends JSWindowActorChild {
   /**
    * Handle form-submission-detected event (dispatched by FormHandlerChild)
    *
-   * @param {CustomEvent} evt form-submission-detected event
-   */
-  onFormSubmission(evt) {
-    const formElement = evt.detail.form;
-    const formSubmissionReason = evt.detail.reason;
-
-    this.formSubmitted(formElement, formSubmissionReason);
-  }
-
-  /**
-   * Handle the DOMFormRemoved event.
+   * Depending on the heuristic that detected the form submission,
+   * the form that is submitted is retrieved differently
    *
-   * Infers a form submission when the form is removed
-   * after a successful fetch or XHR request.
-   *
-   * @param {Event} evt DOMFormRemoved
+   * @param {HTMLFormElement} form that is being submitted
+   * @param {string} reason heuristic that detected the form submission
+   *                        (see FormHandlerChild.FORM_SUBMISSION_REASON)
    */
-  onDOMFormRemoved(evt) {
-    const formSubmissionReason =
-      lazy.FORM_SUBMISSION_REASON.FORM_REMOVAL_AFTER_FETCH;
-
-    this.formSubmitted(evt.target, formSubmissionReason);
+  onFormSubmission(form, reason) {
+    switch (reason) {
+      case lazy.FORM_SUBMISSION_REASON.PAGE_NAVIGATION:
+        this.onPageNavigation();
+        break;
+      case lazy.FORM_SUBMISSION_REASON.FORM_SUBMIT_EVENT:
+        this.formSubmitted(form, reason);
+        break;
+      case lazy.FORM_SUBMISSION_REASON.FORM_REMOVAL_AFTER_FETCH:
+        this.onFormRemoval(form);
+        break;
+    }
   }
 
-  /**
-   * Handle the DOMDocFetchSuccess event.
-   *
-   * Sets up an event listener for the DOMFormRemoved event
-   * and unregisters the event listener for DOMDocFetchSuccess event.
-   */
-  onDOMDocFetchSuccess() {
-    this.registerDOMFormRemovedEventListener();
-
-    this.unregisterDOMDocFetchSuccessEventListener();
-  }
-
-  /**
-   * Unregister all listeners that notify of a form submission,
-   * because we just detected and acted on a form submission
-   */
-  unregisterFormSubmissionListeners() {
-    this.unregisterDOMDocFetchSuccessEventListener();
-    this.unregisterDOMFormRemovedEventListener();
-    this.unregisterProgressListener();
-  }
-
-  receiveMessage(message) {
+  async receiveMessage(message) {
     if (!lazy.FormAutofill.isAutofillEnabled) {
       return;
     }
 
-    const doc = this.document;
-
     switch (message.name) {
       case "FormAutofill:PreviewProfile": {
-        this.previewProfile(doc);
+        this.previewProfile(message.data);
         break;
       }
       case "FormAutofill:ClearForm": {
@@ -509,7 +295,7 @@ export class FormAutofillChild extends JSWindowActorChild {
         break;
       }
       case "FormAutofill:FillForm": {
-        this.activeHandler.autofillFormFields(message.data);
+        await this.autofillFields(message.data);
         break;
       }
     }
@@ -579,9 +365,11 @@ export class FormAutofillChild extends JSWindowActorChild {
       return;
     }
 
-    // Unregister the form submission listeners after handling a form submission
-    this.debug("Unregistering form submission listeners");
-    this.unregisterFormSubmissionListeners();
+    // After a form submit event follows (most likely) a page navigation, so we set this flag
+    // to not handle the following one as form submission in order to avoid re-submitting the same form.
+    // Ideally, we should keep a record of the last submitted form details and based on that we
+    // should decide if we want to submit a form (bug 1895437)
+    this.isFollowingSubmitEvent = true;
 
     [records.address, records.creditCard].forEach((rs, idx) => {
       lazy.AutofillTelemetry.recordSubmittedSectionCount(
@@ -631,7 +419,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     this.debug("updateActiveElement: checking for popup-on-focus");
     // We know this element just received focus. If it's a credit card field,
     // open its popup.
-    if (this._autofillPending) {
+    if (this.#autofillPending) {
       this.debug("updateActiveElement: skipping check; autofill is imminent");
     } else if (element.value?.length !== 0) {
       this.debug(
@@ -652,16 +440,8 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
-  set autofillPending(flag) {
-    this.debug("Setting autofillPending to", flag);
-    this._autofillPending = flag;
-  }
-
   clearForm() {
-    let focusedInput =
-      this.activeInput ||
-      lazy.ProfileAutocomplete._lastAutoCompleteFocusedInput;
-    if (!focusedInput) {
+    if (!this.activeSection) {
       return;
     }
 
@@ -677,66 +457,41 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
-  previewProfile(doc) {
-    let docWin = doc.ownerGlobal;
-    let selectedIndex = lazy.ProfileAutocomplete._getSelectedIndex(docWin);
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
+  get lastProfileAutoCompleteResult() {
+    return this.manager.getActor("AutoComplete")?.lastProfileAutoCompleteResult;
+  }
 
-    if (
-      selectedIndex === -1 ||
-      !focusedInput ||
-      !lastAutoCompleteResult ||
-      lastAutoCompleteResult.getStyleAt(selectedIndex) != "autofill-profile"
-    ) {
-      this.sendAsyncMessage("FormAutofill:UpdateWarningMessage", {});
+  get lastProfileAutoCompleteFocusedInput() {
+    return this.manager.getActor("AutoComplete")
+      ?.lastProfileAutoCompleteFocusedInput;
+  }
 
-      lazy.ProfileAutocomplete._clearProfilePreview();
+  previewProfile(profile) {
+    if (profile && this.activeSection) {
+      const adaptedProfile = this.activeSection.getAdaptedProfiles([
+        profile,
+      ])[0];
+      this.activeSection.previewFormFields(adaptedProfile);
     } else {
-      let focusedInputDetails = this.activeFieldDetail;
-      let profile = JSON.parse(
-        lastAutoCompleteResult.getCommentAt(selectedIndex)
-      );
-      let allFieldNames = this.activeSection.allFieldNames;
-      let profileFields = allFieldNames.filter(
-        fieldName => !!profile[fieldName]
-      );
-
-      let focusedCategory = lazy.FormAutofillUtils.getCategoryFromFieldName(
-        focusedInputDetails.fieldName
-      );
-      let categories =
-        lazy.FormAutofillUtils.getCategoriesFromFieldNames(profileFields);
-      this.sendAsyncMessage("FormAutofill:UpdateWarningMessage", {
-        focusedCategory,
-        categories,
-      });
-
-      lazy.ProfileAutocomplete._previewSelectedProfile(selectedIndex);
+      this.activeSection.clearPreviewedFormFields();
     }
   }
 
-  onPopupClosed(selectedRowStyle) {
-    this.debug("Popup has closed.");
-    lazy.ProfileAutocomplete._clearProfilePreview();
-
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
-    if (
-      lastAutoCompleteResult &&
-      this._keyDownEnterForInput &&
-      focusedInput === this._keyDownEnterForInput &&
-      focusedInput ===
-        lazy.ProfileAutocomplete.lastProfileAutoCompleteFocusedInput
-    ) {
-      if (selectedRowStyle == "autofill-footer") {
-        this.sendAsyncMessage("FormAutofill:OpenPreferences");
-      } else if (selectedRowStyle == "autofill-clear-button") {
-        this.clearForm();
-      }
+  async autofillFields(profile) {
+    this.#autofillPending = true;
+    Services.obs.notifyObservers(null, "autofill-fill-starting");
+    try {
+      Services.obs.notifyObservers(null, "autofill-fill-starting");
+      await this.activeHandler.autofillFormFields(profile);
+      Services.obs.notifyObservers(null, "autofill-fill-complete");
+    } finally {
+      this.#autofillPending = false;
     }
+  }
+
+  onPopupClosed() {
+    this.debug("Popup has closed.");
+    this.activeSection?.clearPreviewedFormFields();
   }
 
   onPopupOpened() {
@@ -762,23 +517,147 @@ export class FormAutofillChild extends JSWindowActorChild {
       return;
     }
 
-    formFillController.markAsAutofillField(field);
+    this.manager
+      .getActor("AutoComplete")
+      ?.markAsAutoCompletableField(field, this);
   }
 
-  _onKeyDown(e) {
-    delete this._keyDownEnterForInput;
-    let lastAutoCompleteResult =
-      lazy.ProfileAutocomplete.lastProfileAutoCompleteResult;
-    let focusedInput = this.activeInput;
-    if (
-      e.keyCode != e.DOM_VK_RETURN ||
-      !lastAutoCompleteResult ||
-      !focusedInput ||
-      focusedInput !=
-        lazy.ProfileAutocomplete.lastProfileAutoCompleteFocusedInput
-    ) {
-      return;
+  get actorName() {
+    return "FormAutofill";
+  }
+
+  /**
+   * Get the search options when searching for autocomplete entries in the parent
+   *
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @returns {object} the search options for the input
+   */
+  getAutoCompleteSearchOption(input) {
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+
+    const scenarioName = lazy.FormScenarios.detect({ input }).signUpForm
+      ? "SignUpFormScenario"
+      : "";
+    return { fieldName: fieldDetail?.fieldName, scenarioName };
+  }
+
+  /**
+   * Ask the provider whether it might have autocomplete entry to show
+   * for the given input.
+   *
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @returns {boolean} true if we shold search for autocomplete entries
+   */
+  shouldSearchForAutoComplete(input) {
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+    if (!fieldDetail) {
+      return false;
     }
-    this._keyDownEnterForInput = focusedInput;
+    const fieldName = fieldDetail.fieldName;
+    const isAddressField = lazy.FormAutofillUtils.isAddressField(fieldName);
+    const searchPermitted = isAddressField
+      ? lazy.FormAutofill.isAutofillAddressesEnabled
+      : lazy.FormAutofill.isAutofillCreditCardsEnabled;
+    // If the specified autofill feature is pref off, do not search
+    if (!searchPermitted) {
+      return false;
+    }
+
+    // No profile can fill the currently-focused input.
+    if (!lazy.FormAutofillContent.savedFieldNames.has(fieldName)) {
+      return false;
+    }
+
+    // The current form has already been populated and the field is not
+    // an empty credit card field.
+    const isCreditCardField =
+      lazy.FormAutofillUtils.isCreditCardField(fieldName);
+    const isInputAutofilled =
+      input.autofillState == lazy.FormAutofillUtils.FIELD_STATES.AUTO_FILLED;
+    const filledRecordGUID = this.activeSection.filledRecordGUID;
+    if (
+      !isInputAutofilled &&
+      filledRecordGUID &&
+      !(isCreditCardField && this.activeInput.value === "")
+    ) {
+      return false;
+    }
+
+    // (address only) less than 3 inputs are covered by all saved fields in the storage.
+    if (
+      isAddressField &&
+      this.activeSection.allFieldNames.filter(field =>
+        lazy.FormAutofillContent.savedFieldNames.has(field)
+      ).length < lazy.FormAutofillUtils.AUTOFILL_FIELDS_THRESHOLD
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Convert the search result to autocomplete results
+   *
+   * @param {string} searchString - The string to search for
+   * @param {HTMLInputElement} input - The input element to search for autocompelte entries
+   * @param {Array<object>} records - autocomplete records
+   * @returns {AutocompleteResult}
+   */
+  searchResultToAutoCompleteResult(searchString, input, records) {
+    if (!records) {
+      return null;
+    }
+
+    const entries = records.records;
+    const externalEntries = records.externalEntries;
+
+    const fieldDetail = this._fieldDetailsManager
+      ._getFormHandler(input)
+      ?.getFieldDetailByElement(input);
+    if (!fieldDetail) {
+      return null;
+    }
+
+    const adaptedRecords = this.activeSection.getAdaptedProfiles(entries);
+    const isSecure = lazy.InsecurePasswordUtils.isFormSecure(
+      this.activeHandler.form
+    );
+    const isInputAutofilled =
+      input.autofillState == lazy.FormAutofillUtils.FIELD_STATES.AUTO_FILLED;
+    const allFieldNames = this.activeSection.allFieldNames;
+
+    const AutocompleteResult = lazy.FormAutofillUtils.isAddressField(
+      fieldDetail.fieldName
+    )
+      ? lazy.AddressResult
+      : lazy.CreditCardResult;
+
+    const acResult = new AutocompleteResult(
+      searchString,
+      fieldDetail.fieldName,
+      allFieldNames,
+      adaptedRecords,
+      { isSecure, isInputAutofilled }
+    );
+
+    acResult.externalEntries.push(
+      ...externalEntries.map(
+        entry =>
+          new lazy.GenericAutocompleteItem(
+            entry.image,
+            entry.title,
+            entry.subtitle,
+            entry.fillMessageName,
+            entry.fillMessageData
+          )
+      )
+    );
+
+    return acResult;
   }
 }

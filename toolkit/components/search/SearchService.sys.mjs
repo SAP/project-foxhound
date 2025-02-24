@@ -173,7 +173,7 @@ class ParseSubmissionResult {
 
   /**
    * String containing the sought terms. This can be an empty string in case no
-   * terms were specified or the URL does not represent a search submission.*
+   * terms were specified or the URL does not represent a search submission.
    *
    * @type {string}
    */
@@ -422,9 +422,11 @@ export class SearchService {
   async getAppProvidedEngines() {
     await this.init();
 
-    return this._sortEnginesByDefaults(
-      this.#sortedEngines.filter(e => e.isAppProvided)
-    );
+    return lazy.SearchUtils.sortEnginesByDefaults({
+      engines: this.#sortedEngines.filter(e => e.isAppProvided),
+      appDefaultEngine: this.appDefaultEngine,
+      appPrivateDefaultEngine: this.appPrivateDefaultEngine,
+    });
   }
 
   async getEnginesByExtensionID(extensionID) {
@@ -967,6 +969,10 @@ export class SearchService {
     );
   }
 
+  getAlternateDomains(domain) {
+    return lazy.SearchStaticData.getAlternateDomains(domain);
+  }
+
   /**
    * This is a nsITimerCallback for the timerManager notification that is
    * registered for handling updates to search engines. Only OpenSearch engines
@@ -991,9 +997,10 @@ export class SearchService {
   /**
    * A deferred promise that is resolved when initialization has finished.
    *
+   * Resolved when initalization has successfully finished, and rejected if it
+   * has failed.
+   *
    * @type {Promise}
-   *   Resolved when initalization has successfully finished, and rejected if it
-   *   has failed.
    */
   #initDeferredPromise = Promise.withResolvers();
 
@@ -1078,10 +1085,10 @@ export class SearchService {
    * engine, as suggested by the configuration.
    * For the legacy configuration, this is the user visible name.
    *
-   * @type {object}
-   *
    * This is prefixed with _ rather than # because it is
    * called in a test.
+   *
+   * @type {object}
    */
   _searchDefault = null;
 
@@ -1113,6 +1120,16 @@ export class SearchService {
   #startupRemovedExtensions = new Set();
 
   /**
+   * Used in #parseSubmissionMap
+   *
+   * @typedef {object} submissionMapEntry
+   * @property {nsISearchEngine} engine
+   *   The search engine.
+   * @property {string} termsParameterName
+   *   The search term parameter name.
+   */
+
+  /**
    * This map is built lazily after the available search engines change.  It
    * allows quick parsing of an URL representing a search submission into the
    * search engine name and original terms.
@@ -1120,12 +1137,7 @@ export class SearchService {
    * The keys are strings containing the domain name and lowercase path of the
    * engine submission, for example "www.google.com/search".
    *
-   * The values are objects with these properties:
-   * {
-   *   engine: The associated nsISearchEngine.
-   *   termsParameterName: Name of the URL parameter containing the search
-   *                       terms, for example "q".
-   * }
+   * @type {Map<string, submissionMapEntry>|null}
    */
   #parseSubmissionMap = null;
 
@@ -1791,9 +1803,9 @@ export class SearchService {
         this.#addEngineToStore(engine);
       } catch (ex) {
         console.error(
-          `Could not load engine ${
-            "webExtension" in config ? config.webExtension.id : "unknown"
-          }: ${ex}`
+          "Could not load engine",
+          "webExtension" in config ? config.webExtension.id : "unknown",
+          ex
         );
       }
     }
@@ -1829,7 +1841,8 @@ export class SearchService {
         });
       } catch (ex) {
         lazy.logConsole.error(
-          `#createAndAddAddonEngine failed for ${extension.id}`,
+          "#createAndAddAddonEngine failed for",
+          extension.id,
           ex
         );
       }
@@ -2489,6 +2502,19 @@ export class SearchService {
         } else if (loadPath?.startsWith("[user]")) {
           engine = new lazy.UserSearchEngine({ json: engineJSON });
         } else if (engineJSON.extensionID ?? engineJSON._extensionID) {
+          let existingEngine = this.#getEngineByName(engineJSON._name);
+          let extensionId = engineJSON.extensionID ?? engineJSON._extensionID;
+
+          if (existingEngine && existingEngine._extensionID == extensionId) {
+            // We assume that this WebExtension was already loaded as part of
+            // #loadStartupEngines, and therefore do not try to add it again.
+            lazy.logConsole.log(
+              "Ignoring already added WebExtension",
+              extensionId
+            );
+            continue;
+          }
+
           engine = new lazy.AddonSearchEngine({
             isAppProvided: false,
             json: engineJSON,
@@ -2577,7 +2603,7 @@ export class SearchService {
   async _fetchEngineSelectorEngines() {
     let searchEngineSelectorProperties = {
       locale: Services.locale.appLocaleAsBCP47,
-      region: lazy.Region.home || "default",
+      region: lazy.Region.home || "unknown",
       channel: lazy.SearchUtils.MODIFIED_APP_CHANNEL,
       experiment:
         lazy.NimbusFeatures.searchConfiguration.getVariable("experiment") ?? "",
@@ -2718,70 +2744,11 @@ export class SearchService {
     }
     lazy.logConsole.debug("#buildSortedEngineList: using default orders");
 
-    return (this._cachedSortedEngines = this._sortEnginesByDefaults(
-      Array.from(this._engines.values())
-    ));
-  }
-
-  /**
-   * Sorts engines by the default settings (prefs, configuration values).
-   *
-   * @param {Array} engines
-   *   An array of engine objects to sort.
-   * @returns {Array}
-   *   The sorted array of engine objects.
-   *
-   * This is a private method with _ rather than # because it is
-   * called in a test.
-   */
-  _sortEnginesByDefaults(engines) {
-    const sortedEngines = [];
-    const addedEngines = new Set();
-
-    function maybeAddEngineToSort(engine) {
-      if (!engine || addedEngines.has(engine.name)) {
-        return;
-      }
-
-      sortedEngines.push(engine);
-      addedEngines.add(engine.name);
-    }
-
-    // The app default engine should always be first in the list (except
-    // for distros, that we should respect).
-    const appDefault = this.appDefaultEngine;
-    maybeAddEngineToSort(appDefault);
-
-    // If there's a private default, and it is different to the normal
-    // default, then it should be second in the list.
-    const appPrivateDefault = this.appPrivateDefaultEngine;
-    if (appPrivateDefault && appPrivateDefault != appDefault) {
-      maybeAddEngineToSort(appPrivateDefault);
-    }
-
-    let remainingEngines;
-    const collator = new Intl.Collator();
-
-    remainingEngines = engines.filter(e => !addedEngines.has(e.name));
-
-    // We sort by highest orderHint first, then alphabetically by name.
-    remainingEngines.sort((a, b) => {
-      if (a._orderHint && b._orderHint) {
-        if (a._orderHint == b._orderHint) {
-          return collator.compare(a.name, b.name);
-        }
-        return b._orderHint - a._orderHint;
-      }
-      if (a._orderHint) {
-        return -1;
-      }
-      if (b._orderHint) {
-        return 1;
-      }
-      return collator.compare(a.name, b.name);
-    });
-
-    return [...sortedEngines, ...remainingEngines];
+    return (this._cachedSortedEngines = lazy.SearchUtils.sortEnginesByDefaults({
+      engines: Array.from(this._engines.values()),
+      appDefaultEngine: this.appDefaultEngine,
+      appPrivateDefaultEngine: this.appPrivateDefaultEngine,
+    }));
   }
 
   /**
@@ -2789,7 +2756,6 @@ export class SearchService {
    *
    * @returns {Array<SearchEngine>}
    */
-
   get #sortedVisibleEngines() {
     return this.#sortedEngines.filter(engine => !engine.hidden);
   }

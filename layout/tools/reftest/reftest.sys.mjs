@@ -1423,7 +1423,9 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
         // branch, 'equal' must be false so let's assert that to guard
         // against logic errors.
         if (equal) {
-          throw new Error("Logic error in reftest.jsm fuzzy test handling!");
+          throw new Error(
+            "Logic error in reftest.sys.mjs fuzzy test handling!"
+          );
         }
         output = { s: ["PASS", "FAIL"], n: "UnexpectedPass" };
       } else {
@@ -1510,6 +1512,8 @@ function RecordResult(testRunTime, errorMsg, typeSpecificResults) {
             extra.image1 = image1;
           }
         }
+        extra.modifiers = g.urls[0].modifiers;
+
         logger.testStatus(
           g.urls[0].identifier,
           message,

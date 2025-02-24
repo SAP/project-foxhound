@@ -12,10 +12,8 @@ use log::{debug, info, trace, warn};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::iter::FromIterator;
 use std::net::TcpStream;
 use std::num::{ParseIntError, TryFromIntError};
 use std::path::{Component, Path};
@@ -54,8 +52,6 @@ impl FromStr for AndroidStorageInput {
         }
     }
 }
-
-
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AndroidStorage {

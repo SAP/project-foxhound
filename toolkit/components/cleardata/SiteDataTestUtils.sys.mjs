@@ -114,7 +114,11 @@ export var SiteDataTestUtils = {
   },
 
   /**
-   * Adds a new localStorage entry for the specified origin, with the specified contents.
+   * Adds a new localStorage entry for the specified origin, with the specified
+   * contents.
+   *
+   * This method requires the pref dom.storage.client_validation=false in order
+   * to access LS without a window.
    *
    * @param {String} origin - the origin of the site to add test data for
    * @param {String} [key] - the localStorage key
@@ -138,6 +142,9 @@ export var SiteDataTestUtils = {
    * @param {String} origin - the origin of the site to check
    * @param {{key: String, value: String}[]} [testEntries] - An array of entries
    * to test for.
+   *
+   * This method requires the pref dom.storage.client_validation=false in order
+   * to access LS without a window.
    *
    * @returns {Boolean} whether the origin has localStorage data
    */
@@ -244,10 +251,10 @@ export var SiteDataTestUtils = {
     return new Promise(resolve => {
       let data = true;
       let request = indexedDB.openForPrincipal(principal, "TestDatabase", 1);
-      request.onupgradeneeded = function (e) {
+      request.onupgradeneeded = function () {
         data = false;
       };
-      request.onsuccess = function (e) {
+      request.onsuccess = function () {
         resolve(data);
       };
     });
@@ -276,11 +283,11 @@ export var SiteDataTestUtils = {
       CacheListener.prototype = {
         QueryInterface: ChromeUtils.generateQI(["nsICacheEntryOpenCallback"]),
 
-        onCacheEntryCheck(entry) {
+        onCacheEntryCheck() {
           return Ci.nsICacheEntryOpenCallback.ENTRY_WANTED;
         },
 
-        onCacheEntryAvailable(entry, isnew, status) {
+        onCacheEntryAvailable() {
           resolve();
         },
       };

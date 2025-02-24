@@ -211,10 +211,10 @@ interface nsIXPCComponents_Utils : nsISupports
      *          object that you want to make available as a global to code running in
      *          the sandbox. Possible values: Blob, ChromeUtils, CSS, CSSRule,
      *          Directory, DOMParser, Element, Event, File, FileReader, FormData,
-     *          InspectorUtils, MessageChannel, Node, NodeFilter, PromiseDebugging,
-     *          TextDecoder, TextEncoder, URL, URLSearchParams, XMLHttpRequest,
-     *          XMLSerializer, atob, btoa, caches, crypto, fetch, indexedDB,
-     *          rtcIdentityProvider
+     *          InspectorCSSParser, InspectorUtils, MessageChannel, Node, NodeFilter,
+                PromiseDebugging, TextDecoder, TextEncoder, URL, URLSearchParams,
+                XMLHttpRequest, XMLSerializer, atob, btoa, caches, crypto, fetch,
+                indexedDB, rtcIdentityProvider
      *        - wantXrays: {Boolean} Whether the sandbox wants Xray vision with
      *          respect to same-origin objects outside the sandbox.
      *            Note that wantXrays is essentially deprecated. The preferred method
@@ -261,7 +261,7 @@ interface nsIXPCComponents_Utils : nsISupports
                         [optional] in jsval version,
                         [optional] in AUTF8String filename,
                         [optional] in long lineNo,
-                        [optional] in bool enforceFilenameRestrictions);
+                        [optional] in boolean enforceFilenameRestrictions);
 
     /*
      * Get the sandbox for running JS-implemented UA widgets (video controls etc.),
@@ -569,7 +569,7 @@ interface nsIXPCComponents_Utils : nsISupports
      * reference edges) and will throw if you touch them (e.g. by
      * reading/writing a property).
      */
-    bool isDeadWrapper(in jsval obj);
+    boolean isDeadWrapper(in jsval obj);
 
     /**
      * Determines whether this value is a remote object proxy, such as
@@ -584,7 +584,7 @@ interface nsIXPCComponents_Utils : nsISupports
      *     frame.contentWindow.doCrossOriginThing();
      *   }
      */
-    bool isRemoteProxy(in jsval val);
+    boolean isRemoteProxy(in jsval val);
 
     /*
      * To be called from JS only. This is for Gecko internal use only, and may
@@ -653,12 +653,12 @@ interface nsIXPCComponents_Utils : nsISupports
     /**
      * Check whether the given object is an opaque wrapper (PermissiveXrayOpaque).
      */
-    bool isOpaqueWrapper(in jsval obj);
+    boolean isOpaqueWrapper(in jsval obj);
 
     /**
      * Check whether the given object is an XrayWrapper.
      */
-    bool isXrayWrapper(in jsval obj);
+    boolean isXrayWrapper(in jsval obj);
 
     /**
      * Waive Xray on a given value. Identity op for primitives.
@@ -680,13 +680,7 @@ interface nsIXPCComponents_Utils : nsISupports
      * probably what you want.
      */
     [implicit_jscontext]
-    string getClassName(in jsval aObj, in bool aUnwrap);
-
-    /**
-     * Get a DOM classinfo for the given classname.  Only some class
-     * names are supported.
-     */
-    nsIClassInfo getDOMClassInfo(in AString aClassName);
+    string getClassName(in jsval aObj, in boolean aUnwrap);
 
     /**
      * Gets the incument global for the execution of this function. For internal

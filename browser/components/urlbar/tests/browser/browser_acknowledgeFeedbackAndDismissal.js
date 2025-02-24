@@ -389,7 +389,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     ];
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onEngagement(queryContext, controller, details) {
     if (details.result?.providerName == this.name) {
       let { selType } = details;
 

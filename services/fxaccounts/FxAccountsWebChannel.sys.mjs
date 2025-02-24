@@ -28,13 +28,14 @@ import {
   COMMAND_PAIR_COMPLETE,
   COMMAND_PAIR_PREFERENCES,
   COMMAND_FIREFOX_VIEW,
-  FX_OAUTH_CLIENT_ID,
+  OAUTH_CLIENT_ID,
   ON_PROFILE_CHANGE_NOTIFICATION,
   PREF_LAST_FXA_USER,
   WEBCHANNEL_ID,
   log,
   logPII,
 } from "resource://gre/modules/FxAccountsCommon.sys.mjs";
+import { SyncDisconnect } from "resource://services-sync/SyncDisconnect.sys.mjs";
 
 const lazy = {};
 
@@ -78,6 +79,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   null,
   false,
   val => Services.io.newURI(val)
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "oauthEnabled",
+  "identity.fxaccounts.oauth.enabled",
+  false
 );
 
 // These engines were added years after Sync had been introduced, they need
@@ -464,6 +472,10 @@ FxAccountsWebChannelHelpers.prototype = {
    * @param accountData the user's account data and credentials
    */
   async login(accountData) {
+    const signedInUser = await this._fxAccounts.getSignedInUser();
+    if (signedInUser) {
+      await this._disconnect();
+    }
     // We don't act on customizeSync anymore, it used to open a dialog inside
     // the browser to selecte the engines to sync but we do it on the web now.
     log.debug("Webchannel is logging a user in.");
@@ -487,18 +499,30 @@ FxAccountsWebChannelHelpers.prototype = {
       "webchannel"
     );
 
-    const xps = await this._initializeSync();
-    await this._fxAccounts._internal.setSignedInUser(accountData);
+    if (lazy.oauthEnabled) {
+      await this._fxAccounts._internal.setSignedInUser(accountData);
+    } else {
+      const xps = await this._initializeSync();
+      await this._fxAccounts._internal.setSignedInUser(accountData);
 
-    if (requestedServices) {
-      // User has enabled Sync.
-      if (requestedServices.sync) {
-        const { offeredEngines, declinedEngines } = requestedServices.sync;
-        this._setEnabledEngines(offeredEngines, declinedEngines);
-        log.debug("Webchannel is enabling sync");
-        await xps.Weave.Service.configure();
+      if (requestedServices) {
+        // User has enabled Sync.
+        if (requestedServices.sync) {
+          const { offeredEngines, declinedEngines } = requestedServices.sync;
+          this._setEnabledEngines(offeredEngines, declinedEngines);
+          log.debug("Webchannel is enabling sync");
+          await xps.Weave.Service.configure();
+        }
       }
     }
+  },
+
+  /**
+   * Disconnects the user from Sync and FxA
+   *
+   */
+  _disconnect() {
+    return SyncDisconnect.disconnect(false);
   },
 
   /**
@@ -623,14 +647,12 @@ FxAccountsWebChannelHelpers.prototype = {
 
     return {
       signedInUser,
-      clientId: FX_OAUTH_CLIENT_ID,
+      clientId: OAUTH_CLIENT_ID,
       capabilities,
     };
   },
   _getCapabilities() {
-    if (
-      Services.prefs.getBoolPref("identity.fxaccounts.oauth.enabled", false)
-    ) {
+    if (lazy.oauthEnabled) {
       return {
         multiService: true,
         pairing: lazy.pairingEnabled,

@@ -88,6 +88,7 @@ if __name__ == '__main__':
 
     platforms = [
         ('armv7', 'linux', 'arm', True),
+        ('arm64', 'mac', 'arm64', True),
         ('generic', '', 'generic', True),
         ('x86', 'linux', 'ia32', True),
         ('x86', 'win', 'ia32', False),
@@ -120,7 +121,7 @@ if __name__ == '__main__':
 
         # Windows x86_64 needs this -- all other source files are shared
         # between OSes
-        if cpu is 'x86_64' and system is 'win':
+        if cpu == 'x86_64' and system == 'win':
           f.write('  \'X64_WIN_SOURCES\': [\n')
           f.write('    \'%s\',\n' % variables['AOM_PORTS_ASM_X86'])
           f.write("  ],\n")

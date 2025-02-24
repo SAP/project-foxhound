@@ -59,6 +59,11 @@ async function setupFormHistory() {
   ]);
 }
 
+function replaceStars(str)
+{
+  return str.replaceAll("*", "•")
+}
+
 initPopupListener();
 
 // Form with history only.
@@ -84,9 +89,9 @@ add_task(async function all_saved_fields_less_than_threshold() {
   await setInput("#cc-name", "");
   await expectPopup();
   synthesizeKey("KEY_ArrowDown");
-  checkMenuEntries([reducedMockRecord].map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+  checkMenuEntriesComment([reducedMockRecord].map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
     primary: cc["cc-name"],
-    secondary: cc.ccNumberFmt,
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `Visa ${cc["cc-name"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
@@ -101,9 +106,9 @@ add_task(async function check_menu_when_both_existed() {
   await setInput("#cc-number", "");
   await expectPopup();
   synthesizeKey("KEY_ArrowDown");
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
-    primary: cc.ccNumberFmt,
-    secondary: cc["cc-name"],
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+    primary: replaceStars(cc.ccNumberFmt),
+    secondary: cc["cc-name"].toString(),
     ariaLabel: `${getCCTypeName(cc)} ${cc.ccNumberFmt.replaceAll("*", "")} ${cc["cc-name"]}`,
     image: expected.image,
   })));
@@ -111,9 +116,9 @@ add_task(async function check_menu_when_both_existed() {
   await setInput("#cc-name", "");
   await expectPopup();
   synthesizeKey("KEY_ArrowDown");
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
-    primary: cc["cc-name"],
-    secondary: cc.ccNumberFmt,
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+    primary: cc["cc-name"].toString(),
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-name"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
@@ -121,9 +126,9 @@ add_task(async function check_menu_when_both_existed() {
   await setInput("#cc-exp-year", "");
   await expectPopup();
   synthesizeKey("KEY_ArrowDown");
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
-    primary: cc["cc-exp-year"],
-    secondary: cc.ccNumberFmt,
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+    primary: cc["cc-exp-year"].toString(),
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-exp-year"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
@@ -131,9 +136,9 @@ add_task(async function check_menu_when_both_existed() {
   await setInput("#cc-exp-month", "");
   await expectPopup();
   synthesizeKey("KEY_ArrowDown");
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
-    primary: cc["cc-exp-month"],
-    secondary: cc.ccNumberFmt,
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+    primary: cc["cc-exp-month"].toString(),
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-exp-month"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
@@ -184,18 +189,23 @@ add_task(async function check_fields_after_form_autofill() {
   synthesizeKey("KEY_ArrowDown");
   // The popup doesn't auto-show on focus because the field isn't empty
   await expectPopup();
-  checkMenuEntries(MOCK_STORAGE.slice(1).map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
-    primary: cc["cc-exp-year"],
-    secondary: cc.ccNumberFmt,
+  checkMenuEntriesComment(MOCK_STORAGE.slice(1).map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+    primary: cc["cc-exp-year"].toString(),
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-exp-year"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
 
   synthesizeKey("KEY_ArrowDown");
-  let osKeyStoreLoginShown = waitForOSKeyStoreLogin(true);
+  let osKeyStoreLoginShown = Promise.resolve();
+  if(OSKeyStore.canReauth()) {
+    osKeyStoreLoginShown = waitForOSKeyStoreLogin(true);
+  }
   await new Promise(resolve => SimpleTest.executeSoon(resolve));
   await triggerAutofillAndCheckProfile(MOCK_STORAGE[1].cc);
   await osKeyStoreLoginShown;
+  // Enforcing this since it is unable to change back in chaos mode.
+  SpecialPowers.clearUserPref("toolkit.osKeyStore.unofficialBuildOnlyLogin");
 });
 
 // Fallback to history search after autofill values (for non-empty fields).
@@ -218,9 +228,9 @@ add_task(async function check_cc_popup_on_field_blank() {
 
   await setInput("#cc-name", "", true);
   await expectPopup();
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
     primary: cc["cc-name"],
-    secondary: cc.ccNumberFmt,
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-name"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));
@@ -238,9 +248,9 @@ add_task(async function check_form_autofill_resume() {
   await setInput("#cc-name", "");
   synthesizeKey("KEY_ArrowDown");
   await expectPopup();
-  checkMenuEntries(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
+  checkMenuEntriesComment(MOCK_STORAGE.map(patchRecordCCNumber).map(({ cc, expected }) => JSON.stringify({
     primary: cc["cc-name"],
-    secondary: cc.ccNumberFmt,
+    secondary: replaceStars(cc.ccNumberFmt),
     ariaLabel: `${getCCTypeName(cc)} ${cc["cc-name"]} ${cc.ccNumberFmt}`,
     image: expected.image,
   })));

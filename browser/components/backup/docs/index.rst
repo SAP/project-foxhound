@@ -11,3 +11,6 @@ into a single file that can be easily restored from.
    :maxdepth: 3
 
    backup-service
+   backup-resources
+   backup-ui-actors
+   archive-encryption

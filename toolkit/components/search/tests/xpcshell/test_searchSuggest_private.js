@@ -2,7 +2,7 @@
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
 /**
- * Test that search suggestions from SearchSuggestionController.jsm operate
+ * Test that search suggestions from SearchSuggestionController.sys.mjs operate
  * correctly in private mode.
  */
 
@@ -28,7 +28,7 @@ add_setup(async function () {
     method: "GET",
   };
 
-  engine = await SearchTestUtils.promiseNewSearchEngine({
+  engine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(engineData)}`,
   });
 });

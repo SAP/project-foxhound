@@ -334,12 +334,20 @@ static bool ShouldTraceCrossCompartment(JSTracer* trc, JSObject* src,
 
 #ifdef DEBUG
 
-inline void js::gc::AssertShouldMarkInZone(GCMarker* marker, Cell* thing) {
-  if (!thing->isMarkedBlack()) {
-    Zone* zone = thing->zone();
-    MOZ_ASSERT(zone->isAtomsZone() ||
-               zone->shouldMarkInZone(marker->markColor()));
+template <typename T>
+void js::gc::AssertShouldMarkInZone(GCMarker* marker, T* thing) {
+  if (thing->isMarkedBlack()) {
+    return;
   }
+
+  // Allow marking marking atoms if we're not collected the atoms zone, except
+  // for symbols which may entrain other GC things if they're used as weakmap
+  // keys.
+  bool allowAtoms = !std::is_same_v<T, JS::Symbol>;
+
+  Zone* zone = thing->zone();
+  MOZ_ASSERT(zone->shouldMarkInZone(marker->markColor()) ||
+             (allowAtoms && zone->isAtomsZone()));
 }
 
 void js::gc::AssertRootMarkingPhase(JSTracer* trc) {
@@ -721,26 +729,6 @@ void js::gc::TraceRangeInternal(JSTracer* trc, size_t len, T* vec,
 
 namespace js {
 
-using HasNoImplicitEdgesType = bool;
-
-template <typename T>
-struct ImplicitEdgeHolderType {
-  using Type = HasNoImplicitEdgesType;
-};
-
-// For now, we only handle JSObject* and BaseScript* keys, but the linear time
-// algorithm can be easily extended by adding in more types here, then making
-// GCMarker::traverse<T> call markImplicitEdges.
-template <>
-struct ImplicitEdgeHolderType<JSObject*> {
-  using Type = JSObject*;
-};
-
-template <>
-struct ImplicitEdgeHolderType<BaseScript*> {
-  using Type = BaseScript*;
-};
-
 void GCMarker::markEphemeronEdges(EphemeronEdgeVector& edges,
                                   gc::MarkColor srcColor) {
   // This is called as part of GC weak marking or by barriers outside of GC.
@@ -774,86 +762,21 @@ void GCMarker::markEphemeronEdges(EphemeronEdgeVector& edges,
   }
 }
 
-// 'delegate' is no longer the delegate of 'key'.
-void GCMarker::severWeakDelegate(JSObject* key, JSObject* delegate) {
-  MOZ_ASSERT(CurrentThreadIsMainThread());
-
-  JS::Zone* zone = delegate->zone();
-  MOZ_ASSERT(zone->needsIncrementalBarrier());
-
-  auto* p = zone->gcEphemeronEdges(delegate).get(delegate);
-  if (!p) {
-    return;
-  }
-
-  // We are losing 3 edges here: key -> delegate, delegate -> key, and
-  // <delegate, map> -> value. Maintain snapshot-at-beginning (hereafter,
-  // S-A-B) by conservatively assuming the delegate will end up black and
-  // marking through the latter 2 edges.
-  //
-  // Note that this does not fully give S-A-B:
-  //
-  //  1. If the map is gray, then the value will only be marked gray here even
-  //  though the map could later be discovered to be black.
-  //
-  //  2. If the map has not yet been marked, we won't have any entries to mark
-  //  here in the first place.
-  //
-  //  3. We're not marking the delegate, since that would cause eg nukeAllCCWs
-  //  to keep everything alive for another collection.
-  //
-  // We can't even assume that the delegate passed in here is live, because we
-  // could have gotten here from nukeAllCCWs, which iterates over all CCWs
-  // including dead ones.
-  //
-  // This is ok because S-A-B is only needed to prevent the case where an
-  // unmarked object is removed from the graph and then re-inserted where it is
-  // reachable only by things that have already been marked. None of the 3
-  // target objects will be re-inserted anywhere as a result of this action.
-
-  EphemeronEdgeVector& edges = p->value;
-  MOZ_ASSERT(markColor() == MarkColor::Black);
-  markEphemeronEdges(edges, MarkColor::Black);
-}
-
-// 'delegate' is now the delegate of 'key'. Update weakmap marking state.
-void GCMarker::restoreWeakDelegate(JSObject* key, JSObject* delegate) {
-  MOZ_ASSERT(CurrentThreadIsMainThread());
-
-  MOZ_ASSERT(key->zone()->needsIncrementalBarrier());
-
-  if (!delegate->zone()->needsIncrementalBarrier()) {
-    // Normally we should not have added the key -> value edge if the delegate
-    // zone is not marking (because the delegate would have been seen as black,
-    // so we would mark the key immediately instead). But if there wasn't a
-    // delegate (the key was nuked), then we won't have consulted it. So we
-    // can't do the same assertion as above.
-    //
-    // Specifically, the sequence would be:
-    // 1. Nuke the key.
-    // 2. Start the incremental GC.
-    // 3. Mark the WeakMap. Insert a key->value edge with a DeadObjectProxy key.
-    // 4. Un-nuke the key with a delegate in a nonmarking Zone.
-    //
-    // The result is an ephemeron edge (from <map,key> to value, but stored
-    // as key to value) involving a key with a delegate in a nonmarking Zone,
-    // something that ordinarily would not happen.
-    return;
-  }
-
-  auto* p = key->zone()->gcEphemeronEdges(key).get(key);
-  if (!p) {
-    return;
-  }
-
-  // Similar to severWeakDelegate above, mark through the key -> value edge.
-  EphemeronEdgeVector& edges = p->value;
-  MOZ_ASSERT(markColor() == MarkColor::Black);
-  markEphemeronEdges(edges, MarkColor::Black);
-}
+template <typename T>
+struct TypeCanHaveImplicitEdges : std::false_type {};
+template <>
+struct TypeCanHaveImplicitEdges<JSObject> : std::true_type {};
+template <>
+struct TypeCanHaveImplicitEdges<BaseScript> : std::true_type {};
+template <>
+struct TypeCanHaveImplicitEdges<JS::Symbol> : std::true_type {};
 
 template <typename T>
-void GCMarker::markImplicitEdgesHelper(T markedThing) {
+void GCMarker::markImplicitEdges(T* markedThing) {
+  if constexpr (!TypeCanHaveImplicitEdges<T>::value) {
+    return;
+  }
+
   if (!isWeakMarking()) {
     return;
   }
@@ -862,30 +785,34 @@ void GCMarker::markImplicitEdgesHelper(T markedThing) {
   MOZ_ASSERT(zone->isGCMarking());
   MOZ_ASSERT(!zone->isGCSweeping());
 
-  auto p = zone->gcEphemeronEdges().get(markedThing);
+  auto& ephemeronTable = zone->gcEphemeronEdges();
+  auto* p = ephemeronTable.get(markedThing);
   if (!p) {
     return;
   }
+
   EphemeronEdgeVector& edges = p->value;
 
   // markedThing might be a key in a debugger weakmap, which can end up marking
   // values that are in a different compartment.
   AutoClearTracingSource acts(tracer());
 
-  CellColor thingColor = gc::detail::GetEffectiveColor(this, markedThing);
-  markEphemeronEdges(edges, AsMarkColor(thingColor));
-}
+  MarkColor thingColor = markColor();
+  MOZ_ASSERT(CellColor(thingColor) ==
+             gc::detail::GetEffectiveColor(this, markedThing));
 
-template <>
-void GCMarker::markImplicitEdgesHelper(HasNoImplicitEdgesType) {}
+  markEphemeronEdges(edges, thingColor);
 
-template <typename T>
-void GCMarker::markImplicitEdges(T* thing) {
-  markImplicitEdgesHelper<typename ImplicitEdgeHolderType<T*>::Type>(thing);
+  if (edges.empty()) {
+    ephemeronTable.remove(p);
+  }
 }
 
 template void GCMarker::markImplicitEdges(JSObject*);
 template void GCMarker::markImplicitEdges(BaseScript*);
+#ifdef NIGHTLY_BUILD
+template void GCMarker::markImplicitEdges(JS::Symbol*);
+#endif
 
 }  // namespace js
 
@@ -962,6 +889,9 @@ static void TraceEdgeForBarrier(GCMarker* gcmarker, TenuredCell* thing,
     MOZ_ASSERT(ShouldMark(gcmarker, thing));
     CheckTracedThing(gcmarker->tracer(), thing);
     AutoClearTracingSource acts(gcmarker->tracer());
+#ifdef DEBUG
+    AutoSetThreadIsMarking threadIsMarking;
+#endif  // DEBUG
     gcmarker->markAndTraverse<NormalMarkingOptions>(thing);
   });
 }
@@ -1103,6 +1033,11 @@ void GCMarker::traverse(GetterSetter* thing) {
 }
 template <uint32_t opts>
 void GCMarker::traverse(JS::Symbol* thing) {
+#ifdef NIGHTLY_BUILD
+  if constexpr (bool(opts & MarkingOptions::MarkImplicitEdges)) {
+    markImplicitEdges(thing);
+  }
+#endif
   traceChildren<opts>(thing);
 }
 template <uint32_t opts>
@@ -1254,6 +1189,14 @@ template <uint32_t opts, typename T>
 bool js::GCMarker::mark(T* thing) {
   if (!thing->isTenured()) {
     return false;
+  }
+
+  // Don't mark symbols if we're not collecting the atoms zone.
+  if constexpr (std::is_same_v<T, JS::Symbol>) {
+    if (IsOwnedByOtherRuntime(runtime(), thing) ||
+        !thing->zone()->isGCMarkingOrVerifyingPreBarriers()) {
+      return false;
+    }
   }
 
   AssertShouldMarkInZone(this, thing);
@@ -1468,7 +1411,10 @@ void GCMarker::updateRangesAtStartOfSlice() {
   for (MarkStackIter iter(stack); !iter.done(); iter.next()) {
     if (iter.isSlotsOrElementsRange()) {
       MarkStack::SlotsOrElementsRange& range = iter.slotsOrElementsRange();
-      if (range.kind() == SlotsOrElementsKind::Elements) {
+      JSObject* obj = range.ptr().asRangeObject();
+      if (!obj->is<NativeObject>()) {
+        range.setEmpty();
+      } else if (range.kind() == SlotsOrElementsKind::Elements) {
         NativeObject* obj = &range.ptr().asRangeObject()->as<NativeObject>();
         size_t index = range.start();
         size_t numShifted = obj->getElementsHeader()->numShiftedElements();
@@ -1739,6 +1685,8 @@ inline MarkStack::TaggedPtr::TaggedPtr(Tag tag, Cell* ptr)
   assertValid();
 }
 
+inline uintptr_t MarkStack::TaggedPtr::asBits() const { return bits; }
+
 inline uintptr_t MarkStack::TaggedPtr::tagUnchecked() const {
   return bits & TagMask;
 }
@@ -1802,6 +1750,12 @@ inline size_t MarkStack::SlotsOrElementsRange::start() const {
 inline void MarkStack::SlotsOrElementsRange::setStart(size_t newStart) {
   startAndKind_ = (newStart << StartShift) | uintptr_t(kind());
   MOZ_ASSERT(start() == newStart);
+}
+
+inline void MarkStack::SlotsOrElementsRange::setEmpty() {
+  TaggedPtr entry = TaggedPtr(ObjectTag, ptr().asRangeObject());
+  ptr_ = entry;
+  startAndKind_ = entry.asBits();
 }
 
 inline MarkStack::TaggedPtr MarkStack::SlotsOrElementsRange::ptr() const {

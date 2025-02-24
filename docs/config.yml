@@ -25,6 +25,8 @@ categories:
         - toolkit
         - js
         - mobile/android/geckoview
+        - mobile/android/fenix
+        - mobile/android/focus-android
         - dom/bindings/webidl
         - modules/libpref
         - networking
@@ -65,6 +67,7 @@ categories:
         - testing/webrender
         - testing/mochitest-plain
         - testing/xpcshell
+        - testing/tps
         - web-platform
         - gtest
         - tools/fuzzing
@@ -121,4 +124,4 @@ fatal warnings:
     - "WARNING: '([^']*)' reference target not found:((?!.rst).)*$"
     - "WARNING: Include file '([^']*)' not found or reading it failed"
 
-max_num_warnings: 759
+max_num_warnings: 845

@@ -124,7 +124,7 @@ export const presets = {
   "web-developer": {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["screenshots", "js", "cpu"],
+    features: ["screenshots", "js", "cpu", "memory"],
     threads: ["GeckoMain", "Compositor", "Renderer", "DOM Worker"],
     duration: 0,
     profilerViewMode: "active-tab",
@@ -142,7 +142,15 @@ export const presets = {
   "firefox-platform": {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["screenshots", "js", "stackwalk", "cpu", "java", "processcpu"],
+    features: [
+      "screenshots",
+      "js",
+      "stackwalk",
+      "cpu",
+      "java",
+      "processcpu",
+      "memory",
+    ],
     threads: [
       "GeckoMain",
       "Compositor",
@@ -165,7 +173,7 @@ export const presets = {
   graphics: {
     entries: 128 * 1024 * 1024,
     interval: 1,
-    features: ["stackwalk", "js", "cpu", "java", "processcpu"],
+    features: ["stackwalk", "js", "cpu", "java", "processcpu", "memory"],
     threads: [
       "GeckoMain",
       "Compositor",
@@ -199,6 +207,7 @@ export const presets = {
       "audiocallbacktracing",
       "ipcmessages",
       "processcpu",
+      "memory",
     ],
     threads: [
       "cubeb",
@@ -248,6 +257,7 @@ export const presets = {
       "java",
       "processcpu",
       "bandwidth",
+      "memory",
     ],
     threads: [
       "Compositor",
@@ -286,6 +296,7 @@ export const presets = {
       "markersallthreads",
       "power",
       "bandwidth",
+      "memory",
     ],
     threads: ["GeckoMain", "Renderer"],
     duration: 0,
@@ -785,12 +796,13 @@ async function getResponseForMessage(request, browser) {
           return profileCaptureResult.profile;
         case "ERROR":
           throw profileCaptureResult.error;
-        default:
+        default: {
           const { UnhandledCaseError } = lazy.Utils();
           throw new UnhandledCaseError(
             profileCaptureResult,
             "profileCaptureResult"
           );
+        }
       }
     }
     case "GET_SYMBOL_TABLE": {
@@ -831,13 +843,14 @@ async function getResponseForMessage(request, browser) {
       }
       return [];
     }
-    default:
+    default: {
       console.error(
         "An unknown message type was received by the profiler's WebChannel handler.",
         request
       );
       const { UnhandledCaseError } = lazy.Utils();
       throw new UnhandledCaseError(request, "WebChannel request");
+    }
   }
 }
 

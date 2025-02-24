@@ -112,7 +112,7 @@ void NodeChannel::SetOtherPid(base::ProcessId aNewPid) {
   mChannel->SetOtherPid(aNewPid);
 }
 
-#ifdef XP_MACOSX
+#ifdef XP_DARWIN
 void NodeChannel::SetMachTaskPort(task_t aTask) {
   AssertIOThread();
 
@@ -174,6 +174,9 @@ void NodeChannel::SendMessage(UniquePtr<IPC::Message> aMessage) {
         CrashReporter::Annotation::IPCMessageName, aMessage->name());
     CrashReporter::RecordAnnotationU32(
         CrashReporter::Annotation::IPCMessageSize, aMessage->size());
+    CrashReporter::RecordAnnotationU32(
+        CrashReporter::Annotation::IPCMessageLargeBufferShmemFailureSize,
+        aMessage->LargeBufferShmemFailureSize());
     MOZ_CRASH("IPC message size is too large");
   }
   aMessage->AssertAsLargeAsHeader();

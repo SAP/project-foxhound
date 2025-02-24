@@ -39,7 +39,7 @@ The tool is built to be conservative about the number of tests to run, so if you
                             at all relative to the existing GeckoView, and Fenix
                             tasks, then you will need to make fixes in the
                             associated taskcluster files (e.g.
-                            taskcluster/ci/test/browsertime-mobile.yml).
+                            taskcluster/kinds/test/browsertime-mobile.yml).
                             Alternatively, set MOZ_FIREFOX_ANDROID_APK_OUTPUT to a
                             path to an APK, and then run the command with
                             --browsertime-upload-apk firefox-android. This option
@@ -346,10 +346,6 @@ If you have any questions which aren't already answered below please reach out t
      * **Help! I can't find a test in any of the categories. What should I do?**
 
        Use the option ``--show-all``. This will let you select tests from the ``./mach try fuzzy --full`` interface directly instead of the categories. You will always be able to find your tests this way. Please be careful with your task selections though as it's easy to run far too many tests in this way!
-
-     * **How do I run Fenix tests?**
-
-       Use the options ``--android --fenix``. This will enable Fenix tasks to be selected in the categories you pick, assuming those categories have Fenix tasks available. **Note that the Fenix APK is pulled from the firefox-android projet so any local changes you make will not be applied to it, and the base/new pushes will be testing the same build.** However, if you use the ``--browsertime-upload-apk <PATH-TO-APK>`` option, you will be able to upload a locally built APK of Fenix to run in try. It will be used in the new revision push. See the ``--help`` for more information on this.
 
 Future Work
 -----------

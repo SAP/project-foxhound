@@ -16,7 +16,7 @@ let suggestionsEngine;
 let expectedFormHistoryResults = [];
 
 add_setup(async function () {
-  suggestionsEngine = await SearchTestUtils.promiseNewSearchEngine({
+  suggestionsEngine = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + SUGGESTIONS_ENGINE_NAME,
   });
 
@@ -73,141 +73,11 @@ add_setup(async function () {
   });
 });
 
-add_task(async function emptySearch() {
-  await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.update2.emptySearchBehavior", 2]],
-    });
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "",
-    });
-    await UrlbarTestUtils.enterSearchMode(window);
-    Assert.equal(gURLBar.value, "", "Urlbar value should be cleared.");
-    // For the empty search case, we expect to get the form history relative to
-    // the picked engine and no heuristic.
-    await checkResults(expectedFormHistoryResults);
-    await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
-    await UrlbarTestUtils.promisePopupClose(window);
-    await SpecialPowers.popPrefEnv();
-  });
-});
-
-add_task(async function emptySearch_withRestyledHistory() {
-  // URLs with the same host as the search engine.
-  await PlacesTestUtils.addVisits([
-    `http://mochi.test/`,
-    `http://mochi.test/redirect`,
-    // Should not be returned because it's a redirect target.
-    {
-      uri: `http://mochi.test/target`,
-      transition: PlacesUtils.history.TRANSITIONS.REDIRECT_TEMPORARY,
-      referrer: `http://mochi.test/redirect`,
-    },
-    // Can be restyled and dupes form history.
-    "http://mochi.test:8888/?terms=hello+formHistory+0",
-    // Can be restyled but does not dupe form history.
-    "http://mochi.test:8888/?terms=ciao",
-  ]);
-  await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.update2.emptySearchBehavior", 2]],
-    });
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "",
-    });
-    await UrlbarTestUtils.enterSearchMode(window);
-    Assert.equal(gURLBar.value, "", "Urlbar value should be cleared.");
-    // For the empty search case, we expect to get the form history relative to
-    // the picked engine, history without redirects, and no heuristic.
-    await checkResults([
-      {
-        heuristic: false,
-        type: UrlbarUtils.RESULT_TYPE.SEARCH,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        searchParams: {
-          suggestion: "ciao",
-          engine: suggestionsEngine.name,
-        },
-      },
-      ...expectedFormHistoryResults.slice(0, MAX_RESULT_COUNT - 3),
-      {
-        heuristic: false,
-        type: UrlbarUtils.RESULT_TYPE.URL,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        url: `http://mochi.test/`,
-      },
-      {
-        heuristic: false,
-        type: UrlbarUtils.RESULT_TYPE.URL,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        url: `http://mochi.test/redirect`,
-      },
-    ]);
-
-    await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
-    await UrlbarTestUtils.promisePopupClose(window);
-    await SpecialPowers.popPrefEnv();
-  });
-
-  await PlacesUtils.history.clear();
-});
-
-add_task(async function emptySearch_withRestyledHistory_noSearchHistory() {
-  // URLs with the same host as the search engine.
-  await PlacesTestUtils.addVisits([
-    `http://mochi.test/`,
-    `http://mochi.test/redirect`,
-    // Can be restyled but does not dupe form history.
-    "http://mochi.test:8888/?terms=ciao",
-  ]);
-  await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [
-        ["browser.urlbar.update2.emptySearchBehavior", 2],
-        ["browser.urlbar.maxHistoricalSearchSuggestions", 0],
-      ],
-    });
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "",
-    });
-    await UrlbarTestUtils.enterSearchMode(window);
-    Assert.equal(gURLBar.value, "", "Urlbar value should be cleared.");
-    // maxHistoricalSearchSuggestions == 0, so form history should not be
-    // present.
-    await checkResults([
-      {
-        heuristic: false,
-        type: UrlbarUtils.RESULT_TYPE.URL,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        url: `http://mochi.test/redirect`,
-      },
-      {
-        heuristic: false,
-        type: UrlbarUtils.RESULT_TYPE.URL,
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-        url: `http://mochi.test/`,
-      },
-    ]);
-
-    await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
-    await UrlbarTestUtils.promisePopupClose(window);
-    await SpecialPowers.popPrefEnv();
-  });
-
-  await PlacesUtils.history.clear();
-});
-
 add_task(async function emptySearch_behavior() {
   // URLs with the same host as the search engine.
   await PlacesTestUtils.addVisits([`http://mochi.test/`]);
 
   await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.update2.emptySearchBehavior", 0]],
-    });
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       value: "",
@@ -245,24 +115,6 @@ add_task(async function emptySearch_behavior() {
     await SpecialPowers.popPrefEnv();
   });
 
-  await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.update2.emptySearchBehavior", 1]],
-    });
-    await UrlbarTestUtils.promiseAutocompleteResultPopup({
-      window,
-      value: "",
-    });
-    await UrlbarTestUtils.enterSearchMode(window);
-    Assert.equal(gURLBar.value, "", "Urlbar value should be cleared.");
-    // For the empty search case, we expect to get the form history relative to
-    // the picked engine, history without redirects, and no heuristic.
-    await checkResults([...expectedFormHistoryResults]);
-    await UrlbarTestUtils.exitSearchMode(window, { clickClose: true });
-    await UrlbarTestUtils.promisePopupClose(window);
-    await SpecialPowers.popPrefEnv();
-  });
-
   await PlacesUtils.history.clear();
 });
 
@@ -270,9 +122,6 @@ add_task(async function emptySearch_local() {
   await PlacesTestUtils.addVisits([`http://mochi.test/`]);
 
   await BrowserTestUtils.withNewTab("about:robots", async function () {
-    await SpecialPowers.pushPrefEnv({
-      set: [["browser.urlbar.update2.emptySearchBehavior", 0]],
-    });
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
       value: "",
@@ -281,8 +130,7 @@ add_task(async function emptySearch_local() {
       source: UrlbarUtils.RESULT_SOURCE.HISTORY,
     });
     Assert.equal(gURLBar.value, "", "Urlbar value should be cleared.");
-    // Even when emptySearchBehavior is 0, we still show the user's most frecent
-    // history for an empty search.
+    // Show the user's most frecent history for an empty search.
     await checkResults([
       {
         heuristic: false,
@@ -396,7 +244,7 @@ add_task(async function nonEmptySearch_nonMatching() {
 });
 
 add_task(async function nonEmptySearch_withHistory() {
-  let manySuggestionsEngine = await SearchTestUtils.promiseNewSearchEngine({
+  let manySuggestionsEngine = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + MANY_SUGGESTIONS_ENGINE_NAME,
   });
   // URLs with the same host as the search engine.

@@ -8,7 +8,6 @@ support-files = [
   "subtst_contextmenu_xul.xhtml",
   "ctxmenu-image.png",
   "../general/head.js",
-  "../general/video.ogg",
   "../general/audio.ogg",
   "../../../../../toolkit/components/pdfjs/test/file_pdfjs_test.pdf",
   "contextmenu_common.js",
@@ -19,6 +18,7 @@ support-files = [
 ["browser_bug1798178.js"]
 
 ["browser_contextmenu.js"]
+support-files = [ "../general/video.webm"  ]
 tags = "fullscreen"
 skip-if = [
   "os == 'linux'",
@@ -86,6 +86,8 @@ skip-if = ["os == 'linux' && socketprocess_networking"]
 
 ["browser_strip_on_share_link.js"]
 
+["browser_strip_on_share_nested_link.js"]
+
 ["browser_utilityOverlay.js"]
 https_first_disabled = true
 skip-if = ["os == 'linux' && socketprocess_networking"]
@@ -99,3 +101,5 @@ support-files = [
   "test_view_image_inline_svg.html",
 ]
 skip-if = ["os == 'linux' && socketprocess_networking"]
+
+["browser_contextmenu_cross_boundary_selection.js"]

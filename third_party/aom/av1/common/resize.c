@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "config/aom_config.h"
+#include "config/av1_rtcd.h"
 
 #include "aom_dsp/aom_dsp_common.h"
 #include "aom_dsp/flow_estimation/corner_detect.h"
@@ -216,10 +217,6 @@ const int16_t av1_resize_filter_normative[(
 // Filters for interpolation (full-band) - no filtering for integer pixels
 #define filteredinterp_filters1000 av1_resize_filter_normative
 
-// Filters for factor of 2 downsampling.
-static const int16_t av1_down2_symeven_half_filter[] = { 56, 12, -3, -1 };
-static const int16_t av1_down2_symodd_half_filter[] = { 64, 35, 0, -3 };
-
 static const InterpKernel *choose_interp_filter(int in_length, int out_length) {
   int out_length16 = out_length * 16;
   if (out_length16 >= in_length * 16)
@@ -340,8 +337,8 @@ static int32_t get_upscale_convolve_x0(int in_length, int out_length,
   return (int32_t)((uint32_t)x0 & RS_SCALE_SUBPEL_MASK);
 }
 
-static void down2_symeven(const uint8_t *const input, int length,
-                          uint8_t *output) {
+void down2_symeven(const uint8_t *const input, int length, uint8_t *output,
+                   int start_offset) {
   // Actual filter len = 2 * filter_len_half.
   const int16_t *filter = av1_down2_symeven_half_filter;
   const int filter_len_half = sizeof(av1_down2_symeven_half_filter) / 2;
@@ -353,7 +350,7 @@ static void down2_symeven(const uint8_t *const input, int length,
   l2 += (l2 & 1);
   if (l1 > l2) {
     // Short input length.
-    for (i = 0; i < length; i += 2) {
+    for (i = start_offset; i < length; i += 2) {
       int sum = (1 << (FILTER_BITS - 1));
       for (j = 0; j < filter_len_half; ++j) {
         sum +=
@@ -365,7 +362,7 @@ static void down2_symeven(const uint8_t *const input, int length,
     }
   } else {
     // Initial part.
-    for (i = 0; i < l1; i += 2) {
+    for (i = start_offset; i < l1; i += 2) {
       int sum = (1 << (FILTER_BITS - 1));
       for (j = 0; j < filter_len_half; ++j) {
         sum += (input[AOMMAX(i - j, 0)] + input[i + 1 + j]) * filter[j];
@@ -495,7 +492,7 @@ static void resize_multistep(const uint8_t *const input, int length,
       if (filteredlength & 1)
         down2_symodd(in, filteredlength, out);
       else
-        down2_symeven(in, filteredlength, out);
+        down2_symeven(in, filteredlength, out, 0);
       filteredlength = proj_filteredlength;
     }
     if (filteredlength != olength) {
@@ -524,7 +521,62 @@ static void fill_arr_to_col(uint8_t *img, int stride, int len, uint8_t *arr) {
   }
 }
 
-bool av1_resize_plane(const uint8_t *const input, int height, int width,
+bool av1_resize_vert_dir_c(uint8_t *intbuf, uint8_t *output, int out_stride,
+                           int height, int height2, int width2, int start_col) {
+  bool mem_status = true;
+  uint8_t *arrbuf = (uint8_t *)aom_malloc(sizeof(*arrbuf) * height);
+  uint8_t *arrbuf2 = (uint8_t *)aom_malloc(sizeof(*arrbuf2) * height2);
+  if (arrbuf == NULL || arrbuf2 == NULL) {
+    mem_status = false;
+    goto Error;
+  }
+
+  for (int i = start_col; i < width2; ++i) {
+    fill_col_to_arr(intbuf + i, width2, height, arrbuf);
+    down2_symeven(arrbuf, height, arrbuf2, 0);
+    fill_arr_to_col(output + i, out_stride, height2, arrbuf2);
+  }
+
+Error:
+  aom_free(arrbuf);
+  aom_free(arrbuf2);
+  return mem_status;
+}
+
+void av1_resize_horz_dir_c(const uint8_t *const input, int in_stride,
+                           uint8_t *intbuf, int height, int filtered_length,
+                           int width2) {
+  for (int i = 0; i < height; ++i)
+    down2_symeven(input + in_stride * i, filtered_length, intbuf + width2 * i,
+                  0);
+}
+
+bool av1_resize_plane_to_half(const uint8_t *const input, int height, int width,
+                              int in_stride, uint8_t *output, int height2,
+                              int width2, int out_stride) {
+  uint8_t *intbuf = (uint8_t *)aom_malloc(sizeof(*intbuf) * width2 * height);
+  if (intbuf == NULL) {
+    return false;
+  }
+
+  // Resize in the horizontal direction
+  av1_resize_horz_dir(input, in_stride, intbuf, height, width, width2);
+  // Resize in the vertical direction
+  bool mem_status = av1_resize_vert_dir(intbuf, output, out_stride, height,
+                                        height2, width2, 0 /*start_col*/);
+  aom_free(intbuf);
+  return mem_status;
+}
+
+// Check if both the output width and height are half of input width and
+// height respectively.
+bool should_resize_by_half(int height, int width, int height2, int width2) {
+  const bool is_width_by_2 = get_down2_length(width, 1) == width2;
+  const bool is_height_by_2 = get_down2_length(height, 1) == height2;
+  return (is_width_by_2 && is_height_by_2);
+}
+
+bool av1_resize_plane(const uint8_t *input, int height, int width,
                       int in_stride, uint8_t *output, int height2, int width2,
                       int out_stride) {
   int i;
@@ -881,7 +933,7 @@ static void highbd_fill_arr_to_col(uint16_t *img, int stride, int len,
   }
 }
 
-void av1_highbd_resize_plane(const uint8_t *const input, int height, int width,
+void av1_highbd_resize_plane(const uint8_t *input, int height, int width,
                              int in_stride, uint8_t *output, int height2,
                              int width2, int out_stride, int bd) {
   int i;
@@ -980,10 +1032,9 @@ static bool highbd_upscale_normative_rect(const uint8_t *const input,
 }
 #endif  // CONFIG_AV1_HIGHBITDEPTH
 
-void av1_resize_frame420(const uint8_t *const y, int y_stride,
-                         const uint8_t *const u, const uint8_t *const v,
-                         int uv_stride, int height, int width, uint8_t *oy,
-                         int oy_stride, uint8_t *ou, uint8_t *ov,
+void av1_resize_frame420(const uint8_t *y, int y_stride, const uint8_t *u,
+                         const uint8_t *v, int uv_stride, int height, int width,
+                         uint8_t *oy, int oy_stride, uint8_t *ou, uint8_t *ov,
                          int ouv_stride, int oheight, int owidth) {
   if (!av1_resize_plane(y, height, width, y_stride, oy, oheight, owidth,
                         oy_stride))
@@ -996,10 +1047,9 @@ void av1_resize_frame420(const uint8_t *const y, int y_stride,
     abort();
 }
 
-bool av1_resize_frame422(const uint8_t *const y, int y_stride,
-                         const uint8_t *const u, const uint8_t *const v,
-                         int uv_stride, int height, int width, uint8_t *oy,
-                         int oy_stride, uint8_t *ou, uint8_t *ov,
+bool av1_resize_frame422(const uint8_t *y, int y_stride, const uint8_t *u,
+                         const uint8_t *v, int uv_stride, int height, int width,
+                         uint8_t *oy, int oy_stride, uint8_t *ou, uint8_t *ov,
                          int ouv_stride, int oheight, int owidth) {
   if (!av1_resize_plane(y, height, width, y_stride, oy, oheight, owidth,
                         oy_stride))
@@ -1013,10 +1063,9 @@ bool av1_resize_frame422(const uint8_t *const y, int y_stride,
   return true;
 }
 
-bool av1_resize_frame444(const uint8_t *const y, int y_stride,
-                         const uint8_t *const u, const uint8_t *const v,
-                         int uv_stride, int height, int width, uint8_t *oy,
-                         int oy_stride, uint8_t *ou, uint8_t *ov,
+bool av1_resize_frame444(const uint8_t *y, int y_stride, const uint8_t *u,
+                         const uint8_t *v, int uv_stride, int height, int width,
+                         uint8_t *oy, int oy_stride, uint8_t *ou, uint8_t *ov,
                          int ouv_stride, int oheight, int owidth) {
   if (!av1_resize_plane(y, height, width, y_stride, oy, oheight, owidth,
                         oy_stride))
@@ -1031,8 +1080,8 @@ bool av1_resize_frame444(const uint8_t *const y, int y_stride,
 }
 
 #if CONFIG_AV1_HIGHBITDEPTH
-void av1_highbd_resize_frame420(const uint8_t *const y, int y_stride,
-                                const uint8_t *const u, const uint8_t *const v,
+void av1_highbd_resize_frame420(const uint8_t *y, int y_stride,
+                                const uint8_t *u, const uint8_t *v,
                                 int uv_stride, int height, int width,
                                 uint8_t *oy, int oy_stride, uint8_t *ou,
                                 uint8_t *ov, int ouv_stride, int oheight,
@@ -1045,8 +1094,8 @@ void av1_highbd_resize_frame420(const uint8_t *const y, int y_stride,
                           owidth / 2, ouv_stride, bd);
 }
 
-void av1_highbd_resize_frame422(const uint8_t *const y, int y_stride,
-                                const uint8_t *const u, const uint8_t *const v,
+void av1_highbd_resize_frame422(const uint8_t *y, int y_stride,
+                                const uint8_t *u, const uint8_t *v,
                                 int uv_stride, int height, int width,
                                 uint8_t *oy, int oy_stride, uint8_t *ou,
                                 uint8_t *ov, int ouv_stride, int oheight,
@@ -1059,8 +1108,8 @@ void av1_highbd_resize_frame422(const uint8_t *const y, int y_stride,
                           owidth / 2, ouv_stride, bd);
 }
 
-void av1_highbd_resize_frame444(const uint8_t *const y, int y_stride,
-                                const uint8_t *const u, const uint8_t *const v,
+void av1_highbd_resize_frame444(const uint8_t *y, int y_stride,
+                                const uint8_t *u, const uint8_t *v,
                                 int uv_stride, int height, int width,
                                 uint8_t *oy, int oy_stride, uint8_t *ou,
                                 uint8_t *ov, int ouv_stride, int oheight,
@@ -1126,7 +1175,7 @@ void av1_resize_and_extend_frame_c(const YV12_BUFFER_CONFIG *src,
 
 bool av1_resize_and_extend_frame_nonnormative(const YV12_BUFFER_CONFIG *src,
                                               YV12_BUFFER_CONFIG *dst, int bd,
-                                              const int num_planes) {
+                                              int num_planes) {
   // TODO(dkovalev): replace YV12_BUFFER_CONFIG with aom_image_t
 
   // We use AOMMIN(num_planes, MAX_MB_PLANE) instead of num_planes to quiet
@@ -1246,8 +1295,7 @@ void av1_upscale_normative_and_extend_frame(const AV1_COMMON *cm,
 YV12_BUFFER_CONFIG *av1_realloc_and_scale_if_required(
     AV1_COMMON *cm, YV12_BUFFER_CONFIG *unscaled, YV12_BUFFER_CONFIG *scaled,
     const InterpFilter filter, const int phase, const bool use_optimized_scaler,
-    const bool for_psnr, const int border_in_pixels,
-    const int num_pyramid_levels) {
+    const bool for_psnr, const int border_in_pixels, const bool alloc_pyramid) {
   // If scaling is performed for the sole purpose of calculating PSNR, then our
   // target dimensions are superres upscaled width/height. Otherwise our target
   // dimensions are coded width/height.
@@ -1267,7 +1315,7 @@ YV12_BUFFER_CONFIG *av1_realloc_and_scale_if_required(
             scaled, scaled_width, scaled_height, seq_params->subsampling_x,
             seq_params->subsampling_y, seq_params->use_highbitdepth,
             border_in_pixels, cm->features.byte_alignment, NULL, NULL, NULL,
-            num_pyramid_levels, 0))
+            alloc_pyramid, 0))
       aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                          "Failed to allocate scaled buffer");
 
@@ -1363,7 +1411,7 @@ static void copy_buffer_config(const YV12_BUFFER_CONFIG *const src,
 // TODO(afergs): aom_ vs av1_ functions? Which can I use?
 // Upscale decoded image.
 void av1_superres_upscale(AV1_COMMON *cm, BufferPool *const pool,
-                          int num_pyramid_levels) {
+                          bool alloc_pyramid) {
   const int num_planes = av1_num_planes(cm);
   if (!av1_superres_scaled(cm)) return;
   const SequenceHeader *const seq_params = cm->seq_params;
@@ -1378,7 +1426,7 @@ void av1_superres_upscale(AV1_COMMON *cm, BufferPool *const pool,
   if (aom_alloc_frame_buffer(
           &copy_buffer, aligned_width, cm->height, seq_params->subsampling_x,
           seq_params->subsampling_y, seq_params->use_highbitdepth,
-          AOM_BORDER_IN_PIXELS, byte_alignment, 0, 0))
+          AOM_BORDER_IN_PIXELS, byte_alignment, false, 0))
     aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                        "Failed to allocate copy buffer for superres upscaling");
 
@@ -1411,7 +1459,7 @@ void av1_superres_upscale(AV1_COMMON *cm, BufferPool *const pool,
             cm->superres_upscaled_height, seq_params->subsampling_x,
             seq_params->subsampling_y, seq_params->use_highbitdepth,
             AOM_BORDER_IN_PIXELS, byte_alignment, fb, cb, cb_priv,
-            num_pyramid_levels, 0)) {
+            alloc_pyramid, 0)) {
       unlock_buffer_pool(pool);
       aom_internal_error(
           cm->error, AOM_CODEC_MEM_ERROR,
@@ -1428,7 +1476,7 @@ void av1_superres_upscale(AV1_COMMON *cm, BufferPool *const pool,
             frame_to_show, cm->superres_upscaled_width,
             cm->superres_upscaled_height, seq_params->subsampling_x,
             seq_params->subsampling_y, seq_params->use_highbitdepth,
-            AOM_BORDER_IN_PIXELS, byte_alignment, num_pyramid_levels, 0))
+            AOM_BORDER_IN_PIXELS, byte_alignment, alloc_pyramid, 0))
       aom_internal_error(
           cm->error, AOM_CODEC_MEM_ERROR,
           "Failed to reallocate current frame buffer for superres upscaling");

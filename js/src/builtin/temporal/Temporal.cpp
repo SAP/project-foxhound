@@ -6,8 +6,10 @@
 
 #include "builtin/temporal/Temporal.h"
 
+#include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Likely.h"
+#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
 
 #include <algorithm>
@@ -15,8 +17,10 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <stdint.h>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 #include "jsfriendapi.h"
@@ -25,6 +29,7 @@
 #include "NamespaceImports.h"
 
 #include "builtin/temporal/Instant.h"
+#include "builtin/temporal/Int128.h"
 #include "builtin/temporal/PlainDate.h"
 #include "builtin/temporal/PlainDateTime.h"
 #include "builtin/temporal/PlainMonthDay.h"
@@ -47,7 +52,6 @@
 #include "js/RootingAPI.h"
 #include "js/String.h"
 #include "js/Value.h"
-#include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSAtomState.h"
@@ -132,21 +136,21 @@ static bool GetNumberOption(JSContext* cx, Handle<JSObject*> options,
 }
 
 /**
- * ToTemporalRoundingIncrement ( normalizedOptions, dividend, inclusive )
+ * GetRoundingIncrementOption ( normalizedOptions, dividend, inclusive )
  */
-bool js::temporal::ToTemporalRoundingIncrement(JSContext* cx,
-                                               Handle<JSObject*> options,
-                                               Increment* increment) {
-  // Step 1.
+bool js::temporal::GetRoundingIncrementOption(JSContext* cx,
+                                              Handle<JSObject*> options,
+                                              Increment* increment) {
+  // Steps 1-3.
   double number = 1;
   if (!GetNumberOption(cx, options, cx->names().roundingIncrement, &number)) {
     return false;
   }
 
-  // Step 3. (Reordered)
+  // Step 5. (Reordered)
   number = std::trunc(number);
 
-  // Steps 2 and 4.
+  // Steps 4 and 6.
   if (!std::isfinite(number) || number < 1 || number > 1'000'000'000) {
     ToCStringBuf cbuf;
     const char* numStr = NumberToCString(&cbuf, number);
@@ -157,6 +161,7 @@ bool js::temporal::ToTemporalRoundingIncrement(JSContext* cx,
     return false;
   }
 
+  // Step 7.
   *increment = Increment{uint32_t(number)};
   return true;
 }
@@ -177,7 +182,7 @@ bool js::temporal::ValidateTemporalRoundingIncrement(JSContext* cx,
   // Steps 3-4.
   if (increment.value() > maximum || dividend % increment.value() != 0) {
     Int32ToCStringBuf cbuf;
-    const char* numStr = Int32ToCString(&cbuf, increment.value());
+    const char* numStr = Int32ToCString(&cbuf, int32_t(increment.value()));
 
     // TODO: Better error message could be helpful.
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -323,13 +328,14 @@ static std::pair<TemporalUnit, TemporalUnit> AllowedValues(
 }
 
 /**
- * GetTemporalUnit ( normalizedOptions, key, unitGroup, default [ , extraValues
- * ] )
+ * GetTemporalUnitValuedOption ( normalizedOptions, key, unitGroup, default [ ,
+ * extraValues ] )
  */
-bool js::temporal::GetTemporalUnit(JSContext* cx, Handle<JSObject*> options,
-                                   TemporalUnitKey key,
-                                   TemporalUnitGroup unitGroup,
-                                   TemporalUnit* unit) {
+bool js::temporal::GetTemporalUnitValuedOption(JSContext* cx,
+                                               Handle<JSObject*> options,
+                                               TemporalUnitKey key,
+                                               TemporalUnitGroup unitGroup,
+                                               TemporalUnit* unit) {
   // Steps 1-8. (Not applicable in our implementation.)
 
   // Step 9.
@@ -343,17 +349,18 @@ bool js::temporal::GetTemporalUnit(JSContext* cx, Handle<JSObject*> options,
     return true;
   }
 
-  return GetTemporalUnit(cx, value, key, unitGroup, unit);
+  return GetTemporalUnitValuedOption(cx, value, key, unitGroup, unit);
 }
 
 /**
- * GetTemporalUnit ( normalizedOptions, key, unitGroup, default [ , extraValues
- * ] )
+ * GetTemporalUnitValuedOption ( normalizedOptions, key, unitGroup, default [ ,
+ * extraValues ] )
  */
-bool js::temporal::GetTemporalUnit(JSContext* cx, Handle<JSString*> value,
-                                   TemporalUnitKey key,
-                                   TemporalUnitGroup unitGroup,
-                                   TemporalUnit* unit) {
+bool js::temporal::GetTemporalUnitValuedOption(JSContext* cx,
+                                               Handle<JSString*> value,
+                                               TemporalUnitKey key,
+                                               TemporalUnitGroup unitGroup,
+                                               TemporalUnit* unit) {
   // Steps 1-9. (Not applicable in our implementation.)
 
   // Step 10. (Handled in caller.)
@@ -389,12 +396,12 @@ bool js::temporal::GetTemporalUnit(JSContext* cx, Handle<JSString*> value,
 }
 
 /**
- * ToTemporalRoundingMode ( normalizedOptions, fallback )
+ * GetRoundingModeOption ( normalizedOptions, fallback )
  */
-bool js::temporal::ToTemporalRoundingMode(JSContext* cx,
-                                          Handle<JSObject*> options,
-                                          TemporalRoundingMode* mode) {
-  // Step 1.
+bool js::temporal::GetRoundingModeOption(JSContext* cx,
+                                         Handle<JSObject*> options,
+                                         TemporalRoundingMode* mode) {
+  // Steps 1-2.
   Rooted<JSString*> string(cx);
   if (!GetStringOption(cx, options, cx->names().roundingMode, &string)) {
     return false;
@@ -439,471 +446,50 @@ bool js::temporal::ToTemporalRoundingMode(JSContext* cx,
   return true;
 }
 
-static BigInt* Divide(JSContext* cx, Handle<BigInt*> dividend, int64_t divisor,
-                      TemporalRoundingMode roundingMode) {
-  MOZ_ASSERT(divisor > 0);
-
-  Rooted<BigInt*> div(cx, BigInt::createFromInt64(cx, divisor));
-  if (!div) {
-    return nullptr;
-  }
-
-  Rooted<BigInt*> quotient(cx);
-  Rooted<BigInt*> remainder(cx);
-  if (!BigInt::divmod(cx, dividend, div, &quotient, &remainder)) {
-    return nullptr;
-  }
-
-  // No rounding needed when the remainder is zero.
-  if (remainder->isZero()) {
-    return quotient;
-  }
-
-  switch (roundingMode) {
-    case TemporalRoundingMode::Ceil: {
-      if (!remainder->isNegative()) {
-        return BigInt::inc(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::Floor: {
-      if (remainder->isNegative()) {
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::Trunc:
-      // BigInt division truncates.
-      return quotient;
-    case TemporalRoundingMode::Expand: {
-      if (!remainder->isNegative()) {
-        return BigInt::inc(cx, quotient);
-      }
-      return BigInt::dec(cx, quotient);
-    }
-    case TemporalRoundingMode::HalfCeil: {
-      int64_t rem;
-      MOZ_ALWAYS_TRUE(BigInt::isInt64(remainder, &rem));
-
-      if (!remainder->isNegative()) {
-        if (uint64_t(std::abs(rem)) * 2 >= uint64_t(divisor)) {
-          return BigInt::inc(cx, quotient);
-        }
-      } else {
-        if (uint64_t(std::abs(rem)) * 2 > uint64_t(divisor)) {
-          return BigInt::dec(cx, quotient);
-        }
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfFloor: {
-      int64_t rem;
-      MOZ_ALWAYS_TRUE(BigInt::isInt64(remainder, &rem));
-
-      if (remainder->isNegative()) {
-        if (uint64_t(std::abs(rem)) * 2 >= uint64_t(divisor)) {
-          return BigInt::dec(cx, quotient);
-        }
-      } else {
-        if (uint64_t(std::abs(rem)) * 2 > uint64_t(divisor)) {
-          return BigInt::inc(cx, quotient);
-        }
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfExpand: {
-      int64_t rem;
-      MOZ_ALWAYS_TRUE(BigInt::isInt64(remainder, &rem));
-
-      if (uint64_t(std::abs(rem)) * 2 >= uint64_t(divisor)) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfTrunc: {
-      int64_t rem;
-      MOZ_ALWAYS_TRUE(BigInt::isInt64(remainder, &rem));
-
-      if (uint64_t(std::abs(rem)) * 2 > uint64_t(divisor)) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfEven: {
-      int64_t rem;
-      MOZ_ALWAYS_TRUE(BigInt::isInt64(remainder, &rem));
-
-      if (uint64_t(std::abs(rem)) * 2 == uint64_t(divisor)) {
-        bool isOdd = !quotient->isZero() && (quotient->digit(0) & 1) == 1;
-        if (isOdd) {
-          if (!dividend->isNegative()) {
-            return BigInt::inc(cx, quotient);
-          }
-          return BigInt::dec(cx, quotient);
-        }
-      }
-      if (uint64_t(std::abs(rem)) * 2 > uint64_t(divisor)) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-  }
-
-  MOZ_CRASH("invalid rounding mode");
+#ifdef DEBUG
+template <typename T>
+static bool IsValidMul(const T& x, const T& y) {
+  return (mozilla::CheckedInt<T>(x) * y).isValid();
 }
 
-static BigInt* Divide(JSContext* cx, Handle<BigInt*> dividend,
-                      Handle<BigInt*> divisor,
-                      TemporalRoundingMode roundingMode) {
-  MOZ_ASSERT(!divisor->isNegative());
-  MOZ_ASSERT(!divisor->isZero());
+// Copied from mozilla::CheckedInt.
+template <>
+bool IsValidMul<Int128>(const Int128& x, const Int128& y) {
+  static constexpr auto min = Int128{1} << 127;
+  static constexpr auto max = ~min;
 
-  Rooted<BigInt*> quotient(cx);
-  Rooted<BigInt*> remainder(cx);
-  if (!BigInt::divmod(cx, dividend, divisor, &quotient, &remainder)) {
-    return nullptr;
+  if (x == Int128{0} || y == Int128{0}) {
+    return true;
   }
-
-  // No rounding needed when the remainder is zero.
-  if (remainder->isZero()) {
-    return quotient;
+  if (x > Int128{0}) {
+    return y > Int128{0} ? x <= max / y : y >= min / x;
   }
-
-  switch (roundingMode) {
-    case TemporalRoundingMode::Ceil: {
-      if (!remainder->isNegative()) {
-        return BigInt::inc(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::Floor: {
-      if (remainder->isNegative()) {
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::Trunc:
-      // BigInt division truncates.
-      return quotient;
-    case TemporalRoundingMode::Expand: {
-      if (!remainder->isNegative()) {
-        return BigInt::inc(cx, quotient);
-      }
-      return BigInt::dec(cx, quotient);
-    }
-    case TemporalRoundingMode::HalfCeil: {
-      BigInt* rem = BigInt::add(cx, remainder, remainder);
-      if (!rem) {
-        return nullptr;
-      }
-
-      if (!remainder->isNegative()) {
-        if (BigInt::absoluteCompare(rem, divisor) >= 0) {
-          return BigInt::inc(cx, quotient);
-        }
-      } else {
-        if (BigInt::absoluteCompare(rem, divisor) > 0) {
-          return BigInt::dec(cx, quotient);
-        }
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfFloor: {
-      BigInt* rem = BigInt::add(cx, remainder, remainder);
-      if (!rem) {
-        return nullptr;
-      }
-
-      if (remainder->isNegative()) {
-        if (BigInt::absoluteCompare(rem, divisor) >= 0) {
-          return BigInt::dec(cx, quotient);
-        }
-      } else {
-        if (BigInt::absoluteCompare(rem, divisor) > 0) {
-          return BigInt::inc(cx, quotient);
-        }
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfExpand: {
-      BigInt* rem = BigInt::add(cx, remainder, remainder);
-      if (!rem) {
-        return nullptr;
-      }
-
-      if (BigInt::absoluteCompare(rem, divisor) >= 0) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfTrunc: {
-      BigInt* rem = BigInt::add(cx, remainder, remainder);
-      if (!rem) {
-        return nullptr;
-      }
-
-      if (BigInt::absoluteCompare(rem, divisor) > 0) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-    case TemporalRoundingMode::HalfEven: {
-      BigInt* rem = BigInt::add(cx, remainder, remainder);
-      if (!rem) {
-        return nullptr;
-      }
-
-      if (BigInt::absoluteCompare(rem, divisor) == 0) {
-        bool isOdd = !quotient->isZero() && (quotient->digit(0) & 1) == 1;
-        if (isOdd) {
-          if (!dividend->isNegative()) {
-            return BigInt::inc(cx, quotient);
-          }
-          return BigInt::dec(cx, quotient);
-        }
-      }
-      if (BigInt::absoluteCompare(rem, divisor) > 0) {
-        if (!dividend->isNegative()) {
-          return BigInt::inc(cx, quotient);
-        }
-        return BigInt::dec(cx, quotient);
-      }
-      return quotient;
-    }
-  }
-
-  MOZ_CRASH("invalid rounding mode");
+  return y > Int128{0} ? x >= min / y : y >= max / x;
 }
-
-static BigInt* RoundNumberToIncrementSlow(JSContext* cx, Handle<BigInt*> x,
-                                          int64_t divisor, int64_t increment,
-                                          TemporalRoundingMode roundingMode) {
-  // Steps 1-8.
-  Rooted<BigInt*> rounded(cx, Divide(cx, x, divisor, roundingMode));
-  if (!rounded) {
-    return nullptr;
-  }
-
-  // We can skip the next step when |increment=1|.
-  if (increment == 1) {
-    return rounded;
-  }
-
-  // Step 9.
-  Rooted<BigInt*> inc(cx, BigInt::createFromInt64(cx, increment));
-  if (!inc) {
-    return nullptr;
-  }
-  return BigInt::mul(cx, rounded, inc);
-}
-
-static BigInt* RoundNumberToIncrementSlow(JSContext* cx, Handle<BigInt*> x,
-                                          int64_t increment,
-                                          TemporalRoundingMode roundingMode) {
-  return RoundNumberToIncrementSlow(cx, x, increment, increment, roundingMode);
-}
+#endif
 
 /**
  * RoundNumberToIncrement ( x, increment, roundingMode )
  */
-bool js::temporal::RoundNumberToIncrement(JSContext* cx, const Instant& x,
-                                          int64_t increment,
-                                          TemporalRoundingMode roundingMode,
-                                          Instant* result) {
-  MOZ_ASSERT(temporal::IsValidEpochInstant(x));
-  MOZ_ASSERT(increment > 0);
-  MOZ_ASSERT(increment <= ToNanoseconds(TemporalUnit::Day));
-
-  // Fast path for the default case.
-  if (increment == 1) {
-    *result = x;
-    return true;
-  }
-
-  // Dividing zero is always zero.
-  if (x == Instant{}) {
-    *result = x;
-    return true;
-  }
-
-  // Fast-path when we can perform the whole computation with int64 values.
-  if (auto num = x.toNanoseconds(); MOZ_LIKELY(num.isValid())) {
-    // Steps 1-8.
-    int64_t rounded = Divide(num.value(), increment, roundingMode);
-
-    // Step 9.
-    mozilla::CheckedInt64 checked = rounded;
-    checked *= increment;
-    if (MOZ_LIKELY(checked.isValid())) {
-      *result = Instant::fromNanoseconds(checked.value());
-      return true;
-    }
-  }
-
-  Rooted<BigInt*> bi(cx, ToEpochNanoseconds(cx, x));
-  if (!bi) {
-    return false;
-  }
-
-  auto* rounded = RoundNumberToIncrementSlow(cx, bi, increment, roundingMode);
-  if (!rounded) {
-    return false;
-  }
-
-  *result = ToInstant(rounded);
-  return true;
-}
-
-/**
- * RoundNumberToIncrement ( x, increment, roundingMode )
- */
-bool js::temporal::RoundNumberToIncrement(JSContext* cx, int64_t numerator,
-                                          TemporalUnit unit,
-                                          Increment increment,
-                                          TemporalRoundingMode roundingMode,
-                                          double* result) {
-  MOZ_ASSERT(unit >= TemporalUnit::Day);
-  MOZ_ASSERT(Increment::min() <= increment && increment <= Increment::max());
-
-  // Take the slow path when the increment is too large.
-  if (MOZ_UNLIKELY(increment > Increment{100'000})) {
-    Rooted<BigInt*> bi(cx, BigInt::createFromInt64(cx, numerator));
-    if (!bi) {
-      return false;
-    }
-
-    Rooted<BigInt*> denominator(
-        cx, BigInt::createFromInt64(cx, ToNanoseconds(unit)));
-    if (!denominator) {
-      return false;
-    }
-
-    return RoundNumberToIncrement(cx, bi, denominator, increment, roundingMode,
-                                  result);
-  }
-
-  int64_t divisor = ToNanoseconds(unit) * increment.value();
-  MOZ_ASSERT(divisor > 0);
-  MOZ_ASSERT(divisor <= 8'640'000'000'000'000'000);
-
-  // Division by one has no remainder.
-  if (divisor == 1) {
-    MOZ_ASSERT(increment == Increment{1});
-    *result = double(numerator);
-    return true;
-  }
-
-  // Steps 1-8.
-  int64_t rounded = Divide(numerator, divisor, roundingMode);
-
-  // Step 9.
-  mozilla::CheckedInt64 checked = rounded;
-  checked *= increment.value();
-  if (checked.isValid()) {
-    *result = double(checked.value());
-    return true;
-  }
-
-  Rooted<BigInt*> bi(cx, BigInt::createFromInt64(cx, numerator));
-  if (!bi) {
-    return false;
-  }
-  return RoundNumberToIncrement(cx, bi, unit, increment, roundingMode, result);
-}
-
-/**
- * RoundNumberToIncrement ( x, increment, roundingMode )
- */
-bool js::temporal::RoundNumberToIncrement(
-    JSContext* cx, Handle<BigInt*> numerator, TemporalUnit unit,
-    Increment increment, TemporalRoundingMode roundingMode, double* result) {
-  MOZ_ASSERT(unit >= TemporalUnit::Day);
-  MOZ_ASSERT(Increment::min() <= increment && increment <= Increment::max());
-
-  // Take the slow path when the increment is too large.
-  if (MOZ_UNLIKELY(increment > Increment{100'000})) {
-    Rooted<BigInt*> denominator(
-        cx, BigInt::createFromInt64(cx, ToNanoseconds(unit)));
-    if (!denominator) {
-      return false;
-    }
-
-    return RoundNumberToIncrement(cx, numerator, denominator, increment,
-                                  roundingMode, result);
-  }
-
-  int64_t divisor = ToNanoseconds(unit) * increment.value();
-  MOZ_ASSERT(divisor > 0);
-  MOZ_ASSERT(divisor <= 8'640'000'000'000'000'000);
-
-  // Division by one has no remainder.
-  if (divisor == 1) {
-    MOZ_ASSERT(increment == Increment{1});
-    *result = BigInt::numberValue(numerator);
-    return true;
-  }
-
-  // Dividing zero is always zero.
-  if (numerator->isZero()) {
-    *result = 0;
-    return true;
-  }
-
-  // All callers are already in the slow path, so we don't need to fast-path the
-  // case when |x| can be represented by an int64 value.
-
-  // Steps 1-9.
-  auto* rounded = RoundNumberToIncrementSlow(cx, numerator, divisor,
-                                             increment.value(), roundingMode);
-  if (!rounded) {
-    return false;
-  }
-
-  *result = BigInt::numberValue(rounded);
-  return true;
-}
-
-/**
- * RoundNumberToIncrement ( x, increment, roundingMode )
- */
-bool js::temporal::RoundNumberToIncrement(JSContext* cx, int64_t numerator,
-                                          int64_t denominator,
-                                          Increment increment,
-                                          TemporalRoundingMode roundingMode,
-                                          double* result) {
+Int128 js::temporal::RoundNumberToIncrement(int64_t numerator,
+                                            int64_t denominator,
+                                            Increment increment,
+                                            TemporalRoundingMode roundingMode) {
   MOZ_ASSERT(denominator > 0);
   MOZ_ASSERT(Increment::min() <= increment && increment <= Increment::max());
 
   // Dividing zero is always zero.
   if (numerator == 0) {
-    *result = 0;
-    return true;
+    return Int128{0};
   }
 
   // We don't have to adjust the divisor when |increment=1|.
   if (increment == Increment{1}) {
-    int64_t divisor = denominator;
-    int64_t rounded = Divide(numerator, divisor, roundingMode);
-
-    *result = double(rounded);
-    return true;
+    // Steps 1-8 and implicit step 9.
+    return Int128{Divide(numerator, denominator, roundingMode)};
   }
 
+  // Fast-path when we can perform the whole computation with int64 values.
   auto divisor = mozilla::CheckedInt64(denominator) * increment.value();
   if (MOZ_LIKELY(divisor.isValid())) {
     MOZ_ASSERT(divisor.value() > 0);
@@ -912,91 +498,310 @@ bool js::temporal::RoundNumberToIncrement(JSContext* cx, int64_t numerator,
     int64_t rounded = Divide(numerator, divisor.value(), roundingMode);
 
     // Step 9.
-    auto adjusted = mozilla::CheckedInt64(rounded) * increment.value();
-    if (MOZ_LIKELY(adjusted.isValid())) {
-      *result = double(adjusted.value());
-      return true;
+    auto result = mozilla::CheckedInt64(rounded) * increment.value();
+    if (MOZ_LIKELY(result.isValid())) {
+      return Int128{result.value()};
     }
   }
 
-  // Slow path on overflow.
-
-  Rooted<BigInt*> bi(cx, BigInt::createFromInt64(cx, numerator));
-  if (!bi) {
-    return false;
-  }
-
-  Rooted<BigInt*> denom(cx, BigInt::createFromInt64(cx, denominator));
-  if (!denom) {
-    return false;
-  }
-
-  return RoundNumberToIncrement(cx, bi, denom, increment, roundingMode, result);
+  // Int128 path on overflow.
+  return RoundNumberToIncrement(Int128{numerator}, Int128{denominator},
+                                increment, roundingMode);
 }
 
 /**
  * RoundNumberToIncrement ( x, increment, roundingMode )
  */
-bool js::temporal::RoundNumberToIncrement(
-    JSContext* cx, Handle<BigInt*> numerator, Handle<BigInt*> denominator,
-    Increment increment, TemporalRoundingMode roundingMode, double* result) {
-  MOZ_ASSERT(!denominator->isNegative());
-  MOZ_ASSERT(!denominator->isZero());
+Int128 js::temporal::RoundNumberToIncrement(const Int128& numerator,
+                                            const Int128& denominator,
+                                            Increment increment,
+                                            TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(denominator > Int128{0});
   MOZ_ASSERT(Increment::min() <= increment && increment <= Increment::max());
 
-  // Dividing zero is always zero.
-  if (numerator->isZero()) {
-    *result = 0;
-    return true;
-  }
+  auto inc = Int128{increment.value()};
+  MOZ_ASSERT(IsValidMul(denominator, inc), "unsupported overflow");
 
-  // We don't have to adjust the divisor when |increment=1|.
-  if (increment == Increment{1}) {
-    auto divisor = denominator;
-
-    auto* rounded = Divide(cx, numerator, divisor, roundingMode);
-    if (!rounded) {
-      return false;
-    }
-
-    *result = BigInt::numberValue(rounded);
-    return true;
-  }
-
-  Rooted<BigInt*> inc(cx, BigInt::createFromUint64(cx, increment.value()));
-  if (!inc) {
-    return false;
-  }
-
-  Rooted<BigInt*> divisor(cx, BigInt::mul(cx, denominator, inc));
-  if (!divisor) {
-    return false;
-  }
-  MOZ_ASSERT(!divisor->isNegative());
-  MOZ_ASSERT(!divisor->isZero());
+  auto divisor = denominator * inc;
+  MOZ_ASSERT(divisor > Int128{0});
 
   // Steps 1-8.
-  Rooted<BigInt*> rounded(cx, Divide(cx, numerator, divisor, roundingMode));
-  if (!rounded) {
-    return false;
-  }
+  auto rounded = Divide(numerator, divisor, roundingMode);
 
   // Step 9.
-  auto* adjusted = BigInt::mul(cx, rounded, inc);
-  if (!adjusted) {
-    return false;
-  }
-
-  *result = BigInt::numberValue(adjusted);
-  return true;
+  MOZ_ASSERT(IsValidMul(rounded, inc), "unsupported overflow");
+  return rounded * inc;
 }
 
 /**
- * ToCalendarNameOption ( normalizedOptions )
+ * RoundNumberToIncrement ( x, increment, roundingMode )
  */
-bool js::temporal::ToCalendarNameOption(JSContext* cx,
-                                        Handle<JSObject*> options,
-                                        CalendarOption* result) {
+int64_t js::temporal::RoundNumberToIncrement(
+    int64_t x, int64_t increment, TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(increment > 0);
+
+  // Steps 1-8.
+  int64_t rounded = Divide(x, increment, roundingMode);
+
+  // Step 9.
+  MOZ_ASSERT(IsValidMul(rounded, increment), "unsupported overflow");
+  return rounded * increment;
+}
+
+/**
+ * RoundNumberToIncrement ( x, increment, roundingMode )
+ */
+Int128 js::temporal::RoundNumberToIncrement(const Int128& x,
+                                            const Int128& increment,
+                                            TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(increment > Int128{0});
+
+  // Steps 1-8.
+  auto rounded = Divide(x, increment, roundingMode);
+
+  // Step 9.
+  MOZ_ASSERT(IsValidMul(rounded, increment), "unsupported overflow");
+  return rounded * increment;
+}
+
+template <typename IntT>
+static inline constexpr bool IsSafeInteger(const IntT& x) {
+  constexpr IntT MaxSafeInteger = IntT{int64_t(1) << 53};
+  constexpr IntT MinSafeInteger = -MaxSafeInteger;
+  return MinSafeInteger < x && x < MaxSafeInteger;
+}
+
+/**
+ * Return the real number value of the fraction |numerator / denominator|.
+ *
+ * As an optimization we multiply the remainder by 16 when computing the number
+ * of digits after the decimal point, i.e. we compute four instead of one bit of
+ * the fractional digits. The denominator is therefore required to not exceed
+ * 2**(N - log2(16)), where N is the number of non-sign bits in the mantissa.
+ */
+template <typename T>
+static double FractionToDoubleSlow(const T& numerator, const T& denominator) {
+  MOZ_ASSERT(denominator > T{0}, "expected positive denominator");
+  MOZ_ASSERT(denominator <= (T{1} << (std::numeric_limits<T>::digits - 4)),
+             "denominator too large");
+
+  auto absValue = [](const T& value) {
+    if constexpr (std::is_same_v<T, Int128>) {
+      return value.abs();
+    } else {
+      // NB: Not std::abs, because std::abs(INT64_MIN) is undefined behavior.
+      return mozilla::Abs(value);
+    }
+  };
+
+  using UnsignedT = decltype(absValue(T{0}));
+  static_assert(!std::numeric_limits<UnsignedT>::is_signed);
+
+  auto divrem = [](const UnsignedT& x, const UnsignedT& y) {
+    if constexpr (std::is_same_v<T, Int128>) {
+      return x.divrem(y);
+    } else {
+      return std::pair{x / y, x % y};
+    }
+  };
+
+  auto [quot, rem] =
+      divrem(absValue(numerator), static_cast<UnsignedT>(denominator));
+
+  // Simple case when no remainder is present.
+  if (rem == UnsignedT{0}) {
+    double sign = numerator < T{0} ? -1 : 1;
+    return sign * double(quot);
+  }
+
+  using Double = mozilla::FloatingPoint<double>;
+
+  // Significand including the implicit one of IEEE-754 floating point numbers.
+  static constexpr uint32_t SignificandWidthWithImplicitOne =
+      Double::kSignificandWidth + 1;
+
+  // Number of leading zeros for a correctly adjusted significand.
+  static constexpr uint32_t SignificandLeadingZeros =
+      64 - SignificandWidthWithImplicitOne;
+
+  // Exponent bias for an integral significand. (`Double::kExponentBias` is the
+  // bias for the binary fraction `1.xyz * 2**exp`. For an integral significand
+  // the significand width has to be added to the bias.)
+  static constexpr int32_t ExponentBias =
+      Double::kExponentBias + Double::kSignificandWidth;
+
+  // Significand, possibly unnormalized.
+  uint64_t significand = 0;
+
+  // Significand ignored msd bits.
+  uint32_t ignoredBits = 0;
+
+  // Read quotient, from most to least significant digit. Stop when the
+  // significand got too large for double precision.
+  int32_t shift = std::numeric_limits<UnsignedT>::digits;
+  for (; shift != 0 && ignoredBits == 0; shift -= 4) {
+    uint64_t digit = uint64_t(quot >> (shift - 4)) & 0xf;
+
+    significand = significand * 16 + digit;
+    ignoredBits = significand >> SignificandWidthWithImplicitOne;
+  }
+
+  // Read remainder, from most to least significant digit. Stop when the
+  // remainder is zero or the significand got too large.
+  int32_t fractionDigit = 0;
+  for (; rem != UnsignedT{0} && ignoredBits == 0; fractionDigit++) {
+    auto [digit, next] =
+        divrem(rem * UnsignedT{16}, static_cast<UnsignedT>(denominator));
+    rem = next;
+
+    significand = significand * 16 + uint64_t(digit);
+    ignoredBits = significand >> SignificandWidthWithImplicitOne;
+  }
+
+  // Unbiased exponent. (`shift` remaining bits in the quotient, minus the
+  // fractional digits.)
+  int32_t exponent = shift - (fractionDigit * 4);
+
+  // Significand got too large and some bits are now ignored. Adjust the
+  // significand and exponent.
+  if (ignoredBits != 0) {
+    //        significand
+    //  ___________|__________
+    // /                      |
+    // [xxx················yyy|
+    //  \_/                \_/
+    //   |                  |
+    // ignoredBits       extraBits
+    //
+    // `ignoredBits` have to be shifted back into the 53 bits of the significand
+    // and `extraBits` has to be checked if the result has to be rounded up.
+
+    // Number of ignored/extra bits in the significand.
+    uint32_t extraBitsCount = 32 - mozilla::CountLeadingZeroes32(ignoredBits);
+    MOZ_ASSERT(extraBitsCount > 0);
+
+    // Extra bits in the significand.
+    uint32_t extraBits = uint32_t(significand) & ((1 << extraBitsCount) - 1);
+
+    // Move the ignored bits into the proper significand position and adjust the
+    // exponent to reflect the now moved out extra bits.
+    significand >>= extraBitsCount;
+    exponent += extraBitsCount;
+
+    MOZ_ASSERT((significand >> SignificandWidthWithImplicitOne) == 0,
+               "no excess bits in the significand");
+
+    // When the most significant digit in the extra bits is set, we may need to
+    // round the result.
+    uint32_t msdExtraBit = extraBits >> (extraBitsCount - 1);
+    if (msdExtraBit != 0) {
+      // Extra bits, excluding the most significant digit.
+      uint32_t extraBitExcludingMsdMask = (1 << (extraBitsCount - 1)) - 1;
+
+      // Unprocessed bits in the quotient.
+      auto bitsBelowExtraBits = quot & ((UnsignedT{1} << shift) - UnsignedT{1});
+
+      // Round up if the extra bit's msd is set and either the significand is
+      // odd or any other bits below the extra bit's msd are non-zero.
+      //
+      // Bits below the extra bit's msd are:
+      // 1. The remaining bits of the extra bits.
+      // 2. Any bits below the extra bits.
+      // 3. Any rest of the remainder.
+      bool shouldRoundUp = (significand & 1) != 0 ||
+                           (extraBits & extraBitExcludingMsdMask) != 0 ||
+                           bitsBelowExtraBits != UnsignedT{0} ||
+                           rem != UnsignedT{0};
+      if (shouldRoundUp) {
+        // Add one to the significand bits.
+        significand += 1;
+
+        // If they overflow, the exponent must also be increased.
+        if ((significand >> SignificandWidthWithImplicitOne) != 0) {
+          exponent++;
+          significand >>= 1;
+        }
+      }
+    }
+  }
+
+  MOZ_ASSERT(significand > 0, "significand is non-zero");
+  MOZ_ASSERT((significand >> SignificandWidthWithImplicitOne) == 0,
+             "no excess bits in the significand");
+
+  // Move the significand into the correct position and adjust the exponent
+  // accordingly.
+  uint32_t significandZeros = mozilla::CountLeadingZeroes64(significand);
+  if (significandZeros < SignificandLeadingZeros) {
+    uint32_t shift = SignificandLeadingZeros - significandZeros;
+    significand >>= shift;
+    exponent += shift;
+  } else if (significandZeros > SignificandLeadingZeros) {
+    uint32_t shift = significandZeros - SignificandLeadingZeros;
+    significand <<= shift;
+    exponent -= shift;
+  }
+
+  // Combine the individual bits of the double value and return it.
+  uint64_t signBit = uint64_t(numerator < T{0} ? 1 : 0)
+                     << (Double::kExponentWidth + Double::kSignificandWidth);
+  uint64_t exponentBits = static_cast<uint64_t>(exponent + ExponentBias)
+                          << Double::kExponentShift;
+  uint64_t significandBits = significand & Double::kSignificandBits;
+  return mozilla::BitwiseCast<double>(signBit | exponentBits | significandBits);
+}
+
+double js::temporal::FractionToDouble(int64_t numerator, int64_t denominator) {
+  MOZ_ASSERT(denominator > 0);
+
+  // Zero divided by any divisor is still zero.
+  if (numerator == 0) {
+    return 0;
+  }
+
+  // When both values can be represented as doubles, use double division to
+  // compute the exact result. The result is exact, because double division is
+  // guaranteed to return the exact result.
+  if (MOZ_LIKELY(::IsSafeInteger(numerator) && ::IsSafeInteger(denominator))) {
+    return double(numerator) / double(denominator);
+  }
+
+  // Otherwise call into |FractionToDoubleSlow| to compute the exact result.
+  if (denominator <=
+      (int64_t(1) << (std::numeric_limits<int64_t>::digits - 4))) {
+    // Slightly faster, but still slow approach when |denominator| is small
+    // enough to allow computing on int64 values.
+    return FractionToDoubleSlow(numerator, denominator);
+  }
+  return FractionToDoubleSlow(Int128{numerator}, Int128{denominator});
+}
+
+double js::temporal::FractionToDouble(const Int128& numerator,
+                                      const Int128& denominator) {
+  MOZ_ASSERT(denominator > Int128{0});
+
+  // Zero divided by any divisor is still zero.
+  if (numerator == Int128{0}) {
+    return 0;
+  }
+
+  // When both values can be represented as doubles, use double division to
+  // compute the exact result. The result is exact, because double division is
+  // guaranteed to return the exact result.
+  if (MOZ_LIKELY(::IsSafeInteger(numerator) && ::IsSafeInteger(denominator))) {
+    return double(numerator) / double(denominator);
+  }
+
+  // Otherwise call into |FractionToDoubleSlow| to compute the exact result.
+  return FractionToDoubleSlow(numerator, denominator);
+}
+
+/**
+ * GetTemporalShowCalendarNameOption ( normalizedOptions )
+ */
+bool js::temporal::GetTemporalShowCalendarNameOption(JSContext* cx,
+                                                     Handle<JSObject*> options,
+                                                     ShowCalendar* result) {
   // Step 1.
   Rooted<JSString*> calendarName(cx);
   if (!GetStringOption(cx, options, cx->names().calendarName, &calendarName)) {
@@ -1014,13 +819,13 @@ bool js::temporal::ToCalendarNameOption(JSContext* cx,
   }
 
   if (StringEqualsLiteral(linear, "auto")) {
-    *result = CalendarOption::Auto;
+    *result = ShowCalendar::Auto;
   } else if (StringEqualsLiteral(linear, "always")) {
-    *result = CalendarOption::Always;
+    *result = ShowCalendar::Always;
   } else if (StringEqualsLiteral(linear, "never")) {
-    *result = CalendarOption::Never;
+    *result = ShowCalendar::Never;
   } else if (StringEqualsLiteral(linear, "critical")) {
-    *result = CalendarOption::Critical;
+    *result = ShowCalendar::Critical;
   } else {
     if (auto chars = QuoteString(cx, linear, '"')) {
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -1033,11 +838,10 @@ bool js::temporal::ToCalendarNameOption(JSContext* cx,
 }
 
 /**
- * ToFractionalSecondDigits ( normalizedOptions )
+ * GetTemporalFractionalSecondDigitsOption ( normalizedOptions )
  */
-bool js::temporal::ToFractionalSecondDigits(JSContext* cx,
-                                            Handle<JSObject*> options,
-                                            Precision* precision) {
+bool js::temporal::GetTemporalFractionalSecondDigitsOption(
+    JSContext* cx, Handle<JSObject*> options, Precision* precision) {
   // Step 1.
   Rooted<Value> digitsValue(cx);
   if (!GetProperty(cx, options, options, cx->names().fractionalSecondDigits,
@@ -1193,10 +997,11 @@ SecondsStringPrecision js::temporal::ToSecondsStringPrecision(
 }
 
 /**
- * ToTemporalOverflow ( normalizedOptions )
+ * GetTemporalOverflowOption ( normalizedOptions )
  */
-bool js::temporal::ToTemporalOverflow(JSContext* cx, Handle<JSObject*> options,
-                                      TemporalOverflow* result) {
+bool js::temporal::GetTemporalOverflowOption(JSContext* cx,
+                                             Handle<JSObject*> options,
+                                             TemporalOverflow* result) {
   // Step 1.
   Rooted<JSString*> overflow(cx);
   if (!GetStringOption(cx, options, cx->names().overflow, &overflow)) {
@@ -1229,9 +1034,9 @@ bool js::temporal::ToTemporalOverflow(JSContext* cx, Handle<JSObject*> options,
 }
 
 /**
- * ToTemporalDisambiguation ( options )
+ * GetTemporalDisambiguationOption ( options )
  */
-bool js::temporal::ToTemporalDisambiguation(
+bool js::temporal::GetTemporalDisambiguationOption(
     JSContext* cx, Handle<JSObject*> options,
     TemporalDisambiguation* disambiguation) {
   // Step 1. (Not applicable)
@@ -1272,10 +1077,11 @@ bool js::temporal::ToTemporalDisambiguation(
 }
 
 /**
- * ToTemporalOffset ( options, fallback )
+ * GetTemporalOffsetOption ( options, fallback )
  */
-bool js::temporal::ToTemporalOffset(JSContext* cx, Handle<JSObject*> options,
-                                    TemporalOffset* offset) {
+bool js::temporal::GetTemporalOffsetOption(JSContext* cx,
+                                           Handle<JSObject*> options,
+                                           TemporalOffset* offset) {
   // Step 1. (Not applicable in our implementation.)
 
   // Step 2.
@@ -1314,11 +1120,11 @@ bool js::temporal::ToTemporalOffset(JSContext* cx, Handle<JSObject*> options,
 }
 
 /**
- * ToTimeZoneNameOption ( normalizedOptions )
+ * GetTemporalShowTimeZoneNameOption ( normalizedOptions )
  */
-bool js::temporal::ToTimeZoneNameOption(JSContext* cx,
-                                        Handle<JSObject*> options,
-                                        TimeZoneNameOption* result) {
+bool js::temporal::GetTemporalShowTimeZoneNameOption(JSContext* cx,
+                                                     Handle<JSObject*> options,
+                                                     ShowTimeZoneName* result) {
   // Step 1.
   Rooted<JSString*> timeZoneName(cx);
   if (!GetStringOption(cx, options, cx->names().timeZoneName, &timeZoneName)) {
@@ -1336,11 +1142,11 @@ bool js::temporal::ToTimeZoneNameOption(JSContext* cx,
   }
 
   if (StringEqualsLiteral(linear, "auto")) {
-    *result = TimeZoneNameOption::Auto;
+    *result = ShowTimeZoneName::Auto;
   } else if (StringEqualsLiteral(linear, "never")) {
-    *result = TimeZoneNameOption::Never;
+    *result = ShowTimeZoneName::Never;
   } else if (StringEqualsLiteral(linear, "critical")) {
-    *result = TimeZoneNameOption::Critical;
+    *result = ShowTimeZoneName::Critical;
   } else {
     if (auto chars = QuoteString(cx, linear, '"')) {
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -1353,15 +1159,11 @@ bool js::temporal::ToTimeZoneNameOption(JSContext* cx,
 }
 
 /**
- * ToShowOffsetOption ( normalizedOptions )
+ * GetTemporalShowOffsetOption ( normalizedOptions )
  */
-bool js::temporal::ToShowOffsetOption(JSContext* cx, Handle<JSObject*> options,
-                                      ShowOffsetOption* result) {
-  // FIXME: spec issue - should be renamed to ToOffsetOption to match the other
-  // operations ToCalendarNameOption and ToTimeZoneNameOption.
-  //
-  // https://github.com/tc39/proposal-temporal/issues/2441
-
+bool js::temporal::GetTemporalShowOffsetOption(JSContext* cx,
+                                               Handle<JSObject*> options,
+                                               ShowOffset* result) {
   // Step 1.
   Rooted<JSString*> offset(cx);
   if (!GetStringOption(cx, options, cx->names().offset, &offset)) {
@@ -1379,9 +1181,9 @@ bool js::temporal::ToShowOffsetOption(JSContext* cx, Handle<JSObject*> options,
   }
 
   if (StringEqualsLiteral(linear, "auto")) {
-    *result = ShowOffsetOption::Auto;
+    *result = ShowOffset::Auto;
   } else if (StringEqualsLiteral(linear, "never")) {
-    *result = ShowOffsetOption::Never;
+    *result = ShowOffset::Never;
   } else {
     if (auto chars = QuoteString(cx, linear, '"')) {
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
@@ -1404,17 +1206,14 @@ static JSObject* MaybeUnwrapIf(JSObject* object) {
   return nullptr;
 }
 
-// FIXME: spec issue - "Reject" is exclusively used for Promise rejection. The
-// existing `RejectPromise` abstract operation unconditionally rejects, whereas
-// this operation conditionally rejects.
-// https://github.com/tc39/proposal-temporal/issues/2534
-
 /**
- * RejectTemporalLikeObject ( object )
+ * IsPartialTemporalObject ( object )
  */
-bool js::temporal::RejectTemporalLikeObject(JSContext* cx,
-                                            Handle<JSObject*> object) {
-  // Step 1.
+bool js::temporal::ThrowIfTemporalLikeObject(JSContext* cx,
+                                             Handle<JSObject*> object) {
+  // Step 1. (Handled in caller)
+
+  // Step 2.
   if (auto* unwrapped =
           MaybeUnwrapIf<PlainDateObject, PlainDateTimeObject,
                         PlainMonthDayObject, PlainTimeObject,
@@ -1427,31 +1226,31 @@ bool js::temporal::RejectTemporalLikeObject(JSContext* cx,
 
   Rooted<Value> property(cx);
 
-  // Step 2.
+  // Step 3.
   if (!GetProperty(cx, object, object, cx->names().calendar, &property)) {
     return false;
   }
 
-  // Step 3.
+  // Step 4.
   if (!property.isUndefined()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_UNEXPECTED_PROPERTY, "calendar");
     return false;
   }
 
-  // Step 4.
+  // Step 5.
   if (!GetProperty(cx, object, object, cx->names().timeZone, &property)) {
     return false;
   }
 
-  // Step 5.
+  // Step 6.
   if (!property.isUndefined()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_UNEXPECTED_PROPERTY, "timeZone");
     return false;
   }
 
-  // Step 6.
+  // Step 7.
   return true;
 }
 
@@ -1701,8 +1500,8 @@ bool js::temporal::GetDifferenceSettings(
     DifferenceSettings* result) {
   // Steps 1-2.
   auto largestUnit = TemporalUnit::Auto;
-  if (!GetTemporalUnit(cx, options, TemporalUnitKey::LargestUnit, unitGroup,
-                       &largestUnit)) {
+  if (!GetTemporalUnitValuedOption(cx, options, TemporalUnitKey::LargestUnit,
+                                   unitGroup, &largestUnit)) {
     return false;
   }
 
@@ -1716,25 +1515,25 @@ bool js::temporal::GetDifferenceSettings(
 
   // Step 4.
   auto roundingIncrement = Increment{1};
-  if (!ToTemporalRoundingIncrement(cx, options, &roundingIncrement)) {
+  if (!GetRoundingIncrementOption(cx, options, &roundingIncrement)) {
     return false;
   }
 
   // Step 5.
   auto roundingMode = TemporalRoundingMode::Trunc;
-  if (!ToTemporalRoundingMode(cx, options, &roundingMode)) {
+  if (!GetRoundingModeOption(cx, options, &roundingMode)) {
     return false;
   }
 
   // Step 6.
   if (operation == TemporalDifference::Since) {
-    roundingMode = NegateTemporalRoundingMode(roundingMode);
+    roundingMode = NegateRoundingMode(roundingMode);
   }
 
   // Step 7.
   auto smallestUnit = fallbackSmallestUnit;
-  if (!GetTemporalUnit(cx, options, TemporalUnitKey::SmallestUnit, unitGroup,
-                       &smallestUnit)) {
+  if (!GetTemporalUnitValuedOption(cx, options, TemporalUnitKey::SmallestUnit,
+                                   unitGroup, &smallestUnit)) {
     return false;
   }
 
@@ -1813,10 +1612,18 @@ static bool TemporalClassFinish(JSContext* cx, Handle<JSObject*> temporal,
   };
 
   // Add the constructor properties.
-  for (const auto& protoKey :
-       {JSProto_Calendar, JSProto_Duration, JSProto_Instant, JSProto_PlainDate,
-        JSProto_PlainDateTime, JSProto_PlainMonthDay, JSProto_PlainTime,
-        JSProto_PlainYearMonth, JSProto_TimeZone, JSProto_ZonedDateTime}) {
+  for (const auto& protoKey : {
+           JSProto_Calendar,
+           JSProto_Duration,
+           JSProto_Instant,
+           JSProto_PlainDate,
+           JSProto_PlainDateTime,
+           JSProto_PlainMonthDay,
+           JSProto_PlainTime,
+           JSProto_PlainYearMonth,
+           JSProto_TimeZone,
+           JSProto_ZonedDateTime,
+       }) {
     if (!defineProperty(protoKey, ClassName(protoKey, cx))) {
       return false;
     }

@@ -99,9 +99,9 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
 
   // Set the cache validation information (expiry time, whether we must
   // validate, etc) on the cache entry based on the request information.
-  // If this function is called multiple times, the information set earliest
-  // wins.
-  static void SetCacheValidation(imgCacheEntry* aEntry, nsIRequest* aRequest);
+  // If this function is called multiple times, the most strict value wins.
+  static void SetCacheValidation(imgCacheEntry* aEntry, nsIRequest* aRequest,
+                                 bool aForceTouch = false);
 
   bool GetMultipart() const;
 
@@ -283,6 +283,8 @@ class imgRequest final : public nsIThreadRetargetableStreamListener,
   bool mIsCrossSiteNoCORSRequest;
 
   bool mShouldReportRenderTimeForLCP;
+  // SVGs can't be OffMainThread for example
+  bool mOffMainThreadData = false;
 
   mutable mozilla::Mutex mMutex;
 

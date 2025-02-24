@@ -17,8 +17,10 @@ interface nsIFOG : nsISupports
    *        instead of the profile dir.
    * @param aAppIdOverride - The application_id to use instead of
    *        "firefox.desktop".
+   * @param aDisableInternalPings - Whether to disable internal pings (baseline, events, metrics).
+   *        Default: false.
    */
-  void initializeFOG([optional] in AUTF8String aDataPathOverride, [optional] in AUTF8String aAppIdOverride);
+  void initializeFOG([optional] in AUTF8String aDataPathOverride, [optional] in AUTF8String aAppIdOverride, [optional] in boolean aDisableInternalPings);
 
   /**
    * Register custom pings.
@@ -111,7 +113,7 @@ interface nsIFOG : nsISupports
    *        {metric_base_identifier: boolean,}
    *        which may contain multiple metric object entries.
    */
-  void setMetricsFeatureConfig(in ACString aJsonConfig);
+  void applyServerKnobsConfig(in ACString aJsonConfig);
 
   /**
    * ** Test-only Method **
@@ -182,6 +184,7 @@ interface nsIFOG : nsISupports
    * @param aSendIfEmpty - Whether the ping should send even if empty.
    * @param aIncludeInfoSections - Whether the ping should include
    *                               {client|ping}_info sections.
+   * TODO(jer): docs
    * @param aReasonCodes - The list of valid reasons for ping submission.
    */
   uint32_t testRegisterRuntimePing(in ACString aName,
@@ -189,5 +192,7 @@ interface nsIFOG : nsISupports
                                    in boolean aSendIfEmpty,
                                    in boolean aPreciseTimestamps,
                                    in boolean aIncludeInfoSections,
+                                   in boolean aEnabled,
+                                   in Array<ACString> aSchedulesPings,
                                    in Array<ACString> aReasonCodes);
 };

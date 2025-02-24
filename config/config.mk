@@ -262,7 +262,7 @@ export LIB
 endif
 
 ifdef MOZ_USING_CCACHE
-ifdef CLANG_CXX
+ifeq ($(CC_TYPE),clang)
 export CCACHE_CPP2=1
 endif
 endif
@@ -397,10 +397,6 @@ endif # ! relativesrcdir
 
 MERGE_FILE = $(LOCALE_SRCDIR)/$(1)
 MERGE_RELATIVE_FILE = $(call EXPAND_LOCALE_SRCDIR,$(2))/$(1)
-
-ifneq (WINNT,$(OS_ARCH))
-RUN_TEST_PROGRAM = $(DIST)/bin/run-mozilla.sh
-endif # ! WINNT
 
 # Enable verbose logs when not using `make -s`
 ifeq (,$(findstring s, $(filter-out --%, $(MAKEFLAGS))))

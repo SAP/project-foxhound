@@ -18,7 +18,7 @@ struct RemoteTextureOwnerId;
 
 namespace gfx {
 
-class DrawTargetRecording : public DrawTarget {
+class DrawTargetRecording final : public DrawTarget {
  public:
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(DrawTargetRecording, override)
   DrawTargetRecording(DrawEventRecorder* aRecorder, DrawTarget* aDT,
@@ -38,7 +38,8 @@ class DrawTargetRecording : public DrawTarget {
   }
   virtual bool IsRecording() const override { return true; }
 
-  virtual void Link(const char* aDestination, const Rect& aRect) override;
+  virtual void Link(const char* aLocalDest, const char* aURI,
+                    const Rect& aRect) override;
   virtual void Destination(const char* aDestination,
                            const Point& aPoint) override;
 
@@ -68,6 +69,13 @@ class DrawTargetRecording : public DrawTarget {
    */
   virtual void DrawSurface(
       SourceSurface* aSurface, const Rect& aDest, const Rect& aSource,
+      const DrawSurfaceOptions& aSurfOptions = DrawSurfaceOptions(),
+      const DrawOptions& aOptions = DrawOptions()) override;
+
+  virtual void DrawSurfaceDescriptor(
+      const layers::SurfaceDescriptor& aDesc,
+      const RefPtr<layers::Image>& aImageOfSurfaceDescriptor, const Rect& aDest,
+      const Rect& aSource,
       const DrawSurfaceOptions& aSurfOptions = DrawSurfaceOptions(),
       const DrawOptions& aOptions = DrawOptions()) override;
 
@@ -369,6 +377,10 @@ class DrawTargetRecording : public DrawTarget {
 
   void MarkClean() { mIsDirty = false; }
 
+  void SetOptimizeTransform(bool aOptimizeTransform) {
+    mOptimizeTransform = aOptimizeTransform;
+  }
+
  private:
   /**
    * Used for creating a DrawTargetRecording for a CreateSimilarDrawTarget call.
@@ -379,6 +391,35 @@ class DrawTargetRecording : public DrawTarget {
    */
   DrawTargetRecording(const DrawTargetRecording* aDT, IntRect aRect,
                       SurfaceFormat aFormat);
+
+  void RecordTransform(const Matrix& aTransform) const;
+
+  void FlushTransform() const {
+    if (mTransformDirty) {
+      if (!mRecordedTransform.ExactlyEquals(mTransform)) {
+        RecordTransform(mTransform);
+      }
+      mTransformDirty = false;
+    }
+  }
+
+  void RecordEvent(const RecordedEvent& aEvent) const {
+    FlushTransform();
+    mRecorder->RecordEvent(aEvent);
+  }
+
+  void RecordEventSelf(const RecordedEvent& aEvent) const {
+    FlushTransform();
+    mRecorder->RecordEvent(this, aEvent);
+  }
+
+  void RecordEventSkipFlushTransform(const RecordedEvent& aEvent) const {
+    mRecorder->RecordEvent(aEvent);
+  }
+
+  void RecordEventSelfSkipFlushTransform(const RecordedEvent& aEvent) const {
+    mRecorder->RecordEvent(this, aEvent);
+  }
 
   Path* GetPathForPathRecording(const Path* aPath) const;
   already_AddRefed<PathRecording> EnsurePathStored(const Path* aPath);
@@ -403,6 +444,10 @@ class DrawTargetRecording : public DrawTarget {
   std::vector<PushedLayer> mPushedLayers;
 
   bool mIsDirty = false;
+  bool mOptimizeTransform = false;
+
+  // Last transform that was used in the recording.
+  mutable Matrix mRecordedTransform;
 };
 
 }  // namespace gfx

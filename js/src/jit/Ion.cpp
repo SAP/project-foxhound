@@ -20,6 +20,7 @@
 #include "jit/BacktrackingAllocator.h"
 #include "jit/BaselineFrame.h"
 #include "jit/BaselineJIT.h"
+#include "jit/BranchHinting.h"
 #include "jit/CodeGenerator.h"
 #include "jit/CompileInfo.h"
 #include "jit/EdgeCaseAnalysis.h"
@@ -253,6 +254,10 @@ bool JitRuntime::generateTrampolines(JSContext* cx) {
   generateIonGenericCallStub(masm, IonGenericCallKind::Construct);
   rangeRecorder.recordOffset("Trampoline: IonGenericConstruct");
 
+  JitSpew(JitSpew_Codegen, "# Emitting trampoline natives");
+  TrampolineNativeJitEntryOffsets nativeOffsets;
+  generateTrampolineNatives(masm, nativeOffsets, rangeRecorder);
+
   Linker linker(masm);
   trampolineCode_ = linker.newCode(cx, CodeKind::Other);
   if (!trampolineCode_) {
@@ -263,6 +268,14 @@ bool JitRuntime::generateTrampolines(JSContext* cx) {
 #ifdef MOZ_VTUNE
   vtune::MarkStub(trampolineCode_, "Trampolines");
 #endif
+
+  // Initialize TrampolineNative JitEntry array.
+  for (size_t i = 0; i < size_t(TrampolineNative::Count); i++) {
+    TrampolineNative native = TrampolineNative(i);
+    uint32_t offset = nativeOffsets[native];
+    MOZ_ASSERT(offset > 0 && offset < trampolineCode_->instructionsSize());
+    trampolineNativeJitEntries_[native] = trampolineCode_->raw() + offset;
+  }
 
   return true;
 }
@@ -1207,6 +1220,19 @@ bool OptimizeMIR(MIRGenerator* mir) {
     AssertExtendedGraphCoherency(graph);
 
     if (mir->shouldCancel("GVN")) {
+      return false;
+    }
+  }
+
+  if (mir->branchHintingEnabled()) {
+    JitSpewCont(JitSpew_BranchHint, "\n");
+    if (!BranchHinting(mir, graph)) {
+      return false;
+    }
+    gs.spewPass("BranchHinting");
+    AssertBasicGraphCoherency(graph);
+
+    if (mir->shouldCancel("BranchHinting")) {
       return false;
     }
   }
@@ -2345,6 +2371,10 @@ static void InvalidateActivation(JS::GCContext* gcx,
       case FrameType::Rectifier:
         JitSpew(JitSpew_IonInvalidate, "#%zu rectifier frame @ %p", frameno,
                 frame.fp());
+        break;
+      case FrameType::TrampolineNative:
+        JitSpew(JitSpew_IonInvalidate, "#%zu TrampolineNative frame @ %p",
+                frameno, frame.fp());
         break;
       case FrameType::IonICCall:
         JitSpew(JitSpew_IonInvalidate, "#%zu ion IC call frame @ %p", frameno,

@@ -7,6 +7,7 @@
 #include "FFmpegVideoDecoder.h"
 
 #include "FFmpegLog.h"
+#include "FFmpegUtils.h"
 #include "ImageContainer.h"
 #include "MP4Decoder.h"
 #include "MediaInfo.h"
@@ -45,7 +46,9 @@
 #  define AV_PIX_FMT_YUV444P PIX_FMT_YUV444P
 #  define AV_PIX_FMT_YUV444P10LE PIX_FMT_YUV444P10LE
 #  define AV_PIX_FMT_GBRP PIX_FMT_GBRP
+#  define AV_PIX_FMT_GBRP10LE PIX_FMT_GBRP10LE
 #  define AV_PIX_FMT_NONE PIX_FMT_NONE
+#  define AV_PIX_FMT_VAAPI_VLD PIX_FMT_VAAPI_VLD
 #endif
 #if LIBAVCODEC_VERSION_MAJOR > 58
 #  define AV_PIX_FMT_VAAPI_VLD AV_PIX_FMT_VAAPI
@@ -135,6 +138,9 @@ static AVPixelFormat ChoosePixelFormat(AVCodecContext* aCodecContext,
       case AV_PIX_FMT_GBRP:
         FFMPEGV_LOG("Requesting pixel format GBRP.");
         return AV_PIX_FMT_GBRP;
+      case AV_PIX_FMT_GBRP10LE:
+        FFMPEGV_LOG("Requesting pixel format GBRP10LE.");
+        return AV_PIX_FMT_GBRP10LE;
       default:
         break;
     }
@@ -208,7 +214,7 @@ template <>
 class VAAPIDisplayHolder<LIBAV_VER> {
  public:
   VAAPIDisplayHolder(FFmpegLibWrapper* aLib, VADisplay aDisplay, int aDRMFd)
-      : mLib(aLib), mDisplay(aDisplay), mDRMFd(aDRMFd){};
+      : mLib(aLib), mDisplay(aDisplay), mDRMFd(aDRMFd) {};
   ~VAAPIDisplayHolder() {
     mLib->vaTerminate(mDisplay);
     close(mDRMFd);
@@ -611,6 +617,7 @@ static gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) {
     case AV_PIX_FMT_YUV420P10LE:
     case AV_PIX_FMT_YUV422P10LE:
     case AV_PIX_FMT_YUV444P10LE:
+    case AV_PIX_FMT_GBRP10LE:
       return gfx::ColorDepth::COLOR_10;
 #if LIBAVCODEC_VERSION_MAJOR >= 57
     case AV_PIX_FMT_YUV420P12LE:
@@ -618,6 +625,9 @@ static gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) {
     case AV_PIX_FMT_YUV444P12LE:
       return gfx::ColorDepth::COLOR_12;
 #endif
+    case AV_PIX_FMT_VAAPI_VLD:
+      // Placeholder, it could be deeper colors
+      return gfx::ColorDepth::COLOR_8;
     default:
       MOZ_ASSERT_UNREACHABLE("Not supported format?");
       return gfx::ColorDepth::COLOR_8;
@@ -625,7 +635,7 @@ static gfx::ColorDepth GetColorDepth(const AVPixelFormat& aFormat) {
 }
 
 static bool IsYUVFormat(const AVPixelFormat& aFormat) {
-  return aFormat != AV_PIX_FMT_GBRP;
+  return aFormat != AV_PIX_FMT_GBRP && aFormat != AV_PIX_FMT_GBRP10LE;
 }
 
 static gfx::YUVColorSpace TransferAVColorSpaceToColorSpace(
@@ -662,7 +672,7 @@ static int GetVideoBufferWrapper(struct AVCodecContext* aCodecContext,
 
 static void ReleaseVideoBufferWrapper(void* opaque, uint8_t* data) {
   if (opaque) {
-    FFMPEG_LOGV("ReleaseVideoBufferWrapper: PlanarYCbCrImage=%p", opaque);
+    FFMPEGV_LOG("ReleaseVideoBufferWrapper: PlanarYCbCrImage=%p", opaque);
     RefPtr<ImageBufferWrapper> image = static_cast<ImageBufferWrapper*>(opaque);
     image->ReleaseBuffer();
   }
@@ -867,7 +877,9 @@ int FFmpegVideoDecoder<LIBAV_VER>::GetVideoBuffer(
   aFrame->height = aCodecContext->coded_height;
   aFrame->format = aCodecContext->pix_fmt;
   aFrame->extended_data = aFrame->data;
+#  if LIBAVCODEC_VERSION_MAJOR < 61
   aFrame->reordered_opaque = aCodecContext->reordered_opaque;
+#  endif
   MOZ_ASSERT(aFrame->data[0] && aFrame->data[1] && aFrame->data[2]);
 
   // This will hold a reference to image, and the reference would be dropped
@@ -987,12 +999,7 @@ void FFmpegVideoDecoder<LIBAV_VER>::DecodeStats::UpdateDecodeTimes(
   float decodeTime = (now - mDecodeStart).ToMilliseconds();
   mDecodeStart = now;
 
-  if (aFrame->pkt_duration <= 0) {
-    FFMPEGV_LOG("Incorrect frame duration, skipping decode stats.");
-    return;
-  }
-
-  float frameDuration = aFrame->pkt_duration / 1000.0f;
+  const float frameDuration = Duration(aFrame) / 1000.0f;
 
   mDecodedFrames++;
   mAverageFrameDuration =
@@ -1040,19 +1047,27 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
     MediaDataDecoder::DecodedData& aResults) {
   MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
-  AVPacket packet;
-  mLib->av_init_packet(&packet);
+  AVPacket* packet;
+
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+  packet = mLib->av_packet_alloc();
+  auto raii = MakeScopeExit([&]() { mLib->av_packet_free(&packet); });
+#else
+  AVPacket packet_mem;
+  packet = &packet_mem;
+  mLib->av_init_packet(packet);
+#endif
 
 #if LIBAVCODEC_VERSION_MAJOR >= 58
   mDecodeStats.DecodeStart();
 #endif
 
-  packet.data = aData;
-  packet.size = aSize;
-  packet.dts = aSample->mTimecode.ToMicroseconds();
-  packet.pts = aSample->mTime.ToMicroseconds();
-  packet.flags = aSample->mKeyframe ? AV_PKT_FLAG_KEY : 0;
-  packet.pos = aSample->mOffset;
+  packet->data = aData;
+  packet->size = aSize;
+  packet->dts = aSample->mTimecode.ToMicroseconds();
+  packet->pts = aSample->mTime.ToMicroseconds();
+  packet->flags = aSample->mKeyframe ? AV_PKT_FLAG_KEY : 0;
+  packet->pos = aSample->mOffset;
 
   mTrackingId.apply([&](const auto& aId) {
     MediaInfoFlag flag = MediaInfoFlag::None;
@@ -1083,14 +1098,14 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
         break;
     }
     mPerformanceRecorder.Start(
-        packet.dts,
+        packet->dts,
         nsPrintfCString("FFmpegVideoDecoder(%d)", LIBAVCODEC_VERSION_MAJOR),
         aId, flag);
   });
 
 #if LIBAVCODEC_VERSION_MAJOR >= 58
-  packet.duration = aSample->mDuration.ToMicroseconds();
-  int res = mLib->avcodec_send_packet(mCodecContext, &packet);
+  packet->duration = aSample->mDuration.ToMicroseconds();
+  int res = mLib->avcodec_send_packet(mCodecContext, packet);
   if (res < 0) {
     // In theory, avcodec_send_packet could sent -EAGAIN should its internal
     // buffers be full. In practice this can't happen as we only feed one frame
@@ -1098,7 +1113,9 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     char errStr[AV_ERROR_MAX_STRING_SIZE];
     mLib->av_strerror(res, errStr, AV_ERROR_MAX_STRING_SIZE);
     FFMPEG_LOG("avcodec_send_packet error: %s", errStr);
-    return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+    return MediaResult(res == int(AVERROR_EOF)
+                           ? NS_ERROR_DOM_MEDIA_END_OF_STREAM
+                           : NS_ERROR_DOM_MEDIA_DECODE_ERR,
                        RESULT_DETAIL("avcodec_send_packet error: %s", errStr));
   }
   if (aGotFrame) {
@@ -1150,10 +1167,10 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
       }
       if (mUsingV4L2) {
         rv = CreateImageV4L2(mFrame->pkt_pos, GetFramePts(mFrame),
-                             mFrame->pkt_duration, aResults);
+                             Duration(mFrame), aResults);
       } else {
         rv = CreateImageVAAPI(mFrame->pkt_pos, GetFramePts(mFrame),
-                              mFrame->pkt_duration, aResults);
+                              Duration(mFrame), aResults);
       }
 
       // If VA-API/V4L2 playback failed, just quit. Decoder is going to be
@@ -1167,8 +1184,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     } else
 #  endif
     {
-      rv = CreateImage(mFrame->pkt_pos, GetFramePts(mFrame),
-                       mFrame->pkt_duration, aResults);
+      rv = CreateImage(mFrame->pkt_pos, GetFramePts(mFrame), Duration(mFrame),
+                       aResults);
     }
     if (NS_FAILED(rv)) {
       return rv;
@@ -1198,7 +1215,10 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 #  endif
             return Some(DecodeStage::YUV444P);
           case AV_PIX_FMT_GBRP:
+          case AV_PIX_FMT_GBRP10LE:
             return Some(DecodeStage::GBRP);
+          case AV_PIX_FMT_VAAPI_VLD:
+            return Some(DecodeStage::VAAPI_SURFACE);
           default:
             return Nothing();
         }
@@ -1207,6 +1227,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
       aStage.SetColorDepth(GetColorDepth(mCodecContext->pix_fmt));
       aStage.SetYUVColorSpace(GetFrameColorSpace());
       aStage.SetColorRange(GetFrameColorRange());
+      aStage.SetStartTimeAndEndTime(aSample->mTime.ToMicroseconds(),
+                                    aSample->GetEndTime().ToMicroseconds());
     });
     if (aGotFrame) {
       *aGotFrame = true;
@@ -1231,14 +1253,14 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 
   int decoded;
   int bytesConsumed =
-      mLib->avcodec_decode_video2(mCodecContext, mFrame, &decoded, &packet);
+      mLib->avcodec_decode_video2(mCodecContext, mFrame, &decoded, packet);
 
   FFMPEG_LOG(
       "DoDecodeFrame:decode_video: rv=%d decoded=%d "
       "(Input: pts(%" PRId64 ") dts(%" PRId64 ") Output: pts(%" PRId64
       ") "
       "opaque(%" PRId64 ") pts(%" PRId64 ") pkt_dts(%" PRId64 "))",
-      bytesConsumed, decoded, packet.pts, packet.dts, mFrame->pts,
+      bytesConsumed, decoded, packet->pts, packet->dts, mFrame->pts,
       mFrame->reordered_opaque, mFrame->pts, mFrame->pkt_dts);
 
   if (bytesConsumed < 0) {
@@ -1300,6 +1322,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 #  endif
             return Some(DecodeStage::YUV444P);
           case AV_PIX_FMT_GBRP:
+          case AV_PIX_FMT_GBRP10LE:
             return Some(DecodeStage::GBRP);
           default:
             return Nothing();
@@ -1309,6 +1332,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
       aStage.SetColorDepth(GetColorDepth(mCodecContext->pix_fmt));
       aStage.SetYUVColorSpace(GetFrameColorSpace());
       aStage.SetColorRange(GetFrameColorRange());
+      aStage.SetStartTimeAndEndTime(aSample->mTime.ToMicroseconds(),
+                                    aSample->GetEndTime().ToMicroseconds());
     });
   });
 
@@ -1366,8 +1391,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
     int64_t aOffset, int64_t aPts, int64_t aDuration,
     MediaDataDecoder::DecodedData& aResults) const {
   FFMPEG_LOG("Got one frame output with pts=%" PRId64 " dts=%" PRId64
-             " duration=%" PRId64 " opaque=%" PRId64,
-             aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
+             " duration=%" PRId64,
+             aPts, mFrame->pkt_dts, aDuration);
 
   VideoData::YCbCrBuffer b;
   b.mPlanes[0].mData = mFrame->data[0];
@@ -1386,14 +1411,16 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
   b.mPlanes[0].mHeight = mFrame->height;
   if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P ||
       mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P10LE ||
-      mCodecContext->pix_fmt == AV_PIX_FMT_GBRP
+      mCodecContext->pix_fmt == AV_PIX_FMT_GBRP ||
+      mCodecContext->pix_fmt == AV_PIX_FMT_GBRP10LE
 #if LIBAVCODEC_VERSION_MAJOR >= 57
       || mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P12LE
 #endif
   ) {
     b.mPlanes[1].mWidth = b.mPlanes[2].mWidth = mFrame->width;
     b.mPlanes[1].mHeight = b.mPlanes[2].mHeight = mFrame->height;
-    if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P10LE) {
+    if (mCodecContext->pix_fmt == AV_PIX_FMT_YUV444P10LE ||
+        mCodecContext->pix_fmt == AV_PIX_FMT_GBRP10LE) {
       b.mColorDepth = gfx::ColorDepth::COLOR_10;
     }
 #if LIBAVCODEC_VERSION_MAJOR >= 57
@@ -1495,8 +1522,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageVAAPI(
     int64_t aOffset, int64_t aPts, int64_t aDuration,
     MediaDataDecoder::DecodedData& aResults) {
   FFMPEG_LOG("VA-API Got one frame output with pts=%" PRId64 " dts=%" PRId64
-             " duration=%" PRId64 " opaque=%" PRId64,
-             aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
+             " duration=%" PRId64,
+             aPts, mFrame->pkt_dts, aDuration);
 
   VADRMPRIMESurfaceDescriptor vaDesc;
   if (!GetVAAPISurfaceDescriptor(&vaDesc)) {
@@ -1541,8 +1568,8 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImageV4L2(
     int64_t aOffset, int64_t aPts, int64_t aDuration,
     MediaDataDecoder::DecodedData& aResults) {
   FFMPEG_LOG("V4L2 Got one frame output with pts=%" PRId64 " dts=%" PRId64
-             " duration=%" PRId64 " opaque=%" PRId64,
-             aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
+             " duration=%" PRId64,
+             aPts, mFrame->pkt_dts, aDuration);
 
   AVDRMFrameDescriptor* desc = (AVDRMFrameDescriptor*)mFrame->data[0];
   if (!desc) {
@@ -1667,8 +1694,7 @@ static const struct {
   VAProfile va_profile;
   char name[100];
 } vaapi_profile_map[] = {
-#  define MAP(c, v, n) \
-    { AV_CODEC_ID_##c, VAProfile##v, n }
+#  define MAP(c, v, n) {AV_CODEC_ID_##c, VAProfile##v, n}
     MAP(H264, H264ConstrainedBaseline, "H264ConstrainedBaseline"),
     MAP(H264, H264Main, "H264Main"),
     MAP(H264, H264High, "H264High"),

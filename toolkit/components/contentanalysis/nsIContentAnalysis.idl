@@ -36,7 +36,7 @@ interface nsIContentAnalysisAcknowledgement : nsISupports
   readonly attribute nsIContentAnalysisAcknowledgement_FinalAction finalAction;
 };
 
-[scriptable, builtinclass, uuid(89088c61-15f6-4ace-a880-a1b5ea47ca66)]
+[scriptable, uuid(89088c61-15f6-4ace-a880-a1b5ea47ca66)]
 interface nsIContentAnalysisResponse : nsISupports
 {
   // These values must stay synchronized with ContentAnalysisResponse
@@ -52,8 +52,18 @@ interface nsIContentAnalysisResponse : nsISupports
     eCanceled = 1001,
   };
 
-  [infallible] readonly attribute nsIContentAnalysisResponse_Action action;
-  [infallible] readonly attribute boolean shouldAllowContent;
+  cenum CancelError : 32 {
+    eUserInitiated = 0,
+    eNoAgent = 1,
+    eInvalidAgentSignature = 2,
+    eErrorOther = 3,
+  };
+
+  readonly attribute nsIContentAnalysisResponse_Action action;
+  readonly attribute boolean shouldAllowContent;
+  // If action is eCanceled, this is the error explaining why the request was canceled,
+  // or eUserInitiated if the user canceled it.
+  readonly attribute nsIContentAnalysisResponse_CancelError cancelError;
 
   // Identifier for the corresponding nsIContentAnalysisRequest
   readonly attribute ACString requestToken;
@@ -121,6 +131,7 @@ interface nsIContentAnalysisRequest : nsISupports
     eCustomDisplayString = 0,
     eClipboard = 1,
     eDroppedText = 2,
+    eOperationPrint = 3,
   };
   readonly attribute nsIContentAnalysisRequest_OperationType operationTypeForDisplay;
   readonly attribute AString operationDisplayString;
@@ -130,6 +141,15 @@ interface nsIContentAnalysisRequest : nsISupports
 
   // Name of file to analyze.  Only one of textContent or filePath is defined.
   readonly attribute AString filePath;
+
+  // HANDLE to the printed data in PDF format.
+  readonly attribute unsigned long long printDataHandle;
+
+  // Size of the data stored in printDataHandle.
+  readonly attribute unsigned long long printDataSize;
+
+  // Name of the printer being printed to.
+  readonly attribute AString printerName;
 
   // The URL containing the file download/upload or to which web content is
   // being uploaded.
@@ -166,7 +186,16 @@ interface nsIContentAnalysisCallback : nsISupports
   void error(in nsresult aResult);
 };
 
-[scriptable, builtinclass, uuid(61497587-2bba-4a88-acd3-3fbb2cedf163)]
+[scriptable, builtinclass, uuid(a430f6ef-a526-4055-8a82-7741ea757367)]
+interface nsIContentAnalysisDiagnosticInfo : nsISupports
+{
+  [infallible] readonly attribute boolean connectedToAgent;
+  readonly attribute AString agentPath;
+  [infallible] readonly attribute boolean failedSignatureVerification;
+  [infallible] readonly attribute long long requestCount;
+};
+
+[scriptable, uuid(61497587-2bba-4a88-acd3-3fbb2cedf163)]
 interface nsIContentAnalysis : nsISupports
 {
   /**
@@ -182,14 +211,14 @@ interface nsIContentAnalysis : nsISupports
    * into the parent process to determine whether content analysis is actually
    * active.
    */
-  readonly attribute bool mightBeActive;
+  readonly attribute boolean mightBeActive;
 
   /**
    * True if content-analysis activation was determined by enterprise policy,
    * as opposed to enabled with the `allow-content-analysis` command-line
    * parameter.
    */
-  attribute bool isSetByEnterprisePolicy;
+  attribute boolean isSetByEnterprisePolicy;
 
   /**
    * Consults content analysis server, if any, to request a permission
@@ -210,7 +239,7 @@ interface nsIContentAnalysis : nsISupports
    *        calling nsIContentAnalysisResponse::acknowledge() if the Promise is resolved.
    */
   [implicit_jscontext]
-  Promise analyzeContentRequest(in nsIContentAnalysisRequest aCar, in bool aAutoAcknowledge);
+  Promise analyzeContentRequest(in nsIContentAnalysisRequest aCar, in boolean aAutoAcknowledge);
 
   /**
    * Same functionality as AnalyzeContentRequest(), but more convenient to call
@@ -226,7 +255,7 @@ interface nsIContentAnalysis : nsISupports
    * @param callback
    *        Callbacks to be called when the agent sends a response message (or when there is an error).
    */
-  void analyzeContentRequestCallback(in nsIContentAnalysisRequest aCar, in bool aAutoAcknowledge, in nsIContentAnalysisCallback callback);
+  void analyzeContentRequestCallback(in nsIContentAnalysisRequest aCar, in boolean aAutoAcknowledge, in nsIContentAnalysisCallback callback);
 
   /**
    * Cancels the request that is in progress. This may not actually cancel the request
@@ -242,7 +271,7 @@ interface nsIContentAnalysis : nsISupports
    * Indicates that the user has responded to a WARN dialog. aAllowContent represents
    * whether the user wants to allow the request to go through.
    */
-  void respondToWarnDialog(in ACString aRequestToken, in bool aAllowContent);
+  void respondToWarnDialog(in ACString aRequestToken, in boolean aAllowContent);
 
   /**
    * Cancels all outstanding DLP requests. Used on shutdown.
@@ -254,4 +283,11 @@ interface nsIContentAnalysis : nsISupports
    * given to Gecko on the command line.
    */
   void testOnlySetCACmdLineArg(in boolean aVal);
+
+  /**
+   * Gets diagnostic information about content analysis. Returns a
+   * nsIContentAnalysisDiagnosticInfo via the returned promise.
+   */
+  [implicit_jscontext]
+  Promise getDiagnosticInfo();
 };

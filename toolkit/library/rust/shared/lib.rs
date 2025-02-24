@@ -14,6 +14,7 @@ extern crate authrs_bridge;
 extern crate bitsdownload;
 #[cfg(feature = "moz_places")]
 extern crate bookmark_sync;
+extern crate buildid_reader;
 extern crate cascade_bloom_filter;
 extern crate cert_storage;
 extern crate chardetng_c;
@@ -24,6 +25,7 @@ extern crate cubeb_coreaudio;
 #[cfg(feature = "cubeb_pulse_rust")]
 extern crate cubeb_pulse;
 extern crate data_storage;
+extern crate dom_fragmentdirectives;
 extern crate encoding_glue;
 extern crate fog_control;
 extern crate gecko_profiler;
@@ -57,17 +59,14 @@ extern crate webext_storage_bridge;
 extern crate tabs;
 
 #[cfg(not(target_os = "android"))]
-mod reexport_tabs {
+mod reexport_appservices_uniffi_scaffolding {
     tabs::uniffi_reexport_scaffolding!();
+    relevancy::uniffi_reexport_scaffolding!();
+    suggest::uniffi_reexport_scaffolding!();
 }
 
 #[cfg(not(target_os = "android"))]
 extern crate suggest;
-
-#[cfg(not(target_os = "android"))]
-mod reexport_suggest {
-    suggest::uniffi_reexport_scaffolding!();
-}
 
 #[cfg(feature = "webrtc")]
 extern crate mdns_service;
@@ -138,6 +137,7 @@ mod uniffi_fixtures {
     uniffi_fixture_callbacks::uniffi_reexport_scaffolding!();
     uniffi_custom_types::uniffi_reexport_scaffolding!();
     uniffi_fixture_external_types::uniffi_reexport_scaffolding!();
+    uniffi_fixture_refcounts::uniffi_reexport_scaffolding!();
     uniffi_geometry::uniffi_reexport_scaffolding!();
     uniffi_rondpoint::uniffi_reexport_scaffolding!();
     uniffi_sprites::uniffi_reexport_scaffolding!();
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn debug_log(target: *const c_char, message: *const c_char
 // Define extern "C" versions of these UniFFI functions, so that they can be called from C++
 #[no_mangle]
 pub extern "C" fn uniffi_rustbuffer_alloc(
-    size: i32,
+    size: u64,
     call_status: &mut uniffi::RustCallStatus,
 ) -> uniffi::RustBuffer {
     uniffi::uniffi_rustbuffer_alloc(size, call_status)

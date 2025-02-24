@@ -249,7 +249,8 @@ HttpBaseChannel::HttpBaseChannel()
           StaticPrefs::browser_opaqueResponseBlocking()),
       mChannelBlockedByOpaqueResponse(false),
       mDummyChannelForImageCache(false),
-      mHasContentDecompressed(false) {
+      mHasContentDecompressed(false),
+      mRenderBlocking(false) {
   StoreApplyConversion(true);
   StoreAllowSTS(true);
   StoreTracingEnabled(true);
@@ -1322,8 +1323,6 @@ void HttpBaseChannel::ExplicitSetUploadStreamLength(
     return;
   }
 
-  // SetRequestHeader propagates headers to chrome if HttpChannelChild
-  MOZ_ASSERT(!LoadWasOpened());
   nsAutoCString contentLengthStr;
   contentLengthStr.AppendInt(aContentLength);
   SetRequestHeader(header, contentLengthStr, false);
@@ -1405,7 +1404,7 @@ nsresult HttpBaseChannel::DoApplyContentConversions(
 // channels cannot effectively be used in two contexts (specifically this one
 // and a peek context for sniffing)
 //
-class InterceptFailedOnStop : public nsIStreamListener {
+class InterceptFailedOnStop : public nsIThreadRetargetableStreamListener {
   virtual ~InterceptFailedOnStop() = default;
   nsCOMPtr<nsIStreamListener> mNext;
   HttpBaseChannel* mChannel;
@@ -1414,6 +1413,7 @@ class InterceptFailedOnStop : public nsIStreamListener {
   InterceptFailedOnStop(nsIStreamListener* arg, HttpBaseChannel* chan)
       : mNext(arg), mChannel(chan) {}
   NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   NS_IMETHOD OnStartRequest(nsIRequest* aRequest) override {
     return mNext->OnStartRequest(aRequest);
@@ -1435,7 +1435,37 @@ class InterceptFailedOnStop : public nsIStreamListener {
   }
 };
 
-NS_IMPL_ISUPPORTS(InterceptFailedOnStop, nsIStreamListener, nsIRequestObserver)
+NS_IMPL_ADDREF(InterceptFailedOnStop)
+NS_IMPL_RELEASE(InterceptFailedOnStop)
+
+NS_INTERFACE_MAP_BEGIN(InterceptFailedOnStop)
+  NS_INTERFACE_MAP_ENTRY(nsIStreamListener)
+  NS_INTERFACE_MAP_ENTRY(nsIRequestObserver)
+  NS_INTERFACE_MAP_ENTRY(nsIThreadRetargetableStreamListener)
+  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRequestObserver)
+NS_INTERFACE_MAP_END
+
+NS_IMETHODIMP
+InterceptFailedOnStop::CheckListenerChain() {
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mNext);
+  if (!listener) {
+    return NS_ERROR_NO_INTERFACE;
+  }
+
+  return listener->CheckListenerChain();
+}
+
+NS_IMETHODIMP
+InterceptFailedOnStop::OnDataFinished(nsresult aStatus) {
+  nsCOMPtr<nsIThreadRetargetableStreamListener> listener =
+      do_QueryInterface(mNext);
+  if (listener) {
+    return listener->OnDataFinished(aStatus);
+  }
+
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
@@ -1511,6 +1541,8 @@ HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
           mode = 2;
         } else if (from.EqualsLiteral("br")) {
           mode = 3;
+        } else if (from.EqualsLiteral("zstd")) {
+          mode = 4;
         }
         Telemetry::Accumulate(Telemetry::HTTP_CONTENT_ENCODING, mode);
       }
@@ -1611,6 +1643,14 @@ HttpBaseChannel::nsContentEncodings::GetNext(nsACString& aNextEncoding) {
     encoding.BeginReading(start);
     if (CaseInsensitiveFindInReadable("br"_ns, start, end)) {
       aNextEncoding.AssignLiteral(APPLICATION_BROTLI);
+      haveType = true;
+    }
+  }
+
+  if (!haveType) {
+    encoding.BeginReading(start);
+    if (CaseInsensitiveFindInReadable("zstd"_ns, start, end)) {
+      aNextEncoding.AssignLiteral(APPLICATION_ZSTD);
       haveType = true;
     }
   }
@@ -2260,6 +2300,19 @@ HttpBaseChannel::UpgradeToSecure() {
 }
 
 NS_IMETHODIMP
+HttpBaseChannel::GetRequestObserversCalled(bool* aCalled) {
+  NS_ENSURE_ARG_POINTER(aCalled);
+  *aCalled = LoadRequestObserversCalled();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetRequestObserversCalled(bool aCalled) {
+  StoreRequestObserversCalled(aCalled);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 HttpBaseChannel::GetRequestContextID(uint64_t* aRCID) {
   NS_ENSURE_ARG_POINTER(aRCID);
   *aRCID = mRequestContextID;
@@ -2395,7 +2448,6 @@ HttpBaseChannel::GetDocumentURI(nsIURI** aDocumentURI) {
 NS_IMETHODIMP
 HttpBaseChannel::SetDocumentURI(nsIURI* aDocumentURI) {
   ENSURE_CALLED_BEFORE_CONNECT();
-
   mDocumentURI = aDocumentURI;
   return NS_OK;
 }
@@ -4976,7 +5028,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     httpInternal->SetLastRedirectFlags(redirectFlags);
 
     if (LoadRequireCORSPreflight()) {
-      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders, false);
+      httpInternal->SetCorsPreflightParameters(mUnsafeHeaders, false, false);
     }
   }
 
@@ -5142,14 +5194,12 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   // we need to strip Authentication headers for cross-origin requests
   // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
   nsAutoCString authHeader;
-  if (StaticPrefs::network_http_redirect_stripAuthHeader() &&
-      NS_SUCCEEDED(
-          httpChannel->GetRequestHeader("Authorization"_ns, authHeader))) {
-    if (NS_ShouldRemoveAuthHeaderOnRedirect(static_cast<nsIChannel*>(this),
-                                            newChannel, redirectFlags)) {
-      rv = httpChannel->SetRequestHeader("Authorization"_ns, ""_ns, false);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
-    }
+  if (NS_SUCCEEDED(
+          httpChannel->GetRequestHeader("Authorization"_ns, authHeader)) &&
+      NS_ShouldRemoveAuthHeaderOnRedirect(static_cast<nsIChannel*>(this),
+                                          newChannel, redirectFlags)) {
+    rv = httpChannel->SetRequestHeader("Authorization"_ns, ""_ns, false);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
   return NS_OK;
@@ -5850,17 +5900,20 @@ void HttpBaseChannel::EnsureBrowserId() {
 
 void HttpBaseChannel::SetCorsPreflightParameters(
     const nsTArray<nsCString>& aUnsafeHeaders,
-    bool aShouldStripRequestBodyHeader) {
+    bool aShouldStripRequestBodyHeader, bool aShouldStripAuthHeader) {
   MOZ_RELEASE_ASSERT(!LoadRequestObserversCalled());
 
   StoreRequireCORSPreflight(true);
   mUnsafeHeaders = aUnsafeHeaders.Clone();
-  if (aShouldStripRequestBodyHeader) {
+  if (aShouldStripRequestBodyHeader || aShouldStripAuthHeader) {
     mUnsafeHeaders.RemoveElementsBy([&](const nsCString& aHeader) {
-      return aHeader.LowerCaseEqualsASCII("content-type") ||
-             aHeader.LowerCaseEqualsASCII("content-encoding") ||
-             aHeader.LowerCaseEqualsASCII("content-language") ||
-             aHeader.LowerCaseEqualsASCII("content-location");
+      return (aShouldStripRequestBodyHeader &&
+              (aHeader.LowerCaseEqualsASCII("content-type") ||
+               aHeader.LowerCaseEqualsASCII("content-encoding") ||
+               aHeader.LowerCaseEqualsASCII("content-language") ||
+               aHeader.LowerCaseEqualsASCII("content-location"))) ||
+             (aShouldStripAuthHeader &&
+              aHeader.LowerCaseEqualsASCII("authorization"));
     });
   }
 }
@@ -5919,7 +5972,8 @@ HttpBaseChannel::SetNavigationStartTimeStamp(TimeStamp aTimeStamp) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-nsresult HttpBaseChannel::CheckRedirectLimit(uint32_t aRedirectFlags) const {
+nsresult HttpBaseChannel::CheckRedirectLimit(nsIURI* aNewURI,
+                                             uint32_t aRedirectFlags) const {
   if (aRedirectFlags & nsIChannelEventSink::REDIRECT_INTERNAL) {
     // for internal redirect due to auth retry we do not have any limit
     // as we might restrict the number of times a user might retry
@@ -5953,14 +6007,38 @@ nsresult HttpBaseChannel::CheckRedirectLimit(uint32_t aRedirectFlags) const {
   // https and the page answers with a redirect (meta, 302, win.location, ...)
   // then this method can break the cycle which causes the https-only exception
   // page to appear. Note that https-first mode breaks upgrade downgrade endless
-  // loops within ShouldUpgradeHTTPSFirstRequest because https-first does not
+  // loops within ShouldUpgradeHttpsFirstRequest because https-first does not
   // display an exception page but needs a soft fallback/downgrade.
   if (nsHTTPSOnlyUtils::IsUpgradeDowngradeEndlessLoop(
-          mURI, mLoadInfo,
+          mURI, aNewURI, mLoadInfo,
           {nsHTTPSOnlyUtils::UpgradeDowngradeEndlessLoopOptions::
                EnforceForHTTPSOnlyMode})) {
+    // Mark that we didn't upgrade to https due to loop detection in https-only
+    // mode to show https-only error page. We know that we are in https-only
+    // mode, because we passed `EnforceForHTTPSOnlyMode` to
+    // `IsUpgradeDowngradeEndlessLoop`. In other words we upgrade the request
+    // with https-only mode, but then immediately cancel the request.
+    uint32_t httpsOnlyStatus = mLoadInfo->GetHttpsOnlyStatus();
+    if (httpsOnlyStatus & nsILoadInfo::HTTPS_ONLY_UNINITIALIZED) {
+      httpsOnlyStatus ^= nsILoadInfo::HTTPS_ONLY_UNINITIALIZED;
+      httpsOnlyStatus |=
+          nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_NOT_REGISTERED;
+      mLoadInfo->SetHttpsOnlyStatus(httpsOnlyStatus);
+    }
+
     LOG(("upgrade downgrade redirect loop!\n"));
     return NS_ERROR_REDIRECT_LOOP;
+  }
+  // in case of http-first mode we want to add an exception to disable the
+  // upgrade behavior if we have upgrade-downgrade loop to break the loop and
+  // load the http request next
+  if (mozilla::StaticPrefs::
+          dom_security_https_first_add_exception_on_failiure() &&
+      nsHTTPSOnlyUtils::IsUpgradeDowngradeEndlessLoop(
+          mURI, aNewURI, mLoadInfo,
+          {nsHTTPSOnlyUtils::UpgradeDowngradeEndlessLoopOptions::
+               EnforceForHTTPSFirstMode})) {
+    nsHTTPSOnlyUtils::AddHTTPSFirstExceptionForSession(mURI, mLoadInfo);
   }
 
   return NS_OK;
@@ -6226,11 +6304,6 @@ void HttpBaseChannel::MaybeFlushConsoleReports() {
 
 void HttpBaseChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
 
-NS_IMETHODIMP HttpBaseChannel::SetWaitForHTTPSSVCRecord() {
-  mCaps |= NS_HTTP_FORCE_WAIT_HTTP_RR;
-  return NS_OK;
-}
-
 bool HttpBaseChannel::Http3Allowed() const {
   bool isDirectOrNoProxy =
       mProxyInfo ? static_cast<nsProxyInfo*>(mProxyInfo.get())->IsDirect()
@@ -6477,6 +6550,18 @@ HttpBaseChannel::SetHasContentDecompressed(bool aValue) {
 NS_IMETHODIMP
 HttpBaseChannel::GetHasContentDecompressed(bool* value) {
   *value = mHasContentDecompressed;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::SetRenderBlocking(bool aRenderBlocking) {
+  mRenderBlocking = aRenderBlocking;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetRenderBlocking(bool* aRenderBlocking) {
+  *aRenderBlocking = mRenderBlocking;
   return NS_OK;
 }
 

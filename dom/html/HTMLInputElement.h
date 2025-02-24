@@ -165,7 +165,7 @@ class HTMLInputElement final : public TextControlElement,
   void FieldSetDisabledChanged(bool aNotify) override;
 
   // nsIContent
-  bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+  bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
                        int32_t* aTabIndex) override;
 
   bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -233,7 +233,7 @@ class HTMLInputElement final : public TextControlElement,
   bool IsSingleLineTextControl() const override;
   bool IsTextArea() const override;
   bool IsPasswordTextControl() const override;
-  int32_t GetCols() override;
+  Maybe<int32_t> GetCols() override;
   int32_t GetWrapCols() override;
   int32_t GetRows() override;
   void GetDefaultValueFromContent(nsAString& aValue, bool aForDisplay) override;
@@ -251,6 +251,12 @@ class HTMLInputElement final : public TextControlElement,
   MOZ_CAN_RUN_SCRIPT nsresult CreateEditor() override;
   void SetPreviewValue(const nsAString& aValue) override;
   void GetPreviewValue(nsAString& aValue) override;
+  void SetAutofillState(const nsAString& aState) override {
+    SetFormAutofillState(aState);
+  }
+  void GetAutofillState(nsAString& aState) override {
+    GetFormAutofillState(aState);
+  }
   void EnablePreview() override;
   bool IsPreviewEnabled() override;
   void InitializeKeyboardEventListeners() override;
@@ -666,9 +672,8 @@ class HTMLInputElement final : public TextControlElement,
     SetUnsignedIntAttr(nsGkAtoms::width, aValue, 0, aRv);
   }
 
-  void StepUp(int32_t aN, ErrorResult& aRv) { aRv = ApplyStep(aN); }
-
-  void StepDown(int32_t aN, ErrorResult& aRv) { aRv = ApplyStep(-aN); }
+  void StepUp(int32_t aN, ErrorResult& aRv) { ApplyStep(aN, aRv); }
+  void StepDown(int32_t aN, ErrorResult& aRv) { ApplyStep(-aN, aRv); }
 
   /**
    * Returns the current step value.
@@ -1321,22 +1326,17 @@ class HTMLInputElement final : public TextControlElement,
    */
   Decimal GetDefaultStep() const;
 
-  enum StepCallerType { CALLED_FOR_USER_EVENT, CALLED_FOR_SCRIPT };
+  enum class StepCallerType { ForUserEvent, ForScript };
 
   /**
-   * Sets the aValue outparam to the value that this input would take if
-   * someone tries to step aStep steps and this input's value would change as
-   * a result. Leaves aValue untouched if this inputs value would not change
-   * (e.g. already at max, and asking for the next step up).
+   * Returns the value that this input would take if someone tries to step
+   * aStepCount steps and this input's value would change as a result, or
+   * Decimal::nan() otherwise (e.g., if this inputs value would not change due
+   * to it being already at max, and asking for the next step up).
    *
    * Negative aStep means step down, positive means step up.
-   *
-   * Returns NS_OK or else the error values that should be thrown if this call
-   * was initiated by a stepUp()/stepDown() call from script under conditions
-   * that such a call should throw.
    */
-  nsresult GetValueIfStepped(int32_t aStepCount, StepCallerType aCallerType,
-                             Decimal* aNextStep);
+  Decimal GetValueIfStepped(int32_t aStepCount, StepCallerType, ErrorResult&);
 
   /**
    * Apply a step change from stepUp or stepDown by multiplying aStep by the
@@ -1344,7 +1344,7 @@ class HTMLInputElement final : public TextControlElement,
    *
    * @param aStep The value used to be multiplied against the step value.
    */
-  nsresult ApplyStep(int32_t aStep);
+  void ApplyStep(int32_t aStep, ErrorResult&);
 
   /**
    * Returns if the current type is an experimental mobile type.
@@ -1547,6 +1547,7 @@ class HTMLInputElement final : public TextControlElement,
   bool mHasPatternAttribute : 1;
 
  private:
+  Maybe<int32_t> GetNumberInputCols() const;
   static void ImageInputMapAttributesIntoRule(MappedDeclarationsBuilder&);
 
   /**

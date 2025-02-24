@@ -27,22 +27,38 @@ ComputePipeline::ComputePipeline(Device* const aParent, RawId aId,
 ComputePipeline::~ComputePipeline() { Cleanup(); }
 
 void ComputePipeline::Cleanup() {
-  if (mValid && mParent) {
-    mValid = false;
-    auto bridge = mParent->GetBridge();
-    if (bridge && bridge->IsOpen()) {
-      bridge->SendComputePipelineDrop(mId);
-      if (mImplicitPipelineLayoutId) {
-        bridge->SendImplicitLayoutDrop(mImplicitPipelineLayoutId,
-                                       mImplicitBindGroupLayoutIds);
-      }
+  if (!mValid) {
+    return;
+  }
+  mValid = false;
+
+  auto bridge = mParent->GetBridge();
+  if (!bridge) {
+    return;
+  }
+
+  if (bridge->CanSend()) {
+    bridge->SendComputePipelineDrop(mId);
+    if (mImplicitPipelineLayoutId) {
+      bridge->SendImplicitLayoutDrop(mImplicitPipelineLayoutId,
+                                     mImplicitBindGroupLayoutIds);
     }
+  }
+
+  if (mImplicitPipelineLayoutId) {
+    wgpu_client_free_pipeline_layout_id(bridge->GetClient(),
+                                        mImplicitPipelineLayoutId);
+  }
+
+  for (const auto& id : mImplicitBindGroupLayoutIds) {
+    wgpu_client_free_bind_group_layout_id(bridge->GetClient(), id);
   }
 }
 
 already_AddRefed<BindGroupLayout> ComputePipeline::GetBindGroupLayout(
     uint32_t aIndex) const {
   auto bridge = mParent->GetBridge();
+  MOZ_ASSERT(bridge && bridge->CanSend());
   auto* client = bridge->GetClient();
 
   ipc::ByteBuf bb;

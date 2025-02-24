@@ -244,6 +244,7 @@ class EventListener;
 struct FailedCertSecurityInfo;
 class FeaturePolicy;
 class FontFaceSet;
+class FragmentDirective;
 class FrameRequestCallback;
 class ImageTracker;
 class HighlightRegistry;
@@ -1502,7 +1503,8 @@ class Document : public nsINode,
 
   void DoNotifyPossibleTitleChange();
 
-  void InitFeaturePolicy();
+  void InitFeaturePolicy(const Variant<Nothing, FeaturePolicyInfo, Element*>&
+                             aContainerFeaturePolicy);
   nsresult InitFeaturePolicy(nsIChannel* aChannel);
 
   void EnsureNotEnteringAndExitFullscreen();
@@ -2992,15 +2994,6 @@ class Document : public nsINode,
     SetStateObject(aDocument->mStateObjectContainer);
   }
 
-  /**
-   * Returns true if there is a lightweight theme specified. This is used to
-   * determine the state of the :-moz-lwtheme pseudo-class.
-   */
-  bool ComputeDocumentLWTheme() const;
-  void ResetDocumentLWTheme() {
-    UpdateDocumentStates(DocumentState::LWTHEME, true);
-  }
-
   // Whether we're a media document or not.
   enum class MediaDocumentKind {
     NotMedia,
@@ -3281,7 +3274,7 @@ class Document : public nsINode,
   void SetDomain(const nsAString& aDomain, mozilla::ErrorResult& rv);
   void GetCookie(nsAString& aCookie, mozilla::ErrorResult& rv);
   void SetCookie(const nsAString& aCookie, mozilla::ErrorResult& rv);
-  void GetReferrer(nsAString& aReferrer) const;
+  void GetReferrer(nsACString& aReferrer) const;
   void GetLastModified(nsAString& aLastModified) const;
   void GetReadyState(nsAString& aReadyState) const;
 
@@ -3377,7 +3370,6 @@ class Document : public nsINode,
                                                bool aFocusPreviousElement,
                                                bool aFireEvents);
 
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void HideAllPopoversWithoutRunningScript();
   // Hides the given popover element, see
   // https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
   MOZ_CAN_RUN_SCRIPT void HidePopover(Element& popover,
@@ -3426,8 +3418,6 @@ class Document : public nsINode,
   mozilla::dom::HTMLAllCollection* All();
 
   static bool DocumentSupportsL10n(JSContext* aCx, JSObject* aObject);
-  static bool AreWebAnimationsTimelinesEnabled(JSContext* aCx,
-                                               JSObject* aObject);
   // Checks that the caller is either chrome or some addon.
   static bool IsCallerChromeOrAddon(JSContext* aCx, JSObject* aObject);
 
@@ -3718,8 +3708,9 @@ class Document : public nsINode,
     return !mIntersectionObservers.IsEmpty();
   }
 
-  void UpdateIntersectionObservations(TimeStamp aNowTime);
-  void ScheduleIntersectionObserverNotification();
+  // Update intersection observers in this document and all
+  // same-process subdocuments.
+  void UpdateIntersections(TimeStamp aNowTime);
   MOZ_CAN_RUN_SCRIPT void NotifyIntersectionObservers();
 
   DOMIntersectionObserver* GetLazyLoadObserver() { return mLazyLoadObserver; }
@@ -4100,6 +4091,13 @@ class Document : public nsINode,
    */
   class HighlightRegistry& HighlightRegistry();
 
+  /**
+   * @brief Returns the `FragmentDirective` object which contains information
+   * and functionality to extract or create text directives.
+   * Guaranteed to be non-null.
+   */
+  class FragmentDirective* FragmentDirective();
+
   bool ShouldResistFingerprinting(RFPTarget aTarget) const;
   bool IsInPrivateBrowsing() const;
 
@@ -4159,7 +4157,8 @@ class Document : public nsINode,
   // Apply the fullscreen state to the document, and trigger related
   // events. It returns false if the fullscreen element ready check
   // fails and nothing gets changed.
-  bool ApplyFullscreen(UniquePtr<FullscreenRequest>);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool ApplyFullscreen(
+      UniquePtr<FullscreenRequest>);
 
   void RemoveDocStyleSheetsFromStyleSets();
   void ResetStylesheetsToURI(nsIURI* aURI);
@@ -5314,9 +5313,6 @@ class Document : public nsINode,
   // Pres shell resolution saved before entering fullscreen mode.
   float mSavedResolution;
 
-  // Pres shell resolution saved before creating a MobileViewportManager.
-  float mSavedResolutionBeforeMVM;
-
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
 
   bool mHasStoragePermission;
@@ -5381,6 +5377,7 @@ class Document : public nsINode,
   nsTArray<CanvasUsage> mCanvasUsage;
   uint64_t mLastCanvasUsage = 0;
 
+  RefPtr<class FragmentDirective> mFragmentDirective;
   UniquePtr<RadioGroupContainer> mRadioGroupContainer;
 
  public:
@@ -5391,11 +5388,6 @@ class Document : public nsINode,
 
   nsRefPtrHashtable<nsRefPtrHashKey<Element>, nsXULPrototypeElement>
       mL10nProtoElements;
-
-  float GetSavedResolutionBeforeMVM() { return mSavedResolutionBeforeMVM; }
-  void SetSavedResolutionBeforeMVM(float aResolution) {
-    mSavedResolutionBeforeMVM = aResolution;
-  }
 
   void LoadEventFired();
 

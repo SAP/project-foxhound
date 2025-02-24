@@ -10,6 +10,7 @@ Services.scriptloader.loadSubScript(
 
 ChromeUtils.defineESModuleGetters(this, {
   QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
 const lazy = {};
@@ -210,12 +211,7 @@ async function doTest(testFn) {
   await QuickSuggest.blockedSuggestions.clear();
   await QuickSuggest.blockedSuggestions._test_readyPromise;
   await updateTopSites(() => true);
-
-  try {
-    await BrowserTestUtils.withNewTab(gBrowser, testFn);
-  } catch (e) {
-    console.error(e);
-  }
+  await BrowserTestUtils.withNewTab(gBrowser, testFn);
 }
 
 async function initGroupTest() {
@@ -410,13 +406,11 @@ async function setup() {
     set: [
       ["browser.urlbar.searchEngagementTelemetry.enabled", true],
       ["browser.urlbar.quickactions.enabled", true],
-      ["browser.urlbar.quickactions.minimumSearchString", 0],
-      ["browser.urlbar.suggest.quickactions", true],
-      ["browser.urlbar.shortcuts.quickactions", true],
+      ["browser.urlbar.secondaryActions.featureGate", true],
     ],
   });
 
-  const engine = await SearchTestUtils.promiseNewSearchEngine({
+  const engine = await SearchTestUtils.installOpenSearchEngine({
     url: "chrome://mochitests/content/browser/browser/components/urlbar/tests/browser/searchSuggestionEngine.xml",
   });
   const originalDefaultEngine = await Services.search.getDefault();
@@ -446,4 +440,24 @@ async function showResultByArrowDown() {
     EventUtils.synthesizeKey("KEY_ArrowDown");
   });
   await UrlbarTestUtils.promiseSearchComplete(window);
+}
+
+async function expectNoConsoleErrors(task) {
+  let endConsoleListening = TestUtils.listenForConsoleMessages();
+  let msgs;
+  let taskResult;
+
+  try {
+    taskResult = await task();
+  } finally {
+    msgs = await endConsoleListening();
+  }
+
+  for (let msg of msgs) {
+    if (msg.level === "error") {
+      throw new Error(`Console error detected: ${msg.arguments[0]}`);
+    }
+  }
+
+  return taskResult;
 }

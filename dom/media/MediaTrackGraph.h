@@ -112,12 +112,20 @@ class AudioDataListenerInterface {
   /**
    * Number of audio input channels.
    */
-  virtual uint32_t RequestedInputChannelCount(MediaTrackGraph* aGraph) = 0;
+  virtual uint32_t RequestedInputChannelCount(
+      MediaTrackGraph* aGraph) const = 0;
+
+  /**
+   * The input processing params this listener wants the platform to apply.
+   */
+  virtual cubeb_input_processing_params RequestedInputProcessingParams(
+      MediaTrackGraph* aGraph) const = 0;
 
   /**
    * Whether the underlying audio device is used for voice input.
    */
   virtual bool IsVoiceInput(MediaTrackGraph* aGraph) const = 0;
+
   /**
    * Called when the underlying audio device has changed.
    */
@@ -127,6 +135,14 @@ class AudioDataListenerInterface {
    * Called when the underlying audio device is being closed.
    */
   virtual void Disconnect(MediaTrackGraph* aGraph) = 0;
+
+  /**
+   * Called after an attempt to set the input processing params on the
+   * underlying input track.
+   */
+  virtual void NotifySetRequestedInputProcessingParamsResult(
+      MediaTrackGraph* aGraph, cubeb_input_processing_params aRequestedParams,
+      const Result<cubeb_input_processing_params, int>& aResult) = 0;
 };
 
 class AudioDataListener : public AudioDataListenerInterface {
@@ -988,7 +1004,7 @@ class ProcessedMediaTrack : public MediaTrack {
    * tracks (mBlocked is up to date up to mStateComputedTime).
    * Also, we've produced output for all tracks up to this one. If this track
    * is not in a cycle, then all its source tracks have produced data.
-   * Generate output from aFrom to aTo.
+   * Generate output from aFrom to aTo, where aFrom < aTo.
    * This will be called on tracks that have ended. Most track types should
    * just return immediately if they're ended, but some may wish to update
    * internal state (see AudioNodeTrack).
@@ -1200,6 +1216,10 @@ class MediaTrackGraph {
   }
 
   double AudioOutputLatency();
+  /* Return whether the clock for the audio output device used for the AEC
+   * reverse stream might drift from the clock for this MediaTrackGraph.
+   * Graph thread only. */
+  bool OutputForAECMightDrift();
 
   void RegisterCaptureTrackForWindow(uint64_t aWindowId,
                                      ProcessedMediaTrack* aCaptureTrack);

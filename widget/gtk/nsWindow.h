@@ -19,6 +19,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/RWLock.h"
 #include "mozilla/widget/WindowSurface.h"
 #include "mozilla/widget/WindowSurfaceProvider.h"
 #include "nsBaseWidget.h"
@@ -175,6 +176,7 @@ class nsWindow final : public nsBaseWidget {
   void MoveToWorkspace(const nsAString& workspaceID) override;
   void Enable(bool aState) override;
   void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
+  void ResetScreenBounds();
   LayoutDeviceIntRect GetScreenBounds() override;
   LayoutDeviceIntRect GetClientBounds() override;
   LayoutDeviceIntSize GetClientSize() override;
@@ -256,7 +258,9 @@ class nsWindow final : public nsBaseWidget {
 
   gint GetInputRegionMarginInGdkCoords();
 
-  void UpdateTopLevelOpaqueRegion();
+  void UpdateOpaqueRegionInternal();
+  void UpdateOpaqueRegion(const LayoutDeviceIntRegion&) override;
+  LayoutDeviceIntRegion GetOpaqueRegion() const;
 
   already_AddRefed<mozilla::gfx::DrawTarget> StartRemoteDrawingInRegion(
       const LayoutDeviceIntRegion& aInvalidRegion,
@@ -368,9 +372,7 @@ class nsWindow final : public nsBaseWidget {
 
   nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
   void SetDrawsInTitlebar(bool aState);
-  void SetTitlebarRect();
   mozilla::LayoutDeviceIntCoord GetTitlebarRadius();
-  LayoutDeviceIntRect GetTitlebarRect();
   void UpdateWindowDraggingRegion(
       const LayoutDeviceIntRegion& aRegion) override;
 
@@ -388,6 +390,7 @@ class nsWindow final : public nsBaseWidget {
   GdkPoint DevicePixelsToGdkPointRoundDown(const LayoutDeviceIntPoint&);
   GdkRectangle DevicePixelsToGdkSizeRoundUp(const LayoutDeviceIntSize&);
   GdkRectangle DevicePixelsToGdkRectRoundOut(const LayoutDeviceIntRect&);
+  GdkRectangle DevicePixelsToGdkRectRoundIn(const LayoutDeviceIntRect&);
 
   // From GDK
   int GdkCoordToDevicePixels(gint);
@@ -411,7 +414,6 @@ class nsWindow final : public nsBaseWidget {
    */
   static GtkWindowDecoration GetSystemGtkWindowDecoration();
 
-  static bool GetTopLevelWindowActiveState(nsIFrame* aFrame);
   static bool TitlebarUseShapeMask();
   bool IsRemoteContent() { return HasRemoteContent(); }
   void NativeMoveResizeWaylandPopupCallback(const GdkRectangle* aFinalSize,
@@ -460,8 +462,6 @@ class nsWindow final : public nsBaseWidget {
   // Force hide this window, remove compositor etc. to avoid
   // rendering queue blocking (see Bug 1782948).
   void ClearRenderingQueue();
-
-  void DisableRendering();
 
   bool ApplyEnterLeaveMutterWorkaround();
 
@@ -553,6 +553,9 @@ class nsWindow final : public nsBaseWidget {
   GtkWidget* mShell = nullptr;
   MozContainer* mContainer = nullptr;
   GdkWindow* mGdkWindow = nullptr;
+  mozilla::Maybe<GdkPoint> mGdkWindowOrigin;
+  mozilla::Maybe<GdkPoint> mGdkWindowRootOrigin;
+
   PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate = nullptr;
   mozilla::Atomic<WindowCompositorState, mozilla::Relaxed> mCompositorState{
       COMPOSITOR_ENABLED};
@@ -630,13 +633,14 @@ class nsWindow final : public nsBaseWidget {
   // If true, draw our own window titlebar.
   bool mDrawInTitlebar = false;
 
-  mozilla::Mutex mTitlebarRectMutex;
-  LayoutDeviceIntRect mTitlebarRect MOZ_GUARDED_BY(mTitlebarRectMutex);
+  // This mutex protect window visibility changes.
+  mozilla::Mutex mWindowVisibilityMutex;
 
-  mozilla::Mutex mDestroyMutex;
-
+  // This track real window visibility from OS perspective.
+  // It's set by OnMap/OnUnmap which is based on Gtk events.
+  mozilla::Atomic<bool, mozilla::Relaxed> mIsMapped;
   // Has this widget been destroyed yet?
-  bool mIsDestroyed : 1;
+  mozilla::Atomic<bool, mozilla::Relaxed> mIsDestroyed;
   // mIsShown tracks requested visible status from browser perspective, i.e.
   // if the window should be visible or now.
   bool mIsShown : 1;
@@ -646,9 +650,6 @@ class nsWindow final : public nsBaseWidget {
   // that the window is not actually visible but we report to browser that
   // it is visible (mIsShown == true).
   bool mNeedsShow : 1;
-  // This track real window visibility from OS perspective.
-  // It's set by OnMap/OnUnmap which is based on Gtk events.
-  bool mIsMapped : 1;
   // is this widget enabled?
   bool mEnabled : 1;
   // has the native window for this been created yet?
@@ -802,11 +803,6 @@ class nsWindow final : public nsBaseWidget {
 
   void DispatchMissedButtonReleases(GdkEventCrossing* aGdkEvent);
 
-  // When window widget gets mapped/unmapped we need to configure
-  // underlying GdkWindow properly. Otherwise we'll end up with
-  // rendering to released window.
-  void ConfigureGdkWindow();
-  void ReleaseGdkWindow();
   void ConfigureCompositor();
 
   bool IsAlwaysUndecoratedWindow() const;
@@ -996,9 +992,9 @@ class nsWindow final : public nsBaseWidget {
   void RequestRepaint(LayoutDeviceIntRegion& aRepaintRegion);
 
 #ifdef MOZ_X11
-  typedef enum {GTK_WIDGET_COMPOSIDED_DEFAULT = 0,
-                GTK_WIDGET_COMPOSIDED_DISABLED = 1,
-                GTK_WIDGET_COMPOSIDED_ENABLED = 2} WindowComposeRequest;
+  typedef enum {GTK_WIDGET_COMPOSITED_DEFAULT = 0,
+                GTK_WIDGET_COMPOSITED_DISABLED = 1,
+                GTK_WIDGET_COMPOSITED_ENABLED = 2} WindowComposeRequest;
   void SetCompositorHint(WindowComposeRequest aState);
   bool ConfigureX11GLVisual();
 #endif
@@ -1021,6 +1017,8 @@ class nsWindow final : public nsBaseWidget {
   // Running in kiosk mode and requested to stay on specified monitor.
   // If monitor is removed minimize the window.
   mozilla::Maybe<int> mKioskMonitor;
+  LayoutDeviceIntRegion mOpaqueRegion MOZ_GUARDED_BY(mOpaqueRegionLock);
+  mutable mozilla::RWLock mOpaqueRegionLock{"nsWindow::mOpaqueRegion"};
 };
 
 #endif /* __nsWindow_h__ */

@@ -87,7 +87,6 @@ bool ResetTimestampIfExpired(const Timestamp now,
 }  // namespace
 
 constexpr size_t RTCPReceiver::RegisteredSsrcs::kMediaSsrcIndex;
-constexpr size_t RTCPReceiver::RegisteredSsrcs::kMaxSsrcs;
 
 RTCPReceiver::RegisteredSsrcs::RegisteredSsrcs(
     bool disable_sequence_checker,
@@ -105,7 +104,7 @@ RTCPReceiver::RegisteredSsrcs::RegisteredSsrcs(
     }
   }
   // Ensure that the RegisteredSsrcs can inline the SSRCs.
-  RTC_DCHECK_LE(ssrcs_.size(), RTCPReceiver::RegisteredSsrcs::kMaxSsrcs);
+  RTC_DCHECK_LE(ssrcs_.size(), kMaxSimulcastStreams);
 }
 
 bool RTCPReceiver::RegisteredSsrcs::contains(uint32_t ssrc) const {
@@ -1190,11 +1189,11 @@ std::vector<rtcp::TmmbItem> RTCPReceiver::TmmbrReceived() {
   MutexLock lock(&rtcp_receiver_lock_);
   std::vector<rtcp::TmmbItem> candidates;
 
-  Timestamp timeout = clock_->CurrentTime() - kTmmbrTimeoutInterval;
+  Timestamp now = clock_->CurrentTime();
 
   for (auto& kv : tmmbr_infos_) {
     for (auto it = kv.second.tmmbr.begin(); it != kv.second.tmmbr.end();) {
-      if (it->second.last_updated < timeout) {
+      if (now - it->second.last_updated > kTmmbrTimeoutInterval) {
         // Erase timeout entries.
         it = kv.second.tmmbr.erase(it);
       } else {

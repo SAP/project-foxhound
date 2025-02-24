@@ -242,7 +242,6 @@ ComputedStyle* nsTableWrapperFrame::GetParentComputedStyle(
 nscoord nsTableWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
   nscoord iSize = nsLayoutUtils::IntrinsicForContainer(
       aRenderingContext, InnerTableFrame(), IntrinsicISizeType::MinISize);
-  DISPLAY_MIN_INLINE_SIZE(this, iSize);
   if (mCaptionFrames.NotEmpty()) {
     nscoord capISize = nsLayoutUtils::IntrinsicForContainer(
         aRenderingContext, mCaptionFrames.FirstChild(),
@@ -256,10 +255,7 @@ nscoord nsTableWrapperFrame::GetMinISize(gfxContext* aRenderingContext) {
 
 /* virtual */
 nscoord nsTableWrapperFrame::GetPrefISize(gfxContext* aRenderingContext) {
-  nscoord maxISize;
-  DISPLAY_PREF_INLINE_SIZE(this, maxISize);
-
-  maxISize = nsLayoutUtils::IntrinsicForContainer(
+  nscoord maxISize = nsLayoutUtils::IntrinsicForContainer(
       aRenderingContext, InnerTableFrame(), IntrinsicISizeType::PrefISize);
   if (mCaptionFrames.NotEmpty()) {
     // Don't let the caption's pref isize expand the table's pref isize.
@@ -547,7 +543,7 @@ ComputeSizeFlags nsTableWrapperFrame::CreateComputeSizeFlagsForChild() const {
   // Shrink-wrap child frames by default, except if we're a stretched grid item.
   if (MOZ_UNLIKELY(IsGridItem())) {
     auto* gridContainer = static_cast<nsGridContainerFrame*>(GetParent());
-    if (gridContainer->GridItemShouldStretch(this, eLogicalAxisInline)) {
+    if (gridContainer->GridItemShouldStretch(this, LogicalAxis::Inline)) {
       return {};
     }
   }
@@ -691,7 +687,6 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
                                  nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsTableWrapperFrame");
-  DISPLAY_REFLOW(aPresContext, this, aOuterRI, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   // Initialize out parameters

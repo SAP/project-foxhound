@@ -177,9 +177,12 @@ add_task(async function testLangpackStaged() {
   copyTestUpdaterToBinDir();
 
   let greDir = getGREDir();
-  let updateSettingsIni = greDir.clone();
-  updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
-  writeFile(updateSettingsIni, UPDATE_SETTINGS_CONTENTS);
+
+  if (AppConstants.platform != "macosx") {
+    let updateSettingsIni = greDir.clone();
+    updateSettingsIni.append(FILE_UPDATE_SETTINGS_INI);
+    writeFile(updateSettingsIni, UPDATE_SETTINGS_CONTENTS);
+  }
 
   await downloadUpdate();
 
@@ -264,7 +267,7 @@ add_task(async function testRedownload() {
   };
   gAUS.addDownloadListener(listener);
 
-  let bestUpdate = gAUS.selectUpdate(updates);
+  let bestUpdate = await gAUS.selectUpdate(updates);
   await gAUS.downloadUpdate(bestUpdate, false);
 
   await waitForEvent("update-downloaded");

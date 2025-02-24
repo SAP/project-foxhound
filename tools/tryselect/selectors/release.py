@@ -94,6 +94,7 @@ def run(
         "browser/config/version.txt": "{}\n".format(app_version),
         "browser/config/version_display.txt": "{}\n".format(version),
         "config/milestone.txt": "{}\n".format(app_version),
+        "mobile/android/version.txt": "{}\n".format(version),
     }
     with open("browser/config/version.txt") as f:
         current_version = FirefoxVersion.parse(f.read())
@@ -125,7 +126,7 @@ def run(
         }
     )
 
-    with open(os.path.join(vcs.path, "taskcluster/ci/config.yml")) as f:
+    with open(os.path.join(vcs.path, "taskcluster/config.yml")) as f:
         migration_configs = yaml.safe_load(f)
     for migration in migrations:
         migration_config = migration_configs["merge-automation"]["behaviors"][migration]

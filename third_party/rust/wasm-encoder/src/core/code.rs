@@ -274,6 +274,34 @@ impl Encode for MemArg {
     }
 }
 
+/// The memory ordering for atomic instructions.
+///
+/// For an in-depth explanation of memory orderings, see the C++ documentation
+/// for [`memory_order`] or the Rust documentation for [`atomic::Ordering`].
+///
+/// [`memory_order`]: https://en.cppreference.com/w/cpp/atomic/memory_order
+/// [`atomic::Ordering`]: https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html
+#[derive(Clone, Copy, Debug)]
+pub enum Ordering {
+    /// For a load, it acquires; this orders all operations before the last
+    /// "releasing" store. For a store, it releases; this orders all operations
+    /// before it at the next "acquiring" load.
+    AcqRel,
+    /// Like `AcqRel` but all threads see all sequentially consistent operations
+    /// in the same order.
+    SeqCst,
+}
+
+impl Encode for Ordering {
+    fn encode(&self, sink: &mut Vec<u8>) {
+        let flag: u8 = match self {
+            Ordering::SeqCst => 0,
+            Ordering::AcqRel => 1,
+        };
+        sink.push(flag);
+    }
+}
+
 /// Describe an unchecked SIMD lane index.
 pub type Lane = u8;
 
@@ -980,6 +1008,16 @@ pub enum Instruction<'a> {
     I64AtomicRmw8CmpxchgU(MemArg),
     I64AtomicRmw16CmpxchgU(MemArg),
     I64AtomicRmw32CmpxchgU(MemArg),
+
+    // More atomic instructions (the shared-everything-threads proposal)
+    GlobalAtomicGet {
+        ordering: Ordering,
+        global_index: u32,
+    },
+    GlobalAtomicSet {
+        ordering: Ordering,
+        global_index: u32,
+    },
 }
 
 impl Encode for Instruction<'_> {
@@ -2787,7 +2825,7 @@ impl Encode for Instruction<'_> {
                 0x113u32.encode(sink);
             }
 
-            // Atmoic instructions from the thread proposal
+            // Atomic instructions from the thread proposal
             Instruction::MemoryAtomicNotify(memarg) => {
                 sink.push(0xFE);
                 sink.push(0x00);
@@ -3123,6 +3161,26 @@ impl Encode for Instruction<'_> {
                 sink.push(0x4E);
                 memarg.encode(sink);
             }
+
+            // Atomic instructions from the shared-everything-threads proposal
+            Instruction::GlobalAtomicGet {
+                ordering,
+                global_index,
+            } => {
+                sink.push(0xFE);
+                sink.push(0x4F);
+                ordering.encode(sink);
+                global_index.encode(sink);
+            }
+            Instruction::GlobalAtomicSet {
+                ordering,
+                global_index,
+            } => {
+                sink.push(0xFE);
+                sink.push(0x50);
+                ordering.encode(sink);
+                global_index.encode(sink);
+            }
         }
     }
 }
@@ -3188,6 +3246,11 @@ impl ConstExpr {
         Self { bytes }
     }
 
+    fn with_insn(mut self, insn: Instruction) -> Self {
+        insn.encode(&mut self.bytes);
+        self
+    }
+
     /// Create a constant expression containing a single `global.get` instruction.
     pub fn global_get(index: u32) -> Self {
         Self::new_insn(Instruction::GlobalGet(index))
@@ -3226,6 +3289,90 @@ impl ConstExpr {
     /// Create a constant expression containing a single `v128.const` instruction.
     pub fn v128_const(value: i128) -> Self {
         Self::new_insn(Instruction::V128Const(value))
+    }
+
+    /// Add a `global.get` instruction to this constant expression.
+    pub fn with_global_get(self, index: u32) -> Self {
+        self.with_insn(Instruction::GlobalGet(index))
+    }
+
+    /// Add a `ref.null` instruction to this constant expression.
+    pub fn with_ref_null(self, ty: HeapType) -> Self {
+        self.with_insn(Instruction::RefNull(ty))
+    }
+
+    /// Add a `ref.func` instruction to this constant expression.
+    pub fn with_ref_func(self, func: u32) -> Self {
+        self.with_insn(Instruction::RefFunc(func))
+    }
+
+    /// Add an `i32.const` instruction to this constant expression.
+    pub fn with_i32_const(self, value: i32) -> Self {
+        self.with_insn(Instruction::I32Const(value))
+    }
+
+    /// Add an `i64.const` instruction to this constant expression.
+    pub fn with_i64_const(self, value: i64) -> Self {
+        self.with_insn(Instruction::I64Const(value))
+    }
+
+    /// Add a `f32.const` instruction to this constant expression.
+    pub fn with_f32_const(self, value: f32) -> Self {
+        self.with_insn(Instruction::F32Const(value))
+    }
+
+    /// Add a `f64.const` instruction to this constant expression.
+    pub fn with_f64_const(self, value: f64) -> Self {
+        self.with_insn(Instruction::F64Const(value))
+    }
+
+    /// Add a `v128.const` instruction to this constant expression.
+    pub fn with_v128_const(self, value: i128) -> Self {
+        self.with_insn(Instruction::V128Const(value))
+    }
+
+    /// Add an `i32.add` instruction to this constant expression.
+    pub fn with_i32_add(self) -> Self {
+        self.with_insn(Instruction::I32Add)
+    }
+
+    /// Add an `i32.sub` instruction to this constant expression.
+    pub fn with_i32_sub(self) -> Self {
+        self.with_insn(Instruction::I32Sub)
+    }
+
+    /// Add an `i32.mul` instruction to this constant expression.
+    pub fn with_i32_mul(self) -> Self {
+        self.with_insn(Instruction::I32Mul)
+    }
+
+    /// Add an `i64.add` instruction to this constant expression.
+    pub fn with_i64_add(self) -> Self {
+        self.with_insn(Instruction::I64Add)
+    }
+
+    /// Add an `i64.sub` instruction to this constant expression.
+    pub fn with_i64_sub(self) -> Self {
+        self.with_insn(Instruction::I64Sub)
+    }
+
+    /// Add an `i64.mul` instruction to this constant expression.
+    pub fn with_i64_mul(self) -> Self {
+        self.with_insn(Instruction::I64Mul)
+    }
+
+    /// Returns the function, if any, referenced by this global.
+    pub fn get_ref_func(&self) -> Option<u32> {
+        let prefix = *self.bytes.get(0)?;
+        // 0xd2 == `ref.func` opcode, and if that's found then load the leb
+        // corresponding to the function index.
+        if prefix != 0xd2 {
+            return None;
+        }
+        leb128::read::unsigned(&mut &self.bytes[1..])
+            .ok()?
+            .try_into()
+            .ok()
     }
 }
 

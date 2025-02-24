@@ -12,7 +12,6 @@ XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
 BROWSER_CHROME_MANIFESTS += ["test/browser/browser.toml"]
 
 XPIDL_SOURCES += [
-    "nsIFormAutoComplete.idl",
     "nsIFormFillController.idl",
 ]
 
@@ -26,10 +25,16 @@ LOCAL_INCLUDES += [
     "../build",
 ]
 
+JAR_MANIFESTS += ["jar.mn"]
+
+DIRS += [
+    "megalist",
+]
+
 EXTRA_JS_MODULES += [
     "FillHelpers.sys.mjs",
-    "FormAutoComplete.sys.mjs",
     "FormHistory.sys.mjs",
+    "FormHistoryAutoComplete.sys.mjs",
     "FormHistoryStartup.sys.mjs",
     "FormScenarios.sys.mjs",
     "integrations/FirefoxRelay.sys.mjs",
@@ -51,6 +56,7 @@ include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_TARGET_FILES.actors += [
     "FormHandlerChild.sys.mjs",
+    "FormHandlerParent.sys.mjs",
     "FormHistoryChild.sys.mjs",
     "FormHistoryParent.sys.mjs",
 ]

@@ -17,7 +17,7 @@
 #include "threading/CpuCount.h"
 #include "util/Poison.h"
 #include "vm/BigIntType.h"
-#include "vm/JSContext.h"
+#include "vm/FrameIter.h"
 #include "vm/Runtime.h"
 #include "vm/StringType.h"
 
@@ -25,6 +25,7 @@
 #include "gc/Heap-inl.h"
 #include "gc/PrivateIterators-inl.h"
 #include "vm/JSContext-inl.h"
+#include "vm/JSScript-inl.h"
 
 using mozilla::TimeDuration;
 using mozilla::TimeStamp;
@@ -77,9 +78,10 @@ MOZ_NEVER_INLINE void* CellAllocator::RetryNurseryAlloc(JSContext* cx,
                                                         size_t thingSize,
                                                         AllocSite* site) {
   MOZ_ASSERT(cx->isNurseryAllocAllowed());
-  MOZ_ASSERT(cx->zone() == site->zone());
-  MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  MOZ_ASSERT(cx->zone()->allocKindInNursery(traceKind));
+
+  Zone* zone = site->zone();
+  MOZ_ASSERT(!zone->isAtomsZone());
+  MOZ_ASSERT(zone->allocKindInNursery(traceKind));
 
   Nursery& nursery = cx->nursery();
   JS::GCReason reason = nursery.handleAllocationFailure();
@@ -102,7 +104,7 @@ MOZ_NEVER_INLINE void* CellAllocator::RetryNurseryAlloc(JSContext* cx,
     cx->runtime()->gc.minorGC(reason);
 
     // Exceeding gcMaxBytes while tenuring can disable the Nursery.
-    if (cx->zone()->allocKindInNursery(traceKind)) {
+    if (zone->allocKindInNursery(traceKind)) {
       void* ptr = cx->nursery().allocateCell(site, thingSize, traceKind);
       if (ptr) {
         return ptr;
@@ -277,6 +279,55 @@ template bool CellAllocator::PreAllocChecks<CanGC>(JSContext* cx,
 
 #endif  // DEBUG || JS_GC_ZEAL || JS_OOM_BREAKPOINT
 
+#ifdef JS_GC_ZEAL
+
+/* static */
+AllocSite* CellAllocator::MaybeGenerateMissingAllocSite(JSContext* cx,
+                                                        JS::TraceKind traceKind,
+                                                        AllocSite* site) {
+  MOZ_ASSERT(site);
+
+  if (!cx->runtime()->gc.tunables.generateMissingAllocSites()) {
+    return site;
+  }
+
+  if (!site->isUnknown()) {
+    return site;
+  }
+
+  if (cx->inUnsafeCallWithABI) {
+    return site;
+  }
+
+  FrameIter frame(cx);
+  if (frame.done() || !frame.isBaseline()) {
+    return site;
+  }
+
+  MOZ_ASSERT(site == cx->zone()->unknownAllocSite(traceKind));
+  MOZ_ASSERT(frame.hasScript());
+
+  JSScript* script = frame.script();
+  if (cx->zone() != script->zone()) {
+    return site;  // Skip cross-zone allocation.
+  }
+
+  uint32_t pcOffset = script->pcToOffset(frame.pc());
+  if (!script->hasBaselineScript() || pcOffset > AllocSite::MaxValidPCOffset) {
+    return site;
+  }
+
+  AllocSite* missingSite =
+      GetOrCreateMissingAllocSite(cx, script, pcOffset, traceKind);
+  if (!missingSite) {
+    return site;
+  }
+
+  return missingSite;
+}
+
+#endif  // JS_GC_ZEAL
+
 #ifdef DEBUG
 /* static */
 void CellAllocator::CheckIncrementalZoneState(JSContext* cx, void* ptr) {
@@ -291,7 +342,7 @@ void CellAllocator::CheckIncrementalZoneState(JSContext* cx, void* ptr) {
 }
 #endif
 
-void* js::gc::AllocateCellInGC(Zone* zone, AllocKind thingKind) {
+void* js::gc::AllocateTenuredCellInGC(Zone* zone, AllocKind thingKind) {
   void* ptr = zone->arenas.allocateFromFreeList(thingKind);
   if (!ptr) {
     AutoEnterOOMUnsafeRegion oomUnsafe;
@@ -541,7 +592,7 @@ TenuredChunk* GCRuntime::getOrAllocChunk(AutoLockGCBgAlloc& lock) {
     // Reinitialize ChunkBase; arenas are all free and may or may not be
     // committed.
     SetMemCheckKind(chunk, sizeof(ChunkBase), MemCheckKind::MakeUndefined);
-    chunk->initBase(rt, nullptr);
+    chunk->initBaseForTenuredChunk(rt);
     MOZ_ASSERT(chunk->unused());
   } else {
     void* ptr = TenuredChunk::allocate(this);

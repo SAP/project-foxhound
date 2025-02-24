@@ -56,6 +56,9 @@ class ExternalEngineStateMachine final
   ExternalEngineStateMachine(MediaDecoder* aDecoder,
                              MediaFormatReader* aReader);
 
+  RefPtr<MediaDecoder::SeekPromise> InvokeSeek(
+      const SeekTarget& aTarget) override;
+
   RefPtr<GenericPromise> InvokeSetSink(
       const RefPtr<AudioDeviceInfo>& aSink) override;
 
@@ -151,12 +154,12 @@ class ExternalEngineStateMachine final
         mSeekJob = SeekJob();
         mSeekJob.mTarget = Some(aTarget);
       }
-      void Resolve(const char* aCallSite) {
+      void Resolve(StaticString aCallSite) {
         MOZ_ASSERT(mSeekJob.Exists());
         mSeekJob.Resolve(aCallSite);
         mSeekJob = SeekJob();
       }
-      void RejectIfExists(const char* aCallSite) {
+      void RejectIfExists(StaticString aCallSite) {
         mSeekJob.RejectIfExists(aCallSite);
       }
       bool IsSeeking() const { return mSeekRequest.Exists(); }
@@ -178,9 +181,9 @@ class ExternalEngineStateMachine final
     // crashes.
     struct RecoverEngine : public InitEngine {};
 
-    StateObject() : mData(InitEngine()), mName(State::InitEngine){};
-    explicit StateObject(ReadingMetadata&& aArg)
-        : mData(std::move(aArg)), mName(State::ReadingMetadata){};
+    StateObject() : mData(ReadingMetadata()), mName(State::ReadingMetadata){};
+    explicit StateObject(InitEngine&& aArg)
+        : mData(std::move(aArg)), mName(State::InitEngine){};
     explicit StateObject(RunningEngine&& aArg)
         : mData(std::move(aArg)), mName(State::RunningEngine){};
     explicit StateObject(SeekingData&& aArg)
@@ -308,7 +311,11 @@ class ExternalEngineStateMachine final
   // Only used if setting CDM happens before the engine finishes initialization.
   MozPromiseHolder<SetCDMPromise> mSetCDMProxyPromise;
   MozPromiseRequestHolder<SetCDMPromise> mSetCDMProxyRequest;
-  MozPromiseRequestHolder<GenericNonExclusivePromise> mInitEngineForCDMRequest;
+
+  // If seek happens while the engine is still initializing, then we would
+  // postpone the seek until the engine is ready.
+  SeekJob mPendingSeek;
+  MozPromiseRequestHolder<MediaDecoder::SeekPromise> mPendingSeekRequest;
 
   // It would be zero for audio-only playback.
   gfx::IntSize mVideoDisplay;
@@ -332,9 +339,11 @@ class ExternalPlaybackEngine {
   virtual ~ExternalPlaybackEngine() = default;
 
   // Init the engine and specify the preload request.
-  virtual RefPtr<GenericNonExclusivePromise> Init(bool aShouldPreload) = 0;
+  virtual RefPtr<GenericNonExclusivePromise> Init(const MediaInfo& aInfo,
+                                                  bool aShouldPreload) = 0;
   virtual void Shutdown() = 0;
   virtual uint64_t Id() const = 0;
+  virtual bool IsInited() const = 0;
 
   // Following methods should only be called after successfully initialize the
   // external engine.
@@ -347,7 +356,6 @@ class ExternalPlaybackEngine {
   virtual void SetPreservesPitch(bool aPreservesPitch) = 0;
   virtual media::TimeUnit GetCurrentPosition() = 0;
   virtual void NotifyEndOfStream(TrackInfo::TrackType aType) = 0;
-  virtual void SetMediaInfo(const MediaInfo& aInfo) = 0;
   virtual bool SetCDMProxy(CDMProxy* aProxy) = 0;
   virtual void NotifyResizing(uint32_t aWidth, uint32_t aHeight) = 0;
 

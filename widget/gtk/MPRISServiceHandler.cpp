@@ -18,6 +18,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/XREAppData.h"
 #include "nsXULAppAPI.h"
 #include "nsIXULAppInfo.h"
 #include "nsIOutputStream.h"
@@ -26,6 +27,7 @@
 #include "WidgetUtilsGtk.h"
 #include "AsyncDBus.h"
 #include "prio.h"
+#include "nsAppRunner.h"
 
 #define LOGMPRIS(msg, ...)                   \
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, \
@@ -410,12 +412,17 @@ void MPRISServiceHandler::InitIdentity() {
   nsresult rv;
   nsCOMPtr<nsIXULAppInfo> appInfo =
       do_GetService("@mozilla.org/xre/app-info;1", &rv);
-
   MOZ_ASSERT(NS_SUCCEEDED(rv));
+
   rv = appInfo->GetVendor(mIdentity);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-  rv = appInfo->GetName(mDesktopEntry);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  if (gAppData) {
+    mDesktopEntry = gAppData->remotingName;
+  } else {
+    rv = appInfo->GetName(mDesktopEntry);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  }
 
   mIdentity.Append(' ');
   mIdentity.Append(mDesktopEntry);
@@ -439,10 +446,10 @@ const char* MPRISServiceHandler::DesktopEntry() const {
 bool MPRISServiceHandler::PressKey(dom::MediaControlKey aKey) const {
   MOZ_ASSERT(mInitialized);
   if (!IsMediaKeySupported(aKey)) {
-    LOGMPRIS("%s is not supported", ToMediaControlKeyStr(aKey));
+    LOGMPRIS("%s is not supported", dom::GetEnumString(aKey).get());
     return false;
   }
-  LOGMPRIS("Press %s", ToMediaControlKeyStr(aKey));
+  LOGMPRIS("Press %s", dom::GetEnumString(aKey).get());
   EmitEvent(aKey);
   return true;
 }
@@ -861,7 +868,7 @@ bool MPRISServiceHandler::EmitSupportedKeyChanged(dom::MediaControlKey aKey,
                                                   bool aSupported) const {
   auto it = gKeyProperty.find(aKey);
   if (it == gKeyProperty.end()) {
-    LOGMPRIS("No property for %s", ToMediaControlKeyStr(aKey));
+    LOGMPRIS("No property for %s", dom::GetEnumString(aKey).get());
     return false;
   }
 

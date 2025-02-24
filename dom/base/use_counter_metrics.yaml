@@ -107,8 +107,8 @@ use.counter:
     send_in_pings:
       - use-counters
 
-# Total of 2307 use counter metrics (excludes denominators).
-# Total of 358 'page' use counters.
+# Total of 2343 use counter metrics (excludes denominators).
+# Total of 364 'page' use counters.
 use.counter.page:
   svgsvgelement_getelementbyid:
     type: counter
@@ -450,57 +450,6 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
-  onstart:
-    type: counter
-    description: >
-      Whether a page sets a <marquee> onstart event listener.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  onbounce:
-    type: counter
-    description: >
-      Whether a page sets a <marquee> onbounce event listener.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  onfinish:
-    type: counter
-    description: >
-      Whether a page sets a <marquee> onfinish event listener.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   onoverflow:
     type: counter
     description: >
@@ -569,10 +518,10 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
-  js_late_weekday:
+  js_wasm_legacy_exceptions:
     type: counter
     description: >
-      Whether a page parses a Date with day of week in an unexpected position.
+      Whether a page uses WebAssembly legacy exception-handling.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -586,10 +535,163 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
-  js_wasm_legacy_exceptions:
+  js_subclassing_array_type_2:
     type: counter
     description: >
-      Whether a page uses WebAssembly legacy exception-handling.
+      Whether a page Array is Type II subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_array_type_3:
+    type: counter
+    description: >
+      Whether a page Array is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_promise_type_2:
+    type: counter
+    description: >
+      Whether a page Promise is Type II subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_promise_type_3:
+    type: counter
+    description: >
+      Whether a page Promise is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_typedarray_type_2:
+    type: counter
+    description: >
+      Whether a page TypedArray is Type II subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_typedarray_type_3:
+    type: counter
+    description: >
+      Whether a page TypedArray is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_arraybuffer_type_3:
+    type: counter
+    description: >
+      Whether a page ArrayBuffer is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_sharedarraybuffer_type_3:
+    type: counter
+    description: >
+      Whether a page SharedArrayBuffer is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_regexp_type_3:
+    type: counter
+    description: >
+      Whether a page RegExp is Type III subclassed.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_regexp_type_4:
+    type: counter
+    description: >
+      Whether a page RegExp is Type IV subclassed.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -6196,7 +6298,7 @@ use.counter.page:
     send_in_pings:
       - use-counters
 
-# Total of 358 'document' use counters.
+# Total of 364 'document' use counters.
 use.counter.doc:
   svgsvgelement_getelementbyid:
     type: counter
@@ -6538,57 +6640,6 @@ use.counter.doc:
     send_in_pings:
       - use-counters
 
-  onstart:
-    type: counter
-    description: >
-      Whether a document sets a <marquee> onstart event listener.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  onbounce:
-    type: counter
-    description: >
-      Whether a document sets a <marquee> onbounce event listener.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  onfinish:
-    type: counter
-    description: >
-      Whether a document sets a <marquee> onfinish event listener.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   onoverflow:
     type: counter
     description: >
@@ -6657,10 +6708,10 @@ use.counter.doc:
     send_in_pings:
       - use-counters
 
-  js_late_weekday:
+  js_wasm_legacy_exceptions:
     type: counter
     description: >
-      Whether a document parses a Date with day of week in an unexpected position.
+      Whether a document uses WebAssembly legacy exception-handling.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -6674,10 +6725,163 @@ use.counter.doc:
     send_in_pings:
       - use-counters
 
-  js_wasm_legacy_exceptions:
+  js_subclassing_array_type_2:
     type: counter
     description: >
-      Whether a document uses WebAssembly legacy exception-handling.
+      Whether a document Array is Type II subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_array_type_3:
+    type: counter
+    description: >
+      Whether a document Array is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_promise_type_2:
+    type: counter
+    description: >
+      Whether a document Promise is Type II subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_promise_type_3:
+    type: counter
+    description: >
+      Whether a document Promise is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_typedarray_type_2:
+    type: counter
+    description: >
+      Whether a document TypedArray is Type II subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_typedarray_type_3:
+    type: counter
+    description: >
+      Whether a document TypedArray is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_arraybuffer_type_3:
+    type: counter
+    description: >
+      Whether a document ArrayBuffer is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_sharedarraybuffer_type_3:
+    type: counter
+    description: >
+      Whether a document SharedArrayBuffer is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_regexp_type_3:
+    type: counter
+    description: >
+      Whether a document RegExp is Type III subclassed.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  js_subclassing_regexp_type_4:
+    type: counter
+    description: >
+      Whether a document RegExp is Type IV subclassed.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -13973,12 +14177,114 @@ use.counter.worker.service:
     send_in_pings:
       - use-counters
 
-# Total of 50 'deprecated operations (page)' use counters.
+# Total of 56 'deprecated operations (page)' use counters.
 use.counter.deprecated_ops.page:
-  mutation_event:
+  domsubtree_modified:
     type: counter
     description: >
-      Whether a page used MutationEvent.
+      Whether a page used DOMSubtreeModified.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_inserted:
+    type: counter
+    description: >
+      Whether a page used DOMNodeInserted.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_removed:
+    type: counter
+    description: >
+      Whether a page used DOMNodeRemoved.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_removed_from_document:
+    type: counter
+    description: >
+      Whether a page used DOMNodeRemovedFromDocument.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_inserted_into_document:
+    type: counter
+    description: >
+      Whether a page used DOMNodeInsertedIntoDocument.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domattr_modified:
+    type: counter
+    description: >
+      Whether a page used DOMAttrModified.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domcharacter_data_modified:
+    type: counter
+    description: >
+      Whether a page used DOMCharacterDataModified.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -14825,12 +15131,114 @@ use.counter.deprecated_ops.page:
     send_in_pings:
       - use-counters
 
-# Total of 50 'deprecated operations (document)' use counters.
+# Total of 56 'deprecated operations (document)' use counters.
 use.counter.deprecated_ops.doc:
-  mutation_event:
+  domsubtree_modified:
     type: counter
     description: >
-      Whether a document used MutationEvent.
+      Whether a document used DOMSubtreeModified.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_inserted:
+    type: counter
+    description: >
+      Whether a document used DOMNodeInserted.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_removed:
+    type: counter
+    description: >
+      Whether a document used DOMNodeRemoved.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_removed_from_document:
+    type: counter
+    description: >
+      Whether a document used DOMNodeRemovedFromDocument.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domnode_inserted_into_document:
+    type: counter
+    description: >
+      Whether a document used DOMNodeInsertedIntoDocument.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domattr_modified:
+    type: counter
+    description: >
+      Whether a document used DOMAttrModified.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  domcharacter_data_modified:
+    type: counter
+    description: >
+      Whether a document used DOMCharacterDataModified.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -15677,7 +16085,7 @@ use.counter.deprecated_ops.doc:
     send_in_pings:
       - use-counters
 
-# Total of 696 'CSS (page)' use counters.
+# Total of 702 'CSS (page)' use counters.
 use.counter.css.page:
   css_align_content:
     type: counter
@@ -16495,6 +16903,23 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
+  css_inset_area:
+    type: counter
+    description: >
+      Whether a page used the CSS property inset-area.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_isolation:
     type: counter
     description: >
@@ -17162,6 +17587,40 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property position.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_try_order:
+    type: counter
+    description: >
+      Whether a page used the CSS property position-try-order.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_visibility:
+    type: counter
+    description: >
+      Whether a page used the CSS property position-visibility.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -18705,10 +19164,27 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-  css_align_tracks:
+  css_anchor_name:
     type: counter
     description: >
-      Whether a page used the CSS property align-tracks.
+      Whether a page used the CSS property anchor-name.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_anchor_scope:
+    type: counter
+    description: >
+      Whether a page used the CSS property anchor-scope.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -19538,23 +20014,6 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-  css_justify_tracks:
-    type: counter
-    description: >
-      Whether a page used the CSS property justify-tracks.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   css_letter_spacing:
     type: counter
     description: >
@@ -19848,6 +20307,40 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property perspective.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_anchor:
+    type: counter
+    description: >
+      Whether a page used the CSS property position-anchor.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_try_options:
+    type: counter
+    description: >
+      Whether a page used the CSS property position-try-options.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -24434,6 +24927,23 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
+  css_webkit_font_smoothing:
+    type: counter
+    description: >
+      Whether a page used the CSS property -webkit-font-smoothing.
+      Compare against `use.counter.top_level_content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_color_adjust:
     type: counter
     description: >
@@ -25747,23 +26257,6 @@ use.counter.css.page:
     type: counter
     description: >
       Whether a page used the CSS property -webkit-animation.
-      Compare against `use.counter.top_level_content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  webkit_font_smoothing:
-    type: counter
-    description: >
-      Whether a page used the (unknown, counted) CSS property -webkit-font-smoothing.
       Compare against `use.counter.top_level_content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -27528,7 +28021,7 @@ use.counter.css.page:
     send_in_pings:
       - use-counters
 
-# Total of 696 'CSS (document)' use counters.
+# Total of 702 'CSS (document)' use counters.
 use.counter.css.doc:
   css_align_content:
     type: counter
@@ -28346,6 +28839,23 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
+  css_inset_area:
+    type: counter
+    description: >
+      Whether a document used the CSS property inset-area.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_isolation:
     type: counter
     description: >
@@ -29013,6 +29523,40 @@ use.counter.css.doc:
     type: counter
     description: >
       Whether a document used the CSS property position.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_try_order:
+    type: counter
+    description: >
+      Whether a document used the CSS property position-try-order.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_visibility:
+    type: counter
+    description: >
+      Whether a document used the CSS property position-visibility.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -30556,10 +31100,27 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
-  css_align_tracks:
+  css_anchor_name:
     type: counter
     description: >
-      Whether a document used the CSS property align-tracks.
+      Whether a document used the CSS property anchor-name.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_anchor_scope:
+    type: counter
+    description: >
+      Whether a document used the CSS property anchor-scope.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -31389,23 +31950,6 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
-  css_justify_tracks:
-    type: counter
-    description: >
-      Whether a document used the CSS property justify-tracks.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
   css_letter_spacing:
     type: counter
     description: >
@@ -31699,6 +32243,40 @@ use.counter.css.doc:
     type: counter
     description: >
       Whether a document used the CSS property perspective.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_anchor:
+    type: counter
+    description: >
+      Whether a document used the CSS property position-anchor.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
+  css_position_try_options:
+    type: counter
+    description: >
+      Whether a document used the CSS property position-try-options.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -36285,6 +36863,23 @@ use.counter.css.doc:
     send_in_pings:
       - use-counters
 
+  css_webkit_font_smoothing:
+    type: counter
+    description: >
+      Whether a document used the CSS property -webkit-font-smoothing.
+      Compare against `use.counter.content_documents_destroyed`
+      to calculate the rate.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
+    notification_emails:
+      - dom-core@mozilla.com
+      - emilio@mozilla.com
+    expires: never
+    send_in_pings:
+      - use-counters
+
   css_color_adjust:
     type: counter
     description: >
@@ -37598,23 +38193,6 @@ use.counter.css.doc:
     type: counter
     description: >
       Whether a document used the CSS property -webkit-animation.
-      Compare against `use.counter.content_documents_destroyed`
-      to calculate the rate.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1852098
-    notification_emails:
-      - dom-core@mozilla.com
-      - emilio@mozilla.com
-    expires: never
-    send_in_pings:
-      - use-counters
-
-  webkit_font_smoothing:
-    type: counter
-    description: >
-      Whether a document used the (unknown, counted) CSS property -webkit-font-smoothing.
       Compare against `use.counter.content_documents_destroyed`
       to calculate the rate.
     bugs:
@@ -39378,3 +39956,4 @@ use.counter.css.doc:
     expires: never
     send_in_pings:
       - use-counters
+

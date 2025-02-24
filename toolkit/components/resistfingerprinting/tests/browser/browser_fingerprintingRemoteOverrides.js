@@ -1,6 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
- * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
@@ -19,6 +19,18 @@ const TARGET_PointerEvents = 0x00000002;
 const TARGET_CanvasRandomization = 0x000000100;
 const TARGET_WindowOuterSize = 0x002000000;
 const TARGET_Gamepad = 0x00800000;
+
+const TEST_PAGE =
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.com"
+  ) + "empty.html";
+
+const TEST_ANOTHER_PAGE =
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.net"
+  ) + "empty.html";
 
 // A helper function to filter high 32 bits.
 function extractLow32Bits(value) {
@@ -311,6 +323,51 @@ add_task(async function test_remote_settings() {
   db.clear();
 });
 
+add_task(async function test_remote_settings_pref() {
+  // Add initial empty record.
+  let db = RemoteSettings(COLLECTION_NAME).db;
+  await db.importChanges({}, Date.now(), []);
+
+  for (let test of TEST_CASES) {
+    info(`Testing with entry ${JSON.stringify(test.entires)}`);
+
+    // Disable remote overrides
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        ["privacy.fingerprintingProtection.remoteOverrides.enabled", false],
+      ],
+    });
+
+    // Create a promise for waiting the overrides get updated.
+    let promise = promiseObserver("fpp-test:set-overrides-finishes");
+
+    // Trigger the fingerprinting overrides update by a remote settings sync.
+    await RemoteSettings(COLLECTION_NAME).emit("sync", {
+      data: {
+        current: test.entires,
+      },
+    });
+    await promise;
+
+    ok(true, "Got overrides update");
+
+    for (let expect of test.expects) {
+      try {
+        // Check for the existance of RFP overrides
+        Services.rfp.getFingerprintingOverrides(expect.domain);
+        ok(
+          false,
+          "This line should never run as the override should not exist and the previous line would throw an exception"
+        );
+      } catch (e) {
+        ok(true, "Received an exception as expected");
+      }
+    }
+  }
+
+  db.clear();
+});
+
 add_task(async function test_pref() {
   for (let test of TEST_CASES) {
     info(`Testing with entry ${JSON.stringify(test.entires)}`);
@@ -403,4 +460,50 @@ add_task(async function test_pref_override_remote_settings() {
   );
 
   db.clear();
+});
+
+// Bug 1873682 - Verify that a third-party beacon request won't hit the
+// assertion in nsRFPService::GetOverriddenFingerprintingSettingsForChannel().
+add_task(async function test_beacon_request() {
+  // Open an empty page.
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_PAGE);
+
+  await SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [TEST_ANOTHER_PAGE],
+    async url => {
+      // Create a third-party iframe
+      let ifr = content.document.createElement("iframe");
+
+      await new content.Promise(resolve => {
+        ifr.onload = resolve;
+        content.document.body.appendChild(ifr);
+        ifr.src = url;
+      });
+
+      await SpecialPowers.spawn(ifr, [url], url => {
+        // Sending the beacon request right before the tab navigates away.
+        content.addEventListener("unload", _ => {
+          let value = ["text"];
+          let blob = new Blob(value, {
+            type: "application/x-www-form-urlencoded",
+          });
+          content.navigator.sendBeacon(url, blob);
+        });
+      });
+
+      // Navigate the tab to another page.
+      content.location = url;
+    }
+  );
+
+  await BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    TEST_ANOTHER_PAGE
+  );
+
+  ok(true, "Successfully navigates away.");
+
+  BrowserTestUtils.removeTab(tab);
 });

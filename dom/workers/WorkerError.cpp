@@ -62,13 +62,13 @@ namespace mozilla::dom {
 
 namespace {
 
-class ReportErrorRunnable final : public WorkerDebuggeeRunnable {
+class ReportErrorRunnable final : public WorkerParentDebuggeeRunnable {
   UniquePtr<WorkerErrorReport> mReport;
 
  public:
   ReportErrorRunnable(WorkerPrivate* aWorkerPrivate,
                       UniquePtr<WorkerErrorReport> aReport)
-      : WorkerDebuggeeRunnable(aWorkerPrivate, "ReportErrorRunnable"),
+      : WorkerParentDebuggeeRunnable("ReportErrorRunnable"),
         mReport(std::move(aReport)) {}
 
  private:
@@ -138,7 +138,7 @@ class ReportErrorRunnable final : public WorkerDebuggeeRunnable {
   }
 };
 
-class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
+class ReportGenericErrorRunnable final : public WorkerParentDebuggeeRunnable {
  public:
   static void CreateAndDispatch(WorkerPrivate* aWorkerPrivate) {
     MOZ_ASSERT(aWorkerPrivate);
@@ -146,12 +146,12 @@ class ReportGenericErrorRunnable final : public WorkerDebuggeeRunnable {
 
     RefPtr<ReportGenericErrorRunnable> runnable =
         new ReportGenericErrorRunnable(aWorkerPrivate);
-    runnable->Dispatch();
+    runnable->Dispatch(aWorkerPrivate);
   }
 
  private:
   explicit ReportGenericErrorRunnable(WorkerPrivate* aWorkerPrivate)
-      : WorkerDebuggeeRunnable(aWorkerPrivate, "ReportGenericErrorRunnable") {
+      : WorkerParentDebuggeeRunnable("ReportGenericErrorRunnable") {
     aWorkerPrivate->AssertIsOnWorkerThread();
   }
 
@@ -354,7 +354,7 @@ void WorkerErrorReport::ReportError(
   if (aWorkerPrivate) {
     RefPtr<ReportErrorRunnable> runnable =
         new ReportErrorRunnable(aWorkerPrivate, std::move(aReport));
-    runnable->Dispatch();
+    runnable->Dispatch(aWorkerPrivate);
     return;
   }
 

@@ -327,7 +327,7 @@ class WalkerActor extends Actor {
         const mutation = {
           type: "events",
           target: actor.actorID,
-          hasEventListeners: actor._hasEventListeners,
+          hasEventListeners: actor.hasEventListeners(/* refreshCache */ true),
         };
         this.queueMutation(mutation);
       }
@@ -339,11 +339,7 @@ class WalkerActor extends Actor {
     return {
       actor: this.actorID,
       root: this.rootNode.form(),
-      traits: {
-        // @backward-compat { version 125 } Indicate to the client that it can use getIdrefNode.
-        // This trait can be removed once 125 hits release.
-        hasGetIdrefNode: true,
-      },
+      traits: {},
     };
   }
 
@@ -384,7 +380,6 @@ class WalkerActor extends Actor {
       this.layoutHelpers = null;
       this._orphaned = null;
       this._retainedOrphans = null;
-      this._nodeActorsMap = null;
 
       this.targetActor.off("will-navigate", this.onFrameUnload);
       this.targetActor.off("window-ready", this.onFrameLoad);
@@ -433,6 +428,9 @@ class WalkerActor extends Actor {
         this._onEventListenerChange
       );
 
+      // Only nullify some key attributes after having removed all the listeners
+      // as they may still be used in the related listeners.
+      this._nodeActorsMap = null;
       this.onMutations = null;
 
       this.layoutActor = null;

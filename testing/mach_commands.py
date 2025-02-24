@@ -1080,7 +1080,7 @@ def test_info_failures(
     # query VCS to get current list of variants:
     import yaml
 
-    url = "https://hg.mozilla.org/mozilla-central/raw-file/tip/taskcluster/ci/test/variants.yml"
+    url = "https://hg.mozilla.org/mozilla-central/raw-file/tip/taskcluster/kinds/test/variants.yml"
     r = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
     variants = yaml.safe_load(r.text)
 
@@ -1184,14 +1184,8 @@ def run_rusttests(command_context, **kwargs):
     category="testing",
     description="Test Fluent migration recipes.",
 )
-@CommandArgument(
-    "--l10n-git",
-    action="store_true",
-    dest="l10n_git",
-    help="Use git rather than hg source repository",
-)
 @CommandArgument("test_paths", nargs="*", metavar="N", help="Recipe paths to test.")
-def run_migration_tests(command_context, l10n_git=False, test_paths=None, **kwargs):
+def run_migration_tests(command_context, test_paths=None, **kwargs):
     if not test_paths:
         test_paths = []
     command_context.activate_virtualenv()
@@ -1228,11 +1222,9 @@ def run_migration_tests(command_context, l10n_git=False, test_paths=None, **kwar
                 "ERROR in {file}: {error}",
             )
             rv |= 1
-    obj_dir, repo_dir = fmt.prepare_directories(command_context, l10n_git)
+    obj_dir, repo_dir = fmt.prepare_directories(command_context)
     for context in with_context:
-        rv |= fmt.test_migration(
-            command_context, obj_dir, repo_dir, l10n_git, **context
-        )
+        rv |= fmt.test_migration(command_context, obj_dir, repo_dir, **context)
     return rv
 
 
@@ -1255,7 +1247,11 @@ def manifest(_command_context):
 )
 @CommandArgument("try_url", nargs=1, help="Treeherder URL for try (please use quotes)")
 @CommandArgument(
-    "-b", "--bugzilla", default=None, dest="bugzilla", help="Bugzilla instance"
+    "-b",
+    "--bugzilla",
+    default=None,
+    dest="bugzilla",
+    help="Bugzilla instance (or disable)",
 )
 @CommandArgument(
     "-m", "--meta-bug-id", default=None, dest="meta_bug_id", help="Meta Bug id"

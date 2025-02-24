@@ -134,10 +134,11 @@ HTMLTextAreaElement::SelectAll(nsPresContext* aPresContext) {
   return NS_OK;
 }
 
-bool HTMLTextAreaElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
+bool HTMLTextAreaElement::IsHTMLFocusable(IsFocusableFlags aFlags,
+                                          bool* aIsFocusable,
                                           int32_t* aTabIndex) {
   if (nsGenericHTMLFormControlElementWithState::IsHTMLFocusable(
-          aWithMouse, aIsFocusable, aTabIndex)) {
+          aFlags, aIsFocusable, aTabIndex)) {
     return true;
   }
 
@@ -1082,7 +1083,13 @@ bool HTMLTextAreaElement::IsTextArea() const { return true; }
 
 bool HTMLTextAreaElement::IsPasswordTextControl() const { return false; }
 
-int32_t HTMLTextAreaElement::GetCols() { return Cols(); }
+Maybe<int32_t> HTMLTextAreaElement::GetCols() {
+  const nsAttrValue* value = GetParsedAttr(nsGkAtoms::cols);
+  if (!value || value->Type() != nsAttrValue::eInteger) {
+    return {};
+  }
+  return Some(value->GetIntegerValue());
+}
 
 int32_t HTMLTextAreaElement::GetWrapCols() {
   nsHTMLTextWrap wrapProp;
@@ -1093,7 +1100,7 @@ int32_t HTMLTextAreaElement::GetWrapCols() {
   }
 
   // Otherwise we just wrap at the given number of columns
-  return GetCols();
+  return GetColsOrDefault();
 }
 
 int32_t HTMLTextAreaElement::GetRows() {

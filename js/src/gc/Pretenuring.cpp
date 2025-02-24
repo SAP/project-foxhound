@@ -11,26 +11,21 @@
 
 #include "gc/GCInternals.h"
 #include "gc/PublicIterators.h"
+#include "jit/BaselineJIT.h"
 #include "jit/Invalidation.h"
 #include "js/Prefs.h"
 
+#include "gc/Marking-inl.h"
 #include "gc/PrivateIterators-inl.h"
 #include "vm/JSScript-inl.h"
 
 using namespace js;
 using namespace js::gc;
 
-// The number of nursery allocations at which to pay attention to an allocation
-// site. This must be large enough to ensure we have enough information to infer
-// the lifetime and also large enough to avoid pretenuring low volume allocation
-// sites.
-static constexpr size_t NormalSiteAttentionThreshold = 500;
-static constexpr size_t UnknownSiteAttentionThreshold = 30000;
-
 // The maximum number of alloc sites to create between each minor
 // collection. Stop tracking allocation after this limit is reached. This
 // prevents unbounded time traversing the list during minor GC.
-static constexpr size_t MaxAllocSitesPerMinorGC = 500;
+static constexpr size_t MaxAllocSitesPerMinorGC = 600;
 
 // The maximum number of times to invalidate JIT code for a site. After this we
 // leave the site's state as Unknown and don't pretenure allocations.
@@ -49,12 +44,12 @@ static constexpr double LowYoungSurvivalThreshold = 0.05;
 // that must occur before recovery is attempted.
 static constexpr size_t LowYoungSurvivalCountBeforeRecovery = 2;
 
-// The proportion of the nursery that must be tenured above which a minor
+// The proportion of the nursery that must be promoted above which a minor
 // collection may be determined to have a high nursery survival rate.
 static constexpr double HighNurserySurvivalPromotionThreshold = 0.6;
 
 // The number of nursery allocations made by optimized JIT code that must be
-// tenured above which a minor collection may be determined to have a high
+// promoted above which a minor collection may be determined to have a high
 // nursery survival rate.
 static constexpr size_t HighNurserySurvivalOptimizedAllocThreshold = 10000;
 
@@ -66,6 +61,11 @@ AllocSite* const AllocSite::EndSentinel = reinterpret_cast<AllocSite*>(1);
 JSScript* const AllocSite::WasmScript =
     reinterpret_cast<JSScript*>(AllocSite::STATE_MASK + 1);
 
+/* static */
+void AllocSite::staticAsserts() {
+  static_assert(jit::BaselineMaxScriptLength <= MaxValidPCOffset);
+}
+
 bool PretenuringNursery::canCreateAllocSite() {
   MOZ_ASSERT(allocSitesCreated <= MaxAllocSitesPerMinorGC);
   return JS::Prefs::site_based_pretenuring() &&
@@ -74,8 +74,8 @@ bool PretenuringNursery::canCreateAllocSite() {
 
 size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
                                          bool validPromotionRate,
-                                         double promotionRate, bool reportInfo,
-                                         size_t reportThreshold) {
+                                         double promotionRate,
+                                         const AllocSiteFilter& reportFilter) {
   size_t sitesActive = 0;
   size_t sitesPretenured = 0;
   size_t sitesInvalidated = 0;
@@ -95,7 +95,7 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
     for (ZonesIter zone(gc, SkipAtoms); !zone.done(); zone.next()) {
       bool highNurserySurvivalRate =
           promotionRate > HighNurserySurvivalPromotionThreshold &&
-          zone->optimizedAllocSite()->nurseryTenuredCount >=
+          zone->optimizedAllocSite()->nurseryPromotedCount >=
               HighNurserySurvivalOptimizedAllocThreshold;
       zone->pretenuring.noteHighNurserySurvivalRate(highNurserySurvivalRate);
       if (highNurserySurvivalRate) {
@@ -104,8 +104,8 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
     }
   }
 
-  if (reportInfo) {
-    AllocSite::printInfoHeader(reason, promotionRate);
+  if (reportFilter.enabled) {
+    AllocSite::printInfoHeader(gc, reason, promotionRate);
   }
 
   AllocSite* site = allocatedSites;
@@ -117,8 +117,8 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
     if (site->isNormal()) {
       sitesActive++;
       updateTotalAllocCounts(site);
-      auto result = site->processSite(gc, NormalSiteAttentionThreshold,
-                                      reportInfo, reportThreshold);
+      auto result =
+          site->processSite(gc, NormalSiteAttentionThreshold, reportFilter);
       if (result == AllocSite::WasPretenured ||
           result == AllocSite::WasPretenuredAndInvalidated) {
         sitesPretenured++;
@@ -129,6 +129,10 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
       if (result == AllocSite::WasPretenuredAndInvalidated) {
         sitesInvalidated++;
       }
+    } else if (site->isMissing()) {
+      sitesActive++;
+      updateTotalAllocCounts(site);
+      site->processMissingSite(reportFilter);
     }
 
     site = next;
@@ -136,23 +140,27 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
 
   // Catch-all sites don't end up on the list if they are only used from
   // optimized JIT code, so process them here.
+
   for (ZonesIter zone(gc, SkipAtoms); !zone.done(); zone.next()) {
     for (auto& site : zone->pretenuring.unknownAllocSites) {
       updateTotalAllocCounts(&site);
       if (site.traceKind() == JS::TraceKind::Object) {
-        site.processCatchAllSite(reportInfo, reportThreshold);
+        site.processCatchAllSite(reportFilter);
       } else {
-        site.processSite(gc, UnknownSiteAttentionThreshold, reportInfo,
-                         reportThreshold);
+        site.processSite(gc, UnknownSiteAttentionThreshold, reportFilter);
       }
       // Result checked in Nursery::doPretenuring.
     }
     updateTotalAllocCounts(zone->optimizedAllocSite());
-    zone->optimizedAllocSite()->processCatchAllSite(reportInfo,
-                                                    reportThreshold);
+    zone->optimizedAllocSite()->processCatchAllSite(reportFilter);
+
+    // The data from the promoted alloc sites is never used so clear them here.
+    for (AllocSite& site : zone->pretenuring.promotedAllocSites) {
+      site.resetNurseryAllocations();
+    }
   }
 
-  if (reportInfo) {
+  if (reportFilter.enabled) {
     AllocSite::printInfoFooter(allocSitesCreated, sitesActive, sitesPretenured,
                                sitesInvalidated);
     if (zonesWithHighNurserySurvival) {
@@ -166,12 +174,11 @@ size_t PretenuringNursery::doPretenuring(GCRuntime* gc, JS::GCReason reason,
   return sitesPretenured;
 }
 
-AllocSite::SiteResult AllocSite::processSite(GCRuntime* gc,
-                                             size_t attentionThreshold,
-                                             bool reportInfo,
-                                             size_t reportThreshold) {
-  MOZ_ASSERT(kind() != Kind::Optimized);
-  MOZ_ASSERT(nurseryAllocCount >= nurseryTenuredCount);
+AllocSite::SiteResult AllocSite::processSite(
+    GCRuntime* gc, size_t attentionThreshold,
+    const AllocSiteFilter& reportFilter) {
+  MOZ_ASSERT(isNormal() || isUnknown());
+  MOZ_ASSERT(nurseryAllocCount >= nurseryPromotedCount);
 
   SiteResult result = NoChange;
 
@@ -180,7 +187,7 @@ AllocSite::SiteResult AllocSite::processSite(GCRuntime* gc,
   bool wasInvalidated = false;
 
   if (nurseryAllocCount > attentionThreshold) {
-    promotionRate = double(nurseryTenuredCount) / double(nurseryAllocCount);
+    promotionRate = double(nurseryPromotedCount) / double(nurseryAllocCount);
     hasPromotionRate = true;
 
     AllocSite::State prevState = state();
@@ -193,7 +200,7 @@ AllocSite::SiteResult AllocSite::processSite(GCRuntime* gc,
 
       // We can optimize JIT code before we realise that a site should be
       // pretenured. Make sure we invalidate any existing optimized code.
-      if (hasScript()) {
+      if (isNormal() && hasScript()) {
         wasInvalidated = invalidateScript(gc);
         if (wasInvalidated) {
           result = WasPretenuredAndInvalidated;
@@ -202,7 +209,7 @@ AllocSite::SiteResult AllocSite::processSite(GCRuntime* gc,
     }
   }
 
-  if (reportInfo && allocCount() >= reportThreshold) {
+  if (reportFilter.matches(*this)) {
     printInfo(hasPromotionRate, promotionRate, wasInvalidated);
   }
 
@@ -211,14 +218,39 @@ AllocSite::SiteResult AllocSite::processSite(GCRuntime* gc,
   return result;
 }
 
-void AllocSite::processCatchAllSite(bool reportInfo, size_t reportThreshold) {
-  MOZ_ASSERT(!isNormal());
+void AllocSite::processMissingSite(const AllocSiteFilter& reportFilter) {
+  MOZ_ASSERT(isMissing());
+  MOZ_ASSERT(nurseryAllocCount >= nurseryPromotedCount);
+
+  // Forward counts from missing sites to the relevant unknown site.
+  AllocSite* unknownSite = zone()->unknownAllocSite(traceKind());
+  unknownSite->nurseryAllocCount += nurseryAllocCount;
+  unknownSite->nurseryPromotedCount += nurseryPromotedCount;
+
+  // Update state but only so we can report it.
+  bool hasPromotionRate = false;
+  double promotionRate = 0.0;
+  if (nurseryAllocCount > NormalSiteAttentionThreshold) {
+    promotionRate = double(nurseryPromotedCount) / double(nurseryAllocCount);
+    hasPromotionRate = true;
+    updateStateOnMinorGC(promotionRate);
+  }
+
+  if (reportFilter.matches(*this)) {
+    printInfo(hasPromotionRate, promotionRate, false);
+  }
+
+  resetNurseryAllocations();
+}
+
+void AllocSite::processCatchAllSite(const AllocSiteFilter& reportFilter) {
+  MOZ_ASSERT(isUnknown() || isOptimized());
 
   if (!hasNurseryAllocations()) {
     return;
   }
 
-  if (reportInfo && allocCount() >= reportThreshold) {
+  if (reportFilter.matches(*this)) {
     printInfo(false, 0.0, false);
   }
 
@@ -269,19 +301,6 @@ void PretenuringNursery::maybeStopPretenuring(GCRuntime* gc) {
       zone->pretenuring.noteLowYoungTenuredSurvivalRate(lowYoungSurvivalRate);
     }
   }
-}
-
-AllocSite::Kind AllocSite::kind() const {
-  if (isNormal()) {
-    return Kind::Normal;
-  }
-
-  if (this == zone()->optimizedAllocSite()) {
-    return Kind::Optimized;
-  }
-
-  MOZ_ASSERT(this == zone()->unknownAllocSite(traceKind()));
-  return Kind::Unknown;
 }
 
 void AllocSite::updateStateOnMinorGC(double promotionRate) {
@@ -351,6 +370,29 @@ void AllocSite::trace(JSTracer* trc) {
   }
 }
 
+bool AllocSite::traceWeak(JSTracer* trc) {
+  if (hasScript()) {
+    JSScript* s = script();
+    if (!TraceManuallyBarrieredWeakEdge(trc, &s, "AllocSite script")) {
+      return false;
+    }
+    if (s != script()) {
+      setScript(s);
+    }
+  }
+
+  return true;
+}
+
+bool AllocSite::needsSweep(JSTracer* trc) const {
+  if (hasScript()) {
+    JSScript* s = script();
+    return IsAboutToBeFinalizedUnbarriered(s);
+  }
+
+  return false;
+}
+
 bool PretenuringZone::calculateYoungTenuredSurvivalRate(double* rateOut) {
   MOZ_ASSERT(allocCountInNewlyCreatedArenas >=
              survivorCountInNewlyCreatedArenas);
@@ -399,10 +441,106 @@ bool PretenuringZone::shouldResetPretenuredAllocSites() {
   return shouldReset;
 }
 
+static const char* AllocSiteKindName(AllocSite::Kind kind) {
+  switch (kind) {
+    case AllocSite::Kind::Normal:
+      return "normal";
+    case AllocSite::Kind::Unknown:
+      return "unknown";
+    case AllocSite::Kind::Optimized:
+      return "optimized";
+    case AllocSite::Kind::Missing:
+      return "missing";
+    default:
+      MOZ_CRASH("Bad AllocSite kind");
+  }
+}
+
 /* static */
-void AllocSite::printInfoHeader(JS::GCReason reason, double promotionRate) {
-  fprintf(stderr, "  %-16s %-16s %-20s %-8s %-8s %-6s %-10s\n", "site", "zone",
-          "script/kind", "nallocs", "tenures", "prate", "state");
+void AllocSite::printInfoHeader(GCRuntime* gc, JS::GCReason reason,
+                                double promotionRate) {
+  fprintf(stderr,
+          "Pretenuring info after minor GC %zu for %s reason with promotion "
+          "rate %4.1f%%:\n",
+          size_t(gc->minorGCCount()), ExplainGCReason(reason),
+          promotionRate * 100.0);
+  fprintf(stderr, "  %-16s %-16s %-20s %-12s %-9s %-9s %-8s %-8s %-6s %-10s\n",
+          "Site", "Zone", "Location", "BytecodeOp", "SiteKind", "TraceKind",
+          "NAllocs", "Promotes", "PRate", "State");
+}
+
+static const char* FindBaseName(const char* filename) {
+#ifdef XP_WIN
+  constexpr char PathSeparator = '\\';
+#else
+  constexpr char PathSeparator = '/';
+#endif
+
+  const char* lastSep = strrchr(filename, PathSeparator);
+  if (!lastSep) {
+    return filename;
+  }
+
+  return lastSep + 1;
+}
+
+void AllocSite::printInfo(bool hasPromotionRate, double promotionRate,
+                          bool wasInvalidated) const {
+  // Zone.
+  fprintf(stderr, "  %16p %16p", this, zone());
+
+  // Location and bytecode op (not present for catch-all sites).
+  char location[21] = {'\0'};
+  char opName[13] = {'\0'};
+  if (hasScript()) {
+    uint32_t line = PCToLineNumber(script(), script()->offsetToPC(pcOffset()));
+    const char* scriptName = FindBaseName(script()->filename());
+    SprintfLiteral(location, "%s:%u", scriptName, line);
+    BytecodeLocation location = script()->offsetToLocation(pcOffset());
+    SprintfLiteral(opName, "%s", CodeName(location.getOp()));
+  }
+  fprintf(stderr, " %-20s %-12s", location, opName);
+
+  // Which kind of site this is.
+  fprintf(stderr, " %-9s", AllocSiteKindName(kind()));
+
+  // Trace kind, except for optimized sites.
+  const char* traceKindName = "";
+  if (!isOptimized()) {
+    traceKindName = JS::GCTraceKindToAscii(traceKind());
+  }
+  fprintf(stderr, " %-9s", traceKindName);
+
+  // Nursery allocation count, missing for optimized sites.
+  char buffer[16] = {'\0'};
+  if (!isOptimized()) {
+    SprintfLiteral(buffer, "%8" PRIu32, nurseryAllocCount);
+  }
+  fprintf(stderr, " %8s", buffer);
+
+  // Nursery promotion count.
+  fprintf(stderr, " %8" PRIu32, nurseryPromotedCount);
+
+  // Promotion rate, if there were enough allocations.
+  buffer[0] = '\0';
+  if (hasPromotionRate) {
+    SprintfLiteral(buffer, "%5.1f%%", std::min(1.0, promotionRate) * 100);
+  }
+  fprintf(stderr, " %6s", buffer);
+
+  // Current state where applicable.
+  const char* state = "";
+  if (!isOptimized()) {
+    state = stateName();
+  }
+  fprintf(stderr, " %-10s", state);
+
+  // Whether the associated script was invalidated.
+  if (wasInvalidated) {
+    fprintf(stderr, " invalidated");
+  }
+
+  fprintf(stderr, "\n");
 }
 
 /* static */
@@ -413,68 +551,6 @@ void AllocSite::printInfoFooter(size_t sitesCreated, size_t sitesActive,
           "  %zu alloc sites created, %zu active, %zu pretenured, %zu "
           "invalidated\n",
           sitesCreated, sitesActive, sitesPretenured, sitesInvalidated);
-}
-
-static const char* AllocSiteKindName(AllocSite::Kind kind) {
-  switch (kind) {
-    case AllocSite::Kind::Normal:
-      return "normal";
-    case AllocSite::Kind::Unknown:
-      return "unknown";
-    case AllocSite::Kind::Optimized:
-      return "optimized";
-    default:
-      MOZ_CRASH("Bad AllocSite kind");
-  }
-}
-
-void AllocSite::printInfo(bool hasPromotionRate, double promotionRate,
-                          bool wasInvalidated) const {
-  // Zone.
-  fprintf(stderr, "  %16p %16p", this, zone());
-
-  // Script, or which kind of catch-all site this is.
-  if (!hasScript()) {
-    const char* siteKindName = AllocSiteKindName(kind());
-    if (kind() == Kind::Unknown) {
-      char buffer[32];
-      const char* traceKindName = JS::GCTraceKindToAscii(traceKind());
-      SprintfLiteral(buffer, "%s %s", siteKindName, traceKindName);
-      fprintf(stderr, " %-20s", buffer);
-    } else {
-      fprintf(stderr, " %-20s", siteKindName);
-    }
-  } else {
-    fprintf(stderr, " %20p", script());
-  }
-
-  // Nursery allocation count, missing for optimized sites.
-  char buffer[16] = {'\0'};
-  if (kind() != Kind::Optimized) {
-    SprintfLiteral(buffer, "%8" PRIu32, nurseryAllocCount);
-  }
-  fprintf(stderr, " %8s", buffer);
-
-  // Nursery tenure count.
-  fprintf(stderr, " %8" PRIu32, nurseryTenuredCount);
-
-  // Promotion rate, if there were enough allocations.
-  buffer[0] = '\0';
-  if (hasPromotionRate) {
-    SprintfLiteral(buffer, "%5.1f%%", std::min(1.0, promotionRate) * 100);
-  }
-  fprintf(stderr, " %6s", buffer);
-
-  // Current state where applicable.
-  const char* state = kind() != Kind::Optimized ? stateName() : "";
-  fprintf(stderr, " %-10s", state);
-
-  // Whether the associated script was invalidated.
-  if (wasInvalidated) {
-    fprintf(stderr, " invalidated");
-  }
-
-  fprintf(stderr, "\n");
 }
 
 const char* AllocSite::stateName() const {
@@ -489,3 +565,112 @@ const char* AllocSite::stateName() const {
 
   MOZ_CRASH("Unknown state");
 }
+
+static bool StringIsPrefix(const CharRange& prefix, const char* whole) {
+  MOZ_ASSERT(prefix.length() != 0);
+  return strncmp(prefix.begin().get(), whole, prefix.length()) == 0;
+}
+
+/* static */
+bool AllocSiteFilter::readFromString(const char* string,
+                                     AllocSiteFilter* filter) {
+  *filter = AllocSiteFilter();
+
+  CharRangeVector parts;
+  if (!SplitStringBy(string, ',', &parts)) {
+    MOZ_CRASH("OOM parsing AllocSiteFilter");
+  }
+
+  for (const auto& part : parts) {
+    if (StringIsPrefix(part, "normal")) {
+      filter->siteKindMask |= 1 << size_t(AllocSite::Kind::Normal);
+    } else if (StringIsPrefix(part, "unknown")) {
+      filter->siteKindMask |= 1 << size_t(AllocSite::Kind::Unknown);
+    } else if (StringIsPrefix(part, "optimized")) {
+      filter->siteKindMask |= 1 << size_t(AllocSite::Kind::Optimized);
+    } else if (StringIsPrefix(part, "missing")) {
+      filter->siteKindMask |= 1 << size_t(AllocSite::Kind::Missing);
+    } else if (StringIsPrefix(part, "object")) {
+      filter->traceKindMask |= 1 << size_t(JS::TraceKind::Object);
+    } else if (StringIsPrefix(part, "string")) {
+      filter->traceKindMask |= 1 << size_t(JS::TraceKind::String);
+    } else if (StringIsPrefix(part, "bigint")) {
+      filter->traceKindMask |= 1 << size_t(JS::TraceKind::BigInt);
+    } else if (StringIsPrefix(part, "longlived")) {
+      filter->stateMask |= 1 << size_t(AllocSite::State::LongLived);
+    } else if (StringIsPrefix(part, "shortlived")) {
+      filter->stateMask |= 1 << size_t(AllocSite::State::ShortLived);
+    } else {
+      char* end;
+      filter->allocThreshold = strtol(part.begin().get(), &end, 10);
+      if (end < part.end().get()) {
+        return false;
+      }
+    }
+  }
+
+  filter->enabled = true;
+
+  return true;
+}
+
+template <typename Enum>
+static bool MaskFilterMatches(uint8_t mask, Enum value) {
+  static_assert(std::is_enum_v<Enum>);
+
+  if (mask == 0) {
+    return true;  // Match if filter not specified.
+  }
+
+  MOZ_ASSERT(size_t(value) < 8);
+  uint8_t bit = 1 << size_t(value);
+  return (mask & bit) != 0;
+}
+
+bool AllocSiteFilter::matches(const AllocSite& site) const {
+  // The state is not relevant for other kinds so skip filter.
+  bool matchState = site.isNormal() || site.isMissing();
+
+  return enabled &&
+         (allocThreshold == 0 || site.allocCount() >= allocThreshold) &&
+         MaskFilterMatches(siteKindMask, site.kind()) &&
+         MaskFilterMatches(traceKindMask, site.traceKind()) &&
+         (!matchState || MaskFilterMatches(stateMask, site.state()));
+}
+
+#ifdef JS_GC_ZEAL
+
+AllocSite* js::gc::GetOrCreateMissingAllocSite(JSContext* cx, JSScript* script,
+                                               uint32_t pcOffset,
+                                               JS::TraceKind traceKind) {
+  // Doesn't increment allocSitesCreated so as not to disturb pretenuring.
+
+  Zone* zone = cx->zone();
+  auto& missingSites = zone->missingSites;
+  if (!missingSites) {
+    missingSites = MakeUnique<MissingAllocSites>(zone);
+    if (!missingSites) {
+      return nullptr;
+    }
+  }
+
+  auto scriptPtr = missingSites->scriptMap.lookupForAdd(script);
+  if (!scriptPtr && !missingSites->scriptMap.add(
+                        scriptPtr, script, MissingAllocSites::SiteMap())) {
+    return nullptr;
+  }
+  auto& siteMap = scriptPtr->value();
+
+  auto sitePtr = siteMap.lookupForAdd(pcOffset);
+  if (!sitePtr) {
+    UniquePtr<AllocSite> site = MakeUnique<AllocSite>(
+        zone, script, pcOffset, traceKind, AllocSite::Kind::Missing);
+    if (!site || !siteMap.add(sitePtr, pcOffset, std::move(site))) {
+      return nullptr;
+    }
+  }
+
+  return sitePtr->value().get();
+}
+
+#endif  // JS_GC_ZEAL

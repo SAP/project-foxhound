@@ -36,6 +36,17 @@ static int32_t GetSystemParam(long flag, int32_t def) {
   return ::SystemParametersInfo(flag, 0, &value, 0) ? value : def;
 }
 
+static int32_t GetTooltipOffsetVertical() {
+  static constexpr DWORD kDefaultCursorSize = 32;
+  const DWORD cursorSize =
+      GetSystemParam(MOZ_SPI_CURSORSIZE, kDefaultCursorSize);
+  if (cursorSize == kDefaultCursorSize) {
+    return LookAndFeel::kDefaultTooltipOffset;
+  }
+  return std::ceilf(float(LookAndFeel::kDefaultTooltipOffset) *
+                    float(cursorSize) / float(kDefaultCursorSize));
+}
+
 static bool SystemWantsDarkTheme() {
   if (nsUXThemeData::IsHighContrastOn()) {
     return LookAndFeel::IsDarkColor(
@@ -92,6 +103,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
 
   auto IsHighlightColor = [&] {
     switch (aID) {
+      case ColorID::MozButtonhoverface:
+      case ColorID::MozButtonactivetext:
+        return nsUXThemeData::IsHighContrastOn();
       case ColorID::MozMenuhover:
         return !UseNonNativeMenuColors(aScheme);
       case ColorID::Highlight:
@@ -109,6 +123,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
 
   auto IsHighlightTextColor = [&] {
     switch (aID) {
+      case ColorID::MozButtonhovertext:
+      case ColorID::MozButtonactiveface:
+        return nsUXThemeData::IsHighContrastOn();
       case ColorID::MozMenubarhovertext:
         if (UseNonNativeMenuColors(aScheme)) {
           return false;
@@ -353,6 +370,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::Marktext:
     case ColorID::Mark:
     case ColorID::SpellCheckerUnderline:
+    case ColorID::MozAutofillBackground:
+    case ColorID::TargetTextBackground:
+    case ColorID::TargetTextForeground:
       aColor = GetStandinForNativeColor(aID, aScheme);
       return NS_OK;
     default:
@@ -392,12 +412,8 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = std::ceil(float(timeout) / (2.0f * float(blinkTime)));
       break;
     }
-
     case IntID::CaretWidth:
       aResult = 1;
-      break;
-    case IntID::ShowCaretDuringSelection:
-      aResult = 0;
       break;
     case IntID::SelectTextfieldsOnKeyFocus:
       // Select textfield content when focused by kbd
@@ -522,6 +538,9 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::ContextMenuOffsetVertical:
     case IntID::ContextMenuOffsetHorizontal:
       aResult = 2;
+      break;
+    case IntID::TooltipOffsetVertical:
+      aResult = GetTooltipOffsetVertical();
       break;
     case IntID::SystemUsesDarkTheme:
       aResult = SystemWantsDarkTheme();

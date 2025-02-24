@@ -4,11 +4,11 @@
 "use strict";
 
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.importESModule(
-  "resource://activity-stream/common/Actions.sys.mjs"
+  "resource://activity-stream/common/Actions.mjs"
 );
 
 const { MESSAGE_TYPE_HASH: msg } = ChromeUtils.importESModule(
-  "resource:///modules/asrouter/ActorConstants.sys.mjs"
+  "resource:///modules/asrouter/ActorConstants.mjs"
 );
 
 const { updateAppInfo } = ChromeUtils.importESModule(
@@ -947,18 +947,18 @@ add_task(
   }
 );
 
-add_task(async function test_applyWhatsNewPolicy() {
+add_task(async function test_applyToolbarBadgePolicy() {
   info(
-    "TelemetryFeed.applyWhatsNewPolicy should set client_id and set pingType"
+    "TelemetryFeed.applyToolbarBadgePolicy should set client_id and set pingType"
   );
   let instance = new TelemetryFeed();
-  let { ping, pingType } = await instance.applyWhatsNewPolicy({});
+  let { ping, pingType } = await instance.applyToolbarBadgePolicy({});
 
   Assert.equal(
     ping.client_id,
     Services.prefs.getCharPref("toolkit.telemetry.cachedClientID")
   );
-  Assert.equal(pingType, "whats-new-panel");
+  Assert.equal(pingType, "toolbar-badge");
 });
 
 add_task(async function test_applyInfoBarPolicy() {
@@ -1288,10 +1288,10 @@ add_task(async function test_createASRouterEvent_call_correctPolicy() {
     message_id: "onboarding_message_01",
   });
 
-  testCallCorrectPolicy("applyWhatsNewPolicy", {
-    action: "whats-new-panel_user_event",
-    event: "CLICK_BUTTON",
-    message_id: "whats-new-panel_message_01",
+  testCallCorrectPolicy("applyToolbarBadgePolicy", {
+    action: "badge_user_event",
+    event: "IMPRESSION",
+    message_id: "badge_message_01",
   });
 
   testCallCorrectPolicy("applyMomentsPolicy", {
@@ -2230,6 +2230,8 @@ add_task(
     const POS_1 = 1;
     const POS_2 = 4;
     const SHIM = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
+    const FETCH_TIMESTAMP = new Date("March 22, 2024 10:15:20");
+    const NEWTAB_CREATION_TIMESTAMP = new Date("March 23, 2024 11:10:30");
     sandbox.stub(instance.sessions, "get").returns({ session_id: SESSION_ID });
 
     let pingSubmitted = new Promise(resolve => {
@@ -2252,6 +2254,14 @@ add_task(
           tile_id: String(2),
         });
         Assert.equal(Glean.pocket.shim.testGetValue(), SHIM);
+        Assert.deepEqual(
+          Glean.pocket.fetchTimestamp.testGetValue(),
+          FETCH_TIMESTAMP
+        );
+        Assert.deepEqual(
+          Glean.pocket.newtabCreationTimestamp.testGetValue(),
+          NEWTAB_CREATION_TIMESTAMP
+        );
 
         resolve();
       });
@@ -2272,10 +2282,12 @@ add_task(
           type: "spoc",
           recommendation_id: undefined,
           shim: SHIM,
+          fetchTimestamp: FETCH_TIMESTAMP.valueOf(),
         },
       ],
       window_inner_width: 1000,
       window_inner_height: 900,
+      firstVisibleTimestamp: NEWTAB_CREATION_TIMESTAMP.valueOf(),
     });
 
     await pingSubmitted;
@@ -2949,6 +2961,8 @@ add_task(
     Services.fog.testResetFOG();
     const ACTION_POSITION = 42;
     const SHIM = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
+    const FETCH_TIMESTAMP = new Date("March 22, 2024 10:15:20");
+    const NEWTAB_CREATION_TIMESTAMP = new Date("March 23, 2024 11:10:30");
     let action = ac.DiscoveryStreamUserEvent({
       event: "CLICK",
       action_position: ACTION_POSITION,
@@ -2957,6 +2971,8 @@ add_task(
         recommendation_id: undefined,
         tile_id: 448685088,
         shim: SHIM,
+        fetchTimestamp: FETCH_TIMESTAMP.valueOf(),
+        firstVisibleTimestamp: NEWTAB_CREATION_TIMESTAMP.valueOf(),
       },
     });
 
@@ -2966,6 +2982,14 @@ add_task(
     let pingSubmitted = new Promise(resolve => {
       GleanPings.spoc.testBeforeNextSubmit(reason => {
         Assert.equal(reason, "click");
+        Assert.deepEqual(
+          Glean.pocket.fetchTimestamp.testGetValue(),
+          FETCH_TIMESTAMP
+        );
+        Assert.deepEqual(
+          Glean.pocket.newtabCreationTimestamp.testGetValue(),
+          NEWTAB_CREATION_TIMESTAMP
+        );
         resolve();
       });
     });
@@ -3043,6 +3067,8 @@ add_task(
     Services.fog.testResetFOG();
     const ACTION_POSITION = 42;
     const SHIM = "Y29uc2lkZXIgeW91ciBjdXJpb3NpdHkgcmV3YXJkZWQ=";
+    const FETCH_TIMESTAMP = new Date("March 22, 2024 10:15:20");
+    const NEWTAB_CREATION_TIMESTAMP = new Date("March 23, 2024 11:10:30");
     let action = ac.DiscoveryStreamUserEvent({
       event: "SAVE_TO_POCKET",
       action_position: ACTION_POSITION,
@@ -3051,6 +3077,8 @@ add_task(
         recommendation_id: undefined,
         tile_id: 448685088,
         shim: SHIM,
+        fetchTimestamp: FETCH_TIMESTAMP.valueOf(),
+        newtabCreationTimestamp: NEWTAB_CREATION_TIMESTAMP.valueOf(),
       },
     });
 
@@ -3063,6 +3091,14 @@ add_task(
           Glean.pocket.shim.testGetValue(),
           SHIM,
           "Pocket shim was recorded"
+        );
+        Assert.deepEqual(
+          Glean.pocket.fetchTimestamp.testGetValue(),
+          FETCH_TIMESTAMP
+        );
+        Assert.deepEqual(
+          Glean.pocket.newtabCreationTimestamp.testGetValue(),
+          NEWTAB_CREATION_TIMESTAMP
         );
 
         resolve();

@@ -42,6 +42,7 @@ class ServiceWorkerContainer;
 class CredentialsContainer;
 class Clipboard;
 class LockManager;
+class PrivateAttribution;
 class HTMLMediaElement;
 class AudioContext;
 class WakeLockJS;
@@ -177,6 +178,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 
   void GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads, ErrorResult& aRv);
   GamepadServiceTest* RequestGamepadServiceTest(ErrorResult& aRv);
+  already_AddRefed<Promise> RequestAllGamepads(ErrorResult& aRv);
   already_AddRefed<Promise> GetVRDisplays(ErrorResult& aRv);
   void FinishGetVRDisplays(bool isWebVRSupportedInwindow, Promise* p);
   void GetActiveVRDisplays(nsTArray<RefPtr<VRDisplay>>& aDisplays) const;
@@ -208,6 +210,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   dom::Clipboard* Clipboard();
   webgpu::Instance* Gpu();
   dom::LockManager* Locks();
+  dom::PrivateAttribution* PrivateAttribution();
 
   static bool Webdriver();
 
@@ -299,7 +302,8 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   RefPtr<AddonManager> mAddonManager;
   RefPtr<webgpu::Instance> mWebGpu;
   RefPtr<Promise> mSharePromise;  // Web Share API related
-  RefPtr<dom::LockManager> mLocks;
+  RefPtr<LockManager> mLocks;
+  RefPtr<dom::PrivateAttribution> mPrivateAttribution;
   RefPtr<dom::UserActivation> mUserActivation;
   RefPtr<dom::WakeLockJS> mWakeLock;
 };

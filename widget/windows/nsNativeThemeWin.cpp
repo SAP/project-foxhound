@@ -481,12 +481,10 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(
     case StyleAppearance::Button:
       return Some(eUXButton);
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
       return Some(eUXEdit);
-    case StyleAppearance::Toolbox:
-      return Some(eUXRebar);
-    case StyleAppearance::Toolbar:
     case StyleAppearance::Toolbarbutton:
     case StyleAppearance::Separator:
       return Some(eUXToolbar);
@@ -503,12 +501,7 @@ mozilla::Maybe<nsUXThemeClass> nsNativeThemeWin::GetThemeClass(
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
       return Some(eUXCombobox);
-    case StyleAppearance::Treeheadercell:
-      return Some(eUXHeader);
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
-    case StyleAppearance::Treetwistyopen:
-    case StyleAppearance::Treeitem:
       return Some(eUXListview);
     default:
       return Nothing();
@@ -597,6 +590,7 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
       return NS_OK;
     }
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea: {
       ElementState elementState = GetContentState(aFrame, aAppearance);
@@ -719,28 +713,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
       }
       return NS_OK;
     }
-    case StyleAppearance::Toolbox: {
-      aState = 0;
-      aPart = RP_BACKGROUND;
-      return NS_OK;
-    }
-    case StyleAppearance::Toolbar: {
-      // Use -1 to indicate we don't wish to have the theme background drawn
-      // for this item. We will pass any nessessary information via aState,
-      // and will render the item using separate code.
-      aPart = -1;
-      aState = 0;
-      if (aFrame) {
-        nsIContent* content = aFrame->GetContent();
-        nsIContent* parent = content->GetParent();
-        // XXXzeniko hiding the first toolbar will result in an unwanted margin
-        if (parent && parent->GetFirstChild() == content) {
-          aState = 1;
-        }
-      }
-      return NS_OK;
-    }
-    case StyleAppearance::Treeview:
     case StyleAppearance::Listbox: {
       aPart = TREEVIEW_BODY;
       aState = TS_NORMAL;
@@ -774,17 +746,6 @@ nsresult nsNativeThemeWin::GetThemePartAndState(nsIFrame* aFrame,
         aState = TS_ACTIVE;  // The selected tab is always "pressed".
       } else
         aState = StandardGetState(aFrame, aAppearance, true);
-
-      return NS_OK;
-    }
-    case StyleAppearance::Treeheadercell: {
-      aPart = 1;
-      if (!aFrame) {
-        aState = TS_NORMAL;
-        return NS_OK;
-      }
-
-      aState = StandardGetState(aFrame, aAppearance, true);
 
       return NS_OK;
     }
@@ -980,6 +941,7 @@ RENDER_AGAIN:
 
     DrawThemeBackground(theme, hdc, part, state, &contentRect, &clipRect);
   } else if (aAppearance == StyleAppearance::NumberInput ||
+             aAppearance == StyleAppearance::PasswordInput ||
              aAppearance == StyleAppearance::Textfield ||
              aAppearance == StyleAppearance::Textarea) {
     DrawThemeBackground(theme, hdc, part, state, &widgetRect, &clipRect);
@@ -1031,16 +993,6 @@ RENDER_AGAIN:
         ::DeleteObject(hPen);
       }
     }
-  } else if (aAppearance == StyleAppearance::Toolbar && state == 0) {
-    // Draw toolbar separator lines above all toolbars except the first one.
-    // The lines are part of the Rebar theme, which is loaded for
-    // StyleAppearance::Toolbox.
-    theme = GetTheme(StyleAppearance::Toolbox);
-    if (!theme) return NS_ERROR_FAILURE;
-
-    widgetRect.bottom = widgetRect.top + TB_SEPARATOR_HEIGHT;
-    DrawThemeEdge(theme, hdc, RP_BAND, 0, &widgetRect, EDGE_ETCHED, BF_TOP,
-                  nullptr);
   }
 
   nativeDrawing.EndNativeDrawing();
@@ -1101,19 +1053,12 @@ LayoutDeviceIntMargin nsNativeThemeWin::GetWidgetBorder(
   }
 
   if (!WidgetIsContainer(aAppearance) ||
-      aAppearance == StyleAppearance::Toolbox ||
       aAppearance == StyleAppearance::Tabpanel)
     return result;  // Don't worry about it.
 
   int32_t part, state;
   nsresult rv = GetThemePartAndState(aFrame, aAppearance, part, state);
   if (NS_FAILED(rv)) return result;
-
-  if (aAppearance == StyleAppearance::Toolbar) {
-    // make space for the separator line above all toolbars but the first
-    if (state == 0) result.top = TB_SEPARATOR_HEIGHT;
-    return result;
-  }
 
   result = GetCachedWidgetBorder(theme, themeClass.value(), aAppearance, part,
                                  state);
@@ -1129,6 +1074,7 @@ LayoutDeviceIntMargin nsNativeThemeWin::GetWidgetBorder(
   }
 
   if (aFrame && (aAppearance == StyleAppearance::NumberInput ||
+                 aAppearance == StyleAppearance::PasswordInput ||
                  aAppearance == StyleAppearance::Textfield ||
                  aAppearance == StyleAppearance::Textarea)) {
     nsIContent* content = aFrame->GetContent();
@@ -1169,6 +1115,7 @@ bool nsNativeThemeWin::GetWidgetPadding(nsDeviceContext* aContext,
    * added, see bug 430212)
    */
   if (aAppearance == StyleAppearance::NumberInput ||
+      aAppearance == StyleAppearance::PasswordInput ||
       aAppearance == StyleAppearance::Textfield ||
       aAppearance == StyleAppearance::Textarea) {
     aResult->top = aResult->bottom = 2;
@@ -1277,14 +1224,12 @@ LayoutDeviceIntSize nsNativeThemeWin::GetMinimumWidgetSize(
 
   switch (aAppearance) {
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
-    case StyleAppearance::Toolbox:
-    case StyleAppearance::Toolbar:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Tabpanels:
     case StyleAppearance::Tabpanel:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
       return {};  // Don't worry about it.
     default:
       break;
@@ -1352,9 +1297,7 @@ nsNativeThemeWin::WidgetStateChanged(nsIFrame* aFrame,
                                      nsAtom* aAttribute, bool* aShouldRepaint,
                                      const nsAttrValue* aOldValue) {
   // Some widget types just never change state.
-  if (aAppearance == StyleAppearance::Toolbox ||
-      aAppearance == StyleAppearance::Toolbar ||
-      aAppearance == StyleAppearance::Progresschunk ||
+  if (aAppearance == StyleAppearance::Progresschunk ||
       aAppearance == StyleAppearance::ProgressBar ||
       aAppearance == StyleAppearance::Tabpanels ||
       aAppearance == StyleAppearance::Tabpanel ||
@@ -1431,6 +1374,7 @@ bool nsNativeThemeWin::ThemeDrawsFocusForWidget(nsIFrame* aFrame,
     case StyleAppearance::Textarea:
     case StyleAppearance::Textfield:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
       return true;
     default:
       return false;
@@ -1483,6 +1427,7 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
   switch (aAppearance) {
     case StyleAppearance::Button:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Range:
@@ -1490,7 +1435,6 @@ bool nsNativeThemeWin::ClassicThemeSupportsWidget(nsIFrame* aFrame,
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::ProgressBar:
     case StyleAppearance::Progresschunk:
     case StyleAppearance::Tab:
@@ -1510,11 +1454,11 @@ LayoutDeviceIntMargin nsNativeThemeWin::ClassicGetWidgetBorder(
       result.top = result.left = result.bottom = result.right = 2;
       break;
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::Menulist:
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Tab:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
       result.top = result.left = result.bottom = result.right = 2;
@@ -1561,8 +1505,8 @@ LayoutDeviceIntSize nsNativeThemeWin::ClassicGetMinimumWidgetSize(
     case StyleAppearance::MenulistButton:
     case StyleAppearance::Button:
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Progresschunk:
@@ -1619,8 +1563,8 @@ nsresult nsNativeThemeWin::ClassicGetThemePartAndState(
       return NS_OK;
     }
     case StyleAppearance::Listbox:
-    case StyleAppearance::Treeview:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Menulist:
@@ -1812,6 +1756,7 @@ RENDER_AGAIN:
     }
     // Draw controls with 2px 3D inset border
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Listbox:
@@ -1829,15 +1774,6 @@ RENDER_AGAIN:
         ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_BTNFACE + 1));
       else
         ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_WINDOW + 1));
-
-      break;
-    }
-    case StyleAppearance::Treeview: {
-      // Draw inset edge
-      ::DrawEdge(hdc, &widgetRect, EDGE_SUNKEN, BF_RECT | BF_ADJUST);
-
-      // Fill in window color background
-      ::FillRect(hdc, &widgetRect, (HBRUSH)(COLOR_WINDOW + 1));
 
       break;
     }
@@ -1948,6 +1884,7 @@ uint32_t nsNativeThemeWin::GetWidgetNativeDrawingFlags(
   switch (aAppearance) {
     case StyleAppearance::Button:
     case StyleAppearance::NumberInput:
+    case StyleAppearance::PasswordInput:
     case StyleAppearance::Textfield:
     case StyleAppearance::Textarea:
     case StyleAppearance::Menulist:

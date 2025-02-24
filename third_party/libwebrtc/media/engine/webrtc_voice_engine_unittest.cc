@@ -1560,8 +1560,8 @@ TEST_P(WebRtcVoiceEngineTestFake, OnPacketReceivedIdentifiesExtensions) {
   webrtc::RtpHeaderExtensionMap extension_map(parameters.extensions);
   webrtc::RtpPacketReceived reference_packet(&extension_map);
   constexpr uint8_t kAudioLevel = 123;
-  reference_packet.SetExtension<webrtc::AudioLevel>(/*voice_activity=*/true,
-                                                    kAudioLevel);
+  reference_packet.SetExtension<webrtc::AudioLevelExtension>(
+      /*voice_activity=*/true, kAudioLevel);
   //  Create a packet without the extension map but with the same content.
   webrtc::RtpPacketReceived received_packet;
   ASSERT_TRUE(received_packet.Parse(reference_packet.Buffer()));
@@ -1571,8 +1571,9 @@ TEST_P(WebRtcVoiceEngineTestFake, OnPacketReceivedIdentifiesExtensions) {
 
   bool voice_activity;
   uint8_t audio_level;
-  EXPECT_TRUE(call_.last_received_rtp_packet().GetExtension<webrtc::AudioLevel>(
-      &voice_activity, &audio_level));
+  EXPECT_TRUE(call_.last_received_rtp_packet()
+                  .GetExtension<webrtc::AudioLevelExtension>(&voice_activity,
+                                                             &audio_level));
   EXPECT_EQ(audio_level, kAudioLevel);
 }
 
@@ -1702,27 +1703,29 @@ TEST_P(WebRtcVoiceEngineTestFake, DontRecreateSendStream) {
 // TODO(ossu): Revisit if these tests need to be here, now that these kinds of
 // tests should be available in AudioEncoderOpusTest.
 
-// Test that if clockrate is not 48000 for opus, we fail.
+// Test that if clockrate is not 48000 for opus, we do not have a send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBadClockrate) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
   parameters.codecs.push_back(kOpusCodec);
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].clockrate = 50000;
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
-// Test that if channels=0 for opus, we fail.
+// Test that if channels=0 for opus, we do not have a send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad0ChannelsNoStereo) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
   parameters.codecs.push_back(kOpusCodec);
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].channels = 0;
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
-// Test that if channels=0 for opus, we fail.
+// Test that if channels=0 for opus, we do not have a send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad0Channels1Stereo) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
@@ -1730,20 +1733,23 @@ TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad0Channels1Stereo) {
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].channels = 0;
   parameters.codecs[0].params["stereo"] = "1";
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
-// Test that if channel is 1 for opus and there's no stereo, we fail.
+// Test that if channel is 1 for opus and there's no stereo, we do not have a
+// send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpus1ChannelNoStereo) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
   parameters.codecs.push_back(kOpusCodec);
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].channels = 1;
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
-// Test that if channel is 1 for opus and stereo=0, we fail.
+// Test that if channel is 1 for opus and stereo=0, we do not have a send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad1Channel0Stereo) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
@@ -1751,10 +1757,11 @@ TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad1Channel0Stereo) {
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].channels = 1;
   parameters.codecs[0].params["stereo"] = "0";
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
-// Test that if channel is 1 for opus and stereo=1, we fail.
+// Test that if channel is 1 for opus and stereo=1, we do not have a send codec.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad1Channel1Stereo) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
@@ -1762,7 +1769,8 @@ TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecOpusBad1Channel1Stereo) {
   parameters.codecs[0].bitrate = 0;
   parameters.codecs[0].channels = 1;
   parameters.codecs[0].params["stereo"] = "1";
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
 // Test that with bitrate=0 and no stereo, bitrate is 32000.
@@ -2035,11 +2043,12 @@ TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecsBitrate) {
   }
 }
 
-// Test that we fail if no codecs are specified.
+// Test that we do not fail if no codecs are specified.
 TEST_P(WebRtcVoiceEngineTestFake, SetSendCodecsNoCodecs) {
   EXPECT_TRUE(SetupSendStream());
   cricket::AudioSenderParameter parameters;
-  EXPECT_FALSE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_TRUE(send_channel_->SetSenderParameters(parameters));
+  EXPECT_EQ(send_channel_->GetSendCodec(), absl::nullopt);
 }
 
 // Test that we can set send codecs even with telephone-event codec as the first

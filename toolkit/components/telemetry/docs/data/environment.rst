@@ -104,6 +104,7 @@ Structure:
         creationDate: <integer>, // integer days since UNIX epoch, e.g. 16446
         resetDate: <integer>, // integer days since UNIX epoch, e.g. 16446 - optional
         firstUseDate: <integer>, // integer days since UNIX epoch, e.g. 16446 - optional
+        recoveredFromBackup: <integer>, // integer days since UNIX epoch, e.g. 16446 - optional
       },
       partner: { // This section may not be immediately available on startup
         distributionId: <string>, // pref "distribution.id", null on failure
@@ -281,7 +282,8 @@ Structure:
             hasBinaryComponents: <bool>,
             installDay: <number>, // days since UNIX epoch, 0 on failure
             updateDay: <number>, // days since UNIX epoch, 0 on failure
-            signedState: <integer>, // whether the add-on is signed by AMO, only present for extensions
+            signedState: <integer>, // whether the add-on is signed by AMO
+            signedTypes: <string>, // JSON-stringified array of signature types found (see nsIAppSignatureInfo's SignatureAlgorithm enum)
             isSystem: <bool>, // true if this is a System Add-on
             isWebExtension: <bool>, // true if this is a WebExtension
             multiprocessCompatible: <bool>, // true if this add-on does *not* require e10s shims
@@ -301,6 +303,8 @@ Structure:
           hasBinaryComponents: <bool>
           installDay: <number>, // days since UNIX epoch, 0 on failure
           updateDay: <number>, // days since UNIX epoch, 0 on failure
+          signedState: <integer>, // whether the add-on is signed by AMO
+          signedTypes: <string>, // JSON-stringified array of signature types found (see nsIAppSignatureInfo's SignatureAlgorithm enum)
         },
         activeGMPlugins: {
             <gmp id>: {
@@ -475,6 +479,10 @@ The following is a partial list of `collected preferences <https://searchfox.org
 
 - ``intl.ime.use_composition_events_for_insert_text``: Whether a set of composition events is fired when user inserts text without keyboard events nor composing state of a composition (only on Linux and macOS).
 
+- ``xpinstall.signatures.required``: Whether XPI files cryptographic signatures are being verified and enforced.
+
+- ``xpinstall.signatures.weakSignaturesTemporarilyAllowed``: Whether new XPI files only signed with weak signature algorithms are still allowed to be installed
+
 attribution
 ~~~~~~~~~~~
 
@@ -540,6 +548,13 @@ firstUseDate
 
 The time of the first use of profile. If this is an old profile where we can't
 determine this this field will not be present.
+It's read from a file-stored timestamp from the client's profile directory.
+
+recoveredFromBackup
+~~~~~~~~~~~~~~~~~~~
+
+The time that this profile was recovered from a backup. If the profile was never
+recovered from a backup, this field will not be present.
 It's read from a file-stored timestamp from the client's profile directory.
 
 partner

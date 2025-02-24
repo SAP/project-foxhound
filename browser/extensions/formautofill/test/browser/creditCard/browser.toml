@@ -1,7 +1,6 @@
 [DEFAULT]
 prefs = [
   "extensions.formautofill.creditCards.enabled=true",
-  "extensions.formautofill.reauth.enabled=true",
   "toolkit.telemetry.ipcBatchTimeout=0", # lower the interval for event telemetry in the content process to update the parent process
 ]
 support-files = [
@@ -42,9 +41,10 @@ skip-if = [
 
 ["browser_creditCard_doorhanger_display.js"]
 skip-if = [
+  "os == 'linux'", # Bug 1895422
   "apple_catalina && !debug", # perma-fail see Bug 1655601
   "apple_silicon && !debug", # perma-fail see Bug 1655601
-  "win11_2009 && ccov",   # Bug 1655600
+  "win11_2009 && ccov", # Bug 1655600
 ]
 
 ["browser_creditCard_doorhanger_fields.js"]
@@ -101,6 +101,9 @@ skip-if = ["apple_silicon && !debug"] # Bug 1714221
 
 ["browser_creditCard_heuristics_cc_type.js"]
 skip-if = ["apple_silicon && !debug"] # Bug 1714221
+
+["browser_creditCard_osAuth.js"]
+skip-if = ["os == 'linux'"]
 
 ["browser_creditCard_submission_autodetect_type.js"]
 skip-if = ["apple_silicon && !debug"]

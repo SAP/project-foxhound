@@ -1,4 +1,4 @@
-import { actionCreators as ac } from "common/Actions.sys.mjs";
+import { actionCreators as ac } from "common/Actions.mjs";
 import { ContentSection } from "content-src/components/CustomizeMenu/ContentSection/ContentSection";
 import { mount } from "enzyme";
 import React from "react";
@@ -10,6 +10,7 @@ const DEFAULT_PROPS = {
   },
   mayHaveSponsoredTopSites: true,
   mayHaveSponsoredStories: true,
+  mayHaveWeather: true,
   pocketRegion: true,
   dispatch: sinon.stub(),
   setPref: sinon.stub(),
@@ -67,6 +68,10 @@ describe("ContentSection", () => {
     assert.equal(
       wrapper.find("#highlights-toggle").prop("data-eventSource"),
       "HIGHLIGHTS"
+    );
+    assert.equal(
+      wrapper.find("#weather-toggle").prop("data-eventSource"),
+      "WEATHER"
     );
   });
 });

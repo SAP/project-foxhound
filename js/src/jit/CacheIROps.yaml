@@ -708,7 +708,7 @@
   transpile: true
   cost_estimate: 1
   args:
-    result: ValId
+    result: ObjId
     obj: ObjId
 
 - name: IdToStringOrSymbol
@@ -750,7 +750,6 @@
   cost_estimate: 1
   args:
     fun: ObjId
-    constructing: BoolImm
 
 - name: GuardFunctionHasNoJitEntry
   shared: true
@@ -837,6 +836,7 @@
   args:
     obj: ObjId
     result: ObjId
+    fallible: BoolImm
 
 - name: LoadValueTag
   shared: true
@@ -2053,7 +2053,7 @@
     target: ValId
     receiver: ObjId
     handler: ObjId
-    trap: ObjectField
+    trap: ObjId
     property: IdField
     nargsAndFlags: UInt32Imm
 
@@ -2067,7 +2067,7 @@
     receiver: ObjId
     handler: ObjId
     property: ValId
-    trap: ObjectField
+    trap: ObjId
     nargsAndFlags: UInt32Imm
 #endif
 
@@ -2619,6 +2619,14 @@
   cost_estimate: 4
   args:
     obj: ObjId
+
+- name: LoadTypeOfEqObjectResult
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    obj: ObjId
+    operand: TypeofEqOperandImm
 
 - name: DoubleAddResult
   shared: true

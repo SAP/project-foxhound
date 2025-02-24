@@ -431,7 +431,7 @@ static bool GCZeal(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  JS_SetGCZeal(cx, uint8_t(zeal), JS_DEFAULT_ZEAL_FREQ);
+  JS::SetGCZeal(cx, uint8_t(zeal), JS::ShellDefaultGCZealFrequency);
   args.rval().setUndefined();
   return true;
 }
@@ -1363,16 +1363,11 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
       {
 #ifdef FUZZING_INTERFACES
         if (fuzzHaveModule) {
-#  ifdef LIBFUZZER
           // argv[0] was removed previously, but libFuzzer expects it
           argc++;
           argv--;
 
-          result = FuzzXPCRuntimeStart(&jsapi, &argc, &argv,
-                                       aShellData->fuzzerDriver);
-#  elif AFLFUZZ
-          MOZ_CRASH("AFL is unsupported for XPC runtime fuzzing integration");
-#  endif
+          result = FuzzXPCRuntimeStart(&jsapi, &argc, &argv, aShellData);
         } else {
 #endif
           // We are almost certainly going to run script here, so we need an

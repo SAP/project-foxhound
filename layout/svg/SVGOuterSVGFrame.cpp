@@ -126,20 +126,14 @@ NS_QUERYFRAME_TAIL_INHERITING(SVGDisplayContainerFrame)
 
 /* virtual */
 nscoord SVGOuterSVGFrame::GetMinISize(gfxContext* aRenderingContext) {
-  nscoord result;
-  DISPLAY_MIN_INLINE_SIZE(this, result);
-
-  // If this ever changes to return something other than zero, then
-  // nsSubDocumentFrame::GetMinISize will also need to change.
-  result = nscoord(0);
-
-  return result;
+  auto size = GetIntrinsicSize();
+  const auto& iSize = GetWritingMode().IsVertical() ? size.height : size.width;
+  return iSize.valueOr(0);
 }
 
 /* virtual */
 nscoord SVGOuterSVGFrame::GetPrefISize(gfxContext* aRenderingContext) {
   nscoord result;
-  DISPLAY_PREF_INLINE_SIZE(this, result);
 
   SVGSVGElement* svg = static_cast<SVGSVGElement*>(GetContent());
   WritingMode wm = GetWritingMode();
@@ -164,7 +158,8 @@ nscoord SVGOuterSVGFrame::GetPrefISize(gfxContext* aRenderingContext) {
       result = nscoord(0);
     }
   } else {
-    result = nsPresContext::CSSPixelsToAppUnits(isize.GetAnimValue(svg));
+    result =
+        nsPresContext::CSSPixelsToAppUnits(isize.GetAnimValueWithZoom(svg));
     if (result < 0) {
       result = nscoord(0);
     }
@@ -195,13 +190,13 @@ IntrinsicSize SVGOuterSVGFrame::GetIntrinsicSize() {
 
   if (!width.IsPercentage()) {
     nscoord val =
-        nsPresContext::CSSPixelsToAppUnits(width.GetAnimValue(content));
+        nsPresContext::CSSPixelsToAppUnits(width.GetAnimValueWithZoom(content));
     intrinsicSize.width.emplace(std::max(val, 0));
   }
 
   if (!height.IsPercentage()) {
-    nscoord val =
-        nsPresContext::CSSPixelsToAppUnits(height.GetAnimValue(content));
+    nscoord val = nsPresContext::CSSPixelsToAppUnits(
+        height.GetAnimValueWithZoom(content));
     intrinsicSize.height.emplace(std::max(val, 0));
   }
 
@@ -325,7 +320,6 @@ void SVGOuterSVGFrame::Reflow(nsPresContext* aPresContext,
                               nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("SVGOuterSVGFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
   NS_FRAME_TRACE(
       NS_FRAME_TRACE_CALLS,

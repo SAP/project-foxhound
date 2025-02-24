@@ -36,8 +36,8 @@ add_task(async function test_icon_types() {
       SearchUtils.MODIFIED_TYPE.ADDED,
       SearchUtils.TOPIC_ENGINE_MODIFIED
     );
-    let promiseEngineChanged = SearchTestUtils.promiseSearchNotification(
-      SearchUtils.MODIFIED_TYPE.CHANGED,
+    let promiseIconChanged = SearchTestUtils.promiseSearchNotification(
+      SearchUtils.MODIFIED_TYPE.ICON_CHANGED,
       SearchUtils.TOPIC_ENGINE_MODIFIED
     );
     const engineData = {
@@ -48,13 +48,13 @@ add_task(async function test_icon_types() {
     };
     // The easiest way to test adding the icon is via a generated xml, otherwise
     // we have to somehow insert the address of the server into it.
-    SearchTestUtils.promiseNewSearchEngine({
+    SearchTestUtils.installOpenSearchEngine({
       url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(engineData)}`,
     });
     let engine = await promiseEngineAdded;
     // Ensure this is a nsISearchEngine.
     engine.QueryInterface(Ci.nsISearchEngine);
-    await promiseEngineChanged;
+    await promiseIconChanged;
 
     Assert.ok(await engine.getIconURL(), `${test.name} engine has an icon`);
     Assert.ok(
@@ -65,7 +65,7 @@ add_task(async function test_icon_types() {
 });
 
 add_task(async function test_multiple_icons_in_file() {
-  let engine = await SearchTestUtils.promiseNewSearchEngine({
+  let engine = await SearchTestUtils.installOpenSearchEngine({
     url: `${gDataUrl}engineImages.xml`,
   });
 

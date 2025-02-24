@@ -1646,7 +1646,7 @@ nsresult DeleteSecurityInfo(mozIStorageConnection& aConn, int32_t aId,
         QM_TRY_RETURN(MOZ_TO_RESULT_INVOKE_MEMBER(*state, GetInt32, 0));
       }()));
 
-  MOZ_DIAGNOSTIC_ASSERT(refcount >= aCount);
+  MOZ_ASSERT_DEBUG_OR_FUZZING(refcount >= aCount);
 
   // Next, calculate the new refcount
   int32_t newCount = refcount - aCount;
@@ -1794,8 +1794,8 @@ nsresult InsertEntry(mozIStorageConnection& aConn, CacheId aCacheId,
     QM_TRY(MOZ_TO_RESULT(state->BindUTF8StringByName("request_url_fragment"_ns,
                                                      aRequest.urlFragment())));
 
-    QM_TRY(MOZ_TO_RESULT(
-        state->BindStringByName("request_referrer"_ns, aRequest.referrer())));
+    QM_TRY(MOZ_TO_RESULT(state->BindUTF8StringByName("request_referrer"_ns,
+                                                     aRequest.referrer())));
 
     QM_TRY(MOZ_TO_RESULT(state->BindInt32ByName(
         "request_referrer_policy"_ns,
@@ -2208,7 +2208,8 @@ Result<SavedRequest, nsresult> ReadRequest(mozIStorageConnection& aConn,
       MOZ_TO_RESULT(state->GetUTF8String(2, savedRequest.mValue.urlQuery())));
   QM_TRY(MOZ_TO_RESULT(
       state->GetUTF8String(3, savedRequest.mValue.urlFragment())));
-  QM_TRY(MOZ_TO_RESULT(state->GetString(4, savedRequest.mValue.referrer())));
+  QM_TRY(
+      MOZ_TO_RESULT(state->GetUTF8String(4, savedRequest.mValue.referrer())));
 
   QM_TRY_INSPECT(const int32_t& referrerPolicy,
                  MOZ_TO_RESULT_INVOKE_MEMBER(state, GetInt32, 5));

@@ -116,8 +116,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
 
     let wantsLocalSuggestions =
       lazy.UrlbarPrefs.get("maxHistoricalSearchSuggestions") &&
-      (queryContext.trimmedSearchString ||
-        lazy.UrlbarPrefs.get("update2.emptySearchBehavior") != 0);
+      queryContext.trimmedSearchString;
 
     return wantsLocalSuggestions || this._allowRemoteSuggestions(queryContext);
   }
@@ -352,12 +351,8 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     return undefined;
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onEngagement(queryContext, controller, details) {
     let { result } = details;
-    if (result?.providerName != this.name) {
-      return;
-    }
-
     if (details.selType == "dismiss" && queryContext.formHistoryName) {
       lazy.FormHistory.update({
         op: "remove",
@@ -606,9 +601,16 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    *   Whether we should fetch trending results.
    */
   #shouldFetchTrending(queryContext) {
+    let trendingEnabled = lazy.UrlbarPrefs.get("trending.featureGate");
+    let enabledLocales = lazy.UrlbarPrefs.get("trending.enabledLocales");
+    if (trendingEnabled && enabledLocales) {
+      trendingEnabled = enabledLocales.includes(
+        Services.locale.appLocaleAsBCP47
+      );
+    }
     return !!(
       queryContext.searchString == "" &&
-      lazy.UrlbarPrefs.get("trending.featureGate") &&
+      trendingEnabled &&
       lazy.UrlbarPrefs.get("suggest.trending") &&
       (queryContext.searchMode ||
         !lazy.UrlbarPrefs.get("trending.requireSearchMode"))

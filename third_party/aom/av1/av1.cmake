@@ -262,20 +262,23 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
 
 list(APPEND AOM_AV1_COMMON_INTRIN_SSE2
             "${AOM_ROOT}/av1/common/x86/av1_txfm_sse2.h"
-            "${AOM_ROOT}/av1/common/x86/cdef_block_sse2.c"
             "${AOM_ROOT}/av1/common/x86/cfl_sse2.c"
             "${AOM_ROOT}/av1/common/x86/convolve_2d_sse2.c"
             "${AOM_ROOT}/av1/common/x86/convolve_sse2.c"
             "${AOM_ROOT}/av1/common/x86/jnt_convolve_sse2.c"
+            "${AOM_ROOT}/av1/common/x86/resize_sse2.c"
             "${AOM_ROOT}/av1/common/x86/wiener_convolve_sse2.c")
 
 list(APPEND AOM_AV1_COMMON_INTRIN_SSSE3
             "${AOM_ROOT}/av1/common/x86/av1_inv_txfm_ssse3.c"
             "${AOM_ROOT}/av1/common/x86/av1_inv_txfm_ssse3.h"
-            "${AOM_ROOT}/av1/common/x86/cdef_block_ssse3.c"
             "${AOM_ROOT}/av1/common/x86/cfl_ssse3.c"
             "${AOM_ROOT}/av1/common/x86/jnt_convolve_ssse3.c"
             "${AOM_ROOT}/av1/common/x86/resize_ssse3.c")
+
+# Fallbacks to support Valgrind on 32-bit x86
+list(APPEND AOM_AV1_COMMON_INTRIN_SSSE3_X86
+            "${AOM_ROOT}/av1/common/x86/cdef_block_ssse3.c")
 
 list(APPEND AOM_AV1_COMMON_INTRIN_SSE4_1
             "${AOM_ROOT}/av1/common/x86/av1_convolve_horiz_rs_sse4.c"
@@ -300,6 +303,7 @@ list(APPEND AOM_AV1_COMMON_INTRIN_AVX2
             "${AOM_ROOT}/av1/common/x86/highbd_inv_txfm_avx2.c"
             "${AOM_ROOT}/av1/common/x86/jnt_convolve_avx2.c"
             "${AOM_ROOT}/av1/common/x86/reconinter_avx2.c"
+            "${AOM_ROOT}/av1/common/x86/resize_avx2.c"
             "${AOM_ROOT}/av1/common/x86/selfguided_avx2.c"
             "${AOM_ROOT}/av1/common/x86/warp_plane_avx2.c"
             "${AOM_ROOT}/av1/common/x86/wiener_convolve_avx2.c")
@@ -351,33 +355,36 @@ list(APPEND AOM_AV1_ENCODER_INTRIN_AVX2
             "${AOM_ROOT}/av1/encoder/x86/ml_avx2.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_NEON
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_error_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_fwd_txfm2d_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_highbd_quantize_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_k_means_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/cnn_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/encodetxb_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/highbd_fwd_txfm_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/hybrid_fwd_txfm_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/ml_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/pickrst_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/pickrst_neon.h"
-            "${AOM_ROOT}/av1/encoder/arm/neon/quantize_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/rdopt_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/reconinter_enc_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/temporal_filter_neon.c"
-            "${AOM_ROOT}/av1/encoder/arm/neon/wedge_utils_neon.c")
+            "${AOM_ROOT}/av1/encoder/arm/av1_error_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/av1_fwd_txfm2d_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/av1_highbd_quantize_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/av1_k_means_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/cnn_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/encodetxb_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/highbd_fwd_txfm_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/hybrid_fwd_txfm_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/ml_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/pickrst_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/pickrst_neon.h"
+            "${AOM_ROOT}/av1/encoder/arm/quantize_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/rdopt_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/reconinter_enc_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/temporal_filter_neon.c"
+            "${AOM_ROOT}/av1/encoder/arm/wedge_utils_neon.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_NEON_DOTPROD
-            "${AOM_ROOT}/av1/encoder/arm/neon/temporal_filter_neon_dotprod.c")
+            "${AOM_ROOT}/av1/encoder/arm/temporal_filter_neon_dotprod.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_SVE
-            "${AOM_ROOT}/av1/encoder/arm/neon/av1_error_sve.c")
+            "${AOM_ROOT}/av1/encoder/arm/av1_error_sve.c"
+            "${AOM_ROOT}/av1/encoder/arm/pickrst_sve.c"
+            "${AOM_ROOT}/av1/encoder/arm/wedge_utils_sve.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_ARM_CRC32
-            "${AOM_ROOT}/av1/encoder/arm/crc32/hash_arm_crc32.c")
+            "${AOM_ROOT}/av1/encoder/arm/hash_arm_crc32.c")
 
 list(APPEND AOM_AV1_COMMON_INTRIN_NEON
+            "${AOM_ROOT}/av1/common/arm/av1_convolve_scale_neon.c"
             "${AOM_ROOT}/av1/common/arm/av1_inv_txfm_neon.c"
             "${AOM_ROOT}/av1/common/arm/av1_inv_txfm_neon.h"
             "${AOM_ROOT}/av1/common/arm/av1_txfm_neon.c"
@@ -408,6 +415,9 @@ list(APPEND AOM_AV1_COMMON_INTRIN_NEON_I8MM
 list(APPEND AOM_AV1_COMMON_INTRIN_SVE
             "${AOM_ROOT}/av1/common/arm/highbd_warp_plane_sve.c"
             "${AOM_ROOT}/av1/common/arm/warp_plane_sve.c")
+
+list(APPEND AOM_AV1_COMMON_INTRIN_SVE2
+            "${AOM_ROOT}/av1/common/arm/convolve_sve2.c")
 
 list(APPEND AOM_AV1_ENCODER_INTRIN_SSE4_2
             "${AOM_ROOT}/av1/encoder/x86/hash_sse42.c")
@@ -447,7 +457,7 @@ if(CONFIG_AV1_TEMPORAL_DENOISING)
               "${AOM_ROOT}/av1/encoder/x86/av1_temporal_denoiser_sse2.c")
 
   list(APPEND AOM_AV1_ENCODER_INTRIN_NEON
-              "${AOM_ROOT}/av1/encoder/arm/neon/av1_temporal_denoiser_neon.c")
+              "${AOM_ROOT}/av1/encoder/arm/av1_temporal_denoiser_neon.c")
 endif()
 
 if(CONFIG_AV1_HIGHBITDEPTH)
@@ -477,6 +487,10 @@ if(CONFIG_AV1_HIGHBITDEPTH)
               "${AOM_ROOT}/av1/common/arm/highbd_warp_plane_neon.c"
               "${AOM_ROOT}/av1/common/arm/highbd_wiener_convolve_neon.c")
 
+  list(APPEND AOM_AV1_COMMON_INTRIN_SVE2
+              "${AOM_ROOT}/av1/common/arm/highbd_compound_convolve_sve2.c"
+              "${AOM_ROOT}/av1/common/arm/highbd_convolve_sve2.c")
+
   list(APPEND AOM_AV1_ENCODER_INTRIN_SSE2
               "${AOM_ROOT}/av1/encoder/x86/highbd_block_error_intrin_sse2.c"
               "${AOM_ROOT}/av1/encoder/x86/highbd_temporal_filter_sse2.c")
@@ -490,9 +504,12 @@ if(CONFIG_AV1_HIGHBITDEPTH)
               "${AOM_ROOT}/av1/encoder/x86/highbd_temporal_filter_avx2.c")
 
   list(APPEND AOM_AV1_ENCODER_INTRIN_NEON
-              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_pickrst_neon.c"
-              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_rdopt_neon.c"
-              "${AOM_ROOT}/av1/encoder/arm/neon/highbd_temporal_filter_neon.c")
+              "${AOM_ROOT}/av1/encoder/arm/highbd_pickrst_neon.c"
+              "${AOM_ROOT}/av1/encoder/arm/highbd_rdopt_neon.c"
+              "${AOM_ROOT}/av1/encoder/arm/highbd_temporal_filter_neon.c")
+
+  list(APPEND AOM_AV1_ENCODER_INTRIN_SVE
+              "${AOM_ROOT}/av1/encoder/arm/highbd_pickrst_sve.c")
 endif()
 
 if(CONFIG_ACCOUNTING)
@@ -518,7 +535,7 @@ if(CONFIG_REALTIME_ONLY)
                    "${AOM_ROOT}/av1/encoder/x86/cnn_avx2.c")
 
   list(REMOVE_ITEM AOM_AV1_ENCODER_INTRIN_NEON
-                   "${AOM_ROOT}/av1/encoder/arm/neon/cnn_neon.c")
+                   "${AOM_ROOT}/av1/encoder/arm/cnn_neon.c")
 
   list(REMOVE_ITEM AOM_AV1_ENCODER_SOURCES
                    "${AOM_ROOT}/av1/encoder/cnn.c"
@@ -605,6 +622,10 @@ function(setup_av1_targets)
     require_compiler_flag_nomsvc("-mssse3" NO)
     add_intrinsics_object_library("-mssse3" "ssse3" "aom_av1_common"
                                   "AOM_AV1_COMMON_INTRIN_SSSE3")
+    if(AOM_ARCH_X86)
+      add_intrinsics_object_library("-mssse3" "ssse3_x86" "aom_av1_common"
+                                    "AOM_AV1_COMMON_INTRIN_SSSE3_X86")
+    endif()
 
     if(CONFIG_AV1_DECODER)
       if(AOM_AV1_DECODER_INTRIN_SSSE3)
@@ -701,6 +722,11 @@ function(setup_av1_targets)
       add_intrinsics_object_library("${AOM_SVE_FLAG}" "sve" "aom_av1_encoder"
                                     "AOM_AV1_ENCODER_INTRIN_SVE")
     endif()
+  endif()
+
+  if(HAVE_SVE2)
+    add_intrinsics_object_library("${AOM_SVE2_FLAG}" "sve2" "aom_av1_common"
+                                  "AOM_AV1_COMMON_INTRIN_SVE2")
   endif()
 
   if(HAVE_VSX)

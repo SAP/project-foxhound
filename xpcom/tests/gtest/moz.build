@@ -26,6 +26,7 @@ UNIFIED_SOURCES += [
     "TestGCPostBarriers.cpp",
     "TestID.cpp",
     "TestIDUtils.cpp",
+    "TestINIParser.cpp",
     "TestInputStreamLengthHelper.cpp",
     "TestJSHolderMap.cpp",
     "TestLogCommandLineHandler.cpp",
@@ -61,11 +62,13 @@ UNIFIED_SOURCES += [
     "TestSynchronization.cpp",
     "TestTArray.cpp",
     "TestTArray2.cpp",
+    "TestTaskController.cpp",
     "TestTaskQueue.cpp",
     "TestTextFormatter.cpp",
     "TestThreadManager.cpp",
-    "TestThreadPool.cpp",
+    "TestThreadPoolIdleTimeout.cpp",
     "TestThreadPoolListener.cpp",
+    "TestThreadUtils.cpp",
     "TestThrottledEventQueue.cpp",
     "TestTimeStamp.cpp",
     "TestTokenizer.cpp",
@@ -73,24 +76,24 @@ UNIFIED_SOURCES += [
     "TestVariant.cpp",
 ]
 
+# Bug 1894540 - Fails under TSAN
+if not CONFIG["MOZ_TSAN"]:
+    UNIFIED_SOURCES += [
+        "TestThreadPool.cpp",
+    ]
+
 if CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += [
         "TestPipes.cpp",
         "TestThreads.cpp",
     ]
 
-# skip the test on windows10-aarch64 due to perma-fail, bug 1422219
-if not (CONFIG["OS_TARGET"] == "WINNT" and CONFIG["TARGET_CPU"] == "aarch64"):
-    UNIFIED_SOURCES += ["TestThreadUtils.cpp"]
-
 # skip the test on OSX due to frequent failures (bug 1571186)
 if CONFIG["OS_TARGET"] != "Darwin":
     UNIFIED_SOURCES += ["TestExpirationTracker.cpp"]
 
 # skip the test on windows10-aarch64 and Android, aarch64 due to bug 1545670
-if CONFIG["OS_TARGET"] != "Android" and not (
-    CONFIG["OS_TARGET"] == "WINNT" and CONFIG["TARGET_CPU"] == "aarch64"
-):
+if CONFIG["OS_TARGET"] != "Android":
     UNIFIED_SOURCES += ["TestTimers.cpp"]
 
 
@@ -143,10 +146,8 @@ if (
         "TestSTLWrappers.cpp",
     ]
 
-# Compile TestAllocReplacement separately so Windows headers don't pollute
-# the global namespace for other files.
 if CONFIG["MOZ_MEMORY"]:
-    SOURCES += [
+    UNIFIED_SOURCES += [
         "TestAllocReplacement.cpp",
     ]
 

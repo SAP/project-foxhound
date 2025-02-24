@@ -275,26 +275,6 @@ TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithDtls) {
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
 }
 
-#if defined(WEBRTC_FUCHSIA)
-// Uses SDES instead of DTLS for key agreement.
-TEST_P(PeerConnectionIntegrationTest, EndToEndCallWithSdes) {
-  PeerConnectionInterface::RTCConfiguration sdes_config;
-  sdes_config.enable_dtls_srtp.emplace(false);
-  ASSERT_TRUE(CreatePeerConnectionWrappersWithConfig(sdes_config, sdes_config));
-  ConnectFakeSignaling();
-
-  // Do normal offer/answer and wait for some frames to be received in each
-  // direction.
-  caller()->AddAudioVideoTracks();
-  callee()->AddAudioVideoTracks();
-  caller()->CreateAndSetAndSignalOffer();
-  ASSERT_TRUE_WAIT(SignalingStateStable(), kDefaultTimeout);
-  MediaExpectations media_expectations;
-  media_expectations.ExpectBidirectionalAudioAndVideo();
-  ASSERT_TRUE(ExpectNewFrames(media_expectations));
-}
-#endif
-
 // Basic end-to-end test specifying the `enable_encrypted_rtp_header_extensions`
 // option to offer encrypted versions of all header extensions alongside the
 // unencrypted versions.
@@ -1356,15 +1336,15 @@ TEST_P(PeerConnectionIntegrationTest, NewGetStatsManyAudioAndManyVideoStreams) {
   ASSERT_EQ(outbound_stream_stats.size(), 4u);
   std::vector<std::string> outbound_track_ids;
   for (const auto& stat : outbound_stream_stats) {
-    ASSERT_TRUE(stat->bytes_sent.is_defined());
+    ASSERT_TRUE(stat->bytes_sent.has_value());
     EXPECT_LT(0u, *stat->bytes_sent);
     if (*stat->kind == "video") {
-      ASSERT_TRUE(stat->key_frames_encoded.is_defined());
+      ASSERT_TRUE(stat->key_frames_encoded.has_value());
       EXPECT_GT(*stat->key_frames_encoded, 0u);
-      ASSERT_TRUE(stat->frames_encoded.is_defined());
+      ASSERT_TRUE(stat->frames_encoded.has_value());
       EXPECT_GE(*stat->frames_encoded, *stat->key_frames_encoded);
     }
-    ASSERT_TRUE(stat->media_source_id.is_defined());
+    ASSERT_TRUE(stat->media_source_id.has_value());
     const RTCMediaSourceStats* media_source =
         static_cast<const RTCMediaSourceStats*>(
             caller_report->Get(*stat->media_source_id));
@@ -1381,12 +1361,12 @@ TEST_P(PeerConnectionIntegrationTest, NewGetStatsManyAudioAndManyVideoStreams) {
   ASSERT_EQ(4u, inbound_stream_stats.size());
   std::vector<std::string> inbound_track_ids;
   for (const auto& stat : inbound_stream_stats) {
-    ASSERT_TRUE(stat->bytes_received.is_defined());
+    ASSERT_TRUE(stat->bytes_received.has_value());
     EXPECT_LT(0u, *stat->bytes_received);
     if (*stat->kind == "video") {
-      ASSERT_TRUE(stat->key_frames_decoded.is_defined());
+      ASSERT_TRUE(stat->key_frames_decoded.has_value());
       EXPECT_GT(*stat->key_frames_decoded, 0u);
-      ASSERT_TRUE(stat->frames_decoded.is_defined());
+      ASSERT_TRUE(stat->frames_decoded.has_value());
       EXPECT_GE(*stat->frames_decoded, *stat->key_frames_decoded);
     }
     inbound_track_ids.push_back(*stat->track_identifier);
@@ -1417,7 +1397,7 @@ TEST_P(PeerConnectionIntegrationTest,
   auto inbound_stream_stats =
       report->GetStatsOfType<RTCInboundRtpStreamStats>();
   ASSERT_EQ(1U, inbound_stream_stats.size());
-  ASSERT_TRUE(inbound_stream_stats[0]->bytes_received.is_defined());
+  ASSERT_TRUE(inbound_stream_stats[0]->bytes_received.has_value());
   ASSERT_GT(*inbound_stream_stats[0]->bytes_received, 0U);
 }
 
@@ -1464,7 +1444,7 @@ TEST_P(PeerConnectionIntegrationTest,
   auto inbound_rtps = report->GetStatsOfType<RTCInboundRtpStreamStats>();
   auto index = FindFirstMediaStatsIndexByKind("audio", inbound_rtps);
   ASSERT_GE(index, 0);
-  EXPECT_TRUE(inbound_rtps[index]->audio_level.is_defined());
+  EXPECT_TRUE(inbound_rtps[index]->audio_level.has_value());
 }
 
 // Test that DTLS 1.0 is used if both sides only support DTLS 1.0.
@@ -2952,7 +2932,7 @@ double GetAudioEnergyStat(PeerConnectionIntegrationWrapper* pc) {
   auto inbound_rtps = report->GetStatsOfType<RTCInboundRtpStreamStats>();
   RTC_CHECK(!inbound_rtps.empty());
   auto* inbound_rtp = inbound_rtps[0];
-  if (!inbound_rtp->total_audio_energy.is_defined()) {
+  if (!inbound_rtp->total_audio_energy.has_value()) {
     return 0.0;
   }
   return *inbound_rtp->total_audio_energy;
@@ -3087,25 +3067,23 @@ TEST_P(PeerConnectionIntegrationTest, RegatherAfterChangingIceTransportType) {
   // `WebRTC.PeerConnection.CandidatePairType_UDP` in this test since this
   // metric is only populated when we reach kIceConnectionComplete in the
   // current implementation.
-  EXPECT_EQ(cricket::RELAY_PORT_TYPE,
-            caller()->last_candidate_gathered().type());
-  EXPECT_EQ(cricket::RELAY_PORT_TYPE,
-            callee()->last_candidate_gathered().type());
+  EXPECT_TRUE(caller()->last_candidate_gathered().is_relay());
+  EXPECT_TRUE(callee()->last_candidate_gathered().is_relay());
 
   // Loosen the caller's candidate filter.
   caller_config = caller()->pc()->GetConfiguration();
   caller_config.type = PeerConnectionInterface::kAll;
   caller()->pc()->SetConfiguration(caller_config);
   // We should have gathered a new host candidate.
-  EXPECT_EQ_WAIT(cricket::LOCAL_PORT_TYPE,
-                 caller()->last_candidate_gathered().type(), kDefaultTimeout);
+  EXPECT_TRUE_WAIT(caller()->last_candidate_gathered().is_local(),
+                   kDefaultTimeout);
 
   // Loosen the callee's candidate filter.
   callee_config = callee()->pc()->GetConfiguration();
   callee_config.type = PeerConnectionInterface::kAll;
   callee()->pc()->SetConfiguration(callee_config);
-  EXPECT_EQ_WAIT(cricket::LOCAL_PORT_TYPE,
-                 callee()->last_candidate_gathered().type(), kDefaultTimeout);
+  EXPECT_TRUE_WAIT(callee()->last_candidate_gathered().is_local(),
+                   kDefaultTimeout);
 
   // Create an offer and verify that it does not contain an ICE restart (i.e new
   // ice credentials).
@@ -3776,7 +3754,7 @@ int NacksReceivedCount(PeerConnectionIntegrationWrapper& pc) {
     ADD_FAILURE();
     return 0;
   }
-  if (!sender_stats[0]->nack_count.is_defined()) {
+  if (!sender_stats[0]->nack_count.has_value()) {
     return 0;
   }
   return *sender_stats[0]->nack_count;
@@ -3789,7 +3767,7 @@ int NacksSentCount(PeerConnectionIntegrationWrapper& pc) {
     ADD_FAILURE();
     return 0;
   }
-  if (!receiver_stats[0]->nack_count.is_defined()) {
+  if (!receiver_stats[0]->nack_count.has_value()) {
     return 0;
   }
   return *receiver_stats[0]->nack_count;

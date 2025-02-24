@@ -18,8 +18,6 @@ const HISTOGRAMS_IDS = {
   eventPageIdleResult: "WEBEXT_EVENTPAGE_IDLE_RESULT_COUNT",
   extensionStartup: "WEBEXT_EXTENSION_STARTUP_MS",
   pageActionPopupOpen: "WEBEXT_PAGEACTION_POPUP_OPEN_MS",
-  storageLocalGetJson: "WEBEXT_STORAGE_LOCAL_GET_MS",
-  storageLocalSetJson: "WEBEXT_STORAGE_LOCAL_SET_MS",
   storageLocalGetIdb: "WEBEXT_STORAGE_LOCAL_IDB_GET_MS",
   storageLocalSetIdb: "WEBEXT_STORAGE_LOCAL_IDB_SET_MS",
 };
@@ -33,8 +31,6 @@ const GLEAN_METRICS_TYPES = {
   eventPageIdleResult: "labeled_counter",
   extensionStartup: "timing_distribution",
   pageActionPopupOpen: "timing_distribution",
-  storageLocalGetJson: "timing_distribution",
-  storageLocalSetJson: "timing_distribution",
   storageLocalGetIdb: "timing_distribution",
   storageLocalSetIdb: "timing_distribution",
 };
@@ -68,7 +64,7 @@ export function getTrimmedString(str) {
  * If the resulting string is longer than 80 characters it is going to be
  * trimmed using the `getTrimmedString` helper function.
  *
- * @param {Error | DOMException | Components.Exception} error
+ * @param {Error | DOMException | ReturnType<typeof Components.Exception>} error
  *        The error object to convert into a string representation.
  *
  * @returns {string}
@@ -146,7 +142,7 @@ class ExtensionTelemetryMetric {
    * @param {string} metric
    *        The Glean timing_distribution metric to record (used to retrieve the Glean metric type from the
    *        GLEAN_METRICS_TYPES map).
-   * @param {Extension | BrowserExtensionContent} extension
+   * @param {Extension | ExtensionChild} extension
    *        The extension to record the telemetry for.
    * @param {any | undefined} [obj = extension]
    *        An optional object the timing_distribution method call should be related to
@@ -207,7 +203,7 @@ class ExtensionTelemetryMetric {
    *        The stopwatch method to call ("start", "finish" or "cancel").
    * @param {string} metric
    *        The stopwatch metric to record (used to retrieve the base histogram id from the HISTOGRAMS_IDS object).
-   * @param {Extension | BrowserExtensionContent} extension
+   * @param {Extension | ExtensionChild} extension
    *        The extension to record the telemetry for.
    * @param {any | undefined} [obj = extension]
    *        An optional telemetry stopwatch object (which defaults to the extension parameter when missing).
@@ -242,7 +238,7 @@ class ExtensionTelemetryMetric {
    * @param {string} metric
    *        The metric to record (used to retrieve the base histogram id from the _histogram object).
    * @param {object}                              options
-   * @param {Extension | BrowserExtensionContent} options.extension
+   * @param {Extension | ExtensionChild} options.extension
    *        The extension to record the telemetry for.
    * @param {string | undefined}                  [options.category]
    *        An optional histogram category.
@@ -290,7 +286,7 @@ class ExtensionTelemetryMetric {
         // NOTE: extensionsTiming may become a property of the GLEAN_METRICS_TYPES
         // map once we may introduce new histograms that are not part of the
         // extensionsTiming Glean metrics category.
-        Glean.extensionsTiming[metric].accumulateSamples([value]);
+        Glean.extensionsTiming[metric].accumulateSingleSample(value);
         break;
       }
       case "labeled_counter": {
@@ -324,6 +320,8 @@ const metricsCache = new Map();
  *      ExtensionTelemetry.extensionStartup.stopwatchStart(extension);
  *      ExtensionTelemetry.browserActionPreloadResult.histogramAdd({category: "Shown", extension});
  */
+/** @type {Record<string, ExtensionTelemetryMetric>} */
+// @ts-ignore no easy way in TS to say Proxy is a different type from target.
 export var ExtensionTelemetry = new Proxy(metricsCache, {
   get(target, prop) {
     // NOTE: if we would be start adding glean probes that do not have a unified

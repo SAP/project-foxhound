@@ -17,6 +17,8 @@ support-files = [
   "testUnicodePDBAArch64.dll",
   "testNoPDBAArch64.dll",
   "!/toolkit/mozapps/extensions/test/xpcshell/head_addons.js",
+  "../../../../mozapps/extensions/test/xpinstall/amosigned.xpi",
+  "../../../../mozapps/extensions/test/xpcshell/data/webext-implicit-id.xpi",
 ]
 generated-files = [
   "system.xpi",
@@ -182,3 +184,7 @@ run-if = ["os == 'win'"]
 
 ["test_failover_retry.js"]
 skip-if = ["os == 'android'"] # Android doesn't support telemetry though some tests manage to pass with xpcshell
+
+["test_new_profile.js"]
+run-if = ["os == 'win'"]
+skip-if = ["appname == 'thunderbird'"] # Test requires modules from browser

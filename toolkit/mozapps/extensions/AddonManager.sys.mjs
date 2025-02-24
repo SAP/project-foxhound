@@ -26,7 +26,6 @@ const MOZ_COMPATIBILITY_NIGHTLY = ![
 
 const INTL_LOCALES_CHANGED = "intl:app-locales-changed";
 
-const PREF_AMO_ABUSEREPORT = "extensions.abuseReport.amWebAPI.enabled";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_EM_UPDATE_ENABLED = "extensions.update.enabled";
 const PREF_EM_LAST_APP_VERSION = "extensions.lastAppVersion";
@@ -160,7 +159,7 @@ var PrefObserver = {
     this.observe(null, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID, PREF_LOGGING_ENABLED);
   },
 
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     if (aTopic == "xpcom-shutdown") {
       Services.prefs.removeObserver(PREF_LOGGING_ENABLED, this);
       Services.obs.removeObserver(this, "xpcom-shutdown");
@@ -339,7 +338,7 @@ BrowserListener.prototype = {
     }
   },
 
-  observe(subject, topic, data) {
+  observe(subject) {
     if (subject != this.messageManager) {
       return;
     }
@@ -349,7 +348,7 @@ BrowserListener.prototype = {
     this.cancelInstall();
   },
 
-  onLocationChange(webProgress, request, location) {
+  onLocationChange() {
     if (
       this.browser.contentPrincipal &&
       this.principal.subsumes(this.browser.contentPrincipal)
@@ -361,19 +360,19 @@ BrowserListener.prototype = {
     this.cancelInstall();
   },
 
-  onDownloadCancelled(install) {
+  onDownloadCancelled() {
     this.unregister();
   },
 
-  onDownloadFailed(install) {
+  onDownloadFailed() {
     this.unregister();
   },
 
-  onInstallFailed(install) {
+  onInstallFailed() {
     this.unregister();
   },
 
-  onInstallEnded(install) {
+  onInstallEnded() {
     this.unregister();
   },
 
@@ -553,7 +552,7 @@ var AddonManagerInternal = {
           this.pendingProviders.add(aProvider);
         }
 
-        return new Promise((resolve, reject) => {
+        return new Promise(resolve => {
           logger.debug("Calling shutdown blocker for " + name);
           resolve(aProvider.shutdown());
         }).catch(err => {
@@ -1311,7 +1310,7 @@ var AddonManagerInternal = {
           }
 
           updates.push(
-            new Promise((resolve, reject) => {
+            new Promise(resolve => {
               addon.findUpdates(
                 {
                   onUpdateAvailable(aAddon, aInstall) {
@@ -3280,7 +3279,7 @@ var AddonManagerInternal = {
             // the customConfirmationUI preference and responding to the
             // "addon-install-confirmation" notification.  If the application
             // does not implement its own prompt, use the built-in xul dialog.
-            if (info.addon.userPermissions) {
+            if (info.addon.installPermissions) {
               let subject = {
                 wrappedJSObject: {
                   target: browser,
@@ -3288,7 +3287,7 @@ var AddonManagerInternal = {
                 },
               };
               subject.wrappedJSObject.info.permissions =
-                info.addon.userPermissions;
+                info.addon.installPermissions;
               Services.obs.notifyObservers(
                 subject,
                 "webextension-permission-prompt"
@@ -3555,6 +3554,10 @@ var AddonManagerInternal = {
       });
     },
 
+    async sendAbuseReport(target, addonId, data, options) {
+      return lazy.AbuseReporter.sendAbuseReport(addonId, data, options);
+    },
+
     async addonUninstall(target, id) {
       let addon = await AddonManager.getAddonByID(id);
       if (!addon) {
@@ -3627,54 +3630,6 @@ var AddonManagerInternal = {
           this.forgetInstall(id);
         }
       }
-    },
-
-    async addonReportAbuse(target, id) {
-      if (!Services.prefs.getBoolPref(PREF_AMO_ABUSEREPORT, false)) {
-        return Promise.reject({
-          message: "amWebAPI reportAbuse not supported",
-        });
-      }
-
-      let existingDialog = lazy.AbuseReporter.getOpenDialog();
-      if (existingDialog) {
-        existingDialog.close();
-      }
-
-      const dialog = await lazy.AbuseReporter.openDialog(
-        id,
-        "amo",
-        target
-      ).catch(err => {
-        Cu.reportError(err);
-        return Promise.reject({
-          message: "Error creating abuse report",
-        });
-      });
-
-      return dialog.promiseReport.then(
-        async report => {
-          if (!report) {
-            return false;
-          }
-
-          await report.submit().catch(err => {
-            Cu.reportError(err);
-            return Promise.reject({
-              message: "Error submitting abuse report",
-            });
-          });
-
-          return true;
-        },
-        err => {
-          Cu.reportError(err);
-          dialog.close();
-          return Promise.reject({
-            message: "Error creating abuse report",
-          });
-        }
-      );
     },
   },
 };
@@ -3892,7 +3847,7 @@ export var AddonManagerPrivate = {
    * This can be used as an implementation for Addon.findUpdates() when
    * no update mechanism is available.
    */
-  callNoUpdateListeners(addon, listener, reason, appVersion, platformVersion) {
+  callNoUpdateListeners(addon, listener) {
     if ("onNoCompatibilityUpdateAvailable" in listener) {
       safeCall(listener.onNoCompatibilityUpdateAvailable.bind(listener), addon);
     }
@@ -4051,6 +4006,8 @@ export var AddonManager = {
     ["ERROR_INCOMPATIBLE", -11],
     // The add-on type is not supported by the platform.
     ["ERROR_UNSUPPORTED_ADDON_TYPE", -12],
+    // The add-on can only be installed via enterprise policy.
+    ["ERROR_ADMIN_INSTALL_ONLY", -13],
   ]),
   // The update check timed out
   ERROR_TIMEOUT: -1,
@@ -4739,7 +4696,7 @@ AMTelemetry = {
 
   // Observer Service notification callback.
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "addon-install-blocked": {
         const { installs } = subject.wrappedJSObject;
@@ -5246,40 +5203,6 @@ AMTelemetry = {
         source: extra.source,
         source_method: extra.method,
         num_strings: extra.num_strings,
-      })
-    );
-  },
-
-  /**
-   * Record an event on abuse report submissions.
-   *
-   * @params {object} opts
-   * @params {string} opts.addonId
-   *         The id of the addon being reported.
-   * @params {string} [opts.addonType]
-   *         The type of the addon being reported  (only present for an existing
-   *         addonId).
-   * @params {string} [opts.errorType]
-   *         The AbuseReport errorType for a submission failure.
-   * @params {string} opts.reportEntryPoint
-   *         The entry point of the abuse report.
-   */
-  recordReportEvent({ addonId, addonType, errorType, reportEntryPoint }) {
-    this.recordEvent({
-      method: "report",
-      object: reportEntryPoint,
-      value: addonId,
-      extra: this.formatExtraVars({
-        addon_type: addonType,
-        error_type: errorType,
-      }),
-    });
-    Glean.addonsManager.report.record(
-      this.formatExtraVars({
-        addon_id: addonId,
-        addon_type: addonType,
-        entry_point: reportEntryPoint,
-        error_type: errorType,
       })
     );
   },

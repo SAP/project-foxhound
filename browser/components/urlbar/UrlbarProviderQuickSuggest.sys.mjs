@@ -45,7 +45,6 @@ const TELEMETRY_SCALARS = {
   CLICK_NAV_SUPERCEDED: `${TELEMETRY_PREFIX}.click_nav_superceded`,
   CLICK_NONSPONSORED: `${TELEMETRY_PREFIX}.click_nonsponsored`,
   CLICK_SPONSORED: `${TELEMETRY_PREFIX}.click_sponsored`,
-  HELP_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.help_dynamic_wikipedia`,
   HELP_NONSPONSORED: `${TELEMETRY_PREFIX}.help_nonsponsored`,
   HELP_SPONSORED: `${TELEMETRY_PREFIX}.help_sponsored`,
   IMPRESSION_DYNAMIC_WIKIPEDIA: `${TELEMETRY_PREFIX}.impression_dynamic_wikipedia`,
@@ -229,7 +228,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
     }
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onLegacyEngagement(state, queryContext, details, controller) {
     // Ignore engagements on other results that didn't end the session.
     if (details.result?.providerName != this.name && details.isSessionOngoing) {
       return;
@@ -237,7 +236,7 @@ class ProviderQuickSuggest extends UrlbarProvider {
 
     // Reset the Merino session ID when a session ends. By design for the user's
     // privacy, we don't keep it around between engagements.
-    if (state != "start" && !details.isSessionOngoing) {
+    if (!details.isSessionOngoing) {
       this.#merino?.resetSession();
     }
 
@@ -413,14 +412,11 @@ class ProviderQuickSuggest extends UrlbarProvider {
     let payload = {
       url: suggestion.url,
       isSponsored: suggestion.is_sponsored,
-      helpUrl: lazy.QuickSuggest.HELP_URL,
-      helpL10n: {
-        id: "urlbar-result-menu-learn-more-about-firefox-suggest",
-      },
       isBlockable: true,
       blockL10n: {
         id: "urlbar-result-menu-dismiss-firefox-suggest",
       },
+      isManageable: true,
     };
 
     if (suggestion.full_keyword) {
@@ -486,8 +482,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   end of the engagement or that was dismissed. Null if no quick suggest
    *   result was present.
    * @param {object} details
-   *   The `details` object that was passed to `onEngagement()`. It must look
-   *   like this: `{ selType, selIndex }`
+   *   The `details` object that was passed to `onLegacyEngagement()`. It must
+   *   look like this: `{ selType, selIndex }`
    */
   #recordEngagement(queryContext, result, details) {
     let resultSelType = "";
@@ -592,9 +588,6 @@ class ProviderQuickSuggest extends UrlbarProvider {
           scalars.push(TELEMETRY_SCALARS.CLICK_DYNAMIC_WIKIPEDIA);
         } else {
           switch (resultSelType) {
-            case "help":
-              scalars.push(TELEMETRY_SCALARS.HELP_DYNAMIC_WIKIPEDIA);
-              break;
             case "dismiss":
               scalars.push(TELEMETRY_SCALARS.BLOCK_DYNAMIC_WIKIPEDIA);
               break;
@@ -781,8 +774,8 @@ class ProviderQuickSuggest extends UrlbarProvider {
    *   True if the main part of the result's row was clicked; false if a button
    *   like help or dismiss was clicked or if no part of the row was clicked.
    * @param {object} options.details
-   *   The `details` object that was passed to `onEngagement()`. It must look
-   *   like this: `{ selType, selIndex }`
+   *   The `details` object that was passed to `onLegacyEngagement()`. It must
+   *   look like this: `{ selType, selIndex }`
    */
   #recordNavSuggestionTelemetry({
     queryContext,

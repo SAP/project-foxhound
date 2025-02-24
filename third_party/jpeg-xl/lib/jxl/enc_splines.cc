@@ -3,14 +3,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include <algorithm>
-
-#include "lib/jxl/ans_params.h"
 #include "lib/jxl/base/status.h"
-#include "lib/jxl/chroma_from_luma.h"
-#include "lib/jxl/dct_scales.h"
 #include "lib/jxl/enc_ans.h"
-#include "lib/jxl/entropy_coder.h"
 #include "lib/jxl/pack_signed.h"
 #include "lib/jxl/splines.h"
 
@@ -34,8 +28,8 @@ class QuantizedSplineEncoder {
         tokens->emplace_back(kDCTContext, PackSigned(dct[i]));
       }
     };
-    for (int c = 0; c < 3; ++c) {
-      encode_dct(spline.color_dct_[c]);
+    for (const auto& dct : spline.color_dct_) {
+      encode_dct(dct);
     }
     encode_dct(spline.sigma_dct_);
   }
@@ -84,8 +78,9 @@ void EncodeSplines(const Splines& splines, BitWriter* writer,
 
   EntropyEncodingData codes;
   std::vector<uint8_t> context_map;
-  BuildAndEncodeHistograms(histogram_params, kNumSplineContexts, tokens, &codes,
-                           &context_map, writer, layer, aux_out);
+  BuildAndEncodeHistograms(writer->memory_manager(), histogram_params,
+                           kNumSplineContexts, tokens, &codes, &context_map,
+                           writer, layer, aux_out);
   WriteTokens(tokens[0], codes, context_map, 0, writer, layer, aux_out);
 }
 

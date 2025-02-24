@@ -371,6 +371,8 @@ class StructType {
     return true;
   }
 
+  static bool createImmutable(const ValTypeVector& types, StructType* struct_);
+
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
   WASM_DECLARE_FRIEND_SERIALIZE(StructType);
 };
@@ -1299,7 +1301,10 @@ inline uintptr_t TypeDef::forMatch(const TypeDef* typeDef,
 
   // Return a tagged index for local type references
   if (typeDef && &typeDef->recGroup() == recGroup) {
-    return uintptr_t(recGroup->indexOf(typeDef)) | 0x1;
+    // recGroup->indexOf result is expected to be not greater than MaxTypes,
+    // and shall fit in 32-bit pointer without loss.
+    static_assert(MaxTypes <= 0x7FFFFFFF);
+    return (uintptr_t(recGroup->indexOf(typeDef)) << 1) | 0x1;
   }
 
   // Return an untagged pointer for non-local type references
@@ -1353,6 +1358,7 @@ inline RefTypeHierarchy RefType::hierarchy() const {
     case RefType::NoExtern:
       return RefTypeHierarchy::Extern;
     case RefType::Exn:
+    case RefType::NoExn:
       return RefTypeHierarchy::Exn;
     case RefType::Any:
     case RefType::None:
@@ -1471,6 +1477,11 @@ inline bool RefType::isSubTypeOf(RefType subType, RefType superType) {
 
   // None is the bottom type of the any hierarchy
   if (subType.isNone() && superType.hierarchy() == RefTypeHierarchy::Any) {
+    return true;
+  }
+
+  // No exn is the bottom type of the exn hierarchy
+  if (subType.isNoExn() && superType.hierarchy() == RefTypeHierarchy::Exn) {
     return true;
   }
 

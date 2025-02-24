@@ -40,8 +40,6 @@ var localProviderModules = {
     "resource:///modules/UrlbarProviderCalculator.sys.mjs",
   UrlbarProviderClipboard:
     "resource:///modules/UrlbarProviderClipboard.sys.mjs",
-  UrlbarProviderContextualSearch:
-    "resource:///modules/UrlbarProviderContextualSearch.sys.mjs",
   UrlbarProviderHeuristicFallback:
     "resource:///modules/UrlbarProviderHeuristicFallback.sys.mjs",
   UrlbarProviderHistoryUrlHeuristic:
@@ -54,8 +52,6 @@ var localProviderModules = {
   UrlbarProviderPlaces: "resource:///modules/UrlbarProviderPlaces.sys.mjs",
   UrlbarProviderPrivateSearch:
     "resource:///modules/UrlbarProviderPrivateSearch.sys.mjs",
-  UrlbarProviderQuickActions:
-    "resource:///modules/UrlbarProviderQuickActions.sys.mjs",
   UrlbarProviderQuickSuggest:
     "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
   UrlbarProviderQuickSuggestContextualOptIn:
@@ -84,6 +80,14 @@ var localMuxerModules = {
     "resource:///modules/UrlbarMuxerUnifiedComplete.sys.mjs",
 };
 
+import { ActionsProviderQuickActions } from "resource:///modules/ActionsProviderQuickActions.sys.mjs";
+import { ActionsProviderContextualSearch } from "resource:///modules/ActionsProviderContextualSearch.sys.mjs";
+
+let globalActionsProviders = [
+  ActionsProviderContextualSearch,
+  ActionsProviderQuickActions,
+];
+
 const DEFAULT_MUXER = "UnifiedComplete";
 
 /**
@@ -96,10 +100,18 @@ class ProvidersManager {
     // Tracks the available providers.  This is a sorted array, with HEURISTIC
     // providers at the front.
     this.providers = [];
+    this.providersByNotificationType = {
+      onEngagement: new Set(),
+      onImpression: new Set(),
+      onAbandonment: new Set(),
+      onSearchSessionEnd: new Set(),
+      onLegacyEngagement: new Set(),
+    };
     for (let [symbol, module] of Object.entries(localProviderModules)) {
       let { [symbol]: provider } = ChromeUtils.importESModule(module);
       this.registerProvider(provider);
     }
+
     // Tracks ongoing Query instances by queryContext.
     this.queries = new Map();
 
@@ -151,6 +163,14 @@ class ProvidersManager {
       index = this.providers.length;
     }
     this.providers.splice(index, 0, provider);
+
+    for (const notificationType of Object.keys(
+      this.providersByNotificationType
+    )) {
+      if (typeof provider[notificationType] === "function") {
+        this.providersByNotificationType[notificationType].add(provider);
+      }
+    }
   }
 
   /**
@@ -165,6 +185,10 @@ class ProvidersManager {
     if (index != -1) {
       this.providers.splice(index, 1);
     }
+
+    Object.values(this.providersByNotificationType).forEach(providers =>
+      providers.delete(provider)
+    );
   }
 
   /**
@@ -176,6 +200,17 @@ class ProvidersManager {
    */
   getProvider(name) {
     return this.providers.find(p => p.name == name);
+  }
+
+  /**
+   * Returns the provider with the given name.
+   *
+   * @param {string} name
+   *   The provider name.
+   * @returns {UrlbarProvider} The provider.
+   */
+  getActionProvider(name) {
+    return globalActionsProviders.find(p => p.name == name);
   }
 
   /**
@@ -284,6 +319,14 @@ class ProvidersManager {
       // history and bookmarks even if search engines are not available.
     }
 
+    // All current global actions are currently memory lookups so it is safe to
+    // wait on them.
+    this.#globalAction = lazy.UrlbarPrefs.getScotchBonnetPref(
+      "secondaryActions.featureGate"
+    )
+      ? await this.pickGlobalAction(queryContext, controller)
+      : null;
+
     if (query.canceled) {
       return;
     }
@@ -333,12 +376,12 @@ class ProvidersManager {
   }
 
   /**
-   * Notifies all providers when the user starts and ends an engagement with the
-   * urlbar.  For details on parameters, see UrlbarProvider.onEngagement().
+   * Notifies all providers about changes in user engagement with the urlbar.
+   * This function centralizes the dispatch of engagement-related events to the
+   * appropriate providers based on the current state of interaction.
    *
    * @param {string} state
-   *   The state of the engagement, one of: start, engagement, abandonment,
-   *   discard
+   *   The state of the engagement, one of: engagement, abandonment
    * @param {UrlbarQueryContext} queryContext
    *   The engagement's query context, if available.
    * @param {object} details
@@ -347,15 +390,155 @@ class ProvidersManager {
    *   The controller associated with the engagement
    */
   notifyEngagementChange(state, queryContext, details = {}, controller) {
-    for (let provider of this.providers) {
+    if (!["engagement", "abandonment"].includes(state)) {
+      lazy.logger.error(`Unsupported state for engagement change: ${state}`);
+      return;
+    }
+
+    const visibleResults = controller.view?.visibleResults ?? [];
+    const visibleResultsByProviderName = new Map();
+
+    visibleResults.forEach((result, index) => {
+      const providerName = result.providerName;
+      let results = visibleResultsByProviderName.get(providerName);
+      if (!results) {
+        results = [];
+        visibleResultsByProviderName.set(providerName, results);
+      }
+      results.push({ index, result });
+    });
+
+    if (!details.isSessionOngoing) {
+      this.#notifyImpression(
+        this.providersByNotificationType.onImpression,
+        state,
+        queryContext,
+        controller,
+        visibleResultsByProviderName
+      );
+    }
+
+    if (state === "engagement") {
+      if (details.result) {
+        this.#notifyEngagement(
+          this.providersByNotificationType.onEngagement,
+          queryContext,
+          controller,
+          details
+        );
+      }
+    } else {
+      this.#notifyAbandonment(
+        this.providersByNotificationType.onAbandonment,
+        queryContext,
+        controller,
+        visibleResultsByProviderName
+      );
+    }
+
+    if (!details.isSessionOngoing) {
+      this.#notifySearchSessionEnd(
+        this.providersByNotificationType.onSearchSessionEnd,
+        queryContext,
+        controller
+      );
+    }
+
+    this.#notifyLegacyEngagement(
+      this.providersByNotificationType.onLegacyEngagement,
+      state,
+      queryContext,
+      details,
+      controller
+    );
+  }
+
+  #notifyEngagement(engagementProviders, queryContext, controller, details) {
+    for (const provider of engagementProviders) {
+      if (details.result.providerName == provider.name) {
+        provider.tryMethod("onEngagement", queryContext, controller, details);
+        break;
+      }
+    }
+  }
+
+  #notifyImpression(
+    impressionProviders,
+    state,
+    queryContext,
+    controller,
+    visibleResultsByProviderName
+  ) {
+    for (const provider of impressionProviders) {
+      const providerVisibleResults =
+        visibleResultsByProviderName.get(provider.name) ?? [];
+
+      if (providerVisibleResults.length) {
+        provider.tryMethod(
+          "onImpression",
+          state,
+          queryContext,
+          controller,
+          providerVisibleResults
+        );
+      }
+    }
+  }
+
+  #notifyAbandonment(
+    abandomentProviders,
+    queryContext,
+    controller,
+    visibleResultsByProviderName
+  ) {
+    for (const provider of abandomentProviders) {
+      if (visibleResultsByProviderName.has(provider.name)) {
+        provider.tryMethod("onAbandonment", queryContext, controller);
+      }
+    }
+  }
+
+  #notifySearchSessionEnd(searchSessionEndProviders, queryContext, controller) {
+    for (const provider of searchSessionEndProviders) {
+      provider.tryMethod("onSearchSessionEnd", queryContext, controller);
+    }
+  }
+
+  #notifyLegacyEngagement(
+    legacyEngagementProviders,
+    state,
+    queryContext,
+    details,
+    controller
+  ) {
+    for (const provider of legacyEngagementProviders) {
       provider.tryMethod(
-        "onEngagement",
+        "onLegacyEngagement",
         state,
         queryContext,
         details,
         controller
       );
     }
+  }
+
+  #globalAction = null;
+
+  async pickGlobalAction(queryContext, controller) {
+    for (let provider of globalActionsProviders) {
+      if (provider.isActive(queryContext)) {
+        let action = await provider.queryAction(queryContext, controller);
+        if (action) {
+          action.providerName = provider.name;
+          return action;
+        }
+      }
+    }
+    return null;
+  }
+
+  getGlobalAction() {
+    return this.#globalAction;
   }
 }
 

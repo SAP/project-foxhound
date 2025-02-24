@@ -24,7 +24,7 @@ Jinja2 template is not. Please file bugs! #}
           #[serde(skip_serializing_if = "Option::is_none")]
           pub {{itemname|snake_case}}: Option<{{ name ~ "Item" ~ itemname|Camelize ~ "Object" }}>,
           {% elif val.type == "array" %}
-          #[serde(skip_serializing_if = "Vec::is_empty")]
+          #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
           pub {{itemname|snake_case}}: {{ name ~ "Item" ~ itemname|Camelize }},
           {% else %}
           #[serde(skip_serializing_if = "Option::is_none")]
@@ -87,7 +87,7 @@ impl ExtraKeys for {{ obj.name|Camelize }}{{ suffix }} {
 /// {{ obj.description|wordwrap() | replace('\n', '\n/// ') }}
 #[rustfmt::skip]
 pub static {{ obj.name|snake_case }}: ::glean::private::__export::Lazy<::glean::private::PingType> =
-    ::glean::private::__export::Lazy::new(|| ::glean::private::PingType::new("{{ obj.name }}", {{ obj.include_client_id|rust }}, {{ obj.send_if_empty|rust }}, {{ obj.precise_timestamps|rust }}, {{ obj.include_info_sections|rust }}, {{ obj.reason_codes|rust }}));
+    ::glean::private::__export::Lazy::new(|| ::glean::private::PingType::new("{{ obj.name }}", {{ obj.include_client_id|rust }}, {{ obj.send_if_empty|rust }}, {{ obj.precise_timestamps|rust }}, {{ obj.include_info_sections|rust }}, {{ obj.enabled|rust }}, {{ obj.schedules_pings|rust }}, {{ obj.reason_codes|rust }}));
 {% endfor %}
 {% else %}
 pub mod {{ category.name|snake_case }} {

@@ -31,10 +31,9 @@ XPCOMUtils.defineLazyPreferenceGetter(
   PREF_STRIP_IS_TEST
 );
 
-// Lazy getter for the strip-on-share strip list.
-ChromeUtils.defineLazyGetter(lazy, "StripOnShareList", async () => {
+async function fetchList(fileName) {
   let response = await fetch(
-    "chrome://global/content/antitracking/StripOnShare.json"
+    "chrome://global/content/antitracking/" + fileName
   );
   if (!response.ok) {
     lazy.logger.error(
@@ -45,7 +44,56 @@ ChromeUtils.defineLazyGetter(lazy, "StripOnShareList", async () => {
     );
   }
   return response.json();
+}
+
+// Lazy getter for the strip-on-share strip list.
+ChromeUtils.defineLazyGetter(lazy, "StripOnShareList", async () => {
+  let [stripOnShareList, stripOnShareLGPLParams] = await Promise.all([
+    fetchList("StripOnShare.json"),
+    fetchList("StripOnShareLGPL.json"),
+  ]);
+
+  if (!stripOnShareList || !stripOnShareLGPLParams) {
+    lazy.logger.error("Error strip-on-share strip list were not loaded");
+    throw new Error("Error fetching strip-on-share strip list were not loaded");
+  }
+
+  // Combines the mozilla licensed strip on share param
+  // list and the LGPL licensed strip on share param list
+  return combineAndParseLists(stripOnShareList, [stripOnShareLGPLParams]);
 });
+
+function combineAndParseLists(mainList, arrOfLists) {
+  arrOfLists.forEach(additionalList => {
+    for (let key in additionalList) {
+      if (Object.hasOwn(mainList, key)) {
+        mainList[key].queryParams.push(...additionalList[key].queryParams);
+
+        mainList[key].topLevelSites.push(...additionalList[key].topLevelSites);
+      } else {
+        mainList[key] = additionalList[key];
+      }
+    }
+  });
+
+  for (let key in mainList) {
+    mainList[key].queryParams = mainList[key].queryParams.map(param =>
+      param.toLowerCase()
+    );
+
+    mainList[key].topLevelSites = mainList[key].topLevelSites.map(param =>
+      param.toLowerCase()
+    );
+
+    // Removes duplicates topLevelSites
+    mainList[key].topLevelSites = [...new Set(mainList[key].topLevelSites)];
+
+    // Removes duplicates queryParams
+    mainList[key].queryParams = [...new Set(mainList[key].queryParams)];
+  }
+
+  return mainList;
+}
 
 export class URLQueryStrippingListService {
   classId = Components.ID("{afff16f0-3fd2-4153-9ccd-c6d9abd879e4}");
@@ -81,7 +129,7 @@ export class URLQueryStrippingListService {
   }
 
   async testSetList(testList) {
-    this.#stripOnShareTestList = testList;
+    this.#stripOnShareTestList = combineAndParseLists(testList, []);
     await this._notifyStripOnShareObservers();
   }
 
@@ -142,11 +190,11 @@ export class URLQueryStrippingListService {
     }
 
     // Get the list from pref.
-    this._onPrefUpdate(
+    await this._onPrefUpdate(
       PREF_STRIP_LIST_NAME,
       Services.prefs.getStringPref(PREF_STRIP_LIST_NAME, "")
     );
-    this._onPrefUpdate(
+    await this._onPrefUpdate(
       PREF_ALLOW_LIST_NAME,
       Services.prefs.getStringPref(PREF_ALLOW_LIST_NAME, "")
     );
@@ -219,7 +267,7 @@ export class URLQueryStrippingListService {
     this._notifyObservers();
   }
 
-  _onPrefUpdate(pref, value) {
+  async _onPrefUpdate(pref, value) {
     switch (pref) {
       case PREF_STRIP_LIST_NAME:
         this.prefStripList = new Set(value ? value.split(" ") : []);
@@ -235,7 +283,7 @@ export class URLQueryStrippingListService {
     }
 
     this._notifyObservers();
-    this._notifyStripOnShareObservers();
+    await this._notifyStripOnShareObservers();
   }
 
   _getListFromSharedData() {

@@ -23,7 +23,6 @@
 #include "aom_dsp/psnr.h"
 #include "aom_dsp/ssim.h"
 #include "aom_ports/mem.h"
-#include "aom_ports/msvc.h"
 #include "aom_scale/yv12config.h"
 
 using libaom_test::ACMRandom;
@@ -112,10 +111,10 @@ class HBDMetricsTestBase {
     memset(&hbd_src, 0, sizeof(hbd_src));
     memset(&hbd_dst, 0, sizeof(hbd_dst));
 
-    aom_alloc_frame_buffer(&lbd_src, width, height, 1, 1, 0, 32, 16, 0, 0);
-    aom_alloc_frame_buffer(&lbd_dst, width, height, 1, 1, 0, 32, 16, 0, 0);
-    aom_alloc_frame_buffer(&hbd_src, width, height, 1, 1, 1, 32, 16, 0, 0);
-    aom_alloc_frame_buffer(&hbd_dst, width, height, 1, 1, 1, 32, 16, 0, 0);
+    aom_alloc_frame_buffer(&lbd_src, width, height, 1, 1, 0, 32, 16, false, 0);
+    aom_alloc_frame_buffer(&lbd_dst, width, height, 1, 1, 0, 32, 16, false, 0);
+    aom_alloc_frame_buffer(&hbd_src, width, height, 1, 1, 1, 32, 16, false, 0);
+    aom_alloc_frame_buffer(&hbd_dst, width, height, 1, 1, 1, 32, 16, false, 0);
 
     memset(lbd_src.buffer_alloc, kPixFiller, lbd_src.buffer_alloc_sz);
     while (i < lbd_src.buffer_alloc_sz) {

@@ -70,12 +70,16 @@ for f in $files; do
             task=gecko.v2.${repo}.latest.taskgraph.decision-${task}
             service=index
             ;;
-        desktop-nightly)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-desktop
+        nightly-all)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-all
             service=index
             ;;
-        ship-geckoview)
-            task=gecko.v2.${repo}.latest.taskgraph.decision-ship-geckoview
+        android-nightly)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-android
+            service=index
+            ;;
+        desktop-nightly)
+            task=gecko.v2.${repo}.latest.taskgraph.decision-nightly-desktop
             service=index
             ;;
         push*|promote*|ship*)
@@ -92,26 +96,36 @@ for f in $files; do
                 *-firefox-rc)
                     product=firefox
                     action=${action%-firefox-rc}
-                    suffix=_rc
+                    phase=${action}_${product}_rc
                     ;;
                 *-firefox)
                     product=firefox
                     action=${action%-$product}
+                    phase=${action}_${product}
                     ;;
                 *-devedition)
                     product=devedition
                     action=${action%-$product}
+                    phase=${action}_${product}
+                    ;;
+                *-android)
+                    product=firefox-android
+                    action=${action%-android}
+                    phase=${action}_android
                     ;;
                 *)
                     echo unknown action $action >&2
                     exit 1
                     ;;
             esac
-            phase=${action}_${product}${suffix}
             # grab the action task id from the latest release where this phase wasn't skipped
             task=$(curl -s "https://shipitapi-public.services.mozilla.com/releases?product=${product}&branch=releases/${repo}&status=shipped" | \
                 jq -r "map(.phases[] | select(.name == "'"'"$phase"'"'" and (.skipped | not)))[-1].actionTaskId")
             service=queue
+            ;;
+        *merge-automation)
+            # these tasks have no useful indexes; unable to update them automatically
+            continue
             ;;
         *)
             echo unknown action $action >&2

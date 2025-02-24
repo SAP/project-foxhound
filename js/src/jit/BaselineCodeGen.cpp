@@ -4544,6 +4544,18 @@ bool BaselineCodeGen<Handler>::emit_TypeofExpr() {
 }
 
 template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_TypeofEq() {
+  frame.popRegsAndSync(1);
+
+  if (!emitNextIC()) {
+    return false;
+  }
+
+  frame.push(R0);
+  return true;
+}
+
+template <typename Handler>
 bool BaselineCodeGen<Handler>::emit_ThrowMsg() {
   prepareVMCall();
   pushUint8BytecodeOperandArg(R2.scratchReg());
@@ -4861,6 +4873,20 @@ bool BaselineCodeGen<Handler>::emit_LeaveWith() {
   using Fn = bool (*)(JSContext*, BaselineFrame*);
   return callVM<Fn, jit::LeaveWith>();
 }
+
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_AddDisposable() {
+  // TODO: AddDisposable to be implemented for Baseline (Bug 1899500)
+  MOZ_CRASH("AddDisposable has not been implemented for baseline");
+}
+
+template <typename Handler>
+bool BaselineCodeGen<Handler>::emit_DisposeDisposables() {
+  // TODO: DisposeDisposables to be implemented for Baseline (Bug 1899500)
+  MOZ_CRASH("DisposeDisposables has not been implemented for baseline");
+}
+#endif
 
 template <typename Handler>
 bool BaselineCodeGen<Handler>::emit_Exception() {

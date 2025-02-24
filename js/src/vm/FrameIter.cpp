@@ -124,7 +124,12 @@ JS::Realm* JitFrameIter::realm() const {
     return asWasm().instance()->realm();
   }
 
-  return asJSJit().script()->realm();
+  if (asJSJit().isScripted()) {
+    return asJSJit().script()->realm();
+  }
+
+  MOZ_RELEASE_ASSERT(asJSJit().isTrampolineNative());
+  return asJSJit().callee()->realm();
 }
 
 uint8_t* JitFrameIter::resumePCinCurrentFrame() const {
@@ -778,7 +783,7 @@ void FrameIter::wasmUpdateBytecodeOffset() {
 
   // Relookup the current frame, updating the bytecode offset in the process.
   data_.jitFrames_ = JitFrameIter(data_.activations_->asJit());
-  while (wasmFrame().debugFrame() != frame) {
+  while (!isWasm() || wasmFrame().debugFrame() != frame) {
     ++data_.jitFrames_;
   }
 

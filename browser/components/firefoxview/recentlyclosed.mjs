@@ -8,11 +8,8 @@ import {
   ifDefined,
   when,
 } from "chrome://global/content/vendor/lit.all.mjs";
-import {
-  isSearchEnabled,
-  searchTabList,
-  MAX_TABS_FOR_RECENT_BROWSING,
-} from "./helpers.mjs";
+import { MAX_TABS_FOR_RECENT_BROWSING } from "./helpers.mjs";
+import { searchTabList } from "./search-helpers.mjs";
 import { ViewPage } from "./viewpage.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/firefoxview/card-container.mjs";
@@ -65,7 +62,7 @@ class RecentlyClosedTabsInView extends ViewPage {
     tabList: "fxview-tab-list",
   };
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     if (
       topic == SS_NOTIFY_CLOSED_OBJECTS_CHANGED ||
       (topic == SS_NOTIFY_BROWSER_SHUTDOWN_FLUSH &&
@@ -249,13 +246,22 @@ class RecentlyClosedTabsInView extends ViewPage {
   onDismissTab(e) {
     const closedId = parseInt(e.originalTarget.closedId, 10);
     const sourceClosedId = parseInt(e.originalTarget.sourceClosedId, 10);
-    const sourceWindowId = e.originalTarget.souceWindowId;
-    if (sourceWindowId || !isNaN(sourceClosedId)) {
+    const sourceWindowId = e.originalTarget.sourceWindowId;
+    if (!isNaN(sourceClosedId)) {
+      // the sourceClosedId is an identifier for a now-closed window the tab
+      // was closed in.
       lazy.SessionStore.forgetClosedTabById(closedId, {
         sourceClosedId,
+      });
+    } else if (sourceWindowId) {
+      // the sourceWindowId is an identifier for a currently-open window the tab
+      // was closed in.
+      lazy.SessionStore.forgetClosedTabById(closedId, {
         sourceWindowId,
       });
     } else {
+      // without either identifier, SessionStore will need to walk its window collections
+      // to find the close tab with matching closedId
       lazy.SessionStore.forgetClosedTabById(closedId);
     }
 
@@ -353,20 +359,17 @@ class RecentlyClosedTabsInView extends ViewPage {
             class="page-header"
             data-l10n-id="firefoxview-recently-closed-header"
           ></h2>
-          ${when(
-            isSearchEnabled(),
-            () => html`<div>
-              <fxview-search-textbox
-                data-l10n-id="firefoxview-search-text-box-recentlyclosed"
-                data-l10n-attrs="placeholder"
-                @fxview-search-textbox-query=${this.onSearchQuery}
-                .size=${this.searchTextboxSize}
-                pageName=${this.recentBrowsing
-                  ? "recentbrowsing"
-                  : "recentlyclosed"}
-              ></fxview-search-textbox>
-            </div>`
-          )}
+          <div>
+            <fxview-search-textbox
+              data-l10n-id="firefoxview-search-text-box-recentlyclosed"
+              data-l10n-attrs="placeholder"
+              @fxview-search-textbox-query=${this.onSearchQuery}
+              .size=${this.searchTextboxSize}
+              pageName=${this.recentBrowsing
+                ? "recentbrowsing"
+                : "recentlyclosed"}
+            ></fxview-search-textbox>
+          </div>
         </div>`
       )}
       <div class=${classMap({ "cards-container": this.selectedTab })}>
@@ -387,7 +390,6 @@ class RecentlyClosedTabsInView extends ViewPage {
             () =>
               html`
                 <fxview-tab-list
-                  class="with-dismiss-button"
                   slot="main"
                   .maxTabsLength=${!this.recentBrowsing || this.showAll
                     ? -1

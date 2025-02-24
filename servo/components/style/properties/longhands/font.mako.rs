@@ -3,14 +3,12 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
-<% from data import Method, to_camel_case, to_rust_ident, to_camel_case_lower, SYSTEM_FONT_LONGHANDS %>
-
-<% data.new_style_struct("Font", inherited=True) %>
+<% from data import SYSTEM_FONT_LONGHANDS %>
 
 ${helpers.predefined_type(
     "font-family",
     "FontFamily",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_value="computed::FontFamily::serif()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-family",
@@ -21,7 +19,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "font-style",
     "FontStyle",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_value="computed::FontStyle::normal()",
     initial_specified_value="specified::FontStyle::normal()",
     animation_value_type="FontStyle",
@@ -39,7 +37,7 @@ ${helpers.predefined_type(
 ${helpers.single_keyword(
     "font-variant-caps",
     "normal small-caps",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     extra_gecko_values="all-small-caps petite-caps all-petite-caps unicase titling-caps",
     gecko_constant_prefix="NS_FONT_VARIANT_CAPS",
     gecko_ffi_name="mFont.variantCaps",
@@ -53,7 +51,7 @@ ${helpers.single_keyword(
 ${helpers.predefined_type(
     "font-weight",
     "FontWeight",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_value="computed::FontWeight::normal()",
     initial_specified_value="specified::FontWeight::normal()",
     animation_value_type="Number",
@@ -65,7 +63,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "font-size",
     "FontSize",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_value="computed::FontSize::medium()",
     initial_specified_value="specified::FontSize::medium()",
     animation_value_type="NonNegativeLength",
@@ -137,7 +135,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "font-stretch",
     "FontStretch",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     initial_value="computed::FontStretch::hundred()",
     initial_specified_value="specified::FontStretch::normal()",
     animation_value_type="Percentage",
@@ -354,7 +352,7 @@ ${helpers.predefined_type(
     "line-height",
     "LineHeight",
     "computed::LineHeight::normal()",
-    engines="gecko servo-2013 servo-2020",
+    engines="gecko servo",
     animation_value_type="LineHeight",
     spec="https://drafts.csswg.org/css2/visudet.html#propdef-line-height",
     servo_restyle_damage="reflow",
@@ -476,11 +474,13 @@ pub mod system_font {
 
 ${helpers.single_keyword(
     "-moz-osx-font-smoothing",
-    "auto grayscale",
+    "auto grayscale subpixel-antialiased",
     engines="gecko",
     gecko_constant_prefix="NS_FONT_SMOOTHING",
     gecko_ffi_name="mFont.smoothing",
     gecko_pref="layout.css.osx-font-smoothing.enabled",
+    aliases="-webkit-font-smoothing:layout.css.osx-font-smoothing.enabled",
+    gecko_aliases="antialiased=grayscale",
     has_effect_on_gecko_scrollbars=False,
     spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/font-smooth)",
     animation_value_type="discrete",

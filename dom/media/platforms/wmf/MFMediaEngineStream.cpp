@@ -11,6 +11,7 @@
 #include "TimeUnits.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkerTypes.h"
+#include "mozilla/ScopeExit.h"
 #include "WMF.h"
 #include "WMFUtils.h"
 
@@ -126,6 +127,13 @@ HRESULT MFMediaEngineStream::RuntimeClassInitialize(
   mTaskQueue = aParentSource->GetTaskQueue();
   MOZ_ASSERT(mTaskQueue);
   mStreamId = aStreamId;
+
+  auto errorExit = MakeScopeExit([&] {
+    SLOG("Failed to initialize media stream (id=%" PRIu64 ")", aStreamId);
+    mIsShutdown = true;
+    Unused << mMediaEventQueue->Shutdown();
+  });
+
   RETURN_IF_FAILED(wmf::MFCreateEventQueue(&mMediaEventQueue));
 
   ComPtr<IMFMediaType> mediaType;
@@ -134,6 +142,7 @@ HRESULT MFMediaEngineStream::RuntimeClassInitialize(
   RETURN_IF_FAILED(GenerateStreamDescriptor(mediaType));
   SLOG("Initialized %s (id=%" PRIu64 ", descriptorId=%lu)",
        GetDescriptionName().get(), aStreamId, mStreamDescriptorId);
+  errorExit.release();
   return S_OK;
 }
 
@@ -391,7 +400,8 @@ HRESULT MFMediaEngineStream::AddEncryptAttributes(
   if (aCryptoConfig.mCryptoScheme == CryptoScheme::Cenc) {
     protectionScheme = MFSampleEncryptionProtectionScheme::
         MF_SAMPLE_ENCRYPTION_PROTECTION_SCHEME_AES_CTR;
-  } else if (aCryptoConfig.mCryptoScheme == CryptoScheme::Cbcs) {
+  } else if (aCryptoConfig.mCryptoScheme == CryptoScheme::Cbcs ||
+             aCryptoConfig.mCryptoScheme == CryptoScheme::Cbcs_1_9) {
     protectionScheme = MFSampleEncryptionProtectionScheme::
         MF_SAMPLE_ENCRYPTION_PROTECTION_SCHEME_AES_CBC;
   } else {

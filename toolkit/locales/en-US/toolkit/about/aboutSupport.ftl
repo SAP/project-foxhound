@@ -435,6 +435,20 @@ support-printing-modified-settings = Modified print settings
 support-printing-prefs-name = Name
 support-printing-prefs-value = Value
 
+## Remote Settings sections
+
+support-remote-settings-title = Remote Settings
+support-remote-settings-status = Status
+support-remote-settings-status-ok = OK
+# Status when synchronization is not working.
+support-remote-settings-status-broken = Not working
+support-remote-settings-last-check = Last check
+support-remote-settings-local-timestamp = Local timestamp
+support-remote-settings-sync-history = History
+support-remote-settings-sync-history-status = Status
+support-remote-settings-sync-history-datetime = Date
+support-remote-settings-sync-history-infos = Infos
+
 ## Normandy sections
 
 support-remote-experiments-title = Remote Experiments
@@ -452,3 +466,15 @@ pointing-device-mouse = Mouse
 pointing-device-touchscreen = Touchscreen
 pointing-device-pen-digitizer = Pen Digitizer
 pointing-device-none = No pointing devices
+
+## Content Analysis (DLP)
+
+# DLP stands for Data Loss Prevention, an industry term for external software
+# that enterprises can set up to prevent sensitive data from being transferred
+# to external websites.
+content-analysis-title = Content Analysis (DLP)
+content-analysis-active = Active
+content-analysis-connected-to-agent = Connected to Agent
+content-analysis-agent-path = Agent Path
+content-analysis-agent-failed-signature-verification = Agent Failed Signature Verification
+content-analysis-request-count = Request Count

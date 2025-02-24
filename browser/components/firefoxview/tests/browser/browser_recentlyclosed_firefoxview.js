@@ -8,7 +8,6 @@ ChromeUtils.defineESModuleGetters(globalThis, {
 });
 
 const NEVER_REMEMBER_HISTORY_PREF = "browser.privatebrowsing.autostart";
-const SEARCH_ENABLED_PREF = "browser.firefox-view.search.enabled";
 const RECENTLY_CLOSED_EVENT = [
   ["firefoxview_next", "recently_closed", "tabs", undefined],
 ];
@@ -180,9 +179,6 @@ async function recentlyClosedDismissTelemetry() {
 }
 
 add_setup(async () => {
-  await SpecialPowers.pushPrefEnv({
-    set: [[SEARCH_ENABLED_PREF, true]],
-  });
   registerCleanupFunction(async () => {
     await SpecialPowers.popPrefEnv();
     clearHistory();
@@ -372,6 +368,12 @@ add_task(async function test_dismiss_tab() {
 
     info("calling dismiss_tab on the top, most-recently closed tab");
     let closedTabItem = listItems[0];
+    // the most recently closed tab was in window 3 which got closed
+    // so we expect a sourceClosedId on the item element
+    ok(
+      !isNaN(closedTabItem.sourceClosedId),
+      "Item has a sourceClosedId property"
+    );
 
     // dismiss the first tab and verify the list is correctly updated
     await dismiss_tab(closedTabItem);
@@ -390,6 +392,12 @@ add_task(async function test_dismiss_tab() {
 
     // dismiss the last tab and verify the list is correctly updated
     closedTabItem = listItems[listItems.length - 1];
+    ok(
+      isNaN(closedTabItem.sourceClosedId),
+      "Item does not have a sourceClosedId property"
+    );
+    ok(closedTabItem.sourceWindowId, "Item has a sourceWindowId property");
+
     await dismiss_tab(closedTabItem);
     await listElem.getUpdateComplete;
 

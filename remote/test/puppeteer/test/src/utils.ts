@@ -6,7 +6,6 @@
 
 import {rm} from 'fs/promises';
 import {tmpdir} from 'os';
-import path from 'path';
 
 import expect from 'expect';
 import type {Frame} from 'puppeteer-core/internal/api/Frame.js';
@@ -15,8 +14,6 @@ import type {EventEmitter} from 'puppeteer-core/internal/common/EventEmitter.js'
 import {Deferred} from 'puppeteer-core/internal/util/Deferred.js';
 
 import {compare} from './golden-utils.js';
-
-const PROJECT_ROOT = path.join(__dirname, '..', '..');
 
 declare module 'expect' {
   interface Matchers<R> {
@@ -56,28 +53,26 @@ export const extendExpectWithToBeGolden = (
   });
 };
 
-export const projectRoot = (): string => {
-  return PROJECT_ROOT;
-};
-
 export const attachFrame = async (
   pageOrFrame: Page | Frame,
   frameId: string,
   url: string
-): Promise<Frame | undefined> => {
-  using handle = await pageOrFrame.evaluateHandle(attachFrame, frameId, url);
-  return (await handle.asElement()?.contentFrame()) ?? undefined;
-
-  async function attachFrame(frameId: string, url: string) {
-    const frame = document.createElement('iframe');
-    frame.src = url;
-    frame.id = frameId;
-    document.body.appendChild(frame);
-    await new Promise(x => {
-      return (frame.onload = x);
-    });
-    return frame;
-  }
+): Promise<Frame> => {
+  using handle = await pageOrFrame.evaluateHandle(
+    async (frameId, url) => {
+      const frame = document.createElement('iframe');
+      frame.src = url;
+      frame.id = frameId;
+      document.body.appendChild(frame);
+      await new Promise(x => {
+        return (frame.onload = x);
+      });
+      return frame;
+    },
+    frameId,
+    url
+  );
+  return await handle.contentFrame();
 };
 
 export const isFavicon = (request: {url: () => string | string[]}): boolean => {
@@ -88,12 +83,10 @@ export async function detachFrame(
   pageOrFrame: Page | Frame,
   frameId: string
 ): Promise<void> {
-  await pageOrFrame.evaluate(detachFrame, frameId);
-
-  function detachFrame(frameId: string) {
+  await pageOrFrame.evaluate(frameId => {
     const frame = document.getElementById(frameId) as HTMLIFrameElement;
     frame.remove();
-  }
+  }, frameId);
 }
 
 export async function navigateFrame(
@@ -101,26 +94,37 @@ export async function navigateFrame(
   frameId: string,
   url: string
 ): Promise<void> {
-  await pageOrFrame.evaluate(navigateFrame, frameId, url);
-
-  function navigateFrame(frameId: string, url: string) {
-    const frame = document.getElementById(frameId) as HTMLIFrameElement;
-    frame.src = url;
-    return new Promise(x => {
-      return (frame.onload = x);
-    });
-  }
+  await pageOrFrame.evaluate(
+    (frameId, url) => {
+      const frame = document.getElementById(frameId) as HTMLIFrameElement;
+      frame.src = url;
+      return new Promise(x => {
+        return (frame.onload = x);
+      });
+    },
+    frameId,
+    url
+  );
 }
 
-export const dumpFrames = (frame: Frame, indentation?: string): string[] => {
+export const dumpFrames = async (
+  frame: Frame,
+  indentation?: string
+): Promise<string[]> => {
   indentation = indentation || '';
   let description = frame.url().replace(/:\d{4,5}\//, ':<PORT>/');
-  if (frame.name()) {
-    description += ' (' + frame.name() + ')';
+  using element = await frame.frameElement();
+  if (element) {
+    const nameOrId = await element.evaluate(frame => {
+      return frame.name || frame.id;
+    });
+    if (nameOrId) {
+      description += ' (' + nameOrId + ')';
+    }
   }
   const result = [indentation + description];
   for (const child of frame.childFrames()) {
-    result.push(...dumpFrames(child, '    ' + indentation));
+    result.push(...(await dumpFrames(child, '    ' + indentation)));
   }
   return result;
 };

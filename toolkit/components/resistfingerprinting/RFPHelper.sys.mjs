@@ -1,9 +1,10 @@
 // -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import * as constants from "resource://gre/modules/RFPTargetConstants.sys.mjs";
 
 const kPrefResistFingerprinting = "privacy.resistFingerprinting";
 const kPrefSpoofEnglish = "privacy.spoof_english";
@@ -43,6 +44,8 @@ class _RFPHelper {
     this._initialized = true;
 
     // Add unconditional observers
+    Services.obs.addObserver(this, "user-characteristics-populating-data");
+    Services.obs.addObserver(this, "user-characteristics-populating-data-done");
     Services.prefs.addObserver(kPrefResistFingerprinting, this);
     Services.prefs.addObserver(kPrefLetterboxing, this);
     XPCOMUtils.defineLazyPreferenceGetter(
@@ -80,6 +83,12 @@ class _RFPHelper {
 
   observe(subject, topic, data) {
     switch (topic) {
+      case "user-characteristics-populating-data":
+        this._registerUserCharacteristicsActor();
+        break;
+      case "user-characteristics-populating-data-done":
+        this._unregisterUserCharacteristicsActor();
+        break;
       case "nsPref:changed":
         this._handlePrefChanged(data);
         break;
@@ -95,6 +104,28 @@ class _RFPHelper {
       default:
         break;
     }
+  }
+
+  _registerUserCharacteristicsActor() {
+    log("_registerUserCharacteristicsActor()");
+    ChromeUtils.registerWindowActor("UserCharacteristics", {
+      parent: {
+        esModuleURI: "resource://gre/actors/UserCharacteristicsParent.sys.mjs",
+      },
+      child: {
+        esModuleURI: "resource://gre/actors/UserCharacteristicsChild.sys.mjs",
+        events: {
+          UserCharacteristicsDataDone: { wantUntrusted: true },
+        },
+      },
+      matches: ["about:fingerprintingprotection"],
+      remoteTypes: ["privilegedabout"],
+    });
+  }
+
+  _unregisterUserCharacteristicsActor() {
+    log("_unregisterUserCharacteristicsActor()");
+    ChromeUtils.unregisterWindowActor("UserCharacteristics");
   }
 
   handleEvent(aMessage) {
@@ -186,7 +217,7 @@ class _RFPHelper {
     );
   }
 
-  _handleHttpOnModifyRequest(subject, data) {
+  _handleHttpOnModifyRequest(subject) {
     // If we are loading an HTTP page from content, show the
     // "request English language web pages?" prompt.
     let httpChannel = subject.QueryInterface(Ci.nsIHttpChannel);
@@ -283,16 +314,21 @@ class _RFPHelper {
   _handleLetterboxingPrefChanged() {
     if (Services.prefs.getBoolPref(kPrefLetterboxing, false)) {
       Services.ww.registerNotification(this);
-      this._registerActor();
+      this._registerLetterboxingActor();
       this._attachAllWindows();
     } else {
-      this._unregisterActor();
+      this._unregisterLetterboxingActor();
       this._detachAllWindows();
       Services.ww.unregisterNotification(this);
     }
   }
 
-  _registerActor() {
+  _registerLetterboxingActor() {
+    /*
+     * It turns out that this triggers a warning that we're registering a Desktop-only actor
+     * in toolkit (which will also run on mobile.)  It just happens this actor only handles
+     * letterboxing, which isn't used on mobile, but we should resolve this.
+     */
     ChromeUtils.registerWindowActor("RFPHelper", {
       parent: {
         esModuleURI: "resource:///actors/RFPHelperParent.sys.mjs",
@@ -307,7 +343,7 @@ class _RFPHelper {
     });
   }
 
-  _unregisterActor() {
+  _unregisterLetterboxingActor() {
     ChromeUtils.unregisterWindowActor("RFPHelper");
   }
 
@@ -624,6 +660,16 @@ class _RFPHelper {
       },
       { once: true }
     );
+  }
+
+  getTargets() {
+    return constants.Targets;
+  }
+
+  getTargetDefaults() {
+    const key =
+      Services.appinfo.OS === "Android" ? "ANDROID_DEFAULT" : "DESKTOP_DEFAULT";
+    return constants.DefaultTargets[key];
   }
 }
 

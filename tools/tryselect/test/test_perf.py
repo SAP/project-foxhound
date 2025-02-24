@@ -193,9 +193,9 @@ TEST_CATEGORIES = {
                         "!live",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload macosx": {
@@ -206,9 +206,9 @@ TEST_CATEGORIES = {
                         "!live",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Resource Usage desktop": {
@@ -220,9 +220,9 @@ TEST_CATEGORIES = {
                         "!live",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                     "talos": [
                         "'talos 'xperf | 'tp5",
@@ -234,7 +234,6 @@ TEST_CATEGORIES = {
             },
             [
                 "Responsiveness android-p2 geckoview",
-                "Benchmarks desktop chromium",
             ],
         ),  # Default settings
         (
@@ -248,9 +247,9 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload macosx": {
@@ -260,9 +259,9 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload macosx live-sites": {
@@ -273,15 +272,14 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                 },
             },
             [
                 "Responsiveness android-p2 geckoview",
-                "Benchmarks desktop chromium",
                 "Benchmarks desktop firefox profiling",
                 "Talos desktop live-sites",
                 "Talos desktop profiling+swr",
@@ -300,8 +298,8 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload macosx safari": {
@@ -330,8 +328,45 @@ TEST_CATEGORIES = {
             ],
         ),
         (
+            {"safari-tp": True},
+            58,
+            {
+                "Benchmarks desktop": {
+                    "raptor": [
+                        "'browsertime 'benchmark",
+                        "!android 'shippable !-32 !clang",
+                        "!bytecode",
+                        "!live",
+                        "!profil",
+                        "!chrom",
+                        "!safari",
+                        "!m-car",
+                        "!safari-tp",
+                    ]
+                },
+                "Pageload macosx": {
+                    "raptor": [
+                        "'browsertime 'tp6",
+                        "'osx 'shippable",
+                        "!bytecode",
+                        "!live",
+                        "!profil",
+                        "!chrom",
+                        "!safari",
+                        "!m-car",
+                        "!safari-tp",
+                    ]
+                },
+            },
+            [
+                "Pageload linux safari-tp",
+                "Pageload windows safari-tp",
+                "Pageload desktop safari-tp",
+            ],
+        ),
+        (
             {"live_sites": True, "chrome": True},
-            114,
+            90,
             {
                 "Benchmarks desktop": {
                     "raptor": [
@@ -339,9 +374,9 @@ TEST_CATEGORIES = {
                         "!android 'shippable !-32 !clang",
                         "!bytecode",
                         "!profil",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload macosx live-sites": {
@@ -351,18 +386,9 @@ TEST_CATEGORIES = {
                         "'live",
                         "!bytecode",
                         "!profil",
-                        "!fenix",
                         "!safari",
                         "!m-car",
-                    ],
-                },
-                "Benchmarks desktop chromium": {
-                    "raptor": [
-                        "'browsertime 'benchmark",
-                        "!android 'shippable !-32 !clang",
-                        "'chromium",
-                        "!bytecode",
-                        "!profil",
+                        "!safari-tp",
                     ],
                 },
             },
@@ -374,7 +400,7 @@ TEST_CATEGORIES = {
         ),
         (
             {"android": True},
-            78,
+            88,
             {
                 "Benchmarks desktop": {
                     "raptor": [
@@ -384,9 +410,9 @@ TEST_CATEGORIES = {
                         "!live",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                 },
                 "Responsiveness android-a51 geckoview": {
@@ -403,12 +429,11 @@ TEST_CATEGORIES = {
             [
                 "Responsiveness android-a51 chrome-m",
                 "Firefox Pageload android",
-                "Pageload android-a51 fenix",
             ],
         ),
         (
             {"android": True, "chrome": True},
-            128,
+            118,
             {
                 "Benchmarks desktop": {
                     "raptor": [
@@ -417,9 +442,9 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!live",
                         "!profil",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                 },
                 "Responsiveness android-a51 chrome-m": {
@@ -437,7 +462,7 @@ TEST_CATEGORIES = {
         ),
         (
             {"android": True, "chrome": True, "profile": True},
-            164,
+            156,
             {
                 "Benchmarks desktop": {
                     "raptor": [
@@ -445,9 +470,9 @@ TEST_CATEGORIES = {
                         "!android 'shippable !-32 !clang",
                         "!bytecode",
                         "!live",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Talos PerfTests desktop profiling": {
@@ -463,7 +488,6 @@ TEST_CATEGORIES = {
                 "Resource Usage desktop profiling",
                 "DAMP (Devtools) desktop chrome",
                 "Resource Usage android",
-                "Resource Usage windows chromium",
             ],
         ),
         (
@@ -480,6 +504,7 @@ TEST_CATEGORIES = {
                         "!chrom",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ]
                 },
                 "Pageload android-a51 fenix": {
@@ -497,7 +522,6 @@ TEST_CATEGORIES = {
                 "Resource Usage desktop profiling",
                 "DAMP (Devtools) desktop chrome",
                 "Resource Usage android",
-                "Resource Usage windows chromium",
             ],
         ),
         # Show all available windows tests, no other platform should exist
@@ -510,7 +534,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'benchmark",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !m-car",
+                        "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!live",
                         "!profil",
@@ -720,7 +744,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'responsive",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !m-car",
+                        "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!live",
                         "!profil",
@@ -742,7 +766,7 @@ TEST_CATEGORIES = {
                     "raptor": [
                         "'browsertime 'responsive",
                         "!-32 'windows 'shippable",
-                        "!chrom !geckoview !fenix !safari !m-car",
+                        "!chrom !geckoview !fenix !safari !m-car !safari-tp",
                         "!bytecode",
                         "!profil",
                     ],
@@ -755,9 +779,9 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                 },
                 "Graphics, & Media Playback windows": {
@@ -767,9 +791,9 @@ TEST_CATEGORIES = {
                         "!bytecode",
                         "!profil",
                         "!chrom",
-                        "!fenix",
                         "!safari",
                         "!m-car",
+                        "!safari-tp",
                     ],
                     "talos": [
                         "'talos 'svgr | 'bcv | 'webgl",
@@ -1001,7 +1025,7 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
             1,
             (
                 "Executing raptor queries: 'browsertime 'benchmark, !clang 'linux "
-                "'shippable, !bytecode, !live, !profil, !chrom, !fenix, !safari, !m-car"
+                "'shippable, !bytecode, !live, !profil, !chrom, !safari, !m-car, !safari-tp"
             ),
             InvalidRegressionDetectorQuery,
         ),

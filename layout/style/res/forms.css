@@ -73,6 +73,8 @@ fieldset {
 
 label {
   cursor: default;
+  /* If you add declarations here, consider whether the select > label and file
+   * input label need them as well. */
 }
 
 /* Default inputs, text inputs, and selects */
@@ -147,15 +149,9 @@ input, textarea, select, button, ::file-selector-button {
 ::placeholder,
 ::-moz-text-control-preview {
   /*
-   * Changing display to inline can leads to broken behaviour and will assert.
-   */
-  display: inline-block;
-
-  /*
    * Changing resize would display a broken behaviour and will assert.
    */
   resize: none;
-
   overflow: hidden;
 
   /*
@@ -172,6 +168,7 @@ input, textarea, select, button, ::file-selector-button {
 }
 
 ::placeholder {
+  -webkit-text-security: none;
   opacity: 0.54;
 }
 
@@ -184,10 +181,16 @@ input, textarea, select, button, ::file-selector-button {
 input::placeholder,
 input::-moz-text-control-editing-root,
 input::-moz-text-control-preview {
+  scrollbar-width: none;
+  resize: none;
   word-wrap: normal;
   white-space: pre;
   /* Make the line-height equal to the available height */
   line-height: -moz-block-height !important;
+}
+
+input[type=password] {
+  -moz-default-appearance: password-input;
 }
 
 input[type=password]::-moz-text-control-editing-root,
@@ -263,6 +266,7 @@ select > button {
   border: 0;
   appearance: auto;
   -moz-default-appearance: -moz-menulist-arrow-button;
+  pointer-events: none;
 
   /* Draw the arrow in the select's color */
   color: inherit;
@@ -280,6 +284,8 @@ select > button {
 select > label {
   display: inline-block;
   overflow: clip;
+  pointer-events: none;
+  cursor: unset;
 }
 
 option[label]::before {
@@ -626,10 +632,7 @@ input[type=file] > label {
   min-inline-size: 12em;
   text-align: match-parent;
 
-  color: unset;
-  font-size: unset;
-  letter-spacing: unset;
-
+  cursor: unset;
   user-select: none;
   unicode-bidi: plaintext;
 }
@@ -837,7 +840,6 @@ input[type=range]::slider-thumb {
 }
 
 input[type=number] {
-  appearance: auto;
   -moz-default-appearance: number-input;
 }
 
@@ -852,13 +854,6 @@ input[type=number]::-moz-number-spin-box {
   max-height: 100%;
   max-width: 100%;
   overflow: clip;
-}
-
-/* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "dom.forms.number.hide_spin_buttons_when_no_hover_or_focus") {
-  input[type=number]:not(:hover, :focus)::-moz-number-spin-box {
-    opacity: 0;
-  }
 }
 
 input[type=number]::-moz-number-spin-up,

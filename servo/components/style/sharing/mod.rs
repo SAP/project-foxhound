@@ -76,13 +76,11 @@ use crate::style_resolver::{PrimaryStyle, ResolvedElementStyles};
 use crate::stylist::Stylist;
 use crate::values::AtomIdent;
 use atomic_refcell::{AtomicRefCell, AtomicRefMut};
-use owning_ref::OwningHandle;
 use selectors::matching::{NeedsSelectorFlags, SelectorCaches, VisitedHandlingMode};
-use servo_arc::Arc;
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
-use std::mem::{self, ManuallyDrop};
+use std::mem;
 use std::ops::Deref;
 use std::ptr::NonNull;
 use uluru::LRUCache;
@@ -505,11 +503,7 @@ impl<Candidate> SharingCacheBase<Candidate> {
 }
 
 impl<E: TElement> SharingCache<E> {
-    fn insert(
-        &mut self,
-        element: E,
-        validation_data_holder: Option<&mut StyleSharingTarget<E>>,
-    ) {
+    fn insert(&mut self, element: E, validation_data_holder: Option<&mut StyleSharingTarget<E>>) {
         let validation_data = match validation_data_holder {
             Some(v) => v.take_validation_data(),
             None => ValidationData::default(),
@@ -535,12 +529,11 @@ impl<E: TElement> SharingCache<E> {
 /// [2] https://github.com/rust-lang/rust/issues/13707
 type SharingCache<E> = SharingCacheBase<StyleSharingCandidate<E>>;
 type TypelessSharingCache = SharingCacheBase<FakeCandidate>;
-type StoredSharingCache = Arc<AtomicRefCell<TypelessSharingCache>>;
 
 thread_local! {
     // See the comment on bloom.rs about why do we leak this.
-    static SHARING_CACHE_KEY: ManuallyDrop<StoredSharingCache> =
-        ManuallyDrop::new(Arc::new_leaked(Default::default()));
+    static SHARING_CACHE_KEY: &'static AtomicRefCell<TypelessSharingCache> =
+        Box::leak(Default::default());
 }
 
 /// An LRU cache of the last few nodes seen, so that we can aggressively try to
@@ -550,7 +543,7 @@ thread_local! {
 /// storing nodes here temporarily is safe.
 pub struct StyleSharingCache<E: TElement> {
     /// The LRU cache, with the type cast away to allow persisting the allocation.
-    cache_typeless: OwningHandle<StoredSharingCache, AtomicRefMut<'static, TypelessSharingCache>>,
+    cache_typeless: AtomicRefMut<'static, TypelessSharingCache>,
     /// Bind this structure to the lifetime of E, since that's what we effectively store.
     marker: PhantomData<SendElement<E>>,
     /// The DOM depth we're currently at.  This is used as an optimization to
@@ -593,9 +586,7 @@ impl<E: TElement> StyleSharingCache<E> {
             mem::align_of::<SharingCache<E>>(),
             mem::align_of::<TypelessSharingCache>()
         );
-        let cache_arc = SHARING_CACHE_KEY.with(|c| Arc::clone(&*c));
-        let cache =
-            OwningHandle::new_with_fn(cache_arc, |x| unsafe { x.as_ref() }.unwrap().borrow_mut());
+        let cache = SHARING_CACHE_KEY.with(|c| c.borrow_mut());
         debug_assert!(cache.is_empty());
 
         StyleSharingCache {
@@ -685,10 +676,7 @@ impl<E: TElement> StyleSharingCache<E> {
             self.clear();
             self.dom_depth = dom_depth;
         }
-        self.cache_mut().insert(
-            *element,
-            validation_data_holder,
-        );
+        self.cache_mut().insert(*element, validation_data_holder);
     }
 
     /// Clear the style sharing candidate cache.

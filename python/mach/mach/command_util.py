@@ -48,6 +48,7 @@ class MachCommandReference:
 
 
 MACH_COMMANDS = {
+    "addstory": MachCommandReference("toolkit/content/widgets/mach_commands.py"),
     "addtest": MachCommandReference("testing/mach_commands.py"),
     "addwidget": MachCommandReference("toolkit/content/widgets/mach_commands.py"),
     "android": MachCommandReference("mobile/android/mach_commands.py"),
@@ -67,6 +68,7 @@ MACH_COMMANDS = {
         "python/mozbuild/mozbuild/build_commands.py",
     ),
     "buildsymbols": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
+    "buildtokens": MachCommandReference("toolkit/content/widgets/mach_commands.py"),
     "busted": MachCommandReference("tools/mach_commands.py"),
     "cargo": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "clang-format": MachCommandReference(
@@ -91,7 +93,9 @@ MACH_COMMANDS = {
     "doctor": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "environment": MachCommandReference("python/mozbuild/mozbuild/mach_commands.py"),
     "eslint": MachCommandReference("tools/lint/mach_commands.py"),
-    "esmify": MachCommandReference("tools/esmify/mach_commands.py"),
+    "event-into-legacy": MachCommandReference(
+        "toolkit/components/glean/build_scripts/mach_commands.py"
+    ),
     "fetch-condprofile": MachCommandReference("testing/condprofile/mach_commands.py"),
     "file-info": MachCommandReference(
         "python/mozbuild/mozbuild/frontend/mach_commands.py"
@@ -105,9 +109,13 @@ MACH_COMMANDS = {
     "geckoview-junit": MachCommandReference(
         "testing/mochitest/mach_commands.py", ["test"]
     ),
+    "gen-uuid": MachCommandReference("dom/base/mach_commands.py"),
     "gen-use-counter-metrics": MachCommandReference("dom/base/mach_commands.py"),
     "generate-test-certs": MachCommandReference(
         "security/manager/tools/mach_commands.py"
+    ),
+    "gifft": MachCommandReference(
+        "toolkit/components/telemetry/build_scripts/mach_commands.py"
     ),
     "gradle": MachCommandReference("mobile/android/mach_commands.py"),
     "gradle-install": MachCommandReference("mobile/android/mach_commands.py"),

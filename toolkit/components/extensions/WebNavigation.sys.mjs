@@ -4,9 +4,11 @@
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
+/** @type {Lazy} */
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClickHandlerParent: "resource:///actors/ClickHandlerParent.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
@@ -23,8 +25,11 @@ function getBrowser(bc) {
 }
 
 export var WebNavigationManager = {
-  // Map[string -> Map[listener -> URLFilter]]
+  /** @type {Map<string, Set<callback>>} */
   listeners: new Map(),
+
+  /** @type {WeakMap<XULBrowserElement, object>} */
+  recentTabTransitionData: new WeakMap(),
 
   init() {
     // Collect recent tab transition data in a WeakMap:
@@ -123,9 +128,9 @@ export var WebNavigationManager = {
    *   The data for the autocompleted item.
    * @param {object} [acData.result]
    *   The result information associated with the navigation action.
-   * @param {UrlbarUtils.RESULT_TYPE} [acData.result.type]
+   * @param {typeof lazy.UrlbarUtils.RESULT_TYPE} [acData.result.type]
    *   The result type associated with the navigation action.
-   * @param {UrlbarUtils.RESULT_SOURCE} [acData.result.source]
+   * @param {typeof lazy.UrlbarUtils.RESULT_SOURCE} [acData.result.source]
    *   The result source associated with the navigation action.
    */
   onURLBarUserStartNavigation(acData) {
@@ -245,8 +250,7 @@ export var WebNavigationManager = {
   onContentClick(target, data) {
     // We are interested only on clicks to links which are not "add to bookmark" commands
     if (data.href && !data.bookmark) {
-      let ownerWin = target.ownerGlobal;
-      let where = ownerWin.whereToOpenLink(data);
+      let where = lazy.BrowserUtils.whereToOpenLink(data);
       if (where == "current") {
         this.setRecentTabTransitionData({ link: true });
       }

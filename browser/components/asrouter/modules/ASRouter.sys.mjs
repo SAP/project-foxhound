@@ -55,7 +55,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   ToastNotification: "resource:///modules/asrouter/ToastNotification.sys.mjs",
   ToolbarBadgeHub: "resource:///modules/asrouter/ToolbarBadgeHub.sys.mjs",
-  ToolbarPanelHub: "resource:///modules/asrouter/ToolbarPanelHub.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
@@ -67,7 +66,7 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
   );
   return new Logger("ASRouter");
 });
-import { actionCreators as ac } from "resource://activity-stream/common/Actions.sys.mjs";
+import { actionCreators as ac } from "resource://activity-stream/common/Actions.mjs";
 import { MESSAGING_EXPERIMENTS_DEFAULT_FEATURES } from "resource:///modules/asrouter/MessagingExperimentConstants.sys.mjs";
 import { CFRMessageProvider } from "resource:///modules/asrouter/CFRMessageProvider.sys.mjs";
 import { OnboardingMessageProvider } from "resource:///modules/asrouter/OnboardingMessageProvider.sys.mjs";
@@ -620,7 +619,6 @@ export class _ASRouter {
     this._onLocaleChanged = this._onLocaleChanged.bind(this);
     this.isUnblockedMessage = this.isUnblockedMessage.bind(this);
     this.unblockAll = this.unblockAll.bind(this);
-    this.forceWNPanel = this.forceWNPanel.bind(this);
     this._onExperimentEnrollmentsUpdated =
       this._onExperimentEnrollmentsUpdated.bind(this);
     this.forcePBWindow = this.forcePBWindow.bind(this);
@@ -995,10 +993,6 @@ export class _ASRouter {
       unblockMessageById: this.unblockMessageById,
       sendTelemetry: this.sendTelemetry,
     });
-    lazy.ToolbarPanelHub.init(this.waitForInitialized, {
-      getMessages: this.handleMessageRequest,
-      sendTelemetry: this.sendTelemetry,
-    });
     lazy.MomentsPageHub.init(this.waitForInitialized, {
       handleMessageRequest: this.handleMessageRequest,
       addImpression: this.addImpression,
@@ -1055,7 +1049,6 @@ export class _ASRouter {
 
     lazy.ASRouterPreferences.removeListener(this.onPrefChange);
     lazy.ASRouterPreferences.uninit();
-    lazy.ToolbarPanelHub.uninit();
     lazy.ToolbarBadgeHub.uninit();
     lazy.MomentsPageHub.uninit();
 
@@ -1309,16 +1302,6 @@ export class _ASRouter {
     return true;
   }
 
-  async _extraTemplateStrings(originalMessage) {
-    let extraTemplateStrings;
-    let localProvider = this._findProvider(originalMessage.provider);
-    if (localProvider && localProvider.getExtraAttributes) {
-      extraTemplateStrings = await localProvider.getExtraAttributes();
-    }
-
-    return extraTemplateStrings;
-  }
-
   _findProvider(providerID) {
     return this._localProviders[
       this.state.providers.find(i => i.id === providerID).localProvider
@@ -1346,11 +1329,6 @@ export class _ASRouter {
     }
 
     switch (message.template) {
-      case "whatsnew_panel_message":
-        if (force) {
-          lazy.ToolbarPanelHub.forceShowMessage(browser, message);
-        }
-        break;
       case "cfr_doorhanger":
       case "milestone_message":
         if (force) {
@@ -1964,6 +1942,17 @@ export class _ASRouter {
     if (!skipLoadingMessages) {
       await this.loadMessagesFromAllProviders();
     }
+    // Implement the global `browserIsSelected` context property.
+    if (trigger && browser?.constructor.name === "MozBrowser") {
+      if (!Object.prototype.hasOwnProperty.call(trigger, "context")) {
+        trigger.context = {};
+      }
+      if (typeof trigger.context === "object") {
+        trigger.context.browserIsSelected =
+          trigger.context.browserIsSelected ||
+          browser === browser.ownerGlobal.gBrowser?.selectedBrowser;
+      }
+    }
     const telemetryObject = { tabId };
     TelemetryStopwatch.start("MS_MESSAGE_REQUEST_TIME_MS", telemetryObject);
     // Return all the messages so that it can record the Reach event
@@ -2003,29 +1992,6 @@ export class _ASRouter {
       trigger,
       false
     );
-  }
-
-  async forceWNPanel(browser) {
-    let win = browser.ownerGlobal;
-    await lazy.ToolbarPanelHub.enableToolbarButton();
-
-    win.PanelUI.showSubView(
-      "PanelUI-whatsNew",
-      win.document.getElementById("whats-new-menu-button")
-    );
-
-    let panel = win.document.getElementById("customizationui-widget-panel");
-    // Set the attribute to keep the panel open
-    panel.setAttribute("noautohide", true);
-  }
-
-  async closeWNPanel(browser) {
-    let win = browser.ownerGlobal;
-    let panel = win.document.getElementById("customizationui-widget-panel");
-    // Set the attribute to allow the panel to close
-    panel.setAttribute("noautohide", false);
-    // Removing the button is enough to close the panel.
-    await lazy.ToolbarPanelHub._hideToolbarButton(win);
   }
 
   async _onExperimentEnrollmentsUpdated() {

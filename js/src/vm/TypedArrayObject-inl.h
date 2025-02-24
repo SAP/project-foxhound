@@ -28,6 +28,7 @@
 #include "util/Memory.h"
 #include "vm/ArrayObject.h"
 #include "vm/BigIntType.h"
+#include "vm/Float16.h"
 #include "vm/NativeObject.h"
 #include "vm/Uint8Clamped.h"
 
@@ -39,6 +40,68 @@ namespace js {
 
 template <typename To, typename From>
 inline To ConvertNumber(From src);
+
+template <>
+inline int8_t ConvertNumber<int8_t, float16>(float16 src) {
+  return JS::ToInt8(src.toDouble());
+}
+
+template <>
+inline uint8_t ConvertNumber<uint8_t, float16>(float16 src) {
+  return JS::ToUint8(src.toDouble());
+}
+
+template <>
+inline uint8_clamped ConvertNumber<uint8_clamped, float16>(float16 src) {
+  return uint8_clamped(src.toDouble());
+}
+
+template <>
+inline float16 ConvertNumber<float16, float16>(float16 src) {
+  return src;
+}
+
+template <>
+inline int16_t ConvertNumber<int16_t, float16>(float16 src) {
+  return JS::ToInt16(src.toDouble());
+}
+
+template <>
+inline uint16_t ConvertNumber<uint16_t, float16>(float16 src) {
+  return JS::ToUint16(src.toDouble());
+}
+
+template <>
+inline int32_t ConvertNumber<int32_t, float16>(float16 src) {
+  return JS::ToInt32(src.toDouble());
+}
+
+template <>
+inline uint32_t ConvertNumber<uint32_t, float16>(float16 src) {
+  return JS::ToUint32(src.toDouble());
+}
+
+template <>
+inline int64_t ConvertNumber<int64_t, float16>(float16 src) {
+  return JS::ToInt64(src.toDouble());
+}
+
+template <>
+inline uint64_t ConvertNumber<uint64_t, float16>(float16 src) {
+  return JS::ToUint64(src.toDouble());
+}
+
+// Float16 is a bit of a special case in that it's floating point,
+// but std::is_floating_point_v doesn't know about it.
+template <>
+inline float ConvertNumber<float, float16>(float16 src) {
+  return static_cast<float>(src.toDouble());
+}
+
+template <>
+inline double ConvertNumber<double, float16>(float16 src) {
+  return src.toDouble();
+}
 
 template <>
 inline int8_t ConvertNumber<int8_t, float>(float src) {
@@ -53,6 +116,11 @@ inline uint8_t ConvertNumber<uint8_t, float>(float src) {
 template <>
 inline uint8_clamped ConvertNumber<uint8_clamped, float>(float src) {
   return uint8_clamped(src);
+}
+
+template <>
+inline float16 ConvertNumber<float16, float>(float src) {
+  return float16(src);
 }
 
 template <>
@@ -98,6 +166,11 @@ inline uint8_t ConvertNumber<uint8_t, double>(double src) {
 template <>
 inline uint8_clamped ConvertNumber<uint8_clamped, double>(double src) {
   return uint8_clamped(src);
+}
+
+template <>
+inline float16 ConvertNumber<float16, double>(double src) {
+  return float16(src);
 }
 
 template <>
@@ -181,6 +254,11 @@ template <>
 struct TypeIDOfType<uint64_t> {
   static const Scalar::Type id = Scalar::BigUint64;
   static const JSProtoKey protoKey = JSProto_BigUint64Array;
+};
+template <>
+struct TypeIDOfType<float16> {
+  static const Scalar::Type id = Scalar::Float16;
+  static const JSProtoKey protoKey = JSProto_Float16Array;
 };
 template <>
 struct TypeIDOfType<float> {
@@ -309,10 +387,24 @@ class ElementSpecific {
     MOZ_ASSERT(offset <= targetLength);
     MOZ_ASSERT(sourceLength <= targetLength - offset);
 
+    // Return early when copying no elements.
+    //
+    // Note: `SharedMem::cast` asserts the memory is properly aligned. Non-zero
+    // memory is correctly aligned, this is statically asserted below. Zero
+    // memory can have a different alignment, so we have to return early.
+    if (sourceLength == 0) {
+      return true;
+    }
+
     if (TypedArrayObject::sameBuffer(target, source)) {
       return setFromOverlappingTypedArray(target, targetLength, source,
                                           sourceLength, offset);
     }
+
+    // `malloc` returns memory at least as strictly aligned as for max_align_t
+    // and the alignment of max_align_t is a multiple of the size of `T`,
+    // so `SharedMem::cast` will be called with properly aligned memory.
+    static_assert(alignof(std::max_align_t) % sizeof(T) == 0);
 
     SharedMem<T*> dest =
         target->dataPointerEither().template cast<T*>() + offset;
@@ -378,6 +470,13 @@ class ElementSpecific {
       }
       case Scalar::BigUint64: {
         SharedMem<uint64_t*> src = data.cast<uint64_t*>();
+        for (size_t i = 0; i < count; ++i) {
+          Ops::store(dest++, ConvertNumber<T>(Ops::load(src++)));
+        }
+        break;
+      }
+      case Scalar::Float16: {
+        SharedMem<float16*> src = data.cast<float16*>();
         for (size_t i = 0; i < count; ++i) {
           Ops::store(dest++, ConvertNumber<T>(Ops::load(src++)));
         }
@@ -759,6 +858,26 @@ class ElementSpecific {
     return T(JS::ToInt32(d));
   }
 };
+
+inline gc::AllocKind js::FixedLengthTypedArrayObject::allocKindForTenure()
+    const {
+  // Fixed length typed arrays in the nursery may have a lazily allocated
+  // buffer. Make sure there is room for the array's fixed data when moving the
+  // array.
+
+  if (hasBuffer()) {
+    return NativeObject::allocKindForTenure();
+  }
+
+  gc::AllocKind allocKind;
+  if (hasInlineElements()) {
+    allocKind = AllocKindForLazyBuffer(byteLength());
+  } else {
+    allocKind = gc::GetGCObjectKind(getClass());
+  }
+
+  return gc::ForegroundToBackgroundAllocKind(allocKind);
+}
 
 /* static */ gc::AllocKind
 js::FixedLengthTypedArrayObject::AllocKindForLazyBuffer(size_t nbytes) {

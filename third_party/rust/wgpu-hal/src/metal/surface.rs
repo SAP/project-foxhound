@@ -17,7 +17,7 @@ use objc::{
 use parking_lot::{Mutex, RwLock};
 
 #[cfg(target_os = "macos")]
-#[cfg_attr(feature = "link", link(name = "QuartzCore", kind = "framework"))]
+#[link(name = "QuartzCore", kind = "framework")]
 extern "C" {
     #[allow(non_upper_case_globals)]
     static kCAGravityTopLeft: *mut Object;
@@ -169,7 +169,9 @@ impl super::Surface {
     }
 }
 
-impl crate::Surface<super::Api> for super::Surface {
+impl crate::Surface for super::Surface {
+    type A = super::Api;
+
     unsafe fn configure(
         &self,
         device: &super::Device,
@@ -240,6 +242,7 @@ impl crate::Surface<super::Api> for super::Surface {
     unsafe fn acquire_texture(
         &self,
         _timeout_ms: Option<std::time::Duration>, //TODO
+        _fence: &super::Fence,
     ) -> Result<Option<crate::AcquiredSurfaceTexture<super::Api>>, crate::SurfaceError> {
         let render_layer = self.render_layer.lock();
         let (drawable, texture) = match autoreleasepool(|| {

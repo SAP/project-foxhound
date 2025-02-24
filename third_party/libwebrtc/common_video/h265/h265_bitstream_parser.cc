@@ -12,6 +12,7 @@
 #include <stdlib.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "common_video/h265/h265_common.h"
@@ -129,6 +130,8 @@ H265BitstreamParser::Result H265BitstreamParser::ParseNonParameterSetNalu(
 
     uint32_t slice_segment_address_bits =
         H265::Log2Ceiling(pic_height_in_ctbs_y * pic_width_in_ctbs_y);
+    TRUE_OR_RETURN(slice_segment_address_bits !=
+                   std::numeric_limits<uint32_t>::max());
     slice_reader.ConsumeBits(slice_segment_address_bits);
   }
 
@@ -528,8 +531,7 @@ absl::optional<int> H265BitstreamParser::GetLastSliceQp() const {
   if (!last_slice_qp_delta_ || !last_slice_pps_id_) {
     return absl::nullopt;
   }
-  uint32_t pps_id = 0;
-  const H265PpsParser::PpsState* pps = GetPPS(pps_id);
+  const H265PpsParser::PpsState* pps = GetPPS(last_slice_pps_id_.value());
   if (!pps)
     return absl::nullopt;
   const int parsed_qp = 26 + pps->init_qp_minus26 + *last_slice_qp_delta_;
@@ -538,6 +540,15 @@ absl::optional<int> H265BitstreamParser::GetLastSliceQp() const {
     return absl::nullopt;
   }
   return parsed_qp;
+}
+
+absl::optional<uint32_t> H265BitstreamParser::GetLastSlicePpsId() const {
+  if (!last_slice_pps_id_) {
+    RTC_LOG(LS_ERROR) << "Failed to parse PPS id from bitstream.";
+    return absl::nullopt;
+  }
+
+  return last_slice_pps_id_;
 }
 
 }  // namespace webrtc

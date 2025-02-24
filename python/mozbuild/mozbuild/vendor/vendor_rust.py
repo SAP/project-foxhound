@@ -47,9 +47,9 @@ CARGO_CONFIG_TEMPLATE = """\
 
 # Take advantage of the fact that cargo will treat lines starting with #
 # as comments to add preprocessing directives. This file can thus by copied
-# as-is to $topsrcdir/.cargo/config with no preprocessing to be used there
+# as-is to $topsrcdir/.cargo/config.toml with no preprocessing to be used there
 # (for e.g. independent tasks building rust code), or be preprocessed by
-# the build system to produce a .cargo/config with the right content.
+# the build system to produce a .cargo/config.toml with the right content.
 #define REPLACE_NAME {replace_name}
 #define VENDORED_DIRECTORY {directory}
 # We explicitly exclude the following section when preprocessing because
@@ -90,7 +90,6 @@ PACKAGES_WE_ALWAYS_WANT_AN_OVERRIDE_OF = [
 # If you do need to make changes increasing the number of duplicates, please
 # add a comment as to why.
 TOLERATED_DUPES = {
-    "mio": 2,
     # Transition from time 0.1 to 0.3 underway, but chrono is stuck on 0.1
     # and hasn't been updated in 1.5 years (an hypothetical update is
     # expected to remove the dependency on time altogether).
@@ -275,6 +274,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
         "ISC",
         "MIT",
         "MPL-2.0",
+        "Unicode-3.0",
         "Unicode-DFS-2016",
         "Unlicense",
         "Zlib",
@@ -846,7 +846,7 @@ license file's hash.
         output = res.stdout.decode("UTF-8")
 
         # Get the snippet of configuration that cargo vendor outputs, and
-        # update .cargo/config with it.
+        # update .cargo/config.toml with it.
         # XXX(bug 1576765): Hopefully do something better after
         # https://github.com/rust-lang/cargo/issues/7280 is addressed.
         config = "\n".join(
@@ -880,7 +880,7 @@ license file's hash.
             mozpath.normsep(os.path.normcase(self.topsrcdir)),
         )
 
-        cargo_config = os.path.join(self.topsrcdir, ".cargo", "config.in")
+        cargo_config = os.path.join(self.topsrcdir, ".cargo", "config.toml.in")
         with open(cargo_config, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(
                 CARGO_CONFIG_TEMPLATE.format(

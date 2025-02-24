@@ -20,27 +20,24 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ScrollStyles.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/PresShell.h"
-
 #include "nsCOMPtr.h"
-#include "nsILayoutHistoryState.h"
-#include "nsIAnonymousContentCreator.h"
 #include "nsFrameManager.h"
+#include "nsIAnonymousContentCreator.h"
 #include "nsIFrame.h"
+#include "nsILayoutHistoryState.h"
 
 struct nsStyleDisplay;
 struct nsGenConInitializer;
 
 class nsBlockFrame;
 class nsContainerFrame;
-class nsFirstLineFrame;
-class nsFirstLetterFrame;
+class nsCanvasFrame;
 class nsCSSAnonBoxPseudoStaticAtom;
-class nsPageSequenceFrame;
-
-class nsPageContentFrame;
-
+class nsFirstLetterFrame;
+class nsFirstLineFrame;
 class nsFrameConstructorState;
+class nsPageContentFrame;
+class nsPageSequenceFrame;
 
 namespace mozilla {
 
@@ -48,6 +45,7 @@ class ComputedStyle;
 class PresShell;
 class PrintedSheetFrame;
 class RestyleManager;
+class ViewportFrame;
 
 namespace dom {
 
@@ -97,11 +95,9 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     Async,
   };
 
-  mozilla::RestyleManager* RestyleManager() const {
-    return mPresShell->GetPresContext()->RestyleManager();
-  }
+  mozilla::RestyleManager* RestyleManager() const;
 
-  nsIFrame* ConstructRootFrame();
+  mozilla::ViewportFrame* ConstructRootFrame();
 
  private:
   enum Operation { CONTENTAPPEND, CONTENTINSERT };
@@ -477,7 +473,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    */
   void CreateGeneratedContent(
       nsFrameConstructorState& aState, Element& aOriginatingElement,
-      ComputedStyle& aPseudoStyle, uint32_t aContentIndex,
+      ComputedStyle& aPseudoStyle, const mozilla::StyleContentItem& aItem,
+      size_t aContentIndex,
       const mozilla::FunctionRef<void(nsIContent*)> aAddChild);
 
   /**
@@ -1423,18 +1420,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // for it.
   void ReframeTextIfNeeded(nsIContent* aContent);
 
-  enum InsertPageBreakLocation { eBefore, eAfter };
-  inline void AppendPageBreakItem(nsIContent* aContent,
-                                  FrameConstructionItemList& aItems) {
-    InsertPageBreakItem(aContent, aItems, InsertPageBreakLocation::eAfter);
-  }
-  inline void PrependPageBreakItem(nsIContent* aContent,
-                                   FrameConstructionItemList& aItems) {
-    InsertPageBreakItem(aContent, aItems, InsertPageBreakLocation::eBefore);
-  }
-  void InsertPageBreakItem(nsIContent* aContent,
-                           FrameConstructionItemList& aItems,
-                           InsertPageBreakLocation location);
+  void AppendPageBreakItem(nsIContent* aContent,
+                           FrameConstructionItemList& aItems);
 
   // Function to find FrameConstructionData for aElement.  Will return
   // null if aElement is not HTML.
@@ -1669,28 +1656,50 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   nsContainerFrame* GetFloatContainingBlock(nsIFrame* aFrame);
 
  private:
-  // Build a scroll frame:
-  //  Calls BeginBuildingScrollFrame, InitAndRestoreFrame, and then
-  //  FinishBuildingScrollFrame.
-  // @param aNewFrame the created scrollframe --- output only
-  // @param aParentFrame the geometric parent that the scrollframe will have.
-  void BuildScrollFrame(nsFrameConstructorState& aState, nsIContent* aContent,
-                        ComputedStyle* aContentStyle, nsIFrame* aScrolledFrame,
-                        nsContainerFrame* aParentFrame,
-                        nsContainerFrame*& aNewFrame);
+  // Build a scroll container frame, and wrap the scrolled frame. The
+  // hierarchy will look like this:
+  //
+  //       ScrollContainerFrame
+  //                 ^
+  //                 |
+  //               Frame (scrolled frame you passed in as aScrolledFrame)
+  //
+  // @param aContent the content node of the child to wrap.
+  //
+  // @param aContentStyle the style that has already been resolved for the
+  // content being passed in.
+  //
+  // @param aScrolledFrame The frame of the content to wrap. This should not be
+  // initialized (i.e. Init() should not yet have been called). This method will
+  // initialize it with a scrolled pseudo and no nsIContent. The content will be
+  // attached to the scroll container frame that this function returns.
+  //
+  // @param aParentFrame The geometric parent to attach the scroll container
+  // frame to.
+  //
+  // @param aNewFrame [in/out] If this is not nullptr, we will just use it as
+  // the scroll container frame, rather than creating a new scroll container
+  // frame. Otherwise (i.e. if it's nullptr), we'll create a new scroll
+  // container frame, and return it by reference via this param.
+  void BuildScrollContainerFrame(nsFrameConstructorState& aState,
+                                 nsIContent* aContent,
+                                 ComputedStyle* aContentStyle,
+                                 nsIFrame* aScrolledFrame,
+                                 nsContainerFrame* aParentFrame,
+                                 nsContainerFrame*& aNewFrame);
 
-  // Builds the initial ScrollFrame
-  already_AddRefed<ComputedStyle> BeginBuildingScrollFrame(
+  // Builds the initial scroll container frame.
+  already_AddRefed<ComputedStyle> BeginBuildingScrollContainerFrame(
       nsFrameConstructorState& aState, nsIContent* aContent,
       ComputedStyle* aContentStyle, nsContainerFrame* aParentFrame,
       mozilla::PseudoStyleType aScrolledPseudo, bool aIsRoot,
       nsContainerFrame*& aNewFrame);
 
-  // Completes the building of the scrollframe:
+  // Completes the building of the scroll container frame.
   // Creates a view for the scrolledframe and makes it the child of the
-  // scrollframe.
-  void FinishBuildingScrollFrame(nsContainerFrame* aScrollFrame,
-                                 nsIFrame* aScrolledFrame);
+  // scroll container frame.
+  void FinishBuildingScrollContainerFrame(
+      nsContainerFrame* aScrollContainerFrame, nsIFrame* aScrolledFrame);
 
   void InitializeListboxSelect(nsFrameConstructorState& aState,
                                nsContainerFrame* aScrollFrame,

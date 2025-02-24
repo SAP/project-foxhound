@@ -8,10 +8,10 @@
 #include "RetainedDisplayListBuilder.h"
 
 #include "mozilla/Attributes.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
-#include "nsIScrollableFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsSubDocumentFrame.h"
 #include "nsViewManager.h"
@@ -305,8 +305,8 @@ bool RetainedDisplayListBuilder::PreProcessDisplayList(
         !item->GetActiveScrolledRoot()) {
       agrFrame = aAsyncAncestor;
     } else {
-      agrFrame =
-          item->GetActiveScrolledRoot()->mScrollableFrame->GetScrolledFrame();
+      agrFrame = item->GetActiveScrolledRoot()
+                     ->mScrollContainerFrame->GetScrolledFrame();
     }
 
     if (aAGR && agrFrame != aAGR) {
@@ -363,7 +363,7 @@ static Maybe<const ActiveScrolledRoot*> SelectContainerASR(
       aClipChain ? aClipChain->mASR : nullptr;
 
   MOZ_DIAGNOSTIC_ASSERT(!aClipChain || aClipChain->mOnStack || !itemClipASR ||
-                        itemClipASR->mScrollableFrame);
+                        itemClipASR->mScrollContainerFrame);
 
   const ActiveScrolledRoot* finiteBoundsASR =
       ActiveScrolledRoot::PickDescendant(itemClipASR, aItemASR);
@@ -973,7 +973,7 @@ static bool ProcessFrameInternal(nsIFrame* aFrame,
 
     // Check whether the current frame is a scrollable frame with display port.
     nsRect displayPort;
-    nsIScrollableFrame* sf = do_QueryFrame(currentFrame);
+    ScrollContainerFrame* sf = do_QueryFrame(currentFrame);
     nsIContent* content = sf ? currentFrame->GetContent() : nullptr;
 
     if (content && DisplayPortUtils::GetDisplayPort(content, &displayPort)) {
@@ -1303,7 +1303,7 @@ bool RetainedDisplayListBuilder::ShouldBuildPartial(
     // reasons as above, but also because top layer items should to be marked
     // modified if the root scroll frame is modified. Putting this check here
     // means we don't need to check everytime a frame is marked modified though.
-    if (type == LayoutFrameType::Scroll && f->GetParent() &&
+    if (type == LayoutFrameType::ScrollContainer && f->GetParent() &&
         !f->GetParent()->GetParent()) {
       Metrics()->mPartialUpdateFailReason = PartialUpdateFailReason::FrameType;
       return false;
@@ -1311,23 +1311,6 @@ bool RetainedDisplayListBuilder::ShouldBuildPartial(
   }
 
   return true;
-}
-
-void RetainedDisplayListBuilder::InvalidateCaretFramesIfNeeded() {
-  if (mPreviousCaret == mBuilder.GetCaretFrame()) {
-    // The current caret frame is the same as the previous one.
-    return;
-  }
-
-  if (mPreviousCaret) {
-    mPreviousCaret->MarkNeedsDisplayItemRebuild();
-  }
-
-  if (mBuilder.GetCaretFrame()) {
-    mBuilder.GetCaretFrame()->MarkNeedsDisplayItemRebuild();
-  }
-
-  mPreviousCaret = mBuilder.GetCaretFrame();
 }
 
 class AutoClearFramePropsArray {
@@ -1585,7 +1568,7 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
     MarkFramesWithItemsAndImagesModified(&mList);
   }
 
-  InvalidateCaretFramesIfNeeded();
+  mBuilder.InvalidateCaretFramesIfNeeded();
 
   // We set the override dirty regions during ComputeRebuildRegion or in
   // DisplayPortUtils::InvalidateForDisplayPortChange. The display port change
@@ -1628,8 +1611,8 @@ PartialUpdateResult RetainedDisplayListBuilder::AttemptPartialUpdate(
 
   // This is normally handled by EnterPresShell, but we skipped it so that we
   // didn't call MarkFrameForDisplayIfVisible before ComputeRebuildRegion.
-  nsIScrollableFrame* sf =
-      RootReferenceFrame()->PresShell()->GetRootScrollFrameAsScrollable();
+  ScrollContainerFrame* sf =
+      RootReferenceFrame()->PresShell()->GetRootScrollContainerFrame();
   if (sf) {
     nsCanvasFrame* canvasFrame = do_QueryFrame(sf->GetScrolledFrame());
     if (canvasFrame) {

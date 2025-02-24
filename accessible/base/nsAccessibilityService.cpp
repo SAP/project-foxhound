@@ -9,9 +9,11 @@
 #include "ApplicationAccessibleWrap.h"
 #include "ARIAGridAccessible.h"
 #include "ARIAMap.h"
+#include "CssAltContent.h"
 #include "DocAccessible-inl.h"
 #include "DocAccessibleChild.h"
 #include "FocusManager.h"
+#include "mozilla/FocusModel.h"
 #include "HTMLCanvasAccessible.h"
 #include "HTMLElementAccessibles.h"
 #include "HTMLImageMapAccessible.h"
@@ -122,7 +124,7 @@ static LocalAccessible* MaybeCreateSpecificARIAAccessible(
     if (!parent) {
       return nullptr;
     }
-    if (!parent->IsTable() && parent->Role() == roles::GROUPING) {
+    if (!parent->IsTable() && parent->Role() == roles::ROWGROUP) {
       parent = parent->GetNonGenericParent();
       if (!parent) {
         return nullptr;
@@ -133,48 +135,6 @@ static LocalAccessible* MaybeCreateSpecificARIAAccessible(
     }
   }
   return nullptr;
-}
-
-/**
- * Return true if the element has an attribute (ARIA, title, or relation) that
- * requires the creation of an Accessible for the element.
- */
-static bool AttributesMustBeAccessible(nsIContent* aContent,
-                                       DocAccessible* aDocument) {
-  if (aContent->IsElement()) {
-    uint32_t attrCount = aContent->AsElement()->GetAttrCount();
-    for (uint32_t attrIdx = 0; attrIdx < attrCount; attrIdx++) {
-      const nsAttrName* attr = aContent->AsElement()->GetAttrNameAt(attrIdx);
-      if (attr->NamespaceEquals(kNameSpaceID_None)) {
-        nsAtom* attrAtom = attr->Atom();
-        if (attrAtom == nsGkAtoms::title && aContent->IsHTMLElement()) {
-          // If the author provided a title on an element that would not
-          // be accessible normally, assume an intent and make it accessible.
-          return true;
-        }
-
-        nsDependentAtomString attrStr(attrAtom);
-        if (!StringBeginsWith(attrStr, u"aria-"_ns)) continue;  // not ARIA
-
-        // A global state or a property and in case of token defined.
-        uint8_t attrFlags = aria::AttrCharacteristicsFor(attrAtom);
-        if ((attrFlags & ATTR_GLOBAL) &&
-            (!(attrFlags & ATTR_VALTOKEN) ||
-             nsAccUtils::HasDefinedARIAToken(aContent, attrAtom))) {
-          return true;
-        }
-      }
-    }
-
-    // If the given ID is referred by relation attribute then create an
-    // Accessible for it.
-    nsAutoString id;
-    if (nsCoreUtils::GetID(aContent, id) && !id.IsEmpty()) {
-      return aDocument->IsDependentID(aContent->AsElement(), id);
-    }
-  }
-
-  return false;
 }
 
 /**
@@ -224,19 +184,53 @@ static bool MustBeGenericAccessible(nsIContent* aContent,
  * Return true if the element must be accessible.
  */
 static bool MustBeAccessible(nsIContent* aContent, DocAccessible* aDocument) {
-  nsIFrame* frame = aContent->GetPrimaryFrame();
-  MOZ_ASSERT(frame);
-  // This document might be invisible when it first loads. Therefore, we must
-  // check focusability irrespective of visibility here. Otherwise, we might not
-  // create Accessibles for some focusable elements; e.g. a span with only a
-  // tabindex. Elements that are invisible within this document are excluded
-  // earlier in CreateAccessible.
-  if (frame->IsFocusable(/* aWithMouse */ false,
-                         /* aCheckVisibility */ false)) {
-    return true;
+  if (nsIFrame* frame = aContent->GetPrimaryFrame()) {
+    // This document might be invisible when it first loads. Therefore, we must
+    // check focusability irrespective of visibility here. Otherwise, we might
+    // not create Accessibles for some focusable elements; e.g. a span with only
+    // a tabindex. Elements that are invisible within this document are excluded
+    // earlier in CreateAccessible.
+    if (frame->IsFocusable(IsFocusableFlags::IgnoreVisibility)) {
+      return true;
+    }
   }
 
-  return AttributesMustBeAccessible(aContent, aDocument);
+  // Return true if the element has an attribute (ARIA, title, or relation) that
+  // requires the creation of an Accessible for the element.
+  if (aContent->IsElement()) {
+    uint32_t attrCount = aContent->AsElement()->GetAttrCount();
+    for (uint32_t attrIdx = 0; attrIdx < attrCount; attrIdx++) {
+      const nsAttrName* attr = aContent->AsElement()->GetAttrNameAt(attrIdx);
+      if (attr->NamespaceEquals(kNameSpaceID_None)) {
+        nsAtom* attrAtom = attr->Atom();
+        if (attrAtom == nsGkAtoms::title && aContent->IsHTMLElement()) {
+          // If the author provided a title on an element that would not
+          // be accessible normally, assume an intent and make it accessible.
+          return true;
+        }
+
+        nsDependentAtomString attrStr(attrAtom);
+        if (!StringBeginsWith(attrStr, u"aria-"_ns)) continue;  // not ARIA
+
+        // A global state or a property and in case of token defined.
+        uint8_t attrFlags = aria::AttrCharacteristicsFor(attrAtom);
+        if ((attrFlags & ATTR_GLOBAL) &&
+            (!(attrFlags & ATTR_VALTOKEN) ||
+             nsAccUtils::HasDefinedARIAToken(aContent, attrAtom))) {
+          return true;
+        }
+      }
+    }
+
+    // If the given ID is referred by relation attribute then create an
+    // Accessible for it.
+    nsAutoString id;
+    if (nsCoreUtils::GetID(aContent, id) && !id.IsEmpty()) {
+      return aDocument->IsDependentID(aContent->AsElement(), id);
+    }
+  }
+
+  return false;
 }
 
 bool nsAccessibilityService::ShouldCreateImgAccessible(
@@ -248,12 +242,14 @@ bool nsAccessibilityService::ShouldCreateImgAccessible(
     return false;
   }
 
-  // If the element is not an img, and also not an embedded image via embed or
-  // object, then we should not create an accessible.
+  // If the element is not an img, not an embedded image via embed or object,
+  // and not a pseudo-element with CSS content alt text, then we should not
+  // create an accessible.
   if (!aElement->IsHTMLElement(nsGkAtoms::img) &&
       ((!aElement->IsHTMLElement(nsGkAtoms::embed) &&
         !aElement->IsHTMLElement(nsGkAtoms::object)) ||
-       frame->AccessibleType() != AccType::eImageType)) {
+       frame->AccessibleType() != AccType::eImageType) &&
+      !CssAltContent(aElement)) {
     return false;
   }
 
@@ -291,6 +287,38 @@ static bool MustSVGElementBeAccessible(nsIContent* aContent,
     }
   }
   return MustBeAccessible(aContent, aDocument);
+}
+
+/**
+ * Return an accessible for the content if the SVG element requires the creation
+ * of an Accessible.
+ */
+static RefPtr<LocalAccessible> MaybeCreateSVGAccessible(
+    nsIContent* aContent, DocAccessible* aDocument) {
+  if (aContent->IsSVGGeometryElement() ||
+      aContent->IsSVGElement(nsGkAtoms::image)) {
+    // Shape elements: rect, circle, ellipse, line, path, polygon, and polyline.
+    // 'use' and 'text' graphic elements require special support.
+    if (MustSVGElementBeAccessible(aContent, aDocument)) {
+      return new EnumRoleAccessible<roles::GRAPHIC>(aContent, aDocument);
+    }
+  } else if (aContent->IsSVGElement(nsGkAtoms::text)) {
+    return new HyperTextAccessible(aContent->AsElement(), aDocument);
+  } else if (aContent->IsSVGElement(nsGkAtoms::svg)) {
+    // An <svg> element could contain <foreignObject>, which contains HTML but
+    // does not normally create its own Accessible. This means that the <svg>
+    // Accessible could have TextLeafAccessible children, so it must be a
+    // HyperTextAccessible.
+    return new EnumRoleHyperTextAccessible<roles::DIAGRAM>(aContent, aDocument);
+  } else if (aContent->IsSVGElement(nsGkAtoms::g) &&
+             MustSVGElementBeAccessible(aContent, aDocument)) {
+    // <g> can also contain <foreignObject>.
+    return new EnumRoleHyperTextAccessible<roles::GROUPING>(aContent,
+                                                            aDocument);
+  } else if (aContent->IsSVGElement(nsGkAtoms::a)) {
+    return new HTMLLinkAccessible(aContent, aDocument);
+  }
+  return nullptr;
 }
 
 /**
@@ -838,7 +866,8 @@ void nsAccessibilityService::RecreateAccessible(PresShell* aPresShell,
 
 void nsAccessibilityService::GetStringRole(uint32_t aRole, nsAString& aString) {
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
-             msaaRole, ia2Role, androidClass, iosIsElement, nameRule)       \
+             msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
+             nameRule)                                                      \
   case roles::geckoRole:                                                    \
     aString.AssignLiteral(stringRole);                                      \
     return;
@@ -1137,13 +1166,19 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
       }
     }
 
+    // SVG elements are not in a markup map, but we may still need to create an
+    // accessible for one, even in the case of display:contents.
+    if (!newAcc && content->IsSVGElement()) {
+      newAcc = MaybeCreateSVGAccessible(content, document);
+    }
+
     // Check whether this element has an ARIA role or attribute that requires
     // us to create an Accessible.
     const bool hasNonPresentationalARIARole =
         roleMapEntry && !roleMapEntry->Is(nsGkAtoms::presentation) &&
         !roleMapEntry->Is(nsGkAtoms::none);
-    if (!newAcc && (hasNonPresentationalARIARole ||
-                    AttributesMustBeAccessible(content, document))) {
+    if (!newAcc &&
+        (hasNonPresentationalARIARole || MustBeAccessible(content, document))) {
       newAcc = new HyperTextAccessible(content, document);
     }
 
@@ -1232,7 +1267,13 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
     newAcc = CreateAccessibleByFrameType(frame, content, aContext);
     MOZ_ASSERT(newAcc, "Accessible not created for text node!");
     document->BindToDocument(newAcc, nullptr);
-    newAcc->AsTextLeaf()->SetText(text.mString);
+    if (auto cssAlt = CssAltContent(content)) {
+      nsAutoString text;
+      cssAlt.AppendToString(text);
+      newAcc->AsTextLeaf()->SetText(text);
+    } else {
+      newAcc->AsTextLeaf()->SetText(text.mString);
+    }
     return newAcc;
   }
 
@@ -1356,7 +1397,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
       LayoutFrameType frameType = frame->Type();
       // FIXME(emilio): Why only these frame types?
       if (frameType == LayoutFrameType::FlexContainer ||
-          frameType == LayoutFrameType::Scroll) {
+          frameType == LayoutFrameType::ScrollContainer) {
         newAcc = new XULTabpanelAccessible(content, document);
       }
     }
@@ -1364,32 +1405,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
 
   if (!newAcc) {
     if (content->IsSVGElement()) {
-      if (content->IsSVGGeometryElement() ||
-          content->IsSVGElement(nsGkAtoms::image)) {
-        // Shape elements: rect, circle, ellipse, line, path, polygon,
-        // and polyline. 'use' and 'text' graphic elements require
-        // special support.
-        if (MustSVGElementBeAccessible(content, document)) {
-          newAcc = new EnumRoleAccessible<roles::GRAPHIC>(content, document);
-        }
-      } else if (content->IsSVGElement(nsGkAtoms::text)) {
-        newAcc = new HyperTextAccessible(content->AsElement(), document);
-      } else if (content->IsSVGElement(nsGkAtoms::svg)) {
-        // An <svg> element could contain <foreignObject>, which contains HTML
-        // but does not normally create its own Accessible. This means that the
-        // <svg> Accessible could have TextLeafAccessible children, so it must
-        // be a HyperTextAccessible.
-        newAcc =
-            new EnumRoleHyperTextAccessible<roles::DIAGRAM>(content, document);
-      } else if (content->IsSVGElement(nsGkAtoms::g) &&
-                 MustSVGElementBeAccessible(content, document)) {
-        // <g> can also contain <foreignObject>.
-        newAcc =
-            new EnumRoleHyperTextAccessible<roles::GROUPING>(content, document);
-      } else if (content->IsSVGElement(nsGkAtoms::a)) {
-        newAcc = new HTMLLinkAccessible(content, document);
-      }
-
+      newAcc = MaybeCreateSVGAccessible(content, document);
     } else if (content->IsMathMLElement()) {
       const MarkupMapInfo* markupMap =
           mMathMLMarkupMap.Get(content->NodeInfo()->NameAtom());

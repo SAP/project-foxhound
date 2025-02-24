@@ -6,6 +6,12 @@
 
 :host {
   display: contents;
+
+  /* These z-indexes are used to correctly layer elements in the screenshots overlay */
+  --screenshots-lowest-layer: 1;
+  --screenshots-low-layer: 2;
+  --screenshots-high-layer: 3;
+  --screenshots-highest-layer: 4;
 }
 
 [hidden] {
@@ -47,7 +53,7 @@
   justify-content: center;
   position: sticky;
   top: 0;
-  left: 0;
+  inset-inline: 0;
   width: 100vw;
   height: 100vh;
   background-color: rgba(0, 0, 0, 0.7);
@@ -57,6 +63,7 @@
   position: absolute;
   margin: 10px 0;
   cursor: auto;
+  z-index: var(--screenshots-highest-layer);
 }
 
 #selection-size,
@@ -65,6 +72,11 @@
   background-color: var(--in-content-page-background);
   color: var(--in-content-text-color);
   border-radius: 4px;
+}
+
+#selection-size {
+  border: var(--border-width) solid var(--in-content-border-color);
+  box-shadow: var(--shadow-30);
 }
 
 .buttons-wrapper,
@@ -77,11 +89,13 @@
 .screenshots-button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  gap: var(--space-xsmall);
   cursor: pointer;
   text-align: center;
   user-select: none;
   white-space: nowrap;
-  z-index: 6;
+  z-index: var(--screenshots-highest-layer);
   min-width: 32px;
   margin-inline: 4px;
 }
@@ -90,6 +104,7 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
+  z-index: var(--screenshots-lowest-layer);
 }
 
 #screenshots-cancel-button {
@@ -97,7 +112,7 @@
   border-color: #fff;
   color: #fff;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: var(--in-content-button-background);
     color: var(--in-content-button-text-color);
     border-color: var(--in-content-button-border-color);
@@ -108,7 +123,7 @@
   background-color: #fff;
   color: #000;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: var(--in-content-button-background-hover);
     color: var(--in-content-button-text-color-hover);
     border-color: var(--in-content-button-border-color-hover);
@@ -120,6 +135,10 @@
   fill: currentColor;
   width: 16px;
   height: 16px;
+  pointer-events: none;
+}
+
+.screenshots-button > label {
   pointer-events: none;
 }
 
@@ -135,15 +154,14 @@
   content: url("chrome://browser/skin/downloads/downloads.svg");
 }
 
-#download > img,
-#copy > img {
-  margin-inline-end: 5px;
-}
-
 .face-container {
   position: relative;
   width: 64px;
   height: 64px;
+
+  @media (forced-colors) {
+    display: none;
+  }
 }
 
 .face {
@@ -172,7 +190,7 @@
   border-radius: 50%;
   inset-inline-start: 2px;
   top: 4px;
-  z-index: 10;
+  z-index: var(--screenshots-high-layer);
 }
 
 .left {
@@ -195,7 +213,7 @@
   padding: 20px;
   width: 400px;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     color: CanvasText;
     background-color: Canvas;
   }
@@ -209,7 +227,7 @@
   box-sizing: border-box;
   pointer-events: none;
   position: absolute;
-  z-index: 11;
+  z-index: var(--screenshots-high-layer);
 }
 
 #top-background {
@@ -242,7 +260,7 @@
   cursor: move;
   position: absolute;
   pointer-events: auto;
-  z-index: 2;
+  z-index: var(--screenshots-lowest-layer);
   outline-offset: 8px;
 }
 
@@ -251,7 +269,7 @@
   align-items: center;
   justify-content: center;
   position: absolute;
-  z-index: 5;
+  z-index: var(--screenshots-high-layer);
   pointer-events: auto;
   outline-offset: -15px;
 }
@@ -270,7 +288,7 @@
   inset-inline-start: 0;
   top: -30px;
   width: 100%;
-  z-index: 4;
+  z-index: var(--screenshots-low-layer);
 }
 
 .mover-target.direction-topRight {
@@ -287,7 +305,7 @@
   left: -30px;
   top: 0;
   width: 60px;
-  z-index: 4;
+  z-index: var(--screenshots-low-layer);
 }
 
 .mover-target.direction-right {
@@ -296,7 +314,7 @@
   right: -30px;
   top: 0;
   width: 60px;
-  z-index: 4;
+  z-index: var(--screenshots-low-layer);
 }
 
 .mover-target.direction-bottomLeft {
@@ -313,7 +331,7 @@
   height: 60px;
   inset-inline-start: 0;
   width: 100%;
-  z-index: 4;
+  z-index: var(--screenshots-low-layer);
 }
 
 .mover-target.direction-bottomRight {
@@ -338,7 +356,7 @@
   width: 16px;
   pointer-events: none;
 
-  @media (prefers-contrast) {
+  @media (forced-colors) {
     background-color: ButtonText;
   }
 }

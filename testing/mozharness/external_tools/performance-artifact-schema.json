@@ -8,12 +8,12 @@
             "firefox",
             "chrome",
             "chrome-m",
-            "chromium",
             "fennec",
             "geckoview",
             "refbrow",
             "fenix",
             "safari",
+            "safari-tp",
             "custom-car",
             "cstm-car-m"
           ],

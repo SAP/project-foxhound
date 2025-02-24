@@ -111,7 +111,7 @@ class nsContextMenu {
    * A promise to retrieve the translations language pair
    * if the context menu was opened in a context relevant to
    * open the SelectTranslationsPanel.
-   * @type {Promise<{fromLang: string, toLang: string}>}
+   * @type {Promise<{fromLanguage: string, toLanguage: string}>}
    */
   #translationsLangPairPromise;
 
@@ -866,6 +866,10 @@ class nsContextMenu {
 
     this.showAndFormatSearchContextItem();
     this.showTranslateSelectionItem();
+    nsContextMenu.GenAI.buildAskChatMenu(
+      document.getElementById("context-ask-chat"),
+      this
+    );
 
     // srcdoc cannot be opened separately due to concerns about web
     // content with about:srcdoc in location bar masquerading as trusted
@@ -1347,8 +1351,6 @@ class nsContextMenu {
       !this.onTextInput &&
       !this.onLink &&
       !this.onPlainTextLink &&
-      !this.onImage &&
-      !this.onVideo &&
       !this.onAudio &&
       !this.onEditable &&
       !this.onPassword;
@@ -1619,7 +1621,7 @@ class nsContextMenu {
 
   // Open new "view source" window with the frame's URL.
   viewFrameSource() {
-    BrowserViewSourceOfDocument({
+    BrowserCommands.viewSourceOfDocument({
       browser: this.browser,
       URL: this.contentData.docLocation,
       outerWindowID: this.frameOuterWindowID,
@@ -1627,7 +1629,7 @@ class nsContextMenu {
   }
 
   viewInfo() {
-    BrowserPageInfo(
+    BrowserCommands.pageInfo(
       this.contentData.docLocation,
       null,
       null,
@@ -1637,7 +1639,7 @@ class nsContextMenu {
   }
 
   viewImageInfo() {
-    BrowserPageInfo(
+    BrowserCommands.pageInfo(
       this.contentData.docLocation,
       "mediaTab",
       this.imageInfo,
@@ -1661,7 +1663,7 @@ class nsContextMenu {
   }
 
   viewFrameInfo() {
-    BrowserPageInfo(
+    BrowserCommands.pageInfo(
       this.contentData.docLocation,
       null,
       null,
@@ -1685,7 +1687,7 @@ class nsContextMenu {
 
   // Change current window to the URL of the image, video, or audio.
   viewMedia(e) {
-    let where = whereToOpenLink(e, false, false);
+    let where = BrowserUtils.whereToOpenLink(e, false, false);
     if (where == "current") {
       where = "tab";
     }
@@ -1982,7 +1984,7 @@ class nsContextMenu {
     // we give up waiting for the filename.
     function timerCallback() {}
     timerCallback.prototype = {
-      notify: function sLA_timer_notify(aTimer) {
+      notify: function sLA_timer_notify() {
         channel.cancel(NS_ERROR_SAVE_LINK_AS_TIMEOUT);
       },
     };
@@ -2175,7 +2177,10 @@ class nsContextMenu {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
-    clipboard.copyString(addresses);
+    clipboard.copyString(
+      addresses,
+      this.actor.manager.browsingContext.currentWindowGlobal
+    );
   }
 
   // Extract phone and put it on clipboard
@@ -2195,7 +2200,10 @@ class nsContextMenu {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
-    clipboard.copyString(phone);
+    clipboard.copyString(
+      phone,
+      this.actor.manager.browsingContext.currentWindowGlobal
+    );
   }
 
   copyLink() {
@@ -2204,7 +2212,10 @@ class nsContextMenu {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
-    clipboard.copyString(linkURL);
+    clipboard.copyString(
+      linkURL,
+      this.actor.manager.browsingContext.currentWindowGlobal
+    );
   }
 
   /**
@@ -2220,7 +2231,10 @@ class nsContextMenu {
       let clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
         Ci.nsIClipboardHelper
       );
-      clipboard.copyString(strippedLinkURL);
+      clipboard.copyString(
+        strippedLinkURL,
+        this.actor.manager.browsingContext.currentWindowGlobal
+      );
     }
   }
 
@@ -2324,8 +2338,8 @@ class nsContextMenu {
     try {
       strippedLinkURI = QueryStringStripper.stripForCopyOrShare(this.linkURI);
     } catch (e) {
-      console.warn(`isLinkURIStrippable: ${e.message}`);
-      return null;
+      console.warn(`stripForCopyOrShare: ${e.message}`);
+      return this.linkURI;
     }
 
     // If nothing can be stripped, we return the original URI
@@ -2458,7 +2472,10 @@ class nsContextMenu {
     var clipboard = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
       Ci.nsIClipboardHelper
     );
-    clipboard.copyString(this.originalMediaURL);
+    clipboard.copyString(
+      this.originalMediaURL,
+      this.actor.manager.browsingContext.currentWindowGlobal
+    );
   }
 
   getImageText() {
@@ -2484,30 +2501,13 @@ class nsContextMenu {
     let drmInfoURL =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "drm-content";
-    let dest = whereToOpenLink(aEvent);
+    let dest = BrowserUtils.whereToOpenLink(aEvent);
     // Don't ever want this to open in the same tab as it'll unload the
     // DRM'd video, which is going to be a bad idea in most cases.
     if (dest == "current") {
       dest = "tab";
     }
     openTrustedLinkIn(drmInfoURL, dest);
-  }
-
-  /**
-   * Retrieves an instance of the TranslationsParent actor.
-   * @returns {TranslationsParent} - The TranslationsParent actor.
-   * @throws Throws if an instance of the actor cannot be retrieved.
-   */
-  static #getTranslationsActor() {
-    const actor =
-      gBrowser.selectedBrowser.browsingContext.currentWindowGlobal.getActor(
-        "Translations"
-      );
-
-    if (!actor) {
-      throw new Error("Unable to get the TranslationsParent");
-    }
-    return actor;
   }
 
   /**
@@ -2518,7 +2518,9 @@ class nsContextMenu {
   static #isFullPageTranslationsActive() {
     try {
       const { requestedTranslationPair } =
-        this.#getTranslationsActor().languageState;
+        TranslationsParent.getTranslationsActor(
+          gBrowser.selectedBrowser
+        ).languageState;
       return requestedTranslationPair !== null;
     } catch {
       // Failed to retrieve the Full Page Translations actor, do nothing.
@@ -2532,7 +2534,17 @@ class nsContextMenu {
    * @param {Event} event - The triggering event for opening the panel.
    */
   openSelectTranslationsPanel(event) {
-    SelectTranslationsPanel.open(event, this.#translationsLangPairPromise);
+    const context = this.contentData.context;
+    let screenX = context.screenXDevPx / window.devicePixelRatio;
+    let screenY = context.screenYDevPx / window.devicePixelRatio;
+    SelectTranslationsPanel.open(
+      event,
+      screenX,
+      screenY,
+      this.#getTextToTranslate(),
+      this.isTextSelected,
+      this.#translationsLangPairPromise
+    ).catch(console.error);
   }
 
   /**
@@ -2545,9 +2557,9 @@ class nsContextMenu {
    * @returns {Promise<void>}
    */
   async localizeTranslateSelectionItem(translateSelectionItem) {
-    const { toLang } = await this.#translationsLangPairPromise;
+    const { toLanguage } = await this.#translationsLangPairPromise;
 
-    if (toLang) {
+    if (toLanguage) {
       // A valid to-language exists, so localize the menuitem for that language.
       let displayName;
 
@@ -2555,7 +2567,7 @@ class nsContextMenu {
         const displayNames = new Services.intl.DisplayNames(undefined, {
           type: "language",
         });
-        displayName = displayNames.of(toLang);
+        displayName = displayNames.of(toLanguage);
       } catch {
         // Services.intl.DisplayNames.of threw, do nothing.
       }
@@ -2583,6 +2595,35 @@ class nsContextMenu {
   }
 
   /**
+   * Fetches text for translation, prioritizing selected text over link text.
+   *
+   * @returns {string} The text to translate.
+   */
+  #getTextToTranslate() {
+    if (this.isTextSelected) {
+      // If there is an active selection, we will always offer to translate.
+      return this.selectionInfo.fullText.trim();
+    }
+
+    const linkText = this.linkTextStr.trim();
+    if (!linkText) {
+      // There was no underlying link text, so do not offer to translate.
+      return "";
+    }
+
+    try {
+      // If the underlying link text is a URL, we should not offer to translate.
+      new URL(linkText);
+      return "";
+    } catch {
+      // A URL could not be parsed from the unerlying link text.
+    }
+
+    // Since the underlying link text is not a URL, we should offer to translate it.
+    return linkText;
+  }
+
+  /**
    * Displays or hides the translate-selection item in the context menu.
    */
   showTranslateSelectionItem() {
@@ -2596,14 +2637,13 @@ class nsContextMenu {
       "browser.translations.select.enable"
     );
 
-    // Selected text takes precedence over link text.
-    const textToTranslate = this.isTextSelected
-      ? this.selectedText.trim()
-      : this.linkTextStr.trim();
+    const textToTranslate = this.#getTextToTranslate();
 
     translateSelectionItem.hidden =
       // Only show the item if the feature is enabled.
       !(translationsEnabled && selectTranslationsEnabled) ||
+      // Only show the item if Translations is supported on this hardware.
+      !TranslationsParent.getIsTranslationsEngineSupported() ||
       // If there is no text to translate, we have nothing to do.
       textToTranslate.length === 0 ||
       // We do not allow translating selections on top of Full Page Translations.
@@ -2720,6 +2760,7 @@ class nsContextMenu {
 
 ChromeUtils.defineESModuleGetters(nsContextMenu, {
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.sys.mjs",
+  GenAI: "resource:///modules/GenAI.sys.mjs",
   LoginManagerContextMenu:
     "resource://gre/modules/LoginManagerContextMenu.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",

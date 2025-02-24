@@ -16,6 +16,9 @@
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "api/test/mock_frame_transformer.h"
 #include "call/rtp_transport_controller_send.h"
 #include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/byte_io.h"
@@ -27,7 +30,6 @@
 #include "rtc_base/rate_limiter.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/mock_frame_transformer.h"
 #include "test/mock_transport.h"
 #include "test/scenario/scenario.h"
 #include "test/scoped_key_value_config.h"
@@ -118,23 +120,21 @@ class RtpVideoSenderTestFixture {
       rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
       const FieldTrialsView* field_trials = nullptr)
       : time_controller_(Timestamp::Millis(1000000)),
+        env_(CreateEnvironment(&field_trials_,
+                               field_trials,
+                               time_controller_.GetClock(),
+                               time_controller_.CreateTaskQueueFactory())),
         config_(CreateVideoSendStreamConfig(&transport_,
                                             ssrcs,
                                             rtx_ssrcs,
                                             payload_type)),
         bitrate_config_(GetBitrateConfig()),
         transport_controller_(
-            time_controller_.GetClock(),
-            RtpTransportConfig{
-                .bitrate_config = bitrate_config_,
-                .event_log = &event_log_,
-                .task_queue_factory = time_controller_.GetTaskQueueFactory(),
-                .trials = field_trials ? field_trials : &field_trials_,
-            }),
+            RtpTransportConfig{.env = env_, .bitrate_config = bitrate_config_}),
         stats_proxy_(time_controller_.GetClock(),
                      config_,
                      VideoEncoderConfig::ContentType::kRealtimeVideo,
-                     field_trials ? *field_trials : field_trials_),
+                     env_.field_trials()),
         retransmission_rate_limiter_(time_controller_.GetClock(),
                                      kRetransmitWindowSizeMs) {
     transport_controller_.EnsureStarted();
@@ -144,10 +144,10 @@ class RtpVideoSenderTestFixture {
         config_.rtp, config_.rtcp_report_interval_ms, &transport_,
         CreateObservers(&encoder_feedback_, &stats_proxy_, &stats_proxy_,
                         &stats_proxy_, frame_count_observer, &stats_proxy_),
-        &transport_controller_, &event_log_, &retransmission_rate_limiter_,
-        std::make_unique<FecControllerDefault>(time_controller_.GetClock()),
-        nullptr, CryptoOptions{}, frame_transformer,
-        field_trials ? *field_trials : field_trials_,
+        &transport_controller_, &env_.event_log(),
+        &retransmission_rate_limiter_,
+        std::make_unique<FecControllerDefault>(env_), nullptr, CryptoOptions{},
+        frame_transformer, env_.field_trials(),
         time_controller_.GetTaskQueueFactory());
   }
 
@@ -180,24 +180,20 @@ class RtpVideoSenderTestFixture {
                                   /*frame_transformer=*/nullptr,
                                   field_trials) {}
 
-  ~RtpVideoSenderTestFixture() { Stop(); }
+  ~RtpVideoSenderTestFixture() { SetSending(false); }
 
   RtpVideoSender* router() { return router_.get(); }
   MockTransport& transport() { return transport_; }
   void AdvanceTime(TimeDelta delta) { time_controller_.AdvanceTime(delta); }
 
-  void Stop() { router_->Stop(); }
-
-  void SetActiveModules(const std::vector<bool>& active_modules) {
-    router_->SetActiveModules(active_modules);
-  }
+  void SetSending(bool sending) { router_->SetSending(sending); }
 
  private:
   test::ScopedKeyValueConfig field_trials_;
   NiceMock<MockTransport> transport_;
   NiceMock<MockRtcpIntraFrameObserver> encoder_feedback_;
   GlobalSimulatedTimeController time_controller_;
-  RtcEventLogNull event_log_;
+  Environment env_;
   VideoSendStream::Config config_;
   BitrateConstraints bitrate_config_;
   RtpTransportControllerSend transport_controller_;
@@ -227,20 +223,20 @@ TEST(RtpVideoSenderTest, SendOnOneModule) {
   EXPECT_NE(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image, nullptr).error);
 
-  test.SetActiveModules({true});
+  test.SetSending(true);
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image, nullptr).error);
 
-  test.SetActiveModules({false});
+  test.SetSending(false);
   EXPECT_NE(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image, nullptr).error);
 
-  test.SetActiveModules({true});
+  test.SetSending(true);
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image, nullptr).error);
 }
 
-TEST(RtpVideoSenderTest, SendSimulcastSetActive) {
+TEST(RtpVideoSenderTest, OnEncodedImageReturnOkWhenSendingTrue) {
   constexpr uint8_t kPayload = 'a';
   EncodedImage encoded_image_1;
   encoded_image_1.SetRtpTimestamp(1);
@@ -254,7 +250,7 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActive) {
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
 
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
 
@@ -262,20 +258,9 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActive) {
   encoded_image_2.SetSimulcastIndex(1);
   EXPECT_EQ(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
-
-  // Inactive.
-  test.Stop();
-  EXPECT_NE(EncodedImageCallback::Result::OK,
-            test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
-  EXPECT_NE(EncodedImageCallback::Result::OK,
-            test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
 }
 
-// Tests how setting individual rtp modules to active affects the overall
-// behavior of the payload router. First sets one module to active and checks
-// that outgoing data can be sent on this module, and checks that no data can
-// be sent if both modules are inactive.
-TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
+TEST(RtpVideoSenderTest, OnEncodedImageReturnErrorCodeWhenSendingFalse) {
   constexpr uint8_t kPayload = 'a';
   EncodedImage encoded_image_1;
   encoded_image_1.SetRtpTimestamp(1);
@@ -291,23 +276,15 @@ TEST(RtpVideoSenderTest, SendSimulcastSetActiveModules) {
   CodecSpecificInfo codec_info;
   codec_info.codecType = kVideoCodecVP8;
 
-  // Only setting one stream to active will still set the payload router to
-  // active and allow sending data on the active stream.
-  std::vector<bool> active_modules({true, false});
-  test.SetActiveModules(active_modules);
-  EXPECT_EQ(EncodedImageCallback::Result::OK,
-            test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
-
-  // Setting both streams to inactive will turn the payload router to
+  // Setting rtp streams to inactive will turn the payload router to
   // inactive.
-  active_modules = {false, false};
-  test.SetActiveModules(active_modules);
+  test.SetSending(false);
   // An incoming encoded image will not ask the module to send outgoing data
   // because the payload router is inactive.
   EXPECT_NE(EncodedImageCallback::Result::OK,
             test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
   EXPECT_NE(EncodedImageCallback::Result::OK,
-            test.router()->OnEncodedImage(encoded_image_1, &codec_info).error);
+            test.router()->OnEncodedImage(encoded_image_2, &codec_info).error);
 }
 
 TEST(RtpVideoSenderTest,
@@ -324,7 +301,7 @@ TEST(RtpVideoSenderTest,
   codec_info.codecType = kVideoCodecVP8;
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
   // A layer is sent on both rtp streams.
   test.router()->OnVideoLayersAllocationUpdated(
       {.active_spatial_layers = {{.rtp_stream_index = 0},
@@ -347,7 +324,7 @@ TEST(RtpVideoSenderTest,
 TEST(RtpVideoSenderTest, CreateWithNoPreviousStates) {
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
 
   std::map<uint32_t, RtpPayloadState> initial_states =
       test.router()->GetRtpPayloadStates();
@@ -372,7 +349,7 @@ TEST(RtpVideoSenderTest, CreateWithPreviousStates) {
 
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, states);
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
 
   std::map<uint32_t, RtpPayloadState> initial_states =
       test.router()->GetRtpPayloadStates();
@@ -412,7 +389,7 @@ TEST(RtpVideoSenderTest, FrameCountCallbacks) {
             test.router()->OnEncodedImage(encoded_image, nullptr).error);
   ::testing::Mock::VerifyAndClearExpectations(&callback);
 
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   FrameCounts frame_counts;
   EXPECT_CALL(callback, FrameCountUpdated(_, kSsrc1))
@@ -441,7 +418,7 @@ TEST(RtpVideoSenderTest, FrameCountCallbacks) {
 TEST(RtpVideoSenderTest, DoesNotRetrasmitAckedPackets) {
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
 
   constexpr uint8_t kPayload = 'a';
   EncodedImage encoded_image;
@@ -606,7 +583,7 @@ TEST(RtpVideoSenderTest, RetransmitsOnTransportWideLossInfo) {
 TEST(RtpVideoSenderTest, EarlyRetransmits) {
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
 
   const uint8_t kPayload[1] = {'a'};
   EncodedImage encoded_image;
@@ -701,7 +678,7 @@ TEST(RtpVideoSenderTest, EarlyRetransmits) {
 
 TEST(RtpVideoSenderTest, SupportsDependencyDescriptor) {
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -773,7 +750,7 @@ TEST(RtpVideoSenderTest,
             EXPECT_TRUE(sent_packets.emplace_back(&extensions).Parse(packet));
             return true;
           });
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   EncodedImage key_frame_image;
   key_frame_image._frameType = VideoFrameType::kVideoFrameKey;
@@ -807,7 +784,7 @@ TEST(RtpVideoSenderTest,
 
 TEST(RtpVideoSenderTest, SupportsDependencyDescriptorForVp9) {
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -863,7 +840,7 @@ TEST(RtpVideoSenderTest, SupportsDependencyDescriptorForVp9) {
 TEST(RtpVideoSenderTest,
      SupportsDependencyDescriptorForVp9NotProvidedByEncoder) {
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -918,7 +895,7 @@ TEST(RtpVideoSenderTest, GenerateDependecyDescriptorForGenericCodecs) {
   test::ScopedKeyValueConfig field_trials(
       "WebRTC-GenericCodecDependencyDescriptor/Enabled/");
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {}, &field_trials);
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -964,7 +941,7 @@ TEST(RtpVideoSenderTest, GenerateDependecyDescriptorForGenericCodecs) {
 
 TEST(RtpVideoSenderTest, SupportsStoppingUsingDependencyDescriptor) {
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {});
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -1049,7 +1026,7 @@ TEST(RtpVideoSenderTest, OverheadIsSubtractedFromTargetBitrate) {
       kRtpHeaderSizeBytes + kTransportPacketOverheadBytes;
   RtpVideoSenderTestFixture test({kSsrc1}, {}, kPayloadType, {}, &field_trials);
   test.router()->OnTransportOverheadChanged(kTransportPacketOverheadBytes);
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   {
     test.router()->OnBitrateUpdated(CreateBitrateAllocationUpdate(300000),
@@ -1076,7 +1053,7 @@ TEST(RtpVideoSenderTest, OverheadIsSubtractedFromTargetBitrate) {
 
 TEST(RtpVideoSenderTest, ClearsPendingPacketsOnInactivation) {
   RtpVideoSenderTestFixture test({kSsrc1}, {kRtxSsrc1}, kPayloadType, {});
-  test.SetActiveModules({true});
+  test.SetSending(true);
 
   RtpHeaderExtensionMap extensions;
   extensions.Register<RtpDependencyDescriptorExtension>(
@@ -1127,13 +1104,13 @@ TEST(RtpVideoSenderTest, ClearsPendingPacketsOnInactivation) {
 
   // Disable the sending module and advance time slightly. No packets should be
   // sent.
-  test.SetActiveModules({false});
+  test.SetSending(false);
   test.AdvanceTime(TimeDelta::Millis(20));
   EXPECT_TRUE(sent_packets.empty());
 
   // Reactive the send module - any packets should have been removed, so nothing
   // should be transmitted.
-  test.SetActiveModules({true});
+  test.SetSending(true);
   test.AdvanceTime(TimeDelta::Millis(33));
   EXPECT_TRUE(sent_packets.empty());
 
@@ -1156,7 +1133,7 @@ TEST(RtpVideoSenderTest, ClearsPendingPacketsOnInactivation) {
 TEST(RtpVideoSenderTest, RetransmitsBaseLayerOnly) {
   RtpVideoSenderTestFixture test({kSsrc1, kSsrc2}, {kRtxSsrc1, kRtxSsrc2},
                                  kPayloadType, {});
-  test.SetActiveModules({true, true});
+  test.SetSending(true);
 
   test.router()->SetRetransmissionMode(kRetransmitBaseLayer);
   constexpr uint8_t kPayload = 'a';

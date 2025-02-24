@@ -4,8 +4,6 @@ prefs = [
   "browser.sessionstore.closedTabsFromAllWindows=true",
   "browser.sessionstore.closedTabsFromClosedWindows=true",
   "dom.ipc.keepProcessesAlive.extension=1", # We don't want to reset this at the end of the test, so that we don't have to spawn a new extension child process for each test unit.
-  "dom.animations-api.core.enabled=true",
-  "dom.animations-api.timelines.enabled=true",
   "javascript.options.asyncstack_capture_debuggee_only=false",
 ]
 support-files = [
@@ -46,10 +44,13 @@ support-files = [
   "empty.xpi",
   "../../../../../toolkit/components/extensions/test/mochitest/head_webrequest.js",
   "../../../../../toolkit/components/extensions/test/mochitest/redirection.sjs",
-  "../../../../../toolkit/components/reader/test/readerModeNonArticle.html",
-  "../../../../../toolkit/components/reader/test/readerModeArticle.html",
+  "../../../../../toolkit/components/reader/tests/browser/readerModeNonArticle.html",
+  "../../../../../toolkit/components/reader/tests/browser/readerModeArticle.html",
 ]
-skip-if = ["os == 'linux' && os_version == '18.04' && asan"] # Bug 1721945 - Software WebRender
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # Bug 1721945 - Software WebRender
+  "os == 'linux' && os_version == '18.04' && tsan", # manifest runs too long
+]
 
 ["browser_AMBrowserExtensionsImport.js"]
 
@@ -284,6 +285,8 @@ https_first_disabled = true
 
 ["browser_ext_menus_replace_menu_permissions.js"]
 
+["browser_ext_menus_startup_restored.js"]
+
 ["browser_ext_menus_targetElement.js"]
 
 ["browser_ext_menus_targetElement_extension.js"]
@@ -324,6 +327,8 @@ skip-if = [
 https_first_disabled = true
 
 ["browser_ext_originControls.js"]
+
+["browser_ext_overflow_underflow_events.js"]
 
 ["browser_ext_pageAction_activeTab.js"]
 
@@ -388,6 +393,8 @@ run-if = ["crashreporter"]
 ["browser_ext_reload_manifest_cache.js"]
 
 ["browser_ext_request_permissions.js"]
+
+["browser_ext_runtime_getContexts.js"]
 
 ["browser_ext_runtime_onPerformanceWarning.js"]
 
@@ -700,7 +707,6 @@ tags = "fullscreen"
 ["browser_toolbar_prefers_color_scheme.js"]
 
 ["browser_unified_extensions.js"]
-fail-if = ["a11y_checks"] # Bug 1854460 clicked browser may not be accessible
 
 ["browser_unified_extensions_accessibility.js"]
 

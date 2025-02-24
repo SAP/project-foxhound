@@ -72,6 +72,107 @@ add_task(async function test_pivot_language_behavior() {
   return cleanup();
 });
 
+/**
+ * This test case ensures that stand-alone functions to check language support match the
+ * state of the available language pairs.
+ */
+add_task(async function test_language_support_checks() {
+  const { cleanup } = await setupActorTest({
+    languagePairs: [
+      { fromLang: PIVOT_LANGUAGE, toLang: "es" },
+      { fromLang: "es", toLang: PIVOT_LANGUAGE },
+      { fromLang: PIVOT_LANGUAGE, toLang: "fr" },
+      { fromLang: "fr", toLang: PIVOT_LANGUAGE },
+      { fromLang: PIVOT_LANGUAGE, toLang: "pl" },
+      { fromLang: "pl", toLang: PIVOT_LANGUAGE },
+      // Only supported as a source language
+      { fromLang: "fi", toLang: PIVOT_LANGUAGE },
+      // Only supported as a target language
+      { fromLang: PIVOT_LANGUAGE, toLang: "sl" },
+    ],
+  });
+
+  const { languagePairs } = await TranslationsParent.getSupportedLanguages();
+  for (const { fromLang, toLang } of languagePairs) {
+    ok(
+      await TranslationsParent.isSupportedAsFromLang(fromLang),
+      "Each from-language should be supported as a translation source language."
+    );
+
+    ok(
+      await TranslationsParent.isSupportedAsToLang(toLang),
+      "Each to-language should be supported as a translation target language."
+    );
+
+    is(
+      await TranslationsParent.isSupportedAsToLang(fromLang),
+      languagePairs.some(({ toLang }) => toLang === fromLang),
+      "A from-language should be supported as a to-language if it also exists in the to-language list."
+    );
+
+    is(
+      await TranslationsParent.isSupportedAsFromLang(toLang),
+      languagePairs.some(({ fromLang }) => fromLang === toLang),
+      "A to-language should be supported as a from-language if it also exists in the from-language list."
+    );
+  }
+
+  await usingAppLocale("en", async () => {
+    const expected = "en";
+    const actual = await TranslationsParent.getTopPreferredSupportedToLang();
+    is(
+      actual,
+      expected,
+      "The top supported to-language should match the expected language tag"
+    );
+  });
+
+  await usingAppLocale("es", async () => {
+    const expected = "es";
+    const actual = await TranslationsParent.getTopPreferredSupportedToLang();
+    is(
+      actual,
+      expected,
+      "The top supported to-language should match the expected language tag"
+    );
+  });
+
+  // Only supported as a source language
+  await usingAppLocale("fi", async () => {
+    const expected = "en";
+    const actual = await TranslationsParent.getTopPreferredSupportedToLang();
+    is(
+      actual,
+      expected,
+      "The top supported to-language should match the expected language tag"
+    );
+  });
+
+  // Only supported as a target language
+  await usingAppLocale("sl", async () => {
+    const expected = "sl";
+    const actual = await TranslationsParent.getTopPreferredSupportedToLang();
+    is(
+      actual,
+      expected,
+      "The top supported to-language should match the expected language tag"
+    );
+  });
+
+  // Not supported as a source language or a target language.
+  await usingAppLocale("ja", async () => {
+    const expected = "en";
+    const actual = await TranslationsParent.getTopPreferredSupportedToLang();
+    is(
+      actual,
+      expected,
+      "The top supported to-language should match the expected language tag"
+    );
+  });
+
+  await cleanup();
+});
+
 async function usingAppLocale(locale, callback) {
   info(`Mocking the locale "${locale}", expect missing resource errors.`);
   const { availableLocales, requestedLocales } = Services.locale;
@@ -229,6 +330,32 @@ add_task(async function test_translating_to_and_from_app_language() {
     requested: "fr",
     languagePairs: [],
   });
+
+  return cleanup();
+});
+
+add_task(async function test_firstVisualChange() {
+  const { cleanup } = await setupActorTest({
+    languagePairs: [{ fromLang: "en", toLang: "es" }],
+  });
+
+  const parent = getTranslationsParent();
+
+  Assert.equal(
+    parent.languageState.hasVisibleChange,
+    false,
+    "No visual translation change has occurred yet"
+  );
+
+  parent.receiveMessage({
+    name: "Translations:ReportFirstVisibleChange",
+  });
+
+  Assert.equal(
+    parent.languageState.hasVisibleChange,
+    true,
+    "A change occurred."
+  );
 
   return cleanup();
 });

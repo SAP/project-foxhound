@@ -65,7 +65,6 @@
 
 class gfxContext;
 class nsIContent;
-class nsIScrollableFrame;
 class nsSubDocumentFrame;
 class nsCaret;
 struct WrFiltersHolder;
@@ -80,6 +79,7 @@ enum class nsDisplayOwnLayerFlags;
 class nsDisplayCompositorHitTestInfo;
 class nsDisplayScrollInfoLayer;
 class PresShell;
+class ScrollContainerFrame;
 class StickyScrollContainer;
 
 namespace layers {
@@ -189,8 +189,8 @@ LazyLogModule& GetLoggerByProcess();
  */
 struct ActiveScrolledRoot {
   static already_AddRefed<ActiveScrolledRoot> CreateASRForFrame(
-      const ActiveScrolledRoot* aParent, nsIScrollableFrame* aScrollableFrame,
-      bool aIsRetained);
+      const ActiveScrolledRoot* aParent,
+      ScrollContainerFrame* aScrollContainerFrame, bool aIsRetained);
 
   static const ActiveScrolledRoot* PickAncestor(
       const ActiveScrolledRoot* aOne, const ActiveScrolledRoot* aTwo) {
@@ -226,19 +226,18 @@ struct ActiveScrolledRoot {
   }
 
   RefPtr<const ActiveScrolledRoot> mParent;
-  nsIScrollableFrame* mScrollableFrame;
+  ScrollContainerFrame* mScrollContainerFrame = nullptr;
 
   NS_INLINE_DECL_REFCOUNTING(ActiveScrolledRoot)
 
  private:
-  ActiveScrolledRoot()
-      : mScrollableFrame(nullptr), mDepth(0), mRetained(false) {}
+  ActiveScrolledRoot() : mDepth(0), mRetained(false) {}
 
   ~ActiveScrolledRoot();
 
   static void DetachASR(ActiveScrolledRoot* aASR) {
     aASR->mParent = nullptr;
-    aASR->mScrollableFrame = nullptr;
+    aASR->mScrollContainerFrame = nullptr;
     NS_RELEASE(aASR);
   }
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR(ActiveScrolledRootCache,
@@ -637,13 +636,6 @@ class nsDisplayListBuilder {
   void SetHaveScrollableDisplayPort() { mHaveScrollableDisplayPort = true; }
   void ClearHaveScrollableDisplayPort() { mHaveScrollableDisplayPort = false; }
 
-  bool SetIsCompositingCheap(bool aCompositingCheap) {
-    bool temp = mIsCompositingCheap;
-    mIsCompositingCheap = aCompositingCheap;
-    return temp;
-  }
-
-  bool IsCompositingCheap() const { return mIsCompositingCheap; }
   /**
    * Display the caret if needed.
    */
@@ -659,7 +651,7 @@ class nsDisplayListBuilder {
    * Get the frame that the caret is supposed to draw in.
    * If the caret is currently invisible, this will be null.
    */
-  nsIFrame* GetCaretFrame() { return mCaretFrame; }
+  nsIFrame* GetCaretFrame() { return CurrentPresShellState()->mCaretFrame; }
   /**
    * Get the rectangle we're supposed to draw the caret into.
    */
@@ -852,9 +844,9 @@ class nsDisplayListBuilder {
   /**
    * Notifies the builder that a particular themed widget exists
    * at the given rectangle within the currently built display list.
-   * For certain appearance values (currently only StyleAppearance::Toolbar and
-   * StyleAppearance::WindowTitlebar) this gets called during every display list
-   * construction, for every themed widget of the right type within the
+   * For certain appearance values (currently only
+   * StyleAppearance::MozWindowTitlebar) this gets called during every display
+   * list construction, for every themed widget of the right type within the
    * display list, except for themed widgets which are transformed or have
    * effects applied to them (e.g. CSS opacity or filters).
    *
@@ -904,6 +896,11 @@ class nsDisplayListBuilder {
                        const dom::EffectsInfo& aUpdate);
 
   /**
+   * Invalidates the caret frames from previous paints, if they have changed.
+   */
+  void InvalidateCaretFramesIfNeeded();
+
+  /**
    * Allocate memory in our arena. It will only be freed when this display list
    * builder is destroyed. This memory holds nsDisplayItems and
    * DisplayItemClipChain objects.
@@ -941,7 +938,8 @@ class nsDisplayListBuilder {
    * automatically when the arena goes away.
    */
   ActiveScrolledRoot* AllocateActiveScrolledRoot(
-      const ActiveScrolledRoot* aParent, nsIScrollableFrame* aScrollableFrame);
+      const ActiveScrolledRoot* aParent,
+      ScrollContainerFrame* aScrollContainerFrame);
 
   /**
    * Allocate a new DisplayItemClipChain object in the arena. Will be cleaned
@@ -1173,15 +1171,15 @@ class nsDisplayListBuilder {
     void SetCurrentActiveScrolledRoot(
         const ActiveScrolledRoot* aActiveScrolledRoot);
 
-    void EnterScrollFrame(nsIScrollableFrame* aScrollableFrame) {
+    void EnterScrollFrame(ScrollContainerFrame* aScrollContainerFrame) {
       MOZ_ASSERT(!mUsed);
       ActiveScrolledRoot* asr = mBuilder->AllocateActiveScrolledRoot(
-          mBuilder->mCurrentActiveScrolledRoot, aScrollableFrame);
+          mBuilder->mCurrentActiveScrolledRoot, aScrollContainerFrame);
       mBuilder->mCurrentActiveScrolledRoot = asr;
       mUsed = true;
     }
 
-    void InsertScrollFrame(nsIScrollableFrame* aScrollableFrame);
+    void InsertScrollFrame(ScrollContainerFrame* aScrollContainerFrame);
 
    private:
     nsDisplayListBuilder* mBuilder;
@@ -1637,8 +1635,9 @@ class nsDisplayListBuilder {
     }
   };
 
-  void AddScrollFrameToNotify(nsIScrollableFrame* aScrollFrame);
-  void NotifyAndClearScrollFrames();
+  void AddScrollContainerFrameToNotify(
+      ScrollContainerFrame* aScrollContainerFrame);
+  void NotifyAndClearScrollContainerFrames();
 
   // Helper class to find what link spec (if any) to associate with a frame,
   // recording it in the builder, and generate the corresponding DisplayItem.
@@ -1651,7 +1650,8 @@ class nsDisplayListBuilder {
 
     ~Linkifier() {
       if (mBuilderToReset) {
-        mBuilderToReset->mLinkSpec.Truncate(0);
+        mBuilderToReset->mLinkURI.Truncate(0);
+        mBuilderToReset->mLinkDest.Truncate(0);
       }
     }
 
@@ -1729,6 +1729,7 @@ class nsDisplayListBuilder {
     bool mInsidePointerEventsNoneDoc;
     bool mTouchEventPrefEnabledDoc;
     nsIFrame* mPresShellIgnoreScrollFrame;
+    nsIFrame* mCaretFrame = nullptr;
   };
 
   PresShellState* CurrentPresShellState() {
@@ -1763,7 +1764,6 @@ class nsDisplayListBuilder {
   // The reference frame for mCurrentFrame.
   const nsIFrame* mCurrentReferenceFrame;
 
-  nsIFrame* mCaretFrame;
   // A temporary list that we append scroll info items to while building
   // display items for the contents of frames with SVG effects.
   // Only non-null when ShouldBuildScrollInfoItemsForHoisting() is true.
@@ -1781,7 +1781,8 @@ class nsDisplayListBuilder {
   // When we are inside a filter, the current ASR at the time we entered the
   // filter. Otherwise nullptr.
   const ActiveScrolledRoot* mFilterASR;
-  nsCString mLinkSpec;  // Destination of link currently being emitted, if any.
+  nsCString mLinkURI;   // URI of link currently being emitted, if any.
+  nsCString mLinkDest;  // Local destination name of link, if any.
 
   // Optimized versions for non-retained display list.
   LayoutDeviceIntRegion mWindowDraggingRegion;
@@ -1808,6 +1809,9 @@ class nsDisplayListBuilder {
   // Stores reusable items collected during display list preprocessing.
   nsTHashSet<nsDisplayItem*> mReuseableItems;
 
+  // Tracked carets used for retained display list.
+  AutoTArray<RefPtr<nsCaret>, 1> mPaintedCarets;
+
   // Tracked regions used for retained display list.
   WeakFrameRegion mRetainedWindowDraggingRegion;
   WeakFrameRegion mRetainedWindowNoDraggingRegion;
@@ -1818,7 +1822,7 @@ class nsDisplayListBuilder {
   std::unordered_set<const DisplayItemClipChain*, DisplayItemClipChainHasher,
                      DisplayItemClipChainEqualer>
       mClipDeduplicator;
-  std::unordered_set<nsIScrollableFrame*> mScrollFramesToNotify;
+  std::unordered_set<ScrollContainerFrame*> mScrollContainerFramesToNotify;
 
   AutoTArray<nsIFrame*, 20> mFramesWithOOFData;
   AutoTArray<nsIFrame*, 40> mFramesMarkedForDisplayIfVisible;
@@ -1875,7 +1879,6 @@ class nsDisplayListBuilder {
   bool mIsPaintingToWindow;
   bool mUseHighQualityScaling;
   bool mIsPaintingForWebRender;
-  bool mIsCompositingCheap;
   bool mAncestorHasApzAwareEventHandler;
   // True when the first async-scrollable scroll frame for which we build a
   // display list has a display port. An async-scrollable scroll frame is one
@@ -3195,12 +3198,13 @@ class nsDisplayList {
     // array of 20 items should be able to avoid a lot of dynamic allocations
     // here.
     AutoTArray<Item, 20> items;
+    // Ensure we need just one alloc otherwise, no-op if enough.
+    items.SetCapacity(Length());
 
     for (nsDisplayItem* item : TakeItems()) {
       items.AppendElement(Item(item));
     }
-
-    std::stable_sort(items.begin(), items.end(), aComparator);
+    items.StableSort(aComparator);
 
     for (Item& item : items) {
       AppendToTop(item);
@@ -3208,6 +3212,7 @@ class nsDisplayList {
   }
 
   nsDisplayList TakeItems() {
+    // This std::move makes this a defined empty list, see assignment operator.
     nsDisplayList list = std::move(*this);
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     list.mAllowNonEmptyDestruction = true;
@@ -5465,7 +5470,7 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
   bool IsFixedPositionLayer() const;
   bool IsStickyPositionLayer() const;
   bool HasDynamicToolbar() const;
-  virtual bool ShouldGetFixedOrStickyAnimationId() { return false; }
+  virtual bool ShouldGetFixedAnimationId() { return false; }
 
   bool CreatesStackingContextHelper() override { return true; }
 
@@ -5481,6 +5486,16 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
    */
   layers::ScrollbarData mScrollbarData;
   bool mForceActive;
+
+  // Used for APZ to animate this layer for purposes such as
+  // pinch-zooming or scrollbar thumb movement. Note that setting this
+  // creates a WebRender ReferenceFrame spatial node, and should only
+  // be used for display items that establish a Gecko reference frame
+  // as well (or leaf items like scrollbar thumb nodes where it does not
+  // matter).
+  // FIXME: This is currently also used for adjusting position:fixed items
+  // for dynamic toolbar movement. This may be a problem as position:fixed
+  // items do not establish Gecko reference frames.
   uint64_t mWrAnimationId;
 };
 
@@ -5540,7 +5555,8 @@ class nsDisplayStickyPosition : public nsDisplayOwnLayer {
       : nsDisplayOwnLayer(aBuilder, aOther),
         mContainerASR(aOther.mContainerASR),
         mClippedToDisplayPort(aOther.mClippedToDisplayPort),
-        mShouldFlatten(false) {
+        mShouldFlatten(false),
+        mWrStickyAnimationId(0) {
     MOZ_COUNT_CTOR(nsDisplayStickyPosition);
   }
 
@@ -5565,7 +5581,6 @@ class nsDisplayStickyPosition : public nsDisplayOwnLayer {
 
   bool UpdateScrollData(layers::WebRenderScrollData* aData,
                         layers::WebRenderLayerScrollData* aLayerData) override;
-  bool ShouldGetFixedOrStickyAnimationId() override;
 
   const ActiveScrolledRoot* GetContainerASR() const { return mContainerASR; }
 
@@ -5580,6 +5595,8 @@ class nsDisplayStickyPosition : public nsDisplayOwnLayer {
   bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) final {
     return mShouldFlatten;
   }
+
+  bool ShouldGetStickyAnimationId() const;
 
  private:
   NS_DISPLAY_ALLOW_CLONING()
@@ -5610,6 +5627,13 @@ class nsDisplayStickyPosition : public nsDisplayOwnLayer {
 
   // True if this item should be flattened away.
   bool mShouldFlatten;
+
+  // Used for APZ to animate the sticky element in the compositor
+  // for purposes such as dynamic toolbar movement and (in the future)
+  // overscroll-related adjustment. Unlike nsDisplayOwnLayer::mWrAnimationId,
+  // this does not create a WebRender ReferenceFrame, which is important
+  // because sticky elements do not establish Gecko reference frames either.
+  uint64_t mWrStickyAnimationId;
 };
 
 class nsDisplayFixedPosition : public nsDisplayOwnLayer {
@@ -5651,7 +5675,7 @@ class nsDisplayFixedPosition : public nsDisplayOwnLayer {
       nsDisplayListBuilder* aDisplayListBuilder) override;
   bool UpdateScrollData(layers::WebRenderScrollData* aData,
                         layers::WebRenderLayerScrollData* aLayerData) override;
-  bool ShouldGetFixedOrStickyAnimationId() override;
+  bool ShouldGetFixedAnimationId() override;
   void WriteDebugInfo(std::stringstream& aStream) override;
 
  protected:
@@ -6684,9 +6708,11 @@ class nsDisplayForeignObject : public nsDisplayWrapList {
 class nsDisplayLink : public nsPaintedDisplayItem {
  public:
   nsDisplayLink(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
-                const char* aLinkSpec, const nsRect& aRect)
+                const char* aLinkURI, const char* aLinkDest,
+                const nsRect& aRect)
       : nsPaintedDisplayItem(aBuilder, aFrame),
-        mLinkSpec(aLinkSpec),
+        mLinkURI(aLinkURI),
+        mLinkDest(aLinkDest),
         mRect(aRect) {}
 
   NS_DISPLAY_DECL_NAME("Link", TYPE_LINK)
@@ -6694,7 +6720,8 @@ class nsDisplayLink : public nsPaintedDisplayItem {
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
  private:
-  nsCString mLinkSpec;
+  nsCString mLinkURI;
+  nsCString mLinkDest;
   nsRect mRect;
 };
 

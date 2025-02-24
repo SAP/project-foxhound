@@ -31,6 +31,7 @@ export class MigrationWizard extends HTMLElement {
   #resourceSummary = null;
   #expandedDetails = false;
   #extensionsSuccessLink = null;
+  #supportTextLinks = null;
 
   static get markup() {
     return `
@@ -333,6 +334,7 @@ export class MigrationWizard extends HTMLElement {
     this.#getPermissionsButton.addEventListener("click", this);
 
     this.#browserProfileSelector.addEventListener("click", this);
+    this.#browserProfileSelector.addEventListener("mousedown", this);
     this.#resourceTypeList = shadow.querySelector("#resource-type-list");
     this.#resourceTypeList.addEventListener("change", this);
 
@@ -357,6 +359,11 @@ export class MigrationWizard extends HTMLElement {
       "#extensions-success-link"
     );
     this.#extensionsSuccessLink.addEventListener("click", this);
+
+    this.#supportTextLinks = shadow.querySelectorAll(".support-text");
+    this.#supportTextLinks.forEach(link =>
+      link.addEventListener("click", this)
+    );
 
     this.#shadowRoot = shadow;
   }
@@ -583,9 +590,14 @@ export class MigrationWizard extends HTMLElement {
       "div[name='page-selection']"
     );
 
+    let header = selectionPage.querySelector(".migration-wizard-header");
+    let selectionHeaderString = this.getAttribute("selection-header-string");
+
     if (this.hasAttribute("selection-header-string")) {
-      selectionPage.querySelector(".migration-wizard-header").textContent =
-        this.getAttribute("selection-header-string");
+      header.textContent = selectionHeaderString;
+      header.toggleAttribute("hidden", !selectionHeaderString);
+    } else {
+      header.removeAttribute("hidden");
     }
 
     let selectionSubheaderString = this.getAttribute(
@@ -1391,107 +1403,139 @@ export class MigrationWizard extends HTMLElement {
     }
   }
 
+  #handleClickEvent(event) {
+    if (
+      event.target == this.#importButton ||
+      event.target == this.#importFromFileButton
+    ) {
+      this.#doImport();
+    } else if (
+      event.target.classList.contains("cancel-close") ||
+      event.target.classList.contains("finish-button")
+    ) {
+      this.dispatchEvent(
+        new CustomEvent("MigrationWizard:Close", { bubbles: true })
+      );
+    } else if (
+      event.currentTarget == this.#browserProfileSelectorList &&
+      event.target != this.#browserProfileSelectorList
+    ) {
+      this.#onBrowserProfileSelectionChanged(event.target);
+      // If the user selected a file migration type from the selector, we'll
+      // help the user out by immediately starting the file migration flow,
+      // rather than waiting for them to click the "Select File".
+      if (
+        event.target.getAttribute("type") ==
+        MigrationWizardConstants.MIGRATOR_TYPES.FILE
+      ) {
+        this.#doImport();
+      }
+    } else if (event.target == this.#safariPermissionButton) {
+      this.#requestSafariPermissions();
+    } else if (event.currentTarget == this.#resourceSummary) {
+      this.#expandedDetails = true;
+    } else if (event.target == this.#chooseImportFromFile) {
+      this.dispatchEvent(
+        new CustomEvent("MigrationWizard:RequestState", {
+          bubbles: true,
+          detail: {
+            allowOnlyFileMigrators: true,
+          },
+        })
+      );
+    } else if (event.target == this.#safariPasswordImportSkipButton) {
+      // If the user chose to skip importing passwords from Safari, we
+      // programmatically uncheck the PASSWORDS resource type and re-request
+      // import.
+      let checkbox = this.#shadowRoot.querySelector(
+        `label[data-resource-type="${MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS}"]`
+      ).control;
+      checkbox.checked = false;
+
+      // If there are no other checked checkboxes, go back to the selection
+      // screen.
+      let checked = this.#shadowRoot.querySelectorAll(
+        `label[data-resource-type] > input:checked`
+      ).length;
+
+      if (!checked) {
+        this.requestState();
+      } else {
+        this.#doImport();
+      }
+    } else if (event.target == this.#safariPasswordImportSelectButton) {
+      this.#selectSafariPasswordFile();
+    } else if (event.target == this.#extensionsSuccessLink) {
+      this.dispatchEvent(
+        new CustomEvent("MigrationWizard:OpenAboutAddons", {
+          bubbles: true,
+        })
+      );
+      event.preventDefault();
+    } else if (
+      [...this.#supportTextLinks].includes(event.target) &&
+      this.hasAttribute("in-aboutwelcome-bundle")
+    ) {
+      // When we're running in the context of a spotlight
+      // the click events for standard anchors are being gobbled up by spotlight,
+      // so we're also firing a custom event to handle those clicks when in that context
+      this.dispatchEvent(
+        new CustomEvent("MigrationWizard:OpenURL", {
+          bubbles: true,
+          detail: {
+            url: event.target.href,
+            where: "tabshifted",
+          },
+        })
+      );
+      event.preventDefault();
+    } else if (event.target == this.#getPermissionsButton) {
+      this.#getPermissions();
+    }
+  }
+
+  #handleChangeEvent(event) {
+    if (event.target == this.#browserProfileSelector) {
+      this.#onBrowserProfileSelectionChanged();
+    } else if (event.target == this.#selectAllCheckbox) {
+      let checkboxes = this.#shadowRoot.querySelectorAll(
+        'label[data-resource-type]:not([hidden]) > input[type="checkbox"]'
+      );
+      for (let checkbox of checkboxes) {
+        checkbox.checked = this.#selectAllCheckbox.checked;
+      }
+      this.#displaySelectedResources();
+    } else {
+      let checkboxes = this.#shadowRoot.querySelectorAll(
+        'label[data-resource-type]:not([hidden]) > input[type="checkbox"]'
+      );
+
+      let allVisibleChecked = Array.from(checkboxes).every(checkbox => {
+        return checkbox.checked;
+      });
+
+      this.#selectAllCheckbox.checked = allVisibleChecked;
+      this.#displaySelectedResources();
+    }
+  }
+
   handleEvent(event) {
+    if (
+      event.target == this.#browserProfileSelector &&
+      (event.type == "mousedown" ||
+        (event.type == "click" &&
+          event.mozInputSource == MouseEvent.MOZ_SOURCE_KEYBOARD))
+    ) {
+      this.#browserProfileSelectorList.toggle(event);
+      return;
+    }
     switch (event.type) {
       case "click": {
-        if (
-          event.target == this.#importButton ||
-          event.target == this.#importFromFileButton
-        ) {
-          this.#doImport();
-        } else if (
-          event.target.classList.contains("cancel-close") ||
-          event.target.classList.contains("finish-button")
-        ) {
-          this.dispatchEvent(
-            new CustomEvent("MigrationWizard:Close", { bubbles: true })
-          );
-        } else if (event.target == this.#browserProfileSelector) {
-          this.#browserProfileSelectorList.show(event);
-        } else if (
-          event.currentTarget == this.#browserProfileSelectorList &&
-          event.target != this.#browserProfileSelectorList
-        ) {
-          this.#onBrowserProfileSelectionChanged(event.target);
-          // If the user selected a file migration type from the selector, we'll
-          // help the user out by immediately starting the file migration flow,
-          // rather than waiting for them to click the "Select File".
-          if (
-            event.target.getAttribute("type") ==
-            MigrationWizardConstants.MIGRATOR_TYPES.FILE
-          ) {
-            this.#doImport();
-          }
-        } else if (event.target == this.#safariPermissionButton) {
-          this.#requestSafariPermissions();
-        } else if (event.currentTarget == this.#resourceSummary) {
-          this.#expandedDetails = true;
-        } else if (event.target == this.#chooseImportFromFile) {
-          this.dispatchEvent(
-            new CustomEvent("MigrationWizard:RequestState", {
-              bubbles: true,
-              detail: {
-                allowOnlyFileMigrators: true,
-              },
-            })
-          );
-        } else if (event.target == this.#safariPasswordImportSkipButton) {
-          // If the user chose to skip importing passwords from Safari, we
-          // programmatically uncheck the PASSWORDS resource type and re-request
-          // import.
-          let checkbox = this.#shadowRoot.querySelector(
-            `label[data-resource-type="${MigrationWizardConstants.DISPLAYED_RESOURCE_TYPES.PASSWORDS}"]`
-          ).control;
-          checkbox.checked = false;
-
-          // If there are no other checked checkboxes, go back to the selection
-          // screen.
-          let checked = this.#shadowRoot.querySelectorAll(
-            `label[data-resource-type] > input:checked`
-          ).length;
-
-          if (!checked) {
-            this.requestState();
-          } else {
-            this.#doImport();
-          }
-        } else if (event.target == this.#safariPasswordImportSelectButton) {
-          this.#selectSafariPasswordFile();
-        } else if (event.target == this.#extensionsSuccessLink) {
-          this.dispatchEvent(
-            new CustomEvent("MigrationWizard:OpenAboutAddons", {
-              bubbles: true,
-            })
-          );
-          event.preventDefault();
-        } else if (event.target == this.#getPermissionsButton) {
-          this.#getPermissions();
-        }
+        this.#handleClickEvent(event);
         break;
       }
       case "change": {
-        if (event.target == this.#browserProfileSelector) {
-          this.#onBrowserProfileSelectionChanged();
-        } else if (event.target == this.#selectAllCheckbox) {
-          let checkboxes = this.#shadowRoot.querySelectorAll(
-            'label[data-resource-type]:not([hidden]) > input[type="checkbox"]'
-          );
-          for (let checkbox of checkboxes) {
-            checkbox.checked = this.#selectAllCheckbox.checked;
-          }
-          this.#displaySelectedResources();
-        } else {
-          let checkboxes = this.#shadowRoot.querySelectorAll(
-            'label[data-resource-type]:not([hidden]) > input[type="checkbox"]'
-          );
-
-          let allVisibleChecked = Array.from(checkboxes).every(checkbox => {
-            return checkbox.checked;
-          });
-
-          this.#selectAllCheckbox.checked = allVisibleChecked;
-          this.#displaySelectedResources();
-        }
+        this.#handleChangeEvent(event);
         break;
       }
     }

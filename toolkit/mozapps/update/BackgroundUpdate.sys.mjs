@@ -69,18 +69,6 @@ function taskNameVersion(taskVersion) {
   return 2;
 }
 
-async function deleteTasksInRange(installedVersion, currentVersion) {
-  for (
-    let taskVersion = installedVersion;
-    taskVersion <= currentVersion;
-    taskVersion++
-  ) {
-    await lazy.TaskScheduler.deleteTask(this.taskId, {
-      nameVersion: taskNameVersion(taskVersion),
-    });
-  }
-}
-
 export var BackgroundUpdate = {
   QueryInterface: ChromeUtils.generateQI([
     "nsINamed",
@@ -100,6 +88,24 @@ export var BackgroundUpdate = {
       taskId = `${AppConstants.MOZ_APP_DISPLAYNAME_DO_NOT_USE} Background Update`;
     }
     return taskId;
+  },
+
+  async deleteTasksInRange(installedVersion, currentVersion) {
+    for (
+      let taskVersion = installedVersion;
+      taskVersion <= currentVersion;
+      taskVersion++
+    ) {
+      try {
+        await lazy.TaskScheduler.deleteTask(this.taskId, {
+          nameVersion: taskNameVersion(taskVersion),
+        });
+      } catch (e) {
+        lazy.log.error(
+          `deleteTasksInRange: Error deleting task ${taskVersion}: ${e}`
+        );
+      }
+    }
   },
 
   /**
@@ -583,7 +589,10 @@ export var BackgroundUpdate = {
             TASK_INSTALLED_VERSION_PREF,
             TASK_DEF_CURRENT_VERSION
           );
-          await deleteTasksInRange(installedVersion, TASK_DEF_CURRENT_VERSION);
+          await this.deleteTasksInRange(
+            installedVersion,
+            TASK_DEF_CURRENT_VERSION
+          );
           lazy.log.debug(
             `${SLUG}: witnessed falling (enabled -> disabled) edge; deleted task ${this.taskId}.`
           );
@@ -616,7 +625,10 @@ export var BackgroundUpdate = {
             TASK_INSTALLED_VERSION_PREF,
             TASK_DEF_CURRENT_VERSION
           );
-          await deleteTasksInRange(installedVersion, TASK_DEF_CURRENT_VERSION);
+          await this.deleteTasksInRange(
+            installedVersion,
+            TASK_DEF_CURRENT_VERSION
+          );
         } catch (e) {
           lazy.log.error(`${SLUG}: Error removing old task: ${e}`);
         }

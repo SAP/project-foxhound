@@ -3,3 +3,15 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 browser.jar:
+    content/browser/sidebar/browser-sidebar.js
+    content/browser/sidebar/sidebar-customize.css
+    content/browser/sidebar/sidebar-customize.html
+    content/browser/sidebar/sidebar-customize.mjs
+    content/browser/sidebar/sidebar-main.css
+    content/browser/sidebar/sidebar-main.mjs
+    content/browser/sidebar/sidebar-history.html
+    content/browser/sidebar/sidebar-history.mjs
+    content/browser/sidebar/sidebar-page.mjs
+    content/browser/sidebar/sidebar-syncedtabs.html
+    content/browser/sidebar/sidebar-syncedtabs.mjs
+    content/browser/sidebar/sidebar.css

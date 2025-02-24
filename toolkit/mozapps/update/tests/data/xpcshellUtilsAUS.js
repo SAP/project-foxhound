@@ -181,12 +181,30 @@ var gDebugTestLog = false;
 var gTestsToLog = [];
 var gRealDump;
 var gFOS;
+var gUpdateBin;
 
 var gTestFiles = [];
 var gTestDirs = [];
 
 // Common files for both successful and failed updates.
 var gTestFilesCommon = [
+  {
+    description: "Should never change",
+    fileName: FILE_CHANNEL_PREFS,
+    relPathDir:
+      AppConstants.platform == "macosx"
+        ? "Contents/Frameworks/ChannelPrefs.framework/"
+        : DIR_RESOURCES + "defaults/pref/",
+    originalContents: "ShouldNotBeReplaced\n",
+    compareContents: "ShouldNotBeReplaced\n",
+    originalFile: null,
+    compareFile: null,
+    originalPerms: 0o767,
+    comparePerms: 0o767,
+  },
+];
+
+var gTestFilesCommonNonMac = [
   {
     description: "Should never change",
     fileName: FILE_UPDATE_SETTINGS_INI,
@@ -198,18 +216,31 @@ var gTestFilesCommon = [
     originalPerms: 0o767,
     comparePerms: 0o767,
   },
+];
+
+if (AppConstants.platform != "macosx") {
+  gTestFilesCommon = gTestFilesCommon.concat(gTestFilesCommonNonMac);
+}
+
+var gTestFilesCommonMac = [
   {
     description: "Should never change",
-    fileName: "channel-prefs.js",
-    relPathDir: DIR_RESOURCES + "defaults/pref/",
-    originalContents: "ShouldNotBeReplaced\n",
-    compareContents: "ShouldNotBeReplaced\n",
+    fileName: FILE_UPDATE_SETTINGS_FRAMEWORK,
+    relPathDir:
+      "Contents/MacOS/updater.app/Contents/Frameworks/UpdateSettings.framework/",
+    originalContents: null,
+    compareContents: null,
     originalFile: null,
     compareFile: null,
-    originalPerms: 0o767,
-    comparePerms: 0o767,
+    originalPerms: null,
+    comparePerms: null,
+    existingFile: true,
   },
 ];
+
+if (AppConstants.platform == "macosx") {
+  gTestFilesCommon = gTestFilesCommon.concat(gTestFilesCommonMac);
+}
 
 // Files for a complete successful update. This can be used for a complete
 // failed update by calling setTestFilesAndDirsForFailure.
@@ -656,6 +687,20 @@ var gTestFilesPartialSuccess = [
 
 // Concatenate the common files to the end of the array.
 gTestFilesPartialSuccess = gTestFilesPartialSuccess.concat(gTestFilesCommon);
+
+/**
+ * Searches `gTestFiles` for the file with the given filename. This is currently
+ * not very efficient (it searches the whole array every time).
+ *
+ * @param filename
+ *        The name of the file to search for (i.e. the `fileName` attribute).
+ * @returns
+ *        The object in `gTestFiles` that describes the requested file.
+ *        Or `null`, if the file is not in `gTestFiles`.
+ */
+function getTestFileByName(filename) {
+  return gTestFiles.find(f => f.fileName == filename) ?? null;
+}
 
 var gTestDirsCommon = [
   {
@@ -1260,17 +1305,16 @@ function checkAppBundleModTime() {
  * @param   aUpdateCount
  *          The update history's update count.
  */
-function checkUpdateManager(
+async function checkUpdateManager(
   aStatusFileState,
   aHasActiveUpdate,
   aUpdateStatusState,
   aUpdateErrCode,
   aUpdateCount
 ) {
-  let activeUpdate =
-    aUpdateStatusState == STATE_DOWNLOADING
-      ? gUpdateManager.downloadingUpdate
-      : gUpdateManager.readyUpdate;
+  let activeUpdate = await (aUpdateStatusState == STATE_DOWNLOADING
+    ? gUpdateManager.getDownloadingUpdate()
+    : gUpdateManager.getReadyUpdate());
   Assert.equal(
     readStatusState(),
     aStatusFileState,
@@ -1292,13 +1336,14 @@ function checkUpdateManager(
         msgTags[i] + "the active update should not be defined"
       );
     }
+    const history = await gUpdateManager.getHistory();
     Assert.equal(
-      gUpdateManager.getUpdateCount(),
+      history.length,
       aUpdateCount,
       msgTags[i] + "the update manager updateCount attribute" + MSG_SHOULD_EQUAL
     );
     if (aUpdateCount > 0) {
-      let update = gUpdateManager.getUpdateAt(0);
+      let update = history[0];
       Assert.equal(
         update.state,
         aUpdateStatusState,
@@ -1400,9 +1445,9 @@ function checkPostUpdateRunningFile(aShouldExist) {
  * Initializes the most commonly used settings and creates an instance of the
  * update service stub.
  */
-function standardInit() {
+async function standardInit() {
   // Initialize the update service stub component
-  initUpdateServiceStub();
+  await initUpdateServiceStub();
 }
 
 /**
@@ -2019,8 +2064,13 @@ function runUpdate(
     Services.env.set("MOZ_TEST_SHORTER_WAIT_PID", "1");
   }
 
-  let updateBin = copyTestUpdaterToBinDir();
-  Assert.ok(updateBin.exists(), MSG_SHOULD_EXIST + getMsgPath(updateBin.path));
+  if (!gUpdateBin) {
+    gUpdateBin = copyTestUpdaterToBinDir();
+  }
+  Assert.ok(
+    gUpdateBin.exists(),
+    MSG_SHOULD_EXIST + getMsgPath(gUpdateBin.path)
+  );
 
   let updatesDirPath = aPatchDirPath || getUpdateDirFile(DIR_PATCH).path;
   let installDirPath = aInstallDirPath || getApplyDirFile().path;
@@ -2045,13 +2095,13 @@ function runUpdate(
     args[3] = pid;
   }
 
-  let launchBin = gIsServiceTest && isInvalidArgTest ? callbackApp : updateBin;
+  let launchBin = gIsServiceTest && isInvalidArgTest ? callbackApp : gUpdateBin;
 
   if (!isInvalidArgTest) {
     args = args.concat([callbackApp.parent.path, callbackApp.path]);
     args = args.concat(gCallbackArgs);
   } else if (gIsServiceTest) {
-    args = ["launch-service", updateBin.path].concat(args);
+    args = ["launch-service", gUpdateBin.path].concat(args);
   } else if (aCallbackPath) {
     args = args.concat([callbackApp.parent.path, aCallbackPath]);
   }
@@ -2235,7 +2285,12 @@ function checkSymlink() {
 /**
  * Sets the active update and related information for updater tests.
  */
-function setupActiveUpdate() {
+async function setupActiveUpdate() {
+  // The update system being initialized at an unexpected time could cause
+  // unexpected effects in the reload process. Make sure that initialization
+  // has already run first.
+  await gAUS.init();
+
   let pendingState = gIsServiceTest ? STATE_PENDING_SVC : STATE_PENDING;
   let patchProps = { state: pendingState };
   let patches = getLocalPatchString(patchProps);
@@ -2244,7 +2299,10 @@ function setupActiveUpdate() {
   writeVersionFile(DEFAULT_UPDATE_VERSION);
   writeStatusFile(pendingState);
   reloadUpdateManagerData();
-  Assert.ok(!!gUpdateManager.readyUpdate, "the ready update should be defined");
+  Assert.ok(
+    !!(await gUpdateManager.getReadyUpdate()),
+    "the ready update should be defined"
+  );
 }
 
 /**
@@ -2306,7 +2364,7 @@ async function stageUpdate(
     );
 
     Assert.equal(
-      gUpdateManager.readyUpdate.state,
+      (await gUpdateManager.getReadyUpdate()).state,
       aStateAfterStage,
       "the update state" + MSG_SHOULD_EQUAL
     );
@@ -3111,6 +3169,11 @@ async function setupUpdaterTest(
   { requiresOmnijar = false } = {}
 ) {
   debugDump("start - updater test setup");
+  // Make sure that update has already been initialized. If post update
+  // processing unexpectedly runs between this setup and when we use these
+  // files, it may clean them up before we get the chance to use them.
+  await gAUS.init();
+
   let updatesPatchDir = getUpdateDirFile(DIR_PATCH);
   if (!updatesPatchDir.exists()) {
     updatesPatchDir.create(Ci.nsIFile.DIRECTORY_TYPE, PERMS_DIRECTORY);
@@ -3124,6 +3187,13 @@ async function setupUpdaterTest(
   let afterApplyBinDir = getApplyDirFile(DIR_RESOURCES);
   helperBin.copyToFollowingLinks(afterApplyBinDir, gCallbackBinFile);
   helperBin.copyToFollowingLinks(afterApplyBinDir, gPostUpdateBinFile);
+
+  // On macOS, some test files (like the Update Settings file) may be within the
+  // updater app bundle, so make sure it is in place now in case we want to
+  // manipulate it.
+  if (!gUpdateBin) {
+    gUpdateBin = copyTestUpdaterToBinDir();
+  }
 
   gTestFiles.forEach(function SUT_TF_FE(aTestFile) {
     debugDump("start - setup test file: " + aTestFile.fileName);
@@ -3159,6 +3229,24 @@ async function setupUpdaterTest(
         testFile.permissions = aTestFile.originalPerms;
         // Store the actual permissions on the file for reference later after
         // setting the permissions.
+        if (!aTestFile.comparePerms) {
+          aTestFile.comparePerms = testFile.permissions;
+        }
+      }
+    } else if (aTestFile.existingFile) {
+      const testFile = getApplyDirFile(
+        aTestFile.relPathDir + aTestFile.fileName
+      );
+      if (aTestFile.removeOriginalFile) {
+        testFile.remove(false);
+      } else {
+        const fileContents = readFileBytes(testFile);
+        if (!aTestFile.originalContents && !aTestFile.originalFile) {
+          aTestFile.originalContents = fileContents;
+        }
+        if (!aTestFile.compareContents && !aTestFile.compareFile) {
+          aTestFile.compareContents = fileContents;
+        }
         if (!aTestFile.comparePerms) {
           aTestFile.comparePerms = testFile.permissions;
         }
@@ -3223,7 +3311,7 @@ async function setupUpdaterTest(
   });
 
   if (aSetupActiveUpdate) {
-    setupActiveUpdate();
+    await setupActiveUpdate();
   }
 
   if (aPostUpdateAsync !== null) {
@@ -3424,21 +3512,13 @@ function checkUpdateLogContents(
   // Remove leading timestamps
   updateLogContents = removeTimeStamps(updateLogContents);
 
-  // The channel-prefs.js is defined in gTestFilesCommon which will always be
-  // located to the end of gTestFiles when it is present.
-  if (
-    gTestFiles.length > 1 &&
-    gTestFiles[gTestFiles.length - 1].fileName == "channel-prefs.js" &&
-    !gTestFiles[gTestFiles.length - 1].originalContents
-  ) {
+  const channelPrefs = getTestFileByName(FILE_CHANNEL_PREFS);
+  if (channelPrefs && !channelPrefs.originalContents) {
     updateLogContents = updateLogContents.replace(/.*defaults\/.*/g, "");
   }
 
-  if (
-    gTestFiles.length > 2 &&
-    gTestFiles[gTestFiles.length - 2].fileName == FILE_UPDATE_SETTINGS_INI &&
-    !gTestFiles[gTestFiles.length - 2].originalContents
-  ) {
+  const updateSettings = getTestFileByName(FILE_UPDATE_SETTINGS_INI);
+  if (updateSettings && !updateSettings.originalContents) {
     updateLogContents = updateLogContents.replace(
       /.*update-settings.ini.*/g,
       ""
@@ -3529,21 +3609,11 @@ function checkUpdateLogContents(
   // Remove leading timestamps
   compareLogContents = removeTimeStamps(compareLogContents);
 
-  // The channel-prefs.js is defined in gTestFilesCommon which will always be
-  // located to the end of gTestFiles.
-  if (
-    gTestFiles.length > 1 &&
-    gTestFiles[gTestFiles.length - 1].fileName == "channel-prefs.js" &&
-    !gTestFiles[gTestFiles.length - 1].originalContents
-  ) {
+  if (channelPrefs && !channelPrefs.originalContents) {
     compareLogContents = compareLogContents.replace(/.*defaults\/.*/g, "");
   }
 
-  if (
-    gTestFiles.length > 2 &&
-    gTestFiles[gTestFiles.length - 2].fileName == FILE_UPDATE_SETTINGS_INI &&
-    !gTestFiles[gTestFiles.length - 2].originalContents
-  ) {
+  if (updateSettings && !updateSettings.originalContents) {
     compareLogContents = compareLogContents.replace(
       /.*update-settings.ini.*/g,
       ""
@@ -4226,10 +4296,10 @@ async function waitForUpdateCheck(aSuccess, aExpectedValues = {}) {
  *          onStopRequest occurs and returns the arguments from onStopRequest.
  */
 async function waitForUpdateDownload(aUpdates, aExpectedStatus) {
-  let bestUpdate = gAUS.selectUpdate(aUpdates);
-  let success = await gAUS.downloadUpdate(bestUpdate, false);
-  if (!success) {
-    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + success);
+  let bestUpdate = await gAUS.selectUpdate(aUpdates);
+  let result = await gAUS.downloadUpdate(bestUpdate, false);
+  if (result != Ci.nsIApplicationUpdateService.DOWNLOAD_SUCCESS) {
+    do_throw("nsIApplicationUpdateService:downloadUpdate returned " + result);
   }
   return new Promise(resolve =>
     gAUS.addDownloadListener({
@@ -4877,5 +4947,35 @@ function resetEnvironment() {
   } else if (gIsServiceTest) {
     debugDump("removing MOZ_NO_SERVICE_FALLBACK environment variable");
     Services.env.set("MOZ_NO_SERVICE_FALLBACK", "");
+  }
+}
+
+/**
+ * `gTestFiles` needs to be set such that it contains the Update Settings file
+ * before this function is called.
+ */
+function setUpdateSettingsUseWrongChannel() {
+  if (AppConstants.platform == "macosx") {
+    let replacementUpdateSettings = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    replacementUpdateSettings = replacementUpdateSettings.parent;
+    replacementUpdateSettings.append("UpdateSettings-WrongChannel");
+
+    const updateSettings = getTestFileByName(FILE_UPDATE_SETTINGS_FRAMEWORK);
+    if (!updateSettings) {
+      throw new Error(
+        "gTestFiles does not contain the update settings framework"
+      );
+    }
+    updateSettings.existingFile = false;
+    updateSettings.originalContents = readFileBytes(replacementUpdateSettings);
+  } else {
+    const updateSettings = getTestFileByName(FILE_UPDATE_SETTINGS_INI);
+    if (!updateSettings) {
+      throw new Error("gTestFiles does not contain the update settings INI");
+    }
+    updateSettings.originalContents = UPDATE_SETTINGS_CONTENTS.replace(
+      "xpcshell-test",
+      "wrong-channel"
+    );
   }
 }

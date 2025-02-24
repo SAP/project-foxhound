@@ -57,9 +57,15 @@ static jit::JitFrameLayout* GetTopProfilingJitFrame(jit::JitActivation* act) {
     return nullptr;
   }
 
+  // Skip if the activation has no JS frames. This can happen if there's only a
+  // TrampolineNative frame because these are skipped by the profiling frame
+  // iterator.
   jit::JSJitProfilingFrameIterator jitIter(
       (jit::CommonFrameLayout*)iter.frame().fp());
-  MOZ_ASSERT(!jitIter.done());
+  if (jitIter.done()) {
+    return nullptr;
+  }
+
   return jitIter.framePtr();
 }
 
@@ -365,12 +371,11 @@ void GeckoProfilerRuntime::fixupStringsMapAfterMovingGC() {
 
 #ifdef JSGC_HASH_TABLE_CHECKS
 void GeckoProfilerRuntime::checkStringsMapAfterMovingGC() {
-  for (auto r = strings().all(); !r.empty(); r.popFront()) {
-    BaseScript* script = r.front().key();
+  CheckTableAfterMovingGC(strings(), [](const auto& entry) {
+    BaseScript* script = entry.key();
     CheckGCThingAfterMovingGC(script);
-    auto ptr = strings().lookup(script);
-    MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
-  }
+    return script;
+  });
 }
 #endif
 

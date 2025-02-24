@@ -336,6 +336,7 @@ static const char* gExactCallbackPrefs[] = {
     "intl.accept_languages",
     "layout.css.devPixelsPerPx",
     "layout.css.dpi",
+    "layout.css.letter-spacing.model",
     "layout.css.text-transform.uppercase-eszett.enabled",
     "privacy.trackingprotection.enabled",
     "ui.use_standins_for_native_colors",
@@ -608,7 +609,8 @@ void nsPresContext::PreferenceChanged(const char* aPrefName) {
   }
 
   if (prefName.EqualsLiteral(
-          "layout.css.text-transform.uppercase-eszett.enabled")) {
+          "layout.css.text-transform.uppercase-eszett.enabled") ||
+      prefName.EqualsLiteral("layout.css.letter-spacing.model")) {
     changeHint |= NS_STYLE_HINT_REFLOW;
   }
 
@@ -1410,6 +1412,11 @@ void nsPresContext::SetInRDMPane(bool aInRDMPane) {
   }
   mInRDMPane = aInRDMPane;
   RecomputeTheme();
+  if (mPresShell) {
+    nsContentUtils::AddScriptRunner(NewRunnableMethod<bool>(
+        "PresShell::MaybeRecreateMobileViewportManager", mPresShell,
+        &PresShell::MaybeRecreateMobileViewportManager, true));
+  }
 }
 
 float nsPresContext::GetDeviceFullZoom() {
@@ -2637,11 +2644,6 @@ bool nsPresContext::HavePendingInputEvent() {
   }
 }
 
-bool nsPresContext::HasPendingRestyleOrReflow() {
-  mozilla::PresShell* presShell = PresShell();
-  return presShell->NeedStyleFlush() || presShell->HasPendingReflow();
-}
-
 void nsPresContext::ReflowStarted(bool aInterruptible) {
 #ifdef NOISY_INTERRUPTIBLE_REFLOW
   if (!aInterruptible) {
@@ -2828,7 +2830,7 @@ void nsPresContext::NotifyContentfulPaint() {
       MOZ_ASSERT(!nowTime.IsNull(),
                  "Most recent refresh timestamp should exist since we are in "
                  "a refresh driver tick");
-      RefPtr<PerformancePaintTiming> paintTiming = new PerformancePaintTiming(
+      auto paintTiming = MakeRefPtr<PerformancePaintTiming>(
           perf, u"first-contentful-paint"_ns, nowTime);
       perf->SetFCPTimingEntry(paintTiming);
 

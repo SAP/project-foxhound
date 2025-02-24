@@ -25,6 +25,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -84,7 +85,8 @@ class IPCFuzzController {
   bool ObserveIPCMessage(mozilla::ipc::NodeChannel* channel,
                          IPC::Message& aMessage);
   bool MakeTargetDecision(uint8_t portIndex, uint8_t portInstanceIndex,
-                          uint8_t actorIndex, uint16_t typeOffset,
+                          uint8_t actorIndex, uint8_t actorProtocolIndex,
+                          uint16_t typeOffset,
                           mojo::core::ports::PortName* name, int32_t* seqno,
                           uint64_t* fseqno, int32_t* actorId, uint32_t* type,
                           bool* is_cons, bool update = true);
@@ -110,6 +112,9 @@ class IPCFuzzController {
   void SynchronizeOnMessageExecution(uint32_t expected_messages);
   void AddToplevelActor(mojo::core::ports::PortName name,
                         mozilla::ipc::ProtocolId protocolId);
+
+  void InitAllowedIPCTypes();
+  void InitDisallowedIPCTypes();
 
   // Used for the IPC_SingleMessage fuzzer
   UniquePtr<IPC::Message> replaceIPCMessage(UniquePtr<IPC::Message> aMsg);
@@ -138,12 +143,30 @@ class IPCFuzzController {
   // If set, `lastActorPortName` is valid and fuzzing is pinned to this port.
   Atomic<bool> useLastPortName;
 
-  // Last port where a new actor appeared. Only valid with `useLastPortName`.
+  // If set, `lastActorPortName` is valid and fuzzing is forever pinned to this
+  // port.
+  Atomic<bool> useLastPortNameAlways;
+
+  // If set, the toplevel actor will be from fuzzing.
+  Atomic<bool> protoFilterTargetExcludeToplevel;
+
+  // Last port where a new actor appeared. Only valid with
+  // `useLastPortName`.
   mojo::core::ports::PortName lastActorPortName;
 
   // Counter to indicate how long fuzzing should stay pinned to the last
   // actor that appeared on `lastActorPortName`.
   Atomic<uint32_t> useLastActor;
+
+  // If this is non-zero, we want a specific actor ID instead of the last.
+  Atomic<int32_t> maybeLastActorId;
+
+  // If this is non-empty and in certain configurations, we only use a fixed
+  // set of messages, rather than sending any message type for that actor.
+  std::vector<uint32_t> actorAllowedMessages;
+
+  // Don't ever send messages contained in this set.
+  std::set<uint32_t> actorDisallowedMessages;
 
   // This is the deterministic ordering of toplevel actors for fuzzing.
   // In this matrix, each row (toplevel index) corresponds to one toplevel

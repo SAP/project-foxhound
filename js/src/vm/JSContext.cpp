@@ -799,8 +799,14 @@ JS_PUBLIC_API void js::StopDrainingJobQueue(JSContext* cx) {
   cx->internalJobQueue->interrupt();
 }
 
+JS_PUBLIC_API void js::RestartDrainingJobQueue(JSContext* cx) {
+  MOZ_ASSERT(cx->internalJobQueue.ref());
+  cx->internalJobQueue->uninterrupt();
+}
+
 JS_PUBLIC_API void js::RunJobs(JSContext* cx) {
   MOZ_ASSERT(cx->jobQueue);
+  MOZ_ASSERT(cx->isEvaluatingModule == 0);
   cx->jobQueue->runJobs(cx);
   JS::ClearKeptObjects(cx);
 }
@@ -869,14 +875,14 @@ void InternalJobQueue::runJobs(JSContext* cx) {
           if (!cx->isExceptionPending()) {
             continue;
           }
+
+          // Always clear the exception, because
+          // PrepareScriptEnvironmentAndInvoke will assert that we don't have
+          // one.
           RootedValue exn(cx);
-          if (cx->getPendingException(&exn)) {
-            /*
-             * Clear the exception, because
-             * PrepareScriptEnvironmentAndInvoke will assert that we don't
-             * have one.
-             */
-            cx->clearPendingException();
+          bool success = cx->getPendingException(&exn);
+          cx->clearPendingException();
+          if (success) {
             js::ReportExceptionClosure reportExn(exn);
             PrepareScriptEnvironmentAndInvoke(cx, cx->global(), reportExn);
           }
@@ -887,7 +893,6 @@ void InternalJobQueue::runJobs(JSContext* cx) {
     draining_ = false;
 
     if (interrupted_) {
-      interrupted_ = false;
       break;
     }
 
@@ -966,9 +971,12 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       profilingActivation_(nullptr),
       entryMonitor(this, nullptr),
       noExecuteDebuggerTop(this, nullptr),
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
       inUnsafeCallWithABI(this, false),
       hasAutoUnsafeCallWithABI(this, false),
+#endif
+#ifdef DEBUG
+      liveArraySortDataInstances(this, 0),
 #endif
 #ifdef JS_SIMULATOR
       simulator_(this, nullptr),
@@ -994,6 +1002,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
 #else
       regExpSearcherLastLimit(this, 0),
 #endif
+      isEvaluatingModule(this, 0),
       frontendCollectionPool_(this),
       suppressProfilerSampling(false),
       tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
@@ -1031,6 +1040,16 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
              JS::RootingContext::get(this));
 }
 
+#ifdef ENABLE_WASM_JSPI
+bool js::IsSuspendableStackActive(JSContext* cx) {
+  return cx->wasm().suspendableStackLimit != JS::NativeStackLimitMin;
+}
+
+JS::NativeStackLimit js::GetSuspendableStackLimit(JSContext* cx) {
+  return cx->wasm().suspendableStackLimit;
+}
+#endif
+
 JSContext::~JSContext() {
 #ifdef DEBUG
   // Clear the initialized_ first, so that ProtectedData checks will allow us to
@@ -1040,6 +1059,9 @@ JSContext::~JSContext() {
 
   /* Free the stuff hanging off of cx. */
   MOZ_ASSERT(!resolvingList);
+
+  // Ensure we didn't leak memory for the ArraySortData vector.
+  MOZ_ASSERT(liveArraySortDataInstances == 0);
 
   if (dtoaState) {
     DestroyDtoaState(dtoaState);
@@ -1189,6 +1211,13 @@ SavedFrame* JSContext::getPendingExceptionStack() {
   return unwrappedExceptionStack();
 }
 
+#ifdef DEBUG
+const JS::Value& JSContext::getPendingExceptionUnwrapped() {
+  MOZ_ASSERT(isExceptionPending());
+  return unwrappedException();
+}
+#endif
+
 bool JSContext::isClosingGenerator() {
   return isExceptionPending() &&
          unwrappedException().isMagic(JS_GENERATOR_CLOSING);
@@ -1239,6 +1268,9 @@ void JSContext::trace(JSTracer* trc) {
   if (isolate) {
     irregexp::TraceIsolate(trc, isolate.ref());
   }
+#ifdef ENABLE_WASM_JSPI
+  wasm().promiseIntegration.trace(trc);
+#endif
 }
 
 JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
@@ -1332,7 +1364,8 @@ void ExternalValueArray::trace(JSTracer* trc) {
   }
 }
 
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
+
 AutoUnsafeCallWithABI::AutoUnsafeCallWithABI(UnsafeABIStrictness strictness)
     : cx_(TlsContext.get()),
       nested_(cx_ ? cx_->hasAutoUnsafeCallWithABI : false),
@@ -1368,7 +1401,8 @@ AutoUnsafeCallWithABI::~AutoUnsafeCallWithABI() {
   }
   MOZ_ASSERT_IF(checkForPendingException_, !JS_IsExceptionPending(cx_));
 }
-#endif
+
+#endif  // JS_CHECK_UNSAFE_CALL_WITH_ABI
 
 #ifdef __wasi__
 JS_PUBLIC_API void js::IncWasiRecursionDepth(JSContext* cx) {

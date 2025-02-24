@@ -10,5 +10,6 @@ prefs = [
 ]
 
 # Bug 1876056: remove once bug 1877361 is fixed
+
 ["browser_aboutRestartRequired_buildid_false-positive.js"]
 skip-if = ["win11_2009 && msix && debug"]  # bug 1823581

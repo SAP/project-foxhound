@@ -1710,38 +1710,38 @@ void nsJSContext::MaybeRunNextCollectorSlice(nsIDocShell* aDocShell,
     return;
   }
 
-  if (!sScheduler->IsUserActive()) {
-    if (sScheduler->InIncrementalGC() || sScheduler->IsCollectingCycles()) {
-      Maybe<TimeStamp> next = nsRefreshDriver::GetNextTickHint();
-      if (next.isSome()) {
-        // Try to not delay the next RefreshDriver tick, so give a reasonable
-        // deadline for collectors.
-        sScheduler->RunNextCollectorTimer(aReason, next.value());
-      }
-    } else {
-      nsCOMPtr<nsIDocShell> shell = aDocShell;
-      NS_DispatchToCurrentThreadQueue(
-          NS_NewRunnableFunction(
-              "nsJSContext::MaybeRunNextCollectorSlice",
-              [shell] {
-                nsIDocShell::BusyFlags busyFlags = nsIDocShell::BUSY_FLAGS_NONE;
-                shell->GetBusyFlags(&busyFlags);
-                if (busyFlags == nsIDocShell::BUSY_FLAGS_NONE) {
-                  return;
-                }
-
-                // In order to improve performance on the next page, run a minor
-                // GC. The 16ms limit ensures it isn't called all the time if
-                // there are for example multiple iframes loading at the same
-                // time.
-                JS::RunNurseryCollection(
-                    CycleCollectedJSRuntime::Get()->Runtime(),
-                    JS::GCReason::PREPARE_FOR_PAGELOAD,
-                    mozilla::TimeDuration::FromMilliseconds(16));
-              }),
-          EventQueuePriority::Idle);
+  if (!sScheduler->IsUserActive() &&
+      (sScheduler->InIncrementalGC() || sScheduler->IsCollectingCycles())) {
+    Maybe<TimeStamp> next = nsRefreshDriver::GetNextTickHint();
+    if (next.isSome()) {
+      // Try to not delay the next RefreshDriver tick, so give a reasonable
+      // deadline for collectors.
+      sScheduler->RunNextCollectorTimer(aReason, next.value());
     }
   }
+
+  nsCOMPtr<nsIDocShell> shell = aDocShell;
+  NS_DispatchToCurrentThreadQueue(
+      NS_NewRunnableFunction("nsJSContext::MaybeRunNextCollectorSlice",
+                             [shell] {
+                               nsIDocShell::BusyFlags busyFlags =
+                                   nsIDocShell::BUSY_FLAGS_NONE;
+                               shell->GetBusyFlags(&busyFlags);
+                               if (busyFlags == nsIDocShell::BUSY_FLAGS_NONE) {
+                                 return;
+                               }
+
+                               // In order to improve performance on the next
+                               // page, run a minor GC. The 16ms limit ensures
+                               // it isn't called all the time if there are for
+                               // example multiple iframes loading at the same
+                               // time.
+                               JS::RunNurseryCollection(
+                                   CycleCollectedJSRuntime::Get()->Runtime(),
+                                   JS::GCReason::PREPARE_FOR_PAGELOAD,
+                                   mozilla::TimeDuration::FromMilliseconds(16));
+                             }),
+      EventQueuePriority::Idle);
 }
 
 // static
@@ -2073,7 +2073,8 @@ static bool ConsumeStream(JSContext* aCx, JS::Handle<JSObject*> aObj,
 static js::SliceBudget CreateGCSliceBudget(JS::GCReason aReason,
                                            int64_t aMillis) {
   return sScheduler->CreateGCSliceBudget(
-      mozilla::TimeDuration::FromMilliseconds(aMillis), false, false);
+      mozilla::TimeDuration::FromMilliseconds(aMillis), CCGCScheduler::eNotIdle,
+      CCGCScheduler::eNormalBudget, CCGCScheduler::eInterruptible);
 }
 
 void nsJSContext::EnsureStatics() {
@@ -2124,6 +2125,13 @@ void nsJSContext::EnsureStatics() {
                                        "javascript.options.mem.gc_compacting",
                                        (void*)JSGC_COMPACTING_ENABLED);
 
+#ifdef NIGHTLY_BUILD
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackBool,
+      "javascript.options.mem.gc_experimental_semispace_nursery",
+      (void*)JSGC_SEMISPACE_NURSERY_ENABLED);
+#endif
+
   Preferences::RegisterCallbackAndCall(
       SetMemoryPrefChangedCallbackBool,
       "javascript.options.mem.gc_parallel_marking",
@@ -2133,6 +2141,11 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.gc_parallel_marking_threshold_mb",
       (void*)JSGC_PARALLEL_MARKING_THRESHOLD_MB);
+
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackInt,
+      "javascript.options.mem.gc_max_parallel_marking_threads",
+      (void*)JSGC_MAX_MARKING_THREADS);
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryGCSliceTimePrefChangedCallback,

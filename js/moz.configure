@@ -173,18 +173,30 @@ def enable_decorators(value):
 set_config("ENABLE_DECORATORS", enable_decorators)
 set_define("ENABLE_DECORATORS", enable_decorators)
 
-# Enable JSON.parse with source
+# Enable explicit resource management
 # ===================================================
 option(
-    "--enable-json-parse-with-source",
+    "--enable-explicit-resource-management",
     default=False,
-    help="Enable experimental JS JSON.parse with source support",
+    help="Enable explicit resource management",
 )
 
 
-@depends("--enable-json-parse-with-source")
-def enable_json_parse_with_source(value):
+@depends("--enable-explicit-resource-management")
+def enable_explicit_resource_management(value):
     if value:
+        return True
+
+
+set_config("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
+set_define("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
+
+
+# Enable JSON.parse with source
+# ===================================================
+@depends(milestone.is_nightly)
+def enable_json_parse_with_source(is_nightly):
+    if is_nightly:
         return True
 
 
@@ -227,11 +239,23 @@ set_config(
 
 # JIT support
 # =======================================================
-@depends(target, "--enable-record-tuple", "--enable-portable-baseline-interp")
-def jit_default(target, enable_record_tuple, enable_portable_baseline_interp):
+@depends(
+    target,
+    "--enable-record-tuple",
+    "--enable-portable-baseline-interp",
+    "--enable-explicit-resource-management",
+)
+def jit_default(
+    target,
+    enable_record_tuple,
+    enable_portable_baseline_interp,
+    enable_explicit_resource_management,
+):
     if enable_record_tuple:
         return False
     if enable_portable_baseline_interp:
+        return False
+    if enable_explicit_resource_management:
         return False
     if target.cpu in (
         "x86",
@@ -603,13 +627,14 @@ set_define("MOZ_AARCH64_JSCVT", aarch64_jscvt)
 
 
 @depends(target)
-def has_pthread_jit_write_protect_np(target):
-    return target.os == "OSX" and target.cpu == "aarch64"
+def has_apple_fast_wx(target):
+    return target.kernel == "Darwin" and target.cpu == "aarch64"
 
 
-# On Apple Silicon we use MAP_JIT with pthread_jit_write_protect_np to implement
-# JIT code write protection.
-set_define("JS_USE_APPLE_FAST_WX", True, when=has_pthread_jit_write_protect_np)
+# On Apple Silicon macOS we use MAP_JIT with pthread_jit_write_protect_np to
+# implement JIT code write protection, while on iOS we use MAP_JIT with
+# be_memory_inline_jit_restrict_*.
+set_define("JS_USE_APPLE_FAST_WX", True, when=has_apple_fast_wx)
 
 
 # CTypes
@@ -760,6 +785,80 @@ def wasm_gc(value):
 
 set_config("ENABLE_WASM_GC", wasm_gc)
 set_define("ENABLE_WASM_GC", wasm_gc)
+
+# Support for JS PI spec.
+# ===========================
+
+
+@depends(
+    milestone.is_nightly,
+    "--enable-jit",
+    "--enable-simulator",
+    "--enable-wasm-gc",
+    "--enable-wasm-tail-calls",
+    target,
+)
+def default_wasm_jspi(
+    is_nightly,
+    jit_enabled,
+    simulator,
+    gc,
+    tail_calls,
+    target,
+):
+    if not jit_enabled or simulator:
+        return
+
+    if not gc or not tail_calls:
+        return
+
+    if not is_nightly:
+        return
+
+    if target.cpu in ("x86_64", "aarch64"):
+        return True
+
+
+option(
+    "--enable-wasm-jspi",
+    default=default_wasm_jspi,
+    help="{Enable|Disable} WebAssembly JS PI",
+)
+
+
+@depends(
+    "--enable-wasm-jspi",
+    "--enable-jit",
+    "--enable-simulator",
+    "--enable-wasm-gc",
+    "--enable-wasm-tail-calls",
+    "--wasm-no-experimental",
+    target,
+)
+def wasm_jspi(value, jit_enabled, simulator, gc, tail_calls, no_experimental, target):
+    if no_experimental or not value:
+        return
+
+    if not jit_enabled:
+        die("--enable-wasm-jspi requires --enable-jit")
+
+    if not gc:
+        die("--enable-wasm-jspi requires --enable-wasm-gc")
+
+    if not tail_calls:
+        die("--enable-wasm-jspi requires --enable-wasm-tail-calls")
+
+    if simulator:
+        die("--enable-wasm-jspi is not supported for simulators")
+
+    if target.cpu in ("x86_64", "aarch64"):
+        return True
+
+    die("--enable-wasm-jspi only possible when targeting the x86_64/arm64 jits")
+
+
+set_config("ENABLE_WASM_JSPI", wasm_jspi)
+set_define("ENABLE_WASM_JSPI", wasm_jspi)
 
 # Support for WebAssembly JS String Builtins
 # ==========================================
@@ -1087,6 +1186,35 @@ def wasm_multi_memory(value):
 set_config("ENABLE_WASM_MULTI_MEMORY", wasm_multi_memory)
 set_define("ENABLE_WASM_MULTI_MEMORY", wasm_multi_memory)
 
+
+# Support for WebAssembly Branch-hinting.
+# ===========================
+
+
+@depends(milestone.is_nightly)
+def default_wasm_branch_hinting(is_nightly):
+    if is_nightly:
+        return True
+
+
+option(
+    "--enable-wasm-branch-hinting",
+    default=default_wasm_branch_hinting,
+    help="{Enable|Disable} WebAssembly Branch hints",
+)
+
+
+@depends("--enable-wasm-branch-hinting", "--wasm-no-experimental")
+def wasm_branch_hinting(value, no_experimental):
+    if no_experimental or not value:
+        return
+
+    return True
+
+
+set_config("ENABLE_WASM_BRANCH_HINTING", wasm_branch_hinting)
+set_define("ENABLE_WASM_BRANCH_HINTING", wasm_branch_hinting)
+
 # Options for generating the shell as a script
 # ============================================
 option("--with-qemu-exe", nargs=1, help="Use path as an arm emulator on host platforms")
@@ -1171,12 +1299,22 @@ set_define(
 
 # ECMAScript Internationalization API Support (uses ICU)
 # ======================================================
-system_lib_option("--with-system-icu", help="Use system ICU")
+system_lib_option(
+    "--with-system-icu",
+    help="Use system ICU",
+    when=use_pkg_config,
+)
+
+
+@depends("--with-system-icu", when=use_pkg_config)
+def enable_system_icu_option(enable_system_icu):
+    return enable_system_icu
+
 
 system_icu = pkg_check_modules("MOZ_ICU", "icu-i18n >= 73.1", when="--with-system-icu")
 
 
-@depends("--with-system-icu")
+@depends(enable_system_icu_option)
 def in_tree_icu(system_icu):
     return not system_icu
 
@@ -1351,7 +1489,7 @@ with only_when(compile_environment & depends(target.os)(lambda os: os != "WINNT"
             includes=["langinfo.h"],
             body="char* cs = nl_langinfo(CODESET);",
             check_msg="for nl_langinfo and CODESET",
-            when=building_with_gnu_cc,
+            when=building_with_gnu_compatible_cc,
         ),
     )
 

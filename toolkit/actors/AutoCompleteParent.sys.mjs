@@ -41,21 +41,18 @@ function compareContext(message) {
 // The browsingContext within the message data is either the one that has
 // the active autocomplete popup or the top-level of the one that has
 // the active autocomplete popup.
-Services.ppmm.addMessageListener(
-  "FormAutoComplete:GetSelectedIndex",
-  message => {
-    if (compareContext(message)) {
-      let actor = currentActor;
-      if (actor && actor.openedPopup) {
-        return actor.openedPopup.selectedIndex;
-      }
+Services.ppmm.addMessageListener("AutoComplete:GetSelectedIndex", message => {
+  if (compareContext(message)) {
+    let actor = currentActor;
+    if (actor && actor.openedPopup) {
+      return actor.openedPopup.selectedIndex;
     }
-
-    return -1;
   }
-);
 
-Services.ppmm.addMessageListener("FormAutoComplete:SelectBy", message => {
+  return -1;
+});
+
+Services.ppmm.addMessageListener("AutoComplete:SelectBy", message => {
   if (compareContext(message)) {
     let actor = currentActor;
     if (actor && actor.openedPopup) {
@@ -95,16 +92,11 @@ var AutoCompleteResultView = {
   },
 
   getLabelAt(index) {
-    // Backwardly-used by richlist autocomplete - see getCommentAt.
-    // The label is used for secondary information.
-    return this.results[index].comment;
+    return this.results[index].label;
   },
 
   getCommentAt(index) {
-    // The richlist autocomplete popup uses comment for its main
-    // display of an item, which is why we're returning the label
-    // here instead.
-    return this.results[index].label;
+    return this.results[index].comment;
   },
 
   getStyleAt(index) {
@@ -174,7 +166,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
   handleEvent(evt) {
     switch (evt.type) {
       case "popupshowing": {
-        this.sendAsyncMessage("FormAutoComplete:PopupOpened", {});
+        this.sendAsyncMessage("AutoComplete:PopupOpened", {});
         break;
       }
 
@@ -188,7 +180,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
           selectedIndex != -1
             ? AutoCompleteResultView.getStyleAt(selectedIndex)
             : "";
-        this.sendAsyncMessage("FormAutoComplete:PopupClosed", {
+        this.sendAsyncMessage("AutoComplete:PopupClosed", {
           selectedRowComment,
           selectedRowStyle,
         });
@@ -241,6 +233,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     this.openedPopup.style.direction = dir;
 
     AutoCompleteResultView.setResults(this, results);
+
     this.openedPopup.view = AutoCompleteResultView;
     this.openedPopup.selectedIndex = -1;
 
@@ -250,7 +243,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     // the scrollbar in login or form autofill popups.
     if (
       resultStyles.size &&
-      (resultStyles.has("autofill-profile") || resultStyles.has("loginsFooter"))
+      (resultStyles.has("autofill") || resultStyles.has("loginsFooter"))
     ) {
       this.openedPopup._normalMaxRows = this.openedPopup.maxRows;
       this.openedPopup.mInput.maxRows = 10;
@@ -379,7 +372,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
   }
 
-  receiveMessage(message) {
+  async receiveMessage(message) {
     let browser = this.browsingContext.top.embedderElement;
 
     if (
@@ -397,7 +390,19 @@ export class AutoCompleteParent extends JSWindowActorParent {
     }
 
     switch (message.name) {
-      case "FormAutoComplete:SetSelectedIndex": {
+      // This is called when an autocomplete entry is selected by the users.
+      // In the current design, when a selection is triggered from the parent
+      // process (ex, select by mouse click), we still first send the "HandleEnter"
+      // message to the child and then child send the "SelectEntry" message back
+      // to the parent to indicate that an autocomplete entry is selected.
+      case "AutoComplete:SelectEntry": {
+        if (this.openedPopup) {
+          this.selectEntry(this.openedPopup.selectedIndex);
+        }
+        break;
+      }
+
+      case "AutoComplete:SetSelectedIndex": {
         let { index } = message.data;
         if (this.openedPopup) {
           this.openedPopup.selectedIndex = index;
@@ -405,7 +410,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
         break;
       }
 
-      case "FormAutoComplete:MaybeOpenPopup": {
+      case "AutoComplete:MaybeOpenPopup": {
         let { results, rect, dir, inputElementIdentifier, formOrigin } =
           message.data;
         if (lazy.DELEGATE_AUTOCOMPLETE) {
@@ -422,19 +427,25 @@ export class AutoCompleteParent extends JSWindowActorParent {
         break;
       }
 
-      case "FormAutoComplete:Invalidate": {
+      case "AutoComplete:Invalidate": {
         let { results } = message.data;
         this.invalidate(results);
         break;
       }
 
-      case "FormAutoComplete:ClosePopup": {
+      case "AutoComplete:ClosePopup": {
         if (lazy.DELEGATE_AUTOCOMPLETE) {
           lazy.GeckoViewAutocomplete.delegateDismiss();
           break;
         }
         this.closePopup();
         break;
+      }
+
+      case "AutoComplete:StartSearch": {
+        const { searchString, data } = message.data;
+        const result = await this.#startSearch(searchString, data);
+        return Promise.resolve(result);
       }
     }
     // Returning false to pacify ESLint, but this return value is
@@ -489,14 +500,90 @@ export class AutoCompleteParent extends JSWindowActorParent {
    */
   handleEnter(aIsPopupSelection) {
     if (this.openedPopup) {
-      this.sendAsyncMessage("FormAutoComplete:HandleEnter", {
+      this.sendAsyncMessage("AutoComplete:HandleEnter", {
         selectedIndex: this.openedPopup.selectedIndex,
         isPopupSelection: aIsPopupSelection,
       });
     }
   }
 
+  // This defines the supported autocomplete providers and the prioity to show the autocomplete
+  // entry.
+  #AUTOCOMPLETE_PROVIDERS = ["FormAutofill", "LoginManager", "FormHistory"];
+
+  /**
+   * Search across multiple module to gather autocomplete entries for a given search string.
+   *
+   * @param {string} searchString
+   *                 The input string used to query autocomplete entries across different
+   *                 autocomplete providers.
+   * @param {Array<Object>} providers
+   *                        An array of objects where each object has a `name` used to identify the actor
+   *                        name of the provider and `options` that are passed to the `searchAutoCompleteEntries`
+   *                        method of the actor.
+   * @returns {Array<Object>} An array of results objects with `name` of the provider and `entries`
+   *          that are returned from the provider module's `searchAutoCompleteEntries` method.
+   */
+  async #startSearch(searchString, providers) {
+    for (const name of this.#AUTOCOMPLETE_PROVIDERS) {
+      const provider = providers.find(p => p.actorName == name);
+      if (!provider) {
+        continue;
+      }
+      const { actorName, options } = provider;
+      const actor =
+        this.browsingContext.currentWindowGlobal.getActor(actorName);
+      const entries = await actor?.searchAutoCompleteEntries(
+        searchString,
+        options
+      );
+
+      // We have not yet supported showing autocomplete entries from multiple providers,
+      if (entries) {
+        return [{ actorName, ...entries }];
+      }
+    }
+    return [];
+  }
+
   stopSearch() {}
+
+  // Hard-coded the mapping by using the message prefix to find the actor
+  // to process a given message.
+  #getActorByMessagePrefix(message) {
+    const prefixToActor = [
+      { prefix: "PasswordManager", actor: "LoginManager" },
+      { prefix: "FormAutofill", actor: "FormAutofill" },
+    ];
+
+    const name = prefixToActor.find(x => message.startsWith(x.prefix))?.actor;
+    return this.browsingContext.currentWindowGlobal.getActor(name);
+  }
+
+  previewEntry(index) {
+    this.selectEntry(index, true);
+  }
+
+  /**
+   * When an autocomplete entry is selected, notify the actor that provides the entry
+   */
+  selectEntry(index, hover = false) {
+    const result = AutoCompleteResultView.results[index];
+
+    try {
+      const { fillMessageName, fillMessageData } = JSON.parse(result.comment);
+      if (!fillMessageName) {
+        return;
+      }
+
+      const actor = this.#getActorByMessagePrefix(fillMessageName);
+      if (hover) {
+        actor?.onAutoCompleteEntryHovered(fillMessageName, fillMessageData);
+      } else {
+        actor?.onAutoCompleteEntrySelected(fillMessageName, fillMessageData);
+      }
+    } catch {}
+  }
 
   /**
    * Sends a message to the browser that is requesting the input
@@ -507,7 +594,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
     // disabled.
     /*
     if (this.openedPopup) {
-      this.sendAsyncMessage("FormAutoComplete:Focus");
+      this.sendAsyncMessage("AutoComplete:Focus");
     }
     */
   }

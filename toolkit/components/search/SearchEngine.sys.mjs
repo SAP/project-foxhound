@@ -10,6 +10,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   OpenSearchEngine: "resource://gre/modules/OpenSearchEngine.sys.mjs",
 });
@@ -264,7 +265,7 @@ class QueryPreferenceParameter extends QueryParameter {
 }
 
 /**
- * Perform OpenSearch parameter substitution on aParamValue.
+ * Perform OpenSearch parameter substitution on a parameter value.
  *
  * @see http://opensearch.a9.com/spec/1.1/querysyntax/#core
  *
@@ -275,12 +276,12 @@ class QueryPreferenceParameter extends QueryParameter {
  *   paramValue as the value of the OS_PARAM_USER_DEFINED parameter.
  *   This value must already be escaped appropriately - it is inserted
  *   as-is.
- * @param {nsISearchEngine} engine
- *   The engine which owns the string being acted on.
+ * @param {string} queryCharset
+ *   The character set of the search engine to use for query encoding.
  * @returns {string}
  *   An updated parameter string.
  */
-function ParamSubstitution(paramValue, searchTerms, engine) {
+function ParamSubstitution(paramValue, searchTerms, queryCharset) {
   const PARAM_REGEXP = /\{((?:\w+:)?\w+)(\??)\}/g;
   return paramValue.replace(PARAM_REGEXP, function (match, name, optional) {
     // {searchTerms} is by far the most common param so handle it first.
@@ -290,12 +291,7 @@ function ParamSubstitution(paramValue, searchTerms, engine) {
 
     // {inputEncoding} is the second most common param.
     if (name == OS_PARAM_INPUT_ENCODING) {
-      return engine.queryCharset;
-    }
-
-    // moz: parameters are only available for default search engines.
-    if (engine.isAppProvided && name == lazy.SearchUtils.MOZ_PARAM.LOCALE) {
-      return Services.locale.requestedLocale;
+      return queryCharset;
     }
 
     // Handle the less common OpenSearch parameters we're confident about.
@@ -428,8 +424,21 @@ export class EngineURL {
     }
   }
 
-  getSubmission(searchTerms, engine, purpose) {
-    var url = ParamSubstitution(this.template, searchTerms, engine);
+  /**
+   * Returns a complete URL with parameter data that can be used for submitting
+   * a suggestion query or loading a search page.
+   *
+   * @param {string} searchTerms
+   *   The user's search terms.
+   * @param {string} queryCharset
+   *   The character set that is being used for the query.
+   * @param {string} purpose
+   *   The source of the search (e.g. searchbar, addressbar).
+   * @returns {Submission}
+   *   The submission data containing the URL and post data for the URL.
+   */
+  getSubmission(searchTerms, queryCharset, purpose) {
+    var url = ParamSubstitution(this.template, searchTerms, queryCharset);
     // Default to searchbar if the purpose is not provided
     var requestPurpose = purpose || "searchbar";
 
@@ -454,7 +463,7 @@ export class EngineURL {
 
       // Preference MozParams might not have a preferenced saved, or a valid value.
       if (param.value != null) {
-        var value = ParamSubstitution(param.value, searchTerms, engine);
+        var value = ParamSubstitution(param.value, searchTerms, queryCharset);
 
         dataArray.push(param.name + "=" + value);
       }
@@ -748,7 +757,7 @@ export class SearchEngine {
         }
         break;
       case "http":
-      case "https":
+      case "https": {
         let iconLoadCallback = function (byteArray, contentType) {
           // This callback may run after we've already set a preferred icon,
           // so check again.
@@ -789,7 +798,7 @@ export class SearchEngine {
           if (this._engineAddedToStore) {
             lazy.SearchUtils.notifyAction(
               this,
-              lazy.SearchUtils.MODIFIED_TYPE.CHANGED
+              lazy.SearchUtils.MODIFIED_TYPE.ICON_CHANGED
             );
           }
           this._hasPreferredIcon = isPreferred;
@@ -807,6 +816,7 @@ export class SearchEngine {
         chan.notificationCallbacks = listener;
         chan.asyncOpen(listener);
         break;
+      }
     }
   }
 
@@ -1032,8 +1042,8 @@ export class SearchEngine {
       }
     );
 
-    let existingSubmission = existingUrl.getSubmission("", this);
-    let newSubmission = newUrl.getSubmission("", this);
+    let existingSubmission = existingUrl.getSubmission("", this.queryCharset);
+    let newSubmission = newUrl.getSubmission("", this.queryCharset);
 
     return (
       existingSubmission.uri.equals(newSubmission.uri) &&
@@ -1228,15 +1238,24 @@ export class SearchEngine {
       return;
     }
 
-    let engineSettings;
-    if (settings.version <= 6) {
-      engineSettings = settings.engines?.find(e => e._name == this.name);
-    } else {
-      engineSettings = settings.engines?.find(e => e.id == this.id);
-    }
+    let engineSettings = lazy.SearchSettings.findSettingsForEngine(
+      settings,
+      this.id,
+      this.name
+    );
     if (engineSettings?._metaData) {
       this._metaData = structuredClone(engineSettings._metaData);
     }
+  }
+
+  /**
+   * Gets the order hint for this engine. This is determined from the search
+   * configuration when the engine is initialized.
+   *
+   * @type {number}
+   */
+  get orderHint() {
+    return this._orderHint;
   }
 
   /**
@@ -1411,7 +1430,7 @@ export class SearchEngine {
       "searchform"
     );
     if (searchFormURL) {
-      let submission = searchFormURL.getSubmission("", this);
+      let submission = searchFormURL.getSubmission("", this.queryCharset);
 
       // If the rel=searchform URL is not type="get" (i.e. has postData),
       // ignore it, since we can only return a URL.
@@ -1433,7 +1452,7 @@ export class SearchEngine {
       this._searchForm = lazy.SearchUtils.makeURI(htmlUrl.template).prePath;
     }
 
-    return ParamSubstitution(this._searchForm, "", this);
+    return ParamSubstitution(this._searchForm, "", this.queryCharset);
   }
 
   get queryCharset() {
@@ -1496,7 +1515,7 @@ export class SearchEngine {
         searchTerms
       );
     }
-    return url.getSubmission(submissionData, this, purpose);
+    return url.getSubmission(submissionData, this.queryCharset, purpose);
   }
 
   /**

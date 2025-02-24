@@ -199,24 +199,24 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   void NodeInfoChanged(Document* aOldDoc) override;
 
-  virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
-                              const nsAString& aValue,
-                              nsIPrincipal* aMaybeScriptedPrincipal,
-                              nsAttrValue& aResult) override;
+  bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
+                      const nsAString& aValue,
+                      nsIPrincipal* aMaybeScriptedPrincipal,
+                      nsAttrValue& aResult) override;
 
-  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
-  virtual void UnbindFromTree(UnbindContext&) override;
-  virtual void DoneCreatingElement() override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  void UnbindFromTree(UnbindContext&) override;
+  void DoneCreatingElement() override;
 
-  virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                               int32_t* aTabIndex) override;
-  virtual int32_t TabIndexDefault() override;
+  bool IsHTMLFocusable(IsFocusableFlags, bool* aIsFocusable,
+                       int32_t* aTabIndex) override;
+  int32_t TabIndexDefault() override;
 
   // Called by the video decoder object, on the main thread,
   // when it has read the metadata containing video dimensions,
   // etc.
-  virtual void MetadataLoaded(const MediaInfo* aInfo,
-                              UniquePtr<const MetadataTags> aTags) final;
+  void MetadataLoaded(const MediaInfo* aInfo,
+                      UniquePtr<const MetadataTags> aTags) final;
 
   // Called by the decoder object, on the main thread,
   // when it has read the first frame of the video or audio.
@@ -1461,7 +1461,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   // Holds a reference to the stream connecting this stream to the window
   // capture sink.
-  UniquePtr<MediaStreamWindowCapturer> mStreamWindowCapturer;
+  RefPtr<MediaStreamWindowCapturer> mStreamWindowCapturer;
 
   // Holds references to the DOM wrappers for the MediaStreams that we're
   // writing to.
@@ -1776,7 +1776,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   RefPtr<VideoTrackList> mVideoTrackList;
 
-  UniquePtr<MediaStreamTrackListener> mMediaStreamTrackListener;
+  RefPtr<MediaStreamTrackListener> mMediaStreamTrackListener;
 
   // The principal guarding mVideoFrameContainer access when playing a
   // MediaStream.

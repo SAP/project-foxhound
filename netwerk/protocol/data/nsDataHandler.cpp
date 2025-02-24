@@ -50,9 +50,7 @@ nsDataHandler::GetScheme(nsACString& result) {
   // Strip whitespace unless this is text, where whitespace is important
   // Don't strip escaped whitespace though (bug 391951)
   nsresult rv;
-  if (base64 || (StaticPrefs::network_url_strip_data_url_whitespace() &&
-                 strncmp(contentType.get(), "text/", 5) != 0 &&
-                 contentType.Find("xml") == kNotFound)) {
+  if (base64) {
     // it's ascii encoded binary, don't let any spaces in
     rv = NS_MutateURI(new mozilla::net::nsSimpleURI::Mutator())
              .Apply(&nsISimpleURIMutator::SetSpecAndFilterWhitespace, aSpec,
@@ -68,16 +66,12 @@ nsDataHandler::GetScheme(nsACString& result) {
 
   // use DefaultURI to check for validity when we have possible hostnames
   // since nsSimpleURI doesn't know about hostnames
-  auto pos = aSpec.Find("data:");
+  auto pos = aSpec.Find("data:/");
   if (pos != kNotFound) {
-    nsDependentCSubstring rest(aSpec, pos + sizeof("data:") - 1, -1);
-    if (StringBeginsWith(rest, "//"_ns)) {
-      nsCOMPtr<nsIURI> uriWithHost;
-      rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
-               .SetSpec(aSpec)
-               .Finalize(uriWithHost);
-      NS_ENSURE_SUCCESS(rv, rv);
-    }
+    rv = NS_MutateURI(new mozilla::net::DefaultURI::Mutator())
+             .SetSpec(aSpec)
+             .Finalize(uri);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   uri.forget(result);

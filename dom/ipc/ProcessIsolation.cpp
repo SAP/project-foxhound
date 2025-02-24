@@ -317,7 +317,7 @@ static IsolationBehavior IsolationBehaviorForURI(nsIURI* aURI, bool aIsSubframe,
 
   // Protocols used by Thunderbird to display email messages.
   if (scheme == "imap"_ns || scheme == "mailbox"_ns || scheme == "news"_ns ||
-      scheme == "nntp"_ns || scheme == "snews"_ns) {
+      scheme == "nntp"_ns || scheme == "snews"_ns || scheme == "x-moz-ews"_ns) {
     return IsolationBehavior::Parent;
   }
 
@@ -343,6 +343,7 @@ static IsolationBehavior IsolationBehaviorForURI(nsIURI* aURI, bool aIsSubframe,
           browser_tabs_remote_separatePrivilegedMozillaWebContentProcess()) {
     nsAutoCString host;
     if (NS_SUCCEEDED(aURI->GetAsciiHost(host))) {
+      // This code is duplicated in E10SUtils.sys.mjs, please update both
       for (const auto& separatedDomain : sSeparatedMozillaDomains) {
         // If the domain exactly matches our host, or our host ends with "." +
         // separatedDomain, we consider it matching.
@@ -407,8 +408,8 @@ static already_AddRefed<BasePrincipal> GetAboutReaderURLPrincipal(
 
   // Extract the "url" parameter from the `about:reader`'s query parameters,
   // and recover a content principal from it.
-  nsAutoString readerSpec;
-  if (URLParams::Extract(query, u"url"_ns, readerSpec)) {
+  nsAutoCString readerSpec;
+  if (URLParams::Extract(query, "url"_ns, readerSpec)) {
     nsCOMPtr<nsIURI> readerUri;
     if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(readerUri), readerSpec))) {
       return BasePrincipal::CreateContentPrincipal(readerUri, aAttrs);

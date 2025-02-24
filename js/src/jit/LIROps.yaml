@@ -358,6 +358,25 @@
 - name: InterruptCheck
   mir_op: true
 
+- name: WasmStackSwitchToMain
+  operands:
+    suspender: WordSized
+    fn: WordSized
+    data: WordSized
+  call_instruction: true
+
+- name: WasmStackSwitchToSuspendable
+  operands:
+    suspender: WordSized
+    fn: WordSized
+    data: WordSized
+  call_instruction: true
+
+- name: WasmStackContinueOnSuspendable
+  operands:
+    suspender: WordSized
+  call_instruction: true
+
 - name: WasmInterruptCheck
   operands:
     instance: WordSized
@@ -630,6 +649,21 @@
   gen_boilerplate: false
 
 - name: ConstructArrayGeneric
+  gen_boilerplate: false
+
+- name: ApplyArgsNative
+  gen_boilerplate: false
+
+- name: ApplyArgsObjNative
+  gen_boilerplate: false
+
+- name: ApplyArrayNative
+  gen_boilerplate: false
+
+- name: ConstructArgsNative
+  gen_boilerplate: false
+
+- name: ConstructArrayNative
   gen_boilerplate: false
 
 - name: TestIAndBranch
@@ -2189,7 +2223,7 @@
   mir_op: ClampToUint8
 
 - name: LoadScriptedProxyHandler
-  result_type: BoxedValue
+  result_type: WordSized
   operands:
     object: WordSized
   mir_op: true
@@ -3694,6 +3728,7 @@
   result_type: WordSized
   operands:
     object: WordSized
+  mir_op: true
 
 - name: GuardHasGetterSetter
   operands:

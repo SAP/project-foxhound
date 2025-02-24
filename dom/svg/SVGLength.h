@@ -8,8 +8,6 @@
 #define DOM_SVG_SVGLENGTH_H_
 
 #include "nsDebug.h"
-#include "nsMathUtils.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/dom/SVGAnimatedLength.h"
 #include "mozilla/dom/SVGLengthBinding.h"
 
@@ -95,9 +93,14 @@ class SVGLength {
 
   bool IsPercentage() const { return IsPercentageUnit(mUnit); }
 
+  float GetPixelsPerUnitWithZoom(const dom::UserSpaceMetrics& aMetrics,
+                                 uint8_t aAxis) const {
+    return GetPixelsPerUnit(aMetrics, mUnit, aAxis, true);
+  }
+
   float GetPixelsPerUnit(const dom::UserSpaceMetrics& aMetrics,
                          uint8_t aAxis) const {
-    return GetPixelsPerUnit(aMetrics, mUnit, aAxis);
+    return GetPixelsPerUnit(aMetrics, mUnit, aAxis, false);
   }
 
   static bool IsValidUnitType(uint16_t aUnitType) {
@@ -125,7 +128,8 @@ class SVGLength {
    * Returns the number of pixels per given unit.
    */
   static float GetPixelsPerUnit(const dom::UserSpaceMetrics& aMetrics,
-                                uint8_t aUnitType, uint8_t aAxis);
+                                uint8_t aUnitType, uint8_t aAxis,
+                                bool aApplyZoom);
 
  private:
   float mValue;

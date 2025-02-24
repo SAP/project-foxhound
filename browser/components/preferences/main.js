@@ -10,6 +10,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
+  UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
@@ -86,8 +87,8 @@ Preferences.addAll([
   { id: "browser.warnOnQuitShortcut", type: "bool" },
   { id: "browser.tabs.warnOnOpen", type: "bool" },
   { id: "browser.ctrlTab.sortByRecentlyUsed", type: "bool" },
-  { id: "browser.tabs.cardPreview.enabled", type: "bool" },
-  { id: "browser.tabs.cardPreview.showThumbnails", type: "bool" },
+  { id: "browser.tabs.hoverPreview.enabled", type: "bool" },
+  { id: "browser.tabs.hoverPreview.showThumbnails", type: "bool" },
 
   // CFR
   {
@@ -357,7 +358,7 @@ var gMainPane = {
 
     let thumbsCheckbox = document.getElementById("tabPreviewShowThumbnails");
     let cardPreviewEnabledPref = Preferences.get(
-      "browser.tabs.cardPreview.enabled"
+      "browser.tabs.hoverPreview.enabled"
     );
     let maybeShowThumbsCheckbox = () =>
       (thumbsCheckbox.hidden = !cardPreviewEnabledPref.value);
@@ -430,19 +431,28 @@ var gMainPane = {
         "command",
         gMainPane.onWindowsLaunchOnLoginChange
       );
-      NimbusFeatures.windowsLaunchOnLogin.recordExposureEvent({
-        once: true,
-      });
       // We do a check here for startWithLastProfile as we could
       // have disabled the pref for the user before they're ever
       // exposed to the experiment on a new profile.
+      // If we're using MSIX, we don't show the checkbox as MSIX
+      // can't write to the registry.
       if (
-        NimbusFeatures.windowsLaunchOnLogin.getVariable("enabled") &&
         Cc["@mozilla.org/toolkit/profile-service;1"].getService(
           Ci.nsIToolkitProfileService
         ).startWithLastProfile
       ) {
-        document.getElementById("windowsLaunchOnLoginBox").hidden = false;
+        NimbusFeatures.windowsLaunchOnLogin.recordExposureEvent({
+          once: true,
+        });
+
+        if (
+          Services.prefs.getBoolPref(
+            "browser.startup.windowsLaunchOnLogin.enabled",
+            false
+          )
+        ) {
+          document.getElementById("windowsLaunchOnLoginBox").hidden = false;
+        }
       }
     }
     gMainPane.updateBrowserStartupUI =
@@ -519,6 +529,14 @@ var gMainPane = {
 
     if (Services.policies && !Services.policies.isAllowed("profileImport")) {
       document.getElementById("dataMigrationGroup").remove();
+    }
+
+    if (
+      Services.prefs.getBoolPref("browser.backup.preferences.ui.enabled", false)
+    ) {
+      let backupGroup = document.getElementById("dataBackupGroup");
+      backupGroup.hidden = false;
+      backupGroup.removeAttribute("data-hidden-from-search");
     }
 
     // For media control toggle button, we support it on Windows, macOS and
@@ -674,12 +692,16 @@ var gMainPane = {
         let launchOnLoginCheckbox = document.getElementById(
           "windowsLaunchOnLogin"
         );
-        launchOnLoginCheckbox.checked =
-          WindowsLaunchOnLogin.getLaunchOnLoginEnabled();
-        let approvedByWindows = WindowsLaunchOnLogin.getLaunchOnLoginApproved();
-        launchOnLoginCheckbox.disabled = !approvedByWindows;
-        document.getElementById("windowsLaunchOnLoginDisabledBox").hidden =
-          approvedByWindows;
+        WindowsLaunchOnLogin.getLaunchOnLoginEnabled().then(enabled => {
+          launchOnLoginCheckbox.checked = enabled;
+        });
+        WindowsLaunchOnLogin.getLaunchOnLoginApproved().then(
+          approvedByWindows => {
+            launchOnLoginCheckbox.disabled = !approvedByWindows;
+            document.getElementById("windowsLaunchOnLoginDisabledBox").hidden =
+              approvedByWindows;
+          }
+        );
 
         // On Windows, the Application Update setting is an installation-
         // specific preference, not a profile-specific one. Show a warning to
@@ -1130,7 +1152,7 @@ var gMainPane = {
           this.markAllDownloadPhases("downloaded");
         } catch (error) {
           TranslationsView.showError(
-            "translations-manage-error-install",
+            "translations-manage-error-download",
             error
           );
           await this.reloadDownloadPhases();
@@ -1167,7 +1189,7 @@ var gMainPane = {
             this.updateDownloadPhase(langTag, "downloaded");
           } catch (error) {
             TranslationsView.showError(
-              "translations-manage-error-install",
+              "translations-manage-error-download",
               error
             );
             this.updateDownloadPhase(langTag, "uninstalled");
@@ -1221,7 +1243,7 @@ var gMainPane = {
 
           document.l10n.setAttributes(
             downloadButton,
-            "translations-manage-language-install-button"
+            "translations-manage-language-download-button"
           );
           document.l10n.setAttributes(
             deleteButton,
@@ -1628,16 +1650,19 @@ var gMainPane = {
       return;
     }
     if (event.target.checked) {
-      // windowsLaunchOnLogin has been checked: create registry key
-      WindowsLaunchOnLogin.createLaunchOnLoginRegistryKey();
+      // windowsLaunchOnLogin has been checked: create registry key or shortcut
+      // The shortcut is created with the same AUMID as Firefox itself. However,
+      // this is not set during browser tests and the fallback of checking the
+      // registry fails. As such we pass an arbitrary AUMID for the purpose
+      // of testing.
+      await WindowsLaunchOnLogin.createLaunchOnLogin();
       Services.prefs.setBoolPref(
         "browser.startup.windowsLaunchOnLogin.disableLaunchOnLoginPrompt",
         true
       );
     } else {
       // windowsLaunchOnLogin has been unchecked: delete registry key and shortcut
-      WindowsLaunchOnLogin.removeLaunchOnLoginRegistryKey();
-      await WindowsLaunchOnLogin.removeLaunchOnLoginShortcuts();
+      await WindowsLaunchOnLogin.removeLaunchOnLogin();
     }
   },
 
@@ -2237,9 +2262,8 @@ var gMainPane = {
       // 1/2/4 values set via about:config should persist
       return this._storedFullKeyboardNavigation;
     }
-    // When the checkbox is unchecked, this pref shouldn't exist
-    // at all.
-    return undefined;
+    // When the checkbox is unchecked, default to just text controls.
+    return 1;
   },
 
   /**
@@ -2519,10 +2543,16 @@ var gMainPane = {
   },
 
   async checkUpdateInProgress() {
+    const aus = Cc["@mozilla.org/updates/update-service;1"].getService(
+      Ci.nsIApplicationUpdateService
+    );
     let um = Cc["@mozilla.org/updates/update-manager;1"].getService(
       Ci.nsIUpdateManager
     );
-    if (!um.readyUpdate && !um.downloadingUpdate) {
+    // We don't want to see an idle state just because the updater hasn't
+    // initialized yet.
+    await aus.init();
+    if (aus.currentState == Ci.nsIApplicationUpdateService.STATE_IDLE) {
       return;
     }
 
@@ -2554,12 +2584,9 @@ var gMainPane = {
       {}
     );
     if (rv != 1) {
-      let aus = Cc["@mozilla.org/updates/update-service;1"].getService(
-        Ci.nsIApplicationUpdateService
-      );
       await aus.stopDownload();
-      um.cleanupReadyUpdate();
-      um.cleanupDownloadingUpdate();
+      await um.cleanupActiveUpdates();
+      UpdateListener.clearPendingAndActiveNotifications();
     }
   },
 
@@ -4202,7 +4229,7 @@ const AppearanceChooser = {
           e.preventDefault();
           break;
         case "web-appearance-manage-themes-link":
-          window.browsingContext.topChromeWindow.BrowserOpenAddonsMgr(
+          window.browsingContext.topChromeWindow.BrowserAddonUI.openAddonsMgr(
             "addons://list/theme"
           );
           e.preventDefault();

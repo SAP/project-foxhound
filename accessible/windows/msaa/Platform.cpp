@@ -69,10 +69,13 @@ void a11y::ProxyDestroyed(RemoteAccessible* aProxy) {
 
 void a11y::PlatformEvent(Accessible* aTarget, uint32_t aEventType) {
   MsaaAccessible::FireWinEvent(aTarget, aEventType);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(aTarget, aEventType);
 }
 
-void a11y::PlatformStateChangeEvent(Accessible* aTarget, uint64_t, bool) {
+void a11y::PlatformStateChangeEvent(Accessible* aTarget, uint64_t aState,
+                                    bool aEnabled) {
   MsaaAccessible::FireWinEvent(aTarget, nsIAccessibleEvent::EVENT_STATE_CHANGE);
+  uiaRawElmProvider::RaiseUiaEventForStateChange(aTarget, aState, aEnabled);
 }
 
 void a11y::PlatformFocusEvent(Accessible* aTarget,
@@ -91,6 +94,8 @@ void a11y::PlatformFocusEvent(Accessible* aTarget,
 
   AccessibleWrap::UpdateSystemCaretFor(aTarget, aCaretRect);
   MsaaAccessible::FireWinEvent(aTarget, nsIAccessibleEvent::EVENT_FOCUS);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(
+      aTarget, nsIAccessibleEvent::EVENT_FOCUS);
 }
 
 void a11y::PlatformCaretMoveEvent(Accessible* aTarget, int32_t aOffset,
@@ -112,6 +117,7 @@ void a11y::PlatformTextChangeEvent(Accessible* aText, const nsAString& aStr,
   ia2AccessibleText::UpdateTextChangeData(aText->AsHyperTextBase(), aInsert,
                                           aStr, aStart, aLen);
   MsaaAccessible::FireWinEvent(aText, eventType);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(aText, eventType);
 }
 
 void a11y::PlatformShowHideEvent(Accessible* aTarget, Accessible*, bool aInsert,
@@ -124,6 +130,7 @@ void a11y::PlatformShowHideEvent(Accessible* aTarget, Accessible*, bool aInsert,
 void a11y::PlatformSelectionEvent(Accessible* aTarget, Accessible*,
                                   uint32_t aType) {
   MsaaAccessible::FireWinEvent(aTarget, aType);
+  uiaRawElmProvider::RaiseUiaEventForGeckoEvent(aTarget, aType);
 }
 
 static bool GetInstantiatorExecutable(const DWORD aPid,

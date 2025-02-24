@@ -32,7 +32,8 @@ class MFMediaEngineChild final : public PMFMediaEngineChild {
   void OwnerDestroyed();
   void IPDLActorDestroyed();
 
-  RefPtr<GenericNonExclusivePromise> Init(bool aShouldPreload);
+  RefPtr<GenericNonExclusivePromise> Init(const MediaInfo& aInfo,
+                                          bool aShouldPreload);
   void Shutdown();
 
   // Methods for PMFMediaEngineChild
@@ -99,7 +100,8 @@ class MFMediaEngineWrapper final : public ExternalPlaybackEngine {
   ~MFMediaEngineWrapper();
 
   // Methods for ExternalPlaybackEngine
-  RefPtr<GenericNonExclusivePromise> Init(bool aShouldPreload) override;
+  RefPtr<GenericNonExclusivePromise> Init(const MediaInfo& aInfo,
+                                          bool aShouldPreload) override;
   void Play() override;
   void Pause() override;
   void Seek(const media::TimeUnit& aTargetTime) override;
@@ -111,7 +113,7 @@ class MFMediaEngineWrapper final : public ExternalPlaybackEngine {
   media::TimeUnit GetCurrentPosition() override;
   void NotifyEndOfStream(TrackInfo::TrackType aType) override;
   uint64_t Id() const override { return mEngine->Id(); }
-  void SetMediaInfo(const MediaInfo& aInfo) override;
+  bool IsInited() const { return mEngine->Id() != 0; }
   bool SetCDMProxy(CDMProxy* aProxy) override;
   void NotifyResizing(uint32_t aWidth, uint32_t aHeight) override;
 
@@ -121,7 +123,6 @@ class MFMediaEngineWrapper final : public ExternalPlaybackEngine {
  private:
   friend class MFMediaEngineChild;
 
-  bool IsInited() const { return mEngine->Id() != 0; }
   void UpdateCurrentTime(double aCurrentTimeInSecond);
   void NotifyEvent(ExternalEngineEvent aEvent);
   void NotifyError(const MediaResult& aError);

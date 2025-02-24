@@ -85,7 +85,7 @@ interface nsIZipReader : nsISupports
      * ZipReader is closed or destroyed, and must free the memory as
      * appropriate afterwards.
      */
-    void openMemory(in voidPtr aData, in unsigned long aLength);
+    [noscript] void openMemory(in voidPtr aData, in unsigned long aLength);
 
     /**
      * The file that represents the zip with which this zip reader was
@@ -225,7 +225,7 @@ interface nsIZipReaderCache : nsISupports
     /**
      * returns true if this zipreader already has this file cached
      */
-    bool isCached(in nsIFile zipFile);
+    boolean isCached(in nsIFile zipFile);
 
     /**
      * Returns a (possibly shared) nsIZipReader for a zip inside another zip
@@ -238,7 +238,7 @@ interface nsIZipReaderCache : nsISupports
      * Returns the cached NSPR file descriptor of the file.
      * Note: currently not supported on Windows platform.
      */
-    PRFileDescStar getFd(in nsIFile zipFile);
+    [noscript] PRFileDescStar getFd(in nsIFile zipFile);
 };
 
 ////////////////////////////////////////////////////////////////////////////////

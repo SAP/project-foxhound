@@ -568,7 +568,15 @@ nsresult EventSourceImpl::ParseURL(const nsAString& aURL) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIURI> srcURI;
-  rv = NS_NewURI(getter_AddRefs(srcURI), aURL, nullptr, baseURI);
+  nsCOMPtr<Document> doc =
+      mIsMainThread ? GetEventSource()->GetDocumentIfCurrent() : nullptr;
+  if (doc) {
+    rv = NS_NewURI(getter_AddRefs(srcURI), aURL, doc->GetDocumentCharacterSet(),
+                   baseURI);
+  } else {
+    rv = NS_NewURI(getter_AddRefs(srcURI), aURL, nullptr, baseURI);
+  }
+
   NS_ENSURE_SUCCESS(rv, NS_ERROR_DOM_SYNTAX_ERR);
 
   nsAutoString origin;
@@ -1821,14 +1829,14 @@ nsresult EventSourceImpl::ParseCharacter(char16_t aChr) {
 
 namespace {
 
-class WorkerRunnableDispatcher final : public WorkerRunnable {
+class WorkerRunnableDispatcher final : public WorkerThreadRunnable {
   RefPtr<EventSourceImpl> mEventSourceImpl;
 
  public:
   WorkerRunnableDispatcher(RefPtr<EventSourceImpl>&& aImpl,
                            WorkerPrivate* aWorkerPrivate,
                            already_AddRefed<nsIRunnable> aEvent)
-      : WorkerRunnable(aWorkerPrivate, "WorkerRunnableDispatcher"),
+      : WorkerThreadRunnable("WorkerRunnableDispatcher"),
         mEventSourceImpl(std::move(aImpl)),
         mEvent(std::move(aEvent)) {}
 
@@ -1922,7 +1930,7 @@ EventSourceImpl::Dispatch(already_AddRefed<nsIRunnable> aEvent,
   RefPtr<WorkerRunnableDispatcher> event = new WorkerRunnableDispatcher(
       this, mWorkerRef->Private(), event_ref.forget());
 
-  if (!event->Dispatch()) {
+  if (!event->Dispatch(mWorkerRef->Private())) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;

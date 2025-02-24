@@ -4,16 +4,14 @@
 
 "use strict";
 
-// Bug 1827382, as this module can be used from the worker thread,
-// the following JSM may be loaded by the worker loader until
-// we have proper support for ESM from workers.
-const {
-  startTracing,
-  stopTracing,
-  addTracingListener,
-  removeTracingListener,
-  NEXT_INTERACTION_MESSAGE,
-} = require("resource://devtools/server/tracer/tracer.jsm");
+const lazy = {};
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    JSTracer: "resource://devtools/server/tracer/tracer.sys.mjs",
+  },
+  { global: "contextual" }
+);
 
 const { Actor } = require("resource://devtools/shared/protocol.js");
 const { tracerSpec } = require("resource://devtools/shared/specs/tracer.js");
@@ -121,6 +119,17 @@ class TracerActor extends Actor {
       return;
     }
 
+    // Ignore WindowGlobal target actors for WindowGlobal of iframes running in the same process and thread as their parent document.
+    // isProcessRoot will be true for each WindowGlobal being the top parent within a given process.
+    // It will typically be true for WindowGlobal of iframe running in a distinct origin and process,
+    // but only for the top iframe document. It will also be true for the top level tab document.
+    if (
+      this.targetActor.window &&
+      !this.targetActor.window.windowGlobalChild?.isProcessRoot
+    ) {
+      return;
+    }
+
     this.logMethod = options.logMethod || LOG_METHODS.STDOUT;
 
     if (this.logMethod == LOG_METHODS.PROFILER) {
@@ -136,10 +145,10 @@ class TracerActor extends Actor {
       onTracingPending: this.onTracingPending.bind(this),
       onTracingDOMMutation: this.onTracingDOMMutation.bind(this),
     };
-    addTracingListener(this.tracingListener);
+    lazy.JSTracer.addTracingListener(this.tracingListener);
     this.traceValues = !!options.traceValues;
     try {
-      startTracing({
+      lazy.JSTracer.startTracing({
         global: this.targetActor.window || this.targetActor.workerGlobal,
         prefix: options.prefix || "",
         // Enable receiving the `currentDOMEvent` being passed to `onTracingFrame`
@@ -170,10 +179,10 @@ class TracerActor extends Actor {
       return;
     }
     // Remove before stopping to prevent receiving the stop notification
-    removeTracingListener(this.tracingListener);
+    lazy.JSTracer.removeTracingListener(this.tracingListener);
     this.tracingListener = null;
 
-    stopTracing();
+    lazy.JSTracer.stopTracing();
     this.logMethod = null;
   }
 
@@ -230,7 +239,7 @@ class TracerActor extends Actor {
       if (consoleMessageWatcher) {
         consoleMessageWatcher.emitMessages([
           {
-            arguments: [NEXT_INTERACTION_MESSAGE],
+            arguments: [lazy.JSTracer.NEXT_INTERACTION_MESSAGE],
             styles: [],
             level: "jstracer",
             chromeContext: false,
@@ -510,7 +519,7 @@ class TracerActor extends Actor {
    *        A string to be displayed as a prefix of any logged frame.
    * @param {String} options.why
    *        A string to explain why the function stopped.
-   *        See tracer.jsm's FRAME_EXIT_REASONS.
+   *        See tracer.sys.mjs's FRAME_EXIT_REASONS.
    * @param {Debugger.Object|primitive} options.rv
    *        The returned value. It can be the returned value, or the thrown exception.
    *        It is either a primitive object, otherwise it is a Debugger.Object for any other JS Object type.

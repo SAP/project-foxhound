@@ -182,6 +182,7 @@ class TypedOperandId : public OperandId {
   _(HasOwn)               \
   _(CheckPrivateField)    \
   _(TypeOf)               \
+  _(TypeOfEq)             \
   _(ToPropertyKey)        \
   _(InstanceOf)           \
   _(GetIterator)          \
@@ -321,6 +322,12 @@ class CallFlags {
 
   CallFlags() = default;
   explicit CallFlags(ArgFormat format) : argFormat_(format) {}
+  CallFlags(ArgFormat format, bool isConstructing, bool isSameRealm,
+            bool needsUninitializedThis)
+      : argFormat_(format),
+        isConstructing_(isConstructing),
+        isSameRealm_(isSameRealm),
+        needsUninitializedThis_(needsUninitializedThis) {}
   CallFlags(bool isConstructing, bool isSpread, bool isSameRealm = false,
             bool needsUninitializedThis = false)
       : argFormat_(isSpread ? Spread : Standard),

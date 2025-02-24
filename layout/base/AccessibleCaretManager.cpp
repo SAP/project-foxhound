@@ -19,9 +19,11 @@
 #include "mozilla/dom/NodeFilterBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/TreeWalker.h"
+#include "mozilla/FocusModel.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/SelectionMovementUtils.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_layout.h"
@@ -34,7 +36,6 @@
 #include "nsFrameSelection.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIHapticFeedback.h"
-#include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsServiceManagerUtils.h"
 
@@ -222,27 +223,17 @@ bool AccessibleCaretManager::IsCaretDisplayableInCursorMode(
   if (!caret || !caret->IsVisible()) {
     return false;
   }
-
-  int32_t offset = 0;
-  nsIFrame* frame =
-      nsCaret::GetFrameAndOffset(GetSelection(), nullptr, 0, &offset);
-
-  if (!frame) {
+  auto frameData =
+      nsCaret::GetFrameAndOffset(nsCaret::CaretPositionFor(GetSelection()));
+  if (!GetEditingHostForFrame(frameData.mFrame)) {
     return false;
   }
-
-  if (!GetEditingHostForFrame(frame)) {
-    return false;
-  }
-
   if (aOutFrame) {
-    *aOutFrame = frame;
+    *aOutFrame = frameData.mFrame;
   }
-
   if (aOutOffset) {
-    *aOutOffset = offset;
+    *aOutOffset = frameData.mOffsetInFrameContent;
   }
-
   return true;
 }
 
@@ -889,7 +880,7 @@ nsIFrame* AccessibleCaretManager::GetFocusableFrame(nsIFrame* aFrame) const {
   // Look for the nearest enclosing focusable frame.
   nsIFrame* focusableFrame = aFrame;
   while (focusableFrame) {
-    if (focusableFrame->IsFocusable(/* aWithMouse = */ true)) {
+    if (focusableFrame->IsFocusable(IsFocusableFlags::WithMouse)) {
       break;
     }
     focusableFrame = focusableFrame->GetParent();
@@ -1333,10 +1324,9 @@ nsPoint AccessibleCaretManager::AdjustDragBoundary(
     const nsPoint& aPoint) const {
   nsPoint adjustedPoint = aPoint;
 
-  int32_t focusOffset = 0;
-  nsIFrame* focusFrame =
-      nsCaret::GetFrameAndOffset(GetSelection(), nullptr, 0, &focusOffset);
-  Element* editingHost = GetEditingHostForFrame(focusFrame);
+  auto frameData =
+      nsCaret::GetFrameAndOffset(nsCaret::CaretPositionFor(GetSelection()));
+  Element* editingHost = GetEditingHostForFrame(frameData.mFrame);
 
   if (editingHost) {
     nsIFrame* editingHostFrame = editingHost->GetPrimaryFrame();
@@ -1390,14 +1380,15 @@ void AccessibleCaretManager::StartSelectionAutoScrollTimer(
     return;
   }
 
-  nsIScrollableFrame* scrollFrame = nsLayoutUtils::GetNearestScrollableFrame(
-      anchorFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
-                       nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
-  if (!scrollFrame) {
+  ScrollContainerFrame* scrollContainerFrame =
+      nsLayoutUtils::GetNearestScrollContainerFrame(
+          anchorFrame, nsLayoutUtils::SCROLLABLE_SAME_DOC |
+                           nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+  if (!scrollContainerFrame) {
     return;
   }
 
-  nsIFrame* capturingFrame = scrollFrame->GetScrolledFrame();
+  nsIFrame* capturingFrame = scrollContainerFrame->GetScrolledFrame();
   if (!capturingFrame) {
     return;
   }
@@ -1446,7 +1437,7 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
     commonAncestorNode = sel->GetFrameSelection()->GetAncestorLimiter();
   }
 
-  RefPtr<DOMRect> domRect = new DOMRect(ToSupports(doc));
+  auto domRect = MakeRefPtr<DOMRect>(ToSupports(doc));
   nsRect rect = nsLayoutUtils::GetSelectionBoundingRect(sel);
 
   nsIFrame* commonAncestorFrame = nullptr;
@@ -1471,8 +1462,7 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
 
   // Send isEditable info w/ event detail. This info can help determine
   // whether to show cut command on selection dialog or not.
-  init.mSelectionEditable =
-      commonAncestorFrame && GetEditingHostForFrame(commonAncestorFrame);
+  init.mSelectionEditable = GetEditingHostForFrame(commonAncestorFrame);
 
   init.mBoundingClientRect = domRect;
   init.mReason = aReason;

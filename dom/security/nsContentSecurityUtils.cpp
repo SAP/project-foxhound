@@ -1065,7 +1065,7 @@ nsresult CheckCSPFrameAncestorPolicy(nsIChannel* aChannel,
   csp->SuppressParserLogMessages();
 
   nsCOMPtr<nsIURI> selfURI;
-  nsAutoString referrerSpec;
+  nsAutoCString referrerSpec;
   if (httpChannel) {
     aChannel->GetURI(getter_AddRefs(selfURI));
     nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
@@ -1332,19 +1332,20 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // This allowlist contains about: pages that are permanently allowed to
   // render without a CSP applied.
   static nsLiteralCString sAllowedAboutPagesWithNoCSP[] = {
-    // about:blank is a special about page -> no CSP
-    "about:blank"_ns,
-    // about:srcdoc is a special about page -> no CSP
-    "about:srcdoc"_ns,
-    // about:sync-log displays plain text only -> no CSP
-    "about:sync-log"_ns,
-    // about:logo just displays the firefox logo -> no CSP
-    "about:logo"_ns,
-    // about:sync is a special mozilla-signed developer addon with low usage ->
-    // no CSP
-    "about:sync"_ns,
+      // about:blank is a special about page -> no CSP
+      "about:blank"_ns,
+      // about:srcdoc is a special about page -> no CSP
+      "about:srcdoc"_ns,
+      // about:sync-log displays plain text only -> no CSP
+      "about:sync-log"_ns,
+      // about:logo just displays the firefox logo -> no CSP
+      "about:logo"_ns,
+      // about:sync is a special mozilla-signed developer addon with low usage
+      // ->
+      // no CSP
+      "about:sync"_ns,
 #  if defined(ANDROID)
-    "about:config"_ns,
+      "about:config"_ns,
 #  endif
   };
 
@@ -1363,19 +1364,20 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
              "about: page must contain a CSP denying object-src");
 
   // preferences and downloads allow legacy inline scripts through hash src.
-  MOZ_ASSERT(!foundScriptSrc ||
-                 StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:settings"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:downloads"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:asrouter"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:logins"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:compat"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:welcome"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:profiling"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:studies"_ns) ||
-                 StringBeginsWith(aboutSpec, "about:home"_ns),
-             "about: page must not contain a CSP including script-src");
+  MOZ_ASSERT(
+      !foundScriptSrc || StringBeginsWith(aboutSpec, "about:preferences"_ns) ||
+          StringBeginsWith(aboutSpec, "about:settings"_ns) ||
+          StringBeginsWith(aboutSpec, "about:downloads"_ns) ||
+          StringBeginsWith(aboutSpec, "about:fingerprintingprotection"_ns) ||
+          StringBeginsWith(aboutSpec, "about:asrouter"_ns) ||
+          StringBeginsWith(aboutSpec, "about:newtab"_ns) ||
+          StringBeginsWith(aboutSpec, "about:logins"_ns) ||
+          StringBeginsWith(aboutSpec, "about:compat"_ns) ||
+          StringBeginsWith(aboutSpec, "about:welcome"_ns) ||
+          StringBeginsWith(aboutSpec, "about:profiling"_ns) ||
+          StringBeginsWith(aboutSpec, "about:studies"_ns) ||
+          StringBeginsWith(aboutSpec, "about:home"_ns),
+      "about: page must not contain a CSP including script-src");
 
   MOZ_ASSERT(!foundWorkerSrc,
              "about: page must not contain a CSP including worker-src");
@@ -1670,25 +1672,37 @@ long nsContentSecurityUtils::ClassifyDownload(
   nsCOMPtr<nsIURI> contentLocation;
   aChannel->GetURI(getter_AddRefs(contentLocation));
 
-  if (StaticPrefs::dom_block_download_insecure()) {
-    // If we are not dealing with a potentially trustworthy origin, or a URI
-    // that is safe to be loaded like e.g. data:, then we block the load.
-    bool isInsecureDownload =
-        !nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(
-            contentLocation) &&
-        !nsMixedContentBlocker::URISafeToBeLoadedInSecureContext(
-            contentLocation);
+  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->GetLoadingPrincipal();
+  if (!loadingPrincipal) {
+    loadingPrincipal = loadInfo->TriggeringPrincipal();
+  }
+  // Creating a fake Loadinfo that is just used for the MCB check.
+  nsCOMPtr<nsILoadInfo> secCheckLoadInfo = new mozilla::net::LoadInfo(
+      loadingPrincipal, loadInfo->TriggeringPrincipal(), nullptr,
+      nsILoadInfo::SEC_ONLY_FOR_EXPLICIT_CONTENTSEC_CHECK,
+      nsIContentPolicy::TYPE_FETCH);
+  // Disable HTTPS-Only checks for that loadinfo. This is required because
+  // otherwise nsMixedContentBlocker::ShouldLoad would assume that the request
+  // is safe, because HTTPS-Only is handling it.
+  secCheckLoadInfo->SetHttpsOnlyStatus(nsILoadInfo::HTTPS_ONLY_EXEMPT);
 
-    Telemetry::Accumulate(mozilla::Telemetry::INSECURE_DOWNLOADS,
-                          isInsecureDownload);
+  int16_t decission = nsIContentPolicy::ACCEPT;
+  nsMixedContentBlocker::ShouldLoad(false,  //  aHadInsecureImageRedirect
+                                    contentLocation,   //  aContentLocation,
+                                    secCheckLoadInfo,  //  aLoadinfo
+                                    false,             //  aReportError
+                                    &decission         // aDecision
+  );
+  Telemetry::Accumulate(mozilla::Telemetry::MIXED_CONTENT_DOWNLOADS,
+                        decission != nsIContentPolicy::ACCEPT);
 
-    if (isInsecureDownload) {
-      nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-      if (httpChannel) {
-        LogMessageToConsole(httpChannel, "BlockedInsecureDownload");
-      }
-      return nsITransfer::DOWNLOAD_POTENTIALLY_UNSAFE;
+  if (StaticPrefs::dom_block_download_insecure() &&
+      decission != nsIContentPolicy::ACCEPT) {
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+    if (httpChannel) {
+      LogMessageToConsole(httpChannel, "MixedContentBlockedDownload");
     }
+    return nsITransfer::DOWNLOAD_POTENTIALLY_UNSAFE;
   }
 
   if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal()) {

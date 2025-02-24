@@ -249,7 +249,7 @@ nsresult CSPToCSPInfo(nsIContentSecurityPolicy* aCSP, CSPInfo* aCSPInfo) {
     selfURI->GetSpec(selfURISpec);
   }
 
-  nsAutoString referrer;
+  nsAutoCString referrer;
   aCSP->GetReferrer(referrer);
 
   uint64_t windowID = aCSP->GetInnerWindowID();
@@ -962,10 +962,11 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain(),
-      cookieJarSettingsArgs, aLoadInfo->GetRequestBlockingReason(),
-      aLoadInfo->GetStoragePermission(), overriddenFingerprintingSettingsArg,
-      aLoadInfo->GetIsMetaRefresh(), isThirdPartyContextToTopWindow,
-      aLoadInfo->GetIsInThirdPartyContext(), unstrippedURI);
+      cookieJarSettingsArgs, aLoadInfo->GetContainerFeaturePolicyInfo(),
+      aLoadInfo->GetRequestBlockingReason(), aLoadInfo->GetStoragePermission(),
+      overriddenFingerprintingSettingsArg, aLoadInfo->GetIsMetaRefresh(),
+      isThirdPartyContextToTopWindow, aLoadInfo->GetIsInThirdPartyContext(),
+      unstrippedURI);
 }
 
 nsresult MergeParentLoadInfoForwarder(
@@ -1070,6 +1071,11 @@ nsresult MergeParentLoadInfoForwarder(
 
   rv = aLoadInfo->SetUnstrippedURI(aForwarderArgs.unstrippedURI());
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (aForwarderArgs.containerFeaturePolicyInfo()) {
+    aLoadInfo->SetContainerFeaturePolicyInfo(
+        *aForwarderArgs.containerFeaturePolicyInfo());
+  }
 
   return NS_OK;
 }

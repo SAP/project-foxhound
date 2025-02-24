@@ -11,7 +11,6 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/StaticPrefs_devtools.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_ui.h"
@@ -205,7 +204,7 @@ void PreferenceSheet::Prefs::Load(bool aIsChrome) {
   // as those are the colors exposed to the user in the colors dialog.
   mMustUseLightColorSet = mUsePrefColors && !mUseDocumentColors;
 #ifdef XP_WIN
-  if (mUseAccessibilityTheme) {
+  if (mUseAccessibilityTheme && (mIsChrome || !mUseDocumentColors)) {
     // Windows overrides the light colors with the HCM colors when HCM is
     // active, so make sure to always use the light system colors in that case,
     // and also make sure that we always use the light color set for the same

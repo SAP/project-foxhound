@@ -56,10 +56,7 @@ add_setup(async function () {
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   await waitForIdle();
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.urlbar.suggest.searches", true],
-      ["browser.search.serpEventTelemetry.enabled", true],
-    ],
+    set: [["browser.urlbar.suggest.searches", true]],
   });
   // Enable local telemetry recording for the duration of the tests.
   let oldCanRecord = Services.telemetry.canRecordExtended;
@@ -130,6 +127,7 @@ add_task(async function test_search() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -172,6 +170,7 @@ add_task(async function test_reload() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -194,6 +193,7 @@ add_task(async function test_reload() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -233,6 +233,7 @@ add_task(async function test_reload() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -255,6 +256,7 @@ add_task(async function test_reload() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -306,6 +308,7 @@ add_task(async function test_fresh_search() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -345,6 +348,7 @@ add_task(async function test_click_ad() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -394,6 +398,7 @@ add_task(async function test_go_back() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -419,6 +424,7 @@ add_task(async function test_go_back() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -459,6 +465,7 @@ add_task(async function test_go_back() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -484,6 +491,7 @@ add_task(async function test_go_back() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {
@@ -538,6 +546,7 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -577,6 +586,7 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -599,6 +609,7 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -640,6 +651,7 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       adImpressions: [
         {
@@ -662,6 +674,7 @@ add_task(async function test_fresh_search_with_urlbar_persisted() {
         shopping_tab_displayed: "false",
         is_shopping_page: "false",
         is_private: "false",
+        is_signed_in: "false",
       },
       engagements: [
         {

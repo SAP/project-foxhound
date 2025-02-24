@@ -254,11 +254,16 @@ void CookieStorage::GetAll(nsTArray<RefPtr<nsICookie>>& aResult) const {
   }
 }
 
-const nsTArray<RefPtr<Cookie>>* CookieStorage::GetCookiesFromHost(
-    const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes) {
+void CookieStorage::GetCookiesFromHost(
+    const nsACString& aBaseDomain, const OriginAttributes& aOriginAttributes,
+    nsTArray<RefPtr<Cookie>>& aCookies) {
   CookieEntry* entry =
       mHostTable.GetEntry(CookieKey(aBaseDomain, aOriginAttributes));
-  return entry ? &entry->GetCookies() : nullptr;
+  if (!entry) {
+    return;
+  }
+
+  aCookies = entry->GetCookies().Clone();
 }
 
 void CookieStorage::GetCookiesWithOriginAttributes(
@@ -669,8 +674,8 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
       }
       uint32_t purgedLength = 0;
       purgedList->GetLength(&purgedLength);
-      mozilla::glean::networking::cookie_purge_entry_max.AccumulateSamples(
-          {purgedLength});
+      mozilla::glean::networking::cookie_purge_entry_max.AccumulateSingleSample(
+          purgedLength);
 
     } else if (mCookieCount >= ADD_TEN_PERCENT(mMaxNumberOfCookies)) {
       int64_t maxAge = aCurrentTimeInUsec - mCookieOldestTime;
@@ -687,8 +692,8 @@ void CookieStorage::AddCookie(nsIConsoleReportCollector* aCRC,
                                   mCookiePurgeAge);
         uint32_t purgedLength = 0;
         purgedList->GetLength(&purgedLength);
-        mozilla::glean::networking::cookie_purge_max.AccumulateSamples(
-            {purgedLength});
+        mozilla::glean::networking::cookie_purge_max.AccumulateSingleSample(
+            purgedLength);
       }
     }
   }

@@ -53,8 +53,6 @@ class LookAndFeel {
     CaretBlinkCount,
     // pixel width of caret
     CaretWidth,
-    // show the caret when text is selected?
-    ShowCaretDuringSelection,
     // select textfields when focused via tab/accesskey?
     SelectTextfieldsOnKeyFocus,
     // delay before submenus open
@@ -94,8 +92,6 @@ class LookAndFeel {
     TreeScrollDelay,
     // the maximum number of lines to be scrolled at ones
     TreeScrollLinesMax,
-    // What type of tab-order to use
-    TabFocusModel,
     // Should menu items blink when they're chosen?
     ChosenMenuItemsShouldBlink,
 
@@ -118,6 +114,9 @@ class LookAndFeel {
      * A Boolean value to determine whether macOS is in RTL mode or not.
      */
     MacRTL,
+
+    /* Native macOS titlebar height. */
+    MacTitlebarHeight,
 
     /*
      * AlertNotificationOrigin indicates from which corner of the
@@ -186,6 +185,7 @@ class LookAndFeel {
      */
     ContextMenuOffsetVertical,
     ContextMenuOffsetHorizontal,
+    TooltipOffsetVertical,
 
     /*
      * A boolean value indicating whether client-side decorations are
@@ -299,7 +299,6 @@ class LookAndFeel {
      * 1: High
      */
     DynamicRange,
-    VideoDynamicRange,
 
     /** Whether XUL panel animations are enabled. */
     PanelAnimations,
@@ -310,6 +309,9 @@ class LookAndFeel {
     /* The StyleGtkThemeFamily of the current GTK theme. */
     GTKThemeFamily,
 
+    /* Whether macOS' full keyboard access is enabled */
+    FullKeyboardAccess,
+
     /*
      * Not an ID; used to define the range of valid IDs.  Must be last.
      */
@@ -319,6 +321,11 @@ class LookAndFeel {
   // This is a common enough integer that seems worth the shortcut.
   static bool UseOverlayScrollbars() {
     return GetInt(IntID::UseOverlayScrollbars);
+  }
+
+  static constexpr int32_t kDefaultTooltipOffset = 21;
+  static int32_t TooltipOffsetVertical() {
+    return GetInt(IntID::TooltipOffsetVertical, kDefaultTooltipOffset);
   }
 
   // Returns keyCode value of a modifier key which is used for accesskey.

@@ -14,9 +14,6 @@ var gPermissionPanel = {
     if (!this._popupInitialized) {
       let wrapper = document.getElementById("template-permission-popup");
       wrapper.replaceWith(wrapper.content);
-
-      window.ensureCustomElements("moz-support-link");
-
       this._popupInitialized = true;
     }
   },
@@ -353,7 +350,7 @@ var gPermissionPanel = {
     }
   },
 
-  handleEvent(event) {
+  handleEvent() {
     let elem = document.activeElement;
     let position = elem.compareDocumentPosition(this._permissionPopup);
 
@@ -371,7 +368,7 @@ var gPermissionPanel = {
     }
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "fullscreen-painted": {
         if (subject != window || !this._exitedEventReceived) {

@@ -62,6 +62,7 @@
 #include "vm/PromiseObject.h"
 #include "vm/ProxyObject.h"
 #include "vm/RegExpObject.h"
+#include "vm/SelfHosting.h"
 #include "vm/Shape.h"
 #include "vm/TypedArrayObject.h"
 #include "vm/Watchtower.h"
@@ -1215,6 +1216,10 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(a));
   MOZ_RELEASE_ASSERT(js::ObjectMayBeSwapped(b));
 
+  // Don't allow a GC which may observe intermediate state or run before we
+  // execute all necessary barriers.
+  gc::AutoSuppressGC nogc(cx);
+
   if (!Watchtower::watchObjectSwap(cx, a, b)) {
     oomUnsafe.crash("watchObjectSwap");
   }
@@ -1305,10 +1310,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
       a->as<ProxyObject>().setInlineValueArray();
     }
   } else {
-    // Avoid GC in here to avoid confusing the tracing code with our
-    // intermediate state.
-    gc::AutoSuppressGC suppress(cx);
-
     // When the objects have different sizes, they will have different numbers
     // of fixed slots before and after the swap, so the slots for native objects
     // will need to be rearranged. Remember the original values from the
@@ -2204,7 +2205,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
-#ifdef NIGHTLY_BUILD
   if (key == JSProto_Set && !JS::Prefs::experimental_new_set_methods() &&
       (id == NameToId(cx->names().union_) ||
        id == NameToId(cx->names().difference) ||
@@ -2213,15 +2213,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
        id == NameToId(cx->names().isSupersetOf) ||
        id == NameToId(cx->names().isDisjointFrom) ||
        id == NameToId(cx->names().symmetricDifference))) {
-    return true;
-  }
-#endif
-
-#ifdef NIGHTLY_BUILD
-  if (key == JSProto_ArrayBuffer && !JS::Prefs::arraybuffer_transfer() &&
-      (id == NameToId(cx->names().transfer) ||
-       id == NameToId(cx->names().transferToFixedLength) ||
-       id == NameToId(cx->names().detached))) {
     return true;
   }
 
@@ -2238,6 +2229,53 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
       (id == NameToId(cx->names().maxByteLength) ||
        id == NameToId(cx->names().growable) ||
        id == NameToId(cx->names().grow))) {
+    return true;
+  }
+
+  if (key == JSProto_ArrayBuffer && !JS::Prefs::arraybuffer_transfer() &&
+      (id == NameToId(cx->names().transfer) ||
+       id == NameToId(cx->names().transferToFixedLength) ||
+       id == NameToId(cx->names().detached))) {
+    return true;
+  }
+
+#ifdef NIGHTLY_BUILD
+  if (key == JSProto_Uint8Array &&
+      !JS::Prefs::experimental_uint8array_base64() &&
+      (id == NameToId(cx->names().setFromBase64) ||
+       id == NameToId(cx->names().setFromHex) ||
+       id == NameToId(cx->names().toBase64) ||
+       id == NameToId(cx->names().toHex))) {
+    return true;
+  }
+
+  // It's gently surprising that this is JSProto_Function, but the trick
+  // to realize is that this is a -constructor function-, not a function
+  // on the prototype; and the proto of the constructor is JSProto_Function.
+  if (key == JSProto_Function && !JS::Prefs::experimental_uint8array_base64() &&
+      (id == NameToId(cx->names().fromBase64) ||
+       id == NameToId(cx->names().fromHex))) {
+    return true;
+  }
+#endif
+
+#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
+  if (key == JSProto_JSON &&
+      !JS::Prefs::experimental_json_parse_with_source() &&
+      (id == NameToId(cx->names().isRawJSON) ||
+       id == NameToId(cx->names().rawJSON))) {
+    return true;
+  }
+#endif
+
+#ifdef NIGHTLY_BUILD
+  if (key == JSProto_Math && !JS::Prefs::experimental_float16array() &&
+      (id == NameToId(cx->names().f16round))) {
+    return true;
+  }
+  if (key == JSProto_DataView && !JS::Prefs::experimental_float16array() &&
+      (id == NameToId(cx->names().getFloat16) ||
+       id == NameToId(cx->names().setFloat16))) {
     return true;
   }
 #endif
@@ -2714,9 +2752,8 @@ void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx, char* buf,
         if (false) {
           ;
         }
-#define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp) \
-  else if ((JSProto_##name) == slot) {           \
-    slotname = #name;                            \
+#define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp)       \
+  else if ((JSProto_##name) == slot){slotname = #name; \
   }
         JS_FOR_EACH_PROTOTYPE(TEST_SLOT_MATCHES_PROTOTYPE)
 #undef TEST_SLOT_MATCHES_PROTOTYPE
@@ -3165,19 +3202,8 @@ js::gc::AllocKind JSObject::allocKindForTenure(
       return as<JSFunction>().getAllocKind();
     }
 
-    // Fixed length typed arrays in the nursery may have a lazily allocated
-    // buffer, make sure there is room for the array's fixed data when moving
-    // the array.
-    if (is<FixedLengthTypedArrayObject>() &&
-        !as<FixedLengthTypedArrayObject>().hasBuffer()) {
-      gc::AllocKind allocKind;
-      if (as<FixedLengthTypedArrayObject>().hasInlineElements()) {
-        size_t nbytes = as<FixedLengthTypedArrayObject>().byteLength();
-        allocKind = FixedLengthTypedArrayObject::AllocKindForLazyBuffer(nbytes);
-      } else {
-        allocKind = GetGCObjectKind(getClass());
-      }
-      return ForegroundToBackgroundAllocKind(allocKind);
+    if (is<FixedLengthTypedArrayObject>()) {
+      return as<FixedLengthTypedArrayObject>().allocKindForTenure();
     }
 
     return as<NativeObject>().allocKindForTenure();
@@ -3402,6 +3428,11 @@ void JSObject::traceChildren(JSTracer* trc) {
 
   // Step 7.
   if (IsConstructor(s)) {
+    if (&s.toObject() != ctorObj) {
+      ReportUsageCounter(cx, defaultCtor,
+                         SUBCLASSING_DETERMINE_THROUGH_CONSTRUCTOR,
+                         SUBCLASSING_TYPE_III);
+    }
     return &s.toObject();
   }
 

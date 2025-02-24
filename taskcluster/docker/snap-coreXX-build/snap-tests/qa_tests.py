@@ -261,15 +261,6 @@ class QATests(SnapTestsBase):
         self._wait.until(lambda d: pdf_div.is_displayed() is True)
         return pdf_div
 
-    def is_esr(self):
-        self._driver.set_context("chrome")
-        update_channel = self._driver.execute_script(
-            "return Services.prefs.getStringPref('app.update.channel');"
-        )
-        self._logger.info("Update channel: {}".format(update_channel))
-        self._driver.set_context("content")
-        return update_channel == "esr"
-
     def pdf_get_page(self, page, long=False):
         waiter = self._longwait if long is True else self._wait
         page = waiter.until(
@@ -466,7 +457,21 @@ class QATests(SnapTestsBase):
         )
         action.drag_and_drop_by_offset(paragraph, 50, 10).perform()
         time.sleep(0.75)
-        self.assert_rendering(exp["select_text"], self._driver)
+        try:
+            ref_screen_source = "select_text_with_highlight"
+            self._wait.until(
+                EC.visibility_of_element_located(
+                    (By.CSS_SELECTOR, "button.highlightButton")
+                )
+            )
+        except TimeoutException:
+            ref_screen_source = "select_text_without_highlight"
+            self._logger.info(
+                "Wait for pdf highlight button: timed out, maybe it is not there"
+            )
+        finally:
+            time.sleep(0.75)
+            self.assert_rendering(exp[ref_screen_source], self._driver)
 
         # release select selection
         action.move_by_offset(0, 150).perform()

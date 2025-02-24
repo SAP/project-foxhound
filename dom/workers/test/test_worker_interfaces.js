@@ -46,6 +46,7 @@ let wasmGlobalInterfaces = [
   { name: "Function", insecureContext: true, nightly: true },
   { name: "Exception", insecureContext: true },
   { name: "Tag", insecureContext: true },
+  { name: "JSTag", insecureContext: true, earlyBetaOrEarlier: true },
   { name: "compile", insecureContext: true },
   { name: "compileStreaming", insecureContext: true },
   { name: "instantiate", insecureContext: true },
@@ -137,6 +138,8 @@ let interfaceNamesInGlobalScope = [
   { name: "AudioData", insecureContext: true, nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AudioDecoder", nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "AudioEncoder", nightly: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Blob", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

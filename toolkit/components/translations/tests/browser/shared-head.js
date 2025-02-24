@@ -9,6 +9,9 @@
 const { EngineProcess } = ChromeUtils.importESModule(
   "chrome://global/content/ml/EngineProcess.sys.mjs"
 );
+const { TranslationsPanelShared } = ChromeUtils.importESModule(
+  "chrome://browser/content/translations/TranslationsPanelShared.sys.mjs"
+);
 
 // Avoid about:blank's non-standard behavior.
 const BLANK_PAGE =
@@ -30,8 +33,10 @@ const SPANISH_PAGE_URL_DOT_ORG =
   URL_ORG_PREFIX + DIR_PATH + "translations-tester-es.html";
 const NO_LANGUAGE_URL =
   URL_COM_PREFIX + DIR_PATH + "translations-tester-no-tag.html";
-const EMPTY_PDF_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-empty-pdf-file.pdf";
+const PDF_TEST_PAGE_URL =
+  URL_COM_PREFIX + DIR_PATH + "translations-tester-pdf-file.pdf";
+const SELECT_TEST_PAGE_URL =
+  URL_COM_PREFIX + DIR_PATH + "translations-tester-select.html";
 
 const PIVOT_LANGUAGE = "en";
 const LANGUAGE_PAIRS = [
@@ -349,33 +354,38 @@ function getTranslationsParent() {
 
 /**
  * Closes all open panels and menu popups related to Translations.
+ *
+ * @param {ChromeWindow} [win]
  */
-async function closeAllOpenPanelsAndMenus() {
-  await closeSettingsMenuIfOpen();
-  await closeFullPageTranslationsPanelIfOpen();
-  await closeSelectTranslationsPanelIfOpen();
-  await closeContextMenuIfOpen();
+async function closeAllOpenPanelsAndMenus(win) {
+  await closeFullPagePanelSettingsMenuIfOpen(win);
+  await closeFullPageTranslationsPanelIfOpen(win);
+  await closeSelectPanelSettingsMenuIfOpen(win);
+  await closeSelectTranslationsPanelIfOpen(win);
+  await closeContextMenuIfOpen(win);
 }
 
 /**
  * Closes the popup element with the given Id if it is open.
  *
  * @param {string} popupElementId
+ * @param {ChromeWindow} [win]
  */
-async function closePopupIfOpen(popupElementId) {
+async function closePopupIfOpen(popupElementId, win = window) {
   await waitForCondition(async () => {
-    const contextMenu = document.getElementById(popupElementId);
-    if (!contextMenu) {
+    const popupElement = win.document.getElementById(popupElementId);
+    if (!popupElement) {
       return true;
     }
-    if (contextMenu.state === "closed") {
+    if (popupElement.state === "closed") {
       return true;
     }
     let popuphiddenPromise = BrowserTestUtils.waitForEvent(
-      contextMenu,
+      popupElement,
       "popuphidden"
     );
-    PanelMultiView.hidePopup(contextMenu);
+    popupElement.hidePopup();
+    PanelMultiView.hidePopup(popupElement);
     await popuphiddenPromise;
     return false;
   });
@@ -383,30 +393,50 @@ async function closePopupIfOpen(popupElementId) {
 
 /**
  * Closes the context menu if it is open.
+ *
+ * @param {ChromeWindow} [win]
  */
-async function closeContextMenuIfOpen() {
-  await closePopupIfOpen("contentAreaContextMenu");
+async function closeContextMenuIfOpen(win) {
+  await closePopupIfOpen("contentAreaContextMenu", win);
 }
 
 /**
- * Closes the translations panel settings menu if it is open.
+ * Closes the full-page translations panel settings menu if it is open.
+ *
+ * @param {ChromeWindow} [win]
  */
-async function closeSettingsMenuIfOpen() {
-  await closePopupIfOpen("full-page-translations-panel-settings-menupopup");
+async function closeFullPagePanelSettingsMenuIfOpen(win) {
+  await closePopupIfOpen(
+    "full-page-translations-panel-settings-menupopup",
+    win
+  );
+}
+
+/**
+ * Closes the select translations panel settings menu if it is open.
+ *
+ * @param {ChromeWindow} [win]
+ */
+async function closeSelectPanelSettingsMenuIfOpen(win) {
+  await closePopupIfOpen("select-translations-panel-settings-menupopup", win);
 }
 
 /**
  * Closes the translations panel if it is open.
+ *
+ * @param {ChromeWindow} [win]
  */
-async function closeFullPageTranslationsPanelIfOpen() {
-  await closePopupIfOpen("full-page-translations-panel");
+async function closeFullPageTranslationsPanelIfOpen(win) {
+  await closePopupIfOpen("full-page-translations-panel", win);
 }
 
 /**
  * Closes the translations panel if it is open.
+ *
+ * @param {ChromeWindow} [win]
  */
-async function closeSelectTranslationsPanelIfOpen() {
-  await closePopupIfOpen("select-translations-panel");
+async function closeSelectTranslationsPanelIfOpen(win) {
+  await closePopupIfOpen("select-translations-panel", win);
 }
 
 /**
@@ -471,6 +501,7 @@ async function createAndMockRemoteSettings({
   // The TranslationsParent will pull the language pair values from the JSON dump
   // of Remote Settings. Clear these before mocking the translations engine.
   TranslationsParent.clearCache();
+  TranslationsPanelShared.clearCache();
 
   TranslationsParent.mockTranslationsEngine(
     remoteClients.translationModels.client,
@@ -485,9 +516,82 @@ async function createAndMockRemoteSettings({
 
       TranslationsParent.unmockTranslationsEngine();
       TranslationsParent.clearCache();
+      TranslationsPanelShared.clearCache();
     },
     remoteClients,
   };
+}
+
+/**
+ * This class mocks the window's A11yUtils to count/capture arguments.
+ *
+ * This helps us ensure that the right calls are being made without
+ * needing to handle whether the accessibility service is enabled in CI,
+ * and also without needing to worry about if the call itself is broken
+ * in the accessibility engine, since this is sometimes OS dependent.
+ */
+class MockedA11yUtils {
+  /**
+   * Holds the parameters passed to any calls to announce.
+   *
+   * @type {Array<{ raw: string, id: string}>}
+   */
+  static announceCalls = [];
+
+  /**
+   * Mocks the A11yUtils object for the given window, replacing the real A11yUtils with the mock
+   * and returning a function that will restore the original A11yUtils when called.
+   *
+   * @param {object} window - The window for which to mock A11yUtils.
+   * @returns {Function} - A function to restore A11yUtils to the window.
+   */
+  static mockForWindow(window) {
+    const realA11yUtils = window.A11yUtils;
+    window.A11yUtils = MockedA11yUtils;
+
+    return () => {
+      // Restore everything back to normal for this window.
+      MockedA11yUtils.announceCalls = [];
+      window.A11yUtils = realA11yUtils;
+    };
+  }
+
+  /**
+   * A mocked call to A11yUtils.announce that captures the parameters.
+   *
+   * @param {{ raw: string, id: string }}
+   */
+  static announce({ id, raw }) {
+    MockedA11yUtils.announceCalls.push({ id, raw });
+  }
+
+  /**
+   * Asserts that the most recent A11yUtils announce call matches the expectations.
+   *
+   * @param {object} expectations
+   * @param {string} expectations.expectedCallNumber - The expected position in the announceCalls array.
+   * @param {object} expectations.expectedArgs - The expected arguments passed to the most recent announce call.
+   */
+  static assertMostRecentAnnounceCall({ expectedCallNumber, expectedArgs }) {
+    is(
+      MockedA11yUtils.announceCalls.length,
+      expectedCallNumber,
+      "The most recent A11yUtils announce should match the expected call number."
+    );
+    const { id, raw } = MockedA11yUtils.announceCalls.at(-1);
+    const { id: expectedId, raw: expectedRaw } = expectedArgs;
+
+    is(
+      id,
+      expectedId,
+      "A11yUtils announce arg id should match the expected arg id."
+    );
+    is(
+      raw,
+      expectedRaw,
+      "A11yUtils announce arg raw should match the expected arg raw."
+    );
+  }
 }
 
 async function loadTestPage({
@@ -497,38 +601,62 @@ async function loadTestPage({
   prefs,
   autoOffer,
   permissionsUrls,
+  win = window,
 }) {
   info(`Loading test page starting at url: ${page}`);
-  // Ensure no engine is being carried over from a previous test.
-  await EngineProcess.destroyTranslationsEngine();
-  Services.fog.testResetFOG();
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      // Enabled by default.
-      ["browser.translations.enable", true],
-      ["browser.translations.logLevel", "All"],
-      ["browser.translations.panelShown", true],
-      ["browser.translations.automaticallyPopup", true],
-      ["browser.translations.alwaysTranslateLanguages", ""],
-      ["browser.translations.neverTranslateLanguages", ""],
-      ...(prefs ?? []),
-    ],
-  });
-  await SpecialPowers.pushPermissions(
-    [
-      ENGLISH_PAGE_URL,
-      FRENCH_PAGE_URL,
-      NO_LANGUAGE_URL,
-      SPANISH_PAGE_URL,
-      SPANISH_PAGE_URL_2,
-      SPANISH_PAGE_URL_DOT_ORG,
-      ...(permissionsUrls || []),
-    ].map(url => ({
-      type: TRANSLATIONS_PERMISSION,
-      allow: true,
-      context: url,
-    }))
-  );
+
+  // If there are multiple windows, only do the first time setup on the main window.
+  const isFirstTimeSetup = win === window;
+
+  let remoteClients = null;
+  let removeMocks = () => {};
+
+  const restoreA11yUtils = MockedA11yUtils.mockForWindow(win);
+
+  if (isFirstTimeSetup) {
+    // Ensure no engine is being carried over from a previous test.
+    await EngineProcess.destroyTranslationsEngine();
+
+    Services.fog.testResetFOG();
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        // Enabled by default.
+        ["browser.translations.enable", true],
+        ["browser.translations.logLevel", "All"],
+        ["browser.translations.panelShown", true],
+        ["browser.translations.automaticallyPopup", true],
+        ["browser.translations.alwaysTranslateLanguages", ""],
+        ["browser.translations.neverTranslateLanguages", ""],
+        // Bug 1893100 - This is needed to ensure that switching focus
+        // with tab works in tests independent of macOS settings that
+        // would otherwise disable keyboard navigation at the OS level.
+        ["accessibility.tabfocus_applies_to_xul", false],
+        ...(prefs ?? []),
+      ],
+    });
+    await SpecialPowers.pushPermissions(
+      [
+        ENGLISH_PAGE_URL,
+        FRENCH_PAGE_URL,
+        NO_LANGUAGE_URL,
+        SPANISH_PAGE_URL,
+        SPANISH_PAGE_URL_2,
+        SPANISH_PAGE_URL_DOT_ORG,
+        ...(permissionsUrls || []),
+      ].map(url => ({
+        type: TRANSLATIONS_PERMISSION,
+        allow: true,
+        context: url,
+      }))
+    );
+
+    const result = await createAndMockRemoteSettings({
+      languagePairs,
+      autoDownloadFromRemoteSettings,
+    });
+    remoteClients = result.remoteClients;
+    removeMocks = result.removeMocks;
+  }
 
   if (autoOffer) {
     TranslationsParent.testAutomaticPopup = true;
@@ -536,15 +664,10 @@ async function loadTestPage({
 
   // Start the tab at a blank page.
   const tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
+    win.gBrowser,
     BLANK_PAGE,
     true // waitForLoad
   );
-
-  const { remoteClients, removeMocks } = await createAndMockRemoteSettings({
-    languagePairs,
-    autoDownloadFromRemoteSettings,
-  });
 
   BrowserTestUtils.startLoadingURIString(tab.linkedBrowser, page);
   await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
@@ -589,6 +712,7 @@ async function loadTestPage({
       await loadBlankPage();
       await EngineProcess.destroyTranslationsEngine();
       await removeMocks();
+      restoreA11yUtils();
       Services.fog.testResetFOG();
       TranslationsParent.testAutomaticPopup = false;
       TranslationsParent.resetHostsOffered();
@@ -921,21 +1045,21 @@ async function selectAboutPreferencesElements() {
   );
   const frenchLabel = frenchRow.querySelector("label");
   const frenchDownload = frenchRow.querySelector(
-    `[data-l10n-id="translations-manage-language-install-button"]`
+    `[data-l10n-id="translations-manage-language-download-button"]`
   );
   const frenchDelete = frenchRow.querySelector(
     `[data-l10n-id="translations-manage-language-remove-button"]`
   );
   const spanishLabel = spanishRow.querySelector("label");
   const spanishDownload = spanishRow.querySelector(
-    `[data-l10n-id="translations-manage-language-install-button"]`
+    `[data-l10n-id="translations-manage-language-download-button"]`
   );
   const spanishDelete = spanishRow.querySelector(
     `[data-l10n-id="translations-manage-language-remove-button"]`
   );
   const ukrainianLabel = ukrainianRow.querySelector("label");
   const ukrainianDownload = ukrainianRow.querySelector(
-    `[data-l10n-id="translations-manage-language-install-button"]`
+    `[data-l10n-id="translations-manage-language-download-button"]`
   );
   const ukrainianDelete = ukrainianRow.querySelector(
     `[data-l10n-id="translations-manage-language-remove-button"]`
@@ -1146,13 +1270,35 @@ class TestTranslationsTelemetry {
   static async assertCounter(name, counter, expectedCount) {
     // Ensures that glean metrics are collected from all child processes
     // so that calls to testGetValue() are up to date.
-    await Services.fog.testFlushAllChildren();
-    const count = counter.testGetValue() ?? 0;
+    let count;
+    await waitForCondition(async () => {
+      await Services.fog.testFlushAllChildren();
+      count = counter.testGetValue() ?? 0;
+      return expectedCount === count;
+    });
     is(
       count,
       expectedCount,
       `Telemetry counter ${name} should have expected count`
     );
+  }
+
+  /**
+   * Asserts that a counter with the given label matches the expected count for that label.
+   *
+   * @param {object} counter - The Glean counter object.
+   * @param {Array<Array<string | number>>} expectations - An array of string/number pairs for the label and expected count.
+   */
+  static async assertLabeledCounter(counter, expectations) {
+    for (const [label, expectedCount] of expectations) {
+      await Services.fog.testFlushAllChildren();
+      const count = counter[label].testGetValue() ?? 0;
+      is(
+        count,
+        expectedCount,
+        `Telemetry counter with label ${label} should have expected count.`
+      );
+    }
   }
 
   /**
@@ -1162,39 +1308,33 @@ class TestTranslationsTelemetry {
    * @param {object} expectations - The test expectations.
    * @param {number} expectations.expectedEventCount - The expected count of events.
    * @param {boolean} expectations.expectNewFlowId
-   * @param {boolean} [expectations.expectFirstInteraction]
-   * - Expects the flowId to be different than the previous flowId if true,
-   *   and expects it to be the same if false.
-   * @param {Array<Function>} [expectations.allValuePredicates=[]]
-   * - An array of function predicates to assert for all event values.
-   * @param {Array<Function>} [expectations.finalValuePredicates=[]]
-   * - An array of function predicates to assert for only the final event value.
+   * @param {Record<string, string | boolean | number>} [expectations.assertForAllEvents]
+   * - A record of key-value pairs to assert against all events in this category.
+   * @param {Record<string, string | boolean | number>} [expectations.assertForMostRecentEvent]
+   * - A record of key-value pairs to assert against the most recently recorded event in this category.
    */
   static async assertEvent(
     event,
     {
       expectedEventCount,
       expectNewFlowId = null,
-      expectFirstInteraction = null,
-      allValuePredicates = [],
-      finalValuePredicates = [],
+      assertForAllEvents = {},
+      assertForMostRecentEvent = {},
     }
   ) {
     // Ensures that glean metrics are collected from all child processes
     // so that calls to testGetValue() are up to date.
-    await Services.fog.testFlushAllChildren();
-    const events = event.testGetValue() ?? [];
-    const eventCount = events.length;
+    let events;
+    let eventCount;
+    await waitForCondition(async () => {
+      await Services.fog.testFlushAllChildren();
+      events = event.testGetValue() ?? [];
+      eventCount = events.length;
+      return expectedEventCount === eventCount;
+    });
+
     const name =
       eventCount > 0 ? `${events[0].category}.${events[0].name}` : null;
-
-    if (eventCount > 0 && expectFirstInteraction !== null) {
-      is(
-        events[eventCount - 1].extra.first_interaction,
-        expectFirstInteraction ? "true" : "false",
-        "The newest event should be match the given first-interaction expectation"
-      );
-    }
 
     if (eventCount > 0 && expectNewFlowId !== null) {
       const flowId = events[eventCount - 1].extra.flow_id;
@@ -1230,34 +1370,38 @@ class TestTranslationsTelemetry {
       `There should be ${expectedEventCount} telemetry events of type ${name}`
     );
 
-    if (allValuePredicates.length !== 0) {
+    if (Object.keys(assertForAllEvents).length !== 0) {
       is(
         eventCount > 0,
         true,
-        `Telemetry event ${name} should contain values if allPredicates are specified`
+        `Telemetry event ${name} should contain values if assertForMostRecentEvent are specified`
       );
-      for (const value of events) {
-        for (const predicate of allValuePredicates) {
+      for (const [key, expectedEntry] of Object.entries(
+        assertForMostRecentEvent
+      )) {
+        for (const event of events) {
           is(
-            predicate(value),
-            true,
-            `Telemetry event ${name} allPredicate { ${predicate.toString()} } should pass for each value`
+            event.extra[key],
+            String(expectedEntry),
+            `Telemetry event ${name} value for ${key} should match the expected entry`
           );
         }
       }
     }
 
-    if (finalValuePredicates.length !== 0) {
+    if (Object.keys(assertForMostRecentEvent).length !== 0) {
       is(
         eventCount > 0,
         true,
-        `Telemetry event ${name} should contain values if finalPredicates are specified`
+        `Telemetry event ${name} should contain values if assertForMostRecentEvent are specified`
       );
-      for (const predicate of finalValuePredicates) {
+      for (const [key, expectedEntry] of Object.entries(
+        assertForMostRecentEvent
+      )) {
         is(
-          predicate(events[eventCount - 1]),
-          true,
-          `Telemetry event ${name} finalPredicate { ${predicate.toString()} } should pass for final value`
+          events[eventCount - 1].extra[key],
+          String(expectedEntry),
+          `Telemetry event ${name} value for ${key} should match the expected entry`
         );
       }
     }
@@ -1377,7 +1521,7 @@ async function waitForCloseDialogWindow(dialogWindow) {
 
 // Extracted from https://searchfox.org/mozilla-central/rev/40ef22080910c2e2c27d9e2120642376b1d8b8b2/browser/components/preferences/in-content/tests/head.js#41
 function promiseLoadSubDialog(aURL) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     content.gSubDialog._dialogStack.addEventListener(
       "dialogopen",
       function dialogopen(aEvent) {
@@ -1443,4 +1587,11 @@ function promiseLoadSubDialog(aURL) {
 async function loadBlankPage() {
   BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, BLANK_PAGE);
   await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
+}
+
+/**
+ * Destroys the Translations Engine process.
+ */
+async function destroyTranslationsEngine() {
+  await EngineProcess.destroyTranslationsEngine();
 }

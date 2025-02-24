@@ -12,10 +12,12 @@
 #include <new>
 
 #include "vp9/common/vp9_common.h"
+#include "vp9/encoder/vp9_aq_cyclicrefresh.h"
 #include "vp9/encoder/vp9_encoder.h"
 #include "vp9/encoder/vp9_picklpf.h"
 #include "vpx/vp8cx.h"
 #include "vpx/vpx_codec.h"
+#include "vpx_mem/vpx_mem.h"
 
 namespace libvpx {
 
@@ -303,7 +305,9 @@ int VP9RateControlRTC::GetLoopfilterLevel() const {
 
 bool VP9RateControlRTC::GetSegmentationData(
     VP9SegmentationData *segmentation_data) const {
-  if (!cpi_->cyclic_refresh->apply_cyclic_refresh) return false;
+  if (!cpi_->cyclic_refresh || !cpi_->cyclic_refresh->apply_cyclic_refresh) {
+    return false;
+  }
 
   segmentation_data->segmentation_map = cpi_->segmentation_map;
   segmentation_data->segmentation_map_size =

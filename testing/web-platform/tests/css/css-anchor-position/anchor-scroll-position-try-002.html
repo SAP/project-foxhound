@@ -31,15 +31,15 @@ body {
   width: 100px;
   height: 100px;
   background: green;
-  anchor-default: --a;
-  top: anchor(--a top);
-  left: anchor(--a right);
+  position-anchor: --a;
+  top: anchor(top);
+  left: anchor(right);
   position-try-options: --pf;
 }
 
 @position-try --pf {
   left: auto;
-  right: anchor(--a left);
+  right: anchor(left);
 }
 </style>
 

@@ -201,6 +201,9 @@ class HostWebGLContext final : public SupportsWeakPtr {
 
   // -
 
+  void SetDrawingBufferColorSpace(const dom::PredefinedColorSpace val) const {
+    mContext->SetDrawingBufferColorSpace(val);
+  }
   void Resize(const uvec2& size) { return mContext->Resize(size); }
 
   uvec2 DrawingBufferSize() { return mContext->DrawingBufferSize(); }
@@ -259,8 +262,6 @@ class HostWebGLContext final : public SupportsWeakPtr {
   void SetEnabled(GLenum cap, Maybe<GLuint> i, bool val) const {
     mContext->SetEnabled(cap, i, val);
   }
-
-  bool IsEnabled(GLenum cap) const { return mContext->IsEnabled(cap); }
 
   Maybe<double> GetNumber(GLenum pname) const {
     return mContext->GetParameter(pname);

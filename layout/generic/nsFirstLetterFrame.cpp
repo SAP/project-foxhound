@@ -197,7 +197,6 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
                                 nsReflowStatus& aReflowStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsFirstLetterFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aMetrics, aReflowStatus);
   MOZ_ASSERT(aReflowStatus.IsEmpty(),
              "Caller should pass a fresh reflow status!");
 
@@ -297,7 +296,7 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
     aMetrics.ISize(lineWM) = ll->EndSpan(this) + bp.IStartEnd(wm);
     ll->SetInFirstLetter(false);
 
-    if (mComputedStyle->StyleTextReset()->mInitialLetterSize != 0.0f) {
+    if (mComputedStyle->StyleTextReset()->mInitialLetter.size != 0.0f) {
       aMetrics.SetBlockStartAscent(kidMetrics.BlockStartAscent() +
                                    bp.BStart(wm));
       aMetrics.BSize(lineWM) = kidMetrics.BSize(lineWM) + bp.BStartEnd(wm);
@@ -448,12 +447,12 @@ Maybe<nscoord> nsFirstLetterFrame::GetNaturalBaselineBOffset(
 
 LogicalSides nsFirstLetterFrame::GetLogicalSkipSides() const {
   if (GetPrevContinuation()) {
-    // We shouldn't get calls to GetSkipSides for later continuations since
-    // they have separate ComputedStyles with initial values for all the
-    // properties that could trigger a call to GetSkipSides.  Then again,
-    // it's not really an error to call GetSkipSides on any frame, so
+    // We shouldn't get calls to GetLogicalSkipSides for later continuations
+    // since they have separate ComputedStyles with initial values for all the
+    // properties that could trigger a call to GetLogicalSkipSides. Then again,
+    // it's not really an error to call GetLogicalSkipSides on any frame, so
     // that's why we handle it properly.
-    return LogicalSides(mWritingMode, eLogicalSideBitsAll);
+    return LogicalSides(mWritingMode, LogicalSides::All);
   }
   return LogicalSides(mWritingMode);  // first continuation displays all sides
 }

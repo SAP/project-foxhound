@@ -83,6 +83,12 @@ JSObject* Worker::WrapObject(JSContext* aCx,
   return wrapper;
 }
 
+bool Worker::IsEligibleForMessaging() {
+  NS_ASSERT_OWNINGTHREAD(Worker);
+
+  return mWorkerPrivate && mWorkerPrivate->ParentStatusProtected() <= Running;
+}
+
 void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
                          const Sequence<JSObject*>& aTransferable,
                          ErrorResult& aRv) {
@@ -120,7 +126,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
       JS::ProfilingCategoryPair::DOM, flags);
 
   RefPtr<MessageEventRunnable> runnable =
-      new MessageEventRunnable(mWorkerPrivate, WorkerRunnable::WorkerThread);
+      new MessageEventRunnable(mWorkerPrivate);
 
   JS::CloneDataPolicy clonePolicy;
   // DedicatedWorkers are always part of the same agent cluster.
@@ -151,7 +157,7 @@ void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   // The worker could have closed between the time we entered this function and
   // checked ParentStatusProtected and now, which could cause the dispatch to
   // fail.
-  Unused << NS_WARN_IF(!runnable->Dispatch());
+  Unused << NS_WARN_IF(!runnable->Dispatch(mWorkerPrivate));
 }
 
 void Worker::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
@@ -185,7 +191,7 @@ void Worker::PostEventWithOptions(JSContext* aCx,
     return;
   }
 
-  Unused << NS_WARN_IF(!aRunnable->Dispatch());
+  Unused << NS_WARN_IF(!aRunnable->Dispatch(mWorkerPrivate));
 }
 
 void Worker::Terminate() {

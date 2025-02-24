@@ -4,10 +4,8 @@
 ChromeUtils.defineESModuleGetters(this, {
   BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
-  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSERPTelemetry: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   SearchSERPTelemetryUtils: "resource:///modules/SearchSERPTelemetry.sys.mjs",
-  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
@@ -64,10 +62,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "ff",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -81,10 +80,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "ff",
+      source: "unknown",
       is_shopping_page: "true",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -98,10 +98,11 @@ const TESTS = [
       provider: "example",
       tagged: "true",
       partner_code: "tb",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -115,10 +116,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "foo",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -132,10 +134,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "other",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -149,10 +152,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "other",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -166,10 +170,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -183,10 +188,11 @@ const TESTS = [
       provider: "example",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
   {
@@ -200,10 +206,11 @@ const TESTS = [
       provider: "example2",
       tagged: "false",
       partner_code: "",
+      source: "unknown",
       is_shopping_page: "false",
       is_private: "false",
       shopping_tab_displayed: "false",
-      source: "unknown",
+      is_signed_in: "false",
     },
   },
 ];
@@ -259,18 +266,10 @@ async function testAdUrlClicked(serpUrl, adUrl, expectedAdKey) {
 do_get_profile();
 
 add_task(async function setup() {
-  Services.prefs.setBoolPref(
-    SearchUtils.BROWSER_SEARCH_PREF + "serpEventTelemetry.enabled",
-    true
-  );
   Services.fog.initializeFOG();
   await SearchSERPTelemetry.init();
   SearchSERPTelemetry.overrideSearchTelemetryForTests(TEST_PROVIDER_INFO);
   sinon.stub(BrowserSearchTelemetry, "shouldRecordSearchCount").returns(true);
-  // There is no concept of browsing in unit tests, so assume in tests that we
-  // are not in private browsing mode. We have browser tests that check when
-  // private browsing is used.
-  sinon.stub(PrivateBrowsingUtils, "isBrowserPrivate").returns(false);
 });
 
 add_task(async function test_parsing_search_urls() {
@@ -281,6 +280,14 @@ add_task(async function test_parsing_search_urls() {
     }
     let browser = {
       getTabBrowser: () => {},
+      // There is no concept of browsing in unit tests, so assume in tests that we
+      // are not in private browsing mode. We have browser tests that check when
+      // private browsing is used.
+      contentPrincipal: {
+        originAttributes: {
+          privateBrowsingId: 0,
+        },
+      },
     };
     SearchSERPTelemetry.updateTrackingStatus(browser, test.trackingUrl);
     SearchSERPTelemetry.reportPageImpression(

@@ -14,6 +14,8 @@
 
 #include "absl/flags/flag.h"
 #include "absl/functional/any_invocable.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/units/data_rate.h"
 #include "api/units/frequency.h"
@@ -26,6 +28,8 @@
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/strings/string_builder.h"
+#include "test/explicit_key_value_config.h"
+#include "test/field_trial.h"
 #include "test/gtest.h"
 #include "test/test_flags.h"
 #include "test/testsupport/file_utils.h"
@@ -58,6 +62,7 @@ ABSL_FLAG(double,
           30.0,
           "Encode target frame rate of the top temporal layer in fps.");
 ABSL_FLAG(int, num_frames, 300, "Number of frames to encode and/or decode.");
+ABSL_FLAG(std::string, field_trials, "", "Field trials to apply.");
 ABSL_FLAG(std::string, test_name, "", "Test name.");
 ABSL_FLAG(bool, dump_decoder_input, false, "Dump decoder input.");
 ABSL_FLAG(bool, dump_decoder_output, false, "Dump decoder output.");
@@ -178,7 +183,9 @@ std::string TestOutputPath() {
 }  // namespace
 
 std::unique_ptr<VideoCodecStats> RunEncodeDecodeTest(
-    std::string codec_impl,
+    const Environment& env,
+    std::string encoder_impl,
+    std::string decoder_impl,
     const VideoInfo& video_info,
     const std::map<uint32_t, EncodingSettings>& encoding_settings) {
   VideoSourceSettings source_settings{
@@ -190,28 +197,34 @@ std::unique_ptr<VideoCodecStats> RunEncodeDecodeTest(
       encoding_settings.begin()->second.sdp_video_format;
 
   std::unique_ptr<VideoEncoderFactory> encoder_factory =
-      CreateEncoderFactory(codec_impl);
+      CreateEncoderFactory(encoder_impl);
   if (!encoder_factory
            ->QueryCodecSupport(sdp_video_format,
                                /*scalability_mode=*/absl::nullopt)
            .is_supported) {
-    RTC_LOG(LS_WARNING) << "No encoder for video format "
+    RTC_LOG(LS_WARNING) << "No " << encoder_impl << " encoder for video format "
                         << sdp_video_format.ToString();
     return nullptr;
   }
 
   std::unique_ptr<VideoDecoderFactory> decoder_factory =
-      CreateDecoderFactory(codec_impl);
+      CreateDecoderFactory(decoder_impl);
   if (!decoder_factory
            ->QueryCodecSupport(sdp_video_format,
                                /*reference_scaling=*/false)
            .is_supported) {
+    RTC_LOG(LS_WARNING) << "No " << decoder_impl << " decoder for video format "
+                        << sdp_video_format.ToString()
+                        << ". Trying built-in decoder.";
+    // TODO(ssilkin): No H264 support in ffmpeg on ARM. Consider trying HW
+    // decoder.
     decoder_factory = CreateDecoderFactory("builtin");
     if (!decoder_factory
              ->QueryCodecSupport(sdp_video_format,
                                  /*reference_scaling=*/false)
              .is_supported) {
-      RTC_LOG(LS_WARNING) << "No decoder for video format "
+      RTC_LOG(LS_WARNING) << "No " << decoder_impl
+                          << " decoder for video format "
                           << sdp_video_format.ToString();
       return nullptr;
     }
@@ -221,7 +234,7 @@ std::unique_ptr<VideoCodecStats> RunEncodeDecodeTest(
 
   VideoCodecTester::EncoderSettings encoder_settings;
   encoder_settings.pacing_settings.mode =
-      codec_impl == "builtin" ? PacingMode::kNoPacing : PacingMode::kRealTime;
+      encoder_impl == "builtin" ? PacingMode::kNoPacing : PacingMode::kRealTime;
   if (absl::GetFlag(FLAGS_dump_encoder_input)) {
     encoder_settings.encoder_input_base_path = output_path + "_enc_input";
   }
@@ -231,7 +244,7 @@ std::unique_ptr<VideoCodecStats> RunEncodeDecodeTest(
 
   VideoCodecTester::DecoderSettings decoder_settings;
   decoder_settings.pacing_settings.mode =
-      codec_impl == "builtin" ? PacingMode::kNoPacing : PacingMode::kRealTime;
+      decoder_impl == "builtin" ? PacingMode::kNoPacing : PacingMode::kRealTime;
   if (absl::GetFlag(FLAGS_dump_decoder_input)) {
     decoder_settings.decoder_input_base_path = output_path + "_dec_input";
   }
@@ -240,11 +253,12 @@ std::unique_ptr<VideoCodecStats> RunEncodeDecodeTest(
   }
 
   return VideoCodecTester::RunEncodeDecodeTest(
-      source_settings, encoder_factory.get(), decoder_factory.get(),
+      env, source_settings, encoder_factory.get(), decoder_factory.get(),
       encoder_settings, decoder_settings, encoding_settings);
 }
 
 std::unique_ptr<VideoCodecStats> RunEncodeTest(
+    const Environment& env,
     std::string codec_type,
     std::string codec_impl,
     const VideoInfo& video_info,
@@ -279,7 +293,8 @@ std::unique_ptr<VideoCodecStats> RunEncodeTest(
     encoder_settings.encoder_output_base_path = output_path + "_enc_output";
   }
 
-  return VideoCodecTester::RunEncodeTest(source_settings, encoder_factory.get(),
+  return VideoCodecTester::RunEncodeTest(env, source_settings,
+                                         encoder_factory.get(),
                                          encoder_settings, encoding_settings);
 }
 
@@ -306,6 +321,7 @@ class SpatialQualityTest : public ::testing::TestWithParam<std::tuple<
 };
 
 TEST_P(SpatialQualityTest, SpatialQuality) {
+  const Environment env = CreateEnvironment();
   auto [codec_type, codec_impl, video_info, coding_settings] = GetParam();
   auto [width, height, framerate_fps, bitrate_kbps, expected_min_psnr] =
       coding_settings;
@@ -317,8 +333,8 @@ TEST_P(SpatialQualityTest, SpatialQuality) {
           codec_type, /*scalability_mode=*/"L1T1", width, height,
           {bitrate_kbps}, framerate_fps, num_frames);
 
-  std::unique_ptr<VideoCodecStats> stats =
-      RunEncodeDecodeTest(codec_impl, video_info, frames_settings);
+  std::unique_ptr<VideoCodecStats> stats = RunEncodeDecodeTest(
+      env, codec_impl, codec_impl, video_info, frames_settings);
 
   VideoCodecStats::Stream stream;
   if (stats != nullptr) {
@@ -348,15 +364,15 @@ INSTANTIATE_TEST_SUITE_P(
             Values("builtin"),
 #endif
             Values(kRawVideos.at("FourPeople_1280x720_30")),
-            Values(std::make_tuple(320, 180, 30, 32, 28),
-                   std::make_tuple(320, 180, 30, 64, 30),
-                   std::make_tuple(320, 180, 30, 128, 33),
+            Values(std::make_tuple(320, 180, 30, 32, 26),
+                   std::make_tuple(320, 180, 30, 64, 29),
+                   std::make_tuple(320, 180, 30, 128, 32),
                    std::make_tuple(320, 180, 30, 256, 36),
-                   std::make_tuple(640, 360, 30, 128, 31),
+                   std::make_tuple(640, 360, 30, 128, 29),
                    std::make_tuple(640, 360, 30, 256, 33),
                    std::make_tuple(640, 360, 30, 384, 35),
                    std::make_tuple(640, 360, 30, 512, 36),
-                   std::make_tuple(1280, 720, 30, 256, 32),
+                   std::make_tuple(1280, 720, 30, 256, 30),
                    std::make_tuple(1280, 720, 30, 512, 34),
                    std::make_tuple(1280, 720, 30, 1024, 37),
                    std::make_tuple(1280, 720, 30, 2048, 39))),
@@ -380,6 +396,7 @@ class BitrateAdaptationTest
 
 TEST_P(BitrateAdaptationTest, BitrateAdaptation) {
   auto [codec_type, codec_impl, video_info, bitrate_kbps] = GetParam();
+  const Environment env = CreateEnvironment();
 
   int duration_s = 10;  // Duration of fixed rate interval.
   int num_frames =
@@ -403,7 +420,7 @@ TEST_P(BitrateAdaptationTest, BitrateAdaptation) {
   encoding_settings.merge(encoding_settings2);
 
   std::unique_ptr<VideoCodecStats> stats =
-      RunEncodeTest(codec_type, codec_impl, video_info, encoding_settings);
+      RunEncodeTest(env, codec_type, codec_impl, video_info, encoding_settings);
 
   VideoCodecStats::Stream stream;
   if (stats != nullptr) {
@@ -458,6 +475,7 @@ class FramerateAdaptationTest
 
 TEST_P(FramerateAdaptationTest, FramerateAdaptation) {
   auto [codec_type, codec_impl, video_info, framerate_fps] = GetParam();
+  const Environment env = CreateEnvironment();
 
   int duration_s = 10;  // Duration of fixed rate interval.
 
@@ -483,7 +501,7 @@ TEST_P(FramerateAdaptationTest, FramerateAdaptation) {
   encoding_settings.merge(encoding_settings2);
 
   std::unique_ptr<VideoCodecStats> stats =
-      RunEncodeTest(codec_type, codec_impl, video_info, encoding_settings);
+      RunEncodeTest(env, codec_type, codec_impl, video_info, encoding_settings);
 
   VideoCodecStats::Stream stream;
   if (stats != nullptr) {
@@ -520,6 +538,11 @@ INSTANTIATE_TEST_SUITE_P(
     FramerateAdaptationTest::TestParamsToString);
 
 TEST(VideoCodecTest, DISABLED_EncodeDecode) {
+  ScopedFieldTrials field_trials(absl::GetFlag(FLAGS_field_trials));
+  const Environment env =
+      CreateEnvironment(std::make_unique<ExplicitKeyValueConfig>(
+          absl::GetFlag(FLAGS_field_trials)));
+
   std::vector<std::string> bitrate_str = absl::GetFlag(FLAGS_bitrate_kbps);
   std::vector<int> bitrate_kbps;
   std::transform(bitrate_str.begin(), bitrate_str.end(),
@@ -537,7 +560,8 @@ TEST(VideoCodecTest, DISABLED_EncodeDecode) {
   // logged test name (implies lossing history in the chromeperf dashboard).
   // Sync with changes in Stream::LogMetrics (see TODOs there).
   std::unique_ptr<VideoCodecStats> stats = RunEncodeDecodeTest(
-      CodecNameToCodecImpl(absl::GetFlag(FLAGS_encoder)),
+      env, CodecNameToCodecImpl(absl::GetFlag(FLAGS_encoder)),
+      CodecNameToCodecImpl(absl::GetFlag(FLAGS_decoder)),
       kRawVideos.at(absl::GetFlag(FLAGS_video_name)), frames_settings);
   ASSERT_NE(nullptr, stats);
 

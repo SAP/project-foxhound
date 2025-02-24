@@ -591,12 +591,6 @@ export const TabsSetupFlowManager = new (class {
       );
     this.didFxaTabOpen = true;
     openTabInWindow(window, url, true);
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "fxa_continue",
-      "sync",
-      null
-    );
   }
 
   async openFxAPairDevice(window) {
@@ -605,18 +599,9 @@ export const TabsSetupFlowManager = new (class {
     });
     this.didFxaTabOpen = true;
     openTabInWindow(window, url, true);
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "fxa_mobile",
-      "sync",
-      null,
-      {
-        has_devices: this.secondaryDeviceConnected.toString(),
-      }
-    );
   }
 
-  syncOpenTabs(containerElem) {
+  syncOpenTabs() {
     // Flip the pref on.
     // The observer should trigger re-evaluating state and advance to next step
     Services.prefs.setBoolPref(SYNC_TABS_PREF, true);

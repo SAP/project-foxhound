@@ -161,11 +161,13 @@ class CookieJarSettings final : public nsICookieJarSettings {
 
   void UpdateIsOnContentBlockingAllowList(nsIChannel* aChannel);
 
-  void SetPartitionKey(nsIURI* aURI);
+  void SetPartitionKey(nsIURI* aURI, bool aForeignByAncestorContext);
   void SetPartitionKey(const nsAString& aPartitionKey) {
     mPartitionKey = aPartitionKey;
   }
   const nsAString& GetPartitionKey() { return mPartitionKey; };
+
+  void UpdatePartitionKeyForDocumentLoadedByChannel(nsIChannel* aChannel);
 
   void SetFingerprintingRandomizationKey(const nsTArray<uint8_t>& aKey) {
     mFingerprintingRandomKey.reset();
@@ -178,6 +180,11 @@ class CookieJarSettings final : public nsICookieJarSettings {
   // BEHAVIOR_REJECT_FOREIGN when
   // network.cookie.rejectForeignWithExceptions.enabled pref is set to true.
   static bool IsRejectThirdPartyContexts(uint32_t aCookieBehavior);
+
+  void SetTopLevelWindowContextId(uint64_t aId) {
+    mTopLevelWindowContextId = aId;
+  }
+  uint64_t GetTopLevelWindowContextId() { return mTopLevelWindowContextId; }
 
  private:
   enum State {
@@ -259,6 +266,10 @@ class CookieJarSettings final : public nsICookieJarSettings {
   // browsing session changes. This can prevent trackers to identify individuals
   // by using browser fingerprints.
   Maybe<nsTArray<uint8_t>> mFingerprintingRandomKey;
+
+  // This field caches the top level window context id when loading the top
+  // level document.
+  uint64_t mTopLevelWindowContextId;
 };
 
 }  // namespace net

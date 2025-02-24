@@ -9,6 +9,8 @@
 
 #include <queue>
 
+#include "SimpleMap.h"
+#include "WebCodecsUtils.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/DecoderAgent.h"
 #include "mozilla/MozPromise.h"
@@ -18,7 +20,6 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/media/MediaUtils.h"
 #include "nsStringFwd.h"
-#include "WebCodecsUtils.h"
 
 namespace mozilla {
 
@@ -48,56 +49,63 @@ class DecoderTemplate : public DOMEventTargetHelper {
 
   class ControlMessage {
    public:
-    explicit ControlMessage(const nsACString& aTitle);
+    ControlMessage(WebCodecsId aConfigId) : mConfigId(aConfigId) {};
     virtual ~ControlMessage() = default;
     virtual void Cancel() = 0;
     virtual bool IsProcessing() = 0;
 
-    virtual const nsCString& ToString() const { return mTitle; }
+    virtual nsCString ToString() const = 0;
     virtual ConfigureMessage* AsConfigureMessage() { return nullptr; }
     virtual DecodeMessage* AsDecodeMessage() { return nullptr; }
     virtual FlushMessage* AsFlushMessage() { return nullptr; }
 
-    const nsCString mTitle;  // Used to identify the message in the logs.
+    // All the control message follows a specific configuration. Knowing the
+    // associated configuration of a decode/flush request is helpful in
+    // debugging logs. This id is used to identify which ConfigureMessage the
+    // request follows.
+    const WebCodecsId mConfigId;
   };
 
   class ConfigureMessage final
       : public ControlMessage,
         public MessageRequestHolder<DecoderAgent::ConfigurePromise> {
    public:
-    using Id = DecoderAgent::Id;
-    static constexpr Id NoId = 0;
-    static ConfigureMessage* Create(UniquePtr<ConfigTypeInternal>&& aConfig);
+    static ConfigureMessage* Create(
+        already_AddRefed<ConfigTypeInternal> aConfig);
 
     ~ConfigureMessage() = default;
     virtual void Cancel() override { Disconnect(); }
     virtual bool IsProcessing() override { return Exists(); };
+    virtual nsCString ToString() const override;
     virtual ConfigureMessage* AsConfigureMessage() override { return this; }
     const ConfigTypeInternal& Config() { return *mConfig; }
-    UniquePtr<ConfigTypeInternal> TakeConfig() { return std::move(mConfig); }
-
-    const Id mId;  // A unique id shown in log.
+    already_AddRefed<ConfigTypeInternal> TakeConfig() {
+      return mConfig.forget();
+    }
 
    private:
-    ConfigureMessage(Id aId, UniquePtr<ConfigTypeInternal>&& aConfig);
+    ConfigureMessage(WebCodecsId aConfigId,
+                     already_AddRefed<ConfigTypeInternal> aConfig);
 
-    UniquePtr<ConfigTypeInternal> mConfig;
+    RefPtr<ConfigTypeInternal> mConfig;
+    const nsCString mCodec;
   };
 
   class DecodeMessage final
       : public ControlMessage,
         public MessageRequestHolder<DecoderAgent::DecodePromise> {
    public:
-    using Id = size_t;
-    using ConfigId = typename Self::ConfigureMessage::Id;
-    DecodeMessage(Id aId, ConfigId aConfigId,
+    DecodeMessage(WebCodecsId aSeqId, WebCodecsId aConfigId,
                   UniquePtr<InputTypeInternal>&& aData);
     ~DecodeMessage() = default;
     virtual void Cancel() override { Disconnect(); }
     virtual bool IsProcessing() override { return Exists(); };
+    virtual nsCString ToString() const override;
     virtual DecodeMessage* AsDecodeMessage() override { return this; }
-    const Id mId;  // A unique id shown in log.
 
+    // The sequence id of a decode request associated with a specific
+    // configuration.
+    const WebCodecsId mSeqId;
     UniquePtr<InputTypeInternal> mData;
   };
 
@@ -105,20 +113,17 @@ class DecoderTemplate : public DOMEventTargetHelper {
       : public ControlMessage,
         public MessageRequestHolder<DecoderAgent::DecodePromise> {
    public:
-    using Id = size_t;
-    using ConfigId = typename Self::ConfigureMessage::Id;
-    FlushMessage(Id aId, ConfigId aConfigId, Promise* aPromise);
+    FlushMessage(WebCodecsId aSeqId, WebCodecsId aConfigId);
     ~FlushMessage() = default;
     virtual void Cancel() override { Disconnect(); }
     virtual bool IsProcessing() override { return Exists(); };
+    virtual nsCString ToString() const override;
     virtual FlushMessage* AsFlushMessage() override { return this; }
-    already_AddRefed<Promise> TakePromise() { return mPromise.forget(); }
-    void RejectPromiseIfAny(const nsresult& aReason);
 
-    const Id mId;  // A unique id shown in log.
-
-   private:
-    RefPtr<Promise> mPromise;
+    // The sequence id of a flush request associated with a specific
+    // configuration.
+    const WebCodecsId mSeqId;
+    const int64_t mUniqueId;
   };
 
  protected:
@@ -153,7 +158,7 @@ class DecoderTemplate : public DOMEventTargetHelper {
       const ConfigTypeInternal& aConfig) = 0;
   virtual nsTArray<RefPtr<OutputType>> DecodedDataToOutputType(
       nsIGlobalObject* aGlobalObject, const nsTArray<RefPtr<MediaData>>&& aData,
-      ConfigTypeInternal& aConfig) = 0;
+      const ConfigTypeInternal& aConfig) = 0;
 
  protected:
   // DecoderTemplate can run on either main thread or worker thread.
@@ -170,13 +175,14 @@ class DecoderTemplate : public DOMEventTargetHelper {
 
   MOZ_CAN_RUN_SCRIPT void ReportError(const nsresult& aResult);
   MOZ_CAN_RUN_SCRIPT void OutputDecodedData(
-      const nsTArray<RefPtr<MediaData>>&& aData);
+      const nsTArray<RefPtr<MediaData>>&& aData,
+      const ConfigTypeInternal& aConfig);
 
   void ScheduleDequeueEventIfNeeded();
   nsresult FireEvent(nsAtom* aTypeWithOn, const nsAString& aEventType);
 
   void ProcessControlMessageQueue();
-  void CancelPendingControlMessages(const nsresult& aResult);
+  void CancelPendingControlMessagesAndFlushPromises(const nsresult& aResult);
 
   // Queue a task to the control thread. This is to be used when a task needs to
   // perform multiple steps.
@@ -194,7 +200,7 @@ class DecoderTemplate : public DOMEventTargetHelper {
 
   // Returns true when mAgent can be created.
   bool CreateDecoderAgent(DecoderAgent::Id aId,
-                          UniquePtr<ConfigTypeInternal>&& aConfig,
+                          already_AddRefed<ConfigTypeInternal> aConfig,
                           UniquePtr<TrackInfo>&& aInfo);
   void DestroyDecoderAgentIfAny();
 
@@ -209,6 +215,11 @@ class DecoderTemplate : public DOMEventTargetHelper {
   std::queue<UniquePtr<ControlMessage>> mControlMessageQueue;
   UniquePtr<ControlMessage> mProcessingMessage;
 
+  // When a flush request is initiated, a promise is created and stored in
+  // mPendingFlushPromises until it is settled in the task delivering the flush
+  // result or Reset() is called before the promise is settled.
+  SimpleMap<int64_t, RefPtr<Promise>> mPendingFlushPromises;
+
   uint32_t mDecodeQueueSize;
   bool mDequeueEventScheduled;
 
@@ -216,17 +227,17 @@ class DecoderTemplate : public DOMEventTargetHelper {
   // DecoderAgent's Id.
   uint32_t mLatestConfigureId;
   // Tracking how many decode data has been enqueued and this number will be
-  // used as the DecodeMessage's Id.
+  // used as the DecodeMessage's sequence Id.
   size_t mDecodeCounter;
   // Tracking how many flush request has been enqueued and this number will be
-  // used as the FlushMessage's Id.
+  // used as the FlushMessage's sequence Id.
   size_t mFlushCounter;
 
   // DecoderAgent will be created every time "configure" is being processed, and
   // will be destroyed when "reset" or another "configure" is called (spec
   // allows calling two "configure" without a "reset" in between).
   RefPtr<DecoderAgent> mAgent;
-  UniquePtr<ConfigTypeInternal> mActiveConfig;
+  RefPtr<ConfigTypeInternal> mActiveConfig;
 
   // Used to add a nsIAsyncShutdownBlocker on main thread to block
   // xpcom-shutdown before the underlying MediaDataDecoder is created. The

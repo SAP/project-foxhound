@@ -20,6 +20,11 @@ import jsonschema  # type: ignore
 from jsonschema import _utils  # type: ignore
 import yaml
 
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader  # type: ignore
+
 
 def date_fromisoformat(datestr: str) -> datetime.date:
     return datetime.date.fromisoformat(datestr)
@@ -44,7 +49,7 @@ class DictWrapper(dict):
     pass
 
 
-class _NoDatesSafeLoader(yaml.SafeLoader):
+class _NoDatesSafeLoader(SafeLoader):
     @classmethod
     def remove_implicit_resolver(cls, tag_to_remove):
         """
@@ -401,7 +406,7 @@ def is_expired(expires: str, major_version: Optional[int] = None) -> bool:
         return parse_expiration_version(expires) <= major_version
     else:
         date = parse_expiration_date(expires)
-        return date <= datetime.datetime.utcnow().date()
+        return date <= datetime.datetime.now(datetime.timezone.utc).date()
 
 
 def validate_expires(expires: str, major_version: Optional[int] = None) -> None:
@@ -453,7 +458,7 @@ def build_date(date: Optional[str]) -> datetime.datetime:
         else:
             ts = datetime_fromisoformat(date).replace(tzinfo=datetime.timezone.utc)
     else:
-        ts = datetime.datetime.utcnow()
+        ts = datetime.datetime.now(datetime.timezone.utc)
 
     return ts
 
@@ -526,6 +531,8 @@ ping_args = [
     "send_if_empty",
     "precise_timestamps",
     "include_info_sections",
+    "enabled",
+    "schedules_pings",
     "reason_codes",
 ]
 

@@ -368,7 +368,7 @@ nsBaseDragService::InvokeDragSession(
       nsCOMPtr<nsITransferable> trans =
           do_CreateInstance("@mozilla.org/widget/transferable;1");
       trans->Init(nullptr);
-      trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
+      trans->SetDataPrincipal(mSourceNode->NodePrincipal());
       trans->SetContentPolicyType(mContentPolicyType);
       trans->SetCookieJarSettings(aCookieJarSettings);
       mutableArray->AppendElement(trans);
@@ -378,8 +378,8 @@ nsBaseDragService::InvokeDragSession(
       nsCOMPtr<nsITransferable> trans =
           do_QueryElementAt(aTransferableArray, i);
       if (trans) {
-        // Set the requestingPrincipal on the transferable.
-        trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
+        // Set the dataPrincipal on the transferable.
+        trans->SetDataPrincipal(mSourceNode->NodePrincipal());
         trans->SetContentPolicyType(mContentPolicyType);
         trans->SetCookieJarSettings(aCookieJarSettings);
       }
@@ -423,7 +423,7 @@ nsBaseDragService::InvokeDragSessionWithImage(
       mSourceWindowContext ? mSourceWindowContext->TopWindowContext() : nullptr;
 
   mScreenPosition = aDragEvent->ScreenPoint(CallerType::System);
-  mInputSource = aDragEvent->InputSource();
+  mInputSource = aDragEvent->InputSource(CallerType::System);
 
   // If dragging within a XUL tree and no custom drag image was
   // set, the region argument to InvokeDragSessionWithImage needs
@@ -472,7 +472,7 @@ nsBaseDragService::InvokeDragSessionWithRemoteImage(
   mSourceTopWindowContext = mDragStartData->GetSourceTopWindowContext();
 
   mScreenPosition = aDragEvent->ScreenPoint(CallerType::System);
-  mInputSource = aDragEvent->InputSource();
+  mInputSource = aDragEvent->InputSource(CallerType::System);
 
   nsresult rv = InvokeDragSession(
       aDOMNode, aPrincipal, aCsp, aCookieJarSettings, aTransferableArray,
@@ -504,7 +504,7 @@ nsBaseDragService::InvokeDragSessionWithSelection(
 
   mScreenPosition.x = aDragEvent->ScreenX(CallerType::System);
   mScreenPosition.y = aDragEvent->ScreenY(CallerType::System);
-  mInputSource = aDragEvent->InputSource();
+  mInputSource = aDragEvent->InputSource(CallerType::System);
 
   // just get the focused node from the selection
   // XXXndeakin this should actually be the deepest node that contains both
@@ -742,7 +742,7 @@ static PresShell* GetPresShellForContent(nsINode* aDOMNode) {
 
   RefPtr<Document> document = content->GetComposedDoc();
   if (document) {
-    document->FlushPendingNotifications(FlushType::Display);
+    document->FlushPendingNotifications(FlushType::Layout);
     return document->GetPresShell();
   }
 

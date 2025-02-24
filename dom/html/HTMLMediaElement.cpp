@@ -323,7 +323,7 @@ class HTMLMediaElement::MediaControlKeyListener final
 
   MOZ_INIT_OUTSIDE_CTOR explicit MediaControlKeyListener(
       HTMLMediaElement* aElement)
-      : mElement(aElement) {
+      : mElement(aElement), mElementId(nsID::GenerateUUID()) {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(aElement);
   }
@@ -416,6 +416,33 @@ class HTMLMediaElement::MediaControlKeyListener final
     }
   }
 
+  void NotifyMediaPositionState() {
+    if (!IsStarted()) {
+      return;
+    }
+
+    MOZ_ASSERT(mControlAgent);
+    auto* owner = Owner();
+    PositionState state(owner->Duration(), owner->PlaybackRate(),
+                        owner->CurrentTime(), TimeStamp::Now());
+    MEDIACONTROL_LOG(
+        "Notify media position state (duration=%f, playbackRate=%f, "
+        "position=%f)",
+        state.mDuration, state.mPlaybackRate,
+        state.mLastReportedPlaybackPosition);
+    mControlAgent->UpdateGuessedPositionState(mOwnerBrowsingContextId,
+                                              mElementId, Some(state));
+  }
+
+  void Shutdown() {
+    StopIfNeeded();
+    if (!mControlAgent) {
+      return;
+    }
+    mControlAgent->UpdateGuessedPositionState(mOwnerBrowsingContextId,
+                                              mElementId, Nothing());
+  }
+
   // This method can be called before the listener starts, which would cache
   // the audible state and update after the listener starts.
   void UpdateMediaAudibleState(bool aIsOwnerAudible) {
@@ -459,7 +486,7 @@ class HTMLMediaElement::MediaControlKeyListener final
   void HandleMediaKey(MediaControlKey aKey) override {
     MOZ_ASSERT(NS_IsMainThread());
     MOZ_ASSERT(IsStarted());
-    MEDIACONTROL_LOG("HandleEvent '%s'", ToMediaControlKeyStr(aKey));
+    MEDIACONTROL_LOG("HandleEvent '%s'", GetEnumString(aKey).get());
     if (aKey == MediaControlKey::Play) {
       Owner()->Play();
     } else if (aKey == MediaControlKey::Pause) {
@@ -548,6 +575,10 @@ class HTMLMediaElement::MediaControlKeyListener final
     MOZ_ASSERT(mState != aState, "Should not notify same state again!");
     mState = aState;
     mControlAgent->NotifyMediaPlaybackChanged(mOwnerBrowsingContextId, mState);
+
+    if (aState == MediaPlaybackState::ePlayed) {
+      NotifyMediaPositionState();
+    }
   }
 
   void NotifyAudibleStateChanged(MediaAudibleState aState) {
@@ -562,6 +593,7 @@ class HTMLMediaElement::MediaControlKeyListener final
   bool mIsPictureInPictureEnabled = false;
   bool mIsOwnerAudible = false;
   MOZ_INIT_OUTSIDE_CTOR uint64_t mOwnerBrowsingContextId;
+  const nsID mElementId;
 };
 
 class HTMLMediaElement::MediaStreamTrackListener
@@ -569,6 +601,10 @@ class HTMLMediaElement::MediaStreamTrackListener
  public:
   explicit MediaStreamTrackListener(HTMLMediaElement* aElement)
       : mElement(aElement) {}
+
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(MediaStreamTrackListener,
+                                           DOMMediaStream::TrackListener)
 
   void NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) override {
     if (!mElement) {
@@ -683,16 +719,26 @@ class HTMLMediaElement::MediaStreamTrackListener
   }
 
  protected:
-  const WeakPtr<HTMLMediaElement> mElement;
+  virtual ~MediaStreamTrackListener() = default;
+  RefPtr<HTMLMediaElement> mElement;
 };
+
+NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLMediaElement::MediaStreamTrackListener,
+                                   DOMMediaStream::TrackListener, mElement)
+NS_IMPL_ADDREF_INHERITED(HTMLMediaElement::MediaStreamTrackListener,
+                         DOMMediaStream::TrackListener)
+NS_IMPL_RELEASE_INHERITED(HTMLMediaElement::MediaStreamTrackListener,
+                          DOMMediaStream::TrackListener)
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(
+    HTMLMediaElement::MediaStreamTrackListener)
+NS_INTERFACE_MAP_END_INHERITING(DOMMediaStream::TrackListener)
 
 /**
  * Helper class that manages audio and video outputs for all enabled tracks in a
  * media element. It also manages calculating the current time when playing a
  * MediaStream.
  */
-class HTMLMediaElement::MediaStreamRenderer
-    : public DOMMediaStream::TrackListener {
+class HTMLMediaElement::MediaStreamRenderer {
  public:
   NS_INLINE_DECL_REFCOUNTING(MediaStreamRenderer)
 
@@ -985,7 +1031,7 @@ class HTMLMediaElement::MediaStreamRenderer
         graph->CreateSourceTrack(MediaSegment::AUDIO));
   }
 
-  void ResolveAudioDevicePromiseIfExists(const char* aMethodName) {
+  void ResolveAudioDevicePromiseIfExists(StaticString aMethodName) {
     if (mSetAudioDevicePromise.IsEmpty()) {
       return;
     }
@@ -1978,6 +2024,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLMediaElement)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLMediaElement,
                                                   nsGenericHTMLElement)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStreamWindowCapturer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaSource)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSrcMediaSource)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSrcStream)
@@ -1993,6 +2040,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(HTMLMediaElement,
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mTextTrackManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAudioTrackList)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVideoTrackList)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaStreamTrackListener)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeys)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIncomingMediaKeys)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSelectedVideoStreamTrack)
@@ -2027,6 +2075,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLMediaElement,
           tmp->mMediaStreamTrackListener.get());
     }
   }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mStreamWindowCapturer)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSrcStream)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSrcAttrStream)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMediaSource)
@@ -2045,6 +2094,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLMediaElement,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mTextTrackManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mAudioTrackList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVideoTrackList)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mMediaStreamTrackListener)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mMediaKeys)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIncomingMediaKeys)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSelectedVideoStreamTrack)
@@ -2052,7 +2102,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(HTMLMediaElement,
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSeekDOMPromise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSetMediaKeysDOMPromise)
   if (tmp->mMediaControlKeyListener) {
-    tmp->mMediaControlKeyListener->StopIfNeeded();
+    tmp->mMediaControlKeyListener->Shutdown();
   }
   if (tmp->mEventBlocker) {
     tmp->mEventBlocker->Shutdown();
@@ -3371,6 +3421,8 @@ void HTMLMediaElement::Seek(double aTime, SeekTarget::Type aSeekType,
 
   // We changed whether we're seeking so we need to AddRemoveSelfReference.
   AddRemoveSelfReference();
+
+  mMediaControlKeyListener->NotifyMediaPositionState();
 }
 
 double HTMLMediaElement::Duration() const {
@@ -4791,10 +4843,9 @@ void HTMLMediaElement::DoneCreatingElement() {
   }
 }
 
-bool HTMLMediaElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
-                                       int32_t* aTabIndex) {
-  if (nsGenericHTMLElement::IsHTMLFocusable(aWithMouse, aIsFocusable,
-                                            aTabIndex)) {
+bool HTMLMediaElement::IsHTMLFocusable(IsFocusableFlags aFlags,
+                                       bool* aIsFocusable, int32_t* aTabIndex) {
+  if (nsGenericHTMLElement::IsHTMLFocusable(aFlags, aIsFocusable, aTabIndex)) {
     return true;
   }
 
@@ -5284,7 +5335,7 @@ void HTMLMediaElement::SetupSrcMediaStreamPlayback(DOMMediaStream* aStream) {
     NotifyMediaStreamTrackAdded(track);
   }
 
-  mMediaStreamTrackListener = MakeUnique<MediaStreamTrackListener>(this);
+  mMediaStreamTrackListener = new MediaStreamTrackListener(this);
   mSrcStream->RegisterTrackListener(mMediaStreamTrackListener.get());
 
   ChangeNetworkState(NETWORK_IDLE);
@@ -6241,7 +6292,8 @@ VideoFrameContainer* HTMLMediaElement::GetVideoFrameContainer() {
   }
 
   mVideoFrameContainer = new VideoFrameContainer(
-      this, MakeAndAddRef<ImageContainer>(ImageContainer::ASYNCHRONOUS));
+      this, MakeAndAddRef<ImageContainer>(ImageUsageType::VideoFrameContainer,
+                                          ImageContainer::ASYNCHRONOUS));
 
   return mVideoFrameContainer;
 }
@@ -6867,6 +6919,7 @@ void HTMLMediaElement::SetPlaybackRate(double aPlaybackRate, ErrorResult& aRv) {
     mDecoder->SetPlaybackRate(ClampPlaybackRate(mPlaybackRate));
   }
   DispatchAsyncEvent(u"ratechange"_ns);
+  mMediaControlKeyListener->NotifyMediaPositionState();
 }
 
 void HTMLMediaElement::SetPreservesPitch(bool aPreservesPitch) {
@@ -7361,7 +7414,9 @@ void HTMLMediaElement::AudioCaptureTrackChange(bool aCapture) {
         CaptureStreamInternal(StreamCaptureBehavior::CONTINUE_WHEN_ENDED,
                               StreamCaptureType::CAPTURE_AUDIO, mtg);
     mStreamWindowCapturer =
-        MakeUnique<MediaStreamWindowCapturer>(stream, window->WindowID());
+        new MediaStreamWindowCapturer(stream, window->WindowID());
+    mStreamWindowCapturer->mStream->RegisterTrackListener(
+        mStreamWindowCapturer);
   } else if (!aCapture && mStreamWindowCapturer) {
     for (size_t i = 0; i < mOutputStreams.Length(); i++) {
       if (mOutputStreams[i].mStream == mStreamWindowCapturer->mStream) {
@@ -7375,6 +7430,9 @@ void HTMLMediaElement::AudioCaptureTrackChange(bool aCapture) {
         break;
       }
     }
+
+    mStreamWindowCapturer->mStream->UnregisterTrackListener(
+        mStreamWindowCapturer);
     mStreamWindowCapturer = nullptr;
     if (mOutputStreams.IsEmpty()) {
       mTracksCaptured = nullptr;

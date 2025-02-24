@@ -14,6 +14,7 @@
 #include "mozilla/Variant.h"
 
 #include "js/AllocPolicy.h"
+#include "js/HelperThreadAPI.h"
 #include "js/shadow/Zone.h"
 #include "js/UniquePtr.h"
 #include "js/Vector.h"
@@ -68,20 +69,41 @@ using UniqueTier2GeneratorTask = UniquePtr<Tier2GeneratorTask>;
  */
 extern Mutex gHelperThreadLock MOZ_UNANNOTATED;
 
-class MOZ_RAII AutoLockHelperThreadState : public LockGuard<Mutex> {
-  using Base = LockGuard<Mutex>;
-
+// Set of tasks to dispatch when the helper thread state lock is released.
+class AutoHelperTaskQueue {
  public:
-  explicit AutoLockHelperThreadState() : Base(gHelperThreadLock) {}
+  ~AutoHelperTaskQueue() { dispatchQueuedTasks(); }
+  bool hasQueuedTasks() const { return !tasksToDispatch.empty(); }
+  void queueTaskToDispatch(JS::HelperThreadTask* task) const;
+  void dispatchQueuedTasks();
+
+ private:
+  // TODO: Convert this to use a linked list.
+  mutable Vector<JS::HelperThreadTask*, 1, SystemAllocPolicy> tasksToDispatch;
 };
 
-class MOZ_RAII AutoUnlockHelperThreadState : public UnlockGuard<Mutex> {
-  using Base = UnlockGuard<Mutex>;
-
+// A lock guard for data protected by the helper thread lock.
+//
+// This can also queue helper thread tasks to be triggered when the lock is
+// released.
+class MOZ_RAII AutoLockHelperThreadState
+    : public AutoHelperTaskQueue,  // Must come before LockGuard.
+      public LockGuard<Mutex> {
  public:
-  explicit AutoUnlockHelperThreadState(AutoLockHelperThreadState& locked)
-      : Base(locked) {}
+  AutoLockHelperThreadState() : LockGuard<Mutex>(gHelperThreadLock) {}
+  AutoLockHelperThreadState(const AutoLockHelperThreadState&) = delete;
+
+ private:
+  friend class UnlockGuard<AutoLockHelperThreadState>;
+  void unlock() {
+    LockGuard<Mutex>::unlock();
+    dispatchQueuedTasks();
+  }
+
+  friend class GlobalHelperThreadState;
 };
+
+using AutoUnlockHelperThreadState = UnlockGuard<AutoLockHelperThreadState>;
 
 // Create data structures used by helper threads.
 bool CreateHelperThreadsState();

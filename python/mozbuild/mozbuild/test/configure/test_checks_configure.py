@@ -592,7 +592,7 @@ class TestChecksConfigure(unittest.TestCase):
         javac = mozpath.abspath("/usr/bin/javac")
         paths = {java: None, javac: None}
         expected_error_message = (
-            "ERROR: Could not locate Java at /mozbuild/jdk/jdk-17.0.10+7/bin, "
+            "ERROR: Could not locate Java at /mozbuild/jdk/jdk-17.0.11+9/bin, "
             "please run ./mach bootstrap --no-system-changes\n"
         )
 
@@ -730,7 +730,7 @@ class TestChecksConfigure(unittest.TestCase):
                 toolchain_prefix = depends(when=True)(lambda: None)
                 target_multiarch_dir = depends(when=True)(lambda: None)
                 target_sysroot = depends(when=True)(lambda: %(sysroot)s)
-                target = depends(when=True)(lambda: None)
+                target = depends(when=True)(lambda: namespace(os="unknown"))
                 include('%(topsrcdir)s/build/moz.configure/util.configure')
                 include('%(topsrcdir)s/build/moz.configure/checks.configure')
                 # Skip bootstrapping.

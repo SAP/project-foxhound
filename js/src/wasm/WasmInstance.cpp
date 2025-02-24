@@ -53,11 +53,13 @@
 #include "wasm/WasmCode.h"
 #include "wasm/WasmDebug.h"
 #include "wasm/WasmDebugFrame.h"
+#include "wasm/WasmFeatures.h"
 #include "wasm/WasmInitExpr.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmMemory.h"
 #include "wasm/WasmModule.h"
 #include "wasm/WasmModuleTypes.h"
+#include "wasm/WasmPI.h"
 #include "wasm/WasmStubs.h"
 #include "wasm/WasmTypeDef.h"
 #include "wasm/WasmValType.h"
@@ -307,6 +309,13 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
     return true;
   }
 
+#ifdef ENABLE_WASM_JSPI
+  // Disable jit exit optimization when JSPI is enabled.
+  if (JSPromiseIntegrationAvailable(cx)) {
+    return true;
+  }
+#endif
+
   // The import may already have become optimized.
   for (auto t : code().tiers()) {
     void* jitExitCode = codeBase(t) + fi.jitExitCodeOffset();
@@ -346,6 +355,11 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
 Instance::callImport_general(Instance* instance, int32_t funcImportIndex,
                              int32_t argc, uint64_t* argv) {
   JSContext* cx = instance->cx();
+#ifdef ENABLE_WASM_JSPI
+  if (IsSuspendableStackActive(cx)) {
+    return CallImportOnMainThread(cx, instance, funcImportIndex, argc, argv);
+  }
+#endif
   return instance->callImport(cx, funcImportIndex, argc, argv);
 }
 
@@ -2373,6 +2387,23 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
   Tier callerTier = code_->bestTier();
   for (size_t i = 0; i < metadata(callerTier).funcImports.length(); i++) {
     JSObject* f = funcImports[i];
+
+#ifdef ENABLE_WASM_JSPI
+    if (JSObject* suspendingObject = MaybeUnwrapSuspendingObject(f)) {
+      // Compile suspending function Wasm wrapper.
+      const FuncImport& fi = metadata(callerTier).funcImports[i];
+      const FuncType& funcType = metadata().getFuncImportType(fi);
+      RootedObject wrapped(cx, suspendingObject);
+      RootedFunction wrapper(
+          cx, WasmSuspendingFunctionCreate(cx, wrapped, funcType));
+      if (!wrapper) {
+        return false;
+      }
+      MOZ_ASSERT(IsWasmExportedFunction(wrapper));
+      f = wrapper;
+    }
+#endif
+
     MOZ_ASSERT(f->isCallable());
     const FuncImport& fi = metadata(callerTier).funcImports[i];
     const FuncType& funcType = metadata().getFuncImportType(fi);
@@ -2617,7 +2648,25 @@ bool Instance::isInterrupted() const {
 
 void Instance::resetInterrupt(JSContext* cx) {
   interrupt_ = false;
+#ifdef ENABLE_WASM_JSPI
+  if (cx->wasm().suspendableStackLimit != JS::NativeStackLimitMin) {
+    stackLimit_ = cx->wasm().suspendableStackLimit;
+    return;
+  }
+#endif
   stackLimit_ = cx->stackLimitForJitCode(JS::StackForUntrustedScript);
+}
+
+void Instance::setTemporaryStackLimit(JS::NativeStackLimit limit) {
+  if (!isInterrupted()) {
+    stackLimit_ = limit;
+  }
+}
+
+void Instance::resetTemporaryStackLimit(JSContext* cx) {
+  if (!isInterrupted()) {
+    stackLimit_ = cx->stackLimitForJitCode(JS::StackForUntrustedScript);
+  }
 }
 
 bool Instance::debugFilter(uint32_t funcIndex) const {
@@ -2937,7 +2986,8 @@ static bool EnsureEntryStubs(const Instance& instance, uint32_t funcIndex,
 }
 
 static bool GetInterpEntryAndEnsureStubs(JSContext* cx, Instance& instance,
-                                         uint32_t funcIndex, CallArgs args,
+                                         uint32_t funcIndex,
+                                         const CallArgs& args,
                                          void** interpEntry,
                                          const FuncType** funcType) {
   const FuncExport* funcExport;
@@ -3099,8 +3149,8 @@ class MOZ_RAII ReturnToJSResultCollector {
   }
 };
 
-bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args,
-                          CoercionLevel level) {
+bool Instance::callExport(JSContext* cx, uint32_t funcIndex,
+                          const CallArgs& args, CoercionLevel level) {
   if (memory0Base_) {
     // If there has been a moving grow, this Instance should have been notified.
     MOZ_RELEASE_ASSERT(memoryBase(0).unwrap() == memory0Base_);

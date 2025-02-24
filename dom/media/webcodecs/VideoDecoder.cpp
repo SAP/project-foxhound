@@ -96,7 +96,7 @@ VideoColorSpaceInit VideoColorSpaceInternal::ToColorSpaceInit() const {
 VideoDecoderConfigInternal::VideoDecoderConfigInternal(
     const nsAString& aCodec, Maybe<uint32_t>&& aCodedHeight,
     Maybe<uint32_t>&& aCodedWidth, Maybe<VideoColorSpaceInternal>&& aColorSpace,
-    Maybe<RefPtr<MediaByteBuffer>>&& aDescription,
+    already_AddRefed<MediaByteBuffer> aDescription,
     Maybe<uint32_t>&& aDisplayAspectHeight,
     Maybe<uint32_t>&& aDisplayAspectWidth,
     const HardwareAcceleration& aHardwareAcceleration,
@@ -105,14 +105,14 @@ VideoDecoderConfigInternal::VideoDecoderConfigInternal(
       mCodedHeight(std::move(aCodedHeight)),
       mCodedWidth(std::move(aCodedWidth)),
       mColorSpace(std::move(aColorSpace)),
-      mDescription(std::move(aDescription)),
+      mDescription(aDescription),
       mDisplayAspectHeight(std::move(aDisplayAspectHeight)),
       mDisplayAspectWidth(std::move(aDisplayAspectWidth)),
       mHardwareAcceleration(aHardwareAcceleration),
-      mOptimizeForLatency(std::move(aOptimizeForLatency)){};
+      mOptimizeForLatency(std::move(aOptimizeForLatency)) {};
 
 /*static*/
-UniquePtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
+RefPtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
     const VideoDecoderConfig& aConfig) {
   nsCString errorMessage;
   if (!VideoDecoderTraits::Validate(aConfig, errorMessage)) {
@@ -120,7 +120,7 @@ UniquePtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
     return nullptr;
   }
 
-  Maybe<RefPtr<MediaByteBuffer>> description;
+  RefPtr<MediaByteBuffer> description;
   if (aConfig.mDescription.WasPassed()) {
     auto rv = GetExtraDataFromArrayBuffer(aConfig.mDescription.Value());
     if (rv.isErr()) {  // Invalid description data.
@@ -130,27 +130,23 @@ UniquePtr<VideoDecoderConfigInternal> VideoDecoderConfigInternal::Create(
           static_cast<uint32_t>(rv.unwrapErr()));
       return nullptr;
     }
-    description.emplace(rv.unwrap());
+    description = rv.unwrap();
   }
 
-  Maybe<VideoColorSpaceInternal> colorSpace;
-  if (aConfig.mColorSpace.WasPassed()) {
-    colorSpace.emplace(VideoColorSpaceInternal(aConfig.mColorSpace.Value()));
-  }
-
-  return UniquePtr<VideoDecoderConfigInternal>(new VideoDecoderConfigInternal(
+  return MakeRefPtr<VideoDecoderConfigInternal>(
       aConfig.mCodec, OptionalToMaybe(aConfig.mCodedHeight),
-      OptionalToMaybe(aConfig.mCodedWidth), std::move(colorSpace),
-      std::move(description), OptionalToMaybe(aConfig.mDisplayAspectHeight),
+      OptionalToMaybe(aConfig.mCodedWidth),
+      OptionalToMaybe(aConfig.mColorSpace), description.forget(),
+      OptionalToMaybe(aConfig.mDisplayAspectHeight),
       OptionalToMaybe(aConfig.mDisplayAspectWidth),
       aConfig.mHardwareAcceleration,
-      OptionalToMaybe(aConfig.mOptimizeForLatency)));
+      OptionalToMaybe(aConfig.mOptimizeForLatency));
 }
 
-nsString VideoDecoderConfigInternal::ToString() const {
-  nsString rv;
+nsCString VideoDecoderConfigInternal::ToString() const {
+  nsCString rv;
 
-  rv.Append(mCodec);
+  rv.Append(NS_ConvertUTF16toUTF8(mCodec));
   if (mCodedWidth.isSome()) {
     rv.AppendPrintf("coded: %dx%d", mCodedWidth.value(), mCodedHeight.value());
   }
@@ -161,8 +157,8 @@ nsString VideoDecoderConfigInternal::ToString() const {
   if (mColorSpace.isSome()) {
     rv.AppendPrintf("colorspace %s", "todo");
   }
-  if (mDescription.isSome() && mDescription.value()) {
-    rv.AppendPrintf("extradata: %zu bytes", mDescription.value()->Length());
+  if (mDescription) {
+    rv.AppendPrintf("extradata: %zu bytes", mDescription->Length());
   }
   rv.AppendPrintf("hw accel: %s", GetEnumString(mHardwareAcceleration).get());
   if (mOptimizeForLatency.isSome()) {
@@ -579,8 +575,7 @@ bool VideoDecoderTraits::IsSupported(
 /* static */
 Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     const VideoDecoderConfigInternal& aConfig) {
-  LOG("Create a VideoInfo from %s config",
-      NS_ConvertUTF16toUTF8(aConfig.ToString()).get());
+  LOG("Create a VideoInfo from %s config", aConfig.ToString().get());
 
   nsTArray<UniquePtr<TrackInfo>> tracks = GetTracksInfo(aConfig);
   if (tracks.Length() != 1 || tracks[0]->GetType() != TrackInfo::kVideoTrack) {
@@ -668,15 +663,14 @@ Result<UniquePtr<TrackInfo>, nsresult> VideoDecoderTraits::CreateTrackInfo(
     }
   }
 
-  if (aConfig.mDescription.isSome()) {
-    RefPtr<MediaByteBuffer> buf;
-    buf = aConfig.mDescription.value();
-    if (buf) {
-      LOG("The given config has %zu bytes of description data", buf->Length());
+  if (aConfig.mDescription) {
+    if (!aConfig.mDescription->IsEmpty()) {
+      LOG("The given config has %zu bytes of description data",
+          aConfig.mDescription->Length());
       if (vi->mExtraData) {
         LOGW("The default extra data is overwritten");
       }
-      vi->mExtraData = buf;
+      vi->mExtraData = aConfig.mDescription;
     }
 
     // TODO: Make this utility and replace the similar one in MP4Demuxer.cpp.
@@ -722,31 +716,39 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
                                   nsCString& aErrorMessage) {
   Maybe<nsString> codec = ParseCodecString(aConfig.mCodec);
   if (!codec || codec->IsEmpty()) {
-    LOGE("Invalid codec string");
+    aErrorMessage.AssignLiteral("Invalid codec string");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
 
   if (aConfig.mCodedWidth.WasPassed() != aConfig.mCodedHeight.WasPassed()) {
-    LOGE("Missing coded %s",
-         aConfig.mCodedWidth.WasPassed() ? "height" : "width");
+    aErrorMessage.AppendPrintf(
+        "Missing coded %s",
+        aConfig.mCodedWidth.WasPassed() ? "height" : "width");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
   if (aConfig.mCodedWidth.WasPassed() &&
       (aConfig.mCodedWidth.Value() == 0 || aConfig.mCodedHeight.Value() == 0)) {
-    LOGE("codedWidth and/or codedHeight can't be zero");
+    aErrorMessage.AssignLiteral("codedWidth and/or codedHeight can't be zero");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
 
   if (aConfig.mDisplayAspectWidth.WasPassed() !=
       aConfig.mDisplayAspectHeight.WasPassed()) {
-    LOGE("Missing display aspect %s",
-         aConfig.mDisplayAspectWidth.WasPassed() ? "height" : "width");
+    aErrorMessage.AppendPrintf(
+        "Missing display aspect %s",
+        aConfig.mDisplayAspectWidth.WasPassed() ? "height" : "width");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
   if (aConfig.mDisplayAspectWidth.WasPassed() &&
       (aConfig.mDisplayAspectWidth.Value() == 0 ||
        aConfig.mDisplayAspectHeight.Value() == 0)) {
-    LOGE("display aspect width and height cannot be zero");
+    aErrorMessage.AssignLiteral(
+        "display aspect width and height cannot be zero");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
 
@@ -761,7 +763,8 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
                  .isDetached());
 
   if (detached) {
-    LOGE("description is detached.");
+    aErrorMessage.AssignLiteral("description is detached.");
+    LOGE("%s", aErrorMessage.get());
     return false;
   }
 
@@ -769,7 +772,7 @@ bool VideoDecoderTraits::Validate(const VideoDecoderConfig& aConfig,
 }
 
 /* static */
-UniquePtr<VideoDecoderConfigInternal> VideoDecoderTraits::CreateConfigInternal(
+RefPtr<VideoDecoderConfigInternal> VideoDecoderTraits::CreateConfigInternal(
     const VideoDecoderConfig& aConfig) {
   return VideoDecoderConfigInternal::Create(aConfig);
 }
@@ -906,7 +909,7 @@ already_AddRefed<MediaRawData> VideoDecoder::InputDataToMediaRawData(
 
 nsTArray<RefPtr<VideoFrame>> VideoDecoder::DecodedDataToOutputType(
     nsIGlobalObject* aGlobalObject, const nsTArray<RefPtr<MediaData>>&& aData,
-    VideoDecoderConfigInternal& aConfig) {
+    const VideoDecoderConfigInternal& aConfig) {
   AssertIsOnOwningThread();
 
   nsTArray<RefPtr<VideoFrame>> frames;

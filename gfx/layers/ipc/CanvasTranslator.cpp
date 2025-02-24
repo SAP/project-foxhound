@@ -21,6 +21,7 @@
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/layers/TextureClient.h"
+#include "mozilla/layers/VideoBridgeParent.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
@@ -112,6 +113,8 @@ static bool CreateAndMapShmem(RefPtr<ipc::SharedMemoryBasic>& aShmem,
   return true;
 }
 
+StaticRefPtr<gfx::SharedContextWebgl> CanvasTranslator::sSharedContext;
+
 bool CanvasTranslator::EnsureSharedContextWebgl() {
   if (!mSharedContext || mSharedContext->IsContextLost()) {
     if (mSharedContext) {
@@ -121,7 +124,14 @@ bool CanvasTranslator::EnsureSharedContextWebgl() {
         mRemoteTextureOwner->ClearRecycledTextures();
       }
     }
-    mSharedContext = gfx::SharedContextWebgl::Create();
+    // Check if the global shared context is still valid. If not, instantiate
+    // a new one before we try to use it.
+    if (!sSharedContext || sSharedContext->IsContextLost()) {
+      sSharedContext = gfx::SharedContextWebgl::Create();
+    }
+    mSharedContext = sSharedContext;
+    // If we can't get a new context, then the only thing left to do is block
+    // new canvases.
     if (!mSharedContext || mSharedContext->IsContextLost()) {
       mSharedContext = nullptr;
       BlockCanvas();
@@ -129,6 +139,13 @@ bool CanvasTranslator::EnsureSharedContextWebgl() {
     }
   }
   return true;
+}
+
+void CanvasTranslator::Shutdown() {
+  if (sSharedContext) {
+    gfx::CanvasRenderThread::Dispatch(NS_NewRunnableFunction(
+        "CanvasTranslator::Shutdown", []() { sSharedContext = nullptr; }));
+  }
 }
 
 mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
@@ -725,8 +742,12 @@ bool CanvasTranslator::CheckForFreshCanvasDevice(int aLineNumber) {
     return CreateReferenceTexture();
   }
 
+  gfx::DeviceResetReason reason = gfx::DeviceResetReason::OTHER;
+
   if (mDevice) {
-    if (mDevice->GetDeviceRemovedReason() == S_OK) {
+    const auto d3d11Reason = mDevice->GetDeviceRemovedReason();
+    reason = DXGIErrorToDeviceResetReason(d3d11Reason);
+    if (reason == gfx::DeviceResetReason::OK) {
       return false;
     }
 
@@ -736,13 +757,9 @@ bool CanvasTranslator::CheckForFreshCanvasDevice(int aLineNumber) {
   }
 
   RefPtr<Runnable> runnable =
-      NS_NewRunnableFunction("CanvasTranslator NotifyDeviceReset", []() {
-        if (XRE_IsGPUProcess()) {
-          gfx::GPUParent::GetSingleton()->NotifyDeviceReset();
-        } else {
-          gfx::GPUProcessManager::Get()->OnInProcessDeviceReset(
-              /* aTrackThreshold */ false);
-        }
+      NS_NewRunnableFunction("CanvasTranslator NotifyDeviceReset", [reason]() {
+        gfx::GPUProcessManager::GPUProcessManager::NotifyDeviceReset(
+            reason, gfx::DeviceResetDetectPlace::CANVAS_TRANSLATOR);
       });
 
   // It is safe to wait here because only the Compositor thread waits on us and
@@ -848,6 +865,7 @@ void CanvasTranslator::PrepareShmem(int64_t aTextureId) {
 }
 
 void CanvasTranslator::ClearCachedResources() {
+  mUsedDataSurfaceForSurfaceDescriptor = nullptr;
   if (mSharedContext) {
     // If there are any DrawTargetWebgls, then try to cache their framebuffers
     // in software surfaces, just in case the GL context is lost. So long as
@@ -1136,6 +1154,7 @@ bool CanvasTranslator::PushRemoteTexture(int64_t aTextureId, TextureData* aData,
 }
 
 void CanvasTranslator::ClearTextureInfo() {
+  mUsedDataSurfaceForSurfaceDescriptor = nullptr;
   for (auto const& entry : mTextureInfo) {
     if (entry.second.mTextureData) {
       entry.second.mTextureData->Unlock();
@@ -1144,6 +1163,13 @@ void CanvasTranslator::ClearTextureInfo() {
   mTextureInfo.clear();
   mDrawTargets.Clear();
   mSharedContext = nullptr;
+  // If the global shared context's ref is the last ref left, then clear out
+  // any internal caches and textures from the context, but still keep it
+  // alive. This saves on startup costs while not contributing significantly
+  // to memory usage.
+  if (sSharedContext && sSharedContext->hasOneRef()) {
+    sSharedContext->ClearCaches();
+  }
   mBaseDT = nullptr;
   if (mReferenceTextureData) {
     mReferenceTextureData->Unlock();
@@ -1161,6 +1187,113 @@ void CanvasTranslator::ClearTextureInfo() {
 already_AddRefed<gfx::SourceSurface> CanvasTranslator::LookupExternalSurface(
     uint64_t aKey) {
   return mSharedSurfacesHolder->Get(wr::ToExternalImageId(aKey));
+}
+
+// Check if the surface descriptor describes a GPUVideo texture for which we
+// only have an opaque source/handle from SurfaceDescriptorRemoteDecoder to
+// derive the actual texture from.
+static bool SDIsSupportedRemoteDecoder(const SurfaceDescriptor& sd) {
+  if (sd.type() != SurfaceDescriptor::TSurfaceDescriptorGPUVideo) {
+    return false;
+  }
+
+  const auto& sdv = sd.get_SurfaceDescriptorGPUVideo();
+  const auto& sdvType = sdv.type();
+  if (sdvType != SurfaceDescriptorGPUVideo::TSurfaceDescriptorRemoteDecoder) {
+    return false;
+  }
+
+  const auto& sdrd = sdv.get_SurfaceDescriptorRemoteDecoder();
+  const auto& subdesc = sdrd.subdesc();
+  const auto& subdescType = subdesc.type();
+
+  if (subdescType == RemoteDecoderVideoSubDescriptor::Tnull_t ||
+      subdescType ==
+          RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorMacIOSurface) {
+    return true;
+  }
+
+  return false;
+}
+
+already_AddRefed<gfx::DataSourceSurface>
+CanvasTranslator::GetRecycledDataSurfaceForSurfaceDescriptor(
+    TextureHost* aTextureHost) {
+  if (!StaticPrefs::gfx_canvas_remote_recycle_used_data_surface()) {
+    return nullptr;
+  }
+
+  auto& usedSurf = mUsedDataSurfaceForSurfaceDescriptor;
+
+  bool isYuvVideo = false;
+  if (aTextureHost->AsMacIOSurfaceTextureHost()) {
+    if (aTextureHost->GetFormat() == SurfaceFormat::NV12 ||
+        aTextureHost->GetFormat() == SurfaceFormat::YUV422) {
+      isYuvVideo = true;
+    }
+  } else if (aTextureHost->GetFormat() == gfx::SurfaceFormat::YUV) {
+    isYuvVideo = true;
+  }
+
+  if (isYuvVideo && usedSurf && usedSurf->refCount() == 1 &&
+      usedSurf->GetFormat() == gfx::SurfaceFormat::B8G8R8X8 &&
+      aTextureHost->GetSize() == usedSurf->GetSize()) {
+    // Reuse previously used DataSourceSurface if it is not used and same
+    // size/format.
+    return usedSurf.forget();
+  }
+  usedSurf = nullptr;
+  return nullptr;
+}
+
+already_AddRefed<gfx::SourceSurface>
+CanvasTranslator::LookupSourceSurfaceFromSurfaceDescriptor(
+    const SurfaceDescriptor& aDesc) {
+  if (!SDIsSupportedRemoteDecoder(aDesc)) {
+    return nullptr;
+  }
+
+  const auto& sdrd = aDesc.get_SurfaceDescriptorGPUVideo()
+                         .get_SurfaceDescriptorRemoteDecoder();
+  const auto& subdesc = sdrd.subdesc();
+  const auto& subdescType = subdesc.type();
+
+  RefPtr<VideoBridgeParent> parent =
+      VideoBridgeParent::GetSingleton(sdrd.source());
+  if (!parent) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    gfxCriticalNote << "TexUnpackSurface failed to get VideoBridgeParent";
+    return nullptr;
+  }
+  RefPtr<TextureHost> texture =
+      parent->LookupTexture(mContentId, sdrd.handle());
+  if (!texture) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    gfxCriticalNote << "TexUnpackSurface failed to get TextureHost";
+    return nullptr;
+  }
+
+  if (subdescType ==
+      RemoteDecoderVideoSubDescriptor::TSurfaceDescriptorMacIOSurface) {
+    MOZ_ASSERT(texture->AsMacIOSurfaceTextureHost());
+
+    RefPtr<gfx::DataSourceSurface> reuseSurf =
+        GetRecycledDataSurfaceForSurfaceDescriptor(texture);
+    RefPtr<gfx::DataSourceSurface> surf = texture->GetAsSurface(reuseSurf);
+    mUsedDataSurfaceForSurfaceDescriptor = surf;
+    return surf.forget();
+  }
+
+  if (subdescType == RemoteDecoderVideoSubDescriptor::Tnull_t) {
+    RefPtr<gfx::DataSourceSurface> reuseSurf =
+        GetRecycledDataSurfaceForSurfaceDescriptor(texture);
+    RefPtr<gfx::DataSourceSurface> surf = texture->GetAsSurface(reuseSurf);
+    mUsedDataSurfaceForSurfaceDescriptor = surf;
+    return surf.forget();
+  }
+
+  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  return nullptr;
 }
 
 void CanvasTranslator::CheckpointReached() { CheckAndSignalWriter(); }

@@ -151,7 +151,9 @@ impl TransitionBehavior {
 }
 
 /// https://drafts.csswg.org/css-animations/#animation-iteration-count
-#[derive(Copy, Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem)]
+#[derive(
+    Copy, Clone, Debug, MallocSizeOf, PartialEq, Parse, SpecifiedValueInfo, ToCss, ToShmem,
+)]
 pub enum AnimationIterationCount {
     /// A `<number>` value.
     Number(NonNegativeNumber),
@@ -164,6 +166,12 @@ impl AnimationIterationCount {
     #[inline]
     pub fn one() -> Self {
         Self::Number(NonNegativeNumber::new(1.0))
+    }
+
+    /// Returns true if it's `1.0`.
+    #[inline]
+    pub fn is_one(&self) -> bool {
+        *self == Self::one()
     }
 }
 
@@ -220,7 +228,19 @@ impl Parse for AnimationName {
 }
 
 /// https://drafts.csswg.org/css-animations/#propdef-animation-direction
-#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum AnimationDirection {
@@ -230,8 +250,31 @@ pub enum AnimationDirection {
     AlternateReverse,
 }
 
+impl AnimationDirection {
+    /// Returns true if the name matches any animation-direction keyword.
+    #[inline]
+    pub fn match_keywords(name: &AnimationName) -> bool {
+        if let Some(name) = name.as_atom() {
+            return name.with_str(|n| Self::from_ident(n).is_ok());
+        }
+        false
+    }
+}
+
 /// https://drafts.csswg.org/css-animations/#animation-play-state
-#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum AnimationPlayState {
@@ -239,8 +282,31 @@ pub enum AnimationPlayState {
     Paused,
 }
 
+impl AnimationPlayState {
+    /// Returns true if the name matches any animation-play-state keyword.
+    #[inline]
+    pub fn match_keywords(name: &AnimationName) -> bool {
+        if let Some(name) = name.as_atom() {
+            return name.with_str(|n| Self::from_ident(n).is_ok());
+        }
+        false
+    }
+}
+
 /// https://drafts.csswg.org/css-animations/#propdef-animation-fill-mode
-#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum AnimationFillMode {
@@ -250,8 +316,32 @@ pub enum AnimationFillMode {
     Both,
 }
 
+impl AnimationFillMode {
+    /// Returns true if the name matches any animation-fill-mode keyword.
+    /// Note: animation-name:none is its initial value, so we don't have to match none here.
+    #[inline]
+    pub fn match_keywords(name: &AnimationName) -> bool {
+        if let Some(atom) = name.as_atom() {
+            return !name.is_none() && atom.with_str(|n| Self::from_ident(n).is_ok());
+        }
+        false
+    }
+}
+
 /// https://drafts.csswg.org/css-animations-2/#animation-composition
-#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToResolvedValue, ToShmem)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    MallocSizeOf,
+    Parse,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum AnimationComposition {

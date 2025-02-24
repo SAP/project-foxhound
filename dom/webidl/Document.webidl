@@ -13,6 +13,7 @@
  * https://drafts.csswg.org/cssom/#extensions-to-the-document-interface
  * https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface
  * https://wicg.github.io/feature-policy/#policy
+ * https://wicg.github.io/scroll-to-text-fragment/#feature-detectability
  */
 
 interface ContentSecurityPolicy;
@@ -98,8 +99,6 @@ interface Document : Node {
   HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
   [Pure]
   HTMLCollection getElementsByClassName(DOMString classNames);
-  [Pure]
-  Element? getElementById(DOMString elementId);
 
   // These DOM methods cannot be accessed by UA Widget scripts
   // because the DOM element reflectors will be in the content scope,
@@ -156,7 +155,7 @@ partial interface Document {
 
   [PutForwards=href, LegacyUnforgeable] readonly attribute Location? location;
   [SetterThrows]                           attribute DOMString domain;
-  readonly attribute DOMString referrer;
+  readonly attribute UTF8String referrer;
   [Throws] attribute DOMString cookie;
   readonly attribute DOMString lastModified;
   readonly attribute DOMString readyState;
@@ -387,20 +386,8 @@ partial interface Document {
     readonly attribute Element? scrollingElement;
 };
 
-// http://dev.w3.org/2006/webapi/selectors-api2/#interface-definitions
-partial interface Document {
-  [Throws, Pure]
-  Element?  querySelector(UTF8String selectors);
-  [Throws, Pure]
-  NodeList  querySelectorAll(UTF8String selectors);
-
-  //(Not implemented)Element?  find(DOMString selectors, optional (Element or sequence<Node>)? refNodes);
-  //(Not implemented)NodeList  findAll(DOMString selectors, optional (Element or sequence<Node>)? refNodes);
-};
-
 // https://drafts.csswg.org/web-animations/#extensions-to-the-document-interface
 partial interface Document {
-  [Func="Document::AreWebAnimationsTimelinesEnabled"]
   readonly attribute DocumentTimeline timeline;
 };
 
@@ -757,4 +744,15 @@ partial interface Document {
   // context which isn't in bfcache.
   [ChromeOnly]
   boolean isActive();
+};
+
+Document includes NonElementParentNode;
+
+/**
+ * Extension to add the fragmentDirective property.
+ * https://wicg.github.io/scroll-to-text-fragment/#feature-detectability
+ */
+partial interface Document {
+    [Pref="dom.text_fragments.enabled", SameObject]
+    readonly attribute FragmentDirective fragmentDirective;
 };

@@ -34,6 +34,27 @@ const REMOTE_SETTINGS_RESULTS = [
   },
 ];
 
+const MERINO_NAVIGATIONAL_SUGGESTION = {
+  url: "https://example.com/navigational-suggestion",
+  title: "Navigational suggestion",
+  provider: "top_picks",
+  is_sponsored: false,
+  score: 0.25,
+  block_id: 0,
+  is_top_pick: true,
+};
+
+const MERINO_DYNAMIC_WIKIPEDIA_SUGGESTION = {
+  url: "https://example.com/dynamic-wikipedia",
+  title: "Dynamic Wikipedia suggestion",
+  click_url: "https://example.com/click",
+  impression_url: "https://example.com/impression",
+  advertiser: "dynamic-wikipedia",
+  provider: "wikipedia",
+  iab_category: "5 - Education",
+  block_id: 1,
+};
+
 add_setup(async function () {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
@@ -46,7 +67,11 @@ add_setup(async function () {
         attachment: REMOTE_SETTINGS_RESULTS,
       },
     ],
+    merinoSuggestions: [],
   });
+
+  // Disable Merino so we trigger only remote settings suggestions.
+  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", false);
 });
 
 // Tests a sponsored result and keyword highlighting.
@@ -164,3 +189,51 @@ add_tasks_with_rust(
     await cleanUpNimbus();
   }
 );
+
+// Tests the "Manage" result menu for sponsored suggestion.
+add_tasks_with_rust(async function resultMenu_manage_sponsored() {
+  await doManageTest({
+    input: "fra",
+    index: 1,
+  });
+});
+
+// Tests the "Manage" result menu for non-sponsored suggestion.
+add_tasks_with_rust(async function resultMenu_manage_nonSponsored() {
+  await doManageTest({
+    input: "nonspon",
+    index: 1,
+  });
+});
+
+// Tests the "Manage" result menu for Navigational suggestion.
+add_tasks_with_rust(async function resultMenu_manage_navigational() {
+  // Enable Merino.
+  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+  MerinoTestUtils.server.response.body.suggestions = [
+    MERINO_NAVIGATIONAL_SUGGESTION,
+  ];
+
+  await doManageTest({
+    input: "test",
+    index: 1,
+  });
+
+  UrlbarPrefs.clear("quicksuggest.dataCollection.enabled");
+});
+
+// Tests the "Manage" result menu for Dynamic Wikipedia suggestion.
+add_tasks_with_rust(async function resultMenu_manage_dynamicWikipedia() {
+  // Enable Merino.
+  UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+  MerinoTestUtils.server.response.body.suggestions = [
+    MERINO_DYNAMIC_WIKIPEDIA_SUGGESTION,
+  ];
+
+  await doManageTest({
+    input: "test",
+    index: 1,
+  });
+
+  UrlbarPrefs.clear("quicksuggest.dataCollection.enabled");
+});

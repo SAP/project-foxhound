@@ -38,6 +38,7 @@
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModuleTypes.h"
+#include "wasm/WasmPI.h"
 #include "wasm/WasmSerialize.h"
 #include "wasm/WasmUtility.h"
 
@@ -486,6 +487,10 @@ bool Module::instantiateFunctions(JSContext* cx,
       const Import& import = FindImportFunction(imports_, i);
       UniqueChars importModuleName = import.module.toQuotedString(cx);
       UniqueChars importFieldName = import.field.toQuotedString(cx);
+      if (!importFieldName || !importModuleName) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
       JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                JSMSG_WASM_BAD_IMPORT_SIG,
                                importModuleName.get(), importFieldName.get());

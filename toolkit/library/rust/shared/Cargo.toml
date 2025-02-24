@@ -22,11 +22,11 @@ static_prefs = { path = "../../../../modules/libpref/init/static_prefs" }
 profiler_helper = { path = "../../../../tools/profiler/rust-helper", optional = true }
 mozurl = { path = "../../../../netwerk/base/mozurl" }
 webrender_bindings = { path = "../../../../gfx/webrender_bindings" }
-cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "d23ab55eab684b46f46e1da177c8814f6103a009", optional = true }
-cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="8ff972c8e2ec1782ff262ac4071c0415e69b1367", optional = true, features=["pulse-dlopen"] }
-cubeb-sys = { version = "0.12.0", optional = true, features=["gecko-in-tree"] }
-audioipc2-client = { git = "https://github.com/mozilla/audioipc", rev = "596bdb7fbb5745ea415726e16bd497e6c850a540", optional = true }
-audioipc2-server = { git = "https://github.com/mozilla/audioipc", rev = "596bdb7fbb5745ea415726e16bd497e6c850a540", optional = true }
+cubeb-coreaudio = { git = "https://github.com/mozilla/cubeb-coreaudio-rs", rev = "8bce3b333a920999055397a397e59c2b81a93b9a", optional = true }
+cubeb-pulse = { git = "https://github.com/mozilla/cubeb-pulse-rs", rev="8678dcab1c287de79c4c184ccc2e065bc62b70e2", optional = true, features=["pulse-dlopen"] }
+cubeb-sys = { version = "0.13", optional = true, features=["gecko-in-tree"] }
+audioipc2-client = { git = "https://github.com/mozilla/audioipc", rev = "3495905752a4263827f5d43737f9ca3ed0243ce0", optional = true }
+audioipc2-server = { git = "https://github.com/mozilla/audioipc", rev = "3495905752a4263827f5d43737f9ca3ed0243ce0", optional = true }
 encoding_glue = { path = "../../../../intl/encoding_glue" }
 authrs_bridge = { path = "../../../../dom/webauthn/authrs_bridge" }
 gkrust_utils = { path = "../../../../xpcom/rust/gkrust_utils" }
@@ -43,8 +43,9 @@ data_storage = { path = "../../../../security/manager/ssl/data_storage" }
 bitsdownload = { path = "../../../components/bitsdownload", optional = true }
 storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
+buildid_reader = { path = "../../buildid_reader" }
 chardetng_c = "0.1.1"
-audio_thread_priority = { version = "0.31", default_features = false }
+audio_thread_priority = { version = "0.32", default_features = false }
 mdns_service = { path="../../../../dom/media/webrtc/transport/mdns_service", optional = true }
 neqo_glue = { path = "../../../../netwerk/socket/neqo_glue" }
 wgpu_bindings = { path = "../../../../gfx/wgpu_bindings" }
@@ -67,22 +68,24 @@ mozannotation_server  = { path = "../../../crashreporter/mozannotation_server", 
 gecko-profiler = { path = "../../../../tools/profiler/rust-api"}
 midir_impl = { path = "../../../../dom/midi/midir_impl", optional = true }
 dom = { path = "../../../../dom/base/rust" }
+dom_fragmentdirectives = { path="../../../../dom/base/fragmentdirectives" }
 origin-trials-ffi = { path = "../../../../dom/origin-trials/ffi" }
 jog = { path = "../../../components/glean/bindings/jog" }
 dap_ffi = { path = "../../../components/telemetry/dap/ffi" }
 data-encoding-ffi = { path = "../../../../dom/fs/parent/rust/data-encoding-ffi" }
-uniffi-example-arithmetic = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
-uniffi-example-geometry = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
-uniffi-example-rondpoint = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
-uniffi-example-sprites = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
-uniffi-example-todolist = { git = "https://github.com/mozilla/uniffi-rs.git", rev = "afb29ebdc1d9edf15021b1c5332fc9f285bbe13b", optional = true }
-uniffi-example-custom-types = { path = "../../../components/uniffi-example-custom-types/", optional = true }
-uniffi-fixture-callbacks = { path = "../../../components/uniffi-fixture-callbacks/", optional = true }
-uniffi-fixture-external-types = { path = "../../../components/uniffi-fixture-external-types/", optional = true }
+uniffi-example-arithmetic = { path = "../../../components/uniffi-fixtures/arithmetic/", optional = true }
+uniffi-example-geometry = { path = "../../../components/uniffi-fixtures/geometry/", optional = true }
+uniffi-example-rondpoint = { path = "../../../components/uniffi-fixtures/rondpoint/", optional = true }
+uniffi-example-sprites = { path = "../../../components/uniffi-fixtures/sprites/", optional = true }
+uniffi-example-todolist = { path = "../../../components/uniffi-fixtures/todolist/", optional = true }
+uniffi-example-custom-types = { path = "../../../components/uniffi-fixtures/custom-types/", optional = true }
+uniffi-fixture-callbacks = { path = "../../../components/uniffi-fixtures/callbacks/", optional = true }
+uniffi-fixture-external-types = { path = "../../../components/uniffi-fixtures/external-types/", optional = true }
+uniffi-fixture-refcounts = { path = "../../../components/uniffi-fixtures/refcounts/", optional = true }
 binary_http = { path = "../../../../netwerk/protocol/http/binary_http" }
 oblivious_http = { path = "../../../../netwerk/protocol/http/oblivious_http" }
 mime-guess-ffi = { path = "../../../../dom/fs/parent/rust/mime-guess-ffi" }
-uniffi = { version = "0.25.2" }
+uniffi = { workspace = true }
 
 # Note: `modern_sqlite` means rusqlite's bindings file be for a sqlite with
 # version less than or equal to what we link to. This isn't a problem because we
@@ -113,6 +116,7 @@ viaduct = "0.1"
 webext_storage_bridge = { path = "../../../components/extensions/storage/webext_storage_bridge" }
 tabs = { version = "0.1" }
 suggest = { version = "0.1" }
+relevancy = { version = "0.1" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 detect_win32k_conflicts = { path = "../../../xre/detect_win32k_conflicts" }
@@ -143,7 +147,7 @@ thread_sanitizer = ["xpcom/thread_sanitizer"]
 uniffi_fixtures = [
     "uniffi-example-arithmetic", "uniffi-example-geometry", "uniffi-example-rondpoint", "uniffi-example-sprites",
     "uniffi-example-todolist", "uniffi-example-custom-types", "uniffi-fixture-callbacks",
-    "uniffi-fixture-external-types",
+    "uniffi-fixture-external-types", "uniffi-fixture-refcounts",
 ]
 webmidi_midir_impl = ["midir_impl"]
 icu4x = ["jsrust_shared/icu4x"]

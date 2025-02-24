@@ -13,7 +13,7 @@
 #include "nsString.h"
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "mozilla/java/WebAuthnTokenManagerNatives.h"
+#  include "mozilla/java/WebAuthnUtilsNatives.h"
 #endif
 
 #ifdef XP_WIN
@@ -44,16 +44,17 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
 
 #ifdef MOZ_WIDGET_ANDROID
   explicit WebAuthnRegisterResult(
-      const java::WebAuthnTokenManager::MakeCredentialResponse::LocalRef&
-          aResponse) {
+      const java::WebAuthnUtils::MakeCredentialResponse::LocalRef& aResponse) {
     mAttestationObject.AppendElements(
         reinterpret_cast<uint8_t*>(
             aResponse->AttestationObject()->GetElements().Elements()),
         aResponse->AttestationObject()->Length());
-    mClientDataJSON = Some(nsAutoCString(
-        reinterpret_cast<const char*>(
-            aResponse->ClientDataJson()->GetElements().Elements()),
-        aResponse->ClientDataJson()->Length()));
+    if (aResponse->ClientDataJson()) {
+      mClientDataJSON = Some(nsAutoCString(
+          reinterpret_cast<const char*>(
+              aResponse->ClientDataJson()->GetElements().Elements()),
+          aResponse->ClientDataJson()->Length()));
+    }
     mCredentialId.AppendElements(
         reinterpret_cast<uint8_t*>(
             aResponse->KeyHandle()->GetElements().Elements()),
@@ -63,8 +64,8 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
       mTransports.AppendElement(
           jni::String::LocalRef(transports->GetElement(i))->ToString());
     }
-    // authenticator attachment is not available on Android
-    mAuthenticatorAttachment = Nothing();
+    mAuthenticatorAttachment =
+        Some(aResponse->AuthenticatorAttachment()->ToString());
   }
 #endif
 
@@ -134,8 +135,6 @@ class WebAuthnRegisterResult final : public nsIWebAuthnRegisterResult {
   }
 #endif
 
-  nsresult Anonymize();
-
  private:
   ~WebAuthnRegisterResult() = default;
 
@@ -169,16 +168,17 @@ class WebAuthnSignResult final : public nsIWebAuthnSignResult {
 
 #ifdef MOZ_WIDGET_ANDROID
   explicit WebAuthnSignResult(
-      const java::WebAuthnTokenManager::GetAssertionResponse::LocalRef&
-          aResponse) {
+      const java::WebAuthnUtils::GetAssertionResponse::LocalRef& aResponse) {
     mAuthenticatorData.AppendElements(
         reinterpret_cast<uint8_t*>(
             aResponse->AuthData()->GetElements().Elements()),
         aResponse->AuthData()->Length());
-    mClientDataJSON = Some(nsAutoCString(
-        reinterpret_cast<const char*>(
-            aResponse->ClientDataJson()->GetElements().Elements()),
-        aResponse->ClientDataJson()->Length()));
+    if (aResponse->ClientDataJson()) {
+      mClientDataJSON = Some(nsAutoCString(
+          reinterpret_cast<const char*>(
+              aResponse->ClientDataJson()->GetElements().Elements()),
+          aResponse->ClientDataJson()->Length()));
+    }
     mCredentialId.AppendElements(
         reinterpret_cast<uint8_t*>(
             aResponse->KeyHandle()->GetElements().Elements()),
@@ -191,8 +191,8 @@ class WebAuthnSignResult final : public nsIWebAuthnSignResult {
         reinterpret_cast<uint8_t*>(
             aResponse->UserHandle()->GetElements().Elements()),
         aResponse->UserHandle()->Length());
-    // authenticator attachment is not available on Android
-    mAuthenticatorAttachment = Nothing();
+    mAuthenticatorAttachment =
+        Some(aResponse->AuthenticatorAttachment()->ToString());
   }
 #endif
 

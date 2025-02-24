@@ -155,6 +155,223 @@ a11y:
     record_in_processes:
       - 'main'
 
+installation.firstSeen:
+  failure_reason:
+    bug_numbers:
+      - 1811374
+    description: >
+      Only sent if unable to collect firstSeen data. Can have
+      value "NotFoundError" if file not found or other values
+      depending on the failure reason.
+    keyed: false
+    expires: "134"
+    kind: string
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  installer_type:
+    bug_numbers:
+      - 1811374
+    description: >
+      The type of installer used to install Firefox.
+      The value is one of "stub", "full", or "msix"
+    keyed: false
+    expires: "134"
+    kind: string
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  version:
+    bug_numbers:
+      - 1811374
+    description: >
+      The application version installed by the installer
+      (not necessarily the current version)
+    keyed: false
+    expires: "134"
+    kind: string
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  admin_user:
+    bug_numbers:
+      - 1811374
+    description: >
+      Whether the installer is running from an elevated admin user
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  install_existed:
+    bug_numbers:
+      - 1811374
+    description: >
+      'Whether there was already an install in this location'
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  profdir_existed:
+    bug_numbers:
+      - 1811374
+    description: >
+      'Whether the top-level profile directory existed'
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  other_inst:
+    bug_numbers:
+      - 1811374
+    description: >
+      'Whether there was already any non-MSIX install on this system'
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  other_msix_inst:
+    bug_numbers:
+      - 1811374
+    description: >
+      'Whether there was already any MSIX install on this system'
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  silent:
+    bug_numbers:
+      - 1811374
+    description: >
+      (optional, present if installer_type is "full")
+      Whether this was a silent install
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  from_msi:
+    bug_numbers:
+      - 1811374
+    description: >
+      (optional, present if installer_type is "full")
+      Whether this was an MSI install
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
+  default_path:
+    bug_numbers:
+      - 1811374
+    description: >
+      (optional, present if installer_type is "full")
+      Whether the default path was used
+    keyed: false
+    expires: "134"
+    kind: boolean
+    notification_emails:
+      - rtestard@mozilla.com
+      - application-update-telemetry-alerts@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'all'
+    record_into_store:
+      - 'new-profile'
+
 browser.backup:
   prof_d_disk_space:
     bug_numbers:
@@ -163,6 +380,246 @@ browser.backup:
       The total disk space available on the storage device that the profile
       directory is stored on. To reduce fingerprintability, we round to the
       nearest 10 megabytes and return the result in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  places_size:
+    bug_numbers:
+      - 1883642
+    description: >
+      The total file size of the places.sqlite db located in the current profile
+      directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  favicons_size:
+    bug_numbers:
+      - 1883642
+    description: >
+      The total file size of the favicons.sqlite db located in the current profile
+      directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  credentials_data_size:
+    bug_numbers:
+      - 1883736
+    description: >
+      The total size of logins, payment method, and form autofill related files
+      in the current profile directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  security_data_size:
+    bug_numbers:
+      - 1883736
+    description: >
+      The total size of files needed for NSS initialization parameters and security
+      certificate settings in the current profile directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  preferences_size:
+    bug_numbers:
+      - 1883739
+    description: >
+      The total size of files relating to user preferences and permissions in the current profile
+      directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  misc_data_size:
+    bug_numbers:
+      - 1883747
+      - 1887746
+    description: >
+      The total size of files for telemetry, site storage, media device origin mapping,
+      chrome privileged IndexedDB databases, and Mozilla Accounts in the current profile directory,
+      rounded to the nearest tenth kilobyte.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  cookies_size:
+    bug_numbers:
+      - 1883740
+    description: >
+      The total file size of the cookies.sqlite db located in the current profile
+      directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  form_history_size:
+    bug_numbers:
+      - 1883740
+    description: >
+      The file size of the formhistory.sqlite db located in the current profile
+      directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  session_store_backups_directory_size:
+    bug_numbers:
+      - 1883740
+    description: >
+      The total size of the session store backups directory, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  session_store_size:
+    bug_numbers:
+      - 1883740
+    description: >
+      The size of uncompressed session store json, in kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  extensions_json_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The total file size of the extensions json files located in the current
+      profile directory,rounded to the nearest 10 kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  extension_store_permissions_data_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The file size of the current profiles extension-store-permissions/data.safe.bin
+      file, rounded to the nearest 10 kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  storage_sync_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The file size of the current profiles storage-sync-v2.sqlite database,
+      rounded to the nearest 10 kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  browser_extension_data_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The total size of the current profiles storage.local legacy JSON backend
+      in the browser-extension-data directory, rounded to the nearest 10 kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  extensions_xpi_directory_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The total size of the current profiles extensions directory,
+      rounded to the nearest 10 kilobytes.
+    expires: never
+    kind: uint
+    notification_emails:
+      - mconley@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+  extensions_storage_size:
+    bug_numbers:
+      - 1883655
+    description: >
+      The total size of all extensions storage directories,
+      rounded to the nearest 10 kilobytes.
     expires: never
     kind: uint
     notification_emails:
@@ -1546,9 +2003,10 @@ extensions.startupCache:
   write_byteLength:
     bug_numbers:
       - 1767336
+      - 1892151
     description: >
       The amount of bytes writted into the Extensions StartupCache file.
-    expires: "128"
+    expires: "135"
     kind: uint
     notification_emails:
       - addons-dev-internal@mozilla.com
@@ -1560,10 +2018,11 @@ extensions.startupCache:
   read_errors:
     bug_numbers:
       - 1767336
+      - 1892151
     description: >
       The amount of times an unexpected error has been raised while
       reading the Extensions StartupCache file
-    expires: "128"
+    expires: "135"
     kind: uint
     keyed: true
     notification_emails:
@@ -1681,23 +2140,6 @@ pwmgr:
       - 'firefox'
     record_in_processes:
       - main
-
-bloburl:
-  resolve_stopped:
-    bug_numbers:
-      - 1843158
-    description: >
-      Counts how many times we do not resolve a blob URL
-      because of different partition keys
-    expires: "127"
-    kind: uint
-    notification_emails:
-      - amadan@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - content
 
 contentblocking:
   cryptomining_blocking_enabled:
@@ -2331,13 +2773,13 @@ os.environment:
     bug_numbers:
       - 1743914
       - 1781984
+      - 1842290
     description: >
       Records whether Firefox was the default handler for particular file types
       or protocols.  The result is split into keys which represent the file
-      extension: currently, a subset of the file types Firefox registers to
-      handle, namely ".pdf".  In the future, more file types may be recorded,
-      and/or a subset of the protocol schemes that Firefox registers to may be
-      recorded.
+      extension or scheme: currently, a subset of the file types Firefox
+      registers to handle, namely ".pdf" and "mailto" as protocol. In the
+      future, more file types may be recorded.
     keyed: true
     expires: never
     kind: boolean
@@ -2724,6 +3166,7 @@ media:
   device_hardware_decoding_support:
     bug_numbers:
       - 1850594
+      - 1892516
     description: >
       Record the hardware decoding availability on devices, the key is the name of video codec, eg. h264, av1.
     expires: never
@@ -2735,7 +3178,7 @@ media:
     products:
       - 'firefox'
     record_in_processes:
-      - 'gpu'
+      - 'main'
 
 # The following section contains content process base counters.
 dom.contentprocess:
@@ -5891,13 +6334,14 @@ browser.searchinit:
       - 1801017
       - 1832463
       - 1871199
+      - 1897049
     description: >
       Records the WebExtension ID of a search engine where the WebExtension
       is not installed (= 1), disabled (= 2), search engine no longer specified (= 4),
       a different name (= 5), where the submission URL is different between the
       search engine and the WebExtension (= 6). The value '3' has been replaced
       by '6' to distinguish newer entries.
-    expires: "129"
+    expires: "136"
     keyed: true
     kind: uint
     notification_emails:
@@ -8566,24 +9010,6 @@ contextual.services.quicksuggest:
       - 'firefox'
     record_in_processes:
       - main
-  help_dynamic_wikipedia:
-    bug_numbers:
-      - 1800993
-    description: >
-      A keyed uint recording how many times the user has clicked on the help
-      button in sponsored Firefox Suggest dynamic wikipedia results
-      in the urlbar (not including the help button). The key is the 1-based
-      index of each result.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
   help_nonsponsored:
     bug_numbers:
       - 1800993
@@ -8608,23 +9034,6 @@ contextual.services.quicksuggest:
       A keyed uint recording how many times the user has clicked on the help
       button in sponsored Firefox Suggests (a.k.a. Quick Suggest) results in
       the urlbar. The key is the 1-based index of each result.
-    expires: never
-    kind: uint
-    keyed: true
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    products:
-      - 'firefox'
-    record_in_processes:
-      - main
-  help_weather:
-    bug_numbers:
-      - 1804536
-    description: >
-      A keyed uint recording how many times the user has clicked on the help
-      button in Firefox Suggests (a.k.a. Quick Suggest) weather results in the
-      urlbar. The key is the 1-based index of each result.
     expires: never
     kind: uint
     keyed: true
@@ -8975,7 +9384,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main' # test_ChildScalars.js depends on this being main-only.
@@ -8993,7 +9401,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main'
@@ -9011,7 +9418,6 @@ telemetry.test:
     products:
       - 'firefox'
       - 'fennec'
-      - 'geckoview_streaming'
       - 'thunderbird'
     record_in_processes:
       - 'main'

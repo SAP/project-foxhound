@@ -87,7 +87,6 @@
 #include "nsIWindowWatcher.h"
 #include "nsIConsoleService.h"
 #include "nsAsyncRedirectVerifyHelper.h"
-#include "nsStringBuffer.h"
 #include "nsIFileChannel.h"
 #include "mozilla/Telemetry.h"
 #include "js/ArrayBuffer.h"  // JS::{Create,Release}MappedArrayBufferContents,New{,Mapped}ArrayBufferWithContents
@@ -232,12 +231,19 @@ struct DebugWorkerRefs {
     (((const std::ostringstream&)(std::ostringstream() << stuff)) \
          .str())  // NOLINT
 
-#  define DEBUG_WORKERREFS \
-    DebugWorkerRefs MOZ_UNIQUE_VAR(debugWR__)(*this, __func__)
+#  if 1  // Disabling because bug 1855699
+#    define DEBUG_WORKERREFS void()
+#    define DEBUG_WORKERREFS1(x) void()
+#  else
 
-#  define DEBUG_WORKERREFS1(x)                 \
-    DebugWorkerRefs MOZ_UNIQUE_VAR(debugWR__)( \
-        *this, STREAM_STRING(__func__ << ": " << x))  // NOLINT
+#    define DEBUG_WORKERREFS \
+      DebugWorkerRefs MOZ_UNIQUE_VAR(debugWR__)(*this, __func__)
+
+#    define DEBUG_WORKERREFS1(x)                 \
+      DebugWorkerRefs MOZ_UNIQUE_VAR(debugWR__)( \
+          *this, STREAM_STRING(__func__ << ": " << x))  // NOLINT
+
+#  endif
 
 #else
 #  define DEBUG_WORKERREFS void()
@@ -3620,7 +3626,6 @@ XMLHttpRequestMainThread::AsyncOnChannelRedirect(
   // we need to strip Authentication headers for cross-origin requests
   // Ref: https://fetch.spec.whatwg.org/#http-redirect-fetch
   bool stripAuth =
-      StaticPrefs::network_fetch_redirect_stripAuthHeader() &&
       NS_ShouldRemoveAuthHeaderOnRedirect(aOldChannel, aNewChannel, aFlags);
 
   OnRedirectVerifyCallback(NS_OK, stripAuth);

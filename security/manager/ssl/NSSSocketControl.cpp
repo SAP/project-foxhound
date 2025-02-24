@@ -11,7 +11,9 @@
 #include "nsISocketProvider.h"
 #include "secerr.h"
 #include "mozilla/Base64.h"
+#include "mozilla/dom/Promise.h"
 #include "nsNSSCallbacks.h"
+#include "nsProxyRelease.h"
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -290,6 +292,58 @@ NS_IMETHODIMP
 NSSSocketControl::StartTLS() {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
   return ActivateSSL();
+}
+
+NS_IMETHODIMP
+NSSSocketControl::AsyncStartTLS(JSContext* aCx,
+                                mozilla::dom::Promise** aPromise) {
+  MOZ_RELEASE_ASSERT(NS_IsMainThread());
+  NS_ENSURE_ARG_POINTER(aCx);
+  NS_ENSURE_ARG_POINTER(aPromise);
+
+  nsIGlobalObject* globalObject = xpc::CurrentNativeGlobal(aCx);
+  if (!globalObject) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  ErrorResult result;
+  RefPtr<mozilla::dom::Promise> promise =
+      mozilla::dom::Promise::Create(globalObject, result);
+  if (result.Failed()) {
+    return result.StealNSResult();
+  }
+
+  nsCOMPtr<nsIEventTarget> target(
+      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID));
+  if (!target) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  auto promiseHolder = MakeRefPtr<nsMainThreadPtrHolder<dom::Promise>>(
+      "AsyncStartTLS promise", promise);
+
+  nsCOMPtr<nsIRunnable> runnable(NS_NewRunnableFunction(
+      "AsyncStartTLS::StartTLS",
+      [promiseHolder = std::move(promiseHolder), self = RefPtr{this}]() {
+        nsresult rv = self->StartTLS();
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "AsyncStartTLS::Resolve", [rv, promiseHolder]() {
+              dom::Promise* promise = promiseHolder.get()->get();
+              if (NS_FAILED(rv)) {
+                promise->MaybeReject(rv);
+              } else {
+                promise->MaybeResolveWithUndefined();
+              }
+            }));
+      }));
+
+  nsresult rv = target->Dispatch(runnable, NS_DISPATCH_NORMAL);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  promise.forget(aPromise);
+  return NS_OK;
 }
 
 NS_IMETHODIMP

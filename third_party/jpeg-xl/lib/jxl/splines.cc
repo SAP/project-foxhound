@@ -5,13 +5,16 @@
 
 #include "lib/jxl/splines.h"
 
+#include <jxl/memory_manager.h>
+
 #include <algorithm>
-#include <cinttypes>
+#include <cinttypes>  // PRIu64
 #include <cmath>
 #include <limits>
 
 #include "lib/jxl/base/common.h"
 #include "lib/jxl/base/printf_macros.h"
+#include "lib/jxl/base/rect.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/chroma_from_luma.h"
 #include "lib/jxl/common.h"  // JXL_HIGH_PRECISION
@@ -94,11 +97,11 @@ void DrawSegment(DF df, const SplineSegment& segment, const bool add,
 
 void DrawSegment(const SplineSegment& segment, const bool add, const size_t y,
                  const ssize_t x0, ssize_t x1, float* JXL_RESTRICT rows[3]) {
-  ssize_t x =
-      std::max<ssize_t>(x0, segment.center_x - segment.maximum_distance + 0.5f);
+  ssize_t x = std::max<ssize_t>(
+      x0, std::llround(segment.center_x - segment.maximum_distance));
   // one-past-the-end
-  x1 =
-      std::min<ssize_t>(x1, segment.center_x + segment.maximum_distance + 1.5f);
+  x1 = std::min<ssize_t>(
+      x1, std::llround(segment.center_x + segment.maximum_distance) + 1);
   HWY_FULL(float) df;
   for (; x + static_cast<ssize_t>(Lanes(df)) <= x1; x += Lanes(df)) {
     DrawSegment(df, segment, add, y, x, rows);
@@ -399,9 +402,9 @@ QuantizedSpline::QuantizedSpline(const Spline& original,
       const float inv_dct_factor = (i == 0) ? kSqrt0_5 : 1.0f;
       auto restored_y =
           color_dct_[1][i] * inv_dct_factor * kChannelWeight[1] * inv_quant;
-      auto decorellated = original.color_dct[c][i] - factor * restored_y;
+      auto decorrelated = original.color_dct[c][i] - factor * restored_y;
       color_dct_[c][i] =
-          to_int(decorellated * dct_factor * quant / kChannelWeight[c]);
+          to_int(decorrelated * dct_factor * quant / kChannelWeight[c]);
     }
   }
   for (int i = 0; i < 32; ++i) {
@@ -550,8 +553,8 @@ Status QuantizedSpline::Decode(const std::vector<uint8_t>& context_map,
     }
     return true;
   };
-  for (int c = 0; c < 3; ++c) {
-    JXL_RETURN_IF_ERROR(decode_dct(color_dct_[c]));
+  for (auto& dct : color_dct_) {
+    JXL_RETURN_IF_ERROR(decode_dct(dct));
   }
   JXL_RETURN_IF_ERROR(decode_dct(sigma_dct_));
   return true;
@@ -566,12 +569,14 @@ void Splines::Clear() {
   segment_y_start_.clear();
 }
 
-Status Splines::Decode(jxl::BitReader* br, const size_t num_pixels) {
+Status Splines::Decode(JxlMemoryManager* memory_manager, jxl::BitReader* br,
+                       const size_t num_pixels) {
   std::vector<uint8_t> context_map;
   ANSCode code;
-  JXL_RETURN_IF_ERROR(
-      DecodeHistograms(br, kNumSplineContexts, &code, &context_map));
-  ANSSymbolReader decoder(&code, br);
+  JXL_RETURN_IF_ERROR(DecodeHistograms(memory_manager, br, kNumSplineContexts,
+                                       &code, &context_map));
+  JXL_ASSIGN_OR_RETURN(ANSSymbolReader decoder,
+                       ANSSymbolReader::Create(&code, br));
   size_t num_splines =
       decoder.ReadHybridUint(kNumSplinesContext, br, context_map);
   size_t max_control_points = std::min(
@@ -621,7 +626,7 @@ void Splines::SubtractFrom(Image3F* const opsin) const {
 
 Status Splines::InitializeDrawCache(const size_t image_xsize,
                                     const size_t image_ysize,
-                                    const ColorCorrelationMap& cmap) {
+                                    const ColorCorrelation& color_correlation) {
   // TODO(veluca): avoid storing segments that are entirely outside image
   // boundaries.
   segments_.clear();
@@ -634,9 +639,9 @@ Status Splines::InitializeDrawCache(const size_t image_xsize,
   for (size_t i = 0; i < splines_.size(); ++i) {
     Spline spline;
     JXL_RETURN_IF_ERROR(splines_[i].Dequantize(
-        starting_points_[i], quantization_adjustment_, cmap.YtoXRatio(0),
-        cmap.YtoBRatio(0), image_xsize * image_ysize,
-        &total_estimated_area_reached, spline));
+        starting_points_[i], quantization_adjustment_,
+        color_correlation.YtoXRatio(0), color_correlation.YtoBRatio(0),
+        image_xsize * image_ysize, &total_estimated_area_reached, spline));
     if (std::adjacent_find(spline.control_points.begin(),
                            spline.control_points.end()) !=
         spline.control_points.end()) {

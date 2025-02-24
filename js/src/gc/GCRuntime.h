@@ -284,10 +284,11 @@ class GCRuntime {
 
   JS::HeapState heapState() const { return heapState_; }
 
-  inline bool hasZealMode(ZealMode mode);
-  inline void clearZealMode(ZealMode mode);
-  inline bool needZealousGC();
-  inline bool hasIncrementalTwoSliceZealMode();
+  bool hasZealMode(ZealMode mode) const;
+  bool hasAnyZealModeOf(mozilla::EnumSet<ZealMode> mode) const;
+  void clearZealMode(ZealMode mode);
+  bool needZealousGC();
+  bool zealModeControlsYieldPoint() const;
 
   [[nodiscard]] bool addRoot(Value* vp, const char* name);
   void removeRoot(Value* vp);
@@ -1027,6 +1028,7 @@ class GCRuntime {
   MainThreadData<double> helperThreadRatio;
   MainThreadData<size_t> maxHelperThreads;
   MainThreadOrGCTaskData<size_t> helperThreadCount;
+  MainThreadData<size_t> maxMarkingThreads;
   MainThreadData<size_t> markingThreadCount;
 
   // Per-runtime helper thread task queue. Can be accessed from helper threads
@@ -1205,7 +1207,8 @@ class GCRuntime {
    * a background thread.
    */
   HelperThreadLockData<LifoAlloc> lifoBlocksToFree;
-  MainThreadData<LifoAlloc> lifoBlocksToFreeAfterMinorGC;
+  MainThreadData<LifoAlloc> lifoBlocksToFreeAfterFullMinorGC;
+  MainThreadData<LifoAlloc> lifoBlocksToFreeAfterNextMinorGC;
   HelperThreadLockData<Nursery::BufferSet> buffersToFreeAfterMinorGC;
 
   /* Index of current sweep group (for stats). */
@@ -1429,6 +1432,13 @@ class GCRuntime {
   friend class AutoEnterIteration;
 };
 
+#ifndef JS_GC_ZEAL
+inline bool GCRuntime::hasZealMode(ZealMode mode) const { return false; }
+inline void GCRuntime::clearZealMode(ZealMode mode) {}
+inline bool GCRuntime::needZealousGC() { return false; }
+inline bool GCRuntime::zealModeControlsYieldPoint() const { return false; }
+#endif
+
 /* Prevent compartments and zones from being collected during iteration. */
 class MOZ_RAII AutoEnterIteration {
   GCRuntime* gc;
@@ -1443,50 +1453,6 @@ class MOZ_RAII AutoEnterIteration {
     --gc->numActiveZoneIters;
   }
 };
-
-#ifdef JS_GC_ZEAL
-
-inline bool GCRuntime::hasZealMode(ZealMode mode) {
-  static_assert(size_t(ZealMode::Limit) < sizeof(zealModeBits) * 8,
-                "Zeal modes must fit in zealModeBits");
-  return zealModeBits & (1 << uint32_t(mode));
-}
-
-inline void GCRuntime::clearZealMode(ZealMode mode) {
-  zealModeBits &= ~(1 << uint32_t(mode));
-  MOZ_ASSERT(!hasZealMode(mode));
-}
-
-inline bool GCRuntime::needZealousGC() {
-  if (nextScheduled > 0 && --nextScheduled == 0) {
-    if (hasZealMode(ZealMode::Alloc) || hasZealMode(ZealMode::GenerationalGC) ||
-        hasZealMode(ZealMode::IncrementalMultipleSlices) ||
-        hasZealMode(ZealMode::Compact) || hasIncrementalTwoSliceZealMode()) {
-      nextScheduled = zealFrequency;
-    }
-    return true;
-  }
-  return false;
-}
-
-inline bool GCRuntime::hasIncrementalTwoSliceZealMode() {
-  return hasZealMode(ZealMode::YieldBeforeRootMarking) ||
-         hasZealMode(ZealMode::YieldBeforeMarking) ||
-         hasZealMode(ZealMode::YieldBeforeSweeping) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingAtoms) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingCaches) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingObjects) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingNonObjects) ||
-         hasZealMode(ZealMode::YieldBeforeSweepingPropMapTrees) ||
-         hasZealMode(ZealMode::YieldWhileGrayMarking);
-}
-
-#else
-inline bool GCRuntime::hasZealMode(ZealMode mode) { return false; }
-inline void GCRuntime::clearZealMode(ZealMode mode) {}
-inline bool GCRuntime::needZealousGC() { return false; }
-inline bool GCRuntime::hasIncrementalTwoSliceZealMode() { return false; }
-#endif
 
 bool IsCurrentlyAnimating(const mozilla::TimeStamp& lastAnimationTime,
                           const mozilla::TimeStamp& currentTime);

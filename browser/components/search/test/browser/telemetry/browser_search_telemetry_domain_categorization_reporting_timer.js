@@ -87,9 +87,20 @@ add_setup(async function () {
   await promise;
 
   registerCleanupFunction(async () => {
-    // The scheduler uses the mock idle service.
-    SearchSERPCategorizationEventScheduler.uninit();
-    SearchSERPCategorizationEventScheduler.init();
+    // Manually unload the pref so that we can check if we should wait for the
+    // the categories map to be un-initialized.
+    await SpecialPowers.popPrefEnv();
+    if (
+      !Services.prefs.getBoolPref(
+        "browser.search.serpEventTelemetryCategorization.enabled"
+      )
+    ) {
+      await waitForDomainToCategoriesUninit();
+    } else {
+      // The scheduler uses the mock idle service.
+      SearchSERPCategorizationEventScheduler.uninit();
+      SearchSERPCategorizationEventScheduler.init();
+    }
     SearchSERPTelemetry.overrideSearchTelemetryForTests();
     resetTelemetry();
   });
@@ -126,7 +137,10 @@ add_task(async function test_categorize_serp_and_wait() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "0",
+      num_ads_hidden: "0",
+      num_ads_loaded: "2",
       num_ads_visible: "2",
     },
   ]);
@@ -170,7 +184,10 @@ add_task(async function test_categorize_serp_open_multiple_tabs() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "0",
+      num_ads_hidden: "0",
+      num_ads_loaded: "2",
       num_ads_visible: "2",
     });
   }
@@ -223,7 +240,10 @@ add_task(async function test_categorize_serp_close_tab_and_wait() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "0",
+      num_ads_hidden: "0",
+      num_ads_loaded: "2",
       num_ads_visible: "2",
     },
   ]);
@@ -276,7 +296,10 @@ add_task(async function test_categorize_serp_open_ad_and_wait() {
       partner_code: "ff",
       provider: "example",
       tagged: "true",
+      is_shopping_page: "false",
       num_ads_clicked: "1",
+      num_ads_hidden: "0",
+      num_ads_loaded: "2",
       num_ads_visible: "2",
     },
   ]);

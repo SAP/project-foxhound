@@ -33,12 +33,14 @@
 
   --popup-notification-body-width: calc(31em - calc(2 * var(--arrowpanel-padding)));
 
+  --input-border-color: color-mix(in srgb, currentColor 46%, transparent);
+
   --toolbarbutton-icon-fill: currentColor;
   --toolbarbutton-disabled-opacity: 0.4;
 
   --toolbar-field-background-color: Field;
   --toolbar-field-color: FieldText;
-  --toolbar-field-border-color: ThreeDShadow;
+  --toolbar-field-border-color: var(--input-border-color);
   --toolbar-field-focus-background-color: Field;
   --toolbar-field-focus-color: FieldText;
   --toolbar-field-focus-border-color: color-mix(in srgb, var(--focus-outline-color) 50%, transparent);
@@ -48,7 +50,7 @@
   --toolbar-bgcolor: var(--toolbar-non-lwt-bgcolor);
   --toolbar-color: var(--toolbar-non-lwt-textcolor);
 
-  &:-moz-lwtheme {
+  &[lwtheme] {
     --toolbar-bgcolor: rgba(255,255,255,.4);
     --toolbar-color: var(--lwt-text-color, inherit);
   }
@@ -72,9 +74,15 @@
     --panel-separator-color: currentColor;
     --toolbar-field-focus-border-color: var(--focus-outline-color);
 
-    &:not(:-moz-lwtheme) {
+    --input-border-color: currentColor;
+
+    &:not([lwtheme]) {
       --panel-disabled-color: GrayText;
     }
+  }
+
+  @media (forced-colors) {
+    --input-border-color: ThreeDShadow;
   }
 
   background-color: -moz-Dialog;
@@ -96,7 +104,7 @@
 
 /* Lightweight theme roots */
 
-:root:-moz-lwtheme {
+:root[lwtheme] {
   toolbar,
   &[lwt-popup="light"] panel {
     color-scheme: light;
@@ -116,13 +124,6 @@
 }
 
 /* General styles */
-
-.plain {
-  appearance: none;
-  margin: 0 !important;
-  border: none;
-  padding: 0;
-}
 
 moz-input-box,
 html|input {
@@ -144,14 +145,14 @@ html|input:where(:not([type=radio i], [type=checkbox i], [type=range i])),
 html|textarea {
   appearance: none;
   padding: var(--space-small);
-  border: 1px solid var(--input-border-color, ThreeDShadow);
+  border: 1px solid var(--input-border-color);
   border-radius: var(--border-radius-small);
   margin: 0;
   background-color: var(--input-bgcolor, Field);
   color: var(--input-color, FieldText);
 
   &:where(:user-invalid) {
-    border-color: var(--color-error-outline);
+    border-color: var(--outline-color-error);
   }
 
   &:where(:focus-visible) {

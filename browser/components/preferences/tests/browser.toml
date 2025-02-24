@@ -10,6 +10,11 @@ support-files = [
   "addons/set_homepage.xpi",
   "addons/set_newtab.xpi",
 ]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && asan", # manifest runs too long
+  "os == 'linux' && os_version == '18.04' && tsan", # manifest runs too long
+  "win11_2009 && asan", # manifest runs too long
+]
 
 ["browser_about_settings.js"]
 
@@ -66,6 +71,9 @@ skip-if = [
   "verify && debug && os == 'linux'",
   "verify && debug && os == 'mac'",
 ]
+
+["browser_connection_system_wpad.js"]
+run-if = ["os == 'win'"]
 
 ["browser_connection_valid_hostname.js"]
 
@@ -193,6 +201,8 @@ skip-if = ["true"]
 
 ["browser_privacy_syncDataClearing.js"]
 
+["browser_privacy_syncDataClearing_v2.js"]
+
 ["browser_privacypane_2.js"]
 
 ["browser_privacypane_3.js"]
@@ -276,7 +286,6 @@ support-files = [
   "subdialog.xhtml",
   "subdialog2.xhtml",
 ]
-fail-if = ["a11y_checks"] # Bug 1854636 clicked label.dialogTitle, vbox#dialogTemplate.dialogOverlay may not be focusable
 
 ["browser_sync_chooseWhatToSync.js"]
 
@@ -289,4 +298,7 @@ fail-if = ["a11y_checks"] # Bug 1854636 clicked label.dialogTitle, vbox#dialogTe
 ["browser_warning_permanent_private_browsing.js"]
 
 ["browser_windows_launch_on_login.js"]
-run-if = ["os == 'win'"]
+run-if = ["(os == 'win' && !msix)"]
+
+["browser_windows_launch_on_login_msix.js"]
+run-if = ["(os == 'win' && msix)"]

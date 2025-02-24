@@ -1,7 +1,7 @@
 // -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
- * You can obtain one at http://mozilla.org/MPL/2.0/. */
+ * You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 const lazy = {};
 
@@ -49,11 +49,19 @@ const SCHEMA = `{
 const COLLECTION_NAME = "fingerprinting-protection-overrides";
 const PREF_GRANULAR_OVERRIDES =
   "privacy.fingerprintingProtection.granularOverrides";
+const PREF_REMOTE_OVERRIDES_ENABLED =
+  "privacy.fingerprintingProtection.remoteOverrides.enabled";
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "granularOverridesPref",
   PREF_GRANULAR_OVERRIDES
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "remoteOverridesEnabled",
+  PREF_REMOTE_OVERRIDES_ENABLED
 );
 
 /**
@@ -195,6 +203,12 @@ export class FingerprintingWebCompatService {
 
   #onRemoteUpdate(entries) {
     lazy.logConsole.debug("onUpdateEntries", { entries });
+
+    if (!lazy.remoteOverridesEnabled) {
+      lazy.logConsole.debug("Abort remote overrides");
+      return;
+    }
+
     // Clear all overrides before we update the overrides.
     this.#remoteOverrides.clear();
 

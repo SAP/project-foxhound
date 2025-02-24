@@ -566,8 +566,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
                      SRICheckDataVerifier* aSRIDataVerifier) const;
 
   nsresult SaveSRIHash(ScriptLoadRequest* aRequest,
-                       SRICheckDataVerifier* aSRIDataVerifier,
-                       uint32_t* sriLength) const;
+                       SRICheckDataVerifier* aSRIDataVerifier) const;
 
   void ReportErrorToConsole(ScriptLoadRequest* aRequest,
                             nsresult aResult) const override;
@@ -687,7 +686,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
 
   // Returns wether we should save the bytecode of this script after the
   // execution of the script.
-  static bool ShouldCacheBytecode(ScriptLoadRequest* aRequest);
+  static void CalculateBytecodeCacheFlag(ScriptLoadRequest* aRequest);
 
   void RunScriptWhenSafe(ScriptLoadRequest* aRequest);
 

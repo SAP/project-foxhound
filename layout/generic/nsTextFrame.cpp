@@ -1929,8 +1929,8 @@ bool BuildTextRunsScanner::ContinueTextRunAcrossFrames(nsTextFrame* aFrame1,
 
     // Map inline-end and inline-start to physical sides for checking presence
     // of non-zero margin/border/padding.
-    Side side1 = wm.PhysicalSide(eLogicalSideIEnd);
-    Side side2 = wm.PhysicalSide(eLogicalSideIStart);
+    Side side1 = wm.PhysicalSide(LogicalSide::IEnd);
+    Side side2 = wm.PhysicalSide(LogicalSide::IStart);
     // If the frames have an embedding level that is opposite to the writing
     // mode, we need to swap which sides we're checking.
     if (aFrame1->GetEmbeddingLevel().IsRTL() == wm.IsBidiLTR()) {
@@ -2766,7 +2766,7 @@ void BuildTextRunsScanner::SetupBreakSinksForTextRun(gfxTextRun* aTextRun,
     if (aTextRun->GetFlags2() & nsTextFrameUtils::Flags::NoBreaks) {
       flags |= nsLineBreaker::BREAK_SKIP_SETTING_NO_BREAKS;
     }
-    if (textStyle->mTextTransform.case_ == StyleTextTransformCase::Capitalize) {
+    if (textStyle->mTextTransform & StyleTextTransform::CAPITALIZE) {
       flags |= nsLineBreaker::BREAK_NEED_CAPITALIZATION;
     }
     if (textStyle->mHyphens == StyleHyphens::Auto &&
@@ -3611,6 +3611,20 @@ void nsTextFrame::PropertyProvider::GetSpacing(Range aRange,
       !(mTextRun->GetFlags2() & nsTextFrameUtils::Flags::HasTab));
 }
 
+static bool CanAddSpacingBefore(const gfxTextRun* aTextRun, uint32_t aOffset,
+                                bool aNewlineIsSignificant) {
+  const auto* g = aTextRun->GetCharacterGlyphs();
+  MOZ_ASSERT(aOffset < aTextRun->GetLength());
+  if (aNewlineIsSignificant && g[aOffset].CharIsNewline()) {
+    return false;
+  }
+  if (!aOffset) {
+    return true;
+  }
+  return g[aOffset].IsClusterStart() && g[aOffset].IsLigatureGroupStart() &&
+         !g[aOffset - 1].CharIsFormattingControl() && !g[aOffset].CharIsTab();
+}
+
 static bool CanAddSpacingAfter(const gfxTextRun* aTextRun, uint32_t aOffset,
                                bool aNewlineIsSignificant) {
   const auto* g = aTextRun->GetCharacterGlyphs();
@@ -3683,14 +3697,45 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
     nsSkipCharsRunIterator run(
         start, nsSkipCharsRunIterator::LENGTH_UNSKIPPED_ONLY, aRange.Length());
     bool newlineIsSignificant = mTextStyle->NewlineIsSignificant(mFrame);
+    // Which letter-spacing model are we using?
+    //   0 - Gecko legacy model, spacing added to trailing side of letter
+    //   1 - WebKit/Blink-compatible, spacing added to right-hand side
+    //   2 - Symmetrical spacing, half added to each side
+    gfxFloat before, after;
+    switch (StaticPrefs::layout_css_letter_spacing_model()) {
+      default:  // use Gecko legacy behavior if pref value is unknown
+      case 0:
+        before = 0.0;
+        after = mLetterSpacing;
+        break;
+      case 1:
+        if (mTextRun->IsRightToLeft()) {
+          before = mLetterSpacing;
+          after = 0.0;
+        } else {
+          before = 0.0;
+          after = mLetterSpacing;
+        }
+        break;
+      case 2:
+        before = mLetterSpacing / 2.0;
+        after = mLetterSpacing - before;
+        break;
+    }
     while (run.NextRun()) {
       uint32_t runOffsetInSubstring = run.GetSkippedOffset() - aRange.start;
       gfxSkipCharsIterator iter = run.GetPos();
       for (int32_t i = 0; i < run.GetRunLength(); ++i) {
-        if (CanAddSpacingAfter(mTextRun, run.GetSkippedOffset() + i,
+        if (before != 0.0 &&
+            CanAddSpacingBefore(mTextRun, run.GetSkippedOffset() + i,
+                                newlineIsSignificant)) {
+          aSpacing[runOffsetInSubstring + i].mBefore += before;
+        }
+        if (after != 0.0 &&
+            CanAddSpacingAfter(mTextRun, run.GetSkippedOffset() + i,
                                newlineIsSignificant)) {
           // End of a cluster, not in a ligature: put letter-spacing after it
-          aSpacing[runOffsetInSubstring + i].mAfter += mLetterSpacing;
+          aSpacing[runOffsetInSubstring + i].mAfter += after;
         }
         if (IsCSSWordSpacingSpace(mFrag, i + run.GetOriginalOffset(), mFrame,
                                   mTextStyle)) {
@@ -5050,25 +5095,25 @@ nsRect nsTextFrame::UpdateTextEmphasis(WritingMode aWM,
           : do_AddRef(aProvider.GetFontMetrics());
   // When the writing mode is vertical-lr the line is inverted, and thus
   // the ascent and descent are swapped.
-  nscoord absOffset = (side == eLogicalSideBStart) != aWM.IsLineInverted()
+  nscoord absOffset = (side == LogicalSide::BStart) != aWM.IsLineInverted()
                           ? baseFontMetrics->MaxAscent() + fm->MaxDescent()
                           : baseFontMetrics->MaxDescent() + fm->MaxAscent();
   RubyBlockLeadings leadings;
   if (nsRubyFrame* ruby = FindFurthestInlineRubyAncestor(this)) {
     leadings = ruby->GetBlockLeadings();
   }
-  if (side == eLogicalSideBStart) {
+  if (side == LogicalSide::BStart) {
     info->baselineOffset = -absOffset - leadings.mStart;
     overflowRect.BStart(aWM) = -overflowRect.BSize(aWM) - leadings.mStart;
   } else {
-    MOZ_ASSERT(side == eLogicalSideBEnd);
+    MOZ_ASSERT(side == LogicalSide::BEnd);
     info->baselineOffset = absOffset + leadings.mEnd;
     overflowRect.BStart(aWM) = frameSize.BSize(aWM) + leadings.mEnd;
   }
   // If text combined, fix the gap between the text frame and its parent.
   if (isTextCombined) {
     nscoord gap = (baseFontMetrics->MaxHeight() - frameSize.BSize(aWM)) / 2;
-    overflowRect.BStart(aWM) += gap * (side == eLogicalSideBStart ? -1 : 1);
+    overflowRect.BStart(aWM) += gap * (side == LogicalSide::BStart ? -1 : 1);
   }
 
   SetProperty(EmphasisMarkProperty(), info);
@@ -5675,6 +5720,10 @@ bool nsTextFrame::GetSelectionTextColors(SelectionType aSelectionType,
       bool hasBackground = aTextPaintStyle.GetCustomHighlightBackgroundColor(
           aHighlightName, aBackground);
       return hasForeground || hasBackground;
+    }
+    case SelectionType::eTargetText: {
+      aTextPaintStyle.GetTargetTextColors(aForeground, aBackground);
+      return true;
     }
     case SelectionType::eURLSecondary:
       aTextPaintStyle.GetURLSecondaryColor(aForeground);
@@ -9201,7 +9250,7 @@ bool nsTextFrame::IsFloatingFirstLetterChild() const {
 
 bool nsTextFrame::IsInitialLetterChild() const {
   nsIFrame* frame = GetParent();
-  return frame && frame->StyleTextReset()->mInitialLetterSize != 0.0f &&
+  return frame && frame->StyleTextReset()->mInitialLetter.size != 0.0f &&
          frame->IsLetterFrame();
 }
 
@@ -9216,7 +9265,6 @@ void nsTextFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                          nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("nsTextFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aMetrics, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   InvalidateSelectionState();

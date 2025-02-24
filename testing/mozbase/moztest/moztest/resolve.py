@@ -8,13 +8,13 @@ import pickle
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
+from urllib.parse import urlsplit
 
 import mozpack.path as mozpath
 import six
 from manifestparser import TestManifest, combine_fields
 from mozbuild.base import MozbuildObject
 from mozbuild.testing import REFTEST_FLAVORS, TEST_MANIFESTS
-from mozbuild.util import OrderedDefaultDict
 from mozpack.files import FileFinder
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -612,7 +612,7 @@ class TestResolver(MozbuildObject):
         self._wpt_loaded = False
 
     def _reset_state(self):
-        self._tests_by_path = OrderedDefaultDict(list)
+        self._tests_by_path = defaultdict(list)
         self._tests_by_flavor = defaultdict(set)
         self._tests_by_manifest = defaultdict(list)
         self._test_dirs = set()
@@ -854,10 +854,9 @@ class TestResolver(MozbuildObject):
         if test["name"].startswith("/_mozilla/webgpu"):
             depth = 9001
 
-        group = os.path.dirname(test["name"])
-        while group.count("/") > depth:
-            group = os.path.dirname(group)
-        return group
+        # We have a leading / so the first component is always ""
+        components = depth + 1
+        return "/".join(urlsplit(test["name"]).path.split("/")[:-1][:components])
 
     def add_wpt_manifest_data(self):
         """Adds manifest data for web-platform-tests into the list of available tests.
@@ -887,7 +886,6 @@ class TestResolver(MozbuildObject):
             self.topsrcdir,
             self.topobjdir,
             rebuild=False,
-            download=True,
             config_path=None,
             rewrite_config=True,
             update=True,

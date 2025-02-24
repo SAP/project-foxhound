@@ -31,6 +31,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   ExtensionData: "resource://gre/modules/Extension.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   PermissionsUtils: "resource://gre/modules/PermissionsUtils.sys.mjs",
   QuarantinedDomains: "resource://gre/modules/ExtensionPermissions.sys.mjs",
 });
@@ -192,12 +193,14 @@ const PROP_JSON_FIELDS = [
   "targetApplications",
   "targetPlatforms",
   "signedState",
+  "signedTypes",
   "signedDate",
   "seen",
   "dependencies",
   "incognito",
   "userPermissions",
   "optionalPermissions",
+  "requestedPermissions",
   "sitePermissions",
   "siteOrigin",
   "icons",
@@ -1424,12 +1427,70 @@ AddonWrapper = class {
     return addon.location.name == KEY_APP_PROFILE;
   }
 
+  /**
+   * Returns true if the addon is configured to be installed
+   * by enterprise policy.
+   */
+  get isInstalledByEnterprisePolicy() {
+    const policySettings = Services.policies?.getExtensionSettings(this.id);
+    return ["force_installed", "normal_installed"].includes(
+      policySettings?.installation_mode
+    );
+  }
+
+  /**
+   * Required permissions that extension has access to based on its manifest.
+   * In mv3 this doesn't include host_permissions.
+   */
   get userPermissions() {
     return addonFor(this).userPermissions;
   }
 
   get optionalPermissions() {
     return addonFor(this).optionalPermissions;
+  }
+
+  /**
+   * Additional permissions that extension is requesting in its manifest.
+   * Currently this is host_permissions in MV3.
+   */
+  get requestedPermissions() {
+    return addonFor(this).requestedPermissions;
+  }
+
+  /**
+   * A helper that returns all permissions for the install prompt.
+   */
+  get installPermissions() {
+    let required = this.userPermissions;
+    if (!required) {
+      return null;
+    }
+    let requested = this.requestedPermissions;
+    // Currently this can't result in duplicates, but if logic of what goes
+    // into these lists changes, make sure to check for dupes.
+    let perms = {
+      origins: required.origins.concat(requested?.origins ?? []),
+      permissions: required.permissions.concat(requested?.permissions ?? []),
+    };
+    return perms;
+  }
+
+  get optionalOriginsNormalized() {
+    const { permissions } = this.userPermissions;
+    const { origins } = this.optionalPermissions;
+
+    const { patterns } = new MatchPatternSet(origins, {
+      restrictSchemes: !(
+        this.isPrivileged && permissions?.includes("mozillaAddons")
+      ),
+      ignorePath: true,
+    });
+
+    // De-dup the normalized host permission patterns.
+    return patterns
+      ? [...new Set(patterns.map(matcher => matcher.pattern))]
+      : [];
   }
 
   isCompatibleWith(aAppVersion, aPlatformVersion) {
@@ -1556,6 +1617,7 @@ function defineAddonWrapperProperty(name, getter) {
   "validInstallOrigins",
   "dependencies",
   "signedState",
+  "signedTypes",
   "sitePermissions",
   "siteOrigin",
   "isCorrectlySigned",
@@ -2175,7 +2237,7 @@ export const XPIDatabase = {
    */
   async verifySignatures() {
     try {
-      let addons = await this.getAddonList(a => true);
+      let addons = await this.getAddonList(() => true);
 
       let changes = {
         enabled: [],
@@ -2188,17 +2250,43 @@ export const XPIDatabase = {
           continue;
         }
 
-        let signedState = await XPIExports.verifyBundleSignedState(
-          addon._sourceBundle,
-          addon
-        );
+        let { signedState, signedTypes } =
+          await XPIExports.verifyBundleSignedState(addon._sourceBundle, addon);
+
+        const changedProperties = [];
 
         if (signedState != addon.signedState) {
           addon.signedState = signedState;
+          changedProperties.push("signedState");
+        }
+
+        if (
+          addon.signedState === lazy.AddonManager.SIGNEDSTATE_SIGNED &&
+          Services.policies
+        ) {
+          const addonDetailsFromFile =
+            await XPIExports.XPIInstall.loadManifestFromFile(
+              addon._sourceBundle,
+              addon.location
+            );
+          addon.adminInstallOnly = addonDetailsFromFile.adminInstallOnly;
+        }
+
+        if (
+          !lazy.ObjectUtils.deepEqual(
+            signedTypes?.toSorted(),
+            addon.signedTypes?.toSorted()
+          )
+        ) {
+          addon.signedTypes = signedTypes;
+          changedProperties.push("signedTypes");
+        }
+
+        if (changedProperties.length) {
           lazy.AddonManagerPrivate.callAddonListeners(
             "onPropertyChanged",
             addon.wrapper,
-            ["signedState"]
+            changedProperties
           );
         }
 
@@ -2426,7 +2514,7 @@ export const XPIDatabase = {
     if (!this.addonDB) {
       return [];
     }
-    return _filterDB(this.addonDB, aAddon => true);
+    return _filterDB(this.addonDB, () => true);
   },
 
   /**
@@ -2520,6 +2608,25 @@ export const XPIDatabase = {
       if (Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)) {
         logger.warn(`Preference ${PREF_XPI_SIGNATURES_DEV_ROOT} is set.`);
       }
+      return false;
+    }
+
+    // When signatures are required, and the addon has the adminInstallOnly
+    // flag set to true, then we want to confirm if there is still an active
+    // enterprise policy setting for the same addon id, otherwise we should
+    // mark if as appDisabled.
+    //
+    // NOTE: the adminInstallOnly boolean flag is not being stored in the Addon DB,
+    // it is instead computed only when installing the addon and when we are
+    // re-verify the signatures once per day.
+    if (
+      this.mustSign(aAddon.type) &&
+      aAddon.adminInstallOnly &&
+      !aAddon.wrapper.isInstalledByEnterprisePolicy
+    ) {
+      logger.warn(
+        `Add-on ${aAddon.id} is installable only from policies, but no policy extension settings have been found.`
+      );
       return false;
     }
 
@@ -3084,24 +3191,11 @@ export const XPIDatabaseReconcile = {
    *        The new state of the add-on
    * @param {AddonInternal?} [aNewAddon]
    *        The manifest for the new add-on if it has already been loaded
-   * @param {string?} [aOldAppVersion]
-   *        The version of the application last run with this profile or null
-   *        if it is a new profile or the version is unknown
-   * @param {string?} [aOldPlatformVersion]
-   *        The version of the platform last run with this profile or null
-   *        if it is a new profile or the version is unknown
    * @returns {boolean}
    *        A boolean indicating if flushing caches is required to complete
    *        changing this add-on
    */
-  addMetadata(
-    aLocation,
-    aId,
-    aAddonState,
-    aNewAddon,
-    aOldAppVersion,
-    aOldPlatformVersion
-  ) {
+  addMetadata(aLocation, aId, aAddonState, aNewAddon) {
     logger.debug(`New add-on ${aId} installed in ${aLocation.name}`);
 
     // We treat this is a new install if,
@@ -3348,6 +3442,10 @@ export const XPIDatabaseReconcile = {
     let signedDateMissing =
       aOldAddon.signedDate === undefined &&
       (aOldAddon.signedState || checkSigning);
+    // signedTypes must be set if signedState is set.
+    let signedTypesMissing =
+      aOldAddon.signedTypes === undefined &&
+      (aOldAddon.signedState || checkSigning);
 
     // If maxVersion was inadvertently updated for a locale, force a reload
     // from the manifest.  See Bug 1646016 for details.
@@ -3360,7 +3458,12 @@ export const XPIDatabaseReconcile = {
     }
 
     let manifest = null;
-    if (checkSigning || aReloadMetadata || signedDateMissing) {
+    if (
+      checkSigning ||
+      aReloadMetadata ||
+      signedDateMissing ||
+      signedTypesMissing
+    ) {
       try {
         manifest = XPIExports.XPIInstall.syncLoadManifest(
           aAddonState,
@@ -3382,6 +3485,10 @@ export const XPIDatabaseReconcile = {
 
     if (signedDateMissing) {
       aOldAddon.signedDate = manifest.signedDate;
+    }
+
+    if (signedTypesMissing) {
+      aOldAddon.signedTypes = manifest.signedTypes;
     }
 
     // May be updating from a version of the app that didn't support all the

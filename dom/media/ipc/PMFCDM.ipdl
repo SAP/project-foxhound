@@ -12,6 +12,7 @@ using mozilla::CryptoScheme from "MediaData.h";
 using mozilla::dom::MediaKeyMessageType from "mozilla/dom/MediaKeyMessageEventBinding.h";
 using mozilla::dom::MediaKeyStatus from "mozilla/dom/MediaKeyStatusMapBinding.h";
 using mozilla::dom::HDCPVersion from "mozilla/dom/MediaKeysBinding.h";
+using mozilla::KeySystemConfigRequest from "mozilla/KeySystemConfig.h";
 
 namespace mozilla {
 
@@ -45,6 +46,7 @@ struct MFCDMKeyExpiration {
 // For GetCapabilities()
 struct MFCDMMediaCapability {
   nsString contentType;
+  CryptoScheme[] encryptionSchemes;
   nsString robustness;
 };
 
@@ -54,10 +56,10 @@ struct MFCDMCapabilitiesIPDL {
   MFCDMMediaCapability[] audioCapabilities;
   MFCDMMediaCapability[] videoCapabilities;
   SessionType[] sessionTypes;
-  CryptoScheme[] encryptionSchemes;
   Requirement distinctiveID;
   Requirement persistentState;
-  bool isHDCP22Compatible;
+  bool? isHDCP22Compatible;
+  bool isHardwareDecryption;
 };
 
 union MFCDMCapabilitiesResult {
@@ -95,12 +97,18 @@ union MFCDMSessionResult {
   nsresult;
 };
 
+struct MFCDMCapabilitiesRequest {
+  nsString keySystem;
+  bool isHardwareDecryption;
+  bool isPrivateBrowsing;
+};
+
 [ManualDealloc]
 async protocol PMFCDM
 {
   manager PRemoteDecoderManager;
 parent:
-  async GetCapabilities(bool isHwSecured) returns (MFCDMCapabilitiesResult result);
+  async GetCapabilities(MFCDMCapabilitiesRequest request) returns (MFCDMCapabilitiesResult result);
   async Init(MFCDMInitParamsIPDL params) returns (MFCDMInitResult result);
   async CreateSessionAndGenerateRequest(MFCDMCreateSessionParamsIPDL type)
       returns (MFCDMSessionResult result);

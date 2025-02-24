@@ -30,7 +30,7 @@ load 385423-2.html
 load 385719-1.html
 load 389326-1.html
 load 390476.html
-skip-if(winWidget&&!is64Bit) load 393746-1.xhtml  # Bug 1727925
+load 393746-1.xhtml  # Bug 1727925
 load 393749-1.html
 load 393822-1.html
 load 394384-1.html
@@ -165,7 +165,7 @@ load 1467847-1.html
 load 1468020.html
 load 1470437.html
 load 1470440.html
-pref(widget.windows.window_occlusion_tracking.enabled,false) load 1478035.html # Bug 1819154
+load 1478035.html
 load 1490704-1.html
 load 1501518.html
 load 1503986-1.html
@@ -177,12 +177,12 @@ load 1513133.html
 load 1496194.html
 load 1505934-1.html
 load 1509123.html
-pref(widget.windows.window_occlusion_tracking.enabled,false) load 1494062-blob-image-wraplist-clip.html # Bug 1819154
+load 1494062-blob-image-wraplist-clip.html
 load texture-allocator-zero-region.html
 load 1524418.html
-pref(layout.css.individual-transform.enabled,true) load 1529149.html
+load 1529149.html
 load 1541113.html
-pref(layout.css.individual-transform.enabled,true) load 1547169.html
+load 1547169.html
 load 1535657.html
 load 1566206.html
 load 1615141.html
@@ -224,4 +224,5 @@ load 1808830.html
 load 1825450.html
 load 1683679.html
 load 1843622.html
+load 1898569.html
 

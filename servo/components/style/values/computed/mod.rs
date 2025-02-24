@@ -38,16 +38,15 @@ use std::ops::{Add, Sub};
 
 #[cfg(feature = "gecko")]
 pub use self::align::{
-    AlignContent, AlignItems, AlignTracks, JustifyContent, JustifyItems, JustifyTracks,
-    SelfAlignment,
+    AlignContent, AlignItems, JustifyContent, JustifyItems, SelfAlignment,
 };
 #[cfg(feature = "gecko")]
 pub use self::align::{AlignSelf, JustifySelf};
 pub use self::angle::Angle;
 pub use self::animation::{
-    AnimationIterationCount, AnimationName, AnimationTimeline, AnimationPlayState,
-    AnimationFillMode, AnimationComposition, AnimationDirection, ScrollAxis,
-    ScrollTimelineName, TransitionBehavior, TransitionProperty, ViewTimelineInset
+    AnimationComposition, AnimationDirection, AnimationFillMode, AnimationIterationCount,
+    AnimationName, AnimationPlayState, AnimationTimeline, ScrollAxis, ScrollTimelineName,
+    TransitionBehavior, TransitionProperty, ViewTimelineInset,
 };
 pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
@@ -88,10 +87,18 @@ pub use self::motion::{OffsetPath, OffsetPosition, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::page::{PageName, PageOrientation, PageSize, PageSizeOrientation, PaperSize};
 pub use self::percentage::{NonNegativePercentage, Percentage};
+pub use self::position::AnchorName;
+pub use self::position::AnchorScope;
 pub use self::position::AspectRatio;
+pub use self::position::DashedIdentAndOrTryTactic;
+pub use self::position::PositionAnchor;
+pub use self::position::PositionTryOptions;
+pub use self::position::PositionTryOrder;
+pub use self::position::PositionVisibility;
 pub use self::position::{
     GridAutoFlow, GridTemplateAreas, MasonryAutoFlow, Position, PositionOrAuto, ZIndex,
 };
+pub use self::position::{InsetArea, InsetAreaKeyword};
 pub use self::ratio::Ratio;
 pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::Resolution;
@@ -649,6 +656,25 @@ where
     }
 }
 
+impl<T> ToComputedValue for thin_vec::ThinVec<T>
+where
+    T: ToComputedValue,
+{
+    type ComputedValue = thin_vec::ThinVec<<T as ToComputedValue>::ComputedValue>;
+
+    #[inline]
+    fn to_computed_value(&self, context: &Context) -> Self::ComputedValue {
+        self.iter()
+            .map(|item| item.to_computed_value(context))
+            .collect()
+    }
+
+    #[inline]
+    fn from_computed_value(computed: &Self::ComputedValue) -> Self {
+        computed.iter().map(T::from_computed_value).collect()
+    }
+}
+
 // NOTE(emilio): This is implementable more generically, but it's unlikely
 // what you want there, as it forces you to have an extra allocation.
 //
@@ -703,6 +729,7 @@ trivial_to_computed_value!(crate::values::AtomIdent);
 trivial_to_computed_value!(crate::Namespace);
 #[cfg(feature = "servo")]
 trivial_to_computed_value!(crate::Prefix);
+trivial_to_computed_value!(crate::stylesheets::UrlExtraData);
 trivial_to_computed_value!(String);
 trivial_to_computed_value!(Box<str>);
 trivial_to_computed_value!(crate::OwnedStr);

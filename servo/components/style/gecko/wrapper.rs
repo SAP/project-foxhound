@@ -19,7 +19,7 @@ use crate::bloom::each_relevant_element_hash;
 use crate::context::{PostAnimationTasks, QuirksMode, SharedStyleContext, UpdateAnimationsTasks};
 use crate::data::ElementData;
 use crate::dom::{LayoutIterator, NodeInfo, OpaqueNode, TDocument, TElement, TNode, TShadowRoot};
-use crate::gecko::selector_parser::{CustomState, NonTSPseudoClass, PseudoElement, SelectorImpl};
+use crate::gecko::selector_parser::{NonTSPseudoClass, PseudoElement, SelectorImpl};
 use crate::gecko::snapshot_helpers;
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::bindings::Gecko_ElementHasAnimations;
@@ -61,6 +61,7 @@ use crate::rule_tree::CascadeLevel as ServoCascadeLevel;
 use crate::selector_parser::{AttrValue, Lang};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::string_cache::{Atom, Namespace, WeakAtom, WeakNamespace};
+use crate::stylesheets::scope_rule::ImplicitScopeRoot;
 use crate::stylist::CascadeData;
 use crate::values::computed::Display;
 use crate::values::{AtomIdent, AtomString};
@@ -207,6 +208,15 @@ impl<'lr> TShadowRoot for GeckoShadowRoot<'lr> {
         }
 
         unsafe { mem::transmute(slice) }
+    }
+
+    #[inline]
+    fn implicit_scope_for_sheet(&self, sheet_index: usize) -> Option<ImplicitScopeRoot> {
+        use crate::stylesheets::StylesheetInDocument;
+
+        let author_styles = unsafe { self.0.mServoStyles.mPtr.as_ref()? };
+        let sheet = author_styles.stylesheets.get(sheet_index)?;
+        sheet.implicit_scope_root()
     }
 }
 
@@ -577,14 +587,14 @@ pub enum GeckoChildrenIterator<'a> {
     /// replaces it with the next sibling when requested.
     Current(Option<GeckoNode<'a>>),
     /// A Gecko-implemented iterator we need to drop appropriately.
-    GeckoIterator(structs::StyleChildrenIterator),
+    GeckoIterator(std::mem::ManuallyDrop<structs::StyleChildrenIterator>),
 }
 
 impl<'a> Drop for GeckoChildrenIterator<'a> {
     fn drop(&mut self) {
         if let GeckoChildrenIterator::GeckoIterator(ref mut it) = *self {
             unsafe {
-                bindings::Gecko_DestroyStyleChildrenIterator(it);
+                bindings::Gecko_DestroyStyleChildrenIterator(&mut **it);
             }
         }
     }
@@ -605,7 +615,7 @@ impl<'a> Iterator for GeckoChildrenIterator<'a> {
                 // however we can't express this easily with bindgen, and it would
                 // introduce functions with two input lifetimes into bindgen,
                 // which would be out of scope for elision.
-                bindings::Gecko_GetNextStyleChild(&mut *(it as *mut _))
+                bindings::Gecko_GetNextStyleChild(&mut **it)
                     .as_ref()
                     .map(GeckoNode)
             },
@@ -806,13 +816,14 @@ impl<'le> GeckoElement<'le> {
             "note_explicit_hints: {:?}, restyle_hint={:?}, change_hint={:?}",
             self, restyle_hint, change_hint
         );
-
+        debug_assert!(bindings::Gecko_IsMainThread());
         debug_assert!(
             !(restyle_hint.has_animation_hint() && restyle_hint.has_non_animation_hint()),
             "Animation restyle hints should not appear with non-animation restyle hints"
         );
 
-        let mut data = match self.mutate_data() {
+        // See comments on borrow_assert_main_thread and co.
+        let data = match self.get_data() {
             Some(d) => d,
             None => {
                 debug!("(Element not styled, discarding hints)");
@@ -820,14 +831,17 @@ impl<'le> GeckoElement<'le> {
             },
         };
 
-        debug_assert!(data.has_styles(), "how?");
-
         // Propagate the bit up the chain.
         if restyle_hint.has_animation_hint() {
             bindings::Gecko_NoteAnimationOnlyDirtyElement(self.0);
         } else {
             bindings::Gecko_NoteDirtyElement(self.0);
         }
+
+        #[cfg(debug_assertions)]
+        let mut data = data.borrow_mut();
+        #[cfg(not(debug_assertions))]
+        let data = &mut *data.as_ptr();
 
         data.hint.insert(restyle_hint);
         data.damage |= damage;
@@ -875,10 +889,12 @@ impl<'le> GeckoElement<'le> {
         // function.
         if let Some(ref existing) = existing_transitions.get(&property_declaration_id.to_owned()) {
             let after_value =
-                AnimationValue::from_computed_values(property_declaration_id, after_change_style)
-                    .unwrap();
-
-            return ***existing != after_value;
+                AnimationValue::from_computed_values(property_declaration_id, after_change_style);
+            debug_assert!(
+                after_value.is_some() ||
+                    matches!(property_declaration_id, PropertyDeclarationId::Custom(..))
+            );
+            return after_value.is_none() || ***existing != after_value.unwrap();
         }
 
         if combined_duration_seconds <= 0.0f32 {
@@ -889,7 +905,16 @@ impl<'le> GeckoElement<'le> {
             AnimationValue::from_computed_values(property_declaration_id, before_change_style);
         let to = AnimationValue::from_computed_values(property_declaration_id, after_change_style);
 
-        debug_assert_eq!(to.is_some(), from.is_some());
+        debug_assert!(
+            to.is_some() == from.is_some() ||
+                // If the declaration contains a custom property and getComputedValue was previously
+                // called before that custom property was defined, `from` will be `None` here.
+                matches!(from, Some(AnimationValue::Custom(..))) ||
+                // Similarly, if the declaration contains a custom property, getComputedValue was
+                // previously called, and the custom property registration is removed, `to` will be
+                // `None`.
+                matches!(to, Some(AnimationValue::Custom(..)))
+        );
 
         from != to
     }
@@ -1011,9 +1036,11 @@ impl<'le> TElement for GeckoElement<'le> {
             self.may_have_anonymous_children()
         {
             unsafe {
-                let mut iter: structs::StyleChildrenIterator = ::std::mem::zeroed();
-                bindings::Gecko_ConstructStyleChildrenIterator(self.0, &mut iter);
-                return LayoutIterator(GeckoChildrenIterator::GeckoIterator(iter));
+                let mut iter = std::mem::MaybeUninit::<structs::StyleChildrenIterator>::uninit();
+                bindings::Gecko_ConstructStyleChildrenIterator(self.0, iter.as_mut_ptr());
+                return LayoutIterator(GeckoChildrenIterator::GeckoIterator(
+                    std::mem::ManuallyDrop::new(iter.assume_init()),
+                ));
             }
         }
 
@@ -1237,20 +1264,6 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     #[inline]
-    fn has_custom_state(&self, state: &CustomState) -> bool {
-        if !self.is_html_element() {
-            return false;
-        }
-        let check_state_ptr: *const nsAtom = state.0.as_ptr();
-        self.extended_slots().map_or(false, |slot| {
-            (&slot.mCustomStates).iter().any(|setstate| {
-                let setstate_ptr: *const nsAtom = setstate.mRawPtr;
-                setstate_ptr == check_state_ptr
-            })
-        })
-    }
-
-    #[inline]
     fn has_part_attr(&self) -> bool {
         self.as_node()
             .get_bool_flag(nsINode_BooleanFlag::ElementHasPart)
@@ -1289,6 +1302,20 @@ impl<'le> TElement for GeckoElement<'le> {
         };
 
         snapshot_helpers::each_class_or_part(attr, callback)
+    }
+
+    #[inline]
+    fn each_custom_state<F>(&self, mut callback: F)
+    where
+        F: FnMut(&AtomIdent),
+    {
+        if let Some(slots) = self.extended_slots() {
+            unsafe {
+                for atom in slots.mCustomStates.iter() {
+                    AtomIdent::with(atom.mRawPtr, &mut callback)
+                }
+            }
+        }
     }
 
     #[inline]
@@ -1551,14 +1578,13 @@ impl<'le> TElement for GeckoElement<'le> {
 
         let mut transitions_to_keep = PropertyDeclarationIdSet::default();
         for transition_property in after_change_style.transition_properties() {
-            let physical_longhand = PropertyDeclarationId::Longhand(
-                transition_property
-                    .longhand_id
-                    .to_physical(after_change_style.writing_mode),
-            );
-            transitions_to_keep.insert(physical_longhand);
+            let physical_property = transition_property
+                .property
+                .as_borrowed()
+                .to_physical(after_change_style.writing_mode);
+            transitions_to_keep.insert(physical_property);
             if self.needs_transitions_update_per_property(
-                physical_longhand,
+                physical_property,
                 after_change_ui_style
                     .transition_combined_duration_at(transition_property.index)
                     .seconds(),
@@ -1791,17 +1817,17 @@ impl<'le> TElement for GeckoElement<'le> {
         self.as_node().selector_flags() & node_flags == node_flags
     }
 
-    fn relative_selector_search_direction(&self) -> Option<ElementSelectorFlags> {
+    fn relative_selector_search_direction(&self) -> ElementSelectorFlags {
         use crate::gecko_bindings::structs::NodeSelectorFlags;
         let flags = self.as_node().selector_flags();
         if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestorSibling.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR_SIBLING
         } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionAncestor.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_ANCESTOR
         } else if (flags & NodeSelectorFlags::RelativeSelectorSearchDirectionSibling.0) != 0 {
-            Some(ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING)
+            ElementSelectorFlags::RELATIVE_SELECTOR_SEARCH_DIRECTION_SIBLING
         } else {
-            None
+            ElementSelectorFlags::empty()
         }
     }
 }
@@ -2042,15 +2068,12 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
-            // TODO: This applying only to HTML elements is weird.
-            NonTSPseudoClass::Dir(ref dir) => {
-                self.is_html_element() && self.state().intersects(dir.element_state())
-            },
+            NonTSPseudoClass::Dir(ref dir) => self.state().intersects(dir.element_state()),
             NonTSPseudoClass::AnyLink => self.is_link(),
             NonTSPseudoClass::Link => {
                 self.is_link() && context.visited_handling().matches_unvisited()
             },
-            NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(state),
+            NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(&state.0),
             NonTSPseudoClass::Visited => {
                 self.is_link() && context.visited_handling().matches_visited()
             },
@@ -2101,9 +2124,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 bindings::Gecko_IsSelectListBox(self.0)
             },
             NonTSPseudoClass::MozIsHTML => self.as_node().owner_doc().is_html_document(),
-            NonTSPseudoClass::MozLWTheme |
-            NonTSPseudoClass::MozLocaleDir(..) |
-            NonTSPseudoClass::MozWindowInactive => {
+            NonTSPseudoClass::MozLocaleDir(..) | NonTSPseudoClass::MozWindowInactive => {
                 let state_bit = pseudo_class.document_state_flag();
                 if state_bit.is_empty() {
                     debug_assert!(
@@ -2183,6 +2204,20 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         };
 
         snapshot_helpers::has_class_or_part(name, case_sensitivity, attr)
+    }
+
+    #[inline]
+    fn has_custom_state(&self, state: &AtomIdent) -> bool {
+        if !self.is_html_element() {
+            return false;
+        }
+        let check_state_ptr: *const nsAtom = state.as_ptr();
+        self.extended_slots().map_or(false, |slot| {
+            (&slot.mCustomStates).iter().any(|setstate| {
+                let setstate_ptr: *const nsAtom = setstate.mRawPtr;
+                setstate_ptr == check_state_ptr
+            })
+        })
     }
 
     #[inline]

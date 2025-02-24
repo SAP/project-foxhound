@@ -318,7 +318,13 @@ function compare_remote_settings_files {
     remote_records_url="$REMOTE_SETTINGS_SERVER/buckets/${bucket}/collections/${collection}/changeset?_expected=${last_modified}"
     local_location_output="$REMOTE_SETTINGS_OUTPUT/${bucket}/${collection}.json"
     mkdir -p "$REMOTE_SETTINGS_OUTPUT/${bucket}"
-    ${WGET} -qO- "$remote_records_url" | ${JQ} '{"data": .changes, "timestamp": .timestamp}' > "${local_location_output}"
+    # We sort both the keys and the records in search-config-v2 to make it
+    # easier to read and to experiment with making changes via the dump file.
+    if [ "${collection}" = "search-config-v2" ]; then
+      ${WGET} -qO- "$remote_records_url" | ${JQ} --sort-keys '{"data": .changes | sort_by(.recordType, .identifier), "timestamp": .timestamp}' > "${local_location_output}"
+    else
+      ${WGET} -qO- "$remote_records_url" | ${JQ} '{"data": .changes, "timestamp": .timestamp}' > "${local_location_output}"
+    fi
 
     # 5. Download attachments if needed.
     if [ "${bucket}" = "blocklists" ] && [ "${collection}" = "addons-bloomfilters" ]; then
@@ -415,10 +421,10 @@ function compare_mobile_experiments() {
 
   ( ${DIFF} fenix-experiments-old.json fenix-experiments-new.json; ${DIFF} focus-experiments-old.json focus-experiments-new.json ) > "${EXPERIMENTER_DIFF_ARTIFACT}"
   if [ -s "${EXPERIMENTER_DIFF_ARTIFACT}" ]; then
+    return 0
+  else
     # no change
     return 1
-  else
-    return 0
   fi
 }
 

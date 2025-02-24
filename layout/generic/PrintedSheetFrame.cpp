@@ -10,6 +10,7 @@
 
 #include <tuple>
 
+#include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsPageContentFrame.h"
@@ -86,7 +87,6 @@ void PrintedSheetFrame::Reflow(nsPresContext* aPresContext,
                                nsReflowStatus& aStatus) {
   MarkInReflow();
   DO_GLOBAL_REFLOW_COUNT("PrintedSheetFrame");
-  DISPLAY_REFLOW(aPresContext, this, aReflowInput, aReflowOutput, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   // If we have a prev-in-flow, take its overflowing content:

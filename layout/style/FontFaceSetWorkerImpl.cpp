@@ -177,11 +177,11 @@ void FontFaceSetWorkerImpl::DispatchToOwningThread(
     return;
   }
 
-  class FontFaceSetWorkerRunnable final : public WorkerRunnable {
+  class FontFaceSetWorkerRunnable final : public WorkerThreadRunnable {
    public:
     FontFaceSetWorkerRunnable(WorkerPrivate* aWorkerPrivate,
                               std::function<void()>&& aFunc)
-        : WorkerRunnable(aWorkerPrivate, "FontFaceSetWorkerRunnable"),
+        : WorkerThreadRunnable("FontFaceSetWorkerRunnable"),
           mFunc(std::move(aFunc)) {}
 
     bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
@@ -193,9 +193,9 @@ void FontFaceSetWorkerImpl::DispatchToOwningThread(
     std::function<void()> mFunc;
   };
 
-  RefPtr<FontFaceSetWorkerRunnable> runnable =
-      new FontFaceSetWorkerRunnable(workerPrivate, std::move(aFunc));
-  runnable->Dispatch();
+  auto runnable =
+      MakeRefPtr<FontFaceSetWorkerRunnable>(workerPrivate, std::move(aFunc));
+  runnable->Dispatch(workerPrivate);
 }
 
 uint64_t FontFaceSetWorkerImpl::GetInnerWindowID() {
@@ -227,7 +227,7 @@ void FontFaceSetWorkerImpl::FlushUserFontSet() {
   }
 
   if (modified) {
-    IncrementGeneration(true);
+    IncrementGenerationLocked(true);
     mHasLoadingFontFacesIsDirty = true;
     CheckLoadingStarted();
     CheckLoadingFinished();
@@ -262,8 +262,8 @@ nsresult FontFaceSetWorkerImpl::StartLoad(gfxUserFontEntry* aUserFontEntry,
       mWorkerRef->Private(), loadGroup, nullptr);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  RefPtr<nsFontFaceLoader> fontLoader =
-      new nsFontFaceLoader(aUserFontEntry, aSrcIndex, this, channel);
+  auto fontLoader =
+      MakeRefPtr<nsFontFaceLoader>(aUserFontEntry, aSrcIndex, this, channel);
 
   if (LOG_ENABLED()) {
     nsCOMPtr<nsIURI> referrer =

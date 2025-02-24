@@ -19,12 +19,13 @@ const kESModuleList = new Set([
   /browser\/vpn-card.js$/,
   /toolkit\/content\/global\/certviewer\/components\/.*\.js$/,
   /toolkit\/content\/global\/certviewer\/.*\.js$/,
+  /toolkit\/content\/global\/ml\/transformers.*\.js$/,
   /chrome\/pdfjs\/content\/web\/.*\.js$/,
 ]);
 
-// Normally we would use reflect.jsm to get Reflect.parse. However, if
-// we do that, then all the AST data is allocated in reflect.jsm's
-// zone. That exposes a bug in our GC. The GC collects reflect.jsm's
+// Normally we would use reflect.sys.mjs to get Reflect.parse. However, if
+// we do that, then all the AST data is allocated in reflect.sys.mjs's
+// zone. That exposes a bug in our GC. The GC collects reflect.sys.mjs's
 // zone but not the zone in which our test code lives (since no new
 // data is being allocated in it). The cross-compartment wrappers in
 // our zone that point to the AST data never get collected, and so the
@@ -69,7 +70,7 @@ function uriIsESModule(uri) {
 }
 
 function parsePromise(uri, parseTarget) {
-  let promise = new Promise((resolve, reject) => {
+  let promise = new Promise(resolve => {
     let xhr = new XMLHttpRequest();
     xhr.open("GET", uri, true);
     xhr.onreadystatechange = function () {

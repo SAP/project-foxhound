@@ -19,6 +19,7 @@
 #include "mozilla/PositionedEventTargeting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/ToString.h"
@@ -26,7 +27,9 @@
 #include "mozilla/ViewportUtils.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
+#include "mozilla/layers/APZUtils.h"
 #include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/widget/nsAutoRollup.h"
 #include "nsCOMPtr.h"
@@ -34,7 +37,6 @@
 #include "nsDocShell.h"
 #include "nsIDOMWindowUtils.h"
 #include "nsINamed.h"
-#include "nsIScrollableFrame.h"
 #include "nsIScrollbarMediator.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIWidget.h"
@@ -99,13 +101,8 @@ APZEventState::APZEventState(nsIWidget* aWidget,
       ,
       mActiveElementManager(new ActiveElementManager()),
       mContentReceivedInputBlockCallback(std::move(aCallback)),
-      mPendingTouchPreventedResponse(false),
       mPendingTouchPreventedBlockId(0),
-      mEndTouchIsClick(false),
-      mFirstTouchCancelled(false),
-      mTouchEndCancelled(false),
-      mReceivedNonTouchStart(false),
-      mTouchStartPrevented(false),
+      mEndTouchState(apz::SingleTapState::NotClick),
       mLastTouchIdentifier(0) {
   nsresult rv;
   mWidget = do_GetWeakReference(aWidget, &rv);
@@ -138,8 +135,9 @@ void APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
   nsCOMPtr<nsIWidget> localWidget = do_QueryReferent(mWidget);
   if (localWidget) {
     widget::nsAutoRollup rollup(touchRollup);
-    APZCCallbackHelper::FireSingleTapEvent(aPoint * aScale, aModifiers,
-                                           aClickCount, localWidget);
+    APZCCallbackHelper::FireSingleTapEvent(
+        aPoint * aScale, aModifiers, aClickCount, mPrecedingPointerDownState,
+        localWidget);
   }
 
   mActiveElementManager->ProcessSingleTap();
@@ -160,7 +158,8 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
   // Note that we don't need to check whether mousemove event is consumed or
   // not because Chrome also ignores the result.
   APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-      eMouseMove, aPoint * aScale, aModifiers, 0 /* clickCount */, aWidget);
+      eMouseMove, aPoint * aScale, aModifiers, 0 /* clickCount */,
+      mPrecedingPointerDownState, aWidget);
 
   // Converting the modifiers to DOM format for the DispatchMouseEvent call
   // is the most useless thing ever because nsDOMWindowUtils::SendMouseEvent
@@ -185,7 +184,7 @@ PreventDefaultResult APZEventState::FireContextmenuEvents(
     // If the contextmenu wasn't consumed, fire the eMouseLongTap event.
     nsEventStatus status = APZCCallbackHelper::DispatchSynthesizedMouseEvent(
         eMouseLongTap, aPoint * aScale, aModifiers,
-        /*clickCount*/ 1, aWidget);
+        /*clickCount*/ 1, mPrecedingPointerDownState, aWidget);
     APZES_LOG("eMouseLongTap event %s\n", ToString(status).c_str());
 #endif
   }
@@ -227,7 +226,8 @@ void APZEventState::ProcessLongTap(PresShell* aPresShell,
   // at this time, because things like text selection or dragging may want
   // to know about it.
   APZCCallbackHelper::DispatchSynthesizedMouseEvent(
-      eMouseLongTap, aPoint * aScale, aModifiers, /*clickCount*/ 1, widget);
+      eMouseLongTap, aPoint * aScale, aModifiers, /*clickCount*/ 1,
+      mPrecedingPointerDownState, widget);
 #else
   PreventDefaultResult preventDefaultResult =
       FireContextmenuEvents(aPresShell, aPoint, aScale, aModifiers, widget);
@@ -323,6 +323,14 @@ void APZEventState::ProcessTouchEvent(
       // touchstart was prevented by content.
       if (mTouchCounter.GetActiveTouchCount() == 0) {
         mFirstTouchCancelled = isTouchPrevented;
+        const PointerInfo* pointerInfo =
+            !aEvent.mTouches.IsEmpty() ? PointerEventHandler::GetPointerInfo(
+                                             aEvent.mTouches[0]->Identifier())
+                                       : nullptr;
+        mPrecedingPointerDownState =
+            pointerInfo && pointerInfo->mPreventMouseEventByContent
+                ? PrecedingPointerDown::ConsumedByContent
+                : PrecedingPointerDown::NotConsumed;
       } else {
         if (mFirstTouchCancelled && !isTouchPrevented) {
           APZES_LOG(
@@ -349,11 +357,13 @@ void APZEventState::ProcessTouchEvent(
     case eTouchEnd:
       if (isTouchPrevented) {
         mTouchEndCancelled = true;
-        mEndTouchIsClick = false;
+        mEndTouchState = apz::SingleTapState::NotClick;
       }
       [[fallthrough]];
     case eTouchCancel:
-      mActiveElementManager->HandleTouchEndEvent(mEndTouchIsClick);
+      if (mActiveElementManager->HandleTouchEndEvent(mEndTouchState)) {
+        mEndTouchState = apz::SingleTapState::NotClick;
+      }
       [[fallthrough]];
     case eTouchMove: {
       if (!mReceivedNonTouchStart) {
@@ -483,7 +493,8 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
                                           Maybe<uint64_t> aInputBlockId) {
   switch (aChange) {
     case APZStateChange::eTransformBegin: {
-      nsIScrollableFrame* sf = nsLayoutUtils::FindScrollableFrameFor(aViewId);
+      ScrollContainerFrame* sf =
+          nsLayoutUtils::FindScrollContainerFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(true);
         sf->ScrollbarActivityStarted();
@@ -499,7 +510,8 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       break;
     }
     case APZStateChange::eTransformEnd: {
-      nsIScrollableFrame* sf = nsLayoutUtils::FindScrollableFrameFor(aViewId);
+      ScrollContainerFrame* sf =
+          nsLayoutUtils::FindScrollContainerFrameFor(aViewId);
       if (sf) {
         sf->SetTransformingByAPZ(false);
         sf->ScrollbarActivityStopped();
@@ -515,13 +527,13 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       break;
     }
     case APZStateChange::eStartTouch: {
-      bool canBePan = aArg;
-      mActiveElementManager->HandleTouchStart(canBePan);
+      bool canBePanOrZoom = aArg;
+      mActiveElementManager->HandleTouchStart(canBePanOrZoom);
       // If this is a non-scrollable content, set a timer for the amount of
       // time specified by ui.touch_activation.duration_ms to clear the
       // active element state.
-      APZES_LOG("%s: can-be-pan=%d", __FUNCTION__, aArg);
-      if (!canBePan) {
+      APZES_LOG("%s: can-be-pan-or-zoom=%d", __FUNCTION__, aArg);
+      if (!canBePanOrZoom) {
         MOZ_ASSERT(aInputBlockId.isSome());
       }
       break;
@@ -532,8 +544,10 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       break;
     }
     case APZStateChange::eEndTouch: {
-      mEndTouchIsClick = aArg;
-      mActiveElementManager->HandleTouchEnd();
+      mEndTouchState = static_cast<apz::SingleTapState>(aArg);
+      if (mActiveElementManager->HandleTouchEnd(mEndTouchState)) {
+        mEndTouchState = apz::SingleTapState::NotClick;
+      }
       break;
     }
   }

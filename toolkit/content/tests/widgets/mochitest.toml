@@ -5,8 +5,8 @@ support-files = [
   "file_videocontrols_jsdisabled.html",
   "image.png",
   "image-zh.png",
-  "seek_with_sound.ogg",
-  "video.ogg",
+  "seek_with_sound.webm",
+  "video.webm",
   "head.js",
   "tree_shared.js",
   "test-webvtt-1.vtt",
@@ -96,8 +96,13 @@ skip-if = [
 
 ["test_videocontrols_size.html"]
 
+["test_videocontrols_src_change.html"]
+
 ["test_videocontrols_standalone.html"]
-skip-if = ["os == 'android'"] # bug 1075573
+skip-if = [
+  "os == 'linux'", # bug 1804621
+  "os == 'android'", # bug 1075573
+]
 
 ["test_videocontrols_video_direction.html"]
 skip-if = [

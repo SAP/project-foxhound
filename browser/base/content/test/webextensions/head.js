@@ -302,7 +302,7 @@ function checkNotification(panel, checkIcon, permissions, sideloaded) {
  *
  * @returns {Promise}
  */
-async function testInstallMethod(installFn, telemetryBase) {
+async function testInstallMethod(installFn) {
   const PERMS_XPI = "browser_webext_permissions.xpi";
   const NO_PERMS_XPI = "browser_webext_nopermissions.xpi";
   const ID = "permissions@test.mozilla.org";
@@ -508,7 +508,7 @@ async function interactiveUpdateTest(autoUpdate, checkFn) {
   ok(addon, "Addon was installed");
   is(addon.version, "1.0", "Version 1 of the addon is installed");
 
-  let win = await BrowserOpenAddonsMgr("addons://list/extension");
+  let win = await BrowserAddonUI.openAddonsMgr("addons://list/extension");
 
   await waitAboutAddonsViewLoaded(win.document);
 

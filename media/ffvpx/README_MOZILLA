@@ -36,6 +36,9 @@ Then, make sure the files:
 include conditional compilation directives, by probably reverting them (or
 reverting and adjusting them if new codecs are added).
 
+Revert and adjust libavcodec `dovi_rpu.h` so that it contains just the necessary
+stubs to compile.
+
 ## Add headers for a new major ffmpeg version
 
 If a new major version of ffmpeg is being imported in the tree, it's necessary
@@ -122,7 +125,7 @@ with the thread flavor Gecko prefers on Windows (win32, not pthreads).
 - Run ffmpeg's `./configure` with the options needed:
 
 > ./configure --disable-all --enable-avcodec --enable-decoder=vp8,vp9,mp3,flac
-              --enable-parser=vp8,vp9 --disable-static --enable-shared 
+              --enable-parser=vp8,vp9 --disable-static --enable-shared
               --disable-autodetect --enable-w32threads --toolchain=msvc
 
 - Copy `config.h` and `config.asm` as `config_win64.h` and `config_win64.asm`.
@@ -158,6 +161,8 @@ There are going to be a lot of changes in terms of symbols exported. Adjust
 `libavutil/avutil.symbols` and `libavcodec/avcodec.symbols` by removing and
 adding symbols until the build passes.
 
-Finally, apply the patch:
+Finally, apply the patches:
 - no-unicode-stdio.patch to avoid passing the infity symbol in unicode to an
   stdio.h function, that causes bug 1879740 issue on Windows.
+- opusenc-dtx.patch to allow enabling DTX in the opus encoder.
+- libaomenc-svc.patch to allow configuring SVC in the libaom encoder.

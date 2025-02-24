@@ -213,6 +213,25 @@ void nsTextPaintStyle::GetHighlightColors(nscolor* aForeColor,
   *aBackColor = NS_TRANSPARENT;
 }
 
+void nsTextPaintStyle::GetTargetTextColors(nscolor* aForeColor,
+                                           nscolor* aBackColor) {
+  NS_ASSERTION(aForeColor, "aForeColor is null");
+  NS_ASSERTION(aBackColor, "aBackColor is null");
+  const RefPtr<const ComputedStyle> targetTextStyle =
+      mFrame->ComputeTargetTextStyle();
+  if (targetTextStyle) {
+    *aForeColor = targetTextStyle->GetVisitedDependentColor(
+        &nsStyleText::mWebkitTextFillColor);
+    *aBackColor = targetTextStyle->GetVisitedDependentColor(
+        &nsStyleBackground::mBackgroundColor);
+    return;
+  }
+  *aBackColor =
+      LookAndFeel::Color(LookAndFeel::ColorID::TargetTextBackground, mFrame);
+  *aForeColor =
+      LookAndFeel::Color(LookAndFeel::ColorID::TargetTextForeground, mFrame);
+}
+
 bool nsTextPaintStyle::GetCustomHighlightTextColor(nsAtom* aHighlightName,
                                                    nscolor* aForeColor) {
   NS_ASSERTION(aForeColor, "aForeColor is null");

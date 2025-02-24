@@ -229,7 +229,7 @@ void ContentMediaAgent::EnableAction(uint64_t aBrowsingContextId,
   }
 
   LOG("Notify to enable action '%s' in BC %" PRId64,
-      ToMediaSessionActionStr(aAction), bc->Id());
+      GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
     Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
@@ -251,7 +251,7 @@ void ContentMediaAgent::DisableAction(uint64_t aBrowsingContextId,
   }
 
   LOG("Notify to disable action '%s' in BC %" PRId64,
-      ToMediaSessionActionStr(aAction), bc->Id());
+      GetEnumString(aAction).get(), bc->Id());
   if (XRE_IsContentProcess()) {
     ContentChild* contentChild = ContentChild::GetSingleton();
     Unused << contentChild->SendNotifyMediaSessionSupportedActionChanged(
@@ -304,6 +304,37 @@ void ContentMediaAgent::UpdatePositionState(
   }
 }
 
+void ContentMediaAgent::UpdateGuessedPositionState(
+    uint64_t aBrowsingContextId, const nsID& aMediaId,
+    const Maybe<PositionState>& aState) {
+  RefPtr<BrowsingContext> bc = GetBrowsingContextForAgent(aBrowsingContextId);
+  if (!bc || bc->IsDiscarded()) {
+    return;
+  }
+
+  if (aState) {
+    LOG("Update guessed position state for BC %" PRId64
+        " media id %s (duration=%f, playbackRate=%f, position=%f)",
+        bc->Id(), aMediaId.ToString().get(), aState->mDuration,
+        aState->mPlaybackRate, aState->mLastReportedPlaybackPosition);
+  } else {
+    LOG("Clear guessed position state for BC %" PRId64 " media id %s", bc->Id(),
+        aMediaId.ToString().get());
+  }
+
+  if (XRE_IsContentProcess()) {
+    ContentChild* contentChild = ContentChild::GetSingleton();
+    Unused << contentChild->SendNotifyGuessedPositionStateChanged(bc, aMediaId,
+                                                                  aState);
+    return;
+  }
+  // This would only happen when we disable e10s.
+  if (RefPtr<IMediaInfoUpdater> updater =
+          bc->Canonical()->GetMediaController()) {
+    updater->UpdateGuessedPositionState(bc->Id(), aMediaId, aState);
+  }
+}
+
 ContentMediaController::ContentMediaController(uint64_t aId) {
   LOG("Create content media controller for BC %" PRId64, aId);
 }
@@ -325,7 +356,7 @@ void ContentMediaController::HandleMediaKey(MediaControlKey aKey) {
   if (mReceivers.IsEmpty()) {
     return;
   }
-  LOG("Handle '%s' event, receiver num=%zu", ToMediaControlKeyStr(aKey),
+  LOG("Handle '%s' event, receiver num=%zu", GetEnumString(aKey).get(),
       mReceivers.Length());
   // We have default handlers for play, pause and stop.
   // https://w3c.github.io/mediasession/#ref-for-dom-mediasessionaction-play%E2%91%A3

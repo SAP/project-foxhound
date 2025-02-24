@@ -43,7 +43,7 @@
 skip-if(isDebugBuild||AddressSanitizer||ThreadSanitizer||(winWidget&&(!is64Bit))) == 256180-1.html 256180-1-ref.html
 # Debug builds have larger stack frames, so skipped.
 # 32-bit Windows doesn't have enough run-time stack to deal with the test, so skipped.
-skip-if(isDebugBuild||(winWidget&&(!is64Bit))) == 256180-2.html 256180-2-ref.html
+skip-if(isDebugBuild) == 256180-2.html 256180-2-ref.html
 # Debug builds and ASAN builds have larger stack frames, so skipped.
 # 32-bit Windows doesn't have enough run-time stack to deal with the test, so skipped.
 skip-if(isDebugBuild||AddressSanitizer||ThreadSanitizer||(winWidget&&(!is64Bit))) fails-if(geckoview) == 256180-3.html 256180-3-ref.html
@@ -342,8 +342,7 @@ skip-if(useDrawSnapshot) == 306660-2.html 306660-2-ref.html
 == 306660-3.html 306660-3-ref.html
 == 307076-1.html 307076-1-ref.html
 == 307102-1.html 307102-1-ref.html
-== 307102-2.html 307102-2-ref.html
-== 307102-3.html 307102-3-ref.html
+random == 307102-3.html 307102-3-ref.html
 == 307102-4.html 307102-4-ref.html
 == 308406-1.html 308406-1-ref.html
 == 308406-2.html 308406-2-ref.html
@@ -725,8 +724,6 @@ fuzzy(0-2,0-5) == 381507-1.html 381507-1-ref.html
 fuzzy(0-1,0-600) == 385823-2a.html 385823-2-ref.html
 fails == 385823-2b.html 385823-2-ref.html
 fuzzy(0-1,0-600) == 385823-2c.html 385823-2-ref.html
-fuzzy(0-2,0-11) == 385870-1.html 385870-1-ref.html
-fuzzy(0-2,0-3) == 385870-2.html 385870-2-ref.html
 == 386014-1a.html 386014-1-ref.html
 == 386014-1b.html 386014-1-ref.html
 == 386014-1c.html 386014-1-ref.html
@@ -922,7 +919,7 @@ fuzzy-if(winWidget,0-123,0-1600) fuzzy-if(swgl,0-1,0-39) == 409659-1a.html 40965
 != 409659-1c.html 409659-1-ref.html
 fuzzy-if(winWidget,0-123,0-1900) fuzzy-if(swgl,0-1,0-39) == 409659-1d.html 409659-1-ref.html # Bug 1128229
 == 410621-1.html 410621-1-ref.html
-== 411059-1.html 411059-1-ref.html
+pref(layout.css.letter-spacing.model,0) == 411059-1.html 411059-1-ref.html
 fuzzy-if(winWidget,46-129,652-770) == 411334-1.xml 411334-1-ref.xml
 == 411585-1.html 411585-1-ref.html
 == 411585-2.html 411585-2-ref.html
@@ -1123,7 +1120,7 @@ fuzzy(0-1,0-3280) == 438987-2c.html 438987-2-ref.html
 != about:blank 438987-2-ref.html # check that backgrounds work at all
 == 439004-1.html 439004-1-ref.html
 == 439639-1.html 439639-1-ref.html
-fuzzy-if(gtkWidget,0-255,0-6) == 439910.html 439910-ref.html
+pref(layout.css.letter-spacing.model,0) fuzzy-if(gtkWidget,0-255,0-6) == 439910.html 439910-ref.html
 fuzzy(0-1,0-1) fuzzy-if(Android,0-1,0-3) == 440112.html 440112-ref.html
 == 440149-1.html 440149-1-ref.html
 == 441259-1.html 441259-1-ref.html
@@ -1347,7 +1344,7 @@ pref(browser.display.focus_ring_width,1) == 491180-2.html 491180-2-ref.html
 fuzzy(0-6,0-97456) == 501627-1.html 501627-1-ref.html # Bug 1481664
 == 502288-1.html 502288-1-ref.html
 fuzzy-if(gtkWidget,0-1,0-2) == 502447-1.html 502447-1-ref.html #Bug 1315834
-== 502795-1.html 502795-1-ref.html
+pref(layout.css.letter-spacing.model,0) == 502795-1.html 502795-1-ref.html
 == 502942-1.html 502942-1-ref.html
 == 503364-1a.html 503364-1-ref.html
 == 503364-1b.html 503364-1-ref.html
@@ -1370,8 +1367,8 @@ fuzzy(0-1,0-1200) == 512410.html 512410-ref.html
 == 512631-1.html 512631-1-ref.html
 fuzzy(0-1,0-4) == 513153-1a.html 513153-1-ref.html
 fuzzy(0-1,0-4) == 513153-1b.html 513153-1-ref.html
-pref(widget.non-native-theme.webrender,true) == 513153-2a.html 513153-2-ref.html # appleSilicon: bug 1724583
-fuzzy-if(cocoaWidget,0-112,0-108) == 513153-2b.html 513153-2-ref.html # only fuzzy when widget.non-native-theme.webrender=false, snapping difference
+== 513153-2a.html 513153-2-ref.html # appleSilicon: bug 1724583
+== 513153-2b.html 513153-2-ref.html
 == chrome://reftest/content/bugs/513318-1.xhtml chrome://reftest/content/bugs/513318-1-ref.xhtml
 != chrome://reftest/content/bugs/513318-2.xhtml chrome://reftest/content/bugs/513318-2-ref.xhtml
 == 514917-1.html 514917-1-ref.html
@@ -1751,7 +1748,7 @@ test-pref(font.minimum-size.x-western,32) fuzzy-if(Android,0-45,0-324) == 935056
 == 936670-1.svg 936670-1-ref.svg
 == 941940-1.html 941940-1-ref.html
 fails == 942017.html 942017-ref.html # bug 942017
-fuzzy(0-2,0-160000) fuzzy-if(winWidget&&isDebugBuild&&!is64Bit,1-1,12-175) == 942672-1.html 942672-1-ref.html
+fuzzy(0-2,0-160000) == 942672-1.html 942672-1-ref.html
 == 953334-win32-clipping.html 953334-win32-clipping-ref.html
 fuzzy(0-1,0-5) == 956513-1.svg 956513-1-ref.svg
 == 944291-1.html 944291-1-ref.html
@@ -2099,7 +2096,7 @@ skip-if(Android) == 1727172-1.xhtml 1727172-1-ref.html
 == 1726663-1.html 1726663-1-ref.html
 == 1727016-1.html 1727016-1-ref.html
 != 1730314-1.html 1730314-1-ref.html
-fuzzy(0-3,0-19) fuzzy-if(Android,0-3,0-1901) fuzzy-if(winWidget,0-154,0-118) == 1738700-1.html 1738700-1-ref.html
+fuzzy(0-3,0-19) fuzzy-if(Android,0-11,0-1901) fuzzy-if(winWidget,0-154,0-340) fuzzy-if(cocoaWidget,0-23,0-230) == 1738700-1.html 1738700-1-ref.html
 
 # Have to skip android because it doesn't set up example.org as a local host,
 # so the test crashes there.
@@ -2165,3 +2162,4 @@ fuzzy-if(!useDrawSnapshot,18-19,294-322) == 1840747-1.html about:blank
 # here. That's tracked in bug 1840747.
 fuzzy-if(!useDrawSnapshot&&!swgl,254-255,110-121) fuzzy-if(useDrawSnapshot,18-18,93-93) fuzzy-if(swgl,19-19,58-58) == 1841355-1.html about:blank
 skip-if(((AddressSanitizer||ThreadSanitizer)&&gtkWidget)||(isDebugBuild&&Android)) fuzzy(0-123,0-1425) == 1878294-1.html 1878294-1-ref.html
+== 1888941-text-transform-emergency-wrap.html 1888941-text-transform-emergency-wrap-ref.html

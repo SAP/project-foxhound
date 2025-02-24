@@ -15,7 +15,7 @@ import time
 
 import blessed
 import six
-from mozbuild.util import mozilla_build_version
+from mozbuild.buildversion import mozilla_build_version
 from packaging.version import Version
 
 IS_WINDOWS = sys.platform.startswith("win")
@@ -45,6 +45,9 @@ def enable_blessed():
         return True
 
     if os.environ.get("NO_ANSI"):
+        return False
+
+    if not os.environ.get("MOZILLABUILD"):
         return False
 
     # MozillaBuild 4.0.2 is the first Release that supports

@@ -13,7 +13,7 @@ use std::{
     rc::Rc,
 };
 
-use neqo_common::{qdebug, qinfo, Encoder, Header};
+use neqo_common::{qdebug, Encoder, Header};
 use neqo_transport::{
     server::ActiveConnectionRef, AppError, Connection, DatagramTracking, StreamId, StreamType,
 };
@@ -82,6 +82,19 @@ impl StreamHandler {
         self.handler
             .borrow_mut()
             .send_data(self.stream_id(), buf, &mut self.conn.borrow_mut())
+    }
+
+    /// Bytes sendable on stream at the QUIC layer.
+    ///
+    /// Note that this does not yet account for HTTP3 frame headers.
+    ///
+    /// # Errors
+    ///
+    /// It may return `InvalidStreamId` if a stream does not exist anymore.
+    pub fn available(&mut self) -> Res<usize> {
+        let stream_id = self.stream_id();
+        let n = self.conn.borrow_mut().stream_avail_send_space(stream_id)?;
+        Ok(n)
     }
 
     /// Close sending side.
@@ -189,7 +202,7 @@ impl Http3OrWebTransportStream {
     ///
     /// It may return `InvalidStreamId` if a stream does not exist anymore.
     pub fn send_data(&mut self, data: &[u8]) -> Res<usize> {
-        qinfo!([self], "Set new response.");
+        qdebug!([self], "Set new response.");
         self.stream_handler.send_data(data)
     }
 
@@ -199,7 +212,7 @@ impl Http3OrWebTransportStream {
     ///
     /// It may return `InvalidStreamId` if a stream does not exist anymore.
     pub fn stream_close_send(&mut self) -> Res<()> {
-        qinfo!([self], "Set new response.");
+        qdebug!([self], "Set new response.");
         self.stream_handler.stream_close_send()
     }
 }
@@ -270,7 +283,7 @@ impl WebTransportRequest {
     ///
     /// It may return `InvalidStreamId` if a stream does not exist anymore.
     pub fn response(&mut self, accept: &WebTransportSessionAcceptAction) -> Res<()> {
-        qinfo!([self], "Set a response for a WebTransport session.");
+        qdebug!([self], "Set a response for a WebTransport session.");
         self.stream_handler
             .handler
             .borrow_mut()

@@ -614,12 +614,13 @@ this.AccessibilityUtils = (function () {
       (node.tagName == "menuitem" &&
         node.classList.contains("urlbarView-result-menuitem"));
 
+    let parentNode = node.getRootNode().host ?? node.parentNode;
     const isParentMenu =
-      node.parentNode.getAttribute("role") == "menu" ||
-      (node.parentNode.tagName == "richlistbox" &&
-        node.parentNode.classList.contains("autocomplete-richlistbox")) ||
-      (node.parentNode.tagName == "menupopup" &&
-        node.parentNode.classList.contains("urlbarView-result-menu"));
+      parentNode.getAttribute("role") == "menu" ||
+      (parentNode.tagName == "richlistbox" &&
+        parentNode.classList.contains("autocomplete-richlistbox")) ||
+      (parentNode.tagName == "menupopup" &&
+        parentNode.classList.contains("urlbarView-result-menu"));
     return (
       isMenuItem &&
       isParentMenu &&
@@ -1078,6 +1079,22 @@ this.AccessibilityUtils = (function () {
     }
     // Walk a11y ancestors until we find one which is interactive.
     for (; acc; acc = acc.parent) {
+      const relation = acc.getRelationByType(
+        Ci.nsIAccessibleRelation.RELATION_LABEL_FOR
+      );
+      if (
+        acc.role === Ci.nsIAccessibleRole.ROLE_LABEL &&
+        relation.targetsCount > 0
+      ) {
+        // If a <label> was clicked to activate a radiobutton or a checkbox,
+        // return the accessible of the related input.
+        // Note: aria-labelledby doesn't give the node a role of label, so this
+        // won't work for aria-labelledby cases. That said, aria-labelledby also
+        // doesn't have implicit click behaviour either and there's not really
+        // any way we can check for that.
+        const targetAcc = relation.getTarget(0);
+        return targetAcc;
+      }
       if (INTERACTIVE_ROLES.has(acc.role)) {
         return acc;
       }

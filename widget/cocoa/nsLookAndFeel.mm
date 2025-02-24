@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AppearanceOverride.h"
 #include "mozilla/widget/ThemeChangeKind.h"
 #include "nsLookAndFeel.h"
 #include "nsCocoaFeatures.h"
@@ -32,22 +31,44 @@ using namespace mozilla;
 + (void)startObserving;
 @end
 
-nsLookAndFeel::nsLookAndFeel() = default;
+nsLookAndFeel::nsLookAndFeel() {
+  [MOZLookAndFeelDynamicChangeObserver startObserving];
+}
 
 nsLookAndFeel::~nsLookAndFeel() = default;
 
-void nsLookAndFeel::NativeInit() {
+void nsLookAndFeel::EnsureInit() {
+  if (mInitialized) {
+    return;
+  }
+
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK
 
-  [MOZLookAndFeelDynamicChangeObserver startObserving];
+  mInitialized = true;
+  NSWindow* window =
+      [[NSWindow alloc] initWithContentRect:NSZeroRect
+                                  styleMask:NSWindowStyleMaskTitled
+                                    backing:NSBackingStoreBuffered
+                                      defer:NO];
+  auto release = MakeScopeExit([&] { [window release]; });
+
+  mRtl = window.windowTitlebarLayoutDirection ==
+         NSUserInterfaceLayoutDirectionRightToLeft;
+  mTitlebarHeight = std::ceil(window.frame.size.height);
+
   RecordTelemetry();
 
   NS_OBJC_END_TRY_ABORT_BLOCK
 }
 
+void nsLookAndFeel::RefreshImpl() {
+  mInitialized = false;
+  nsXPLookAndFeel::RefreshImpl();
+}
+
 static nscolor GetColorFromNSColor(NSColor* aColor) {
   NSColor* deviceColor =
-      [aColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+      [aColor colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
   return NS_RGBA((unsigned int)(deviceColor.redComponent * 255.0),
                  (unsigned int)(deviceColor.greenComponent * 255.0),
                  (unsigned int)(deviceColor.blueComponent * 255.0),
@@ -77,8 +98,7 @@ static nscolor GetColorFromNSColorWithCustomAlpha(NSColor* aColor,
 // whereas white text on dark blue (which what you get if you mix
 // partially-transparent light blue with the black textbox background) has much
 // better contrast.
-nscolor nsLookAndFeel::ProcessSelectionBackground(nscolor aColor,
-                                                  ColorScheme aScheme) {
+static nscolor ProcessSelectionBackground(nscolor aColor, ColorScheme aScheme) {
   if (aScheme == ColorScheme::Dark) {
     // When we use a dark selection color, we do not change alpha because we do
     // not use dark selection in content. The dark system color is appropriate
@@ -136,6 +156,14 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozMenuhover:
     case ColorID::Selecteditem:
       color = GetColorFromNSColor(NSColor.selectedContentBackgroundColor);
+      if (aID == ColorID::MozMenuhover &&
+          !LookAndFeel::GetInt(IntID::PrefersReducedTransparency)) {
+        // Wash the color a little bit with semi-transparent white to match a
+        // bit closer the native NSVisualEffectSelection on menus.
+        color = NS_ComposeColors(
+            color,
+            NS_RGBA(255, 255, 255, aScheme == ColorScheme::Light ? 51 : 25));
+      }
       break;
     case ColorID::Accentcolortext:
     case ColorID::MozMenuhovertext:
@@ -197,6 +225,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
                   : NS_RGB(0xFF, 0xFF, 0xFF);
       break;
     case ColorID::Windowtext:
+    case ColorID::MozDialogtext:
       color = GetColorFromNSColor(NSColor.windowFrameTextColor);
       break;
     case ColorID::Appworkspace:
@@ -209,9 +238,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozButtonhoverface:
     case ColorID::MozButtonactiveface:
     case ColorID::MozButtondisabledface:
-    case ColorID::MozColheader:
-    case ColorID::MozColheaderhover:
-    case ColorID::MozColheaderactive:
       color = GetColorFromNSColor(NSColor.controlColor);
       if (!NS_GET_A(color)) {
         color = GetColorFromNSColor(NSColor.controlBackgroundColor);
@@ -254,13 +280,14 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::Windowframe:
       color = GetColorFromNSColor(NSColor.windowFrameColor);
       break;
-    case ColorID::Window: {
-      color = GetColorFromNSColor(NSColor.windowBackgroundColor);
+    case ColorID::MozDialog:
+    case ColorID::Window:
+      color = GetColorFromNSColor(aScheme == ColorScheme::Light
+                                      ? NSColor.windowBackgroundColor
+                                      : NSColor.underPageBackgroundColor);
       break;
-    }
     case ColorID::Field:
     case ColorID::MozCombobox:
-    case ColorID::MozDialog:
       color = GetColorFromNSColor(NSColor.controlBackgroundColor);
       break;
     case ColorID::Fieldtext:
@@ -269,11 +296,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::MozButtonhovertext:
     case ColorID::Menutext:
     case ColorID::Infotext:
-    case ColorID::MozDialogtext:
     case ColorID::MozCellhighlighttext:
-    case ColorID::MozColheadertext:
-    case ColorID::MozColheaderhovertext:
-    case ColorID::MozColheaderactivetext:
     case ColorID::MozSidebartext:
       color = GetColorFromNSColor(NSColor.controlTextColor);
       break;
@@ -289,6 +312,17 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       // For inactive list selection
       color = GetColorFromNSColor(NSColor.secondarySelectedControlColor);
       break;
+    case ColorID::MozColheadertext:
+    case ColorID::MozColheaderhovertext:
+    case ColorID::MozColheaderactivetext:
+      color = GetColorFromNSColor(NSColor.headerTextColor);
+      break;
+    case ColorID::MozColheaderactive:
+      color = GetColorFromNSColor(
+          NSColor.unemphasizedSelectedContentBackgroundColor);
+      break;
+    case ColorID::MozColheader:
+    case ColorID::MozColheaderhover:
     case ColorID::MozEventreerow:
       // Background color of even list rows.
       color =
@@ -323,6 +357,9 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     case ColorID::SpellCheckerUnderline:
     case ColorID::Activeborder:
     case ColorID::Inactiveborder:
+    case ColorID::MozAutofillBackground:
+    case ColorID::TargetTextBackground:
+    case ColorID::TargetTextForeground:
       aColor = GetStandinForNativeColor(aID, aScheme);
       return NS_OK;
     default:
@@ -334,6 +371,16 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
   return NS_OK;
 
   NS_OBJC_END_TRY_ABORT_BLOCK
+}
+
+static bool SystemWantsDarkTheme() {
+  // This returns true if the macOS system appearance is set to dark mode,
+  // false otherwise.
+  NSAppearanceName aquaOrDarkAqua =
+      [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[
+        NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+      ]];
+  return [aquaOrDarkAqua isEqualToString:NSAppearanceNameDarkAqua];
 }
 
 nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
@@ -354,9 +401,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     case IntID::CaretWidth:
       aResult = 1;
-      break;
-    case IntID::ShowCaretDuringSelection:
-      aResult = 0;
       break;
     case IntID::SelectTextfieldsOnKeyFocus:
       // Select textfield content when focused by kbd
@@ -412,15 +456,15 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = nsCocoaFeatures::OnBigSurOrLater();
       break;
     case IntID::MacRTL:
-      aResult = IsSystemOrientationRTL();
+      EnsureInit();
+      aResult = mRtl;
+      break;
+    case IntID::MacTitlebarHeight:
+      EnsureInit();
+      aResult = mTitlebarHeight;
       break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;
-      break;
-    case IntID::TabFocusModel:
-      aResult = [NSApp isFullKeyboardAccessEnabled]
-                    ? nsIContent::eTabFocus_any
-                    : nsIContent::eTabFocus_textControlsMask;
       break;
     case IntID::ScrollToClick: {
       aResult = [[NSUserDefaults standardUserDefaults]
@@ -469,16 +513,11 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = NSWorkspace.sharedWorkspace
                     .accessibilityDisplayShouldIncreaseContrast;
       break;
-    case IntID::VideoDynamicRange: {
-      // If the platform says it supports HDR, then we claim to support
-      // video-dynamic-range.
-      gfxPlatform* platform = gfxPlatform::GetPlatform();
-      MOZ_ASSERT(platform);
-      aResult = platform->SupportsHDR();
-      break;
-    }
     case IntID::PanelAnimations:
       aResult = 1;
+      break;
+    case IntID::FullKeyboardAccess:
+      aResult = NSApp.isFullKeyboardAccessEnabled;
       break;
     default:
       aResult = 0;
@@ -517,28 +556,6 @@ nsresult nsLookAndFeel::NativeGetFloat(FloatID aID, float& aResult) {
   return res;
 
   NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-bool nsLookAndFeel::SystemWantsDarkTheme() {
-  // This returns true if the macOS system appearance is set to dark mode, false
-  // otherwise.
-  NSAppearanceName aquaOrDarkAqua =
-      [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[
-        NSAppearanceNameAqua, NSAppearanceNameDarkAqua
-      ]];
-  return [aquaOrDarkAqua isEqualToString:NSAppearanceNameDarkAqua];
-}
-
-/*static*/
-bool nsLookAndFeel::IsSystemOrientationRTL() {
-  NSWindow* window =
-      [[NSWindow alloc] initWithContentRect:NSZeroRect
-                                  styleMask:NSWindowStyleMaskBorderless
-                                    backing:NSBackingStoreBuffered
-                                      defer:NO];
-  auto direction = window.windowTitlebarLayoutDirection;
-  [window release];
-  return direction == NSUserInterfaceLayoutDirectionRightToLeft;
 }
 
 bool nsLookAndFeel::NativeGetFont(FontID aID, nsString& aFontName,
@@ -617,10 +634,6 @@ void nsLookAndFeel::RecordAccessibilityTelemetry() {
                   object:nil
       suspensionBehavior:NSNotificationSuspensionBehaviorDeliverImmediately];
 
-  [MOZGlobalAppearance.sharedInstance addObserver:self
-                                       forKeyPath:@"effectiveAppearance"
-                                          options:0
-                                          context:nil];
   [NSApp addObserver:self
           forKeyPath:@"effectiveAppearance"
              options:0

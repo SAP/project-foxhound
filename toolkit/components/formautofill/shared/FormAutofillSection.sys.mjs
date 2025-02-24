@@ -136,15 +136,15 @@ export class FormAutofillSection {
    * specific case. Return the original value in the default case.
    * @param {String} value
    *        The original field value.
-   * @param {Object} fieldDetail
+   * @param {Object} _fieldName
    *        A fieldDetail of the related element.
-   * @param {HTMLElement} element
+   * @param {HTMLElement} _element
    *        A element for checking converting value.
    *
    * @returns {String}
    *          A string of the converted value.
    */
-  computeFillingValue(value, fieldName, element) {
+  computeFillingValue(value, _fieldName, _element) {
     return value;
   }
 
@@ -158,6 +158,13 @@ export class FormAutofillSection {
 
   getFieldDetailByName(fieldName) {
     return this.fieldDetails.find(detail => detail.fieldName == fieldName);
+  }
+
+  getFieldDetailByNamePreferVisible(fieldName) {
+    let fieldDetail = this.fieldDetails.find(
+      detail => detail.fieldName == fieldName && detail.isVisible
+    );
+    return fieldDetail || this.getFieldDetailByName(fieldName);
   }
 
   get allFieldNames() {
@@ -175,7 +182,7 @@ export class FormAutofillSection {
     }
 
     for (const fieldName in profile) {
-      const fieldDetail = this.getFieldDetailByName(fieldName);
+      const fieldDetail = this.getFieldDetailByNamePreferVisible(fieldName);
       const element = fieldDetail?.element;
 
       if (!HTMLSelectElement.isInstance(element)) {
@@ -362,8 +369,7 @@ export class FormAutofillSection {
           element == this.#focusedInput ||
           (element != this.#focusedInput &&
             (!element.value || element.value == element.defaultValue)) ||
-          this.handler.getFilledStateByElement(element) ==
-            FIELD_STATES.AUTO_FILLED
+          element.autofillState == FIELD_STATES.AUTO_FILLED
         ) {
           this.fillFieldValue(element, value);
           this.handler.changeFieldState(fieldDetail, FIELD_STATES.AUTO_FILLED);
@@ -413,6 +419,7 @@ export class FormAutofillSection {
         profile[`${fieldDetail.fieldName}-formatted`] ||
         profile[fieldDetail.fieldName] ||
         "";
+
       if (HTMLSelectElement.isInstance(element)) {
         // Unlike text input, select element is always previewed even if
         // the option is already selected.
@@ -452,9 +459,7 @@ export class FormAutofillSection {
         // when clear the target set, such as <select>.
         dimFieldDetails.push(fieldDetail);
       } else {
-        isAutofilled |=
-          this.handler.getFilledStateByElement(element) ==
-          FIELD_STATES.AUTO_FILLED;
+        isAutofilled |= element.autofillState == FIELD_STATES.AUTO_FILLED;
       }
     }
     if (!isAutofilled) {
@@ -462,6 +467,7 @@ export class FormAutofillSection {
       // that user had intention to clear the filled form manually.
       for (const fieldDetail of dimFieldDetails) {
         // If we can't find a selected option, then we should just reset to the first option's value
+
         let element = fieldDetail.element;
         this._resetSelectElementValue(element);
         this.handler.changeFieldState(fieldDetail, FIELD_STATES.NORMAL);
@@ -487,10 +493,7 @@ export class FormAutofillSection {
 
       // We keep the state if this field has
       // already been auto-filled.
-      if (
-        this.handler.getFilledStateByElement(element) ==
-        FIELD_STATES.AUTO_FILLED
-      ) {
+      if (element.autofillState == FIELD_STATES.AUTO_FILLED) {
         continue;
       }
 
@@ -509,10 +512,7 @@ export class FormAutofillSection {
         continue;
       }
 
-      if (
-        this.handler.getFilledStateByElement(element) ==
-        FIELD_STATES.AUTO_FILLED
-      ) {
+      if (element.autofillState == FIELD_STATES.AUTO_FILLED) {
         if (HTMLInputElement.isInstance(element)) {
           element.setUserInput("");
         } else if (HTMLSelectElement.isInstance(element)) {
@@ -521,6 +521,8 @@ export class FormAutofillSection {
         }
       }
     }
+
+    this.filledRecordGUID = null;
   }
 
   resetFieldStates() {
@@ -610,10 +612,7 @@ export class FormAutofillSection {
 
       data.record[detail.fieldName] = value;
 
-      if (
-        this.handler.getFilledStateByElement(element) ==
-        FIELD_STATES.AUTO_FILLED
-      ) {
+      if (element.autofillState == FIELD_STATES.AUTO_FILLED) {
         data.untouchedFields.push(detail.fieldName);
       }
     });

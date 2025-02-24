@@ -7,6 +7,7 @@
 #ifndef MOZILLA_GFX_RemoteTextureHostWrapper_H
 #define MOZILLA_GFX_RemoteTextureHostWrapper_H
 
+#include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/Monitor.h"
 
@@ -26,7 +27,8 @@ class RemoteTextureHostWrapper : public TextureHost {
 
   gfx::SurfaceFormat GetFormat() const override;
 
-  already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override {
+  already_AddRefed<gfx::DataSourceSurface> GetAsSurface(
+      gfx::DataSourceSurface* aSurface) override {
     return nullptr;
   }
 
@@ -80,6 +82,15 @@ class RemoteTextureHostWrapper : public TextureHost {
 
   void ApplyTextureFlagsToRemoteTexture();
 
+  void EnableWaitForRemoteTextureOwner(bool aEnable) {
+    mWaitForRemoteTextureOwner = true;
+  }
+
+  RemoteTextureInfo GetRemoteTextureInfo() const {
+    return RemoteTextureInfo(mTextureId, mOwnerId, mForPid,
+                             mWaitForRemoteTextureOwner);
+  }
+
   const RemoteTextureId mTextureId;
   const RemoteTextureOwnerId mOwnerId;
   const base::ProcessId mForPid;
@@ -107,6 +118,8 @@ class RemoteTextureHostWrapper : public TextureHost {
   CompositableTextureHostRef mRemoteTexture;
 
   bool mRenderTextureCreated = false;
+
+  bool mWaitForRemoteTextureOwner = false;
 
   friend class RemoteTextureMap;
 };

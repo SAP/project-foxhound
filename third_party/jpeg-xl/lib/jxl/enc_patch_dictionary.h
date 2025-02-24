@@ -8,12 +8,16 @@
 
 // Chooses reference patches, and avoids encoding them once per occurrence.
 
-#include <stddef.h>
-#include <string.h>
+#include <jxl/cms_interface.h>
 #include <sys/types.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <utility>
 #include <vector>
 
+#include "lib/jxl/base/compiler_specific.h"
 #include "lib/jxl/base/data_parallel.h"
 #include "lib/jxl/base/status.h"
 #include "lib/jxl/dec_patch_dictionary.h"
@@ -79,10 +83,12 @@ class PatchDictionaryEncoder {
   static void SetPositions(PatchDictionary* pdic,
                            std::vector<PatchPosition> positions,
                            std::vector<PatchReferencePosition> ref_positions,
-                           std::vector<PatchBlending> blendings) {
+                           std::vector<PatchBlending> blendings,
+                           size_t blendings_stride) {
     pdic->positions_ = std::move(positions);
     pdic->ref_positions_ = std::move(ref_positions);
     pdic->blendings_ = std::move(blendings);
+    pdic->blendings_stride_ = blendings_stride;
     pdic->ComputePatchTree();
   }
 

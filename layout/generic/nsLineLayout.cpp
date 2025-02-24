@@ -396,8 +396,10 @@ nsLineLayout::PerSpanData* nsLineLayout::NewPerSpanData() {
   psd->mFrame = nullptr;
   psd->mFirstFrame = nullptr;
   psd->mLastFrame = nullptr;
+  psd->mReflowInput = nullptr;
   psd->mContainsFloat = false;
   psd->mHasNonemptyContent = false;
+  psd->mBaseline = nullptr;
 
 #ifdef DEBUG
   outerLineLayout->mSpansAllocated++;
@@ -1713,10 +1715,10 @@ void nsLineLayout::AdjustLeadings(nsIFrame* spanFrame, PerSpanData* psd,
   if (aStyleText->HasEffectiveTextEmphasis()) {
     nscoord bsize = GetBSizeOfEmphasisMarks(spanFrame, aInflation);
     LogicalSide side = aStyleText->TextEmphasisSide(mRootSpan->mWritingMode);
-    if (side == eLogicalSideBStart) {
+    if (side == LogicalSide::BStart) {
       requiredStartLeading += bsize;
     } else {
-      MOZ_ASSERT(side == eLogicalSideBEnd,
+      MOZ_ASSERT(side == LogicalSide::BEnd,
                  "emphasis marks must be in block axis");
       requiredEndLeading += bsize;
     }
@@ -2341,7 +2343,7 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
               delta = emphasisHeight;
             }
             LogicalSide side = mStyleText->TextEmphasisSide(lineWM);
-            if (side == eLogicalSideBStart) {
+            if (side == LogicalSide::BStart) {
               blockStart -= delta;
             } else {
               blockEnd += delta;
@@ -3271,7 +3273,6 @@ void nsLineLayout::TextAlignLine(nsLineBox* aLine, bool aIsLastLine) {
       }
 
       case StyleTextAlign::Start:
-      case StyleTextAlign::Char:
         // Default alignment is to start edge so do nothing, except to apply
         // any "reverse-hang" amount resulting from reversed-direction trailing
         // space.

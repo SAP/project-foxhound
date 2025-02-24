@@ -396,7 +396,8 @@ function initPage() {
       });
       longDesc = null;
 
-      document.getElementById("openInNewWindowContainer").hidden = false;
+      document.getElementById("openInNewWindowContainer").hidden =
+        RPMGetBoolPref("security.xfocsp.hideOpenInNewWindow");
 
       const openInNewWindowButton = document.getElementById(
         "openInNewWindowButton"
@@ -498,7 +499,7 @@ function initPage() {
       trrExceptionButton.addEventListener("click", () => {
         RPMSendQuery("Browser:AddTRRExcludedDomain", {
           hostname: HOST_NAME,
-        }).then(msg => {
+        }).then(() => {
           retryThis(trrExceptionButton);
         });
       });
@@ -539,7 +540,7 @@ function initPage() {
       } else if (skipReason == "TRR_TIMEOUT") {
         descriptionTag = "neterror-dns-not-found-trr-only-timeout";
       } else if (
-        skipReason == "TRR_IS_OFFLINE" ||
+        skipReason == "TRR_BROWSER_IS_OFFLINE" ||
         skipReason == "TRR_NO_CONNECTIVITY"
       ) {
         descriptionTag = "neterror-dns-not-found-trr-offline";
@@ -1061,15 +1062,15 @@ function addCertException() {
     () => {
       location.reload();
     },
-    err => {}
+    () => {}
   );
 }
 
-function onReturnButtonClick(e) {
+function onReturnButtonClick() {
   RPMSendAsyncMessage("Browser:SSLErrorGoBack");
 }
 
-function copyPEMToClipboard(e) {
+function copyPEMToClipboard() {
   const errorText = document.getElementById("certificateErrorText");
   navigator.clipboard.writeText(errorText.textContent);
 }

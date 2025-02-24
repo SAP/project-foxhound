@@ -49,13 +49,23 @@ const LOCAL_GMP_SOURCES = [
   },
 ];
 
+function getLocalSources() {
+  if (GMPPrefs.getBool(GMPPrefs.KEY_ALLOW_LOCAL_SOURCES, true)) {
+    return LOCAL_GMP_SOURCES;
+  }
+
+  let log = getScopedLogger("GMPInstallManager.checkForAddons");
+  log.info("ignoring local sources");
+  return [];
+}
+
 function downloadJSON(uri) {
   let log = getScopedLogger("GMPInstallManager.checkForAddons");
   log.info("fetching config from: " + uri);
   return new Promise((resolve, reject) => {
     let xmlHttp = new lazy.ServiceRequest({ mozAnon: true });
 
-    xmlHttp.onload = function (aResponse) {
+    xmlHttp.onload = function () {
       resolve(JSON.parse(this.responseText));
     };
 
@@ -149,6 +159,36 @@ GMPInstallManager.prototype = {
 
     log.info("Using url (with replacement): " + url);
     return url;
+  },
+
+  /**
+   * Determines the root to use for verifying content signatures.
+   * @param url
+   *        The Balrog URL, i.e. the return value of _getURL().
+   */
+  _getContentSignatureRootForURL(url) {
+    // The prod and stage URLs of Balrog are documented at:
+    // https://mozilla-balrog.readthedocs.io/en/latest/infrastructure.html
+    // Note: we are matching by prefix without the full domain nor slash, to
+    // enable us to move to a different host name in the future if desired.
+    if (url.startsWith("https://aus")) {
+      return Ci.nsIContentSignatureVerifier.ContentSignatureProdRoot;
+    }
+    if (url.startsWith("https://stage.")) {
+      return Ci.nsIContentSignatureVerifier.ContentSignatureStageRoot;
+    }
+    if (Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+      return Ci.nsIX509CertDB.AppXPCShellRoot;
+    }
+    // When content signature verification for GMP was added (bug 1714621), a
+    // pref existed to configure an arbitrary root, which enabled local testing.
+    // This pref was removed later in bug 1769669, and replaced with hard-coded
+    // roots (prod and tests only). Support for testing against the stage server
+    // was restored in bug 1771992.
+    // Note: other verifiers ultimately fall back to ContentSignatureLocalRoot,
+    // to support local development. Here we use ContentSignatureProdRoot to
+    // minimize risk (and the unclear demand for "local" development).
+    return Ci.nsIContentSignatureVerifier.ContentSignatureProdRoot;
   },
 
   /**
@@ -325,9 +365,10 @@ GMPInstallManager.prototype = {
     }
 
     let url = await this._getURL();
+    let trustedContentSignatureRoot = this._getContentSignatureRootForURL(url);
 
     log.info(
-      `Fetching product addon list url=${url}, allowNonBuiltIn=${allowNonBuiltIn}, certs=${certs}, checkContentSignature=${checkContentSignature}`
+      `Fetching product addon list url=${url}, allowNonBuiltIn=${allowNonBuiltIn}, certs=${certs}, checkContentSignature=${checkContentSignature}, trustedContentSignatureRoot=${trustedContentSignatureRoot}`
     );
 
     let success = true;
@@ -337,7 +378,8 @@ GMPInstallManager.prototype = {
         url,
         allowNonBuiltIn,
         certs,
-        checkContentSignature
+        checkContentSignature,
+        trustedContentSignatureRoot
       );
 
       if (checkContentSignature) {
@@ -354,10 +396,12 @@ GMPInstallManager.prototype = {
       }
     }
 
+    let localSources = getLocalSources();
+
     try {
       if (!success) {
         log.info("Falling back to local config");
-        let fallbackSources = LOCAL_GMP_SOURCES.filter(function (gmpSource) {
+        let fallbackSources = localSources.filter(function (gmpSource) {
           return gmpSource.installByDefault;
         });
         res = await downloadLocalConfig(fallbackSources);
@@ -379,7 +423,7 @@ GMPInstallManager.prototype = {
     // the user has requested be forced installed regardless of our update
     // server configuration.
     try {
-      let forcedSources = LOCAL_GMP_SOURCES.filter(function (gmpSource) {
+      let forcedSources = localSources.filter(function (gmpSource) {
         return GMPPrefs.getBool(
           GMPPrefs.KEY_PLUGIN_FORCE_INSTALL,
           false,
@@ -788,48 +832,62 @@ GMPDownloader.prototype = {
           gmpAddon.version,
         ]);
         let installPromise = gmpInstaller.install();
-        return installPromise.then(
-          extractedPaths => {
-            // Success, set the prefs
-            let now = Math.round(Date.now() / 1000);
-            GMPPrefs.setInt(GMPPrefs.KEY_PLUGIN_LAST_UPDATE, now, gmpAddon.id);
-            // Remember our ABI, so that if the profile is migrated to another
-            // platform or from 32 -> 64 bit, we notice and don't try to load the
-            // unexecutable plugin library.
-            let abi = GMPUtils._expectedABI(gmpAddon);
-            log.info("Setting ABI to '" + abi + "' for " + gmpAddon.id);
-            GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_ABI, abi, gmpAddon.id);
-            // We use the combination of the hash and version to ensure we are
-            // up to date.
-            GMPPrefs.setString(
-              GMPPrefs.KEY_PLUGIN_HASHVALUE,
-              gmpAddon.hashValue,
-              gmpAddon.id
-            );
-            // Setting the version pref signals installation completion to consumers,
-            // if you need to set other prefs etc. do it before this.
-            GMPPrefs.setString(
-              GMPPrefs.KEY_PLUGIN_VERSION,
-              gmpAddon.version,
-              gmpAddon.id
-            );
-            return extractedPaths;
-          },
-          reason => {
-            GMPPrefs.setString(
-              GMPPrefs.KEY_PLUGIN_LAST_INSTALL_FAIL_REASON,
-              reason,
-              gmpAddon.id
-            );
-            let now = Math.round(Date.now() / 1000);
-            GMPPrefs.setInt(
-              GMPPrefs.KEY_PLUGIN_LAST_INSTALL_FAILED,
-              now,
-              gmpAddon.id
-            );
-            throw reason;
-          }
-        );
+        return installPromise
+          .then(
+            extractedPaths => {
+              // Success, set the prefs
+              let now = Math.round(Date.now() / 1000);
+              GMPPrefs.setInt(
+                GMPPrefs.KEY_PLUGIN_LAST_UPDATE,
+                now,
+                gmpAddon.id
+              );
+              // Remember our ABI, so that if the profile is migrated to another
+              // platform or from 32 -> 64 bit, we notice and don't try to load the
+              // unexecutable plugin library.
+              let abi = GMPUtils._expectedABI(gmpAddon);
+              log.info("Setting ABI to '" + abi + "' for " + gmpAddon.id);
+              GMPPrefs.setString(GMPPrefs.KEY_PLUGIN_ABI, abi, gmpAddon.id);
+              // We use the combination of the hash and version to ensure we are
+              // up to date.
+              GMPPrefs.setString(
+                GMPPrefs.KEY_PLUGIN_HASHVALUE,
+                gmpAddon.hashValue,
+                gmpAddon.id
+              );
+              // Setting the version pref signals installation completion to consumers,
+              // if you need to set other prefs etc. do it before this.
+              GMPPrefs.setString(
+                GMPPrefs.KEY_PLUGIN_VERSION,
+                gmpAddon.version,
+                gmpAddon.id
+              );
+              return extractedPaths;
+            },
+            reason => {
+              GMPPrefs.setString(
+                GMPPrefs.KEY_PLUGIN_LAST_INSTALL_FAIL_REASON,
+                reason,
+                gmpAddon.id
+              );
+              let now = Math.round(Date.now() / 1000);
+              GMPPrefs.setInt(
+                GMPPrefs.KEY_PLUGIN_LAST_INSTALL_FAILED,
+                now,
+                gmpAddon.id
+              );
+              throw reason;
+            }
+          )
+          .finally(() => {
+            log.info(`Deleting ${gmpAddon.id} temporary zip file ${zipPath}`);
+            // We need to send out an observer event to ensure the nsZipReaderCache
+            // clears its cache entries associated with our temporary file. Otherwise
+            // if the addons downloader reuses the temporary file path, then we may hit
+            // the cache and get different contents than expected.
+            Services.obs.notifyObservers(null, "flush-cache-entry", zipPath);
+            IOUtils.remove(zipPath);
+          });
       },
       reason => {
         GMPPrefs.setString(

@@ -12,20 +12,18 @@ import type {DebugInfo} from '../api/Browser.js';
 import {
   Browser as BrowserBase,
   BrowserEvent,
-  WEB_PERMISSION_TO_PROTOCOL_PERMISSION,
   type BrowserCloseCallback,
   type BrowserContextOptions,
   type IsPageTargetCallback,
-  type Permission,
   type TargetFilterCallback,
 } from '../api/Browser.js';
-import {BrowserContext, BrowserContextEvent} from '../api/BrowserContext.js';
+import {BrowserContextEvent} from '../api/BrowserContext.js';
 import {CDPSessionEvent, type CDPSession} from '../api/CDPSession.js';
 import type {Page} from '../api/Page.js';
 import type {Target} from '../api/Target.js';
 import type {Viewport} from '../common/Viewport.js';
-import {assert} from '../util/assert.js';
 
+import {CdpBrowserContext} from './BrowserContext.js';
 import {ChromeTargetManager} from './ChromeTargetManager.js';
 import type {Connection} from './Connection.js';
 import {FirefoxTargetManager} from './FirefoxTargetManager.js';
@@ -61,7 +59,6 @@ export class CdpBrowser extends BrowserBase {
       product,
       connection,
       contextIds,
-      ignoreHTTPSErrors,
       defaultViewport,
       process,
       closeCallback,
@@ -69,10 +66,14 @@ export class CdpBrowser extends BrowserBase {
       isPageTargetCallback,
       waitForInitiallyDiscoveredTargets
     );
+    if (ignoreHTTPSErrors) {
+      await connection.send('Security.setIgnoreCertificateErrors', {
+        ignore: true,
+      });
+    }
     await browser._attach();
     return browser;
   }
-  #ignoreHTTPSErrors: boolean;
   #defaultViewport?: Viewport | null;
   #process?: ChildProcess;
   #connection: Connection;
@@ -87,7 +88,6 @@ export class CdpBrowser extends BrowserBase {
     product: 'chrome' | 'firefox' | undefined,
     connection: Connection,
     contextIds: string[],
-    ignoreHTTPSErrors: boolean,
     defaultViewport?: Viewport | null,
     process?: ChildProcess,
     closeCallback?: BrowserCloseCallback,
@@ -97,14 +97,13 @@ export class CdpBrowser extends BrowserBase {
   ) {
     super();
     product = product || 'chrome';
-    this.#ignoreHTTPSErrors = ignoreHTTPSErrors;
     this.#defaultViewport = defaultViewport;
     this.#process = process;
     this.#connection = connection;
-    this.#closeCallback = closeCallback || function (): void {};
+    this.#closeCallback = closeCallback || (() => {});
     this.#targetFilterCallback =
       targetFilterCallback ||
-      ((): boolean => {
+      (() => {
         return true;
       });
     this.#setIsPageTargetCallback(isPageTargetCallback);
@@ -270,7 +269,6 @@ export class CdpBrowser extends BrowserBase {
         context,
         this.#targetManager,
         createSession,
-        this.#ignoreHTTPSErrors,
         this.#defaultViewport ?? null
       );
     }
@@ -281,7 +279,6 @@ export class CdpBrowser extends BrowserBase {
         context,
         this.#targetManager,
         createSession,
-        this.#ignoreHTTPSErrors,
         this.#defaultViewport ?? null
       );
     }
@@ -422,92 +419,5 @@ export class CdpBrowser extends BrowserBase {
     return {
       pendingProtocolErrors: this.#connection.getPendingProtocolErrors(),
     };
-  }
-}
-
-/**
- * @internal
- */
-export class CdpBrowserContext extends BrowserContext {
-  #connection: Connection;
-  #browser: CdpBrowser;
-  #id?: string;
-
-  constructor(connection: Connection, browser: CdpBrowser, contextId?: string) {
-    super();
-    this.#connection = connection;
-    this.#browser = browser;
-    this.#id = contextId;
-  }
-
-  override get id(): string | undefined {
-    return this.#id;
-  }
-
-  override targets(): CdpTarget[] {
-    return this.#browser.targets().filter(target => {
-      return target.browserContext() === this;
-    });
-  }
-
-  override async pages(): Promise<Page[]> {
-    const pages = await Promise.all(
-      this.targets()
-        .filter(target => {
-          return (
-            target.type() === 'page' ||
-            (target.type() === 'other' &&
-              this.#browser._getIsPageTargetCallback()?.(target))
-          );
-        })
-        .map(target => {
-          return target.page();
-        })
-    );
-    return pages.filter((page): page is Page => {
-      return !!page;
-    });
-  }
-
-  override isIncognito(): boolean {
-    return !!this.#id;
-  }
-
-  override async overridePermissions(
-    origin: string,
-    permissions: Permission[]
-  ): Promise<void> {
-    const protocolPermissions = permissions.map(permission => {
-      const protocolPermission =
-        WEB_PERMISSION_TO_PROTOCOL_PERMISSION.get(permission);
-      if (!protocolPermission) {
-        throw new Error('Unknown permission: ' + permission);
-      }
-      return protocolPermission;
-    });
-    await this.#connection.send('Browser.grantPermissions', {
-      origin,
-      browserContextId: this.#id || undefined,
-      permissions: protocolPermissions,
-    });
-  }
-
-  override async clearPermissionOverrides(): Promise<void> {
-    await this.#connection.send('Browser.resetPermissions', {
-      browserContextId: this.#id || undefined,
-    });
-  }
-
-  override newPage(): Promise<Page> {
-    return this.#browser._createPageInContext(this.#id);
-  }
-
-  override browser(): CdpBrowser {
-    return this.#browser;
-  }
-
-  override async close(): Promise<void> {
-    assert(this.#id, 'Non-incognito profiles cannot be closed!');
-    await this.#browser._disposeContext(this.#id);
   }
 }

@@ -198,6 +198,8 @@ export const SpecialMessageActions = {
       "browser.firefox-view.feature-tour",
       "browser.pdfjs.feature-tour",
       "browser.newtab.feature-tour",
+      "browser.newtabpage.activity-stream.newtabWallpapers.wallpaper-light",
+      "browser.newtabpage.activity-stream.newtabWallpapers.wallpaper-dark",
       "cookiebanners.service.mode",
       "cookiebanners.service.mode.privateBrowsing",
       "cookiebanners.service.detectOnly",
@@ -291,7 +293,7 @@ export const SpecialMessageActions = {
           Ci.nsISupportsWeakReference,
         ]),
 
-        observe(aSubject, aTopic, aData) {
+        observe() {
           let state = lazy.UIState.get();
           if (state.status === lazy.UIState.STATUS_SIGNED_IN) {
             // We completed sign-in, so tear down our listener / observer and resolve
@@ -455,7 +457,7 @@ export const SpecialMessageActions = {
         const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
           "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
         );
-        await WindowsLaunchOnLogin.createLaunchOnLoginRegistryKey();
+        await WindowsLaunchOnLogin.createLaunchOnLogin();
         break;
       case "PIN_CURRENT_TAB":
         let tab = window.gBrowser.selectedTab;

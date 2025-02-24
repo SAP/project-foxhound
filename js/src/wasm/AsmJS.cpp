@@ -6916,8 +6916,8 @@ static bool GetImports(JSContext* cx, const AsmJSMetadata& metadata,
   return true;
 }
 
-static bool TryInstantiate(JSContext* cx, CallArgs args, const Module& module,
-                           const AsmJSMetadata& metadata,
+static bool TryInstantiate(JSContext* cx, const CallArgs& args,
+                           const Module& module, const AsmJSMetadata& metadata,
                            MutableHandle<WasmInstanceObject*> instanceObj,
                            MutableHandleObject exportObj) {
   HandleValue globalVal = args.get(0);
@@ -6958,7 +6958,7 @@ static bool TryInstantiate(JSContext* cx, CallArgs args, const Module& module,
   return true;
 }
 
-static bool HandleInstantiationFailure(JSContext* cx, CallArgs args,
+static bool HandleInstantiationFailure(JSContext* cx, const CallArgs& args,
                                        const AsmJSMetadata& metadata) {
   using js::frontend::FunctionSyntaxKind;
 

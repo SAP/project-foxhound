@@ -48,9 +48,12 @@ class HTMLDetailsElement final : public nsGenericHTMLElement {
 
   void ToggleOpen() { SetOpen(!Open(), IgnoreErrors()); }
 
-  virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
+  void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
-  void HandleInvokeInternal(nsAtom* aAction, ErrorResult& aRv) override;
+  bool IsValidInvokeAction(InvokeAction aAction) const override;
+  MOZ_CAN_RUN_SCRIPT bool HandleInvokeInternal(Element* invoker,
+                                               InvokeAction aAction,
+                                               ErrorResult& aRv) override;
 
  protected:
   virtual ~HTMLDetailsElement();

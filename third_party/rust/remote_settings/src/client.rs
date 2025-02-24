@@ -4,7 +4,7 @@
 
 use crate::config::RemoteSettingsConfig;
 use crate::error::{RemoteSettingsError, Result};
-use crate::UniffiCustomTypeConverter;
+use crate::{RemoteSettingsServer, UniffiCustomTypeConverter};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use std::{
@@ -31,11 +31,17 @@ pub struct Client {
 impl Client {
     /// Create a new [Client] with properties matching config.
     pub fn new(config: RemoteSettingsConfig) -> Result<Self> {
-        let server_url = config
-            .server_url
-            .unwrap_or_else(|| String::from("https://firefox.settings.services.mozilla.com"));
+        let server = match (config.server, config.server_url) {
+            (Some(server), None) => server,
+            (None, Some(server_url)) => RemoteSettingsServer::Custom { url: server_url },
+            (None, None) => RemoteSettingsServer::Prod,
+            (Some(_), Some(_)) => Err(RemoteSettingsError::ConfigError(
+                "`RemoteSettingsConfig` takes either `server` or `server_url`, not both".into(),
+            ))?,
+        };
+
         let bucket_name = config.bucket_name.unwrap_or_else(|| String::from("main"));
-        let base_url = Url::parse(&server_url)?;
+        let base_url = server.url()?;
 
         Ok(Self {
             base_url,
@@ -64,7 +70,7 @@ impl Client {
     /// collection defined by the [ClientConfig] used to generate this [Client].
     pub fn get_records_since(&self, timestamp: u64) -> Result<RemoteSettingsResponse> {
         self.get_records_with_options(
-            GetItemsOptions::new().gt("last_modified", timestamp.to_string()),
+            GetItemsOptions::new().filter_gt("last_modified", timestamp.to_string()),
         )
     }
 
@@ -307,7 +313,7 @@ struct AttachmentsCapability {
 }
 
 /// Options for requests to endpoints that return multiple items.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GetItemsOptions {
     filters: Vec<Filter>,
     sort: Vec<Sort>,
@@ -328,14 +334,14 @@ impl GetItemsOptions {
     /// `author.name`. `value` can be a bare number or string (like
     /// `2` or `Ben`), or a stringified JSON value (`"2.0"`, `[1, 2]`,
     /// `{"checked": true}`).
-    pub fn eq(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_eq(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Eq(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items whose `field` is not equal to the
     /// given `value`.
-    pub fn not(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_not(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Not(field.into(), value.into()));
         self
     }
@@ -343,7 +349,11 @@ impl GetItemsOptions {
     /// Sets an option to only return items whose `field` is an array that
     /// contains the given `value`. If `value` is a stringified JSON array, the
     /// field must contain all its elements.
-    pub fn contains(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_contains(
+        &mut self,
+        field: impl Into<String>,
+        value: impl Into<String>,
+    ) -> &mut Self {
         self.filters
             .push(Filter::Contains(field.into(), value.into()));
         self
@@ -351,47 +361,47 @@ impl GetItemsOptions {
 
     /// Sets an option to only return items whose `field` is strictly less
     /// than the given `value`.
-    pub fn lt(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_lt(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Lt(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items whose `field` is strictly greater
     /// than the given `value`.
-    pub fn gt(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_gt(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Gt(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items whose `field` is less than or equal
     /// to the given `value`.
-    pub fn max(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_max(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Max(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items whose `field` is greater than or
     /// equal to the given `value`.
-    pub fn min(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_min(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Min(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items whose `field` is a string that
     /// contains the substring `value`. `value` can contain `*` wildcards.
-    pub fn like(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
+    pub fn filter_like(&mut self, field: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Like(field.into(), value.into()));
         self
     }
 
     /// Sets an option to only return items that have the given `field`.
-    pub fn has(&mut self, field: impl Into<String>) -> &mut Self {
+    pub fn filter_has(&mut self, field: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::Has(field.into()));
         self
     }
 
     /// Sets an option to only return items that do not have the given `field`.
-    pub fn has_not(&mut self, field: impl Into<String>) -> &mut Self {
+    pub fn filter_has_not(&mut self, field: impl Into<String>) -> &mut Self {
         self.filters.push(Filter::HasNot(field.into()));
         self
     }
@@ -454,7 +464,7 @@ impl GetItemsOptions {
 }
 
 /// The order in which to return items.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub enum SortOrder {
     /// Smaller values first.
     Ascending,
@@ -462,7 +472,7 @@ pub enum SortOrder {
     Descending,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 enum Filter {
     Eq(String, String),
     Not(String, String),
@@ -495,7 +505,7 @@ impl Filter {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct Sort(String, SortOrder);
 
 impl Sort {
@@ -515,6 +525,7 @@ mod test {
     #[test]
     fn test_defaults() {
         let config = RemoteSettingsConfig {
+            server: None,
             server_url: None,
             bucket_name: None,
             collection_name: String::from("the-collection"),
@@ -525,6 +536,33 @@ mod test {
             client.base_url
         );
         assert_eq!(String::from("main"), client.bucket_name);
+    }
+
+    #[test]
+    fn test_deprecated_server_url() {
+        let config = RemoteSettingsConfig {
+            server: None,
+            server_url: Some("https://example.com".into()),
+            bucket_name: None,
+            collection_name: String::from("the-collection"),
+        };
+        let client = Client::new(config).unwrap();
+        assert_eq!(Url::parse("https://example.com").unwrap(), client.base_url);
+    }
+
+    #[test]
+    fn test_invalid_config() {
+        let config = RemoteSettingsConfig {
+            server: Some(RemoteSettingsServer::Prod),
+            server_url: Some("https://example.com".into()),
+            bucket_name: None,
+            collection_name: String::from("the-collection"),
+        };
+        match Client::new(config) {
+            Ok(_) => panic!("Wanted config error; got client"),
+            Err(RemoteSettingsError::ConfigError(_)) => {}
+            Err(err) => panic!("Wanted config error; got {}", err),
+        }
     }
 
     #[test]
@@ -548,7 +586,10 @@ mod test {
         .create();
 
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: None,
         };
@@ -584,7 +625,10 @@ mod test {
         .create();
 
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: None,
         };
@@ -613,7 +657,10 @@ mod test {
         .with_header("etag", "\"1000\"")
         .create();
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: Some(String::from("the-bucket")),
         };
@@ -640,7 +687,10 @@ mod test {
         .with_header("Retry-After", "60")
         .create();
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: Some(String::from("the-bucket")),
         };
@@ -682,7 +732,10 @@ mod test {
         .with_header("etag", "\"1000\"")
         .create();
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: Some(String::from("the-bucket")),
         };
@@ -692,16 +745,16 @@ mod test {
             .field("a")
             .field("c")
             .field("b")
-            .eq("a", "b")
-            .lt("c.d", "5")
-            .gt("e", "15")
-            .max("f", "20")
-            .min("g", "10")
-            .not("h", "i")
-            .like("j", "*k*")
-            .has("l")
-            .has_not("m")
-            .contains("n", "o")
+            .filter_eq("a", "b")
+            .filter_lt("c.d", "5")
+            .filter_gt("e", "15")
+            .filter_max("f", "20")
+            .filter_min("g", "10")
+            .filter_not("h", "i")
+            .filter_like("j", "*k*")
+            .filter_has("l")
+            .filter_has_not("m")
+            .filter_contains("n", "o")
             .sort("b", SortOrder::Descending)
             .sort("a", SortOrder::Ascending)
             .limit(3);
@@ -806,7 +859,10 @@ mod test {
         .with_header("etag", "\"1000\"")
         .create();
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: Some(String::from("the-bucket")),
         };
@@ -846,7 +902,10 @@ mod test {
         .with_header("etag", "\"1000\"")
         .create();
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             collection_name: String::from("the-collection"),
             bucket_name: Some(String::from("the-bucket")),
         };
@@ -949,7 +1008,10 @@ mod test {
         .create();
 
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             bucket_name: Some(String::from("the-bucket")),
             collection_name: String::from("the-collection"),
         };
@@ -978,7 +1040,10 @@ mod test {
         .create();
 
         let config = RemoteSettingsConfig {
-            server_url: Some(mockito::server_url()),
+            server: Some(RemoteSettingsServer::Custom {
+                url: mockito::server_url(),
+            }),
+            server_url: None,
             bucket_name: Some(String::from("the-bucket")),
             collection_name: String::from("the-collection"),
         };

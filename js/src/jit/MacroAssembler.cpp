@@ -678,8 +678,8 @@ void MacroAssembler::updateAllocSite(Register temp, Register result,
   add32(Imm32(1), Address(site, gc::AllocSite::offsetOfNurseryAllocCount()));
 
   branch32(Assembler::NotEqual,
-           Address(site, gc::AllocSite::offsetOfNurseryAllocCount()), Imm32(1),
-           &done);
+           Address(site, gc::AllocSite::offsetOfNurseryAllocCount()),
+           Imm32(js::gc::NormalSiteAttentionThreshold), &done);
 
   loadPtr(AbsoluteAddress(zone->addressOfNurseryAllocatedSites()), temp);
   storePtr(temp, Address(site, gc::AllocSite::offsetOfNextNurseryAllocated()));
@@ -1310,7 +1310,7 @@ void MacroAssembler::loadStringChars(Register str, Register dest,
       MOZ_ASSERT(encoding == CharEncoding::TwoByte);
       static constexpr uint32_t Mask =
           JSString::LINEAR_BIT | JSString::LATIN1_CHARS_BIT;
-      static_assert(Mask < 1024,
+      static_assert(Mask < 2048,
                     "Mask should be a small, near-null value to ensure we "
                     "block speculative execution when it's used as string "
                     "pointer");
@@ -1344,7 +1344,7 @@ void MacroAssembler::loadNonInlineStringChars(Register str, Register dest,
     static constexpr uint32_t Mask = JSString::LINEAR_BIT |
                                      JSString::INLINE_CHARS_BIT |
                                      JSString::LATIN1_CHARS_BIT;
-    static_assert(Mask < 1024,
+    static_assert(Mask < 2048,
                   "Mask should be a small, near-null value to ensure we "
                   "block speculative execution when it's used as string "
                   "pointer");
@@ -2659,11 +2659,15 @@ void MacroAssembler::loadMegamorphicSetPropCache(Register dest) {
   movePtr(ImmPtr(runtime()->addressOfMegamorphicSetPropCache()), dest);
 }
 
-void MacroAssembler::lookupStringInAtomCacheLastLookups(Register str,
-                                                        Register scratch,
-                                                        Register output,
-                                                        Label* fail) {
-  Label found;
+void MacroAssembler::tryFastAtomize(Register str, Register scratch,
+                                    Register output, Label* fail) {
+  Label found, done, notAtomRef;
+
+  branchTest32(Assembler::Zero, Address(str, JSString::offsetOfFlags()),
+               Imm32(JSString::ATOM_REF_BIT), &notAtomRef);
+  loadPtr(Address(str, JSAtomRefString::offsetOfAtom()), output);
+  jump(&done);
+  bind(&notAtomRef);
 
   uintptr_t cachePtr = uintptr_t(runtime()->addressOfStringToAtomCache());
   void* offset = (void*)(cachePtr + StringToAtomCache::offsetOfLastLookups());
@@ -2682,6 +2686,7 @@ void MacroAssembler::lookupStringInAtomCacheLastLookups(Register str,
   bind(&found);
   size_t atomOffset = StringToAtomCache::LastLookup::offsetOfAtom();
   loadPtr(Address(scratch, atomOffset), output);
+  bind(&done);
 }
 
 void MacroAssembler::loadAtomHash(Register id, Register outHash, Label* done) {
@@ -2741,7 +2746,7 @@ void MacroAssembler::loadAtomOrSymbolAndHash(ValueOperand value, Register outId,
   loadAtomHash(outId, outHash, &done);
 
   bind(&nonAtom);
-  lookupStringInAtomCacheLastLookups(outId, outHash, outId, cacheMiss);
+  tryFastAtomize(outId, outHash, outId, cacheMiss);
   jump(&atom);
 
   bind(&done);
@@ -3169,6 +3174,8 @@ void MacroAssembler::emitMegamorphicCachedSetSlot(
   passABIArg(scratch2);
   callWithABI<Fn, NativeObject::growSlotsPure>();
   storeCallPointerResult(scratch2);
+
+  MOZ_ASSERT(!save.has(scratch2));
   PopRegsInMask(save);
 
   branchIfFalseBool(scratch2, &cacheMiss);
@@ -3380,13 +3387,19 @@ void MacroAssembler::guardSpecificAtom(Register str, JSAtom* atom,
                                        Register scratch,
                                        const LiveRegisterSet& volatileRegs,
                                        Label* fail) {
-  Label done;
+  Label done, notCachedAtom;
   branchPtr(Assembler::Equal, str, ImmGCPtr(atom), &done);
 
   // The pointers are not equal, so if the input string is also an atom it
   // must be a different string.
   branchTest32(Assembler::NonZero, Address(str, JSString::offsetOfFlags()),
                Imm32(JSString::ATOM_BIT), fail);
+
+  // Try to do a cheap atomize on the string and repeat the above test
+  tryFastAtomize(str, scratch, scratch, &notCachedAtom);
+  branchPtr(Assembler::Equal, scratch, ImmGCPtr(atom), &done);
+  jump(fail);
+  bind(&notCachedAtom);
 
   // Check the length.
   branch32(Assembler::NotEqual, Address(str, JSString::offsetOfLength()),
@@ -4498,8 +4511,9 @@ void MacroAssembler::callWithABINoProfiler(void* fun, ABIType result,
   uint32_t stackAdjust;
   callWithABIPre(&stackAdjust);
 
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   if (check == CheckUnsafeCallWithABI::Check) {
+    // Set the JSContext::inUnsafeCallWithABI flag.
     push(ReturnReg);
     loadJSContext(ReturnReg);
     Address flagAddr(ReturnReg, JSContext::offsetOfInUnsafeCallWithABI());
@@ -4514,8 +4528,9 @@ void MacroAssembler::callWithABINoProfiler(void* fun, ABIType result,
 
   callWithABIPost(stackAdjust, result);
 
-#ifdef DEBUG
+#ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   if (check == CheckUnsafeCallWithABI::Check) {
+    // Check JSContext::inUnsafeCallWithABI was cleared as expected.
     Label ok;
     push(ReturnReg);
     loadJSContext(ReturnReg);
@@ -6549,6 +6564,14 @@ void MacroAssembler::branchWasmRefIsSubtypeExn(Register ref,
     branchTestPtr(Assembler::Zero, ref, ref, nullLabel);
   }
 
+  // The only value that can inhabit 'noexn' is null. So, early out if we got
+  // not-null.
+  if (destType.isNoExn()) {
+    jump(failLabel);
+    bind(&fallthrough);
+    return;
+  }
+
   // There are no other possible types except exnref, so succeed!
   jump(successLabel);
   bind(&fallthrough);
@@ -7091,13 +7114,14 @@ void MacroAssembler::wasmBumpPointerAllocate(Register instance, Register result,
 
   int32_t endOffset = Nursery::offsetOfCurrentEndFromPosition();
 
-  // Bail to OOL code if the alloc site needs to be initialized. Keep allocCount
-  // in temp2 for later.
+  // Bail to OOL code if the alloc site needs to be pushed onto the active
+  // list. Keep allocCount in temp2 for later.
   computeEffectiveAddress(
       Address(typeDefData, wasm::TypeDefInstanceData::offsetOfAllocSite()),
       temp1);
   load32(Address(temp1, gc::AllocSite::offsetOfNurseryAllocCount()), temp2);
-  branch32(Assembler::Equal, temp2, Imm32(0), fail);
+  branch32(Assembler::Equal, temp2,
+           Imm32(js::gc::NormalSiteAttentionThreshold - 1), fail);
 
   // Bump allocate in the nursery, bailing if there is not enough room.
   loadPtr(Address(instance, wasm::Instance::offsetOfAddressOfNurseryPosition()),
@@ -7143,7 +7167,8 @@ void MacroAssembler::wasmBumpPointerAllocateDynamic(
   load32(Address(typeDefData, wasm::TypeDefInstanceData::offsetOfAllocSite() +
                                   gc::AllocSite::offsetOfNurseryAllocCount()),
          temp1);
-  branch32(Assembler::Equal, temp1, Imm32(0), fail);
+  branch32(Assembler::Equal, temp1,
+           Imm32(js::gc::NormalSiteAttentionThreshold - 1), fail);
 
   // Bump allocate in the nursery, bailing if there is not enough room.
   loadPtr(Address(instance, wasm::Instance::offsetOfAddressOfNurseryPosition()),
@@ -7803,6 +7828,24 @@ void MacroAssembler::loadArgumentsObjectLength(Register obj, Register output,
   rshift32(Imm32(ArgumentsObject::PACKED_BITS_COUNT), output);
 }
 
+void MacroAssembler::loadArgumentsObjectLength(Register obj, Register output) {
+  // Get initial length value.
+  unboxInt32(Address(obj, ArgumentsObject::getInitialLengthSlotOffset()),
+             output);
+
+#ifdef DEBUG
+  // Assert length hasn't been overridden.
+  Label ok;
+  branchTest32(Assembler::Zero, output,
+               Imm32(ArgumentsObject::LENGTH_OVERRIDDEN_BIT), &ok);
+  assumeUnreachable("arguments object length has been overridden");
+  bind(&ok);
+#endif
+
+  // Shift out arguments length and return it.
+  rshift32(Imm32(ArgumentsObject::PACKED_BITS_COUNT), output);
+}
+
 void MacroAssembler::branchTestArgumentsObjectFlags(Register obj, Register temp,
                                                     uint32_t flags,
                                                     Condition cond,
@@ -7901,10 +7944,15 @@ void MacroAssembler::typedArrayElementSize(Register obj, Register output) {
   branchPtr(Assembler::Below, output, ImmPtr(classForType(Scalar::BigInt64)),
             &one);
 
+  static_assert(ValidateSizeRange(Scalar::BigInt64, Scalar::Float16),
+                "element size is eight in [BigInt64, Float16)");
+  branchPtr(Assembler::Below, output, ImmPtr(classForType(Scalar::Float16)),
+            &eight);
+
   static_assert(
-      ValidateSizeRange(Scalar::BigInt64, Scalar::MaxTypedArrayViewType),
-      "element size is eight in [BigInt64, MaxTypedArrayViewType)");
-  // Fall through for BigInt64 and BigUint64
+      ValidateSizeRange(Scalar::Float16, Scalar::MaxTypedArrayViewType),
+      "element size is two in [Float16, MaxTypedArrayViewType)");
+  jump(&two);
 
   bind(&eight);
   move32(Imm32(8), output);
@@ -7973,10 +8021,16 @@ void MacroAssembler::resizableTypedArrayElementShiftBy(Register obj,
   branchPtr(Assembler::Below, scratch, ImmPtr(classForType(Scalar::BigInt64)),
             &zero);
 
+  static_assert(ValidateSizeRange(Scalar::BigInt64, Scalar::Float16),
+                "element shift is three in [BigInt64, Float16)");
+  branchPtr(Assembler::Below, scratch, ImmPtr(classForType(Scalar::Float16)),
+            &three);
+
   static_assert(
-      ValidateSizeRange(Scalar::BigInt64, Scalar::MaxTypedArrayViewType),
-      "element shift is three in [BigInt64, MaxTypedArrayViewType)");
-  // Fall through for BigInt64 and BigUint64
+      ValidateSizeRange(Scalar::Float16, Scalar::MaxTypedArrayViewType),
+      "element shift is one in [Float16, MaxTypedArrayViewType)");
+  branchPtr(Assembler::Below, scratch, ImmPtr(classForType(Scalar::Float16)),
+            &one);
 
   bind(&three);
   rshiftPtr(Imm32(3), output);

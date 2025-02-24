@@ -136,6 +136,10 @@ enum VarDeclKind {
   VARDECL_VAR = 0,
   VARDECL_CONST,
   VARDECL_LET,
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+  VARDECL_USING,
+  VARDECL_AWAIT_USING,
+#endif
   VARDECL_LIMIT
 };
 
@@ -505,7 +509,7 @@ class NodeBuilder {
   [[nodiscard]] bool debuggerStatement(TokenPos* pos, MutableHandleValue dst);
 
   [[nodiscard]] bool moduleRequest(HandleValue moduleSpec,
-                                   NodeVector& assertions, TokenPos* pos,
+                                   NodeVector& attributes, TokenPos* pos,
                                    MutableHandleValue dst);
 
   [[nodiscard]] bool importAttribute(HandleValue key, HandleValue value,
@@ -1160,10 +1164,10 @@ bool NodeBuilder::yieldExpression(HandleValue arg, YieldKind kind,
                  dst);
 }
 
-bool NodeBuilder::moduleRequest(HandleValue moduleSpec, NodeVector& assertions,
+bool NodeBuilder::moduleRequest(HandleValue moduleSpec, NodeVector& attributes,
                                 TokenPos* pos, MutableHandleValue dst) {
   RootedValue array(cx);
-  if (!newArray(assertions, &array)) {
+  if (!newArray(attributes, &array)) {
     return false;
   }
 
@@ -1235,10 +1239,26 @@ bool NodeBuilder::variableDeclaration(NodeVector& elts, VarDeclKind kind,
   MOZ_ASSERT(kind > VARDECL_ERR && kind < VARDECL_LIMIT);
 
   RootedValue array(cx), kindName(cx);
-  if (!newArray(elts, &array) || !atomValue(kind == VARDECL_CONST ? "const"
-                                            : kind == VARDECL_LET ? "let"
-                                                                  : "var",
-                                            &kindName)) {
+  const char* s;
+  switch (kind) {
+    case VARDECL_CONST:
+      s = "const";
+      break;
+    case VARDECL_LET:
+      s = "let";
+      break;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case VARDECL_USING:
+      s = "using";
+      break;
+    case VARDECL_AWAIT_USING:
+      s = "await using";
+      break;
+#endif
+    default:
+      s = "var";
+  }
+  if (!newArray(elts, &array) || !atomValue(s, &kindName)) {
     return false;
   }
 
@@ -1729,6 +1749,10 @@ bool ASTSerializer::declaration(ParseNode* pn, MutableHandleValue dst) {
   MOZ_ASSERT(pn->isKind(ParseNodeKind::Function) ||
              pn->isKind(ParseNodeKind::VarStmt) ||
              pn->isKind(ParseNodeKind::LetDecl) ||
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+             pn->isKind(ParseNodeKind::UsingDecl) ||
+             pn->isKind(ParseNodeKind::AwaitUsingDecl) ||
+#endif
              pn->isKind(ParseNodeKind::ConstDecl));
 
   switch (pn->getKind()) {
@@ -1740,6 +1764,10 @@ bool ASTSerializer::declaration(ParseNode* pn, MutableHandleValue dst) {
 
     default:
       MOZ_ASSERT(pn->isKind(ParseNodeKind::LetDecl) ||
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                 pn->isKind(ParseNodeKind::UsingDecl) ||
+                 pn->isKind(ParseNodeKind::AwaitUsingDecl) ||
+#endif
                  pn->isKind(ParseNodeKind::ConstDecl));
       return variableDeclaration(&pn->as<ListNode>(), true, dst);
   }
@@ -1748,6 +1776,10 @@ bool ASTSerializer::declaration(ParseNode* pn, MutableHandleValue dst) {
 bool ASTSerializer::variableDeclaration(ListNode* declList, bool lexical,
                                         MutableHandleValue dst) {
   MOZ_ASSERT_IF(lexical, declList->isKind(ParseNodeKind::LetDecl) ||
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                             declList->isKind(ParseNodeKind::UsingDecl) ||
+                             declList->isKind(ParseNodeKind::AwaitUsingDecl) ||
+#endif
                              declList->isKind(ParseNodeKind::ConstDecl));
   MOZ_ASSERT_IF(!lexical, declList->isKind(ParseNodeKind::VarStmt));
 
@@ -1755,8 +1787,19 @@ bool ASTSerializer::variableDeclaration(ListNode* declList, bool lexical,
   // Treat both the toplevel const binding (secretly var-like) and the lexical
   // const the same way
   if (lexical) {
-    kind =
-        declList->isKind(ParseNodeKind::LetDecl) ? VARDECL_LET : VARDECL_CONST;
+    if (declList->isKind(ParseNodeKind::LetDecl)) {
+      kind = VARDECL_LET;
+    }
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    else if (declList->isKind(ParseNodeKind::UsingDecl)) {
+      kind = VARDECL_USING;
+    } else if (declList->isKind(ParseNodeKind::AwaitUsingDecl)) {
+      kind = VARDECL_AWAIT_USING;
+    }
+#endif
+    else {
+      kind = VARDECL_CONST;
+    }
   } else {
     kind =
         declList->isKind(ParseNodeKind::VarStmt) ? VARDECL_VAR : VARDECL_CONST;
@@ -1967,12 +2010,12 @@ bool ASTSerializer::exportDeclaration(ParseNode* exportNode,
         &moduleRequest->as<BinaryNode>().right()->as<ListNode>();
     MOZ_ASSERT(attributeList->isKind(ParseNodeKind::ImportAttributeList));
 
-    NodeVector assertions(cx);
-    if (!importAttributes(attributeList, assertions)) {
+    NodeVector attributes(cx);
+    if (!importAttributes(attributeList, attributes)) {
       return false;
     }
 
-    if (!builder.moduleRequest(moduleSpec, assertions, &exportNode->pn_pos,
+    if (!builder.moduleRequest(moduleSpec, attributes, &exportNode->pn_pos,
                                &moduleRequestValue)) {
       return false;
     }
@@ -2030,13 +2073,13 @@ bool ASTSerializer::importAttributes(ListNode* attributeList,
       return false;
     }
 
-    RootedValue assertion(cx);
+    RootedValue attribute(cx);
     if (!builder.importAttribute(key, value, &attributeNode->pn_pos,
-                                 &assertion)) {
+                                 &attribute)) {
       return false;
     }
 
-    if (!attributes.append(assertion)) {
+    if (!attributes.append(attribute)) {
       return false;
     }
   }
@@ -2143,7 +2186,11 @@ bool ASTSerializer::forInit(ParseNode* pn, MutableHandleValue dst) {
   }
 
   bool lexical = pn->isKind(ParseNodeKind::LetDecl) ||
-                 pn->isKind(ParseNodeKind::ConstDecl);
+                 pn->isKind(ParseNodeKind::ConstDecl)
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                 || pn->isKind(ParseNodeKind::UsingDecl)
+#endif
+      ;
   return (lexical || pn->isKind(ParseNodeKind::VarStmt))
              ? variableDeclaration(&pn->as<ListNode>(), lexical, dst)
              : expression(pn, dst);
@@ -2218,6 +2265,10 @@ bool ASTSerializer::statement(ParseNode* pn, MutableHandleValue dst) {
 
     case ParseNodeKind::LetDecl:
     case ParseNodeKind::ConstDecl:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case ParseNodeKind::UsingDecl:
+    case ParseNodeKind::AwaitUsingDecl:
+#endif
       return declaration(pn, dst);
 
     case ParseNodeKind::ImportDecl:
@@ -2339,6 +2390,10 @@ bool ASTSerializer::statement(ParseNode* pn, MutableHandleValue dst) {
           }
         } else if (!initNode->isKind(ParseNodeKind::VarStmt) &&
                    !initNode->isKind(ParseNodeKind::LetDecl) &&
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                   !initNode->isKind(ParseNodeKind::UsingDecl) &&
+                   !initNode->isKind(ParseNodeKind::AwaitUsingDecl) &&
+#endif
                    !initNode->isKind(ParseNodeKind::ConstDecl)) {
           if (!pattern(initNode, &var)) {
             return false;
@@ -2347,6 +2402,10 @@ bool ASTSerializer::statement(ParseNode* pn, MutableHandleValue dst) {
           if (!variableDeclaration(
                   &initNode->as<ListNode>(),
                   initNode->isKind(ParseNodeKind::LetDecl) ||
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+                      initNode->isKind(ParseNodeKind::UsingDecl) ||
+                      initNode->isKind(ParseNodeKind::AwaitUsingDecl) ||
+#endif
                       initNode->isKind(ParseNodeKind::ConstDecl),
                   &var)) {
             return false;

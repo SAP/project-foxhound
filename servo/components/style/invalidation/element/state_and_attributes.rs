@@ -18,12 +18,14 @@ use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::selector_map::SelectorMap;
 use crate::selector_parser::Snapshot;
 use crate::stylesheets::origin::OriginSet;
+use crate::values::AtomIdent;
 use crate::{Atom, WeakAtom};
 use dom::ElementState;
 use selectors::attr::CaseSensitivity;
+use selectors::kleene_value::KleeneValue;
 use selectors::matching::{
-    matches_selector, MatchingContext, MatchingForInvalidation, MatchingMode, NeedsSelectorFlags,
-    SelectorCaches, VisitedHandlingMode,
+    matches_selector_kleene, IncludeStartingStyle, MatchingContext, MatchingForInvalidation,
+    MatchingMode, NeedsSelectorFlags, SelectorCaches, VisitedHandlingMode,
 };
 use smallvec::SmallVec;
 
@@ -41,6 +43,8 @@ where
     added_id: Option<&'a WeakAtom>,
     classes_removed: &'a SmallVec<[Atom; 8]>,
     classes_added: &'a SmallVec<[Atom; 8]>,
+    custom_states_removed: &'a SmallVec<[AtomIdent; 8]>,
+    custom_states_added: &'a SmallVec<[AtomIdent; 8]>,
     state_changes: ElementState,
     descendant_invalidations: &'a mut DescendantInvalidationLists<'selectors>,
     sibling_invalidations: &'a mut InvalidationVector<'selectors>,
@@ -70,6 +74,7 @@ impl<'a, 'b: 'a, E: TElement + 'b> StateAndAttrInvalidationProcessor<'a, 'b, E> 
             None,
             selector_caches,
             VisitedHandlingMode::AllLinksVisitedAndUnvisited,
+            IncludeStartingStyle::No,
             shared_context.quirks_mode(),
             NeedsSelectorFlags::No,
             MatchingForInvalidation::Yes,
@@ -97,23 +102,25 @@ where
     E: TElement,
     W: selectors::Element<Impl = E::Impl>,
 {
-    let matches_now = matches_selector(
-        &dependency.selector,
-        dependency.selector_offset,
-        None,
-        element,
-        context,
-    );
+    context.for_invalidation_comparison(|context| {
+        let matches_now = matches_selector_kleene(
+            &dependency.selector,
+            dependency.selector_offset,
+            None,
+            element,
+            context,
+        );
 
-    let matched_then = matches_selector(
-        &dependency.selector,
-        dependency.selector_offset,
-        None,
-        wrapper,
-        context,
-    );
+        let matched_then = matches_selector_kleene(
+            &dependency.selector,
+            dependency.selector_offset,
+            None,
+            wrapper,
+            context,
+        );
 
-    matched_then != matches_now
+        matched_then != matches_now || matches_now == KleeneValue::Unknown
+    })
 }
 
 /// Whether we should process the descendants of a given element for style
@@ -243,7 +250,7 @@ where
             return false;
         };
 
-        if !snapshot.has_attrs() && state_changes.is_empty() {
+        if !snapshot.has_attrs() && !snapshot.has_custom_states() && state_changes.is_empty() {
             return false;
         }
 
@@ -260,6 +267,21 @@ where
             element.each_class(|c| {
                 if !snapshot.has_class(c, CaseSensitivity::CaseSensitive) {
                     classes_added.push(c.0.clone())
+                }
+            })
+        }
+
+        let mut custom_states_removed = SmallVec::<[AtomIdent; 8]>::new();
+        let mut custom_states_added = SmallVec::<[AtomIdent; 8]>::new();
+        if snapshot.has_custom_states() {
+            snapshot.each_custom_state(|s| {
+                if !element.has_custom_state(s) {
+                    custom_states_removed.push(s.clone())
+                }
+            });
+            element.each_custom_state(|s| {
+                if !snapshot.has_custom_state(s) {
+                    custom_states_added.push(s.clone())
                 }
             })
         }
@@ -326,6 +348,8 @@ where
                 added_id: id_added,
                 classes_removed: &classes_removed,
                 classes_added: &classes_added,
+                custom_states_removed: &custom_states_removed,
+                custom_states_added: &custom_states_added,
                 descendant_invalidations,
                 sibling_invalidations,
                 invalidates_self: false,
@@ -437,6 +461,18 @@ where
 
         for class in self.classes_added.iter().chain(self.classes_removed.iter()) {
             if let Some(deps) = map.class_to_selector.get(class, quirks_mode) {
+                for dep in deps {
+                    self.scan_dependency(dep);
+                }
+            }
+        }
+
+        for state in self
+            .custom_states_added
+            .iter()
+            .chain(self.custom_states_removed.iter())
+        {
+            if let Some(deps) = map.custom_state_affecting_selectors.get(state) {
                 for dep in deps {
                     self.scan_dependency(dep);
                 }

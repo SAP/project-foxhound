@@ -9,20 +9,21 @@
 mod codec;
 mod datagram;
 pub mod event;
+#[cfg(feature = "build-fuzzing-corpus")]
+mod fuzz;
 pub mod header;
 pub mod hrtime;
 mod incrdecoder;
 pub mod log;
 pub mod qlog;
-pub mod timer;
 pub mod tos;
-#[cfg(feature = "udp")]
-pub mod udp;
 
 use std::fmt::Write;
 
 use enum_map::Enum;
 
+#[cfg(feature = "build-fuzzing-corpus")]
+pub use self::fuzz::write_item_to_fuzzing_corpus;
 pub use self::{
     codec::{Decoder, Encoder},
     datagram::Datagram,

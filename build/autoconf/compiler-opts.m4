@@ -4,83 +4,19 @@ dnl file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 dnl Add compiler specific options
 
-dnl ============================================================================
-dnl C++ rtti
-dnl We don't use it in the code, but it can be usefull for debugging, so give
-dnl the user the option of enabling it.
-dnl ============================================================================
-AC_DEFUN([MOZ_RTTI],
-[
-if test -z "$_MOZ_USE_RTTI"; then
-    if test "$GNU_CC"; then
-        CXXFLAGS="$CXXFLAGS -fno-rtti"
-    else
-        case "$target" in
-        *-mingw*)
-            CXXFLAGS="$CXXFLAGS -GR-"
-        esac
-    fi
-fi
-])
-
-dnl ========================================================
-dnl =
-dnl = Debugging Options
-dnl =
-dnl ========================================================
-AC_DEFUN([MOZ_DEBUGGING_OPTS],
-[
-
-if test -z "$MOZ_DEBUG" -o -n "$MOZ_ASAN"; then
-    MOZ_NO_DEBUG_RTL=1
-fi
-
-AC_SUBST(MOZ_NO_DEBUG_RTL)
-
-if test -n "$MOZ_DEBUG"; then
-    if test -n "$COMPILE_ENVIRONMENT"; then
-        AC_MSG_CHECKING([for valid debug flags])
-        _SAVE_CFLAGS=$CFLAGS
-        CFLAGS="$CFLAGS $MOZ_DEBUG_FLAGS"
-        AC_TRY_COMPILE([#include <stdio.h>],
-            [printf("Hello World\n");],
-            _results=yes,
-            _results=no)
-        AC_MSG_RESULT([$_results])
-        if test "$_results" = "no"; then
-            AC_MSG_ERROR([These compiler flags are invalid: $MOZ_DEBUG_FLAGS])
-        fi
-        CFLAGS=$_SAVE_CFLAGS
-    fi
-fi
-])
-
 dnl A high level macro for selecting compiler options.
 AC_DEFUN([MOZ_COMPILER_OPTS],
 [
-  MOZ_DEBUGGING_OPTS
-  MOZ_RTTI
-
-if test "$GNU_CC"; then
-    if test -z "$DEVELOPER_OPTIONS"; then
-        CFLAGS="$CFLAGS -ffunction-sections -fdata-sections"
-        CXXFLAGS="$CXXFLAGS -ffunction-sections -fdata-sections"
-    fi
-
-    CFLAGS="$CFLAGS -fno-math-errno"
-    CXXFLAGS="$CXXFLAGS -fno-exceptions -fno-math-errno"
-fi
-
 dnl ========================================================
 dnl = Identical Code Folding
 dnl ========================================================
 
-if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF" -a -z "$DEVELOPER_OPTIONS"; then
+if test "$CC_TYPE" != "clang-cl" -a "$GCC_USE_GNU_LD" -a -z "$MOZ_DISABLE_ICF" -a -z "$DEVELOPER_OPTIONS"; then
     AC_CACHE_CHECK([whether the linker supports Identical Code Folding],
         moz_cv_opt_ld_supports_icf,
         [echo 'int foo() {return 42;}' \
               'int bar() {return 42;}' \
-              'int main() {return foo() - bar();}' > conftest.${ac_ext}
+              'int main() {return 0;}' > conftest.${ac_ext}
         # If the linker supports ICF, foo and bar symbols will have
         # the same address
         if AC_TRY_COMMAND([${CC-cc} -o conftest${ac_exeext} $LDFLAGS -Wl,--icf=safe -ffunction-sections conftest.${ac_ext} $LIBS 1>&2]) &&
@@ -141,16 +77,7 @@ dnl ========================================================
 dnl = Automatically remove dead symbols
 dnl ========================================================
 
-SANCOV=
-if test -n "$LIBFUZZER"; then
-    case "$LIBFUZZER_FLAGS" in
-    *-fsanitize-coverage*|*-fsanitize=fuzzer*)
-        SANCOV=1
-        ;;
-    esac
-fi
-
-if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS" -a -z "$MOZ_PROFILE_GENERATE" -a -z "$SANCOV"; then
+if test "$CC_TYPE" != clang-cl -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS" -a -z "$MOZ_PROFILE_GENERATE" -a -z "$SANCOV"; then
     if test -n "$MOZ_DEBUG_FLAGS"; then
         dnl See bug 670659
         AC_CACHE_CHECK([whether removing dead symbols breaks debugging],
@@ -180,7 +107,7 @@ if test "$GNU_CC" -a "$GCC_USE_GNU_LD" -a -z "$DEVELOPER_OPTIONS" -a -z "$MOZ_PR
     fi
 fi
 
-if test "$GNU_CC$CLANG_CC"; then
+if test "$CC_TYPE" != clang-cl ; then
     case "${OS_TARGET}" in
     Darwin|WASI)
         # It's the default on those targets, and clang complains about -pie

@@ -904,7 +904,7 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
     };
   }
 
-  onEngagement(state, queryContext, details, _controller) {
+  onEngagement(queryContext, controller, details) {
     if (this._pickPromiseResolve) {
       let { result, element } = details;
       this._pickPromiseResolve([result, element]);

@@ -22,10 +22,8 @@ class BrowsertimeDesktop(PerftestDesktop, Browsertime):
         LOG.info("binary_path: {}".format(binary_path))
 
         args_list = ["--viewPort", "1280x1024"]
-
         if self.config["app"] in (
             "chrome",
-            "chromium",
             "custom-car",
         ):
             return args_list + [
@@ -34,6 +32,10 @@ class BrowsertimeDesktop(PerftestDesktop, Browsertime):
                 "--chrome.binaryPath",
                 binary_path,
             ]
+
+        if self.config["app"] in ("safari-tp",):
+            return args_list + ["--browser", "safari", "--safari.useTechnologyPreview"]
+
         return args_list + [
             "--browser",
             self.config["app"],

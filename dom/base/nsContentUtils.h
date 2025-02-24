@@ -118,7 +118,6 @@ class nsNodeInfoManager;
 class nsParser;
 class nsPIWindowRoot;
 class nsPresContext;
-class nsStringBuffer;
 class nsTextFragment;
 class nsView;
 class nsWrapperCache;
@@ -146,6 +145,7 @@ class HTMLEditor;
 class LazyLogModule;
 class LogModule;
 class PresShell;
+class StringBuffer;
 class TextEditor;
 class WidgetDragEvent;
 class WidgetKeyboardEvent;
@@ -193,6 +193,7 @@ class NodeInfo;
 class OwningFileOrUSVStringOrFormData;
 class Selection;
 enum class ShadowRootMode : uint8_t;
+class ShadowRoot;
 struct StructuredSerializeOptions;
 class WorkerPrivate;
 enum class ElementCallbackType;
@@ -228,13 +229,14 @@ enum EventNameType {
   EventNameType_SVGSVG = 0x0008,      // the svg element
   EventNameType_SMIL = 0x0010,        // smil elements
   EventNameType_HTMLBodyOrFramesetOnly = 0x0020,
-  EventNameType_HTMLMarqueeOnly = 0x0040,
 
   EventNameType_HTMLXUL = 0x0003,
   EventNameType_All = 0xFFFF
 };
 
 enum class TreeKind : uint8_t { DOM, Flat };
+
+enum class SerializeShadowRoots : uint8_t { Yes, No };
 
 struct EventNameMapping {
   // This holds pointers to nsGkAtoms members, and is therefore safe as a
@@ -505,6 +507,9 @@ class nsContentUtils {
     return GetCommonAncestorHelper(aNode1, aNode2);
   }
 
+  static nsINode* GetClosestCommonShadowIncludingInclusiveAncestor(
+      nsINode* aNode1, nsINode* aNode2);
+
   /**
    * Returns the common flattened tree ancestor, if any, for two given content
    * nodes.
@@ -517,6 +522,13 @@ class nsContentUtils {
 
     return GetCommonFlattenedTreeAncestorHelper(aContent1, aContent2);
   }
+
+  /**
+   * Returns the common flattened tree ancestor from the point of view of
+   * the selection system, if any, for two given content nodes.
+   */
+  static nsIContent* GetCommonFlattenedTreeAncestorForSelection(
+      nsIContent* aContent1, nsIContent* aContent2);
 
   /**
    * Returns the common flattened tree ancestor from the point of view of the
@@ -784,6 +796,10 @@ class nsContentUtils {
    * Returns true if aChar is of class L*, N* or S* (for first-letter).
    */
   static bool IsAlphanumericOrSymbol(uint32_t aChar);
+  /**
+   * Returns true if aChar is a kind of hyphen.
+   */
+  static bool IsHyphen(uint32_t aChar);
 
   /*
    * Is the character an HTML whitespace character?
@@ -961,6 +977,11 @@ class nsContentUtils {
                                             const nsAString& aSpec,
                                             Document* aDocument,
                                             nsIURI* aBaseURI);
+
+  /**
+   * Returns true if |aAtom| contains at least one |aChar|.
+   */
+  static bool ContainsChar(nsAtom* aAtom, char aChar);
 
   /**
    * Returns true if |aName| is a name with dashes.
@@ -1472,6 +1493,11 @@ class nsContentUtils {
    * Returns true if aDocument is a chrome document
    */
   static bool IsChromeDoc(const Document* aDocument);
+
+  /**
+   * Returns true if aDocument is an addon document
+   */
+  static bool IsAddonDoc(const Document* aDocument);
 
   /**
    * Returns true if aDocument is in a docshell whose parent is the same type
@@ -2436,14 +2462,6 @@ class nsContentUtils {
   [[nodiscard]] static bool PlatformToDOMLineBreaks(nsString& aString,
                                                     const mozilla::fallible_t&);
 
-  /**
-   * Populates aResultString with the contents of the string-buffer aBuf, up
-   * to aBuf's null-terminator.  aBuf must not be null. Ownership of the string
-   * is not transferred.
-   */
-  static void PopulateStringFromStringBuffer(nsStringBuffer* aBuf,
-                                             nsAString& aResultString);
-
   static bool IsHandlingKeyBoardEvent() { return sIsHandlingKeyBoardEvent; }
 
   static void SetIsHandlingKeyBoardEvent(bool aHandling) {
@@ -2754,6 +2772,7 @@ class nsContentUtils {
   static bool IsJavaScriptLanguage(const nsString& aName);
 
   static bool IsJavascriptMIMEType(const nsAString& aMIMEType);
+  static bool IsJavascriptMIMEType(const nsACString& aMIMEType);
 
   static void SplitMimeType(const nsAString& aValue, nsString& aType,
                             nsString& aParams);
@@ -2771,9 +2790,13 @@ class nsContentUtils {
    *                    check.  aNode and aOffset can be computed with
    *                    UIEvent::GetRangeParentContentAndOffset() if you want to
    *                    check the click point.
+   * @param aAllowCrossShadowBoundary If true, this method allows the selection
+   *                                  to have boundaries that cross shadow
+   *                                  boundaries.
    */
   static bool IsPointInSelection(const mozilla::dom::Selection& aSelection,
-                                 const nsINode& aNode, const uint32_t aOffset);
+                                 const nsINode& aNode, const uint32_t aOffset,
+                                 const bool aAllowCrossShadowBoundary = false);
 
   /**
    * Takes a selection, and a text control element (<input> or <textarea>), and
@@ -3034,7 +3057,7 @@ class nsContentUtils {
   static mozilla::Maybe<mozilla::dom::IPCImage> SurfaceToIPCImage(
       mozilla::gfx::DataSourceSurface&);
   static already_AddRefed<mozilla::gfx::DataSourceSurface> IPCImageToSurface(
-      mozilla::dom::IPCImage&&);
+      const mozilla::dom::IPCImage&);
 
   // Helpers shared by the implementations of nsContentUtils methods and
   // nsIDOMWindowUtils methods.
@@ -3102,8 +3125,13 @@ class nsContentUtils {
   /*
    * Serializes a HTML nsINode into its markup representation.
    */
-  static bool SerializeNodeToMarkup(nsINode* aRoot, bool aDescendentsOnly,
-                                    nsAString& aOut);
+  template <SerializeShadowRoots ShouldSerializeShadowRoots =
+                SerializeShadowRoots::No>
+  static bool SerializeNodeToMarkup(
+      nsINode* aRoot, bool aDescendantsOnly, nsAString& aOut,
+      bool aSerializableShadowRoots,
+      const mozilla::dom::Sequence<
+          mozilla::OwningNonNull<mozilla::dom::ShadowRoot>>& aShadowRoots);
 
   /*
    * Returns true iff the provided JSObject is a global, and its URI matches
@@ -3537,7 +3565,7 @@ class nsContentUtils {
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   static nsIContent* AttachDeclarativeShadowRoot(
       nsIContent* aHost, mozilla::dom::ShadowRootMode aMode, bool aIsClonable,
-      bool aDelegatesFocus);
+      bool aIsSerializable, bool aDelegatesFocus);
 
  private:
   static bool InitializeEventTable();
@@ -3590,6 +3618,8 @@ class nsContentUtils {
           aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
+  static nsINode* GetCommonShadowIncludingAncestorHelper(nsINode* aNode1,
+                                                         nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(
       nsIContent* aContent1, nsIContent* aContent2);
 

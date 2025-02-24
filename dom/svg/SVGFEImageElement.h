@@ -94,6 +94,7 @@ class SVGFEImageElement final : public SVGFEImageElementBase,
   }
 
  private:
+  void DidAnimateAttribute(int32_t aNameSpaceID, nsAtom* aAttribute) override;
   nsresult LoadSVGImage(bool aForce, bool aNotify);
   bool ShouldLoadImage() const;
 

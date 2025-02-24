@@ -651,23 +651,6 @@ rtc_source_set("type_traits") {
   sources = [ "type_traits.h" ]
 }
 
-rtc_library("rtc_task_queue") {
-  visibility = [ "*" ]
-  sources = [
-    "task_queue.cc",
-    "task_queue.h",
-  ]
-  deps = [
-    ":macromagic",
-    "../api/task_queue",
-    "system:rtc_export",
-  ]
-  absl_deps = [
-    "//third_party/abseil-cpp/absl/functional:any_invocable",
-    "//third_party/abseil-cpp/absl/memory",
-  ]
-}
-
 rtc_source_set("rtc_operations_chain") {
   visibility = [ "*" ]
   sources = [
@@ -1040,6 +1023,12 @@ rtc_library("threading") {
     "thread.cc",
     "thread.h",
   ]
+  if (is_bsd && build_with_mozilla) {
+    sources -= [
+      "physical_socket_server.cc",
+      "physical_socket_server.h",
+    ]
+  }
   absl_deps = [
     "//third_party/abseil-cpp/absl/algorithm:container",
     "//third_party/abseil-cpp/absl/base:core_headers",
@@ -1063,7 +1052,6 @@ rtc_library("threading") {
     ":platform_thread_types",
     ":refcount",
     ":rtc_event",
-    ":rtc_task_queue",
     ":socket",
     ":socket_address",
     ":socket_server",
@@ -1078,6 +1066,7 @@ rtc_library("threading") {
     "../api/task_queue:pending_task_safety_flag",
     "../api/units:time_delta",
     "../system_wrappers:field_trial",
+    "./network:ecn_marking",
     "synchronization:mutex",
     "system:no_unique_address",
     "system:rtc_export",
@@ -1119,13 +1108,19 @@ rtc_library("socket") {
     "socket.h",
   ]
   deps = [
+    ":buffer",
+    ":checks",
     ":macromagic",
     ":socket_address",
+    "../api/units:timestamp",
+    "./network:ecn_marking",
+    "system:rtc_export",
     "third_party/sigslot",
   ]
   if (is_win) {
     deps += [ ":win32" ]
   }
+  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
 rtc_source_set("network_constants") {
@@ -1367,7 +1362,9 @@ if (!build_with_mozilla) {
     ":socket_factory",
     ":timeutils",
     "../api:sequence_checker",
+    "../api/units:time_delta",
     "../system_wrappers:field_trial",
+    "network:received_packet",
     "network:sent_packet",
     "system:no_unique_address",
   ]
@@ -1406,6 +1403,7 @@ if (rtc_include_tests) {
     deps = [
       ":async_packet_socket",
       ":gunit_helpers",
+      ":socket_address",
       "../test:test_support",
       "network:received_packet",
       "third_party/sigslot",
@@ -1664,10 +1662,7 @@ rtc_source_set("gtest_prod") {
 
 rtc_library("gunit_helpers") {
   testonly = true
-  sources = [
-    "gunit.cc",
-    "gunit.h",
-  ]
+  sources = [ "gunit.h" ]
   deps = [
     ":logging",
     ":rtc_base_tests_utils",
@@ -1737,8 +1732,6 @@ rtc_library("rtc_base_tests_utils") {
     "server_socket_adapters.cc",
     "server_socket_adapters.h",
     "sigslot_tester.h",
-    "socket_stream.cc",
-    "socket_stream.h",
     "test_base64.h",
     "test_certificate_verifier.h",
     "test_echo_server.cc",
@@ -1753,6 +1746,7 @@ rtc_library("rtc_base_tests_utils") {
     ":async_socket",
     ":async_tcp_socket",
     ":async_udp_socket",
+    ":buffer",
     ":byte_buffer",
     ":checks",
     ":ip_address",
@@ -1772,6 +1766,7 @@ rtc_library("rtc_base_tests_utils") {
     ":stringutils",
     ":threading",
     ":timeutils",
+    "../api:array_view",
     "../api:make_ref_counted",
     "../api:refcountedbase",
     "../api:scoped_refptr",
@@ -1806,9 +1801,7 @@ rtc_library("task_queue_for_test") {
   ]
   deps = [
     ":checks",
-    ":macromagic",
     ":rtc_event",
-    ":rtc_task_queue",
     "../api:function_view",
     "../api/task_queue",
     "../api/task_queue:default_task_queue_factory",
@@ -1889,6 +1882,7 @@ if (rtc_include_tests) {
         ":threading",
         ":timeutils",
         "../api/units:time_delta",
+        "../api/units:timestamp",
         "../system_wrappers",
         "../test:field_trial",
         "../test:fileutils",
@@ -1986,7 +1980,6 @@ if (rtc_include_tests) {
         ":rtc_base_tests_utils",
         ":rtc_event",
         ":rtc_numerics",
-        ":rtc_task_queue",
         ":safe_compare",
         ":safe_minmax",
         ":sample_counter",
@@ -2020,6 +2013,7 @@ if (rtc_include_tests) {
         "containers:flat_map",
         "containers:unittests",
         "memory:unittests",
+        "network:received_packet",
         "synchronization:mutex",
         "task_utils:repeating_task",
         "third_party/base64",
@@ -2046,7 +2040,6 @@ if (rtc_include_tests) {
         ":gunit_helpers",
         ":rtc_base_tests_utils",
         ":rtc_event",
-        ":rtc_task_queue",
         ":task_queue_for_test",
         ":timeutils",
         "../api/units:time_delta",
@@ -2121,7 +2114,6 @@ if (rtc_include_tests) {
         "nat_unittest.cc",
         "network_route_unittest.cc",
         "network_unittest.cc",
-        "proxy_unittest.cc",
         "rolling_accumulator_unittest.cc",
         "rtc_certificate_generator_unittest.cc",
         "rtc_certificate_unittest.cc",
@@ -2181,6 +2173,7 @@ if (rtc_include_tests) {
         "../test:test_main",
         "../test:test_support",
         "memory:fifo_buffer",
+        "network:received_packet",
         "synchronization:mutex",
         "third_party/sigslot",
       ]

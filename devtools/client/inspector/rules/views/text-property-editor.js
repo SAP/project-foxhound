@@ -264,6 +264,15 @@ TextPropertyEditor.prototype = {
       title: l10n("rule.warning.title"),
     });
 
+    this.invalidAtComputedValueTimeWarning = createChild(
+      this.container,
+      "div",
+      {
+        class: "ruleview-invalid-at-computed-value-time-warning",
+        hidden: "",
+      }
+    );
+
     this.unusedState = createChild(this.container, "div", {
       class: "ruleview-unused-warning",
       hidden: "",
@@ -597,8 +606,11 @@ TextPropertyEditor.prototype = {
       baseURI: this.sheetHref,
       unmatchedVariableClass: "ruleview-unmatched-variable",
       matchedVariableClass: "ruleview-variable",
-      getVariableValue: varName =>
-        this.rule.elementStyle.getVariable(varName, this.rule.pseudoElement),
+      getVariableData: varName =>
+        this.rule.elementStyle.getVariableData(
+          varName,
+          this.rule.pseudoElement
+        ),
     };
     const frag = outputParser.parseCssProperty(name, val, parserOptions);
 
@@ -881,6 +893,17 @@ TextPropertyEditor.prototype = {
       : l10n("rule.warning.title");
 
     this.warning.hidden = this.editing || this.isValid();
+
+    if (!this.editing && this.isInvalidAtComputedValueTime()) {
+      this.invalidAtComputedValueTimeWarning.title = l10nFormatStr(
+        "rule.warningInvalidAtComputedValueTime.title",
+        `"${this.prop.getExpectedSyntax()}"`
+      );
+      this.invalidAtComputedValueTimeWarning.hidden = false;
+    } else {
+      this.invalidAtComputedValueTimeWarning.hidden = true;
+    }
+
     this.filterProperty.hidden =
       this.editing ||
       !this.isValid() ||
@@ -1590,6 +1613,10 @@ TextPropertyEditor.prototype = {
    */
   isNameValid() {
     return this.prop.isNameValid();
+  },
+
+  isInvalidAtComputedValueTime() {
+    return this.prop.isInvalidAtComputedValueTime();
   },
 
   /**

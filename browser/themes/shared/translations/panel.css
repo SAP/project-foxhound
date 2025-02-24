@@ -7,7 +7,7 @@
   width: 31em;
 }
 
-:where(#full-page-translations-panel) :is(description, label, menulist) {
+:where(.translations-panel) :is(description, label, menulist) {
   margin: 0;
 }
 
@@ -63,7 +63,7 @@ h1.translations-panel-header-wrapper {
 
 /* The default styling is to dim the default, but here override it so that it still uses
    the primary color. */
-.translations-panel-footer > button[default][disabled="true"] {
+.translations-panel-button-group > button[default][disabled="true"] {
   color: var(--button-primary-color);
   background-color: var(--button-primary-bgcolor);
 }
@@ -117,44 +117,107 @@ h1.translations-panel-header-wrapper {
   padding: 12px;
 }
 
-.select-translations-panel-button {
-  align-items: center;
-  justify-content: center;
-  margin-inline: 0;
+#select-translations-panel-a11y-document-wrapper {
+  padding-block: var(--space-medium);
 }
 
 .select-translations-panel-content {
-  padding: var(--arrowpanel-padding);
-  padding-block: 4px;
+  margin-block: var(--space-xsmall);
+  padding-inline: var(--arrowpanel-padding);
 }
 
-.select-translations-panel-copy-button {
-  background-color: transparent;
-  font: message-box;
-  font-weight: var(--font-weight-bold);
-  &::before {
-    content: url(chrome://global/skin/icons/edit-copy.svg);
-    fill: currentColor;
-    margin-inline-end: 5px;
-    -moz-context-properties: fill;
-  }
-}
-
-.select-translations-panel-header {
-  padding: var(--arrowpanel-padding);
-  text-align: initial;
+#select-translations-panel-header-row {
+  padding-block: var(--space-small) 0;
 }
 
 .select-translations-panel-label {
-  margin-inline: 2px;
+  margin-block-end: var(--space-small);
 }
 
 #select-translations-panel-lang-selection {
-  gap: 6px;
+  column-gap: var(--space-medium);
 }
 
-#select-translations-panel-translation-area {
+#select-translations-panel-text-area {
   height: 8em;
-  margin-inline: 5px;
+  min-height: 3.5em;
   resize: none;
+  margin-block-start: var(--space-large);
+  padding-block: var(--space-medium);
+  padding-inline: var(--space-medium);
+  color: inherit;
+  background-color: transparent;
+
+  &:disabled {
+    color: var(--panel-disabled-color);
+    border-color: var(--panel-disabled-color);
+  }
+
+  &.translating {
+    -moz-context-properties: fill;
+    fill: currentColor;
+    background-image: url("chrome://global/skin/icons/loading.svg");
+    background-repeat: no-repeat;
+    background-position: var(--space-medium) var(--space-medium);
+    background-size: var(--size-item-small);
+    padding-inline-start: calc(var(--space-medium) + var(--size-item-small) + var(--space-small));
+
+    &:-moz-locale-dir(rtl) {
+      background-position-x: right var(--space-medium);
+    }
+  }
+}
+
+.select-translations-panel-message-bar {
+  margin-block-start: var(--space-xsmall);
+}
+
+#select-translations-panel-unsupported-language-message-bar {
+  margin-block-end: var(--space-medium);
+}
+
+#select-translations-panel-translation-failure-message-bar {
+  margin-block-start: var(--space-large);
+}
+
+#select-translations-panel-footer {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  margin-block: var(--space-medium);
+  padding-block: var(--space-small);
+  column-gap: var(--space-small);
+  row-gap: var(--space-large);
+}
+
+.select-translations-panel-copy-button {
+  height: var(--size-item-large);
+  min-height: var(--size-item-large);
+  margin: 0;
+  justify-content: flex-start;
+  list-style-image: url(chrome://global/skin/icons/edit-copy.svg);
+  background-color: transparent;
+  -moz-context-properties: fill;
+  fill: currentColor;
+
+  > .button-box {
+    gap: var(--space-xsmall);
+  }
+
+  &.copied {
+    list-style-image: url(chrome://global/skin/icons/check.svg);
+  }
+}
+
+#select-translations-panel-footer-button-group {
+  flex: 1;
+  justify-content: flex-end;
+  column-gap: var(--space-xsmall);
+
+  > .footer-button {
+    height: var(--size-item-large);
+    min-height: var(--size-item-large);
+  }
 }

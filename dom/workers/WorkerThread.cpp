@@ -13,6 +13,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventQueue.h"
+#include "mozilla/Logging.h"
 #include "mozilla/MacroForEach.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/ThreadEventQueue.h"
@@ -25,7 +26,14 @@
 #include "nsIRunnable.h"
 #include "nsIThreadInternal.h"
 #include "nsString.h"
+#include "nsThreadUtils.h"
 #include "prthread.h"
+
+static mozilla::LazyLogModule gWorkerThread("WorkerThread");
+#ifdef LOGV
+#  undef LOGV
+#endif
+#define LOGV(msg) MOZ_LOG(gWorkerThread, LogLevel::Verbose, msg);
 
 namespace mozilla {
 
@@ -109,46 +117,54 @@ SafeRefPtr<WorkerThread> WorkerThread::Create(
 void WorkerThread::SetWorker(const WorkerThreadFriendKey& /* aKey */,
                              WorkerPrivate* aWorkerPrivate) {
   MOZ_ASSERT(PR_GetCurrentThread() == mThread);
+  MOZ_ASSERT(aWorkerPrivate);
 
-  if (aWorkerPrivate) {
-    {
-      MutexAutoLock lock(mLock);
+  {
+    MutexAutoLock lock(mLock);
 
-      MOZ_ASSERT(!mWorkerPrivate);
-      MOZ_ASSERT(mAcceptingNonWorkerRunnables);
+    MOZ_ASSERT(!mWorkerPrivate);
+    MOZ_ASSERT(mAcceptingNonWorkerRunnables);
 
-      mWorkerPrivate = aWorkerPrivate;
+    mWorkerPrivate = aWorkerPrivate;
 #ifdef DEBUG
-      mAcceptingNonWorkerRunnables = false;
+    mAcceptingNonWorkerRunnables = false;
 #endif
+  }
+
+  mObserver = new Observer(aWorkerPrivate);
+  MOZ_ALWAYS_SUCCEEDS(AddObserver(mObserver));
+}
+
+void WorkerThread::ClearEventQueueAndWorker(
+    const WorkerThreadFriendKey& /* aKey */) {
+  MOZ_ASSERT(PR_GetCurrentThread() == mThread);
+
+  MOZ_ALWAYS_SUCCEEDS(RemoveObserver(mObserver));
+  mObserver = nullptr;
+
+  {
+    MutexAutoLock lock(mLock);
+
+    MOZ_ASSERT(mWorkerPrivate);
+    MOZ_ASSERT(!mAcceptingNonWorkerRunnables);
+    // mOtherThreadsDispatchingViaEventTarget can still be non-zero here
+    // because WorkerThread::Dispatch isn't atomic so a thread initiating
+    // dispatch can have dispatched a runnable at this thread allowing us to
+    // begin shutdown before that thread gets a chance to decrement
+    // mOtherThreadsDispatchingViaEventTarget back to 0.  So we need to wait
+    // for that.
+    while (mOtherThreadsDispatchingViaEventTarget) {
+      mWorkerPrivateCondVar.Wait();
     }
-
-    mObserver = new Observer(aWorkerPrivate);
-    MOZ_ALWAYS_SUCCEEDS(AddObserver(mObserver));
-  } else {
-    MOZ_ALWAYS_SUCCEEDS(RemoveObserver(mObserver));
-    mObserver = nullptr;
-
-    {
-      MutexAutoLock lock(mLock);
-
-      MOZ_ASSERT(mWorkerPrivate);
-      MOZ_ASSERT(!mAcceptingNonWorkerRunnables);
-      // mOtherThreadsDispatchingViaEventTarget can still be non-zero here
-      // because WorkerThread::Dispatch isn't atomic so a thread initiating
-      // dispatch can have dispatched a runnable at this thread allowing us to
-      // begin shutdown before that thread gets a chance to decrement
-      // mOtherThreadsDispatchingViaEventTarget back to 0.  So we need to wait
-      // for that.
-      while (mOtherThreadsDispatchingViaEventTarget) {
-        mWorkerPrivateCondVar.Wait();
-      }
-
+    // Need to clean up the dispatched runnables if
+    // mOtherThreadsDispatchingViaEventTarget was non-zero.
+    if (NS_HasPendingEvents(nullptr)) {
+      NS_ProcessPendingEvents(nullptr);
+    }
 #ifdef DEBUG
-      mAcceptingNonWorkerRunnables = true;
+    mAcceptingNonWorkerRunnables = true;
 #endif
-      mWorkerPrivate = nullptr;
-    }
+    mWorkerPrivate = nullptr;
   }
 }
 
@@ -223,6 +239,8 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
   // May be called on any thread!
   nsCOMPtr<nsIRunnable> runnable(aRunnable);  // in case we exit early
 
+  LOGV(("WorkerThread::Dispatch [%p] runnable: %p", this, runnable.get()));
+
   // Workers only support asynchronous dispatch.
   if (NS_WARN_IF(aFlags != NS_DISPATCH_NORMAL)) {
     return NS_ERROR_UNEXPECTED;
@@ -232,8 +250,13 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
 
   WorkerPrivate* workerPrivate = nullptr;
   if (onWorkerThread) {
+    // If the mWorkerPrivate has already disconnected by
+    // WorkerPrivate::ResetWorkerPrivateInWorkerThread(), there is no chance
+    // that to execute this runnable. Return NS_ERROR_UNEXPECTED here.
+    if (!mWorkerPrivate) {
+      return NS_ERROR_UNEXPECTED;
+    }
     // No need to lock here because it is only modified on this thread.
-    MOZ_ASSERT(mWorkerPrivate);
     mWorkerPrivate->AssertIsOnWorkerThread();
 
     workerPrivate = mWorkerPrivate;
@@ -252,13 +275,7 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
   }
 
   nsresult rv;
-  if (runnable && onWorkerThread) {
-    RefPtr<WorkerRunnable> workerRunnable =
-        workerPrivate->MaybeWrapAsWorkerRunnable(runnable.forget());
-    rv = nsThread::Dispatch(workerRunnable.forget(), NS_DISPATCH_NORMAL);
-  } else {
-    rv = nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
-  }
+  rv = nsThread::Dispatch(runnable.forget(), NS_DISPATCH_NORMAL);
 
   if (!onWorkerThread && workerPrivate) {
     // We need to wake the worker thread if we're not already on the right
@@ -282,6 +299,8 @@ WorkerThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOGV(("WorkerThread::Dispatch [%p] failed, runnable: %p", this,
+          runnable.get()));
     return rv;
   }
 

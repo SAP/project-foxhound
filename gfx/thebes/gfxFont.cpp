@@ -729,15 +729,6 @@ void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
   // preceding letter by any letter-spacing or justification.
   const char16_t kBengaliVirama = 0x09CD;
   const char16_t kBengaliYa = 0x09AF;
-  // Characters treated as hyphens for the purpose of "emergency" breaking
-  // when the content would otherwise overflow.
-  auto isHyphen = [](char16_t c) {
-    return c == char16_t('-') ||  // HYPHEN-MINUS
-           c == 0x2010 ||         // HYPHEN
-           c == 0x2012 ||         // FIGURE DASH
-           c == 0x2013 ||         // EN DASH
-           c == 0x058A;           // ARMENIAN HYPHEN
-  };
   bool prevWasHyphen = false;
   while (pos < aLength) {
     const char16_t ch = aString[pos];
@@ -750,7 +741,7 @@ void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
     }
     if (ch == char16_t(' ') || ch == kIdeographicSpace) {
       glyphs[pos].SetIsSpace();
-    } else if (isHyphen(ch) && pos &&
+    } else if (nsContentUtils::IsHyphen(ch) && pos &&
                nsContentUtils::IsAlphanumeric(aString[pos - 1])) {
       prevWasHyphen = true;
     } else if (ch == kBengaliYa) {
@@ -1006,6 +997,10 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
   }
 
   mKerningSet = HasFeatureSet(HB_TAG('k', 'e', 'r', 'n'), mKerningEnabled);
+
+  // Ensure the gfxFontEntry's unitsPerEm and extents fields are initialized,
+  // so that GetFontExtents can use them without risk of races.
+  Unused << mFontEntry->UnitsPerEm();
 }
 
 gfxFont::~gfxFont() {
@@ -3897,8 +3892,7 @@ bool gfxFont::InitFakeSmallCapsRun(
           AutoTArray<bool, 50> charsToMergeArray;
           AutoTArray<bool, 50> deletedCharsArray;
 
-          StyleTextTransform globalTransform{StyleTextTransformCase::Uppercase,
-                                             {}};
+          const auto globalTransform = StyleTextTransform::UPPERCASE;
           // No mask needed; we're doing case conversion, not password-hiding.
           const char16_t maskChar = 0;
           bool mergeNeeded = nsCaseTransformTextRunFactory::TransformString(
@@ -4706,7 +4700,7 @@ gfxFontStyle::gfxFontStyle()
     : size(DEFAULT_PIXEL_FONT_SIZE),
       sizeAdjust(0.0f),
       baselineOffset(0.0f),
-      languageOverride(NO_FONT_LANGUAGE_OVERRIDE),
+      languageOverride{0},
       weight(FontWeight::NORMAL),
       stretch(FontStretch::NORMAL),
       style(FontSlantStyle::NORMAL),
@@ -4729,7 +4723,7 @@ gfxFontStyle::gfxFontStyle(FontSlantStyle aStyle, FontWeight aWeight,
                            bool aAllowStyleSynthesis,
                            bool aAllowSmallCapsSynthesis,
                            bool aUsePositionSynthesis,
-                           uint32_t aLanguageOverride)
+                           StyleFontLanguageOverride aLanguageOverride)
     : size(aSize),
       baselineOffset(0.0f),
       languageOverride(aLanguageOverride),

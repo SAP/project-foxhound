@@ -20,7 +20,6 @@ const TELEMETRY_PREFIX = "contextual.services.quicksuggest";
 const TELEMETRY_SCALARS = {
   BLOCK: `${TELEMETRY_PREFIX}.block_weather`,
   CLICK: `${TELEMETRY_PREFIX}.click_weather`,
-  HELP: `${TELEMETRY_PREFIX}.help_weather`,
   IMPRESSION: `${TELEMETRY_PREFIX}.impression_weather`,
 };
 
@@ -115,7 +114,7 @@ class ProviderWeather extends UrlbarProvider {
       return false;
     }
 
-    return keywords.has(queryContext.searchString.trim().toLocaleLowerCase());
+    return keywords.has(queryContext.trimmedLowerCaseSearchString);
   }
 
   /**
@@ -163,7 +162,7 @@ class ProviderWeather extends UrlbarProvider {
     return lazy.QuickSuggest.weather.getViewUpdate(result);
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onLegacyEngagement(state, queryContext, details, controller) {
     // Ignore engagements on other results that didn't end the session.
     if (details.result?.providerName != this.name && details.isSessionOngoing) {
       return;
@@ -233,7 +232,6 @@ class ProviderWeather extends UrlbarProvider {
    *
    *   - "": The user didn't pick the row or any part of it
    *   - "weather": The user picked the main part of the row
-   *   - "help": The user picked the help button
    *   - "dismiss": The user dismissed the result
    *
    *   An empty string means the user picked some other row to end the
@@ -243,7 +241,7 @@ class ProviderWeather extends UrlbarProvider {
    *   A non-empty string means the user picked the weather row or some part of
    *   it, and both impression and click telemetry will be recorded. The
    *   non-empty-string values come from the `details.selType` passed in to
-   *   `onEngagement()`; see `TelemetryEvent.typeFromElement()`.
+   *   `onLegacyEngagement()`; see `TelemetryEvent.typeFromElement()`.
    */
   #recordEngagementTelemetry(result, isPrivate, selType) {
     // Indexes recorded in quick suggest telemetry are 1-based, so add 1 to the
@@ -264,10 +262,6 @@ class ProviderWeather extends UrlbarProvider {
       case "weather":
         clickScalars.push(TELEMETRY_SCALARS.CLICK);
         eventObject = "click";
-        break;
-      case "help":
-        clickScalars.push(TELEMETRY_SCALARS.HELP);
-        eventObject = "help";
         break;
       case "dismiss":
         clickScalars.push(TELEMETRY_SCALARS.BLOCK);

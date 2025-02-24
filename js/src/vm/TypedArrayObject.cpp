@@ -7,9 +7,12 @@
 #include "vm/TypedArrayObject-inl.h"
 #include "vm/TypedArrayObject.h"
 
+#include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/IntegerTypeTraits.h"
+#include "mozilla/Likely.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/TextUtils.h"
 
 #include <algorithm>
@@ -31,6 +34,7 @@
 #include "gc/Barrier.h"
 #include "gc/MaybeRooted.h"
 #include "jit/InlinableNatives.h"
+#include "jit/TrampolineNatives.h"
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType, JS_GetTypedArray{Length,ByteOffset,ByteLength}, JS_IsTypedArrayObject
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
@@ -39,11 +43,14 @@
 #include "js/UniquePtr.h"
 #include "js/Wrapper.h"
 #include "util/DifferentialTesting.h"
+#include "util/StringBuffer.h"
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
 #include "vm/ArrayBufferObject.h"
+#include "vm/Float16.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/GlobalObject.h"
+#include "vm/Interpreter.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PIC.h"
@@ -52,6 +59,7 @@
 #include "vm/Uint8Clamped.h"
 #include "vm/WrapperObject.h"
 
+#include "builtin/Sorting-inl.h"
 #include "gc/Nursery-inl.h"
 #include "vm/ArrayBufferObject-inl.h"
 #include "vm/Compartment-inl.h"
@@ -91,6 +99,7 @@ bool TypedArrayObject::convertValue(JSContext* cx, HandleValue v,
     case Scalar::Uint16:
     case Scalar::Int32:
     case Scalar::Uint32:
+    case Scalar::Float16:
     case Scalar::Float32:
     case Scalar::Float64:
     case Scalar::Uint8Clamped: {
@@ -113,6 +122,13 @@ bool TypedArrayObject::convertValue(JSContext* cx, HandleValue v,
 static bool IsTypedArrayObject(HandleValue v) {
   return v.isObject() && v.toObject().is<TypedArrayObject>();
 }
+
+#ifdef NIGHTLY_BUILD
+static bool IsUint8ArrayObject(HandleValue v) {
+  return IsTypedArrayObject(v) &&
+         v.toObject().as<TypedArrayObject>().type() == Scalar::Uint8;
+}
+#endif
 
 /* static */
 bool TypedArrayObject::ensureHasBuffer(JSContext* cx,
@@ -199,7 +215,6 @@ size_t FixedLengthTypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
   auto* newObj = &obj->as<FixedLengthTypedArrayObject>();
   const auto* oldObj = &old->as<FixedLengthTypedArrayObject>();
   MOZ_ASSERT(newObj->elementsRaw() == oldObj->elementsRaw());
-  MOZ_ASSERT(obj->isTenured());
 
   // Typed arrays with a buffer object do not need an update.
   if (oldObj->hasBuffer()) {
@@ -233,13 +248,13 @@ size_t FixedLengthTypedArrayObject::objectMoved(JSObject* obj, JSObject* old) {
 
   constexpr size_t headerSize = dataOffset() + sizeof(HeapSlot);
 
-  // See AllocKindForLazyBuffer.
-  gc::AllocKind newAllocKind = obj->asTenured().getAllocKind();
+  gc::AllocKind allocKind = oldObj->allocKindForTenure();
+  MOZ_ASSERT_IF(obj->isTenured(), obj->asTenured().getAllocKind() == allocKind);
   MOZ_ASSERT_IF(nbytes == 0,
-                headerSize + sizeof(uint8_t) <= GetGCKindBytes(newAllocKind));
+                headerSize + sizeof(uint8_t) <= GetGCKindBytes(allocKind));
 
   if (nursery.isInside(buf) &&
-      headerSize + nbytes <= GetGCKindBytes(newAllocKind)) {
+      headerSize + nbytes <= GetGCKindBytes(allocKind)) {
     MOZ_ASSERT(oldObj->hasInlineElements());
 #ifdef DEBUG
     if (nbytes == 0) {
@@ -2046,6 +2061,1083 @@ bool TypedArrayObject::copyWithin(JSContext* cx, unsigned argc, Value* vp) {
                               TypedArrayObject::copyWithin_impl>(cx, args);
 }
 
+#ifdef NIGHTLY_BUILD
+
+// Byte vector with large enough inline storage to allow constructing small
+// typed arrays without extra heap allocations.
+using ByteVector =
+    js::Vector<uint8_t, FixedLengthTypedArrayObject::INLINE_BUFFER_LIMIT>;
+
+static UniqueChars QuoteString(JSContext* cx, char16_t ch) {
+  Sprinter sprinter(cx);
+  if (!sprinter.init()) {
+    return nullptr;
+  }
+
+  StringEscape esc{};
+  js::EscapePrinter ep(sprinter, esc);
+  ep.putChar(ch);
+
+  return sprinter.release();
+}
+
+/**
+ * FromHex ( string [ , maxLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-fromhex
+ */
+static bool FromHex(JSContext* cx, Handle<JSString*> string, size_t maxLength,
+                    ByteVector& bytes, size_t* readLength) {
+  // Step 1. (Not applicable in our implementation.)
+
+  // Step 2.
+  size_t length = string->length();
+
+  // Step 3.
+  if (length % 2 != 0) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TYPED_ARRAY_BAD_HEX_STRING_LENGTH);
+    return false;
+  }
+
+  JSLinearString* linear = string->ensureLinear(cx);
+  if (!linear) {
+    return false;
+  }
+
+  // Step 4. (Not applicable in our implementation.)
+  MOZ_ASSERT(bytes.empty());
+
+  // Step 5.
+  size_t index = 0;
+
+  // Step 6.
+  while (index < length && bytes.length() < maxLength) {
+    // Step 6.a.
+    char16_t c0 = linear->latin1OrTwoByteChar(index);
+    char16_t c1 = linear->latin1OrTwoByteChar(index + 1);
+
+    // Step 6.b.
+    if (MOZ_UNLIKELY(!mozilla::IsAsciiHexDigit(c0) ||
+                     !mozilla::IsAsciiHexDigit(c1))) {
+      char16_t ch = !mozilla::IsAsciiHexDigit(c0) ? c0 : c1;
+      if (auto str = QuoteString(cx, ch)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_TYPED_ARRAY_BAD_HEX_DIGIT, str.get());
+      }
+      return false;
+    }
+
+    // Step 6.c.
+    index += 2;
+
+    // Step 6.d.
+    uint8_t byte = (mozilla::AsciiAlphanumericToNumber(c0) << 4) +
+                   mozilla::AsciiAlphanumericToNumber(c1);
+
+    // Step 6.e.
+    if (!bytes.append(byte)) {
+      return false;
+    }
+  }
+
+  // Step 7.
+  *readLength = index;
+  return true;
+}
+
+namespace Base64 {
+static constexpr uint8_t InvalidChar = UINT8_MAX;
+
+static constexpr auto DecodeTable(const char (&alphabet)[65]) {
+  std::array<uint8_t, 128> result = {};
+
+  // Initialize all elements to InvalidChar.
+  for (auto& e : result) {
+    e = InvalidChar;
+  }
+
+  // Map the base64 characters to their values.
+  for (uint8_t i = 0; i < 64; ++i) {
+    result[alphabet[i]] = i;
+  }
+
+  return result;
+}
+}  // namespace Base64
+
+namespace Base64::Encode {
+static constexpr const char Base64[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static_assert(std::char_traits<char>::length(Base64) == 64);
+
+static constexpr const char Base64Url[] =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+static_assert(std::char_traits<char>::length(Base64Url) == 64);
+}  // namespace Base64::Encode
+
+namespace Base64::Decode {
+static constexpr auto Base64 = DecodeTable(Base64::Encode::Base64);
+static_assert(Base64.size() == 128,
+              "128 elements to allow access through ASCII characters");
+
+static constexpr auto Base64Url = DecodeTable(Base64::Encode::Base64Url);
+static_assert(Base64Url.size() == 128,
+              "128 elements to allow access through ASCII characters");
+}  // namespace Base64::Decode
+
+enum class Alphabet {
+  /**
+   * Standard base64 alphabet.
+   */
+  Base64,
+
+  /**
+   * URL and filename safe base64 alphabet.
+   */
+  Base64Url,
+};
+
+enum class LastChunkHandling {
+  /**
+   * Allow partial chunks at the end of the input.
+   */
+  Loose,
+
+  /**
+   * Disallow partial chunks at the end of the input.
+   */
+  Strict,
+
+  /**
+   * Stop before partial chunks at the end of the input.
+   */
+  StopBeforePartial,
+};
+
+/**
+ * FromBase64 ( string, alphabet, lastChunkHandling [ , maxLength ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-frombase64
+ */
+static bool FromBase64(JSContext* cx, Handle<JSString*> string,
+                       Alphabet alphabet, LastChunkHandling lastChunkHandling,
+                       size_t maxLength, ByteVector& bytes,
+                       size_t* readLength) {
+  // Steps 1-2. (Not applicable in our implementation.)
+
+  // Step 3.
+  size_t remaining = maxLength;
+  if (remaining == 0) {
+    MOZ_ASSERT(bytes.empty());
+    *readLength = 0;
+    return true;
+  }
+
+  JSLinearString* linear = string->ensureLinear(cx);
+  if (!linear) {
+    return false;
+  }
+
+  // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
+  //
+  // Encode a complete base64 chunk.
+  auto decodeChunk = [&](uint32_t chunk) {
+    MOZ_ASSERT(chunk <= 0xffffff);
+    MOZ_ASSERT(remaining >= 3);
+
+    if (!bytes.reserve(bytes.length() + 3)) {
+      return false;
+    }
+    bytes.infallibleAppend(chunk >> 16);
+    bytes.infallibleAppend(chunk >> 8);
+    bytes.infallibleAppend(chunk);
+    return true;
+  };
+
+  // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
+  //
+  // Encode a three element partial base64 chunk.
+  auto decodeChunk3 = [&](uint32_t chunk, bool throwOnExtraBits) {
+    MOZ_ASSERT(chunk <= 0x3ffff);
+    MOZ_ASSERT(remaining >= 2);
+
+    if (throwOnExtraBits && (chunk & 0x3) != 0) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_TYPED_ARRAY_EXTRA_BASE64_BITS);
+      return false;
+    }
+
+    if (!bytes.reserve(bytes.length() + 2)) {
+      return false;
+    }
+    bytes.infallibleAppend(chunk >> 10);
+    bytes.infallibleAppend(chunk >> 2);
+    return true;
+  };
+
+  // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
+  //
+  // Encode a two element partial base64 chunk.
+  auto decodeChunk2 = [&](uint32_t chunk, bool throwOnExtraBits) {
+    MOZ_ASSERT(chunk <= 0xfff);
+    MOZ_ASSERT(remaining >= 1);
+
+    if (throwOnExtraBits && (chunk & 0xf) != 0) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_TYPED_ARRAY_EXTRA_BASE64_BITS);
+      return false;
+    }
+
+    if (!bytes.reserve(bytes.length() + 1)) {
+      return false;
+    }
+    bytes.infallibleAppend(chunk >> 4);
+    return true;
+  };
+
+  // DecodeBase64Chunk ( chunk [ , throwOnExtraBits ] )
+  //
+  // Encode a partial base64 chunk.
+  auto decodePartialChunk = [&](uint32_t chunk, uint32_t chunkLength,
+                                bool throwOnExtraBits = false) {
+    MOZ_ASSERT(chunkLength == 2 || chunkLength == 3);
+    return chunkLength == 2 ? decodeChunk2(chunk, throwOnExtraBits)
+                            : decodeChunk3(chunk, throwOnExtraBits);
+  };
+
+  // Step 4.
+  //
+  // String index after the last fully read base64 chunk.
+  size_t read = 0;
+
+  // Step 5.
+  MOZ_ASSERT(bytes.empty());
+
+  // Step 6.
+  //
+  // Current base64 chunk, a uint24 number.
+  uint32_t chunk = 0;
+
+  // Step 7.
+  //
+  // Current base64 chunk length, in the range [0..4].
+  size_t chunkLength = 0;
+
+  // Step 8.
+  //
+  // Current string index.
+  size_t index = 0;
+
+  // Step 9.
+  size_t length = linear->length();
+
+  const auto& decode = alphabet == Alphabet::Base64 ? Base64::Decode::Base64
+                                                    : Base64::Decode::Base64Url;
+
+  // Step 10.
+  for (; index < length; index++) {
+    // Step 10.c. (Reordered)
+    char16_t ch = linear->latin1OrTwoByteChar(index);
+
+    // Step 10.a.
+    if (mozilla::IsAsciiWhitespace(ch)) {
+      continue;
+    }
+
+    // Step 10.b. (Moved out of loop.)
+
+    // Step 10.d. (Performed in for-loop step.)
+
+    // Step 10.e.
+    if (ch == '=') {
+      break;
+    }
+
+    // Steps 10.f-g.
+    uint8_t value = Base64::InvalidChar;
+    if (mozilla::IsAscii(ch)) {
+      value = decode[ch];
+    }
+    if (MOZ_UNLIKELY(value == Base64::InvalidChar)) {
+      if (auto str = QuoteString(cx, ch)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_TYPED_ARRAY_BAD_BASE64_CHAR, str.get());
+      }
+      return false;
+    }
+
+    // Step 10.h. (Not applicable in our implementation.)
+
+    // Step 10.i.
+    if ((remaining == 1 && chunkLength == 2) ||
+        (remaining == 2 && chunkLength == 3)) {
+      *readLength = read;
+      return true;
+    }
+
+    // Step 10.j.
+    chunk = (chunk << 6) | value;
+
+    // Step 10.k.
+    chunkLength += 1;
+
+    // Step 10.l.
+    if (chunkLength == 4) {
+      // Step 10.l.i.
+      if (!decodeChunk(chunk)) {
+        return false;
+      }
+
+      // Step 10.l.ii.
+      chunk = 0;
+
+      // Step 10.l.iii.
+      chunkLength = 0;
+
+      // Step 10.l.iv.
+      //
+      // NB: Add +1 to include the |index| update from step 10.d.
+      read = index + 1;
+
+      // Step 10.l.v.
+      MOZ_ASSERT(remaining >= 3);
+      remaining -= 3;
+      if (remaining == 0) {
+        *readLength = read;
+        return true;
+      }
+    }
+  }
+
+  // Step 10.b.
+  if (index == length) {
+    // Step 10.b.i.
+    if (chunkLength > 0) {
+      // Step 10.b.i.1.
+      if (lastChunkHandling == LastChunkHandling::StopBeforePartial) {
+        *readLength = read;
+        return true;
+      }
+
+      // Steps 10.b.i.2-3.
+      if (lastChunkHandling == LastChunkHandling::Loose) {
+        // Step 10.b.i.2.a.
+        if (chunkLength == 1) {
+          JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                    JSMSG_TYPED_ARRAY_BAD_INCOMPLETE_CHUNK);
+          return false;
+        }
+        MOZ_ASSERT(chunkLength == 2 || chunkLength == 3);
+
+        // Step 10.b.i.2.b.
+        if (!decodePartialChunk(chunk, chunkLength)) {
+          return false;
+        }
+      } else {
+        // Step 10.b.i.3.a.
+        MOZ_ASSERT(lastChunkHandling == LastChunkHandling::Strict);
+
+        // Step 10.b.i.3.b.
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_TYPED_ARRAY_BAD_INCOMPLETE_CHUNK);
+        return false;
+      }
+    }
+
+    // Step 10.b.ii.
+    *readLength = length;
+    return true;
+  }
+
+  // Step 10.e.
+  MOZ_ASSERT(index < length);
+  MOZ_ASSERT(linear->latin1OrTwoByteChar(index) == '=');
+
+  // Step 10.e.i.
+  if (chunkLength < 2) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TYPED_ARRAY_BAD_INCOMPLETE_CHUNK);
+    return false;
+  }
+  MOZ_ASSERT(chunkLength == 2 || chunkLength == 3);
+
+  // Step 10.e.ii. (Inlined SkipAsciiWhitespace)
+  while (++index < length) {
+    char16_t ch = linear->latin1OrTwoByteChar(index);
+    if (!mozilla::IsAsciiWhitespace(ch)) {
+      break;
+    }
+  }
+
+  // Step 10.e.iii.
+  if (chunkLength == 2) {
+    // Step 10.e.iii.1.
+    if (index == length) {
+      // Step 10.e.iii.1.a.
+      if (lastChunkHandling == LastChunkHandling::StopBeforePartial) {
+        *readLength = read;
+        return true;
+      }
+
+      // Step 10.e.iii.1.b.
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_TYPED_ARRAY_MISSING_BASE64_PADDING);
+      return false;
+    }
+
+    // Step 10.e.iii.2.
+    char16_t ch = linear->latin1OrTwoByteChar(index);
+
+    // Step 10.e.iii.3.
+    if (ch == '=') {
+      // Step 10.e.iii.3.a. (Inlined SkipAsciiWhitespace)
+      while (++index < length) {
+        char16_t ch = linear->latin1OrTwoByteChar(index);
+        if (!mozilla::IsAsciiWhitespace(ch)) {
+          break;
+        }
+      }
+    }
+  }
+
+  // Step 10.e.iv.
+  if (index < length) {
+    char16_t ch = linear->latin1OrTwoByteChar(index);
+    if (auto str = QuoteString(cx, ch)) {
+      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                JSMSG_TYPED_ARRAY_BAD_BASE64_AFTER_PADDING,
+                                str.get());
+    }
+    return false;
+  }
+
+  // Steps 10.e.v-vi.
+  bool throwOnExtraBits = lastChunkHandling == LastChunkHandling::Strict;
+
+  // Step 10.e.vii.
+  if (!decodePartialChunk(chunk, chunkLength, throwOnExtraBits)) {
+    return false;
+  }
+
+  // Step 10.e.viii.
+  *readLength = length;
+  return true;
+}
+
+/**
+ * Uint8Array.fromBase64 ( string [ , options ] )
+ * Uint8Array.prototype.setFromBase64 ( string [ , options ] )
+ * Uint8Array.prototype.toBase64 ( [ options ] )
+ *
+ * Helper to retrieve the "alphabet" option.
+ */
+static bool GetAlphabetOption(JSContext* cx, Handle<JSObject*> options,
+                              Alphabet* result) {
+  Rooted<Value> value(cx);
+  if (!GetProperty(cx, options, options, cx->names().alphabet, &value)) {
+    return false;
+  }
+
+  if (value.isUndefined()) {
+    *result = Alphabet::Base64;
+    return true;
+  }
+
+  if (!value.isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
+                            value, nullptr, "not a string");
+  }
+
+  auto* linear = value.toString()->ensureLinear(cx);
+  if (!linear) {
+    return false;
+  }
+
+  if (StringEqualsAscii(linear, "base64")) {
+    *result = Alphabet::Base64;
+    return true;
+  }
+
+  if (StringEqualsAscii(linear, "base64url")) {
+    *result = Alphabet::Base64Url;
+    return true;
+  }
+
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_TYPED_ARRAY_BAD_BASE64_ALPHABET);
+  return false;
+}
+
+/**
+ * Uint8Array.fromBase64 ( string [ , options ] )
+ * Uint8Array.prototype.setFromBase64 ( string [ , options ] )
+ *
+ * Helper to retrieve the "lastChunkHandling" option.
+ */
+static bool GetLastChunkHandlingOption(JSContext* cx, Handle<JSObject*> options,
+                                       LastChunkHandling* result) {
+  Rooted<Value> value(cx);
+  if (!GetProperty(cx, options, options, cx->names().lastChunkHandling,
+                   &value)) {
+    return false;
+  }
+
+  if (value.isUndefined()) {
+    *result = LastChunkHandling::Loose;
+    return true;
+  }
+
+  if (!value.isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK,
+                            value, nullptr, "not a string");
+  }
+
+  auto* linear = value.toString()->ensureLinear(cx);
+  if (!linear) {
+    return false;
+  }
+
+  if (StringEqualsAscii(linear, "loose")) {
+    *result = LastChunkHandling::Loose;
+    return true;
+  }
+
+  if (StringEqualsAscii(linear, "strict")) {
+    *result = LastChunkHandling::Strict;
+    return true;
+  }
+
+  if (StringEqualsAscii(linear, "stop-before-partial")) {
+    *result = LastChunkHandling::StopBeforePartial;
+    return true;
+  }
+
+  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                            JSMSG_TYPED_ARRAY_BAD_BASE64_LAST_CHUNK_HANDLING);
+  return false;
+}
+
+/**
+ * Uint8Array.fromBase64 ( string [ , options ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.frombase64
+ */
+static bool uint8array_fromBase64(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Step 1.
+  if (!args.get(0).isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
+                            args.get(0), nullptr, "not a string");
+  }
+  Rooted<JSString*> string(cx, args[0].toString());
+
+  // Steps 2-9.
+  auto alphabet = Alphabet::Base64;
+  auto lastChunkHandling = LastChunkHandling::Loose;
+  if (args.hasDefined(1)) {
+    // Step 2. (Inlined GetOptionsObject)
+    Rooted<JSObject*> options(
+        cx, RequireObjectArg(cx, "options", "fromBase64", args[1]));
+    if (!options) {
+      return false;
+    }
+
+    // Steps 3-6.
+    if (!GetAlphabetOption(cx, options, &alphabet)) {
+      return false;
+    }
+
+    // Steps 7-9.
+    if (!GetLastChunkHandlingOption(cx, options, &lastChunkHandling)) {
+      return false;
+    }
+  }
+
+  // Step 10.
+  constexpr size_t maxLength = std::numeric_limits<size_t>::max();
+  ByteVector bytes(cx);
+  size_t unusedReadLength;
+  if (!FromBase64(cx, string, alphabet, lastChunkHandling, maxLength, bytes,
+                  &unusedReadLength)) {
+    return false;
+  }
+
+  // Step 11.
+  size_t resultLength = bytes.length();
+
+  // Step 12.
+  auto* tarray =
+      TypedArrayObjectTemplate<uint8_t>::fromLength(cx, resultLength);
+  if (!tarray) {
+    return false;
+  }
+
+  // Step 13.
+  auto target = SharedMem<uint8_t*>::unshared(tarray->dataPointerUnshared());
+  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
+  UnsharedOps::podCopy(target, source, resultLength);
+
+  // Step 14.
+  args.rval().setObject(*tarray);
+  return true;
+}
+
+/**
+ * Uint8Array.fromHex ( string )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.fromhex
+ */
+static bool uint8array_fromHex(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Step 1.
+  if (!args.get(0).isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
+                            args.get(0), nullptr, "not a string");
+  }
+  Rooted<JSString*> string(cx, args[0].toString());
+
+  // Step 2.
+  constexpr size_t maxLength = std::numeric_limits<size_t>::max();
+  ByteVector bytes(cx);
+  size_t unusedReadLength;
+  if (!FromHex(cx, string, maxLength, bytes, &unusedReadLength)) {
+    return false;
+  }
+
+  // Step 3.
+  size_t resultLength = bytes.length();
+
+  // Step 4.
+  auto* tarray =
+      TypedArrayObjectTemplate<uint8_t>::fromLength(cx, resultLength);
+  if (!tarray) {
+    return false;
+  }
+
+  // Step 5.
+  auto target = SharedMem<uint8_t*>::unshared(tarray->dataPointerUnshared());
+  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
+  UnsharedOps::podCopy(target, source, resultLength);
+
+  // Step 6.
+  args.rval().setObject(*tarray);
+  return true;
+}
+
+/**
+ * Uint8Array.prototype.setFromBase64 ( string [ , options ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.setfrombase64
+ */
+static bool uint8array_setFromBase64(JSContext* cx, const CallArgs& args) {
+  Rooted<TypedArrayObject*> tarray(
+      cx, &args.thisv().toObject().as<TypedArrayObject>());
+
+  // Step 3.
+  if (!args.get(0).isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
+                            args.get(0), nullptr, "not a string");
+  }
+  Rooted<JSString*> string(cx, args[0].toString());
+
+  // Steps 4-11.
+  auto alphabet = Alphabet::Base64;
+  auto lastChunkHandling = LastChunkHandling::Loose;
+  if (args.hasDefined(1)) {
+    // Step 2. (Inlined GetOptionsObject)
+    Rooted<JSObject*> options(
+        cx, RequireObjectArg(cx, "options", "setFromBase64", args[1]));
+    if (!options) {
+      return false;
+    }
+
+    // Steps 3-6.
+    if (!GetAlphabetOption(cx, options, &alphabet)) {
+      return false;
+    }
+
+    // Steps 7-9.
+    if (!GetLastChunkHandlingOption(cx, options, &lastChunkHandling)) {
+      return false;
+    }
+  }
+
+  // Steps 12-14.
+  auto length = tarray->length();
+  if (!length) {
+    ReportOutOfBounds(cx, tarray);
+    return false;
+  }
+
+  // Step 15.
+  size_t maxLength = *length;
+
+  // Steps 16-17.
+  ByteVector bytes(cx);
+  size_t readLength;
+  if (!FromBase64(cx, string, alphabet, lastChunkHandling, maxLength, bytes,
+                  &readLength)) {
+    return false;
+  }
+
+  // Step 18.
+  size_t written = bytes.length();
+
+  // Step 19.
+  //
+  // The underlying buffer has neither been detached nor shrunk. (It may have
+  // been grown when it's a growable shared buffer and a concurrent thread
+  // resized the buffer.)
+  MOZ_ASSERT(!tarray->hasDetachedBuffer());
+  MOZ_ASSERT(tarray->length().valueOr(0) >= *length);
+
+  // Step 20.
+  MOZ_ASSERT(written <= *length);
+
+  // Step 21. (Inlined SetUint8ArrayBytes)
+  auto target = tarray->dataPointerEither().cast<uint8_t*>();
+  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
+  if (tarray->isSharedMemory()) {
+    SharedOps::podCopy(target, source, written);
+  } else {
+    UnsharedOps::podCopy(target, source, written);
+  }
+
+  // Step 22.
+  Rooted<PlainObject*> result(cx, NewPlainObject(cx));
+  if (!result) {
+    return false;
+  }
+
+  // Step 23.
+  Rooted<Value> readValue(cx, NumberValue(readLength));
+  if (!DefineDataProperty(cx, result, cx->names().read, readValue)) {
+    return false;
+  }
+
+  // Step 24.
+  Rooted<Value> writtenValue(cx, NumberValue(written));
+  if (!DefineDataProperty(cx, result, cx->names().written, writtenValue)) {
+    return false;
+  }
+
+  // Step 25.
+  args.rval().setObject(*result);
+  return true;
+}
+
+/**
+ * Uint8Array.prototype.setFromBase64 ( string [ , options ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.setfrombase64
+ */
+static bool uint8array_setFromBase64(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  return CallNonGenericMethod<IsUint8ArrayObject, uint8array_setFromBase64>(
+      cx, args);
+}
+
+/**
+ * Uint8Array.prototype.setFromHex ( string )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.setfromhex
+ */
+static bool uint8array_setFromHex(JSContext* cx, const CallArgs& args) {
+  Rooted<TypedArrayObject*> tarray(
+      cx, &args.thisv().toObject().as<TypedArrayObject>());
+
+  // Step 3.
+  if (!args.get(0).isString()) {
+    return ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_SEARCH_STACK,
+                            args.get(0), nullptr, "not a string");
+  }
+  Rooted<JSString*> string(cx, args[0].toString());
+
+  // Steps 4-6.
+  auto length = tarray->length();
+  if (!length) {
+    ReportOutOfBounds(cx, tarray);
+    return false;
+  }
+
+  // Step 7.
+  size_t maxLength = *length;
+
+  // Steps 8-9.
+  ByteVector bytes(cx);
+  size_t readLength;
+  if (!FromHex(cx, string, maxLength, bytes, &readLength)) {
+    return false;
+  }
+
+  // Step 10.
+  size_t written = bytes.length();
+
+  // Step 11.
+  //
+  // The underlying buffer has neither been detached nor shrunk. (It may have
+  // been grown when it's a growable shared buffer and a concurrent thread
+  // resized the buffer.)
+  MOZ_ASSERT(!tarray->hasDetachedBuffer());
+  MOZ_ASSERT(tarray->length().valueOr(0) >= *length);
+
+  // Step 12.
+  MOZ_ASSERT(written <= *length);
+
+  // Step 13. (Inlined SetUint8ArrayBytes)
+  auto target = tarray->dataPointerEither().cast<uint8_t*>();
+  auto source = SharedMem<uint8_t*>::unshared(bytes.begin());
+  if (tarray->isSharedMemory()) {
+    SharedOps::podCopy(target, source, written);
+  } else {
+    UnsharedOps::podCopy(target, source, written);
+  }
+
+  // Step 14.
+  Rooted<PlainObject*> result(cx, NewPlainObject(cx));
+  if (!result) {
+    return false;
+  }
+
+  // Step 15.
+  Rooted<Value> readValue(cx, NumberValue(readLength));
+  if (!DefineDataProperty(cx, result, cx->names().read, readValue)) {
+    return false;
+  }
+
+  // Step 16.
+  Rooted<Value> writtenValue(cx, NumberValue(written));
+  if (!DefineDataProperty(cx, result, cx->names().written, writtenValue)) {
+    return false;
+  }
+
+  // Step 17.
+  args.rval().setObject(*result);
+  return true;
+}
+
+/**
+ * Uint8Array.prototype.setFromHex ( string )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.setfromhex
+ */
+static bool uint8array_setFromHex(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  return CallNonGenericMethod<IsUint8ArrayObject, uint8array_setFromHex>(cx,
+                                                                         args);
+}
+
+/**
+ * Uint8Array.prototype.toBase64 ( [ options ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.tobase64
+ */
+static bool uint8array_toBase64(JSContext* cx, const CallArgs& args) {
+  Rooted<TypedArrayObject*> tarray(
+      cx, &args.thisv().toObject().as<TypedArrayObject>());
+
+  // Steps 3-7.
+  auto alphabet = Alphabet::Base64;
+  if (args.hasDefined(0)) {
+    // Step 3. (Inlined GetOptionsObject)
+    Rooted<JSObject*> options(
+        cx, RequireObjectArg(cx, "options", "toBase64", args[0]));
+    if (!options) {
+      return false;
+    }
+
+    // Steps 4-7.
+    if (!GetAlphabetOption(cx, options, &alphabet)) {
+      return false;
+    }
+  }
+
+  // Step 8. (Partial)
+  auto length = tarray->length();
+  if (!length) {
+    ReportOutOfBounds(cx, tarray);
+    return false;
+  }
+
+  // Compute the output string length. Three input bytes are encoded as four
+  // characters, so the output length is ⌈length × 4/3⌉.
+  auto outLength = mozilla::CheckedInt<size_t>{*length};
+  outLength += 2;
+  outLength /= 3;
+  outLength *= 4;
+  if (!outLength.isValid() || outLength.value() > JSString::MAX_LENGTH) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
+
+  JSStringBuilder sb(cx);
+  if (!sb.reserve(outLength.value())) {
+    return false;
+  }
+
+  // Steps 9-10.
+  const auto& base64Chars = alphabet == Alphabet::Base64
+                                ? Base64::Encode::Base64
+                                : Base64::Encode::Base64Url;
+
+  auto encode = [&base64Chars](uint32_t value) {
+    return base64Chars[value & 0x3f];
+  };
+
+  // Our implementation directly converts the bytes to their string
+  // representation instead of first collecting them into an intermediate list.
+  auto data = tarray->dataPointerEither().cast<uint8_t*>();
+  auto toRead = *length;
+  for (; toRead >= 3; toRead -= 3) {
+    // Combine three input bytes into a single uint24 value.
+    auto byte0 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto byte1 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto byte2 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto u24 = (uint32_t(byte0) << 16) | (uint32_t(byte1) << 8) | byte2;
+
+    // Encode the uint24 value as base64.
+    sb.infallibleAppend(encode(u24 >> 18));
+    sb.infallibleAppend(encode(u24 >> 12));
+    sb.infallibleAppend(encode(u24 >> 6));
+    sb.infallibleAppend(encode(u24 >> 0));
+  }
+
+  // Trailing two and one element bytes are padded with '='.
+  if (toRead == 2) {
+    // Combine two input bytes into a single uint24 value.
+    auto byte0 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto byte1 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto u24 = (uint32_t(byte0) << 16) | (uint32_t(byte1) << 8);
+
+    // Encode the uint24 value as base64, including padding.
+    sb.infallibleAppend(encode(u24 >> 18));
+    sb.infallibleAppend(encode(u24 >> 12));
+    sb.infallibleAppend(encode(u24 >> 6));
+    sb.infallibleAppend('=');
+  } else if (toRead == 1) {
+    // Combine one input byte into a single uint24 value.
+    auto byte0 = jit::AtomicOperations::loadSafeWhenRacy(data++);
+    auto u24 = uint32_t(byte0) << 16;
+
+    // Encode the uint24 value as base64, including padding.
+    sb.infallibleAppend(encode(u24 >> 18));
+    sb.infallibleAppend(encode(u24 >> 12));
+    sb.infallibleAppend('=');
+    sb.infallibleAppend('=');
+  } else {
+    MOZ_ASSERT(toRead == 0);
+  }
+
+  MOZ_ASSERT(sb.length() == outLength.value(), "all characters were written");
+
+  // Step 11.
+  auto* str = sb.finishString();
+  if (!str) {
+    return false;
+  }
+
+  args.rval().setString(str);
+  return true;
+}
+
+/**
+ * Uint8Array.prototype.toBase64 ( [ options ] )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.tobase64
+ */
+static bool uint8array_toBase64(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  return CallNonGenericMethod<IsUint8ArrayObject, uint8array_toBase64>(cx,
+                                                                       args);
+}
+
+/**
+ * Uint8Array.prototype.toHex ( )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.tohex
+ */
+static bool uint8array_toHex(JSContext* cx, const CallArgs& args) {
+  Rooted<TypedArrayObject*> tarray(
+      cx, &args.thisv().toObject().as<TypedArrayObject>());
+
+  // Step 3. (Partial)
+  auto length = tarray->length();
+  if (!length) {
+    ReportOutOfBounds(cx, tarray);
+    return false;
+  }
+
+  // |length| is limited by |ByteLengthLimit|, which ensures that multiplying it
+  // by two won't overflow.
+  static_assert(TypedArrayObject::ByteLengthLimit <=
+                std::numeric_limits<size_t>::max() / 2);
+  MOZ_ASSERT(*length <= TypedArrayObject::ByteLengthLimit);
+
+  // Compute the output string length. Each byte is encoded as two characters,
+  // so the output length is exactly twice as large as |length|.
+  size_t outLength = *length * 2;
+  if (outLength > JSString::MAX_LENGTH) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
+
+  // Step 4.
+  JSStringBuilder sb(cx);
+  if (!sb.reserve(outLength)) {
+    return false;
+  }
+
+  // NB: Lower case hex digits.
+  static constexpr char HexDigits[] = "0123456789abcdef";
+  static_assert(std::char_traits<char>::length(HexDigits) == 16);
+
+  // Steps 3 and 5.
+  //
+  // Our implementation directly converts the bytes to their string
+  // representation instead of first collecting them into an intermediate list.
+  auto data = tarray->dataPointerEither().cast<uint8_t*>();
+  for (size_t index = 0; index < *length; index++) {
+    auto byte = jit::AtomicOperations::loadSafeWhenRacy(data + index);
+
+    sb.infallibleAppend(HexDigits[byte >> 4]);
+    sb.infallibleAppend(HexDigits[byte & 0xf]);
+  }
+
+  MOZ_ASSERT(sb.length() == outLength, "all characters were written");
+
+  // Step 6.
+  auto* str = sb.finishString();
+  if (!str) {
+    return false;
+  }
+
+  args.rval().setString(str);
+  return true;
+}
+
+/**
+ * Uint8Array.prototype.toHex ( )
+ *
+ * https://tc39.es/proposal-arraybuffer-base64/spec/#sec-uint8array.prototype.tohex
+ */
+static bool uint8array_toHex(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Steps 1-2.
+  return CallNonGenericMethod<IsUint8ArrayObject, uint8array_toHex>(cx, args);
+}
+
+#endif
+
 /* static */ const JSFunctionSpec TypedArrayObject::protoFunctions[] = {
     JS_SELF_HOSTED_FN("subarray", "TypedArraySubarray", 2, 0),
     JS_FN("set", TypedArrayObject::set, 1, 0),
@@ -2067,7 +3159,7 @@ bool TypedArrayObject::copyWithin(JSContext* cx, unsigned argc, Value* vp) {
     JS_SELF_HOSTED_FN("reverse", "TypedArrayReverse", 0, 0),
     JS_SELF_HOSTED_FN("slice", "TypedArraySlice", 2, 0),
     JS_SELF_HOSTED_FN("some", "TypedArraySome", 1, 0),
-    JS_SELF_HOSTED_FN("sort", "TypedArraySort", 1, 0),
+    JS_TRAMPOLINE_FN("sort", TypedArrayObject::sort, 1, 0, TypedArraySort),
     JS_SELF_HOSTED_FN("entries", "TypedArrayEntries", 0, 0),
     JS_SELF_HOSTED_FN("keys", "TypedArrayKeys", 0, 0),
     JS_SELF_HOSTED_FN("values", "$TypedArrayValues", 0, 0),
@@ -2146,6 +3238,25 @@ bool TypedArrayObjectTemplate<uint32_t>::getElementPure(
     TypedArrayObject* tarray, size_t index, Value* vp) {
   uint32_t val = getIndex(tarray, index);
   *vp = NumberValue(val);
+  return true;
+}
+
+template <>
+bool TypedArrayObjectTemplate<float16>::getElementPure(TypedArrayObject* tarray,
+                                                       size_t index,
+                                                       Value* vp) {
+  float16 f16 = getIndex(tarray, index);
+  /*
+   * Doubles in typed arrays could be typed-punned arrays of integers. This
+   * could allow user code to break the engine-wide invariant that only
+   * canonical nans are stored into jsvals, which means user code could
+   * confuse the engine into interpreting a double-typed jsval as an
+   * object-typed jsval.
+   *
+   * This could be removed for platforms/compilers known to convert a 32-bit
+   * non-canonical nan to a 64-bit canonical nan.
+   */
+  *vp = JS::CanonicalizedDoubleValue(f16.toDouble());
   return true;
 }
 
@@ -2287,8 +3398,8 @@ bool TypedArrayObject::getElementPure(size_t index, Value* vp) {
 /* static */
 bool TypedArrayObject::getElements(JSContext* cx,
                                    Handle<TypedArrayObject*> tarray,
-                                   Value* vp) {
-  size_t length = tarray->length().valueOr(0);
+                                   size_t length, Value* vp) {
+  MOZ_ASSERT(length <= tarray->length().valueOr(0));
   MOZ_ASSERT_IF(length > 0, !tarray->hasDetachedBuffer());
 
   switch (tarray->type()) {
@@ -2364,15 +3475,50 @@ static const JSPropertySpec
 #undef IMPL_TYPED_ARRAY_PROPERTIES
 };
 
+#ifdef NIGHTLY_BUILD
+static const JSFunctionSpec uint8array_static_methods[] = {
+    JS_FN("fromBase64", uint8array_fromBase64, 1, 0),
+    JS_FN("fromHex", uint8array_fromHex, 1, 0),
+    JS_FS_END,
+};
+
+static const JSFunctionSpec uint8array_methods[] = {
+    JS_FN("setFromBase64", uint8array_setFromBase64, 1, 0),
+    JS_FN("setFromHex", uint8array_setFromHex, 1, 0),
+    JS_FN("toBase64", uint8array_toBase64, 0, 0),
+    JS_FN("toHex", uint8array_toHex, 0, 0),
+    JS_FS_END,
+};
+#endif
+
+static constexpr const JSFunctionSpec* TypedArrayStaticMethods(
+    Scalar::Type type) {
+#ifdef NIGHTLY_BUILD
+  if (type == Scalar::Uint8) {
+    return uint8array_static_methods;
+  }
+#endif
+  return nullptr;
+}
+
+static constexpr const JSFunctionSpec* TypedArrayMethods(Scalar::Type type) {
+#ifdef NIGHTLY_BUILD
+  if (type == Scalar::Uint8) {
+    return uint8array_methods;
+  }
+#endif
+  return nullptr;
+}
+
 static const ClassSpec
     TypedArrayObjectClassSpecs[Scalar::MaxTypedArrayViewType] = {
 #define IMPL_TYPED_ARRAY_CLASS_SPEC(ExternalType, NativeType, Name) \
   {                                                                 \
       TypedArrayObjectTemplate<NativeType>::createConstructor,      \
       TypedArrayObjectTemplate<NativeType>::createPrototype,        \
-      nullptr,                                                      \
+      TypedArrayStaticMethods(Scalar::Type::Name),                  \
       static_prototype_properties[Scalar::Type::Name],              \
-      nullptr,                                                      \
+      TypedArrayMethods(Scalar::Type::Name),                        \
       static_prototype_properties[Scalar::Type::Name],              \
       nullptr,                                                      \
       JSProto_TypedArray,                                           \
@@ -2813,6 +3959,26 @@ static constexpr
   return val ^ FloatingPoint::kSignBit;
 }
 
+template <typename T, typename UnsignedT>
+static constexpr
+    typename std::enable_if_t<std::is_same_v<T, float16>, UnsignedT>
+    UnsignedSortValue(UnsignedT val) {
+  // Flip sign bit for positive numbers; flip all bits for negative numbers,
+  // except negative NaNs.
+
+  // FC00 is negative infinity, (FC00, FFFF] are all NaNs with
+  // the sign-bit set. So any value
+  // larger than negative infinity is a negative NaN.
+  constexpr UnsignedT NegativeInfinity = 0xFC00;
+  if (val > NegativeInfinity) {
+    return val;
+  }
+  if (val & 0x8000) {
+    return ~val;
+  }
+  return val ^ 0x8000;
+}
+
 template <typename T>
 static typename std::enable_if_t<std::is_integral_v<T> ||
                                  std::is_same_v<T, uint8_clamped>>
@@ -2822,8 +3988,9 @@ TypedArrayStdSort(SharedMem<void*> data, size_t length) {
 }
 
 template <typename T>
-static typename std::enable_if_t<std::is_floating_point_v<T>> TypedArrayStdSort(
-    SharedMem<void*> data, size_t length) {
+static typename std::enable_if_t<std::is_floating_point_v<T> ||
+                                 std::is_same_v<T, float16>>
+TypedArrayStdSort(SharedMem<void*> data, size_t length) {
   // Sort on the unsigned representation for performance reasons.
   using UnsignedT =
       typename mozilla::UnsignedStdintTypeForSize<sizeof(T)>::Type;
@@ -3038,7 +4205,13 @@ template <typename T, typename Ops>
 static constexpr typename std::enable_if_t<sizeof(T) == 2 || sizeof(T) == 4,
                                            TypedArraySortFn>
 TypedArraySort() {
-  return TypedArrayRadixSort<T, Ops>;
+  if constexpr (std::is_same_v<T, float16>) {
+    // TODO: Support radix sort for Float16, see
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1893229
+    return TypedArrayStdSort<T, Ops>;
+  } else {
+    return TypedArrayRadixSort<T, Ops>;
+  }
 }
 
 template <typename T, typename Ops>
@@ -3047,43 +4220,259 @@ TypedArraySort() {
   return TypedArrayStdSort<T, Ops>;
 }
 
-bool js::intrinsic_TypedArrayNativeSort(JSContext* cx, unsigned argc,
-                                        Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 1);
-
-  TypedArrayObject* typedArray =
-      UnwrapAndDowncastValue<TypedArrayObject>(cx, args[0]);
-  if (!typedArray) {
-    return false;
-  }
-
-  auto length = typedArray->length();
-  MOZ_RELEASE_ASSERT(length,
-                     "TypedArray is neither detached nor out-of-bounds");
-
+static bool TypedArraySortWithoutComparator(JSContext* cx,
+                                            TypedArrayObject* typedArray,
+                                            size_t len) {
   bool isShared = typedArray->isSharedMemory();
   switch (typedArray->type()) {
-#define SORT(_, T, N)                                                   \
-  case Scalar::N:                                                       \
-    if (isShared) {                                                     \
-      if (!TypedArraySort<T, SharedOps>()(cx, typedArray, *length)) {   \
-        return false;                                                   \
-      }                                                                 \
-    } else {                                                            \
-      if (!TypedArraySort<T, UnsharedOps>()(cx, typedArray, *length)) { \
-        return false;                                                   \
-      }                                                                 \
-    }                                                                   \
+#define SORT(_, T, N)                                               \
+  case Scalar::N:                                                   \
+    if (isShared) {                                                 \
+      if (!TypedArraySort<T, SharedOps>()(cx, typedArray, len)) {   \
+        return false;                                               \
+      }                                                             \
+    } else {                                                        \
+      if (!TypedArraySort<T, UnsharedOps>()(cx, typedArray, len)) { \
+        return false;                                               \
+      }                                                             \
+    }                                                               \
     break;
     JS_FOR_EACH_TYPED_ARRAY(SORT)
 #undef SORT
     default:
       MOZ_CRASH("Unsupported TypedArray type");
   }
-
-  args.rval().set(args[0]);
   return true;
+}
+
+static MOZ_ALWAYS_INLINE bool TypedArraySortPrologue(JSContext* cx,
+                                                     Handle<Value> thisv,
+                                                     Handle<Value> comparefn,
+                                                     ArraySortData* d,
+                                                     bool* done) {
+  // https://tc39.es/ecma262/#sec-%typedarray%.prototype.sort
+  // 23.2.3.29 %TypedArray%.prototype.sort ( comparefn )
+
+  // Step 1.
+  if (MOZ_UNLIKELY(!comparefn.isUndefined() && !IsCallable(comparefn))) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_BAD_TYPEDARRAY_SORT_ARG);
+    return false;
+  }
+
+  // Steps 2-3.
+  Rooted<TypedArrayObject*> tarrayUnwrapped(
+      cx, UnwrapAndTypeCheckValue<TypedArrayObject>(cx, thisv, [cx, &thisv]() {
+        JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
+                                 JSMSG_INCOMPATIBLE_METHOD, "sort", "method",
+                                 InformalValueTypeName(thisv));
+      }));
+  if (!tarrayUnwrapped) {
+    return false;
+  }
+  auto arrayLength = tarrayUnwrapped->length();
+  if (!arrayLength) {
+    ReportOutOfBounds(cx, tarrayUnwrapped);
+    return false;
+  }
+
+  // Step 4.
+  size_t len = *arrayLength;
+
+  // Arrays with less than two elements remain unchanged when sorted.
+  if (len <= 1) {
+    d->setReturnValue(&thisv.toObject());
+    *done = true;
+    return true;
+  }
+
+  // Fast path for sorting without a comparator.
+  if (comparefn.isUndefined()) {
+    if (!TypedArraySortWithoutComparator(cx, tarrayUnwrapped, len)) {
+      return false;
+    }
+    d->setReturnValue(&thisv.toObject());
+    *done = true;
+    return true;
+  }
+
+  // Ensure length * 2 (used below) doesn't overflow UINT32_MAX.
+  if (MOZ_UNLIKELY(len > UINT32_MAX / 2)) {
+    ReportAllocationOverflow(cx);
+    return false;
+  }
+
+  // Merge sort requires extra scratch space.
+  bool needsScratchSpace = len > ArraySortData::InsertionSortMaxLength;
+
+  Rooted<ArraySortData::ValueVector> vec(cx);
+  if (MOZ_UNLIKELY(!vec.resize(needsScratchSpace ? (2 * len) : len))) {
+    ReportOutOfMemory(cx);
+    return false;
+  }
+
+  // Copy elements to JS Value vector.
+  if (!TypedArrayObject::getElements(cx, tarrayUnwrapped, len, vec.begin())) {
+    return false;
+  }
+
+  d->init(&thisv.toObject(), &comparefn.toObject(), std::move(vec.get()), len,
+          len);
+
+  // Continue in ArraySortData::sortTypedArrayWithComparator.
+  MOZ_ASSERT(!*done);
+  return true;
+}
+
+// Copies sorted elements back to the typed array.
+template <typename T, typename Ops>
+static void StoreSortedElements(TypedArrayObject* tarray, Value* elements,
+                                size_t len) {
+  SharedMem<T*> data = tarray->dataPointerEither().cast<T*>();
+  for (size_t i = 0; i < len; i++) {
+    T val;
+    if constexpr (TypeIsFloatingPoint<T>()) {
+      val = elements[i].toDouble();
+    } else if constexpr (std::is_same_v<T, int64_t>) {
+      val = BigInt::toInt64(elements[i].toBigInt());
+    } else if constexpr (std::is_same_v<T, uint64_t>) {
+      val = BigInt::toUint64(elements[i].toBigInt());
+    } else if constexpr (std::is_same_v<T, uint32_t>) {
+      val = uint32_t(elements[i].toNumber());
+    } else {
+      val = elements[i].toInt32();
+    }
+    Ops::store(data + i, val);
+  }
+}
+
+// static
+ArraySortResult ArraySortData::sortTypedArrayWithComparator(ArraySortData* d) {
+  ArraySortResult result =
+      sortWithComparatorShared<ArraySortKind::TypedArray>(d);
+  if (result != ArraySortResult::Done) {
+    return result;
+  }
+
+  // Copy sorted elements to the typed array.
+  JSContext* cx = d->cx();
+  Rooted<TypedArrayObject*> tarrayUnwrapped(
+      cx, UnwrapAndDowncastObject<TypedArrayObject>(cx, d->obj_));
+  if (MOZ_UNLIKELY(!tarrayUnwrapped)) {
+    return ArraySortResult::Failure;
+  }
+
+  auto length = tarrayUnwrapped->length();
+  if (MOZ_LIKELY(length)) {
+    size_t len = std::min<size_t>(*length, d->denseLen);
+    Value* elements = d->list;
+    bool isShared = tarrayUnwrapped->isSharedMemory();
+    switch (tarrayUnwrapped->type()) {
+#define SORT(_, T, N)                                                      \
+  case Scalar::N:                                                          \
+    if (isShared) {                                                        \
+      StoreSortedElements<T, SharedOps>(tarrayUnwrapped, elements, len);   \
+    } else {                                                               \
+      StoreSortedElements<T, UnsharedOps>(tarrayUnwrapped, elements, len); \
+    }                                                                      \
+    break;
+      JS_FOR_EACH_TYPED_ARRAY(SORT)
+#undef SORT
+      default:
+        MOZ_CRASH("Unsupported TypedArray type");
+    }
+  }
+
+  d->freeMallocData();
+  d->setReturnValue(d->obj_);
+  return ArraySortResult::Done;
+}
+
+// https://tc39.es/ecma262/#sec-%typedarray%.prototype.sort
+// 23.2.3.29 %TypedArray%.prototype.sort ( comparefn )
+// static
+bool TypedArrayObject::sort(JSContext* cx, unsigned argc, Value* vp) {
+  AutoJSMethodProfilerEntry pseudoFrame(cx, "[TypedArray].prototype", "sort");
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  // If we have a comparator argument, use the JIT trampoline implementation
+  // instead. This avoids a performance cliff (especially with large arrays)
+  // because C++ => JIT calls are much slower than Trampoline => JIT calls.
+  if (args.hasDefined(0) && jit::IsBaselineInterpreterEnabled()) {
+    return CallTrampolineNativeJitCode(
+        cx, jit::TrampolineNative::TypedArraySort, args);
+  }
+
+  Rooted<ArraySortData> data(cx, cx);
+
+  // On all return paths other than ArraySortData::sortTypedArrayWithComparator
+  // returning Done, we call freeMallocData to not fail debug assertions. This
+  // matches the JIT trampoline where we can't rely on C++ destructors.
+  auto freeData =
+      mozilla::MakeScopeExit([&]() { data.get().freeMallocData(); });
+
+  bool done = false;
+  if (!TypedArraySortPrologue(cx, args.thisv(), args.get(0), data.address(),
+                              &done)) {
+    return false;
+  }
+  if (done) {
+    args.rval().set(data.get().returnValue());
+    return true;
+  }
+
+  FixedInvokeArgs<2> callArgs(cx);
+  Rooted<Value> rval(cx);
+
+  while (true) {
+    ArraySortResult res =
+        ArraySortData::sortTypedArrayWithComparator(data.address());
+    switch (res) {
+      case ArraySortResult::Failure:
+        return false;
+
+      case ArraySortResult::Done:
+        freeData.release();
+        args.rval().set(data.get().returnValue());
+        return true;
+
+      case ArraySortResult::CallJS:
+      case ArraySortResult::CallJSSameRealmNoRectifier:
+        MOZ_ASSERT(data.get().comparatorThisValue().isUndefined());
+        MOZ_ASSERT(&args[0].toObject() == data.get().comparator());
+        callArgs[0].set(data.get().comparatorArg(0));
+        callArgs[1].set(data.get().comparatorArg(1));
+        if (!js::Call(cx, args[0], UndefinedHandleValue, callArgs, &rval)) {
+          return false;
+        }
+        data.get().setComparatorReturnValue(rval);
+        break;
+    }
+  }
+}
+
+ArraySortResult js::TypedArraySortFromJit(
+    JSContext* cx, jit::TrampolineNativeFrameLayout* frame) {
+  // Initialize the ArraySortData class stored in the trampoline frame.
+  void* dataUninit = frame->getFrameData<ArraySortData>();
+  auto* data = new (dataUninit) ArraySortData(cx);
+
+  Rooted<Value> thisv(cx, frame->thisv());
+  Rooted<Value> comparefn(cx);
+  if (frame->numActualArgs() > 0) {
+    comparefn = frame->actualArgs()[0];
+  }
+
+  bool done = false;
+  if (!TypedArraySortPrologue(cx, thisv, comparefn, data, &done)) {
+    return ArraySortResult::Failure;
+  }
+  if (done) {
+    data->freeMallocData();
+    return ArraySortResult::Done;
+  }
+
+  return ArraySortData::sortTypedArrayWithComparator(data);
 }
 
 /* JS Public API */

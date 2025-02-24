@@ -1727,10 +1727,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                                   Register scratch,
                                                   Label* label);
 
-  inline void branchIfFunctionHasNoJitEntry(Register fun, bool isConstructing,
-                                            Label* label);
-  inline void branchIfFunctionHasJitEntry(Register fun, bool isConstructing,
-                                          Label* label);
+  inline void branchIfFunctionHasNoJitEntry(Register fun, Label* label);
+  inline void branchIfFunctionHasJitEntry(Register fun, Label* label);
 
   inline void branchIfScriptHasJitScript(Register script, Label* label);
   inline void branchIfScriptHasNoJitScript(Register script, Label* label);
@@ -5291,6 +5289,7 @@ class MacroAssembler : public MacroAssemblerSpecific {
                                         Label* fail);
 
   void loadArgumentsObjectLength(Register obj, Register output, Label* fail);
+  void loadArgumentsObjectLength(Register obj, Register output);
 
   void branchTestArgumentsObjectFlags(Register obj, Register temp,
                                       uint32_t flags, Condition cond,
@@ -5601,8 +5600,8 @@ class MacroAssembler : public MacroAssemblerSpecific {
   void setIsDefinitelyTypedArrayConstructor(Register obj, Register output);
 
   void loadMegamorphicCache(Register dest);
-  void lookupStringInAtomCacheLastLookups(Register str, Register scratch,
-                                          Register output, Label* fail);
+  void tryFastAtomize(Register str, Register scratch, Register output,
+                      Label* fail);
   void loadMegamorphicSetPropCache(Register dest);
 
   void loadAtomOrSymbolAndHash(ValueOperand value, Register outId,

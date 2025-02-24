@@ -20,13 +20,16 @@ libjxl_base_sources = [
     "jxl/base/fast_math-inl.h",
     "jxl/base/float.h",
     "jxl/base/iaca.h",
+    "jxl/base/include_jpeglib.h",
     "jxl/base/matrix_ops.h",
     "jxl/base/os_macros.h",
     "jxl/base/override.h",
     "jxl/base/printf_macros.h",
     "jxl/base/random.h",
     "jxl/base/rational_polynomial-inl.h",
+    "jxl/base/rect.h",
     "jxl/base/sanitizer_definitions.h",
+    "jxl/base/sanitizers.h",
     "jxl/base/scope_guard.h",
     "jxl/base/span.h",
     "jxl/base/status.h",
@@ -131,8 +134,6 @@ libjxl_dec_sources = [
     "jxl/ans_params.h",
     "jxl/blending.cc",
     "jxl/blending.h",
-    "jxl/cache_aligned.cc",
-    "jxl/cache_aligned.h",
     "jxl/chroma_from_luma.cc",
     "jxl/chroma_from_luma.h",
     "jxl/codec_in_out.h",
@@ -293,7 +294,6 @@ libjxl_dec_sources = [
     "jxl/render_pipeline/stage_xyb.h",
     "jxl/render_pipeline/stage_ycbcr.cc",
     "jxl/render_pipeline/stage_ycbcr.h",
-    "jxl/sanitizers.h",
     "jxl/simd_util-inl.h",
     "jxl/simd_util.cc",
     "jxl/simd_util.h",
@@ -315,8 +315,6 @@ libjxl_enc_sources = [
     "jxl/enc_ans.cc",
     "jxl/enc_ans.h",
     "jxl/enc_ans_params.h",
-    "jxl/enc_ar_control_field.cc",
-    "jxl/enc_ar_control_field.h",
     "jxl/enc_aux_out.cc",
     "jxl/enc_aux_out.h",
     "jxl/enc_bit_writer.cc",
@@ -444,6 +442,7 @@ libjxl_extras_sources = [
     "extras/enc/encode.h",
     "extras/exif.cc",
     "extras/exif.h",
+    "extras/gain_map.cc",
     "extras/mmap.cc",
     "extras/mmap.h",
     "extras/packed_image.h",
@@ -526,6 +525,7 @@ libjxl_jpegli_sources = [
 ]
 
 libjxl_jpegli_testlib_files = [
+    "jpegli/fuzztest.h",
     "jpegli/test_params.h",
     "jpegli/test_utils-inl.h",
     "jpegli/test_utils.cc",
@@ -551,7 +551,7 @@ libjxl_major_version = 0
 
 libjxl_minor_version = 10
 
-libjxl_patch_version = 0
+libjxl_patch_version = 2
 
 libjxl_public_headers = [
     "include/jxl/cms.h",
@@ -562,6 +562,7 @@ libjxl_public_headers = [
     "include/jxl/decode_cxx.h",
     "include/jxl/encode.h",
     "include/jxl/encode_cxx.h",
+    "include/jxl/gain_map.h",
     "include/jxl/memory_manager.h",
     "include/jxl/parallel_runner.h",
     "include/jxl/stats.h",
@@ -573,10 +574,13 @@ libjxl_testlib_files = [
     "jxl/dec_transforms_testonly.cc",
     "jxl/dec_transforms_testonly.h",
     "jxl/fake_parallel_runner_testonly.h",
+    "jxl/fuzztest.h",
     "jxl/image_test_utils.h",
     "jxl/render_pipeline/test_render_pipeline_stages.h",
     "jxl/test_image.cc",
     "jxl/test_image.h",
+    "jxl/test_memory_manager.cc",
+    "jxl/test_memory_manager.h",
     "jxl/test_utils.cc",
     "jxl/test_utils.h",
 ]
@@ -585,6 +589,7 @@ libjxl_tests = [
     "extras/codec_test.cc",
     "extras/dec/color_description_test.cc",
     "extras/dec/pgx_test.cc",
+    "extras/gain_map_test.cc",
     "extras/jpegli_test.cc",
     "jxl/ac_strategy_test.cc",
     "jxl/alpha_test.cc",

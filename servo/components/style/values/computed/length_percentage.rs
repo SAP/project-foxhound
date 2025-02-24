@@ -30,6 +30,7 @@ use crate::values::animated::{Animate, Procedure, ToAnimatedValue, ToAnimatedZer
 use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::calc::{CalcUnits, PositivePercentageBasis};
 use crate::values::generics::{calc, NonNegative};
+use crate::values::resolved::{Context as ResolvedContext, ToResolvedValue};
 use crate::values::specified::length::{FontBaseSize, LineHeightBase};
 use crate::values::{specified, CSSFloat};
 use crate::{Zero, ZeroNoPercent};
@@ -161,6 +162,25 @@ impl MallocSizeOf for LengthPercentage {
             Unpacked::Length(..) | Unpacked::Percentage(..) => 0,
             Unpacked::Calc(c) => unsafe { ops.malloc_size_of(c) },
         }
+    }
+}
+
+impl ToResolvedValue for LengthPercentage {
+    type ResolvedValue = Self;
+
+    fn to_resolved_value(self, context: &ResolvedContext) -> Self::ResolvedValue {
+        if context.style.effective_zoom.is_one() {
+            return self;
+        }
+        match self.unpack() {
+            Unpacked::Length(l) => Self::new_length(l.to_resolved_value(context)),
+            Unpacked::Percentage(..) | Unpacked::Calc(..) => self,
+        }
+    }
+
+    #[inline]
+    fn from_resolved_value(value: Self::ResolvedValue) -> Self {
+        value
     }
 }
 
@@ -660,12 +680,12 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
         }
     }
 
-    fn unitless_value(&self) -> f32 {
-        match *self {
+    fn unitless_value(&self) -> Option<f32> {
+        Some(match *self {
             Self::Length(ref l) => l.px(),
             Self::Percentage(ref p) => p.0,
             Self::Number(n) => n,
-        }
+        })
     }
 
     fn new_number(value: f32) -> Self {
@@ -689,9 +709,18 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
             return None;
         }
 
-        let self_negative = self.is_negative();
-        if self_negative != other.is_negative() {
-            return Some(if self_negative { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater });
+        let Ok(self_negative) = self.is_negative() else {
+            return None;
+        };
+        let Ok(other_negative) = other.is_negative() else {
+            return None;
+        };
+        if self_negative != other_negative {
+            return Some(if self_negative {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            });
         }
 
         match (self, other) {
@@ -754,15 +783,17 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
             } else {
                 // The right side is not a number, so the result should be in the units of the right
                 // side.
-                other.map(|v| v * *left);
-                std::mem::swap(self, other);
-                true
+                if other.map(|v| v * *left).is_ok() {
+                    std::mem::swap(self, other);
+                    true
+                } else {
+                    false
+                }
             }
         } else if let Self::Number(ref right) = *other {
             // The left side is not a number, but the right side is, so the result is the left
             // side unit.
-            self.map(|v| v * *right);
-            true
+            self.map(|v| v * *right).is_ok()
         } else {
             // Neither side is a number, so a product is not possible.
             false
@@ -794,8 +825,8 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
         })
     }
 
-    fn map(&mut self, mut op: impl FnMut(f32) -> f32) {
-        match self {
+    fn map(&mut self, mut op: impl FnMut(f32) -> f32) -> Result<(), ()> {
+        Ok(match self {
             Self::Length(value) => {
                 *value = Length::new(op(value.px()));
             },
@@ -805,7 +836,7 @@ impl calc::CalcNodeLeaf for CalcLengthPercentageLeaf {
             Self::Number(value) => {
                 *value = op(*value);
             },
-        }
+        })
     }
 
     fn simplify(&mut self) {}
@@ -901,7 +932,7 @@ impl specified::CalcLengthPercentage {
                 }
             }),
             Leaf::Number(n) => CalcLengthPercentageLeaf::Number(n),
-            Leaf::Angle(..) | Leaf::Time(..) | Leaf::Resolution(..) => {
+            Leaf::Angle(..) | Leaf::Time(..) | Leaf::Resolution(..) | Leaf::ColorComponent(..) => {
                 unreachable!("Shouldn't have parsed")
             },
         });

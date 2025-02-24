@@ -1914,8 +1914,8 @@ HTMLEditor::AutoInlineStyleSetter::ExtendOrShrinkRangeToApplyTheStyle(
   // range to contain the <br> element.
   EditorDOMRange range(aRange);
   if (range.EndRef().IsInContentNode()) {
-    WSScanResult nextContentData =
-        WSRunScanner::ScanNextVisibleNodeOrBlockBoundary(
+    const WSScanResult nextContentData =
+        WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
             &aEditingHost, range.EndRef(),
             BlockInlineCheck::UseComputedDisplayOutsideStyle);
     if (nextContentData.ReachedInvisibleBRElement() &&
@@ -2076,7 +2076,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAtRangeEdges(
       return result;
     }
     tracker.FlushAndStopTracking();
-    if (NS_WARN_IF(result.inspect().Handled())) {
+    if (result.inspect().Handled()) {
       auto endOfRange = result.inspect().AtSplitPoint<EditorDOMPoint>();
       if (!endOfRange.IsSet()) {
         result.inspect().IgnoreCaretPointSuggestion();

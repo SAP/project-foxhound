@@ -11,9 +11,7 @@
 
 // eslint-disable-next-line mozilla/use-static-import
 const { MESSAGE_TYPE_LIST, MESSAGE_TYPE_HASH: msg } =
-  ChromeUtils.importESModule(
-    "resource:///modules/asrouter/ActorConstants.sys.mjs"
-  );
+  ChromeUtils.importESModule("resource:///modules/asrouter/ActorConstants.mjs");
 
 const VALID_TYPES = new Set(MESSAGE_TYPE_LIST);
 
@@ -103,8 +101,6 @@ export class ASRouterChild extends JSWindowActorChild {
         case msg.DISABLE_PROVIDER:
         case msg.ENABLE_PROVIDER:
         case msg.EXPIRE_QUERY_CACHE:
-        case msg.FORCE_WHATSNEW_PANEL:
-        case msg.CLOSE_WHATSNEW_PANEL:
         case msg.FORCE_PRIVATE_BROWSING_WINDOW:
         case msg.IMPRESSION:
         case msg.RESET_PROVIDER_PREF:

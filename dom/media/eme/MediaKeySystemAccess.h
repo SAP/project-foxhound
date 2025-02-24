@@ -14,6 +14,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
 #include "mozilla/dom/MediaKeysRequestStatusBinding.h"
+#include "mozilla/KeySystemConfig.h"
 
 #include "js/TypeDecls.h"
 
@@ -59,16 +60,13 @@ class MediaKeySystemAccess final : public nsISupports, public nsWrapperCache {
                               const nsAString& aKeySystem,
                               MediaKeySystemStatus aStatus);
 
-  static bool GetSupportedConfig(
-      const nsAString& aKeySystem,
-      const Sequence<MediaKeySystemConfiguration>& aConfigs,
-      MediaKeySystemConfiguration& aOutConfig,
-      DecoderDoctorDiagnostics* aDiagnostics, bool aIsPrivateBrowsing,
-      const std::function<void(const char*)>& aDeprecationLogFn);
+  static RefPtr<KeySystemConfig::KeySystemConfigPromise> GetSupportedConfig(
+      MediaKeySystemAccessRequest* aRequest, bool aIsPrivateBrowsing,
+      const Document* aDocument);
 
-  static bool KeySystemSupportsInitDataType(const nsAString& aKeySystem,
-                                            const nsAString& aInitDataType,
-                                            bool aIsHardwareDecryption);
+  static RefPtr<GenericPromise> KeySystemSupportsInitDataType(
+      const nsAString& aKeySystem, const nsAString& aInitDataType,
+      bool aIsHardwareDecryption, bool aIsPrivateBrowsing);
 
   static nsCString ToCString(
       const Sequence<MediaKeySystemConfiguration>& aConfig);

@@ -236,7 +236,7 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
     });
   }
 
-  async #getConsoleLogs(docShell) {
+  async #getConsoleLogs() {
     return this.#getLoggedMessages()
       .flat()
       .sort((a, b) => a.timeStamp - b.timeStamp)
@@ -256,7 +256,7 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
     reporterConfig,
     webcompatInfo,
   }) {
-    const extra_labels = [];
+    const extra_labels = reporterConfig?.extra_labels || [];
 
     const message = Object.assign({}, reporterConfig, {
       url: reportUrl,
@@ -398,6 +398,8 @@ export class ReportBrokenSiteChild extends JSWindowActorChild {
           details[framework] = true;
           extra_labels.push(`type-${framework}`);
         }
+
+        extra_labels.sort();
       }
     }
 

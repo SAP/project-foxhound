@@ -31,8 +31,6 @@ class ProtectionCategory {
    * @param {Object} options - Category options.
    * @param {string} options.prefEnabled - ID of pref which controls the
    * category enabled state.
-   * @param {string} [options.l10nId] - Identifier l10n strings are keyed under
-   * for this category. Defaults to protection ID.
    * @param {Object} flags - Flags for this category to look for in the content
    * blocking event and content blocking log.
    * @param {Number} [flags.load] - Load flag for this protection category. If
@@ -49,7 +47,7 @@ class ProtectionCategory {
    */
   constructor(
     id,
-    { prefEnabled, l10nId },
+    { prefEnabled },
     {
       load,
       block,
@@ -416,7 +414,6 @@ let TrackingProtection =
       super(
         "trackers",
         {
-          l10nId: "trackingContent",
           prefEnabled: "privacy.trackingprotection.enabled",
         },
         {
@@ -1065,7 +1062,6 @@ let SocialTracking =
       super(
         "socialblock",
         {
-          l10nId: "socialMediaTrackers",
           prefEnabled: "privacy.socialtracking.block_cookies.enabled",
         },
         {
@@ -1381,7 +1377,6 @@ var gProtectionsHandler = {
       let wrapper = document.getElementById("template-protections-popup");
       this._protectionsPopup = wrapper.content.firstElementChild;
       wrapper.replaceWith(wrapper.content);
-      window.ensureCustomElements("moz-support-link");
 
       this.maybeSetMilestoneCounterText();
 
@@ -1595,8 +1590,6 @@ var gProtectionsHandler = {
 
     // Add an observer to observe that the history has been cleared.
     Services.obs.addObserver(this, "browser:purge-session-history");
-
-    window.ensureCustomElements("moz-button-group", "moz-toggle");
   },
 
   uninit() {
@@ -1641,42 +1634,42 @@ var gProtectionsHandler = {
     );
   },
 
-  async showTrackersSubview(event) {
+  async showTrackersSubview() {
     await TrackingProtection.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-trackersView"
     );
   },
 
-  async showSocialblockerSubview(event) {
+  async showSocialblockerSubview() {
     await SocialTracking.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-socialblockView"
     );
   },
 
-  async showCookiesSubview(event) {
+  async showCookiesSubview() {
     await ThirdPartyCookies.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-cookiesView"
     );
   },
 
-  async showFingerprintersSubview(event) {
+  async showFingerprintersSubview() {
     await Fingerprinting.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-fingerprintersView"
     );
   },
 
-  async showCryptominersSubview(event) {
+  async showCryptominersSubview() {
     await Cryptomining.updateSubView();
     this._protectionsPopupMultiView.showSubView(
       "protections-popup-cryptominersView"
     );
   },
 
-  async onCookieBannerClick(event) {
+  async onCookieBannerClick() {
     if (!cookieBannerHandling.isSiteSupported) {
       return;
     }
@@ -2055,7 +2048,7 @@ var gProtectionsHandler = {
     }
   },
 
-  observe(subject, topic, data) {
+  observe(subject, topic) {
     switch (topic) {
       case "browser:purge-session-history":
         // We need to update the earliest recorded date if history has been
@@ -2194,7 +2187,7 @@ var gProtectionsHandler = {
     ContentBlockingAllowList.add(gBrowser.selectedBrowser);
     if (shouldReload) {
       this._hidePopup();
-      BrowserReload();
+      BrowserCommands.reload();
     }
   },
 
@@ -2202,11 +2195,11 @@ var gProtectionsHandler = {
     ContentBlockingAllowList.remove(gBrowser.selectedBrowser);
     if (shouldReload) {
       this._hidePopup();
-      BrowserReload();
+      BrowserCommands.reload();
     }
   },
 
-  async onTPSwitchCommand(event) {
+  async onTPSwitchCommand() {
     // When the switch is clicked, we wait 500ms and then disable/enable
     // protections, causing the page to refresh, and close the popup.
     // We need to ensure we don't handle more clicks during the 500ms delay,
@@ -2533,12 +2526,12 @@ var gProtectionsHandler = {
     };
 
     const doc = event.target.ownerDocument;
-    const container = doc.getElementById("messaging-system-message-container");
+    const container = doc.getElementById("info-message-container");
     const infoButton = doc.getElementById("protections-popup-info-button");
     const panelContainer = doc.getElementById("protections-popup");
     const toggleMessage = () => {
       const learnMoreLink = doc.querySelector(
-        "#messaging-system-message-container .text-link"
+        "#info-message-container .text-link"
       );
       if (learnMoreLink) {
         container.toggleAttribute("disabled");
@@ -2605,14 +2598,14 @@ var gProtectionsHandler = {
   _createHeroElement(doc, message) {
     const messageEl = this._createElement(doc, "div");
     messageEl.setAttribute("id", "protections-popup-message");
-    messageEl.classList.add("whatsNew-hero-message");
+    messageEl.classList.add("protections-hero-message");
     const wrapperEl = this._createElement(doc, "div");
-    wrapperEl.classList.add("whatsNew-message-body");
+    wrapperEl.classList.add("protections-popup-message-body");
     messageEl.appendChild(wrapperEl);
 
     wrapperEl.appendChild(
       this._createElement(doc, "h2", {
-        classList: "whatsNew-message-title",
+        classList: "protections-popup-message-title",
         content: message.content.title,
       })
     );

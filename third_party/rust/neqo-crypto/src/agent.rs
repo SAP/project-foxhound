@@ -16,7 +16,7 @@ use std::{
     time::Instant,
 };
 
-use neqo_common::{hex_snip_middle, hex_with_len, qdebug, qinfo, qtrace, qwarn};
+use neqo_common::{hex_snip_middle, hex_with_len, qdebug, qtrace, qwarn};
 
 pub use crate::{
     agentio::{as_c_void, Record, RecordList},
@@ -406,10 +406,7 @@ impl SecretAgent {
         self.set_option(ssl::Opt::Locking, false)?;
         self.set_option(ssl::Opt::Tickets, false)?;
         self.set_option(ssl::Opt::OcspStapling, true)?;
-        if let Err(e) = self.set_option(ssl::Opt::Grease, grease) {
-            // Until NSS supports greasing, it's OK to fail here.
-            qinfo!([self], "Failed to enable greasing {:?}", e);
-        }
+        self.set_option(ssl::Opt::Grease, grease)?;
         Ok(())
     }
 
@@ -670,7 +667,7 @@ impl SecretAgent {
             let info = self.capture_error(SecretAgentInfo::new(self.fd))?;
             HandshakeState::Complete(info)
         };
-        qinfo!([self], "state -> {:?}", self.state);
+        qdebug!([self], "state -> {:?}", self.state);
         Ok(())
     }
 
@@ -878,14 +875,13 @@ impl Client {
         arg: *mut c_void,
     ) -> ssl::SECStatus {
         let mut info: MaybeUninit<ssl::SSLResumptionTokenInfo> = MaybeUninit::uninit();
-        if ssl::SSL_GetResumptionTokenInfo(
+        let info_res = &ssl::SSL_GetResumptionTokenInfo(
             token,
             len,
             info.as_mut_ptr(),
             c_uint::try_from(mem::size_of::<ssl::SSLResumptionTokenInfo>()).unwrap(),
-        )
-        .is_err()
-        {
+        );
+        if info_res.is_err() {
             // Ignore the token.
             return ssl::SECSuccess;
         }
@@ -898,7 +894,7 @@ impl Client {
         let len = usize::try_from(len).unwrap();
         let mut v = Vec::with_capacity(len);
         v.extend_from_slice(null_safe_slice(token, len));
-        qinfo!(
+        qdebug!(
             [format!("{fd:p}")],
             "Got resumption token {}",
             hex_snip_middle(&v)

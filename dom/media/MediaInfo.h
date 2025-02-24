@@ -109,10 +109,14 @@ struct FlacCodecSpecificData {
   RefPtr<MediaByteBuffer> mStreamInfoBinaryBlob{new MediaByteBuffer};
 };
 
-struct Mp3CodecSpecificData {
+struct Mp3CodecSpecificData final {
   bool operator==(const Mp3CodecSpecificData& rhs) const {
     return mEncoderDelayFrames == rhs.mEncoderDelayFrames &&
            mEncoderPaddingFrames == rhs.mEncoderPaddingFrames;
+  }
+
+  auto MutTiedFields() {
+    return std::tie(mEncoderDelayFrames, mEncoderPaddingFrames);
   }
 
   // The number of frames that should be skipped from the beginning of the
@@ -345,7 +349,32 @@ class VideoInfo : public TrackInfo {
         mExtraData(new MediaByteBuffer),
         mRotation(VideoRotation::kDegree_0) {}
 
-  VideoInfo(const VideoInfo& aOther) = default;
+  VideoInfo(const VideoInfo& aOther) : TrackInfo(aOther) {
+    if (aOther.mCodecSpecificConfig) {
+      mCodecSpecificConfig = new MediaByteBuffer();
+      mCodecSpecificConfig->AppendElements(
+          reinterpret_cast<uint8_t*>(aOther.mCodecSpecificConfig->Elements()),
+          aOther.mCodecSpecificConfig->Length());
+    }
+    if (aOther.mExtraData) {
+      mExtraData = new MediaByteBuffer();
+      mExtraData->AppendElements(
+          reinterpret_cast<uint8_t*>(aOther.mExtraData->Elements()),
+          aOther.mExtraData->Length());
+    }
+    mDisplay = aOther.mDisplay;
+    mStereoMode = aOther.mStereoMode;
+    mImage = aOther.mImage;
+    mRotation = aOther.mRotation;
+    mColorDepth = aOther.mColorDepth;
+    mColorSpace = aOther.mColorSpace;
+    mColorPrimaries = aOther.mColorPrimaries;
+    mTransferFunction = aOther.mTransferFunction;
+    mColorRange = aOther.mColorRange;
+    mImageRect = aOther.mImageRect;
+    mAlphaPresent = aOther.mAlphaPresent;
+    mFrameRate = aOther.mFrameRate;
+  };
 
   bool operator==(const VideoInfo& rhs) const;
 
@@ -558,7 +587,7 @@ class AudioInfo : public TrackInfo {
 
   bool operator==(const AudioInfo& rhs) const;
 
-  static const uint32_t MAX_RATE = 640000;
+  static const uint32_t MAX_RATE = 768000;
   static const uint32_t MAX_CHANNEL_COUNT = 256;
 
   bool IsValid() const override {

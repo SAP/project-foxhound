@@ -249,6 +249,7 @@ var CustomizableUIInternal = {
       Services.policies.isAllowed("removeHomeButtonByDefault")
         ? null
         : "home-button",
+      Services.prefs.getBoolPref("sidebar.revamp") ? "sidebar-button" : null,
       "spring",
       "urlbar-container",
       "spring",
@@ -374,6 +375,14 @@ var CustomizableUIInternal = {
           shouldSetPref = shouldAdd;
         } else if (widget._introducedInVersion > currentVersion) {
           shouldAdd = true;
+        } else if (
+          widget._introducedByPref &&
+          Services.prefs.getBoolPref(widget._introducedByPref)
+        ) {
+          shouldSetPref = shouldAdd = !Services.prefs.getBoolPref(
+            prefId,
+            false
+          );
         }
 
         if (shouldAdd) {
@@ -778,7 +787,7 @@ var CustomizableUIInternal = {
         !widget ||
         widget.source !== CustomizableUI.SOURCE_BUILTIN ||
         !widget.defaultArea ||
-        !widget._introducedInVersion ||
+        !(widget._introducedInVersion || widget._introducedByPref) ||
         savedPlacements.includes(widget.id)
       ) {
         continue;
@@ -1454,7 +1463,7 @@ var CustomizableUIInternal = {
     }
   },
 
-  onCustomizeEnd(aWindow) {
+  onCustomizeEnd() {
     this._clearPreviousUIState();
   },
 
@@ -2983,6 +2992,7 @@ var CustomizableUIInternal = {
       l10nId: null,
       showInPrivateBrowsing: true,
       _introducedInVersion: -1,
+      _introducedByPref: null,
       keepBroadcastAttributesWhenCustomizing: false,
       disallowSubView: false,
       webExtension: false,
@@ -3065,6 +3075,10 @@ var CustomizableUIInternal = {
 
     if (aSource == CustomizableUI.SOURCE_BUILTIN) {
       widget._introducedInVersion = aData.introducedInVersion || 0;
+
+      if (aData._introducedByPref) {
+        widget._introducedByPref = aData._introducedByPref;
+      }
     }
 
     this.wrapWidgetEventHandler("onBeforeCreated", widget);
@@ -6215,7 +6229,7 @@ class OverflowableToolbar {
    * nsIObserver implementation starts here.
    */
 
-  observe(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic) {
     // This nsIObserver method allows us to defer initialization until after
     // this window has finished painting and starting up.
     if (

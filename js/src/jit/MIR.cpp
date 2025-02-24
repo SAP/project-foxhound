@@ -689,7 +689,62 @@ MDefinition* MTest::foldsNeedlessControlFlow(TempAllocator& alloc) {
   return MGoto::New(alloc, ifTrue());
 }
 
+// If a test is dominated by either the true or false path of a previous test of
+// the same condition, then the test is redundant and can be converted into a
+// goto true or goto false, respectively.
+MDefinition* MTest::foldsRedundantTest(TempAllocator& alloc) {
+  MBasicBlock* myBlock = this->block();
+  MDefinition* originalInput = getOperand(0);
+
+  // Handle single and double negatives. This ensures that we do not miss a
+  // folding opportunity due to a condition being inverted.
+  MDefinition* newInput = input();
+  bool inverted = false;
+  if (originalInput->isNot()) {
+    newInput = originalInput->toNot()->input();
+    inverted = true;
+    if (originalInput->toNot()->input()->isNot()) {
+      newInput = originalInput->toNot()->input()->toNot()->input();
+      inverted = false;
+    }
+  }
+
+  // The specific order of traversal does not matter. If there are multiple
+  // dominating redundant tests, they will either agree on direction (in which
+  // case we will prune the same way regardless of order), or they will
+  // disagree, in which case we will eventually be marked entirely dead by the
+  // folding of the redundant parent.
+  for (MUseIterator i(newInput->usesBegin()), e(newInput->usesEnd()); i != e;
+       ++i) {
+    if (!i->consumer()->isDefinition()) {
+      continue;
+    }
+    if (!i->consumer()->toDefinition()->isTest()) {
+      continue;
+    }
+    MTest* otherTest = i->consumer()->toDefinition()->toTest();
+    if (otherTest == this) {
+      continue;
+    }
+
+    if (otherTest->ifFalse()->dominates(myBlock)) {
+      // This test cannot be true, so fold to a goto false.
+      return MGoto::New(alloc, inverted ? ifTrue() : ifFalse());
+    }
+    if (otherTest->ifTrue()->dominates(myBlock)) {
+      // This test cannot be false, so fold to a goto true.
+      return MGoto::New(alloc, inverted ? ifFalse() : ifTrue());
+    }
+  }
+
+  return nullptr;
+}
+
 MDefinition* MTest::foldsTo(TempAllocator& alloc) {
+  if (MDefinition* def = foldsRedundantTest(alloc)) {
+    return def;
+  }
+
   if (MDefinition* def = foldsDoubleNegation(alloc)) {
     return def;
   }
@@ -1067,11 +1122,16 @@ MConstant::MConstant(TempAllocator& alloc, const js::Value& vp)
     case MIRType::Double:
       payload_.d = vp.toDouble();
       break;
-    case MIRType::String:
-      MOZ_ASSERT(!IsInsideNursery(vp.toString()));
-      MOZ_ASSERT(vp.toString()->isLinear());
+    case MIRType::String: {
+      JSString* str = vp.toString();
+      if (str->isAtomRef()) {
+        str = str->atom();
+      }
+      MOZ_ASSERT(!IsInsideNursery(str));
+      MOZ_ASSERT(str->isAtom());
       payload_.str = vp.toString();
       break;
+    }
     case MIRType::Symbol:
       payload_.sym = vp.toSymbol();
       break;
@@ -4255,11 +4315,56 @@ static JSType TypeOfName(JSLinearString* str) {
   return JSTYPE_LIMIT;
 }
 
-static mozilla::Maybe<std::pair<MTypeOfName*, JSType>> IsTypeOfCompare(
-    MCompare* ins) {
+struct TypeOfCompareInput {
+  // The `typeof expr` side of the comparison.
+  // MTypeOfName for JSOp::Typeof/JSOp::TypeofExpr, and
+  // MTypeOf for JSOp::TypeofEq (same pointer as typeOf).
+  MDefinition* typeOfSide;
+
+  // The actual `typeof` operation.
+  MTypeOf* typeOf;
+
+  // The string side of the comparison.
+  JSType type;
+
+  // True if the comparison uses raw JSType (Generated for JSOp::TypeofEq).
+  bool isIntComparison;
+
+  TypeOfCompareInput(MDefinition* typeOfSide, MTypeOf* typeOf, JSType type,
+                     bool isIntComparison)
+      : typeOfSide(typeOfSide),
+        typeOf(typeOf),
+        type(type),
+        isIntComparison(isIntComparison) {}
+};
+
+static mozilla::Maybe<TypeOfCompareInput> IsTypeOfCompare(MCompare* ins) {
   if (!IsEqualityOp(ins->jsop())) {
     return mozilla::Nothing();
   }
+
+  if (ins->compareType() == MCompare::Compare_Int32) {
+    auto* lhs = ins->lhs();
+    auto* rhs = ins->rhs();
+
+    if (ins->type() != MIRType::Boolean || lhs->type() != MIRType::Int32 ||
+        rhs->type() != MIRType::Int32) {
+      return mozilla::Nothing();
+    }
+
+    // NOTE: The comparison is generated inside JIT, and typeof should always
+    //       be in the LHS.
+    if (!lhs->isTypeOf() || !rhs->isConstant()) {
+      return mozilla::Nothing();
+    }
+
+    auto* typeOf = lhs->toTypeOf();
+    auto* constant = rhs->toConstant();
+
+    JSType type = JSType(constant->toInt32());
+    return mozilla::Some(TypeOfCompareInput(typeOf, typeOf, type, true));
+  }
+
   if (ins->compareType() != MCompare::Compare_String) {
     return mozilla::Nothing();
   }
@@ -4280,21 +4385,21 @@ static mozilla::Maybe<std::pair<MTypeOfName*, JSType>> IsTypeOfCompare(
 
   auto* typeOfName =
       lhs->isTypeOfName() ? lhs->toTypeOfName() : rhs->toTypeOfName();
-  MOZ_ASSERT(typeOfName->input()->isTypeOf());
+  auto* typeOf = typeOfName->input()->toTypeOf();
 
   auto* constant = lhs->isConstant() ? lhs->toConstant() : rhs->toConstant();
 
   JSType type = TypeOfName(&constant->toString()->asLinear());
-  return mozilla::Some(std::pair(typeOfName, type));
+  return mozilla::Some(TypeOfCompareInput(typeOfName, typeOf, type, false));
 }
 
 bool MCompare::tryFoldTypeOf(bool* result) {
-  auto typeOfPair = IsTypeOfCompare(this);
-  if (!typeOfPair) {
+  auto typeOfCompare = IsTypeOfCompare(this);
+  if (!typeOfCompare) {
     return false;
   }
-  auto [typeOfName, type] = *typeOfPair;
-  auto* typeOf = typeOfName->input()->toTypeOf();
+  auto* typeOf = typeOfCompare->typeOf;
+  JSType type = typeOfCompare->type;
 
   switch (type) {
     case JSTYPE_BOOLEAN:
@@ -4584,12 +4689,12 @@ bool MCompare::evaluateConstantOperands(TempAllocator& alloc, bool* result) {
 }
 
 MDefinition* MCompare::tryFoldTypeOf(TempAllocator& alloc) {
-  auto typeOfPair = IsTypeOfCompare(this);
-  if (!typeOfPair) {
+  auto typeOfCompare = IsTypeOfCompare(this);
+  if (!typeOfCompare) {
     return this;
   }
-  auto [typeOfName, type] = *typeOfPair;
-  auto* typeOf = typeOfName->input()->toTypeOf();
+  auto* typeOf = typeOfCompare->typeOf;
+  JSType type = typeOfCompare->type;
 
   auto* input = typeOf->input();
   MOZ_ASSERT(input->type() == MIRType::Value ||
@@ -4621,8 +4726,13 @@ MDefinition* MCompare::tryFoldTypeOf(TempAllocator& alloc) {
   // In that case it'd more efficient to emit MTypeOf compared to MTypeOfIs. We
   // don't yet handle that case, because it'd require a separate optimization
   // pass to correctly detect it.
-  if (typeOfName->hasOneUse()) {
+  if (typeOfCompare->typeOfSide->hasOneUse()) {
     return MTypeOfIs::New(alloc, input, jsop(), type);
+  }
+
+  if (typeOfCompare->isIntComparison) {
+    // Already optimized.
+    return this;
   }
 
   MConstant* cst = MConstant::New(alloc, Int32Value(type));
@@ -7185,6 +7295,16 @@ AliasSet MInitHomeObject::getAliasSet() const {
 
 AliasSet MLoadWrapperTarget::getAliasSet() const {
   return AliasSet::Load(AliasSet::Any);
+}
+
+bool MLoadWrapperTarget::congruentTo(const MDefinition* ins) const {
+  if (!ins->isLoadWrapperTarget()) {
+    return false;
+  }
+  if (ins->toLoadWrapperTarget()->fallible() != fallible()) {
+    return false;
+  }
+  return congruentIfOperandsEqual(ins);
 }
 
 AliasSet MGuardHasGetterSetter::getAliasSet() const {

@@ -281,10 +281,10 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         dirs["abs_test_extensions_dir"] = os.path.join(
             dirs["abs_test_install_dir"], "extensions"
         )
+        work_dir = os.environ.get("MOZ_FETCHES_DIR") or abs_dirs["abs_work_dir"]
         if self.is_android:
-            dirs["abs_xre_dir"] = os.path.join(abs_dirs["abs_work_dir"], "hostutils")
+            dirs["abs_xre_dir"] = os.path.join(work_dir, "hostutils")
         if self.is_emulator:
-            work_dir = os.environ.get("MOZ_FETCHES_DIR") or abs_dirs["abs_work_dir"]
             dirs["abs_sdk_dir"] = os.path.join(work_dir, "android-sdk-linux")
             dirs["abs_avds_dir"] = os.path.join(work_dir, "android-device")
             dirs["abs_bundletool_path"] = os.path.join(work_dir, "bundletool.jar")
@@ -377,10 +377,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             "--suppress-handler-traceback",
         ]
 
-        is_windows_7 = (
-            mozinfo.info["os"] == "win" and mozinfo.info["os_version"] == "6.1"
-        )
-
         if self.repeat > 0:
             # repeat should repeat the original test, so +1 for first run
             cmd.append("--repeat=%s" % (self.repeat + 1))
@@ -390,9 +386,9 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             or mozinfo.info["tsan"]
             or "wdspec" in test_types
             or not c["disable_fission"]
-            # Bug 1392106 - skia error 0x80070005: Access is denied.
-            or is_windows_7
-            and mozinfo.info["debug"]
+            # reftest on osx needs to be 1 process
+            or "reftest" in test_types
+            and sys.platform.startswith("darwin")
         ):
             processes = 1
         else:
@@ -408,11 +404,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         else:
             cmd += ["--binary=%s" % self.binary_path, "--product=firefox"]
 
-        if is_windows_7:
-            # On Windows 7 --install-fonts fails, so fall back to a Firefox-specific codepath
-            self._install_fonts()
-        else:
-            cmd += ["--install-fonts"]
+        cmd += ["--install-fonts"]
 
         for test_type in test_types:
             cmd.append("--test-type=%s" % test_type)
@@ -463,14 +455,20 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                 cmd.append("--test-groups={}".format(path))
 
                 for key in mozharness_test_paths.keys():
+                    if "web-platform" not in key:
+                        self.info("Ignoring test_paths for {} harness".format(key))
+                        continue
                     paths = mozharness_test_paths.get(key, [])
-                    for path in paths:
-                        if not path.startswith("/"):
+                    for p in paths:
+                        if not p.startswith("/"):
                             # Assume this is a filesystem path rather than a test id
-                            path = os.path.relpath(path, "testing/web-platform")
+                            path = os.path.relpath(p, "testing/web-platform")
                             if ".." in path:
                                 self.fatal("Invalid WPT path: {}".format(path))
                             path = os.path.join(dirs["abs_wpttest_dir"], path)
+                        else:
+                            path = p
+
                         test_paths.add(path)
             else:
                 # As per WPT harness, the --run-by-dir flag is incompatible with
@@ -521,7 +519,16 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         for tag in c["exclude_tag"]:
             cmd.append(f"--exclude-tag={tag}")
 
-        cmd.extend(test_paths)
+        if mozinfo.info["os"] == "win":
+            # Because of a limit on the length of CLI command line string length in Windows, we
+            # should prefer to pass paths by a file instead.
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                tmp.write("\n".join(test_paths).encode())
+                cmd.append(f"--include-file={tmp.name}")
+        else:
+            cmd.extend(test_paths)
 
         return cmd
 
@@ -543,7 +550,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         )
         dirs = self.query_abs_dirs()
         if self.is_android:
-            self.xre_path = self.download_hostutils(dirs["abs_xre_dir"])
+            self.xre_path = dirs["abs_xre_dir"]
         # Make sure that the logging directory exists
         if self.mkdir_p(dirs["abs_blob_upload_dir"]) == -1:
             self.fatal("Could not create blobber upload directory")

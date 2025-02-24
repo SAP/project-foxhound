@@ -144,15 +144,27 @@ class ProviderInputHistory extends UrlbarProvider {
           // Don't suggest switching to the current page.
           continue;
         }
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-          UrlbarUtils.RESULT_SOURCE.TABS,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+        let payload = lazy.UrlbarResult.payloadAndSimpleHighlights(
+          queryContext.tokens,
+          {
             url: [url, UrlbarUtils.HIGHLIGHT.TYPED],
             title: [resultTitle, UrlbarUtils.HIGHLIGHT.TYPED],
             icon: UrlbarUtils.getIconForUrl(url),
             userContextId: row.getResultByName("userContextId") || 0,
-          })
+          }
+        );
+        if (
+          lazy.UrlbarPrefs.getScotchBonnetPref("secondaryActions.featureGate")
+        ) {
+          payload[0].action = {
+            key: "tabswitch",
+            l10nId: "urlbar-result-action-switch-tab",
+          };
+        }
+        let result = new lazy.UrlbarResult(
+          UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+          UrlbarUtils.RESULT_SOURCE.TABS,
+          ...payload
         );
         addCallback(this, result);
         continue;
@@ -200,12 +212,8 @@ class ProviderInputHistory extends UrlbarProvider {
     }
   }
 
-  onEngagement(state, queryContext, details, controller) {
+  onEngagement(queryContext, controller, details) {
     let { result } = details;
-    if (result?.providerName != this.name) {
-      return;
-    }
-
     if (
       details.selType == "dismiss" &&
       result.type == UrlbarUtils.RESULT_TYPE.URL
@@ -236,7 +244,7 @@ class ProviderInputHistory extends UrlbarProvider {
       SQL_ADAPTIVE_QUERY,
       {
         parent: lazy.PlacesUtils.tagsFolderId,
-        search_string: queryContext.searchString.toLowerCase(),
+        search_string: queryContext.lowerCaseSearchString,
         matchBehavior: Ci.mozIPlacesAutoComplete.MATCH_ANYWHERE,
         searchBehavior: lazy.UrlbarPrefs.get("defaultBehavior"),
         userContextId: lazy.UrlbarPrefs.get("switchTabs.searchAllContainers")

@@ -127,8 +127,8 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource://gre/actors/AutoCompleteParent.sys.mjs",
       // These two messages are also used, but are currently synchronous calls
       // through the per-process message manager.
-      // "FormAutoComplete:GetSelectedIndex",
-      // "FormAutoComplete:SelectBy"
+      // "AutoComplete:GetSelectedIndex",
+      // "AutoComplete:SelectBy"
     },
 
     child: {
@@ -317,7 +317,7 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/actors/FormHistoryChild.sys.mjs",
       events: {
-        "form-submission-detected": {},
+        DOMFormBeforeSubmit: {},
       },
     },
 
@@ -325,10 +325,13 @@ let JSWINDOWACTORS = {
   },
 
   FormHandler: {
+    parent: {
+      esModuleURI: "resource://gre/actors/FormHandlerParent.sys.mjs",
+    },
     child: {
       esModuleURI: "resource://gre/actors/FormHandlerChild.sys.mjs",
       events: {
-        DOMFormBeforeSubmit: {},
+        DOMFormBeforeSubmit: { createActor: false },
       },
     },
 
@@ -366,7 +369,8 @@ let JSWINDOWACTORS = {
     child: {
       esModuleURI: "resource://gre/modules/LoginManagerChild.sys.mjs",
       events: {
-        "form-submission-detected": {},
+        "form-submission-detected": { createActor: false },
+        "before-form-submission": { createActor: false },
         DOMFormHasPassword: {},
         DOMFormHasPossibleUsername: {},
         DOMInputPasswordAdded: {},

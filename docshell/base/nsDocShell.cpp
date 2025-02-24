@@ -35,6 +35,7 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/SimpleEnumerator.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -64,6 +65,7 @@
 #include "mozilla/dom/ContentFrameMessageManager.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/FragmentDirective.h"
 #include "mozilla/dom/HTMLAnchorElement.h"
 #include "mozilla/dom/HTMLIFrameElement.h"
 #include "mozilla/dom/PerformanceNavigation.h"
@@ -144,7 +146,7 @@
 #include "nsIScriptChannel.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIScrollableFrame.h"
+#include "nsScriptSecurityManager.h"
 #include "nsIScrollObserver.h"
 #include "nsISupportsPrimitives.h"
 #include "nsISecureBrowserUI.h"
@@ -166,7 +168,6 @@
 #include "nsIURILoader.h"
 #include "nsIViewSourceChannel.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsIWebBrowserChromeFocus.h"
 #include "nsIWebBrowserFind.h"
 #include "nsIWebProgress.h"
 #include "nsIWidget.h"
@@ -231,6 +232,7 @@
 #include "nsWidgetsCID.h"
 #include "nsXULAppAPI.h"
 
+#include "CertVerifier.h"
 #include "ThirdPartyUtil.h"
 #include "GeckoProfiler.h"
 #include "mozilla/NullPrincipal.h"
@@ -332,7 +334,6 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext,
       mAppType(nsIDocShell::APP_TYPE_UNKNOWN),
       mLoadType(0),
       mFailedLoadType(0),
-      mMetaViewportOverride(nsIDocShell::META_VIEWPORT_OVERRIDE_NONE),
       mChannelToDisconnectOnPageHide(0),
       mCreatingDocument(false),
 #ifdef DEBUG
@@ -2099,27 +2100,6 @@ nsDocShell::GetBusyFlags(BusyFlags* aBusyFlags) {
 }
 
 NS_IMETHODIMP
-nsDocShell::TabToTreeOwner(bool aForward, bool aForDocumentNavigation,
-                           bool* aTookFocus) {
-  NS_ENSURE_ARG_POINTER(aTookFocus);
-
-  nsCOMPtr<nsIWebBrowserChromeFocus> chromeFocus = do_GetInterface(mTreeOwner);
-  if (chromeFocus) {
-    if (aForward) {
-      *aTookFocus =
-          NS_SUCCEEDED(chromeFocus->FocusNextElement(aForDocumentNavigation));
-    } else {
-      *aTookFocus =
-          NS_SUCCEEDED(chromeFocus->FocusPrevElement(aForDocumentNavigation));
-    }
-  } else {
-    *aTookFocus = false;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDocShell::GetLoadURIDelegate(nsILoadURIDelegate** aLoadURIDelegate) {
   nsCOMPtr<nsILoadURIDelegate> delegate = GetLoadURIDelegate();
   delegate.forget(aLoadURIDelegate);
@@ -2376,37 +2356,6 @@ nsDocShell::ClearCachedUserAgent() {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDocShell::GetMetaViewportOverride(
-    MetaViewportOverride* aMetaViewportOverride) {
-  NS_ENSURE_ARG_POINTER(aMetaViewportOverride);
-
-  *aMetaViewportOverride = mMetaViewportOverride;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetMetaViewportOverride(
-    MetaViewportOverride aMetaViewportOverride) {
-  // We don't have a way to verify this coming from Javascript, so this check is
-  // still needed.
-  if (!(aMetaViewportOverride == META_VIEWPORT_OVERRIDE_NONE ||
-        aMetaViewportOverride == META_VIEWPORT_OVERRIDE_ENABLED ||
-        aMetaViewportOverride == META_VIEWPORT_OVERRIDE_DISABLED)) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  mMetaViewportOverride = aMetaViewportOverride;
-
-  // Inform our presShell that it needs to re-check its need for a viewport
-  // override.
-  if (RefPtr<PresShell> presShell = GetPresShell()) {
-    presShell->MaybeRecreateMobileViewportManager(true);
-  }
-
-  return NS_OK;
-}
-
 /* virtual */
 int32_t nsDocShell::ItemType() { return mItemType; }
 
@@ -2586,10 +2535,6 @@ nsresult nsDocShell::SetDocLoaderParent(nsDocLoader* aParent) {
       value = false;
     }
     SetAllowDNSPrefetch(mAllowDNSPrefetch && value);
-
-    // We don't need to inherit metaViewportOverride, because the viewport
-    // is only relevant for the outermost nsDocShell, not for any iframes
-    // like this that might be embedded within it.
   }
 
   nsCOMPtr<nsIURIContentListener> parentURIListener(do_GetInterface(parent));
@@ -4963,7 +4908,7 @@ void nsDocShell::SetTitleOnHistoryEntry(bool aUpdateEntryInSessionHistory) {
 
 nsPoint nsDocShell::GetCurScrollPos() {
   nsPoint scrollPos;
-  if (nsIScrollableFrame* sf = GetRootScrollFrame()) {
+  if (ScrollContainerFrame* sf = GetRootScrollContainerFrame()) {
     scrollPos = sf->GetVisualViewportOffset();
   }
   return scrollPos;
@@ -4971,7 +4916,7 @@ nsPoint nsDocShell::GetCurScrollPos() {
 
 nsresult nsDocShell::SetCurScrollPosEx(int32_t aCurHorizontalPos,
                                        int32_t aCurVerticalPos) {
-  nsIScrollableFrame* sf = GetRootScrollFrame();
+  ScrollContainerFrame* sf = GetRootScrollContainerFrame();
   NS_ENSURE_TRUE(sf, NS_ERROR_FAILURE);
 
   ScrollMode scrollMode =
@@ -5014,11 +4959,11 @@ void nsDocShell::SetScrollbarPreference(mozilla::ScrollbarPreference aPref) {
   if (!ps) {
     return;
   }
-  nsIFrame* scrollFrame = ps->GetRootScrollFrame();
-  if (!scrollFrame) {
+  nsIFrame* rootScrollContainerFrame = ps->GetRootScrollContainerFrame();
+  if (!rootScrollContainerFrame) {
     return;
   }
-  ps->FrameNeedsReflow(scrollFrame,
+  ps->FrameNeedsReflow(rootScrollContainerFrame,
                        IntrinsicDirty::FrameAncestorsAndDescendants,
                        NS_FRAME_IS_DIRTY);
 }
@@ -5831,12 +5776,6 @@ already_AddRefed<nsIURI> nsDocShell::MaybeFixBadCertDomainErrorURI(
     return nullptr;
   }
 
-  // No point in going further if "www." is included in the hostname
-  // already. That is the only hueristic we're applying in this function.
-  if (StringBeginsWith(host, "www."_ns)) {
-    return nullptr;
-  }
-
   // Return if fixup enable pref is turned off.
   if (!mozilla::StaticPrefs::security_bad_cert_domain_error_url_fix_enabled()) {
     return nullptr;
@@ -5913,27 +5852,45 @@ already_AddRefed<nsIURI> nsDocShell::MaybeFixBadCertDomainErrorURI(
   }
 
   mozilla::pkix::Input serverCertInput;
-  mozilla::pkix::Result rv1 =
+  mozilla::pkix::Result result =
       serverCertInput.Init(certBytes.Elements(), certBytes.Length());
-  if (rv1 != mozilla::pkix::Success) {
+  if (result != mozilla::pkix::Success) {
     return nullptr;
   }
 
-  nsAutoCString newHost("www."_ns);
-  newHost.Append(host);
+  constexpr auto wwwPrefix = "www."_ns;
+  nsAutoCString newHost;
+  if (StringBeginsWith(host, wwwPrefix)) {
+    // Try www.example.com -> example.com
+    newHost.Assign(Substring(host, wwwPrefix.Length()));
+  } else {
+    // Try example.com -> www.example.com
+    newHost.Assign(wwwPrefix);
+    newHost.Append(host);
+  }
 
   mozilla::pkix::Input newHostInput;
-  rv1 = newHostInput.Init(
+  result = newHostInput.Init(
       BitwiseCast<const uint8_t*, const char*>(newHost.BeginReading()),
       newHost.Length());
-  if (rv1 != mozilla::pkix::Success) {
+  if (result != mozilla::pkix::Success) {
     return nullptr;
   }
 
-  // Check if adding a "www." prefix to the request's hostname will
-  // cause the response's certificate to match.
-  rv1 = mozilla::pkix::CheckCertHostname(serverCertInput, newHostInput);
-  if (rv1 != mozilla::pkix::Success) {
+  // Because certificate verification returned Result::ERROR_BAD_CERT_DOMAIN /
+  // SSL_ERROR_BAD_CERT_DOMAIN, a chain was built and we know whether or not
+  // the root was a built-in.
+  bool rootIsBuiltIn;
+  if (NS_FAILED(tsi->GetIsBuiltCertChainRootBuiltInRoot(&rootIsBuiltIn))) {
+    return nullptr;
+  }
+  mozilla::psm::SkipInvalidSANsForNonBuiltInRootsPolicy nameMatchingPolicy(
+      rootIsBuiltIn);
+
+  // Check if the certificate is valid for the new hostname.
+  result = mozilla::pkix::CheckCertHostname(serverCertInput, newHostInput,
+                                            nameMatchingPolicy);
+  if (result != mozilla::pkix::Success) {
     return nullptr;
   }
 
@@ -6118,9 +6075,10 @@ already_AddRefed<nsIURI> nsDocShell::AttemptURIFixup(
     }
   }
 
-  // If we have a SSL_ERROR_BAD_CERT_DOMAIN error, try prefixing the domain name
-  // with www. to see if we can avoid showing the cert error page. For example,
-  // https://example.com -> https://www.example.com.
+  // If we have a SSL_ERROR_BAD_CERT_DOMAIN error, try adding or removing
+  // "www." to/from the beginning of the domain name to see if we can avoid
+  // showing the cert error page. For example, https://example.com ->
+  // https://www.example.com or https://www.example.com -> https://example.com.
   if (aStatus ==
       mozilla::psm::GetXPCOMFromNSSError(SSL_ERROR_BAD_CERT_DOMAIN)) {
     newPostData = nullptr;
@@ -6207,7 +6165,6 @@ nsresult nsDocShell::FilterStatusForErrorPage(
     // to see the error page.
     nsCOMPtr<nsILoadInfo> info = aChannel->LoadInfo();
     if (!info->TriggeringPrincipal()->IsSystemPrincipal() &&
-        StaticPrefs::dom_no_unknown_protocol_error_enabled() &&
         !aIsInitialDocument) {
       if (aSkippedUnknownProtocolNavigation) {
         *aSkippedUnknownProtocolNavigation = true;
@@ -6629,8 +6586,6 @@ nsresult nsDocShell::CreateAboutBlankDocumentViewer(
       // after being set here.
       blankDoc->SetSandboxFlags(sandboxFlags);
 
-      blankDoc->InitFeaturePolicy();
-
       // create a content viewer for us and the new document
       docFactory->CreateInstanceForDocument(
           NS_ISUPPORTS_CAST(nsIDocShell*, this), blankDoc, "view",
@@ -6647,6 +6602,12 @@ nsresult nsDocShell::CreateAboutBlankDocumentViewer(
                       /* aIsInitialAboutBlank */ true,
                       /* aLocationFlags */ 0);
         rv = mIsBeingDestroyed ? NS_ERROR_NOT_AVAILABLE : NS_OK;
+      }
+
+      if (Element* embedderElement = blankDoc->GetEmbedderElement()) {
+        blankDoc->InitFeaturePolicy(AsVariant(embedderElement));
+      } else {
+        blankDoc->InitFeaturePolicy(AsVariant(Nothing{}));
       }
     }
   }
@@ -7635,12 +7596,9 @@ nsresult nsDocShell::RestoreFromHistory() {
               ("resize widget(%d, %d, %d, %d)", newBounds.x, newBounds.y,
                newBounds.width, newBounds.height));
       mDocumentViewer->SetBounds(newBounds);
-    } else {
-      nsIScrollableFrame* rootScrollFrame =
-          presShell->GetRootScrollFrameAsScrollable();
-      if (rootScrollFrame) {
-        rootScrollFrame->PostScrolledAreaEventForCurrentArea();
-      }
+    } else if (ScrollContainerFrame* sf =
+                   presShell->GetRootScrollContainerFrame()) {
+      sf->PostScrolledAreaEventForCurrentArea();
     }
   }
 
@@ -8533,6 +8491,17 @@ bool nsDocShell::IsSameDocumentNavigation(nsDocShellLoadState* aLoadState,
     rvURINew = aLoadState->URI()->GetHasRef(&aState.mNewURIHasRef);
   }
 
+  // A Fragment Directive must be removed from the new hash in order to allow
+  // fallback element id scroll. Additionally, the extracted parsed text
+  // directives need to be stored for further use.
+  nsTArray<TextDirective> textDirectives;
+  if (FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragmentString(
+          aState.mNewHash, &textDirectives)) {
+    if (Document* doc = GetDocument()) {
+      doc->FragmentDirective()->SetTextDirectives(std::move(textDirectives));
+    }
+  }
+
   if (currentURI && NS_SUCCEEDED(rvURINew)) {
     nsresult rvURIOld = currentURI->GetRef(aState.mCurrentHash);
     if (NS_SUCCEEDED(rvURIOld)) {
@@ -8568,8 +8537,9 @@ bool nsDocShell::IsSameDocumentNavigation(nsDocShellLoadState* aLoadState,
         if (nsCOMPtr<nsIChannel> docChannel = GetCurrentDocChannel()) {
           nsCOMPtr<nsILoadInfo> docLoadInfo = docChannel->LoadInfo();
           if (!docLoadInfo->GetLoadErrorPage() &&
-              nsHTTPSOnlyUtils::IsEqualURIExceptSchemeAndRef(
-                  currentExposableURI, aLoadState->URI(), docLoadInfo)) {
+              nsHTTPSOnlyUtils::ShouldUpgradeConnection(docLoadInfo) &&
+              nsHTTPSOnlyUtils::IsHttpDowngrade(currentExposableURI,
+                                                aLoadState->URI())) {
             uint32_t status = docLoadInfo->GetHttpsOnlyStatus();
             if (status & (nsILoadInfo::HTTPS_ONLY_UPGRADED_LISTENER_REGISTERED |
                           nsILoadInfo::HTTPS_ONLY_UPGRADED_HTTPS_FIRST)) {
@@ -8689,24 +8659,18 @@ nsresult nsDocShell::HandleSameDocumentNavigation(
       }
     }
 
-    auto isLoadableViaInternet = [](nsIURI* uri) {
-      return (uri && (net::SchemeIsHTTP(uri) || net::SchemeIsHTTPS(uri)));
-    };
-
-    if (isLoadableViaInternet(principalURI) &&
-        isLoadableViaInternet(mCurrentURI) && isLoadableViaInternet(newURI)) {
-      nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
-      if (!NS_SUCCEEDED(
-              ssm->CheckSameOriginURI(newURI, principalURI, false, false)) ||
-          !NS_SUCCEEDED(ssm->CheckSameOriginURI(mCurrentURI, principalURI,
-                                                false, false))) {
-        MOZ_LOG(gSHLog, LogLevel::Debug,
-                ("nsDocShell[%p]: possible violation of the same origin policy "
-                 "during same document navigation",
-                 this));
-        aSameDocument = false;
-        return NS_OK;
-      }
+    if (nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(principalURI,
+                                                             newURI) ||
+        nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(principalURI,
+                                                             mCurrentURI) ||
+        nsScriptSecurityManager::IsHttpOrHttpsAndCrossOrigin(mCurrentURI,
+                                                             newURI)) {
+      aSameDocument = false;
+      MOZ_LOG(gSHLog, LogLevel::Debug,
+              ("nsDocShell[%p]: possible violation of the same origin policy "
+               "during same document navigation",
+               this));
+      return NS_OK;
     }
   }
 
@@ -9631,7 +9595,7 @@ bool nsDocShell::CanLoadInParentProcess(nsIURI* aURI) {
 #ifdef MOZ_THUNDERBIRD
   if (uri->SchemeIs("imap") || uri->SchemeIs("mailbox") ||
       uri->SchemeIs("news") || uri->SchemeIs("nntp") ||
-      uri->SchemeIs("snews")) {
+      uri->SchemeIs("snews") || uri->SchemeIs("x-moz-ews")) {
     return true;
   }
 #endif
@@ -9888,6 +9852,9 @@ nsIPrincipal* nsDocShell::GetInheritedPrincipal(
       nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(channel));
       if (cos) {
         cos->AddClassFlags(nsIClassOfService::UrgentStart);
+        if (StaticPrefs::dom_document_priority_incremental()) {
+          cos->SetIncremental(true);
+        }
       }
     }
   }
@@ -10756,9 +10723,27 @@ nsresult nsDocShell::ScrollToAnchor(bool aCurHasRef, bool aNewHasRef,
     return NS_OK;
   }
 
-  nsIScrollableFrame* rootScroll = presShell->GetRootScrollFrameAsScrollable();
+  ScrollContainerFrame* rootScroll = presShell->GetRootScrollContainerFrame();
   if (rootScroll) {
     rootScroll->ClearDidHistoryRestore();
+  }
+
+  // If it's a load from history, we don't have any anchor jumping to do.
+  // Scrollbar position will be restored by the caller based on positions stored
+  // in session history.
+  bool scroll = aLoadType != LOAD_HISTORY && aLoadType != LOAD_RELOAD_NORMAL;
+  // If the load contains text directives, try to apply them. This may fail if
+  // the load is a same-document load that was initiated before the document was
+  // fully loaded and the target is not yet included in the DOM tree.
+  // For this case, the `uninvokedTextDirectives` are not cleared, so that
+  // `Document::ScrollToRef()` can re-apply the text directive.
+  // `Document::ScrollToRef()` is (presumably) the second "async" call mentioned
+  // in sec. 7.4.2.3.3 in the HTML spec, "Fragment navigations":
+  // https://html.spec.whatwg.org/#scroll-to-fragid:~:text=This%20algorithm%20will%20be%20called%20twice
+  const bool hasScrolledToTextFragment =
+      presShell->HighlightAndGoToTextFragment(scroll);
+  if (hasScrolledToTextFragment) {
+    return NS_OK;
   }
 
   // If we have no new anchor, we do not want to scroll, unless there is a
@@ -10771,11 +10756,6 @@ nsresult nsDocShell::ScrollToAnchor(bool aCurHasRef, bool aNewHasRef,
 
   // Both the new and current URIs refer to the same page. We can now
   // browse to the hash stored in the new URI.
-
-  // If it's a load from history, we don't have any anchor jumping to do.
-  // Scrollbar position will be restored by the caller based on positions stored
-  // in session history.
-  bool scroll = aLoadType != LOAD_HISTORY && aLoadType != LOAD_RELOAD_NORMAL;
 
   if (aNewHash.IsEmpty()) {
     // 2. If fragment is the empty string, then return the special value top of
@@ -12388,11 +12368,11 @@ nsresult nsDocShell::GetPromptAndStringBundle(nsIPrompt** aPrompt,
   return NS_OK;
 }
 
-nsIScrollableFrame* nsDocShell::GetRootScrollFrame() {
+ScrollContainerFrame* nsDocShell::GetRootScrollContainerFrame() {
   PresShell* presShell = GetPresShell();
   NS_ENSURE_TRUE(presShell, nullptr);
 
-  return presShell->GetRootScrollFrameAsScrollable();
+  return presShell->GetRootScrollContainerFrame();
 }
 
 nsresult nsDocShell::EnsureScriptEnvironment() {
@@ -12719,8 +12699,6 @@ class OnLinkClickEvent : public Runnable {
                    bool aIsTrusted, nsIPrincipal* aTriggeringPrincipal);
 
   NS_IMETHOD Run() override {
-    AutoPopupStatePusher popupStatePusher(mPopupState);
-
     // We need to set up an AutoJSAPI here for the following reason: When we
     // do OnLinkClickSync we'll eventually end up in
     // nsGlobalWindow::OpenInternal which only does popup blocking if
@@ -12740,7 +12718,6 @@ class OnLinkClickEvent : public Runnable {
   nsCOMPtr<nsIContent> mContent;
   RefPtr<nsDocShellLoadState> mLoadState;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
-  PopupBlocker::PopupControlState mPopupState;
   bool mNoOpenerImplied;
   bool mIsTrusted;
 };
@@ -12754,7 +12731,6 @@ OnLinkClickEvent::OnLinkClickEvent(nsDocShell* aHandler, nsIContent* aContent,
       mContent(aContent),
       mLoadState(aLoadState),
       mTriggeringPrincipal(aTriggeringPrincipal),
-      mPopupState(PopupBlocker::GetPopupControlState()),
       mNoOpenerImplied(aNoOpenerImplied),
       mIsTrusted(aIsTrusted) {}
 

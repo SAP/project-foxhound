@@ -26,3 +26,7 @@ support-files = ["../schemas/*.schema.json"]
 ["test_TopSitesFeed.js"]
 
 ["test_TopSitesFeed_glean.js"]
+
+["test_WallpaperFeed.js"]
+
+["test_WeatherFeed.js"]

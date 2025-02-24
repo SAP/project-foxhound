@@ -452,6 +452,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   void GetDebugInfo(dom::MediaDecoderDebugInfo& aInfo);
 
+  virtual bool IsHLSDecoder() const { return false; }
+
  protected:
   virtual ~MediaDecoder();
 
@@ -755,12 +757,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // resume to when we stop delaying seeking.
   bool mShouldDelaySeek = false;
   Maybe<SeekTarget> mDelayedSeekTarget;
-
-#  ifdef MOZ_WMF_MEDIA_ENGINE
-  // True if we've ever recreated a new state machine due to the previous state
-  // didn't support the media format or key system.
-  bool mStateMachineRecreated = false;
-#  endif
 
  public:
   Canonical<double>& CanonicalVolume() { return mVolume; }

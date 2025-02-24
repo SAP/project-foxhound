@@ -184,6 +184,13 @@ bool DispatchToUiThread(const char* aName, Lambda&& aLambda) {
 namespace mozilla {
 namespace widget {
 
+// For double click detection
+static int64_t sLastMouseDownTime = 0;
+static int32_t sLastMouseButtons = 0;
+static int32_t sLastClickCount = 0;
+static float sLastMouseDownX = 0;
+static float sLastMouseDownY = 0;
+
 using WindowPtr = jni::NativeWeakPtr<GeckoViewSupport>;
 
 /**
@@ -543,6 +550,28 @@ class NPZCSupport final
         ConvertScrollDirections(aHandledResult.mOverscrollDirections));
   }
 
+  static bool IsIntoDoubleClickThreshold(float aX, float aY) {
+    int32_t deltaX = abs((int32_t)floorf(sLastMouseDownX - aX));
+    int32_t deltaY = abs((int32_t)floorf(sLastMouseDownY - aY));
+    int32_t threshold = StaticPrefs::widget_double_click_threshold();
+
+    return (deltaX * deltaX + deltaY * deltaY < threshold * threshold);
+  }
+
+  static bool IsDoubleClick(int64_t aTime, float aX, float aY, int buttons) {
+    if (sLastMouseButtons != buttons) {
+      return false;
+    }
+
+    int64_t deltaTime = aTime - sLastMouseDownTime;
+    if (deltaTime < (int64_t)StaticPrefs::widget_double_click_min() ||
+        deltaTime > (int64_t)StaticPrefs::widget_double_click_timeout()) {
+      return false;
+    }
+
+    return IsIntoDoubleClickThreshold(aX, aY);
+  }
+
  public:
   int32_t HandleMouseEvent(int32_t aAction, int64_t aTime, int32_t aMetaState,
                            float aX, float aY, int buttons) {
@@ -568,6 +597,16 @@ class NPZCSupport final
         mouseType = MouseInput::MOUSE_DOWN;
         buttonType = GetButtonType(buttons ^ mPreviousButtons);
         mPreviousButtons = buttons;
+
+        if (IsDoubleClick(aTime, aX, aY, buttons)) {
+          sLastClickCount++;
+        } else {
+          sLastClickCount = 1;
+        }
+        sLastMouseDownTime = aTime;
+        sLastMouseDownX = aX;
+        sLastMouseDownY = aY;
+        sLastMouseButtons = buttons;
         break;
       case java::sdk::MotionEvent::ACTION_UP:
         mouseType = MouseInput::MOUSE_UP;
@@ -576,6 +615,10 @@ class NPZCSupport final
         break;
       case java::sdk::MotionEvent::ACTION_MOVE:
         mouseType = MouseInput::MOUSE_MOVE;
+
+        if (!IsIntoDoubleClickThreshold(aX, aY)) {
+          sLastClickCount = 0;
+        }
         break;
       case java::sdk::MotionEvent::ACTION_HOVER_MOVE:
         mouseType = MouseInput::MOUSE_MOVE;
@@ -606,9 +649,27 @@ class NPZCSupport final
       return INPUT_RESULT_IGNORED;
     }
 
-    PostInputEvent([input = std::move(input), result](nsWindow* window) {
+    PostInputEvent([input = std::move(input), result,
+                    clickCount = sLastClickCount](nsWindow* window) {
       WidgetMouseEvent mouseEvent = input.ToWidgetEvent(window);
+      mouseEvent.mClickCount = clickCount;
       window->ProcessUntransformedAPZEvent(&mouseEvent, result);
+      if (MouseInput::SECONDARY_BUTTON == input.mButtonType) {
+        if ((StaticPrefs::ui_context_menus_after_mouseup() &&
+             MouseInput::MOUSE_UP == input.mType) ||
+            (!StaticPrefs::ui_context_menus_after_mouseup() &&
+             MouseInput::MOUSE_DOWN == input.mType)) {
+          MouseInput contextMenu = input;
+
+          // Actually we don't dispatch context menu event to APZ since we don't
+          // handle it on APZ yet. If handling it, we need to consider how to
+          // dispatch it on APZ thread. It may cause a race condition.
+          contextMenu.mType = MouseInput::MOUSE_CONTEXTMENU;
+
+          WidgetMouseEvent contextMenuEvent = contextMenu.ToWidgetEvent(window);
+          window->ProcessUntransformedAPZEvent(&contextMenuEvent, result);
+        }
+      }
     });
 
     switch (result.GetStatus()) {
@@ -1249,6 +1310,9 @@ class LayerViewSupport final
   void SyncPauseCompositor() {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
+    // Set this true prior to attempting to pause the compositor, so that if
+    // pausing fails the subsequent recovery knows to initialize the compositor
+    // in a paused state.
     mCompositorPaused = true;
 
     if (mUiCompositorControllerChild) {
@@ -1283,8 +1347,12 @@ class LayerViewSupport final
   void SyncResumeCompositor() {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
+    // Set this false prior to attempting to resume the compositor, so that if
+    // resumption fails the subsequent recovery knows to initialize the
+    // compositor in a resumed state.
+    mCompositorPaused = false;
+
     if (mUiCompositorControllerChild) {
-      mCompositorPaused = false;
       bool resumed = mUiCompositorControllerChild->Resume();
       if (!resumed) {
         gfxCriticalNote
@@ -1299,6 +1367,11 @@ class LayerViewSupport final
       int32_t aWidth, int32_t aHeight, jni::Object::Param aSurface,
       jni::Object::Param aSurfaceControl) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+
+    // Set this false prior to attempting to resume the compositor, so that if
+    // resumption fails the subsequent recovery knows to initialize the
+    // compositor in a resumed state.
+    mCompositorPaused = false;
 
     mX = aX;
     mY = aY;
@@ -1345,8 +1418,6 @@ class LayerViewSupport final
     }
 
     mRequestedNewSurface = false;
-
-    mCompositorPaused = false;
 
     class OnResumedEvent : public nsAppShell::Event {
       GeckoSession::Compositor::GlobalRef mCompositor;
@@ -1823,12 +1894,10 @@ void GeckoViewSupport::AttachAccessibility(
           sessionAccessibility);
 }
 
-auto GeckoViewSupport::OnLoadRequest(mozilla::jni::String::Param aUri,
-                                     int32_t aWindowType, int32_t aFlags,
-                                     mozilla::jni::String::Param aTriggeringUri,
-                                     bool aHasUserGesture,
-                                     bool aIsTopLevel) const
-    -> java::GeckoResult::LocalRef {
+auto GeckoViewSupport::OnLoadRequest(
+    mozilla::jni::String::Param aUri, int32_t aWindowType, int32_t aFlags,
+    mozilla::jni::String::Param aTriggeringUri, bool aHasUserGesture,
+    bool aIsTopLevel) const -> java::GeckoResult::LocalRef {
   GeckoSession::Window::LocalRef window(mGeckoViewWindow);
   if (!window) {
     return nullptr;
@@ -2246,15 +2315,6 @@ RefPtr<MozPromise<bool, bool, false>> nsWindow::OnLoadRequest(
              : nullptr;
 }
 
-void nsWindow::OnUpdateSessionStore(mozilla::jni::Object::Param aBundle) {
-  auto geckoViewSupport(mGeckoViewSupport.Access());
-  if (!geckoViewSupport) {
-    return;
-  }
-
-  geckoViewSupport->OnUpdateSessionStore(aBundle);
-}
-
 float nsWindow::GetDPI() {
   float dpi = 160.0f;
 
@@ -2584,16 +2644,6 @@ void nsWindow::ShowDynamicToolbar() {
   }
 
   acc->OnShowDynamicToolbar();
-}
-
-void GeckoViewSupport::OnUpdateSessionStore(
-    mozilla::jni::Object::Param aBundle) {
-  GeckoSession::Window::LocalRef window(mGeckoViewWindow);
-  if (!window) {
-    return;
-  }
-
-  window->OnUpdateSessionStore(aBundle);
 }
 
 static EventMessage convertDragEventActionToGeckoEvent(int32_t aAction) {
