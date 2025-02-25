@@ -17,13 +17,17 @@
 
       SimpleTest.waitForExplicitFinish();
       function startTest() {
-        const url = new URL("https://untainted.com");
+        const url = new URL("https://untainted.com/example/1?payload=abcd&sp=x#12345");
         check_untainted(url.toString());
 
-        const tainted_url = new URL(String.tainted("https://tainted_url.com"));
+        const tainted_url = new URL(String.tainted("https://user:password@tainted_url.com/example/1?payload=abcd&sp=x#12345"));
         check_tainted(tainted_url.toString());
         check_tainted(tainted_url.hostname);
         check_tainted(tainted_url.protocol);
+        check_tainted(tainted_url.username);
+        check_tainted(tainted_url.password);
+        check_tainted(tainted_url.pathname);
+        check_tainted(tainted_url.search);
 
         const partially_tainted = new URL("https://" + String.tainted("hostname") + ".com/" + String.tainted("path/to/file"));
 
