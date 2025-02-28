@@ -43,7 +43,7 @@ jobs:
 
       - name: Copy Configuration
         run: |
-          cp taintfox_mozconfig_ubuntu .mozconfig
+          cp taintfox_mozconfig_spidermonkey .mozconfig
     
       - name: Enable JitSpew
         if: ${{ matrix.jitspew == 'true' }}
