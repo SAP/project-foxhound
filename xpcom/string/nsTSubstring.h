@@ -436,6 +436,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
                           "data should be null terminated");
     Finalize();
     SetData(data, aLength, DataFlags::REFCOUNTED | DataFlags::TERMINATED);
+    SetTaint(buffer->Taint());
   }
 
 #if defined(MOZ_USE_CHAR16_WRAPPER)
