@@ -36,18 +36,15 @@ jobs:
           sudo apt-get update
           pip install junit-xml
 
-      - name: Checkout
-        uses: actions/checkout@v3
+      - name: Checkout release branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Copy Configuration
+        run: |
+          cp taintfox_mozconfig_ubuntu .mozconfig
     
-      - name: Bootstrap Build Tools
-        run: |
-          ./mach --no-interactive bootstrap --application-choice=js
-
-      # Configure
-      - name: Copy configuration
-        run: |
-          cp taintfox_mozconfig_spidermonkey .mozconfig
-
       - name: Enable JitSpew
         if: ${{ matrix.jitspew == 'true' }}
         run: echo "ac_add_options --enable-jitspew" >> .mozconfig
@@ -55,7 +52,11 @@ jobs:
       - name: Enable TaintSpew
         if: ${{ matrix.taintspew == 'true' }}
         run: echo "ac_add_options --enable-taintspew" >> .mozconfig
-
+        
+      - name: Bootstrap Build Tools
+        run: |
+          ./mach --no-interactive bootstrap --application-choice=js
+      
       # Build
       - name: Build
         run: |
