@@ -87,9 +87,6 @@ jobs:
 
     steps:
 
-      - name: Prepare Machine
-        run: choco upgrade llvm --version=18.0.0
-
       - name: Download Mozilla Build
         run: |
           Set-PSDebug -Trace 1
