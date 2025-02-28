@@ -87,7 +87,10 @@ jobs:
 
     steps:
 
-      - name: Download mozbuild
+      - name: Prepare Machine
+        run: choco upgrade llvm
+
+      - name: Download Mozilla Build
         run: |
           Set-PSDebug -Trace 1
           Invoke-WebRequest https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe -OutFile .\MozillaBuildSetup-Latest.exe
