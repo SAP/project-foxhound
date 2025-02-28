@@ -1,6 +1,6 @@
 # This is a basic workflow to help you get started with Actions
 
-name: CI
+name: JavaScript
 
 # Controls when the workflow will run
 on:
@@ -36,27 +36,16 @@ jobs:
           sudo apt-get update
           pip install junit-xml
 
-      - name: Checkout release branch
+      - name: Checkout
         uses: actions/checkout@v3
-        with:
-          ref: firefox-release
-          path: release
-
-      # Bootstrap
+    
       - name: Bootstrap Build Tools
         run: |
-          cd release
           ./mach --no-interactive bootstrap --application-choice=js
 
-      - name: Checkout release branch
-        uses: actions/checkout@v3
-        with:
-            path: build
-    
       # Configure
       - name: Copy configuration
         run: |
-          cd build
           cp taintfox_mozconfig_spidermonkey .mozconfig
 
       - name: Enable JitSpew
@@ -70,18 +59,15 @@ jobs:
       # Build
       - name: Build
         run: |
-          cd build
           ./mach build
 
       # Test
       - name: Test
         run:  |
-          cd build
           obj-spider-release/dist/bin/js js/src/Y.js
 
       - name: Taint Tests
         run:  |
-          cd build
           python3 js/src/tests/parse_output.py
 
       - name: Upload Report
@@ -89,4 +75,11 @@ jobs:
         if:  ${{ matrix.taintspew == 'false' &&  matrix.jitspew == 'false' && (success() || failure()) }} # run this step even if previous step failed
         with:
           name: test-results
-          path: build/jstest_output.xml
+          path: jstest_output.xml
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4  # upload test results
+        if:  ${{ matrix.taintspew == 'false' &&  matrix.jitspew == 'false' && (success() || failure()) }} # run this step even if previous step failed
+        with:
+          name: spidermonkey
+          path: obj-spider-release/dist/bin
