@@ -110,12 +110,14 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
 
   if (StringBuffer* buf = readable.GetStringBuffer()) {
     bool shared;
-    // TaintFox: StringBufferToJSVal takes care of propagating taint.
     if (!UCStringBufferToJSVal(cx, buf, length, vp, &shared)) {
       return false;
     }
     if (shared) {
       *sharedBuffer = buf;
+    }
+    if (readable.isTainted()) {
+      JS_SetTaint(cx, vp, readable.Taint());
     }
     return true;
   }
@@ -128,7 +130,9 @@ bool XPCStringConvert::ReadableToJSVal(JSContext* cx, const nsAString& readable,
   // TaintFox: copy taint information.
   // |str| could be cx->names().emptyString, but we don't taint atoms currently, so that's ok.
   // TODO(samuel) verify readable.taint() is sane
-  JS_SetStringTaint(cx, str, readable.Taint());
+  if (readable.isTainted()) {
+    JS_SetStringTaint(cx, str, readable.Taint());
+  }
 
   vp.setString(str);
   return true;
@@ -155,6 +159,9 @@ bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
     if (shared) {
       *sharedBuffer = buf;
     }
+    if (latin1.isTainted()) {
+      JS_SetTaint(cx, vp, latin1.Taint());
+    }
     return true;
   }
 
@@ -164,7 +171,9 @@ bool XPCStringConvert::Latin1ToJSVal(JSContext* cx, const nsACString& latin1,
   }
 
   // TaintFox: Transfer taint information to newly created JS string.
-  JS_SetStringTaint(cx, str, latin1.Taint());
+  if (latin1.isTainted()) {
+    JS_SetStringTaint(cx, str, latin1.Taint());
+  }
 
   vp.setString(str);
   return true;
@@ -190,6 +199,9 @@ bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
     if (shared) {
       *sharedBuffer = buf;
     }
+    if (utf8.isTainted()) {
+      JS_SetTaint(cx, vp, utf8.Taint());
+    }
     return true;
   }
 
@@ -200,7 +212,9 @@ bool XPCStringConvert::UTF8ToJSVal(JSContext* cx, const nsACString& utf8,
   }
 
   // TaintFox: Transfer taint information to newly created JS string.
-  JS_SetStringTaint(cx, str, utf8.Taint());
+  if (utf8.isTainted()) {
+    JS_SetStringTaint(cx, str, utf8.Taint());
+  }
 
   vp.setString(str);
   return true;

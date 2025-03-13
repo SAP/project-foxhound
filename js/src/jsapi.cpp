@@ -4900,6 +4900,14 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
 }
 
 JS_PUBLIC_API void
+JS_SetTaint(JSContext* cx, JS::MutableHandleValue value, const StringTaint& taint)
+{
+  if (value.isString()) {
+    JS_SetStringTaint(cx, value.toString(), taint);
+  }
+}
+
+JS_PUBLIC_API void
 JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& op)
 {
   if (!str->isTainted()) {
