@@ -127,6 +127,7 @@ class nsTextFragment final : public TaintableString {
         mState.mInHeap = true;
         mState.mIs2b = true;
         mState.mLength = aString.Length();
+        AssignTaint(aString.Taint());
         return true;
       }
     }

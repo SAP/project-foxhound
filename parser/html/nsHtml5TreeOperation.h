@@ -551,8 +551,8 @@ class nsHtml5TreeOperation final {
   using Encoding = mozilla::Encoding;
 
  public:
-  static nsresult AppendTextToTextNode(const char16_t* aBuffer,
-                                       uint32_t aLength,
+  static nsresult AppendTextToTextNode(const char16_t* aBuffer, uint32_t aLength,
+                                       const StringTaint& aTaint,
                                        mozilla::dom::Text* aTextNode,
                                        nsHtml5DocumentBuilder* aBuilder);
 

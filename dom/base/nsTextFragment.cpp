@@ -250,6 +250,7 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
     mState.mInHeap = false;
     mState.mIs2b = false;
     mState.mLength = 1;
+    AssignTaint(aTaint);
     return true;
   }
 
@@ -289,7 +290,7 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
       mState.mInHeap = false;
       mState.mIs2b = false;
       mState.mLength = aLength;
-
+      AssignTaint(aTaint);
       return true;
     }
   }
@@ -339,7 +340,7 @@ bool nsTextFragment::SetTo(const char16_t* aBuffer, uint32_t aLength,
   // Setup our fields
   mState.mInHeap = true;
   mState.mLength = aLength;
-
+  AssignTaint(aTaint);
   return true;
 }
 

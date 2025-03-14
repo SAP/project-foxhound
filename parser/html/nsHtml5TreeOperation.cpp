@@ -221,8 +221,8 @@ nsHtml5TreeOperation::~nsHtml5TreeOperation() {
 }
 
 nsresult nsHtml5TreeOperation::AppendTextToTextNode(
-    const char16_t* aBuffer, uint32_t aLength, Text* aTextNode,
-    nsHtml5DocumentBuilder* aBuilder) {
+    const char16_t* aBuffer, uint32_t aLength, const StringTaint& taint,
+    Text* aTextNode, nsHtml5DocumentBuilder* aBuilder) {
   MOZ_ASSERT(aTextNode, "Got null text node.");
   MOZ_ASSERT(aBuilder);
   MOZ_ASSERT(aBuilder->IsInDocUpdate());
@@ -231,7 +231,7 @@ nsresult nsHtml5TreeOperation::AppendTextToTextNode(
   MutationObservers::NotifyCharacterDataWillChange(aTextNode, info);
 
   // TaintFox: TODO(samuel) need taint here!
-  nsresult rv = aTextNode->AppendText(aBuffer, aLength, false, EmptyTaint);
+  nsresult rv = aTextNode->AppendText(aBuffer, aLength, false, taint);
   NS_ENSURE_SUCCESS(rv, rv);
 
   MutationObservers::NotifyCharacterDataChanged(aTextNode, info);
@@ -250,14 +250,13 @@ nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
   nsIContent* lastChild = aParent->GetLastChild();
   if (lastChild && lastChild->IsText()) {
     nsHtml5OtherDocUpdate update(aParent->OwnerDoc(), aBuilder->GetDocument());
-    return AppendTextToTextNode(aBuffer, aLength, lastChild->GetAsText(),
+    return AppendTextToTextNode(aBuffer, aLength, taint, lastChild->GetAsText(),
                                 aBuilder);
   }
 
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
   RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
   NS_ASSERTION(text, "Infallible malloc failed?");
-  // TaintFox: TODO(samuel) need taint information here!
   rv = text->SetText(aBuffer, aLength, false, taint);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -666,7 +665,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
 
     nsIContent* previousSibling = aTable->GetPreviousSibling();
     if (previousSibling && previousSibling->IsText()) {
-      return AppendTextToTextNode(aBuffer, aLength,
+      return AppendTextToTextNode(aBuffer, aLength, EmptyTaint,
                                   previousSibling->GetAsText(), aBuilder);
     }
 
@@ -901,7 +900,8 @@ nsresult nsHtml5TreeOperation::Perform(nsHtml5TreeOpExecutor* aBuilder,
       nsIContent* parent = *aOperation.mParent;
       char16_t* buffer = aOperation.mBuffer;
       uint32_t length = aOperation.mLength;
-      return AppendText(buffer, length, EmptyTaint, parent, mBuilder);
+      const StringTaint taint = aOperation.mTaint;
+      return AppendText(buffer, length, taint, parent, mBuilder);
     }
 
     nsresult operator()(const opFosterParentText& aOperation) {
