@@ -230,7 +230,6 @@ nsresult nsHtml5TreeOperation::AppendTextToTextNode(
   CharacterDataChangeInfo info = {true, oldLength, oldLength, aLength};
   MutationObservers::NotifyCharacterDataWillChange(aTextNode, info);
 
-  // TaintFox: TODO(samuel) need taint here!
   nsresult rv = aTextNode->AppendText(aBuffer, aLength, false, taint);
   NS_ENSURE_SUCCESS(rv, rv);
 
